@@ -21,7 +21,7 @@
 ## สถานะหน้าจอ
 
 - ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users (+ เชิญผู้ใช้) · Cash & Deposits
-- ✅ Liabilities · Credit Cards · Property & Leases · Investments · Opening Setup · System (FX)
+- ✅ Liabilities · Credit Cards · Property & Leases · Investments · Income & Expenses · Month Closing · Opening Setup · System (FX)
 - ⬜ หน้าอื่นตาม Wireframe V1.1 — ทยอยเพิ่ม
 
 ## Supabase Keep-alive (GitHub Actions)
