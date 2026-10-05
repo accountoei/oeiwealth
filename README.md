@@ -20,7 +20,8 @@
 
 ## สถานะหน้าจอ
 
-- ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users · Cash & Deposits
+- ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users (+ เชิญผู้ใช้) · Cash & Deposits
+- ✅ Liabilities · Credit Cards · Property & Leases · Investments · Opening Setup · System (FX)
 - ⬜ หน้าอื่นตาม Wireframe V1.1 — ทยอยเพิ่ม
 
 ## Supabase Keep-alive (GitHub Actions)
@@ -33,3 +34,9 @@
 `.github/workflows/fx-rates.yml` รันทุกวัน 19:30 (ดึงย้อนหลัง 10 วัน) และกดรันเองเพื่อ Backfill ช่วงวันที่ได้
 สคริปต์: `scripts/fx-fetch.mjs` · ใช้ `mid_rate` (ไม่มี → เฉลี่ย buying_transfer/selling) · สกุลที่ประกาศต่อ 100 หน่วยถูกแปลงเป็นต่อ 1 หน่วย
 Repository secrets: `BOT_API_TOKEN`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (เก็บใน GitHub Secrets เท่านั้น ห้ามใส่ใน Vercel)
+
+## Edge Function: invite-user
+
+`supabase/functions/invite-user/index.ts` — ADMIN (ยืนยัน MFA แล้ว) เชิญผู้ใช้ใหม่จากหน้า Family & Users
+ระบบ **ไม่ส่งอีเมล** แต่สร้างลิงก์ `/auth/accept?...` ให้ ADMIN คัดลอกไปส่งเอง (ไม่ต้องตั้ง SMTP)
+ติดตั้ง: Supabase → Edge Functions → Deploy a new function → Via Editor → ชื่อ `invite-user` → วางโค้ด → ปิด "Verify JWT" (ฟังก์ชันตรวจสิทธิ์เอง)

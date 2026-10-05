@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
-import { AddPersonForm, PersonRow, UserRoleForm, UserStatusForm } from "./forms";
+import { AddPersonForm, InviteForm, PersonRow, ResendInviteForm, UserRoleForm, UserStatusForm } from "./forms";
 
 const USER_STATUS: Record<string, string> = { INVITED: "รอเข้าใช้ครั้งแรก", ACTIVE: "ใช้งาน", DISABLED: "ปิดการใช้งาน" };
 
@@ -66,6 +66,7 @@ export default async function FamilyUsersPage() {
                         <span>{USER_STATUS[u.status]}</span>
                         {isAdmin && u.id !== me.id && <UserStatusForm id={u.id} status={u.status} />}
                       </div>
+                      {isAdmin && u.status === "INVITED" && <ResendInviteForm id={u.id} />}
                     </td>
                     <td className="pr-4 text-slate-500">
                       {u.last_login_at ? new Date(u.last_login_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-"}
@@ -77,7 +78,14 @@ export default async function FamilyUsersPage() {
           </table>
         </div>
         {isAdmin && (
-          <p className="mt-4 text-xs text-slate-500">การเชิญผู้ใช้ใหม่ผ่านหน้านี้จะเปิดใช้ในรอบถัดไป (ต้องใช้ Edge Function)</p>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <h3 className="mb-1 text-sm font-medium text-slate-900">เชิญผู้ใช้ใหม่</h3>
+            <p className="mb-2 text-xs text-slate-500">
+              ระบบสร้างลิงก์ให้คัดลอกไปส่งเอง · ผู้รับเปิดลิงก์ ตั้งรหัสผ่าน แล้วเข้าใช้ได้ทันที · ผู้ดูแลระบบต้องตั้ง MFA ต่อ
+            </p>
+            <InviteForm persons={(persons ?? []).filter((p) => p.status === "ACTIVE"
+              && !(users ?? []).some((u) => u.person_id === p.id)).map((p) => ({ id: p.id, name: p.name }))} />
+          </div>
         )}
       </section>
     </div>

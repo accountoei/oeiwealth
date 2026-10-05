@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
 export type ActionState = { error?: string; ok?: string };
@@ -59,4 +60,40 @@ export async function setUserStatus(_: ActionState, form: FormData): Promise<Act
   if (error) return { error: friendly(error.message) };
   revalidatePath("/settings/family-users");
   return { ok: "เปลี่ยนสถานะแล้ว" };
+}
+
+// ---------------------------------------------------------------- Invite (Edge Function: invite-user)
+export type InviteState = ActionState & { link?: string; email?: string };
+
+async function callInvite(body: Record<string, unknown>): Promise<InviteState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.functions.invoke("invite-user", { body });
+  if (error) {
+    let msg = error.message;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === "function") {
+      try { msg = (await ctx.json()).error ?? msg; } catch { /* ไม่ใช่ JSON */ }
+    }
+    if (/Failed to send a request|not found|404/i.test(msg)) msg = "ยังไม่ได้ติดตั้ง Edge Function invite-user ใน Supabase";
+    return { error: msg };
+  }
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const link = `${proto}://${host}/auth/accept?token_hash=${encodeURIComponent(data.token_hash)}&type=${data.type}`;
+  revalidatePath("/settings/family-users");
+  return { ok: "สร้างลิงก์แล้ว", link, email: data.email };
+}
+
+export async function inviteUser(_: InviteState, form: FormData): Promise<InviteState> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  if (!email) return { error: "กรุณาใส่อีเมล" };
+  return callInvite({
+    action: "invite", email, role: String(form.get("role") ?? "VIEWER"),
+    person_id: String(form.get("person_id") ?? "") || null,
+  });
+}
+
+export async function resendInvite(_: InviteState, form: FormData): Promise<InviteState> {
+  return callInvite({ action: "resend", app_user_id: String(form.get("id")) });
 }

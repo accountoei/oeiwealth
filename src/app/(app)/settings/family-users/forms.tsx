@@ -1,7 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
-import { addPerson, updatePerson, setUserRole, setUserStatus, type ActionState } from "./actions";
+import { useActionState, useState } from "react";
+import {
+  addPerson, inviteUser, resendInvite, setUserRole, setUserStatus, updatePerson, type ActionState, type InviteState,
+} from "./actions";
 
 export const RELATIONSHIP_LABEL: Record<string, string> = {
   SELF: "หัวหน้าครอบครัว", SPOUSE: "คู่สมรส", CHILD: "บุตร", CHILD_IN_LAW: "ลูกเขย / ลูกสะใภ้",
@@ -85,5 +87,66 @@ export function UserStatusForm({ id, status }: { id: string; status: string }) {
       </button>
       <Msg s={state} />
     </form>
+  );
+}
+
+/* ---------------------------------------------------------------- เชิญผู้ใช้ */
+function LinkBox({ s }: { s: InviteState }) {
+  const [copied, setCopied] = useState(false);
+  if (!s.link) return null;
+  const text = `เชิญเข้าใช้ Family Wealth Vault (${s.email})\nเปิดลิงก์แล้วกด "ยืนยันและตั้งรหัสผ่าน":\n${s.link}\n(ลิงก์ใช้ได้ครั้งเดียวและมีอายุจำกัด)`;
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+      <div className="font-medium text-emerald-900">ลิงก์สำหรับ {s.email}</div>
+      <textarea readOnly value={text} rows={4} className="w-full rounded-md border border-emerald-200 bg-white p-2 font-mono text-xs" />
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" className={btn}
+          onClick={() => { navigator.clipboard.writeText(text); setCopied(true); }}>{copied ? "คัดลอกแล้ว ✓" : "คัดลอกข้อความ"}</button>
+        <span className="text-xs text-emerald-800">ส่งให้ผู้รับทาง LINE / อีเมลส่วนตัว · ระบบไม่ได้ส่งอีเมลให้ · ลิงก์ไม่ถูกเก็บไว้ ปิดหน้านี้แล้วต้องสร้างใหม่</span>
+      </div>
+    </div>
+  );
+}
+
+export function InviteForm({ persons }: { persons: { id: string; name: string }[] }) {
+  const [state, action, pending] = useActionState<InviteState, FormData>(inviteUser, {});
+  return (
+    <div>
+      <form action={action} className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-slate-600">อีเมล
+          <input name="email" type="email" required placeholder="name@example.com" className={`mt-1 block w-56 ${input}`} />
+        </label>
+        <label className="text-xs text-slate-600">สิทธิ์
+          <select name="role" defaultValue="VIEWER" className={`mt-1 block ${input}`}>
+            {Object.entries(ROLES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label className="text-xs text-slate-600">เป็นสมาชิกครอบครัว
+          <select name="person_id" defaultValue="" className={`mt-1 block ${input}`}>
+            <option value="">— ไม่ใช่สมาชิก (เช่น ผู้ดูแลระบบภายนอก) —</option>
+            {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <button disabled={pending} className={btn}>{pending ? "กำลังสร้าง…" : "เชิญ"}</button>
+        <Msg s={state.link ? {} : state} />
+      </form>
+      <LinkBox s={state} />
+    </div>
+  );
+}
+
+export function ResendInviteForm({ id }: { id: string }) {
+  const [state, action, pending] = useActionState<InviteState, FormData>(resendInvite, {});
+  return (
+    <div>
+      <form action={action} className="inline">
+        <input type="hidden" name="id" value={id} />
+        <button disabled={pending} className="text-xs text-slate-700 underline disabled:opacity-50">
+          {pending ? "…" : "สร้างลิงก์ใหม่"}
+        </button>
+        {!state.link && <Msg s={state} />}
+      </form>
+      <LinkBox s={state} />
+    </div>
   );
 }
