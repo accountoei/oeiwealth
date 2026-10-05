@@ -33,7 +33,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Family & Users", href: "/settings/family-users", ready: true },
       { label: "System", href: "/settings/system" },
-      { label: "Opening Setup", href: "/settings/opening" },
+      { label: "Opening Setup", href: "/settings/opening", ready: true },
       { label: "Security", href: "/settings/security" },
     ],
   },

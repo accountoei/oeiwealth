@@ -24,7 +24,7 @@ export default async function DashboardPage() {
             ความพร้อมก่อน Go-live: พร้อม {count("READY")} · ควรตรวจ {count("WARN")} · ยังขาด {count("MISSING")} รายการ
           </p>
           <p className="mt-2 text-sm text-amber-800">
-            เริ่มจากเพิ่มสมาชิกครอบครัวที่ <Link className="underline" href="/settings/family-users">Family &amp; Users</Link>
+            ดูรายละเอียดและ Confirm Go-live ที่ <Link className="underline" href="/settings/opening">Opening Setup</Link>
           </p>
         </section>
       )}
