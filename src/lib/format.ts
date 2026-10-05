@@ -106,3 +106,21 @@ export function thMonth(value: string | null | undefined): string {
   return new Date(`${value.slice(0, 10)}T12:00:00Z`)
     .toLocaleDateString("th-TH", { month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
 }
+
+export const HOLDING_TYPE_LABEL: Record<string, string> = {
+  EQUITY: "หุ้น", FUND: "กองทุน", BOND: "หุ้นกู้ / พันธบัตร", FCN: "FCN", STRUCTURED_PRODUCT: "Structured Product",
+  CASH: "เงินสดในพอร์ต", OTHER: "อื่น ๆ",
+};
+export const PORTFOLIO_TYPE_LABEL: Record<string, string> = {
+  BROKERAGE: "บัญชีหลักทรัพย์ / กองทุน", PRIVATE_FUND: "กองทุนส่วนบุคคล", OTHER: "อื่น ๆ",
+};
+export const ITX_LABEL: Record<string, string> = {
+  OPENING_BALANCE: "ยอดตั้งต้น", DEPOSIT: "โอนเข้าพอร์ต", WITHDRAWAL: "ถอนออกจากพอร์ต", BUY: "ซื้อ", SELL: "ขาย",
+  DIVIDEND: "ปันผล", INTEREST: "ดอกเบี้ย", COUPON: "Coupon", FEE: "ค่าธรรมเนียม", TAX: "ภาษี",
+  MATURITY: "ครบกำหนด", REDEMPTION: "ไถ่ถอน / ขายคืน", FX_EXCHANGE: "แลกเงิน", ADJUSTMENT: "ปรับปรุง",
+};
+/** จำนวนหน่วย (ไม่เกิน 4 ตำแหน่ง) */
+export function qty(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "-";
+  return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 4 });
+}
