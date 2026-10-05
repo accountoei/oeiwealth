@@ -27,3 +27,9 @@
 
 `.github/workflows/supabase-keepalive.yml` เรียก `rpc/keepalive` ทุก 3 วัน (อ่านอย่างเดียว ไม่เขียนข้อมูล ไม่คืนข้อมูลครอบครัว)
 เพื่อกัน Supabase แผน Free ถูก Pause · ต้องตั้ง Repository secrets: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`
+
+## FX Job — อัตราแลกเปลี่ยน ธปท. (GitHub Actions)
+
+`.github/workflows/fx-rates.yml` รันทุกวัน 19:30 (ดึงย้อนหลัง 10 วัน) และกดรันเองเพื่อ Backfill ช่วงวันที่ได้
+สคริปต์: `scripts/fx-fetch.mjs` · ใช้ `mid_rate` (ไม่มี → เฉลี่ย buying_transfer/selling) · สกุลที่ประกาศต่อ 100 หน่วยถูกแปลงเป็นต่อ 1 หน่วย
+Repository secrets: `BOT_API_TOKEN`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (เก็บใน GitHub Secrets เท่านั้น ห้ามใส่ใน Vercel)

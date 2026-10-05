@@ -1,0 +1,42 @@
+# FX Job: ดึงอัตราแลกเปลี่ยนเฉลี่ยรายวันจาก ธปท. → Supabase (fx_rates)
+# Repository secrets ที่ต้องมี: BOT_API_TOKEN, SUPABASE_URL, SUPABASE_SECRET_KEY
+name: FX rates (Bank of Thailand)
+
+on:
+  schedule:
+    - cron: "30 12 * * *"   # 19:30 เวลาไทย ทุกวัน (ดึงย้อนหลัง 10 วัน เผื่อ ธปท. ประกาศช้า / วันหยุด)
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Backfill ตั้งแต่วันที่ (YYYY-MM-DD) — เว้นว่าง = ย้อนหลัง 10 วัน"
+        required: false
+      end_date:
+        description: "ถึงวันที่ (YYYY-MM-DD) — เว้นว่าง = วันนี้"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fx-rates
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test parser
+        run: node scripts/fx-fetch.test.mjs
+      - name: Fetch BOT rates and upsert to Supabase
+        env:
+          BOT_API_TOKEN: ${{ secrets.BOT_API_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+        run: node scripts/fx-fetch.mjs
