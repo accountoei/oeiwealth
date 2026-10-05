@@ -1,0 +1,37 @@
+# เรียก Supabase ทุก 3 วัน เพื่อไม่ให้ Project แผน Free ถูก Pause
+# ต้องตั้ง Repository secrets: SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "0 2 */3 * *"   # 09:00 เวลาไทย ทุก 3 วัน (GitHub ใช้เวลา UTC)
+  workflow_dispatch: {}      # กดรันเองได้จากแท็บ Actions
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query Supabase (read-only)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::ยังไม่ได้ตั้ง Repository secrets SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY"
+            exit 1
+          fi
+          status=$(curl -sS -o response.txt -w "%{http_code}" \
+            --retry 3 --retry-delay 10 \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/keepalive" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP ${status}: $(cat response.txt)"
+          if [ "$status" != "200" ]; then
+            echo "::error::Supabase keep-alive failed (HTTP ${status})"
+            exit 1
+          fi
