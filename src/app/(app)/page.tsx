@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import DashboardFilters from "@/components/DashboardFilters";
 
 type Preview = {
   as_of: string; financial: number; investment: number; property: number; alternative: number;
@@ -9,6 +10,12 @@ type Preview = {
   prev_net_worth: number | null; prev_label: string | null; prev_date: string | null;
   income: number; investment_income: number; expenses: number; reimbursements: number; other_change: number | null;
   by_person: { person_id: string | null; name: string; assets: number; liabilities: number; net_worth: number }[];
+};
+type DM = {
+  month: string; source: string; as_of: string; financial: number; investment: number; property: number; alternative: number;
+  total_assets: number; total_liabilities: number; net_worth: number;
+  by_person: { person_id: string | null; name: string; assets: number; liabilities: number; net_worth: number }[];
+  base: { label: string; date: string; total_assets: number; total_liabilities: number; net_worth: number } | null;
 };
 type Hist = {
   opening: { date: string; total_assets: number; total_liabilities: number; net_worth: number };
@@ -23,19 +30,33 @@ const FIELD: Record<string, string> = {
   acquisition_cost: "ราคาที่ได้มา", account_no: "เลขบัญชี", title_deed_no: "เลขโฉนด", land_area_sq_wa: "เนื้อที่",
 };
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ p?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
   const today = todayBangkok();
-  const ym = today.slice(0, 7);
-  const { start } = monthRange(ym);
+  const curYm = today.slice(0, 7);
 
-  const { data: family } = await supabase.from("families").select("name,go_live_date,system_status").maybeSingle();
+  const [{ data: family }, { data: personsRaw }] = await Promise.all([
+    supabase.from("families").select("name,go_live_date,system_status").maybeSingle(),
+    supabase.from("persons").select("id,name").is("deleted_at", null).order("created_at"),
+  ]);
   const isSetup = family?.system_status === "SETUP";
+  const goYm = (family?.go_live_date ?? today).slice(0, 7);
+  // เดือนที่เลือกได้: เดือน Go-live → เดือนปัจจุบัน (ใหม่สุดก่อน)
+  const months: { value: string; label: string }[] = [];
+  for (let m = curYm; months.length < 120; m = monthRange(m).prev) {
+    months.push({ value: m, label: thMonth(`${m}-01`) + (m === curYm ? " (เดือนนี้)" : "") });
+    if (m <= goYm) break;
+  }
+  const ym = months.some((x) => x.value === sp.m) ? (sp.m as string) : curYm;
+  const isCurrent = ym === curYm;
+  const { start } = monthRange(ym);
+  const personId = (personsRaw ?? []).some((x) => x.id === sp.p) ? (sp.p as string) : "";
 
-  const [{ data: pv }, { data: hv }, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds },
+  const [{ data: dmRaw }, { data: pv }, { data: hv }, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds },
     { data: leases }, { data: completeness }, { data: monthExp }, { data: items }] = await Promise.all([
+    supabase.rpc("dashboard_month", { p_month: start }),
     supabase.rpc("month_net_worth_preview", { p_month: start }),
     supabase.rpc("net_worth_history"),
     isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
@@ -46,16 +67,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     supabase.from("v_lease_status").select("tenant_name,unit_label,end_date,property_asset_id,lease_status").eq("lease_status", "EXPIRING_SOON"),
     supabase.rpc("asset_completeness"),
     supabase.from("monthly_expenses").select("tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    sp.p ? supabase.from("v_net_worth_items_current").select("item_type,item_name,item_group,base_value,ownership_percent")
-      .eq("person_id", sp.p) : Promise.resolve({ data: null }),
+    personId ? supabase.rpc("month_person_items", { p_month: start, p_person: personId }) : Promise.resolve({ data: null }),
   ]);
+  const dm = dmRaw as DM | null;
   const p = pv as Preview | null;
   const h = hv as Hist | null;
-
-  // ฐานเทียบ: ปิดเดือนล่าสุด → ยอดตั้งต้น
   const finals = (h?.snapshots ?? []).filter((s) => s.status === "FINAL");
-  const base = finals.length ? { label: `ปิดเดือน ${thMonth(finals[finals.length - 1].month)}`, ...finals[finals.length - 1] }
-    : h ? { label: "ยอดตั้งต้น", ...h.opening } : null;
+  const base = dm?.base ?? null;
 
   // งานที่ต้องทำ (Attention) — ปิดเดือนอยู่บนสุด
   const attention: { text: string; href: string; tone: "red" | "amber" | "slate" }[] = [];
@@ -85,17 +103,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     c.asset_type === "BANK_ACCOUNT" ? `/financial/cash/${c.asset_id}` : c.asset_group === "PROPERTY" ? `/property/${c.asset_id}`
       : c.asset_type === "INVESTMENT_PORTFOLIO" ? `/investments/${c.asset_id}` : "/";
 
-  const person = sp.p ? p?.by_person.find((x) => x.person_id === sp.p) ?? null : null;
-  const nw = person ? person.net_worth : p?.net_worth ?? 0;
-  const assets = person ? person.assets : p?.total_assets ?? 0;
-  const liab = person ? person.liabilities : p?.total_liabilities ?? 0;
+  const byPerson = dm?.by_person ?? [];
+  const person = personId ? byPerson.find((x) => x.person_id === personId) ?? { person_id: personId,
+    name: (personsRaw ?? []).find((x) => x.id === personId)?.name ?? "", assets: 0, liabilities: 0, net_worth: 0 } : null;
+  const nw = person ? person.net_worth : dm?.net_worth ?? 0;
+  const assets = person ? person.assets : dm?.total_assets ?? 0;
+  const liab = person ? person.liabilities : dm?.total_liabilities ?? 0;
+  const unalloc = byPerson.find((x) => !x.person_id);
+  const otherChange = p?.prev_net_worth != null && dm
+    ? Number(dm.net_worth) - Number(p.prev_net_worth) - Number(p.income) - Number(p.investment_income) + (Number(p.expenses) - Number(p.reimbursements))
+    : null;
   const track = monthExp?.tracking_status ?? "NOT_TRACKED";
 
   // จุดบนกราฟ: ยอดตั้งต้น + Snapshot (ทึบ) + ยอดวันนี้ (กลวง)
   const points = [
     ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
     ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
-    ...(p ? [{ label: "วันนี้", date: p.as_of, v: Number(p.net_worth), solid: false }] : []),
+    ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: Number(dm.net_worth), solid: false }] : []),
   ];
 
   return (
@@ -104,15 +128,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">{family?.name ?? "Dashboard"}</h1>
           <p className="text-sm text-slate-500">
-            ณ {thDate(p?.as_of ?? today)} · ยอดเงินฝากเป็นยอดคำนวณระหว่างเดือน · {isSetup ? "ช่วงตั้งค่า (SETUP)" : `Go-live ${thDate(family?.go_live_date)}`}
+            ณ {thDate(dm?.as_of ?? today)} · {dm?.source === "SNAPSHOT" ? "ยอดปิดเดือนแล้ว (Snapshot)"
+              : isCurrent ? "ยอดคำนวณระหว่างเดือน" : "เดือนนี้ยังไม่ปิด · ยอดคำนวณ ณ สิ้นเดือน"}
+            {" · "}{isSetup ? "ช่วงตั้งค่า (SETUP)" : `Go-live ${thDate(family?.go_live_date)}`}
           </p>
         </div>
-        <nav className="flex flex-wrap gap-1 text-sm">
-          <Chip href="/" active={!sp.p}>ครอบครัว</Chip>
-          {(p?.by_person ?? []).filter((x) => x.person_id).map((x) => (
-            <Chip key={x.person_id} href={`/?p=${x.person_id}`} active={sp.p === x.person_id}>{x.name}</Chip>
-          ))}
-        </nav>
+        <DashboardFilters persons={(personsRaw ?? []).map((x) => ({ id: x.id, name: x.name }))} months={months}
+          person={personId} month={ym} />
       </div>
 
       {/* ------------------------------------------------ การ์ดหลัก */}
@@ -122,8 +144,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <Big label="สินทรัพย์รวม" value={assets} base={!person && base ? Number(base.total_assets) : null} baseLabel={base?.label} />
         <Big label="หนี้สินรวม" value={liab} base={!person && base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
       </section>
-      {!person && p && Number(p.unallocated) !== 0 && (
-        <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {money(p.unallocated, "THB", 0)} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
+      {!person && unalloc && Number(unalloc.net_worth) !== 0 && (
+        <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {money(unalloc.net_worth, "THB", 0)} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
       )}
 
       <section className="grid gap-4 lg:grid-cols-3">
@@ -131,12 +153,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <h2 className="font-medium text-slate-900">Net Worth ครอบครัว</h2>
           <p className="mb-3 text-xs text-slate-500">● ทึบ = ยอดตั้งต้น / ปิดเดือนแล้ว · ○ กลวง = ยังไม่ปิด (ประมาณการ)</p>
-          <TrendChart points={points} />
+          <TrendChart points={points} selected={points.findIndex((pt) => pt.date === dm?.as_of)} />
         </div>
 
         {/* ------------------------------------------------ Attention */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">สิ่งที่ต้องทำ</h2>
+          <h2 className="mb-2 font-medium text-slate-900">สิ่งที่ต้องทำ <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
           {attention.length === 0 ? <p className="text-sm text-emerald-700">ไม่มีงานค้าง ✓</p> : (
             <ul className="space-y-1.5 text-sm">
               {attention.slice(0, 10).map((a, i) => (
@@ -158,8 +180,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           {person ? <PersonItems items={(items as Item[] | null) ?? []} /> : (
             <ul className="space-y-2.5 text-sm">
               {GROUP.map(([k, label]) => {
-                const v = Number((p as unknown as Record<string, number> | null)?.[k] ?? 0);
-                const pct = p?.total_assets ? (v / Number(p.total_assets)) * 100 : 0;
+                const v = Number((dm as unknown as Record<string, number> | null)?.[k] ?? 0);
+                const pct = dm?.total_assets ? (v / Number(dm.total_assets)) * 100 : 0;
                 return (
                   <li key={k}>
                     <div className="flex justify-between gap-2"><span>{label}</span><span className="tabular-nums text-slate-600">{pct.toFixed(1)}%</span></div>
@@ -176,7 +198,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
         {/* ------------------------------------------------ เปลี่ยนเพราะอะไร */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">เดือนนี้ความมั่งคั่งเปลี่ยนเพราะอะไร</h2>
+          <h2 className="mb-2 font-medium text-slate-900">{thMonth(start)} ความมั่งคั่งเปลี่ยนเพราะอะไร</h2>
           {p?.prev_net_worth == null ? <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p> : (
             <table className="w-full text-sm">
               <tbody className="divide-y divide-slate-100">
@@ -184,8 +206,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <BRow label="+ รายได้ (หลังภาษี)" v={p.income} />
                 <BRow label="− ค่าใช้จ่ายสุทธิ" v={-(p.expenses - p.reimbursements)} />
                 <BRow label="+ รายได้ลงทุน" v={p.investment_income} />
-                <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={p.other_change ?? 0} />
-                <BRow label="= ณ วันนี้" v={p.net_worth} bold />
+                <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={otherChange ?? 0} />
+                <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={dm?.net_worth ?? 0} bold />
               </tbody>
             </table>
           )}
@@ -201,7 +223,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <dd className="tabular-nums">{track === "NOT_TRACKED" ? <span className="text-slate-500">ไม่ได้บันทึก</span> : money(Number(p?.expenses ?? 0) - Number(p?.reimbursements ?? 0), undefined, 0)}</dd></div>
             {track === "PARTIAL" && <p className="text-xs text-amber-700">ค่าใช้จ่ายบันทึกไม่ครบ</p>}
           </dl>
-          <Link href="/income-expenses" className="mt-3 inline-block text-xs text-slate-700 underline">ดูรายละเอียด</Link>
+          <Link href={`/income-expenses?m=${ym}`} className="mt-3 inline-block text-xs text-slate-700 underline">ดูรายละเอียด</Link>
         </div>
       </section>
 
@@ -212,9 +234,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">สมาชิก</th><th className="text-right">สินทรัพย์</th><th className="text-right">หนี้สิน</th><th className="text-right">สุทธิ</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {(p?.by_person ?? []).map((x) => (
+              {byPerson.map((x) => (
                 <tr key={x.person_id ?? "none"} className={x.person_id ? "" : "text-amber-700"}>
-                  <td className="py-1.5">{x.person_id ? <Link href={`/?p=${x.person_id}`} className="hover:underline">{x.name}</Link> : x.name}</td>
+                  <td className="py-1.5">{x.person_id ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="hover:underline">{x.name}</Link> : x.name}</td>
                   <td className="text-right tabular-nums">{money(x.assets, undefined, 0)}</td>
                   <td className="text-right tabular-nums">{money(x.liabilities, undefined, 0)}</td>
                   <td className="text-right font-medium tabular-nums">{money(x.net_worth, undefined, 0)}</td>
@@ -227,7 +249,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ------------------------------------------------ Data Completeness */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="font-medium text-slate-900">ความครบถ้วนของข้อมูล</h2>
+            <h2 className="font-medium text-slate-900">ความครบถ้วนของข้อมูล <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
             {compAvg != null && <span className="text-xl font-semibold tabular-nums">{compAvg}%</span>}
           </div>
           <p className="mb-2 text-xs text-slate-500">คิดจากข้อมูลที่แนะนำ (เอกสาร เจ้าของ มูลค่า ฯลฯ) · ไม่กระทบตัวเลข Net Worth</p>
@@ -245,10 +267,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {me.role === "VIEWER" && <p className="text-xs text-slate-400">สิทธิ์ผู้ดู: ดูข้อมูลได้อย่างเดียว</p>}
     </div>
   );
-}
-
-function Chip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return <Link href={href} className={`rounded-full border px-3 py-1 ${active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 hover:bg-slate-50"}`}>{children}</Link>;
 }
 
 function Big({ label, value, base, baseLabel, inverse }: { label: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean }) {
@@ -300,7 +318,7 @@ function PersonItems({ items }: { items: Item[] }) {
 }
 
 /** กราฟเส้นเดียว (SVG) — จุดทึบ = ยอดยืนยันแล้ว, จุดกลวง = ประมาณการ · hover แสดงค่า */
-function TrendChart({ points }: { points: { label: string; date: string; v: number; solid: boolean }[] }) {
+function TrendChart({ points, selected }: { points: { label: string; date: string; v: number; solid: boolean }[]; selected: number }) {
   if (points.length < 2) return <p className="text-sm text-slate-500">ข้อมูลยังไม่พอแสดงกราฟ</p>;
   const W = 640, H = 220, L = 70, R = 16, T = 12, B = 28;
   const vs = points.map((x) => x.v);
@@ -324,6 +342,7 @@ function TrendChart({ points }: { points: { label: string; date: string; v: numb
       {points.map((pt, i) => (
         <g key={i}>
           <circle cx={x(i)} cy={y(pt.v)} r={14} fill="transparent"><title>{`${pt.label} (${pt.date}): ${pt.v.toLocaleString("th-TH", { maximumFractionDigits: 0 })} บาท`}</title></circle>
+          {i === selected && <circle cx={x(i)} cy={y(pt.v)} r={10} fill="none" stroke="#94a3b8" strokeWidth={2} pointerEvents="none" />}
           <circle cx={x(i)} cy={y(pt.v)} r={5} fill={pt.solid ? "#0f172a" : "#ffffff"} stroke="#0f172a" strokeWidth={2} pointerEvents="none" />
           {(i === 0 || i === points.length - 1 || points.length <= 8) && (
             <text x={x(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"} fontSize={11} fill="#64748b">{pt.label}</text>
