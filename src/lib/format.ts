@@ -124,3 +124,26 @@ export function qty(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "-";
   return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 4 });
 }
+
+export const INCOME_TYPE_LABEL: Record<string, string> = {
+  SALARY: "เงินเดือน", BONUS: "โบนัส", INTEREST: "ดอกเบี้ย", DIVIDEND: "ปันผล", COUPON: "Coupon", RENT: "ค่าเช่า",
+  LOAN_INTEREST: "ดอกเบี้ยเงินให้กู้", BUSINESS_DIVIDEND: "ปันผลกิจการ", OTHER: "รายได้อื่น",
+};
+export const MOVE_LABEL: Record<string, string> = {
+  INCOME: "รายได้", EXPENSE: "ค่าใช้จ่าย", TRANSFER: "โอนระหว่างบัญชี", FX_EXCHANGE: "แลกเงิน", INVESTMENT_OUT: "โอนเข้าพอร์ต",
+  INVESTMENT_IN: "รับจากพอร์ต", LOAN_DISBURSEMENT: "ให้กู้", LOAN_PRINCIPAL_RECEIPT: "รับชำระเงินกู้",
+  ASSET_PURCHASE: "ซื้อทรัพย์สิน", ASSET_SALE: "ขายทรัพย์สิน", CARD_PAYMENT: "จ่ายบัตรเครดิต",
+  LIABILITY_PAYMENT: "จ่ายหนี้", SECURITY_DEPOSIT_IN: "รับเงินประกัน", SECURITY_DEPOSIT_OUT: "คืนเงินประกัน",
+  REIMBURSEMENT_IN: "เงินคืน (ไม่ใช่รายได้)", OTHER_IN: "เงินเข้าอื่น ๆ", OTHER_OUT: "เงินออกอื่น ๆ",
+};
+export const EXPENSE_CATEGORIES = ["ทั่วไป", "อาหาร", "บ้าน / สาธารณูปโภค", "เดินทาง / รถ", "การศึกษา", "สุขภาพ",
+  "ประกัน", "ภาษี", "ท่องเที่ยว", "ช้อปปิ้ง", "ครอบครัว / ของขวัญ", "บริจาค", "BANK_FEE", "อื่น ๆ"];
+/** "2026-10" → ช่วงวันที่ของเดือน */
+export function monthRange(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  const start = `${ym}-01`;
+  const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
+  const next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+  return { start, end, prev, next };
+}

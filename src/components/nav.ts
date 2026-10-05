@@ -15,7 +15,7 @@ export const NAV: NavGroup[] = [
   { label: "Investments", href: "/investments", ready: true },
   { label: "Property", href: "/property", ready: true },
   { label: "Alternative Assets", href: "/alternative" },
-  { label: "Income & Expenses", href: "/income-expenses" },
+  { label: "Income & Expenses", href: "/income-expenses", ready: true },
   { label: "Insurance", href: "/insurance" },
   {
     label: "Family",
