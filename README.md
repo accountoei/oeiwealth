@@ -20,7 +20,7 @@
 
 ## สถานะหน้าจอ
 
-- ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users
+- ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users · Cash & Deposits
 - ⬜ หน้าอื่นตาม Wireframe V1.1 — ทยอยเพิ่ม
 
 ## Supabase Keep-alive (GitHub Actions)

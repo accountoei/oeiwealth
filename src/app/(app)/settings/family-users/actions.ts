@@ -5,12 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type ActionState = { error?: string; ok?: string };
 
-// แปลง Error จากฐานข้อมูลเป็นข้อความที่อ่านเข้าใจ
-function friendly(message: string): string {
-  if (/row-level security|permission denied/i.test(message)) return "คุณไม่มีสิทธิ์ทำรายการนี้";
-  const m = message.match(/^[A-Z_]+: (.*)$/);
-  return m ? m[1] : message;
-}
+import { friendlyError as friendly } from "@/lib/format";
 
 const RELATIONSHIPS = ["SELF", "SPOUSE", "CHILD", "CHILD_IN_LAW", "GRANDCHILD", "PARENT", "PARENT_IN_LAW", "SIBLING", "RELATIVE", "OTHER"];
 

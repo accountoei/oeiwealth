@@ -7,7 +7,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Financial Assets",
     items: [
-      { label: "Cash & Deposits", href: "/financial/cash" },
+      { label: "Cash & Deposits", href: "/financial/cash", ready: true },
       { label: "Loans Receivable", href: "/financial/loans" },
       { label: "Private Business", href: "/financial/business" },
     ],
