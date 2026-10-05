@@ -21,7 +21,8 @@
 ## สถานะหน้าจอ
 
 - ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users (+ เชิญผู้ใช้) · Cash & Deposits
-- ✅ Liabilities · Credit Cards · Property & Leases · Investments · Income & Expenses · Month Closing · Opening Setup · System (FX)
+- ✅ Liabilities · Credit Cards · Property & Leases · Investments · Income & Expenses · Month Closing · Loans · Alternative · Insurance · Opening Setup · System (FX)
+- ✅ แก้ไข / ลบรายการ (Soft Delete) · แก้สัดส่วนเจ้าของ / ผู้รับผิดชอบหนี้ / ผู้รับผลประโยชน์
 - ⬜ หน้าอื่นตาม Wireframe V1.1 — ทยอยเพิ่ม
 
 ## Supabase Keep-alive (GitHub Actions)

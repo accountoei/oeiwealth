@@ -6,6 +6,10 @@ import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, todayBangkok,
 } from "@/lib/format";
 import { MaturityForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm, type Holding } from "./forms";
+import RowActions from "@/components/RowActions";
+import OwnershipEditor from "@/components/OwnershipEditor";
+import DeleteEntity from "@/components/DeleteEntity";
+import StatusSelect from "@/components/StatusSelect";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean };
@@ -22,16 +26,17 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
-    { data: fx }, { data: unsettled }] = await Promise.all([
+    { data: fx }, { data: unsettled }, { data: persons }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
     supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb").eq("asset_id", id).maybeSingle(),
     supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("holding_type").order("name"),
-    supabase.from("v_asset_ownerships_active").select("person_name,ownership_percent,end_date").eq("asset_id", id),
+    supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
   ]);
   if (!a || !pf) notFound();
   const [{ data: txs }, { data: income }] = await Promise.all([
@@ -42,6 +47,8 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   ]);
 
   const canWrite = me.role !== "VIEWER";
+  const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
+  const paths = [`/investments/${id}`, "/investments", "/financial/cash", "/income-expenses"];
   const today = todayBangkok();
   const goLive = family?.go_live_date ?? "";
   const isSetup = family?.system_status === "SETUP";
@@ -70,6 +77,8 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
           {" · "}เจ้าของ {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}
           {ownerTotal < 100 && <span className="text-amber-700"> (ยังไม่ครบ {100 - ownerTotal}%)</span>}
         </p>
+        {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
+          current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
       </div>
 
       <section className="grid gap-4 md:grid-cols-4">
@@ -143,6 +152,9 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                   <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                   <td className="px-3 py-2.5 text-right">
                     {canWrite && canMature && <MaturityForm assetId={id} holding={h} banks={bankList} today={today} minDate={goLive} />}
+                    {canWrite && !isCash && <RowActions table="investment_holdings" id={h.id} paths={paths} canDelete={false} fields={[
+                      { name: "name", label: "ชื่อ", value: h.name }, { name: "symbol", label: "สัญลักษณ์", value: h.symbol, width: "w-24" },
+                      { name: "maturity_date", label: "ครบกำหนด", type: "date", value: h.maturity_date }]} />}
                   </td>
                 </tr>
               );
@@ -172,7 +184,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500">
                 <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
-                  <th className="text-right">ยอด</th><th className="text-right">เงินสดพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th></tr>
+                  <th className="text-right">ยอด</th><th className="text-right">เงินสดพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th><th></th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {txList.map((t) => {
@@ -203,6 +215,21 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                         {t.cash_movement_id && <div>สร้างจากการโอนเงิน (แก้ที่รายการโอน)</div>}
                         {t.notes && <div>{t.notes}</div>}
                       </td>
+                      <td className="pl-2 text-right">
+                        {canWrite && !t.cash_movement_id && (
+                          <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+                            deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
+                            fields={[
+                              ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
+                              ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date }] : []),
+                              ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
+                              ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
+                              ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
+                              ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
+                              ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
+                              { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -214,6 +241,15 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
           &ldquo;—&rdquo; ในช่องเงินสดพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
         </p>
       </section>
+
+      {canWrite && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+          <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะพอร์ต"
+            options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดพอร์ตแล้ว"]]} />
+          {canDelete && <div><DeleteEntity kind="asset" id={id} redirectTo="/investments" paths={["/investments"]} label="ลบพอร์ตนี้"
+            hint="ลบได้เมื่อมีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" /></div>}
+        </section>
+      )}
     </div>
   );
 }

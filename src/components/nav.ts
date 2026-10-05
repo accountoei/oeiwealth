@@ -8,15 +8,15 @@ export const NAV: NavGroup[] = [
     label: "Financial Assets",
     items: [
       { label: "Cash & Deposits", href: "/financial/cash", ready: true },
-      { label: "Loans Receivable", href: "/financial/loans" },
+      { label: "Loans Receivable", href: "/financial/loans", ready: true },
       { label: "Private Business", href: "/financial/business" },
     ],
   },
   { label: "Investments", href: "/investments", ready: true },
   { label: "Property", href: "/property", ready: true },
-  { label: "Alternative Assets", href: "/alternative" },
+  { label: "Alternative Assets", href: "/alternative", ready: true },
   { label: "Income & Expenses", href: "/income-expenses", ready: true },
-  { label: "Insurance", href: "/insurance" },
+  { label: "Insurance", href: "/insurance", ready: true },
   {
     label: "Family",
     items: [

@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, money, thDate, todayBangkok } from "@/lib/format";
 import { CardBalanceForm, CardStatusForm, NewCardForm } from "./forms";
+import RowActions from "@/components/RowActions";
+import DeleteEntity from "@/components/DeleteEntity";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null; card_last4: string | null;
   credit_limit: number | null; currency: string; statement_day: number | null; due_day: number | null;
@@ -23,6 +25,7 @@ export default async function CardsPage() {
   const cards = (data as Card[] | null) ?? [];
   const paidSet = new Set((paidAfter ?? []).map((r) => r.source_id));
   const canWrite = me.role !== "VIEWER";
+  const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
   const isSetup = family?.system_status === "SETUP";
   const goLive = family?.go_live_date ?? "";
@@ -94,6 +97,20 @@ export default async function CardsPage() {
                 </td>
                 <td className="px-4 py-3">
                   {canWrite ? <CardStatusForm cardId={c.id} status={c.status} /> : c.status}
+                  {canWrite && (
+                    <div className="mt-2">
+                      <RowActions table="credit_cards" id={c.id} paths={["/family/cards", "/liabilities"]} canDelete={false} fields={[
+                        { name: "issuer", label: "ผู้ออกบัตร", value: c.issuer },
+                        { name: "card_name", label: "ชื่อบัตร", value: c.card_name },
+                        { name: "credit_limit", label: "วงเงิน", type: "number", value: c.credit_limit },
+                        { name: "statement_day", label: "ตัดรอบ", type: "number", value: c.statement_day, width: "w-16" },
+                        { name: "due_day", label: "ครบชำระ", type: "number", value: c.due_day, width: "w-16" },
+                        { name: "annual_fee", label: "ค่าธรรมเนียมปี", type: "number", value: c.annual_fee },
+                        { name: "expiry_date", label: "หมดอายุ", type: "date", value: c.expiry_date },
+                        { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />
+                    </div>
+                  )}
+                  {canDelete && <DeleteEntity kind="card" id={c.id} paths={["/family/cards", "/liabilities"]} label="ลบ" />}
                 </td>
               </tr>
             ))}

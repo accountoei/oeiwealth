@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
+import RowActions from "@/components/RowActions";
 import { INCOME_TYPE_LABEL, MOVE_LABEL, money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import {
   ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Liab,
 } from "./forms";
 
+const PATHS = ["/income-expenses", "/financial/cash"];
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "โอน & จ่ายหนี้"]];
 const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   RECEIVED: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
@@ -29,6 +31,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const { start, end, prev, next } = monthRange(ym);
   const canWrite = me.role !== "VIEWER";
+  const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
@@ -162,7 +165,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {incomeList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายได้ในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>ของใคร / ที่มา</th><th className="text-right">Gross</th><th className="text-right">ภาษี</th><th className="pl-4">เข้าบัญชี</th></tr>
+                  <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>ของใคร / ที่มา</th><th className="text-right">Gross</th><th className="text-right">ภาษี</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {incomeList.map((i) => (
@@ -178,6 +181,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="text-right tabular-nums">{money(i.amount, i.currency)}</td>
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
+                      <td className="pl-2 text-right">
+                        {canWrite && !i.source_transaction_id && (
+                          <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
+                            { name: "date", label: "วันที่", type: "date", value: i.date },
+                            { name: "amount", label: "Gross", type: "number", value: i.amount },
+                            { name: "tax", label: "ภาษี", type: "number", value: i.tax },
+                            { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]} />
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -195,6 +207,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     {" "}{t.frequency === "MONTHLY" ? "ทุกเดือน" : t.frequency === "QUARTERLY" ? "ทุก 3 เดือน" : "ทุกปี"}
                     {t.due_day && ` วันที่ ${t.due_day}`}
                     {canWrite && <span className="ml-2"><TemplateToggle id={t.id} active={t.active} /></span>}
+                    {canWrite && <span className="ml-2"><RowActions table="recurring_income_templates" id={t.id} paths={PATHS} canDelete={canDelete}
+                      deleteNote="รายได้ที่บันทึกรับไปแล้วยังอยู่" fields={[
+                        { name: "name", label: "ชื่อ", value: t.name, width: "w-44" },
+                        { name: "expected_amount", label: "ยอดปกติ", type: "number", value: t.expected_amount },
+                        { name: "due_day", label: "วันที่", type: "number", value: t.due_day, width: "w-16" },
+                        { name: "end_date", label: "สิ้นสุด", type: "date", value: null }]} /></span>}
                   </li>
                 ))}
               </ul>
@@ -221,7 +239,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {(items ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th className="pl-4">เงินคืน</th></tr>
+                  <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th className="pl-4">เงินคืน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(items ?? []).map((i) => {
@@ -253,6 +271,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             </>
                           )}
                         </td>
+                        <td className="pl-2 text-right">
+                          {canWrite && !i.source_cash_movement_id && (
+                            <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
+                              { name: "date", label: "วันที่", type: "date", value: i.date },
+                              { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },
+                              { name: "amount", label: "จำนวน", type: "number", value: i.amount },
+                              { name: "expense_category", label: "หมวด", value: i.expense_category },
+                              ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]} />
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -270,7 +298,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <MovesTable moves={moves ?? []} name={name} />
+            <MovesTable moves={moves ?? []} name={name} actions={canWrite} canDelete={canDelete} />
           </section>
         </>
       )}
@@ -282,13 +310,16 @@ type Move = { id: string; movement_date: string; movement_type: string; from_ass
   to_credit_card_id: string | null; to_liability_id: string | null; amount: number; currency: string; counter_amount: number | null;
   counter_currency: string | null; fee: number | null; is_derived: boolean; description: string | null };
 
-function MovesTable({ moves, name }: { moves: Move[]; name: Map<string, string> }) {
+const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PAYMENT", "OTHER_IN", "OTHER_OUT",
+  "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "SECURITY_DEPOSIT_IN"];
+
+function MovesTable({ moves, name, actions = false, canDelete = false }: { moves: Move[]; name: Map<string, string>; actions?: boolean; canDelete?: boolean }) {
   if (!moves.length) return <p className="text-sm text-slate-500">ยังไม่มีรายการในเดือนนี้</p>;
   const label = (id: string | null) => (id ? name.get(id) ?? "พอร์ต / ทรัพย์สิน" : "ภายนอก");
   return (
     <table className="w-full text-sm">
       <thead className="text-left text-xs text-slate-500">
-        <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>จาก → ไป</th><th className="text-right">จำนวน</th><th className="pl-4">รายละเอียด</th></tr>
+        <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>จาก → ไป</th><th className="text-right">จำนวน</th><th className="pl-4">รายละเอียด</th>{actions && <th></th>}</tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {moves.map((m) => (
@@ -303,7 +334,21 @@ function MovesTable({ moves, name }: { moves: Move[]; name: Map<string, string> 
               {m.counter_amount != null && <div className="text-xs text-slate-500">→ {money(m.counter_amount, m.counter_currency ?? undefined)}</div>}
               {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
             </td>
-            <td className="pl-4 text-xs text-slate-500">{m.description}{m.is_derived && <span className="ml-1 text-slate-400">(ระบบสร้าง)</span>}</td>
+            <td className="pl-4 text-xs text-slate-500">{m.description}{m.is_derived && <span className="ml-1 text-slate-400">(ระบบสร้าง · แก้ที่รายการต้นทาง)</span>}</td>
+            {actions && (
+              <td className="pl-2 text-right">
+                {!m.is_derived && EDITABLE_MOVES.includes(m.movement_type) && (
+                  <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
+                    deleteNote={m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN" ? "รายการฝาก/ถอนในพอร์ตจะถูกลบตาม" : undefined}
+                    fields={[
+                      { name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
+                      { name: "amount", label: "จำนวน", type: "number", value: m.amount },
+                      ...(m.movement_type === "FX_EXCHANGE" ? [{ name: "counter_amount", label: "ยอดปลายทาง", type: "number" as const, value: m.counter_amount }] : []),
+                      ...(["TRANSFER", "FX_EXCHANGE"].includes(m.movement_type) ? [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: m.fee }] : []),
+                      { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />
+                )}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>

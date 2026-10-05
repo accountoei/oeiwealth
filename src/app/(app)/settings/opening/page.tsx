@@ -37,14 +37,14 @@ function fixLink(r: Row): string {
     case "CREDIT_CARD": return "/family/cards";
     case "LIABILITY": return r.entity_id ? `/liabilities/${r.entity_id}` : "/liabilities";
     case "HOLDING": return "/investments";
-    case "LOAN": return "/financial/loans";
+    case "LOAN": return r.entity_id ? `/financial/loans/${r.entity_id}` : "/financial/loans";
     case "INSURANCE_POLICY": return "/insurance";
   }
   if (r.category === "CASH" && r.entity_id) return `/financial/cash/${r.entity_id}`;
   if (r.category === "OWNERSHIP" && r.entity_type === "ASSET") return "/financial/cash";
   if (r.category === "PROPERTY") return r.entity_id ? `/property/${r.entity_id}` : "/property";
-  if (r.category === "ALTERNATIVE") return "/alternative";
-  if (r.category === "FINANCIAL") return "/financial/business";
+  if (r.category === "ALTERNATIVE") return r.entity_id ? `/alternative/${r.entity_id}` : "/alternative";
+  if (r.category === "FINANCIAL") return "/insurance";
   return "/";
 }
 

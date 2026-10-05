@@ -9,6 +9,10 @@ import {
   EditPropertyForm, NewLeaseForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm, UtilityForm,
   ValuationForm,
 } from "./forms";
+import RowActions from "@/components/RowActions";
+import OwnershipEditor from "@/components/OwnershipEditor";
+import DeleteEntity from "@/components/DeleteEntity";
+import StatusSelect from "@/components/StatusSelect";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -40,11 +44,11 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
-    { data: banks }, { data: family }] = await Promise.all([
+    { data: banks }, { data: family }, { data: persons }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at)")
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("v_asset_ownerships_active").select("person_name,ownership_percent,end_date").eq("asset_id", id),
+    supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("v_lease_status").select("*").eq("property_asset_id", id).order("start_date", { ascending: false }),
@@ -52,10 +56,13 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
       .order("income_period", { ascending: false }).limit(36),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
   ]);
   if (!a || !pd) notFound();
 
   const canWrite = me.role !== "VIEWER";
+  const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
+  const paths = [`/property/${id}`, "/property", "/liabilities", "/income-expenses"];
   const canSettle = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
   const goLive = family?.go_live_date ?? "";
@@ -111,6 +118,8 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
             {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
           </ul>
           {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
+          {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
+            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
         </div>
       </section>
 
@@ -168,6 +177,18 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
                 {canWrite && l.status === "ACTIVE" && l.end_date > today && (
                   <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
                 )}
+                {canWrite && (
+                  <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false} fields={[
+                    { name: "tenant_name", label: "ผู้เช่า", value: l.tenant_name },
+                    { name: "unit_label", label: "ห้อง", value: l.unit_label, width: "w-24" },
+                    { name: "contract_no", label: "เลขสัญญา", value: l.contract_no, width: "w-24" },
+                    { name: "end_date", label: "สิ้นสุด", type: "date", value: l.end_date },
+                    { name: "rent_amount", label: "ค่าเช่า", type: "number", value: l.rent_amount },
+                    { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
+                    { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
+                )}
+                {canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
+                  hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย" />}
                 {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
                   <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
                     banks={bankList} minDate={l.deposit_due_date} today={today} />
@@ -221,7 +242,7 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
         <h2 className="mb-3 font-medium text-slate-900">ประวัติมูลค่า</h2>
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-slate-500">
-            <tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th><th className="pl-4">วิธี</th><th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th></tr>
+            <tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th><th className="pl-4">วิธี</th><th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th><th></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {(vals ?? []).map((v) => (
@@ -231,6 +252,12 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
                 <td className="pl-4">{METHOD_LABEL[v.valuation_method] ?? v.valuation_method}</td>
                 <td className="pl-4">{SOURCE_LABEL[v.source] ?? v.source}</td>
                 <td className="pl-4 text-slate-500">{v.notes}</td>
+                <td className="pl-2 text-right">
+                  {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
+                    fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
+                      { name: "value", label: "มูลค่า", type: "number", value: v.value },
+                      { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -246,6 +273,9 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
                 {UTIL_LABEL[u.utility_type] ?? u.utility_type}{u.provider && ` · ${u.provider}`}
                 {u.account_no && ` · เลขที่ผู้ใช้ ${u.account_no}`}{u.meter_no && ` · มิเตอร์ ${u.meter_no}`}
                 {u.notes && <span className="text-slate-500"> · {u.notes}</span>}
+                {canWrite && <span className="ml-2"><RowActions table="property_utilities" id={u.id} paths={paths} canDelete={canDelete} fields={[
+                  { name: "provider", label: "ผู้ให้บริการ", value: u.provider }, { name: "account_no", label: "เลขที่ผู้ใช้", value: u.account_no },
+                  { name: "meter_no", label: "มิเตอร์", value: u.meter_no }, { name: "notes", label: "หมายเหตุ", value: u.notes }]} /></span>}
               </li>
             ))}
           </ul>
@@ -256,9 +286,17 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
       {canWrite && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-1 font-medium text-slate-900">แก้ไขข้อมูลทรัพย์สิน</h2>
-          <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูล ไม่กระทบมูลค่า · เจ้าของแก้ภายหลังได้ (อยู่ระหว่างพัฒนา)</p>
+          <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูล ไม่กระทบมูลค่า · แก้เจ้าของที่การ์ด &ldquo;เจ้าของ&rdquo; ด้านบน</p>
           <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
             acquisition_cost: a.acquisition_cost, asset_id: id }} />
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะทรัพย์สิน"
+              options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]} />
+          </div>
+          {canDelete && <div className="mt-4 border-t border-slate-100 pt-3">
+            <DeleteEntity kind="asset" id={id} redirectTo="/property" paths={["/property"]} label="ลบทรัพย์สินนี้"
+              hint="สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" />
+          </div>}
         </section>
       )}
     </div>
