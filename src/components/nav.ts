@@ -22,10 +22,10 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Members", href: "/settings/family-users#members", ready: true },
       { label: "Health", href: "/family/health" },
-      { label: "Cards & Membership", href: "/family/cards" },
+      { label: "Cards & Membership", href: "/family/cards", ready: true },
     ],
   },
-  { label: "Liabilities", href: "/liabilities" },
+  { label: "Liabilities", href: "/liabilities", ready: true },
   { label: "Documents", href: "/documents" },
   { label: "Month Closing", href: "/month-closing" },
   {

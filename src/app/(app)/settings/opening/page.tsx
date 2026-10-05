@@ -35,7 +35,7 @@ function fixLink(r: Row): string {
     case "PERSON": case "APP_USER": return "/settings/family-users";
     case "FX_RATE": return "/settings/system";
     case "CREDIT_CARD": return "/family/cards";
-    case "LIABILITY": return "/liabilities";
+    case "LIABILITY": return r.entity_id ? `/liabilities/${r.entity_id}` : "/liabilities";
     case "HOLDING": return "/investments";
     case "LOAN": return "/financial/loans";
     case "INSURANCE_POLICY": return "/insurance";

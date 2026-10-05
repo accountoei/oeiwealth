@@ -35,3 +35,27 @@ export const CURRENCIES = ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "HKD", "SGD
 export const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   SAVING: "ออมทรัพย์", FIXED: "ฝากประจำ", FOREIGN_CURRENCY: "เงินฝากเงินตราต่างประเทศ", OTHER: "อื่น ๆ",
 };
+
+export const LIABILITY_TYPE_LABEL: Record<string, string> = {
+  MORTGAGE: "สินเชื่อบ้าน", CAR_LOAN: "สินเชื่อรถยนต์", PERSONAL_LOAN: "สินเชื่อส่วนบุคคล",
+  CREDIT_LINE: "วงเงินสินเชื่อ (O/D ฯลฯ)", OTHER: "อื่น ๆ",
+};
+
+/** อ่าน owner_<id> จาก FormData → [{person_id, percent}] */
+export function ownersFromForm(form: FormData): { person_id: string; percent: number }[] {
+  const out: { person_id: string; percent: number }[] = [];
+  for (const [k, v] of form.entries()) {
+    const n = Number(String(v).replace(/,/g, ""));
+    if (k.startsWith("owner_") && n > 0) out.push({ person_id: k.slice(6), percent: n });
+  }
+  return out;
+}
+
+export const numOrNull = (v: FormDataEntryValue | null) => {
+  const s = String(v ?? "").replace(/,/g, "").trim();
+  return s === "" ? null : Number(s);
+};
+export const strOrNull = (v: FormDataEntryValue | null) => {
+  const s = String(v ?? "").trim();
+  return s === "" ? null : s;
+};
