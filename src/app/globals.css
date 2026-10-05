@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+body {
+  background: #f8fafc;
+  font-family: "IBM Plex Sans Thai", system-ui, sans-serif;
+}
