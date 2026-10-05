@@ -10,10 +10,10 @@ export default async function FamilyUsersPage() {
   const canEdit = me.role === "ADMIN" || me.role === "EDITOR";
   const isAdmin = me.role === "ADMIN";
 
-  const [{ data: family }, { data: persons }, { data: users }] = await Promise.all([
+  const [{ data: family }, { data: persons, error: personsError }, { data: users, error: usersError }] = await Promise.all([
     supabase.from("families").select("name,go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name,relationship,status").is("deleted_at", null).order("created_at"),
-    supabase.from("app_users").select("id,email,role,status,last_login_at,person_id,persons(name)").order("created_at"),
+    supabase.from("app_users").select("id,email,role,status,last_login_at,person_id,persons!app_users_person_id_fkey(name)").order("created_at"),
   ]);
 
   return (
@@ -28,6 +28,7 @@ export default async function FamilyUsersPage() {
         <p className="mb-3 text-xs text-slate-500">
           รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
         </p>
+        {personsError && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {personsError.message}</p>}
         <div className="divide-y divide-slate-100">
           {(persons ?? []).length === 0 && <p className="py-2 text-sm text-slate-500">ยังไม่มีสมาชิก</p>}
           {(persons ?? []).map((p) => canEdit
@@ -45,6 +46,7 @@ export default async function FamilyUsersPage() {
           {isAdmin ? "เปลี่ยนสิทธิ์หรือปิดการใช้งานได้ · ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อย 1 คนเสมอ"
                    : "แสดงเฉพาะบัญชีของคุณ"}
         </p>
+        {usersError && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อผู้ใช้ไม่สำเร็จ: {usersError.message}</p>}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
