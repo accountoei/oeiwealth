@@ -59,3 +59,50 @@ export const strOrNull = (v: FormDataEntryValue | null) => {
   const s = String(v ?? "").trim();
   return s === "" ? null : s;
 };
+
+export const PROPERTY_TYPE_LABEL: Record<string, string> = {
+  HOUSE: "บ้าน", CONDO: "คอนโด / ห้องชุด", LAND: "ที่ดิน", OTHER: "อื่น ๆ",
+};
+export const USAGE_LABEL: Record<string, string> = {
+  OWNER_OCCUPIED: "อยู่อาศัยเอง", PERSONAL_USE: "ใช้ส่วนตัว", RENTAL: "ปล่อยเช่า", VACANT: "ว่าง",
+  BUSINESS_USE: "ใช้ในกิจการ", OTHER: "อื่น ๆ",
+};
+export const FREQ_LABEL: Record<string, string> = {
+  MONTHLY: "รายเดือน", QUARTERLY: "ราย 3 เดือน", YEARLY: "รายปี", OTHER: "อื่น ๆ",
+};
+
+/** ตารางวารวม → "3-1-71 ไร่ (1,371 ตร.ว. · 5,484 ตร.ม.)" */
+export function landText(sqwa: number | string | null | undefined): string {
+  if (sqwa == null || sqwa === "") return "-";
+  const w = Number(sqwa);
+  const rai = Math.floor(w / 400), ngan = Math.floor((w % 400) / 100), wa = +(w % 100).toFixed(2);
+  const f = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  return `${rai}-${ngan}-${f(wa)} ไร่ (${f(w)} ตร.ว. · ${f(w * 4)} ตร.ม.)`;
+}
+export function landParts(sqwa: number | string | null | undefined) {
+  if (sqwa == null || sqwa === "") return { rai: "", ngan: "", wa: "" };
+  const w = Number(sqwa);
+  return { rai: String(Math.floor(w / 400)), ngan: String(Math.floor((w % 400) / 100)), wa: String(+(w % 100).toFixed(2)) };
+}
+/** อ่าน land_rai / land_ngan / land_wa จากฟอร์ม → ตารางวารวม (หรือ null) */
+export function sqwaFromForm(form: FormData): number | null {
+  const g = (k: string) => String(form.get(k) ?? "").replace(/,/g, "").trim();
+  const r = g("land_rai"), n = g("land_ngan"), w = g("land_wa");
+  if (!r && !n && !w) return null;
+  return (Number(r) || 0) * 400 + (Number(n) || 0) * 100 + (Number(w) || 0);
+}
+
+export const LEASE_STATUS: Record<string, { text: string; cls: string }> = {
+  ACTIVE: { text: "มีผล", cls: "bg-emerald-50 text-emerald-700" },
+  EXPIRING_SOON: { text: "ใกล้หมดสัญญา", cls: "bg-amber-50 text-amber-700" },
+  UPCOMING: { text: "เริ่มในอนาคต", cls: "bg-sky-50 text-sky-700" },
+  EXPIRED: { text: "หมดสัญญาแล้ว", cls: "bg-slate-100 text-slate-600" },
+  TERMINATED: { text: "เลิกสัญญาแล้ว", cls: "bg-slate-100 text-slate-600" },
+};
+
+/** "2026-09-01" → "ก.ย. 2569" */
+export function thMonth(value: string | null | undefined): string {
+  if (!value) return "-";
+  return new Date(`${value.slice(0, 10)}T12:00:00Z`)
+    .toLocaleDateString("th-TH", { month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
+}

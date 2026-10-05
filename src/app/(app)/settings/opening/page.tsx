@@ -42,7 +42,7 @@ function fixLink(r: Row): string {
   }
   if (r.category === "CASH" && r.entity_id) return `/financial/cash/${r.entity_id}`;
   if (r.category === "OWNERSHIP" && r.entity_type === "ASSET") return "/financial/cash";
-  if (r.category === "PROPERTY") return "/property";
+  if (r.category === "PROPERTY") return r.entity_id ? `/property/${r.entity_id}` : "/property";
   if (r.category === "ALTERNATIVE") return "/alternative";
   if (r.category === "FINANCIAL") return "/financial/business";
   return "/";

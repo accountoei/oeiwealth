@@ -13,7 +13,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   { label: "Investments", href: "/investments" },
-  { label: "Property", href: "/property" },
+  { label: "Property", href: "/property", ready: true },
   { label: "Alternative Assets", href: "/alternative" },
   { label: "Income & Expenses", href: "/income-expenses" },
   { label: "Insurance", href: "/insurance" },
