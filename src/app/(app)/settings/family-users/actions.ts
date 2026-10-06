@@ -97,3 +97,19 @@ export async function inviteUser(_: InviteState, form: FormData): Promise<Invite
 export async function resendInvite(_: InviteState, form: FormData): Promise<InviteState> {
   return callInvite({ action: "resend", app_user_id: String(form.get("id")) });
 }
+
+export async function resetPasswordLink(_: InviteState, form: FormData): Promise<InviteState> {
+  return callInvite({ action: "reset_password", app_user_id: String(form.get("id")) });
+}
+
+export async function resetMfa(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.functions.invoke("invite-user", { body: { action: "reset_mfa", app_user_id: String(form.get("id")) } });
+  if (error) {
+    let msg = error.message;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === "function") { try { msg = (await ctx.json()).error ?? msg; } catch { /* */ } }
+    return { error: msg };
+  }
+  return { ok: `ลบ MFA แล้ว ${data?.removed ?? 0} รายการ · ผู้ใช้ต้องสแกน QR ใหม่ตอนเข้าระบบครั้งถัดไป` };
+}

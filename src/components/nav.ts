@@ -9,7 +9,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Cash & Deposits", href: "/financial/cash", ready: true },
       { label: "Loans Receivable", href: "/financial/loans", ready: true },
-      { label: "Private Business", href: "/financial/business" },
+      { label: "Private Business", href: "/financial/business", ready: true },
     ],
   },
   { label: "Investments", href: "/investments", ready: true },
@@ -21,7 +21,7 @@ export const NAV: NavGroup[] = [
     label: "Family",
     items: [
       { label: "Members", href: "/settings/family-users#members", ready: true },
-      { label: "Health", href: "/family/health" },
+      { label: "Health", href: "/family/health", ready: true },
       { label: "Cards & Membership", href: "/family/cards", ready: true },
     ],
   },
@@ -34,7 +34,7 @@ export const NAV: NavGroup[] = [
       { label: "Family & Users", href: "/settings/family-users", ready: true },
       { label: "System", href: "/settings/system", ready: true },
       { label: "Opening Setup", href: "/settings/opening", ready: true },
-      { label: "Security", href: "/settings/security" },
+      { label: "Security", href: "/settings/security", ready: true },
     ],
   },
 ];

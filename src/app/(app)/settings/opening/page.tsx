@@ -41,7 +41,7 @@ function fixLink(r: Row): string {
     case "INSURANCE_POLICY": return "/insurance";
   }
   if (r.category === "CASH" && r.entity_id) return `/financial/cash/${r.entity_id}`;
-  if (r.category === "OWNERSHIP" && r.entity_type === "ASSET") return "/financial/cash";
+  if (r.entity_type === "ASSET" && r.entity_id && r.category !== "CASH") return `/a/${r.entity_id}`;
   if (r.category === "PROPERTY") return r.entity_id ? `/property/${r.entity_id}` : "/property";
   if (r.category === "ALTERNATIVE") return r.entity_id ? `/alternative/${r.entity_id}` : "/alternative";
   if (r.category === "FINANCIAL") return "/insurance";

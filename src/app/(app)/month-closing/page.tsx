@@ -42,7 +42,8 @@ function fixLink(i: Issue, ym: string): string | null {
   if (i.code === "NOT_LIVE") return "/settings/opening";
   if (i.code?.startsWith("RECON")) return "#recon";
   if (i.code === "IN_TRANSIT" && i.entity_id) return `/investments/${i.entity_id}`;
-  if (i.code === "VALUE_OLD" && i.entity_id) return `/property/${i.entity_id}`;
+  if (i.entity_type === "ASSET" && i.entity_id) return `/a/${i.entity_id}`;
+  if (i.entity_type === "LIABILITY" && i.entity_id) return `/liabilities/${i.entity_id}`;
   return null;
 }
 

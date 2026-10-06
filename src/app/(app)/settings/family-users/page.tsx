@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
-import { AddPersonForm, InviteForm, PersonRow, ResendInviteForm, UserRoleForm, UserStatusForm } from "./forms";
+import { AddPersonForm, InviteForm, PersonRow, ResendInviteForm, UserRecovery, UserRoleForm, UserStatusForm } from "./forms";
 
 const USER_STATUS: Record<string, string> = { INVITED: "รอเข้าใช้ครั้งแรก", ACTIVE: "ใช้งาน", DISABLED: "ปิดการใช้งาน" };
 
@@ -67,6 +67,7 @@ export default async function FamilyUsersPage() {
                         {isAdmin && u.id !== me.id && <UserStatusForm id={u.id} status={u.status} />}
                       </div>
                       {isAdmin && u.status === "INVITED" && <ResendInviteForm id={u.id} />}
+                      {isAdmin && u.status === "ACTIVE" && u.id !== me.id && <UserRecovery id={u.id} />}
                     </td>
                     <td className="pr-4 text-slate-500">
                       {u.last_login_at ? new Date(u.last_login_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-"}

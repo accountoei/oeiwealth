@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import {
-  addPerson, inviteUser, resendInvite, setUserRole, setUserStatus, updatePerson, type ActionState, type InviteState,
+  addPerson, inviteUser, resendInvite, resetMfa, resetPasswordLink, setUserRole, setUserStatus, updatePerson, type ActionState, type InviteState,
 } from "./actions";
 
 export const RELATIONSHIP_LABEL: Record<string, string> = {
@@ -94,7 +94,9 @@ export function UserStatusForm({ id, status }: { id: string; status: string }) {
 function LinkBox({ s }: { s: InviteState }) {
   const [copied, setCopied] = useState(false);
   if (!s.link) return null;
-  const text = `เชิญเข้าใช้ Family Wealth Vault (${s.email})\nเปิดลิงก์แล้วกด "ยืนยันและตั้งรหัสผ่าน":\n${s.link}\n(ลิงก์ใช้ได้ครั้งเดียวและมีอายุจำกัด)`;
+  const text = s.link.includes("type=recovery")
+    ? `ลิงก์ตั้งรหัสผ่านใหม่ Family Wealth Vault (${s.email})\nเปิดลิงก์แล้วกด "ยืนยันและตั้งรหัสผ่าน":\n${s.link}\n(ลิงก์ใช้ได้ครั้งเดียวและมีอายุจำกัด)`
+    : `เชิญเข้าใช้ Family Wealth Vault (${s.email})\nเปิดลิงก์แล้วกด "ยืนยันและตั้งรหัสผ่าน":\n${s.link}\n(ลิงก์ใช้ได้ครั้งเดียวและมีอายุจำกัด)`;
   return (
     <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
       <div className="font-medium text-emerald-900">ลิงก์สำหรับ {s.email}</div>
@@ -147,6 +149,28 @@ export function ResendInviteForm({ id }: { id: string }) {
         {!state.link && <Msg s={state} />}
       </form>
       <LinkBox s={state} />
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- ลืมรหัสผ่าน / MFA หาย */
+export function UserRecovery({ id }: { id: string }) {
+  const [ps, pwAction, pwPending] = useActionState<InviteState, FormData>(resetPasswordLink, {});
+  const [ms, mfaAction, mfaPending] = useActionState<ActionState, FormData>(resetMfa, {});
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-3 text-xs">
+        <form action={pwAction}><input type="hidden" name="id" value={id} />
+          <button disabled={pwPending} className="text-slate-700 underline disabled:opacity-50">{pwPending ? "…" : "ลิงก์ตั้งรหัสผ่านใหม่"}</button>
+        </form>
+        <form action={mfaAction} onSubmit={(e) => { if (!confirm("ลบ MFA ของผู้ใช้นี้? (ใช้เมื่อทำมือถือหาย) ผู้ใช้ต้องสแกน QR ใหม่ตอนเข้าระบบครั้งถัดไป")) e.preventDefault(); }}>
+          <input type="hidden" name="id" value={id} />
+          <button disabled={mfaPending} className="text-slate-700 underline disabled:opacity-50">{mfaPending ? "…" : "รีเซ็ต MFA"}</button>
+        </form>
+      </div>
+      {!ps.link && ps.error && <p className="text-xs text-red-600">{ps.error}</p>}
+      <LinkBox s={ps} />
+      <Msg s={ms} />
     </div>
   );
 }

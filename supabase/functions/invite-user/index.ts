@@ -4,6 +4,8 @@
 // เรียกจากเว็บ (Server Action) พร้อม Access Token ของผู้ใช้ที่ Login อยู่
 //   action = "invite" : สร้างบัญชี + app_users (INVITED) แล้วคืน token สำหรับลิงก์ตั้งรหัสผ่าน
 //   action = "resend" : สร้างลิงก์ใหม่ให้ผู้ใช้ที่ยังเป็น INVITED (ลิงก์เดิมหมดอายุ)
+//   action = "reset_password" : ลิงก์ตั้งรหัสผ่านใหม่ (ผู้ใช้ลืมรหัสผ่าน)
+//   action = "reset_mfa"      : ลบ MFA ของผู้ใช้ (ทำมือถือหาย) → เข้าระบบครั้งถัดไปต้องสแกน QR ใหม่
 //
 // ไม่ส่งอีเมล: ADMIN คัดลอกลิงก์ไปส่งเอง (LINE / อีเมลส่วนตัว)
 //   → ไม่ต้องตั้ง SMTP · Supabase แผน Free ส่งอีเมลได้เฉพาะสมาชิกทีม Supabase เท่านั้น
@@ -67,6 +69,34 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email: target.email });
     if (error || !data?.properties?.hashed_token) return json({ error: `สร้างลิงก์ไม่สำเร็จ: ${error?.message ?? ""}` }, 500);
     return json({ ok: true, email: target.email, token_hash: data.properties.hashed_token, type: "magiclink" });
+  }
+
+  // ---- reset_password / reset_mfa: ผู้ใช้อื่นที่มีบัญชีอยู่แล้ว (บันทึก Audit) -------------
+  if (action === "reset_password" || action === "reset_mfa") {
+    const { data: target } = await admin.from("app_users").select("id,email,status,auth_user_id,family_id")
+      .eq("id", String(body.app_user_id ?? "")).maybeSingle();
+    if (!target) return json({ error: "ไม่พบผู้ใช้" }, 404);
+    if (target.status === "DISABLED") return json({ error: "บัญชีนี้ถูกปิดการใช้งาน — เปิดใช้งานก่อน" }, 400);
+    if (target.id === me.id) return json({ error: "ทำกับบัญชีตัวเองไม่ได้ — ใช้หน้า Security" }, 400);
+    const audit = (field: string, meta: Record<string, unknown>) => admin.from("audit_logs").insert({
+      family_id: target.family_id, user_id: me.id, actor_type: "USER", action: "UPDATE", entity_type: "app_users",
+      entity_id: target.id, field_name: field, metadata: { email: target.email, ...meta },
+    });
+    if (action === "reset_password") {
+      const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email: target.email });
+      if (error || !data?.properties?.hashed_token) return json({ error: `สร้างลิงก์ไม่สำเร็จ: ${error?.message ?? ""}` }, 500);
+      await audit("password_reset_link", {});
+      return json({ ok: true, email: target.email, token_hash: data.properties.hashed_token, type: "recovery" });
+    }
+    const { data: f, error: lfErr } = await admin.auth.admin.mfa.listFactors({ userId: target.auth_user_id });
+    if (lfErr) return json({ error: `อ่าน MFA ไม่สำเร็จ: ${lfErr.message}` }, 500);
+    let n = 0;
+    for (const factor of f?.factors ?? []) {
+      const { error } = await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: target.auth_user_id });
+      if (!error) n++;
+    }
+    await audit("mfa_factors", { removed: n });
+    return json({ ok: true, email: target.email, removed: n });
   }
 
   if (action !== "invite") return json({ error: "action ไม่ถูกต้อง" }, 400);

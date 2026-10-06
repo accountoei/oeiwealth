@@ -99,10 +99,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const comp = (completeness ?? []) as { asset_id: string; name: string; asset_group: string; asset_type: string; score: number | null; missing: string[] }[];
   const compAvg = comp.length ? Math.round(comp.reduce((s, c) => s + Number(c.score ?? 0), 0) / comp.length) : null;
-  const assetHref = (c: { asset_id: string; asset_group: string; asset_type: string }) =>
-    c.asset_type === "BANK_ACCOUNT" ? `/financial/cash/${c.asset_id}` : c.asset_group === "PROPERTY" ? `/property/${c.asset_id}`
-      : c.asset_type === "INVESTMENT_PORTFOLIO" ? `/investments/${c.asset_id}` : c.asset_type === "LOAN_RECEIVABLE" ? `/financial/loans/${c.asset_id}`
-      : c.asset_group === "ALTERNATIVE" ? `/alternative/${c.asset_id}` : c.asset_type === "INSURANCE_CASH_VALUE" ? "/insurance" : "/";
+  const assetHref = (c: { asset_id: string }) => `/a/${c.asset_id}`;
 
   const byPerson = dm?.by_person ?? [];
   const person = personId ? byPerson.find((x) => x.person_id === personId) ?? { person_id: personId,

@@ -10,7 +10,8 @@ function AcceptForm() {
   const params = useSearchParams();
   const supabase = createClient();
   const tokenHash = params.get("token_hash") ?? "";
-  const type = params.get("type") === "invite" ? "invite" : "email";
+  const t = params.get("type");
+  const type = t === "invite" ? "invite" : t === "recovery" ? "recovery" : "email";
   const [step, setStep] = useState<"start" | "password">("start");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -50,7 +51,7 @@ function AcceptForm() {
       <div className="w-full max-w-sm space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Family Wealth Vault</h1>
-          <p className="text-sm text-slate-500">{step === "start" ? "ยืนยันคำเชิญเข้าใช้ระบบ" : "ตั้งรหัสผ่านของคุณ"}</p>
+          <p className="text-sm text-slate-500">{step === "start" ? (type === "recovery" ? "ตั้งรหัสผ่านใหม่" : "ยืนยันคำเชิญเข้าใช้ระบบ") : "ตั้งรหัสผ่านของคุณ"}</p>
         </div>
         {!tokenHash ? (
           <p className="text-sm text-red-600">ลิงก์ไม่ถูกต้อง กรุณาเปิดจากลิงก์ที่ได้รับ</p>

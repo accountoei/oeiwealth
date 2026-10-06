@@ -28,10 +28,16 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   alternative_asset_details: { brand: "str", model: "str", serial_no: "str", quantity: "num", storage_location: "str", condition: "str", details: "str" },
   insurance_policies: { insurer: "str", policy_no: "str", start_date: "date", end_date: "date", insured_amount: "num", premium: "num", status: "str", notes: "str" },
   assets: { name: "str", acquisition_date: "date", acquisition_cost: "num", status: "str", notes: "str" },
+  private_business_details: { company_name: "str", registration_no: "str", business_type: "str", total_shares: "num",
+    shares_owned: "num", company_ownership_percent: "num", investment_cost: "num", status: "str", notes: "str" },
+  health_checkups: { checkup_date: "date", hospital: "str", package_name: "str", cost: "num", notes: "str" },
+  health_results: { value_numeric: "num", value_text: "str", unit: "str", reference_min: "num", reference_max: "num", abnormal_flag: "str", notes: "str" },
+  memberships: { program_name: "str", member_id: "str", tier: "str", benefits: "str", expiry_date: "date", status: "str", notes: "str" },
+  points_accounts: { program_name: "str", balance: "num", balance_date: "date", expiry_date: "date" },
 };
 const DELETABLE = new Set(["income_transactions", "expense_items", "cash_movements", "investment_transactions", "asset_valuations",
   "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "property_utilities",
-  "insurance_claims", "expected_income_dismissals"]);
+  "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts"]);
 
 function refresh(form: FormData) {
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));

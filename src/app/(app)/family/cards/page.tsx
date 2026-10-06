@@ -4,6 +4,7 @@ import { addDays, money, thDate, todayBangkok } from "@/lib/format";
 import { CardBalanceForm, CardStatusForm, NewCardForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import DeleteEntity from "@/components/DeleteEntity";
+import { MembershipForm, PointsForm } from "./member-forms";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null; card_last4: string | null;
   credit_limit: number | null; currency: string; statement_day: number | null; due_day: number | null;
@@ -15,12 +16,14 @@ const STATUS_CLS: Record<string, string> = { ACTIVE: "", SUSPENDED: "opacity-70"
 export default async function CardsPage() {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data, error }, { data: persons }, { data: family }, { data: paidAfter }] = await Promise.all([
+  const [{ data, error }, { data: persons }, { data: family }, { data: paidAfter }, { data: members }, { data: points }] = await Promise.all([
     supabase.from("credit_cards").select("*, persons(name)").is("deleted_at", null).order("status").order("issuer"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_liabilities_all").select("source_id").eq("liability_source", "CREDIT_CARD")
       .eq("derived_status", "PAID_AFTER_BALANCE_DATE"),
+    supabase.from("memberships").select("*").is("deleted_at", null).order("status").order("program_name"),
+    supabase.from("points_accounts").select("*").is("deleted_at", null).order("program_name"),
   ]);
   const cards = (data as Card[] | null) ?? [];
   const paidSet = new Set((paidAfter ?? []).map((r) => r.source_id));
@@ -34,6 +37,7 @@ export default async function CardsPage() {
   const totals = new Map<string, number>();
   cards.filter((c) => c.status !== "CLOSED")
     .forEach((c) => totals.set(c.currency, (totals.get(c.currency) ?? 0) + Number(c.outstanding_balance)));
+  const pmap = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const holder = (c: Card) => (Array.isArray(c.persons) ? c.persons[0]?.name : c.persons?.name) ?? "-";
 
   return (
@@ -41,7 +45,7 @@ export default async function CardsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Cards &amp; Membership</h1>
         <p className="text-sm text-slate-500">
-          บัตรเครดิตของสมาชิก · ยอดค้างนับเป็นหนี้ของผู้ถือบัตร (ยกเว้นบัตรที่ยกเลิกแล้ว) · บัตรสมาชิก/Membership จะเพิ่มภายหลัง
+          บัตรเครดิตของสมาชิก · ยอดค้างนับเป็นหนี้ของผู้ถือบัตร (ยกเว้นบัตรที่ยกเลิกแล้ว) · สมาชิกภาพและแต้มสะสมอยู่ด้านล่าง
         </p>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
@@ -120,6 +124,59 @@ export default async function CardsPage() {
       <p className="text-xs text-slate-500">
         อัปเดตยอดค้างจาก Statement ทุกเดือน · การจ่ายบัตรบันทึกเป็นรายการเงินออกจากบัญชี (หน้า Income &amp; Expenses)
       </p>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ</h2>
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4">ระดับ / สิทธิ</th><th className="px-4">หมดอายุ</th><th></th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {(members ?? []).length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
+              {(members ?? []).map((m) => (
+                <tr key={m.id} className={`align-top ${m.status !== "ACTIVE" ? "opacity-50" : ""}`}>
+                  <td className="px-4 py-2.5"><div className="font-medium">{m.program_name}</div>{m.member_id && <div className="text-xs text-slate-500">เลขสมาชิก {m.member_id}</div>}</td>
+                  <td className="px-4">{pmap.get(m.person_id) ?? "-"}</td>
+                  <td className="px-4 text-xs">{m.tier}{m.benefits && <div className="text-slate-500">{m.benefits}</div>}</td>
+                  <td className={`px-4 ${m.expiry_date && m.expiry_date < today ? "text-red-600" : ""}`}>{thDate(m.expiry_date)}</td>
+                  <td className="px-4 text-right">{canWrite && <RowActions table="memberships" id={m.id} paths={["/family/cards"]} canDelete={canDelete} fields={[
+                    { name: "program_name", label: "โปรแกรม", value: m.program_name }, { name: "member_id", label: "เลขสมาชิก", value: m.member_id },
+                    { name: "tier", label: "ระดับ", value: m.tier, width: "w-24" }, { name: "expiry_date", label: "หมดอายุ", type: "date", value: m.expiry_date },
+                    { name: "status", label: "สถานะ", type: "select", value: m.status, options: [["ACTIVE", "ใช้งาน"], ["EXPIRED", "หมดอายุ"], ["CANCELLED", "ยกเลิก"]] },
+                    { name: "benefits", label: "สิทธิประโยชน์", value: m.benefits, width: "w-48" }]} />}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {canWrite && <MembershipForm persons={persons ?? []} />}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-slate-900">แต้มสะสม / ไมล์</h2>
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4 text-right">คงเหลือ</th><th className="px-4">แต้มหมดอายุ</th><th></th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {(points ?? []).length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
+              {(points ?? []).map((pt) => (
+                <tr key={pt.id} className="align-top">
+                  <td className="px-4 py-2.5 font-medium">{pt.program_name}</td>
+                  <td className="px-4">{pmap.get(pt.person_id) ?? "-"}</td>
+                  <td className="px-4 text-right"><div className="tabular-nums">{Number(pt.balance).toLocaleString("th-TH")}</div><div className="text-xs text-slate-500">ณ {thDate(pt.balance_date)}</div></td>
+                  <td className={`px-4 ${pt.expiry_date && pt.expiry_date <= today ? "text-red-600" : ""}`}>{thDate(pt.expiry_date)}</td>
+                  <td className="px-4 text-right">{canWrite && <RowActions table="points_accounts" id={pt.id} paths={["/family/cards"]} canDelete={canDelete} fields={[
+                    { name: "balance", label: "คงเหลือ", type: "number", value: pt.balance }, { name: "balance_date", label: "ณ วันที่", type: "date", value: today },
+                    { name: "expiry_date", label: "หมดอายุ", type: "date", value: pt.expiry_date }]} />}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {canWrite && <PointsForm persons={persons ?? []} today={today} links={[
+          ...(members ?? []).map((m) => ({ value: `m:${m.id}`, label: `สมาชิกภาพ ${m.program_name}` })),
+          ...cards.map((c) => ({ value: `c:${c.id}`, label: `บัตร ${c.issuer} ${c.card_name ?? ""}` }))]} />}
+        <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมใน Net Worth · กดแก้ไขเพื่ออัปเดตยอดตาม Statement</p>
+      </section>
     </div>
   );
 }

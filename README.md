@@ -22,6 +22,7 @@
 
 - ✅ Login · MFA (บังคับสำหรับ ADMIN) · โครงเมนู · Dashboard (สถานะ Setup) · Family & Users (+ เชิญผู้ใช้) · Cash & Deposits
 - ✅ Liabilities · Credit Cards · Property & Leases · Investments · Income & Expenses · Month Closing · Loans · Alternative · Insurance · Opening Setup · System (FX)
+- ✅ Private Business · Health · Membership / Points · Security (รหัสผ่าน, MFA, Audit Log) · ลิงก์ตั้งรหัสใหม่ / รีเซ็ต MFA
 - ✅ แก้ไข / ลบรายการ (Soft Delete) · แก้สัดส่วนเจ้าของ / ผู้รับผิดชอบหนี้ / ผู้รับผลประโยชน์
 - ⬜ หน้าอื่นตาม Wireframe V1.1 — ทยอยเพิ่ม
 
@@ -39,5 +40,6 @@ Repository secrets: `BOT_API_TOKEN`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (เ�
 ## Edge Function: invite-user
 
 `supabase/functions/invite-user/index.ts` — ADMIN (ยืนยัน MFA แล้ว) เชิญผู้ใช้ใหม่จากหน้า Family & Users
+action: invite · resend · reset_password · reset_mfa (ADMIN + MFA เท่านั้น)
 ระบบ **ไม่ส่งอีเมล** แต่สร้างลิงก์ `/auth/accept?...` ให้ ADMIN คัดลอกไปส่งเอง (ไม่ต้องตั้ง SMTP)
 ติดตั้ง: Supabase → Edge Functions → Deploy a new function → Via Editor → ชื่อ `invite-user` → วางโค้ด → ปิด "Verify JWT" (ฟังก์ชันตรวจสิทธิ์เอง)
