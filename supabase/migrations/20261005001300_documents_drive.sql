@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS private.drive_settings (
   oauth_started_by     uuid
 );
 INSERT INTO private.drive_settings(id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE private.drive_settings ENABLE ROW LEVEL SECURITY;   -- ไม่มี Policy = Client อ่านไม่ได้ · ใช้ผ่านฟังก์ชันเท่านั้น
 REVOKE ALL ON private.drive_settings FROM PUBLIC;
 
 -- เขียน Secret ลง Vault (สร้างใหม่ หรือแทนค่าเดิม)
