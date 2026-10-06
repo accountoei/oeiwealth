@@ -7,6 +7,7 @@ import { AddBalanceForm, EditLiabilityForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
@@ -126,6 +127,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
           </div>}
         </section>
       )}
+      <EntityDocuments entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 export default async function LoanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -122,6 +123,7 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
             hint="ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" /></div>}
         </section>
       )}
+      <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
     </div>
   );
 }

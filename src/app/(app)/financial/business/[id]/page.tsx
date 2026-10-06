@@ -11,6 +11,7 @@ import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -139,6 +140,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             hint="ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" /></div>}
         </section>
       )}
+      <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
     </div>
   );
 }

@@ -35,10 +35,11 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   health_results: { value_numeric: "num", value_text: "str", unit: "str", reference_min: "num", reference_max: "num", abnormal_flag: "str", notes: "str" },
   memberships: { program_name: "str", member_id: "str", tier: "str", benefits: "str", expiry_date: "date", status: "str", notes: "str" },
   points_accounts: { program_name: "str", balance: "num", balance_date: "date", expiry_date: "date" },
+  documents: { title: "str", document_type: "str", issue_date: "date", expiry_date: "date", notes: "str" },
 };
 const DELETABLE = new Set(["income_transactions", "expense_items", "cash_movements", "investment_transactions", "asset_valuations",
   "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "property_utilities",
-  "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings"]);
+  "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings", "documents", "document_links"]);
 
 function refresh(form: FormData) {
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));

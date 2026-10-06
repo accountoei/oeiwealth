@@ -155,3 +155,39 @@ export const CLAIM_STATUS: [string, string][] = [["DRAFT", "ร่าง"], ["SU
 export const COUPON_FREQ_LABEL: Record<string, string> = {
   MONTHLY: "รายเดือน", QUARTERLY: "รายไตรมาส", SEMI_ANNUAL: "ทุก 6 เดือน", ANNUAL: "รายปี", AT_MATURITY: "ตอนครบกำหนด", OTHER: "อื่น ๆ",
 };
+
+export const DOC_MODULE_LABEL: Record<string, string> = {
+  FAMILY: "ครอบครัว", FINANCIAL: "การเงิน", INVESTMENT: "การลงทุน", PROPERTY: "อสังหาริมทรัพย์", ALTERNATIVE: "สินทรัพย์อื่น",
+  INSURANCE: "ประกัน", HEALTH: "สุขภาพ", CARD_MEMBERSHIP: "บัตรและสมาชิก", SYSTEM: "รายงานระบบ",
+};
+/** ประเภทเอกสารที่แนะนำ (พิมพ์ประเภทอื่นเองได้) */
+export const DOC_TYPES: Record<string, string[]> = {
+  FAMILY: ["บัตรประชาชน", "ทะเบียนบ้าน", "สูติบัตร", "ทะเบียนสมรส", "หนังสือเดินทาง", "พินัยกรรม", "หนังสือมอบอำนาจ"],
+  FINANCIAL: ["สมุดบัญชี", "Statement ธนาคาร", "สัญญาเงินกู้", "สัญญากู้ยืม (ให้กู้)", "หนังสือรับรองบริษัท", "ใบหุ้น", "งบการเงิน"],
+  INVESTMENT: ["Statement พอร์ต", "Term Sheet", "ใบยืนยันการซื้อขาย", "สัญญาเปิดบัญชี"],
+  PROPERTY: ["โฉนด / หนังสือกรรมสิทธิ์", "สัญญาซื้อขาย", "สัญญาเช่า", "ใบประเมินราคา", "ใบเสร็จภาษีที่ดิน", "แบบบ้าน / ใบอนุญาตก่อสร้าง"],
+  ALTERNATIVE: ["ใบเสร็จ / ใบกำกับภาษี", "ใบรับประกัน", "ใบรับรอง (Certificate)", "รูปถ่าย"],
+  INSURANCE: ["กรมธรรม์", "ใบเสร็จเบี้ยประกัน", "เอกสารเคลม", "สลักหลังกรมธรรม์"],
+  HEALTH: ["ผลตรวจสุขภาพ", "ใบรับรองแพทย์", "ประวัติวัคซีน"],
+  CARD_MEMBERSHIP: ["บัตรสมาชิก", "สัญญาสมาชิก"],
+  SYSTEM: ["รายงานรายเดือน"],
+};
+export const ENTITY_MODULE: Record<string, string> = {
+  FINANCIAL: "FINANCIAL", INVESTMENT: "INVESTMENT", PROPERTY: "PROPERTY", ALTERNATIVE: "ALTERNATIVE",
+  LIABILITY: "FINANCIAL", INSURANCE_POLICY: "INSURANCE", PERSON: "FAMILY", CREDIT_CARD: "CARD_MEMBERSHIP",
+};
+export function fileSize(n: number | null | undefined) {
+  if (n == null) return "";
+  return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+export function extFromMime(m: string | null | undefined) {
+  const map: Record<string, string> = {
+    "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+    "image/heic": ".heic", "image/heif": ".heif", "text/plain": ".txt", "text/csv": ".csv", "application/msword": ".doc",
+    "application/vnd.ms-excel": ".xls", "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  };
+  return map[m ?? ""] ?? "";
+}

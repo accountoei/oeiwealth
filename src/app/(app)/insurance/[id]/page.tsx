@@ -10,6 +10,7 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -159,6 +160,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             hint="มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" /></div>}
         </section>
       )}
+      <EntityDocuments entityType="INSURANCE_POLICY" entityId={id} module="INSURANCE" role={me.role} paths={paths} />
     </div>
   );
 }

@@ -15,6 +15,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -310,6 +311,7 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
           </div>}
         </section>
       )}
+      <EntityDocuments entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} />
     </div>
   );
 }

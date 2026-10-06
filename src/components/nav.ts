@@ -26,7 +26,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   { label: "Liabilities", href: "/liabilities", ready: true },
-  { label: "Documents", href: "/documents" },
+  { label: "Documents", href: "/documents", ready: true },
   { label: "Month Closing", href: "/month-closing", ready: true },
   {
     label: "Settings",

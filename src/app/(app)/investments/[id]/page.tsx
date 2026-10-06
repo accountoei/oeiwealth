@@ -11,6 +11,7 @@ import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean };
@@ -258,6 +259,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             hint="ลบได้เมื่อมีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" /></div>}
         </section>
       )}
+      <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} />
     </div>
   );
 }

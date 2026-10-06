@@ -10,6 +10,7 @@ import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
+import EntityDocuments from "@/components/docs/EntityDocuments";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 
@@ -123,6 +124,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
           {canDelete && <div><DeleteEntity kind="asset" id={id} redirectTo="/alternative" paths={["/alternative"]} label="ลบรายการนี้" /></div>}
         </section>
       )}
+      <EntityDocuments entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} />
     </div>
   );
 }
