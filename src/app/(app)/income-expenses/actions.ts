@@ -123,8 +123,10 @@ export async function addReimbursement(_: ActionState, form: FormData): Promise<
     p_expense_item_id: String(form.get("expense_item_id")), p_received_date: str(form.get("received_date")),
     p_amount: amount, p_received_to_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
     p_received_to_credit_card_id: via === "card" ? str(form.get("card_id")) : null, p_notes: str(form.get("notes")),
+    p_insurance_claim_id: str(form.get("insurance_claim_id")),
   });
   if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/insurance", "layout");
   return done("บันทึกเงินคืนแล้ว");
 }
 

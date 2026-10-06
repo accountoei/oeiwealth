@@ -13,6 +13,8 @@ import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
+import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
+import AssetTradeHistory from "@/components/AssetTradeHistory";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -123,13 +125,22 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
         </div>
       </section>
 
-      {canWrite && (
+      {canWrite && a.status === "ACTIVE" && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-medium text-slate-900">อัปเดตมูลค่า</h2>
           <p className="mb-3 text-xs text-slate-500">แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)</p>
           <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} />
         </section>
       )}
+
+      {canWrite && a.status === "ACTIVE" && (
+        <div className="flex flex-wrap gap-2">
+          <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} />
+          <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
+        </div>
+      )}
+      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+        paths={paths} canWrite={canWrite} canDelete={canDelete} />
 
       {/* ---------------- สัญญาเช่า ---------------- */}
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">

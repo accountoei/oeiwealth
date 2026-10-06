@@ -26,6 +26,14 @@ export default async function InvestmentsPage() {
     .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", goLive || "1900-01-01");
 
   const list = (pvs as PV[] | null) ?? [];
+  type R = { unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
+  const retRows = await Promise.all(list.map(async (p) => {
+    const { data } = await supabase.rpc("investment_returns", { p_portfolio_asset_id: p.asset_id });
+    const rs = (data as R[] | null) ?? [];
+    const sum = (k: keyof R) => rs.reduce((t, r) => t + Number(r[k] ?? 0), 0);
+    return { asset_id: p.asset_id, name: p.name, unreal: sum("unrealized_thb"), unrealFx: sum("unrealized_fx_thb"), real: sum("realized_thb"),
+      realFx: sum("realized_fx_thb"), income: sum("income_thb") - sum("fees_thb"), total: sum("total_thb") };
+  }));
   const inst = new Map((pfs ?? []).map((p) => [p.asset_id, p.institution]));
   const holdings = ((hs as H[] | null) ?? []).filter((h) => h.status === "ACTIVE");
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
@@ -85,6 +93,33 @@ export default async function InvestmentsPage() {
         })}
       </section>
 
+      {retRows.some((r) => r.total || r.unreal || r.real) && (
+        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">ผลตอบแทนแยกพอร์ต (บาท)</h2>
+          <table className="mt-2 w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-4 py-2">พอร์ต</th><th className="px-3 text-right">ยังไม่รับรู้</th><th className="px-3 text-right">รับรู้แล้ว</th>
+                <th className="px-3 text-right">ส่วนจาก FX</th><th className="px-3 text-right">ปันผล / ดอกเบี้ย สุทธิค่าธรรมเนียม</th><th className="px-3 text-right">รวม</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {[...retRows, ...(retRows.length > 1 ? [{ asset_id: "", name: "รวมทุกพอร์ต",
+                unreal: retRows.reduce((t, r) => t + r.unreal, 0), unrealFx: retRows.reduce((t, r) => t + r.unrealFx, 0),
+                real: retRows.reduce((t, r) => t + r.real, 0), realFx: retRows.reduce((t, r) => t + r.realFx, 0),
+                income: retRows.reduce((t, r) => t + r.income, 0), total: retRows.reduce((t, r) => t + r.total, 0) }] : [])].map((r) => (
+                <tr key={r.asset_id || "total"} className={r.asset_id ? "" : "font-medium"}>
+                  <td className="px-4 py-2">{r.asset_id ? <Link href={`/investments/${r.asset_id}`} className="hover:underline">{r.name}</Link> : r.name}</td>
+                  {[r.unreal, r.real, r.unrealFx + r.realFx, r.income, r.total].map((v, i) => (
+                    <td key={i} className={`px-3 text-right tabular-nums ${v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500"}`}>
+                      {v ? `${v > 0 ? "+" : ""}${money(v, undefined, 0)}` : "-"}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-4 py-3 text-xs text-slate-500">ต้นทุนเฉลี่ย · นับตั้งแต่ยอดตั้งต้น · &ldquo;ส่วนจาก FX&rdquo; รวมอยู่ในยังไม่รับรู้ / รับรู้แล้ว (แสดงแยกให้เห็นว่ามาจากค่าเงินเท่าไร)</p>
+        </section>
+      )}
+
       {allocTotal > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
           <Alloc title="สัดส่วนตามประเภท" rows={[...byType.entries()].map(([k, v]) => [HOLDING_TYPE_LABEL[k] ?? k, v])} total={allocTotal} />
@@ -116,7 +151,7 @@ export default async function InvestmentsPage() {
           {soon.length === 0 ? <p className="text-sm text-slate-500">ไม่มี</p> : (
             <ul className="space-y-1 text-sm">
               {soon.map((h) => (
-                <li key={h.id}><Link href={`/investments/${h.portfolio_asset_id}`} className="hover:underline">{h.name}</Link>
+                <li key={h.id}><Link href={`/investments/${h.portfolio_asset_id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>
                   <span className="text-slate-500"> · ครบ {thDate(h.maturity_date)} · {money(h.current_value, h.currency, 0)}</span></li>
               ))}
             </ul>

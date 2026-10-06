@@ -5,7 +5,8 @@ import { requireAppUser } from "@/lib/auth";
 import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, todayBangkok,
 } from "@/lib/format";
-import { MaturityForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm, type Holding } from "./forms";
+import { FxForm, MaturityForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm, type Holding } from "./forms";
+import ReturnsTable, { type Ret } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
@@ -17,7 +18,7 @@ type Tx = { id: string; holding_id: string | null; transaction_date: string; set
   transaction_type: string; quantity: number | null; price: number | null; amount: number; currency: string;
   fee: number | null; tax: number | null; direction: string | null; settle_from_asset_id: string | null;
   settle_to_asset_id: string | null; cash_movement_id: string | null; notes: string | null; net_cash: number;
-  settlement_status: string };
+  settlement_status: string; counter_amount: number | null; counter_currency: string | null };
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
@@ -39,11 +40,12 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
   ]);
   if (!a || !pf) notFound();
-  const [{ data: txs }, { data: income }] = await Promise.all([
+  const [{ data: txs }, { data: income }, { data: rets }] = await Promise.all([
     supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id)
       .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(100),
     supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
       .not("source_transaction_id", "is", null).is("deleted_at", null),
+    supabase.rpc("investment_returns", { p_portfolio_asset_id: id }),
   ]);
 
   const canWrite = me.role !== "VIEWER";
@@ -95,6 +97,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
           <div className="flex flex-wrap gap-2">
             <TxForm assetId={id} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} today={today} minDate={goLive} />
             <TransferForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} />
+            <FxForm assetId={id} cashCurrencies={cashHoldings.map((h) => h.currency)} today={today} minDate={goLive} />
             <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
             {(isSetup || me.role === "ADMIN") && (
               <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
@@ -129,7 +132,10 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
               return (
                 <tr key={h.id} className={`align-top ${h.status !== "ACTIVE" ? "opacity-50" : ""}`}>
                   <td className="px-4 py-2.5">
-                    <div className="font-medium text-slate-900">{h.name}{h.symbol && <span className="ml-1 text-xs text-slate-500">{h.symbol}</span>}</div>
+                    <div className="font-medium text-slate-900">
+                      {isCash ? h.name : <Link href={`/investments/${id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>}
+                      {h.symbol && <span className="ml-1 text-xs text-slate-500">{h.symbol}</span>}
+                    </div>
                     <div className="text-xs text-slate-500">
                       {HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency}
                       {h.status !== "ACTIVE" && ` · ${STATUS_LABEL[h.status] ?? h.status}`}
@@ -163,6 +169,8 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         </table>
       </section>
 
+      <ReturnsTable rows={(rets as Ret[] | null) ?? []} hrefBase={`/investments/${id}/holding/`} />
+
       {(unsettled ?? []).length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
           <h2 className="font-medium text-amber-900">รอชำระ (Trade แล้ว ยังไม่ Settle)</h2>
@@ -194,12 +202,12 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                     <tr key={t.id} className="align-top">
                       <td className="py-1.5">{thDate(t.transaction_date)}</td>
                       <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
-                      <td className="text-slate-600">{t.holding_id ? byId.get(t.holding_id)?.name : "เงินสดพอร์ต"}</td>
+                      <td className="text-slate-600">{t.holding_id ? byId.get(t.holding_id)?.name : t.transaction_type === "FX_EXCHANGE" ? `เงินสด ${t.currency} → ${t.counter_currency}` : "เงินสดพอร์ต"}</td>
                       <td className="text-right tabular-nums text-slate-600">
                         {t.quantity != null && t.price != null ? `${qty(t.quantity)} × ${money(t.price, undefined, 4)}` : t.quantity != null ? qty(t.quantity) : ""}
                       </td>
                       <td className="text-right tabular-nums">
-                        {money(t.amount)}
+                        {money(t.amount)}{t.transaction_type === "FX_EXCHANGE" && <> {t.currency} → {money(t.counter_amount)} {t.counter_currency}</>}
                         {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && (
                           <div className="text-xs text-slate-500">
                             {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}

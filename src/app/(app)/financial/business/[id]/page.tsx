@@ -9,6 +9,8 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
+import { SellAssetForm } from "@/components/AssetTrade";
+import AssetTradeHistory from "@/components/AssetTradeHistory";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -75,8 +77,11 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         <div className="flex flex-wrap gap-2">
           <DividendForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
           <CapitalForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
+          <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
         </div>
       )}
+      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} paths={paths} canWrite={canWrite} canDelete={canDelete} showMoves={false}
+        cost={d.investment_cost != null ? Number(d.investment_cost) : a.acquisition_cost != null ? Number(a.acquisition_cost) : null} />
 
       {canWrite && a.status === "ACTIVE" && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -101,7 +106,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           </tbody></table>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">ปันผล / เงินลงทุนเพิ่ม</h2>
+          <h2 className="mb-2 font-medium text-slate-900">ปันผล / เงินลงทุนเพิ่ม / ขาย</h2>
           {(incomes ?? []).length === 0 && (moves ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
             <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
               {(incomes ?? []).map((i) => (
@@ -113,7 +118,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
               ))}
               {(moves ?? []).map((m) => (
                 <tr key={m.id}>
-                  <td className="py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
+                  <td className="py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : m.movement_type === "ASSET_SALE" ? "เงินขายหุ้น (สุทธิ)" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
                   <td className="text-right tabular-nums">{money(m.amount, m.currency)}</td>
                   <td className="pl-2 text-right">{canWrite && !m.is_derived && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
                     fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount }]} />}</td>

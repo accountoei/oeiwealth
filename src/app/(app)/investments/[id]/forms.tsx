@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import {
-  addHolding, recordMaturity, recordTx, saveValuations, transferMoney, type ActionState,
+  addHolding, recordFx, recordMaturity, recordTx, saveValuations, transferMoney, type ActionState,
 } from "../actions";
 import { CURRENCIES, HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 
@@ -270,6 +270,51 @@ export function TransferForm({ assetId, currency, banks, today, minDate }:
       </p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------------ แลกเงินในพอร์ต */
+export function FxForm({ assetId, cashCurrencies, today, minDate }:
+  { assetId: string; cashCurrencies: string[]; today: string; minDate: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(recordFx, {});
+  const [from, setFrom] = useState(cashCurrencies[0] ?? "THB");
+  const [to, setTo] = useState(cashCurrencies.find((c) => c !== (cashCurrencies[0] ?? "THB")) ?? (from === "THB" ? "USD" : "THB"));
+  const [amt, setAmt] = useState("");
+  const [got, setGot] = useState("");
+  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>แลกเงินในพอร์ต</button>;
+  const rate = n(amt) > 0 && n(got) > 0 ? (from === "THB" ? n(amt) / n(got) : to === "THB" ? n(got) / n(amt) : n(got) / n(amt)) : null;
+  return (
+    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <h3 className="font-medium text-slate-900">แลกเงินภายในพอร์ต (FX Exchange)</h3>
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className={lbl}>จากเงินสดสกุล *
+          <select name="currency" value={from} onChange={(e) => setFrom(e.target.value)} className={input}>
+            {cashCurrencies.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className={lbl}>เป็นสกุล *
+          <select name="counter_currency" value={to} onChange={(e) => setTo(e.target.value)} className={input}>
+            {CURRENCIES.filter((c) => c !== from).map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className={lbl}>ยอดที่แลกออก ({from}) *<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={input} /></label>
+        <label className={lbl}>ยอดที่ได้รับ ({to}) *<input name="counter_amount" required inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} className={input} /></label>
+        <label className={lbl}>ค่าธรรมเนียม ({from})<input name="fee" inputMode="decimal" className={input} /></label>
+        <label className={`${lbl} md:col-span-3`}>หมายเหตุ<input name="notes" className={input} /></label>
+      </div>
+      <p className="text-xs text-slate-500">
+        {rate != null && <>อัตราที่ได้จริง {from === "THB" || to === "THB" ? `1 ${from === "THB" ? to : from} = ${rate.toFixed(4)} THB` : `1 ${from} = ${rate.toFixed(6)} ${to}`} · </>}
+        เงินสด {from} ในพอร์ตลด (ยอด + ค่าธรรมเนียม) · เงินสด {to} เพิ่ม (สร้างให้อัตโนมัติถ้ายังไม่มี) · ไม่ใช่รายได้หรือค่าใช้จ่าย
+      </p>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการแลกเงิน"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>

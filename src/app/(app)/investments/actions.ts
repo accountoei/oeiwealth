@@ -11,7 +11,7 @@ const clean = (v: FormDataEntryValue | null) => str(v)?.replace(/,/g, "") ?? nul
 
 function revalidate(assetId?: string) {
   revalidatePath("/investments");
-  if (assetId) revalidatePath(`/investments/${assetId}`);
+  if (assetId) revalidatePath(`/investments/${assetId}`, "layout");
   revalidatePath("/");
 }
 
@@ -148,4 +148,65 @@ export async function saveValuations(_: ActionState, form: FormData): Promise<Ac
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
   return { ok: `บันทึกราคา ${rows.length} รายการแล้ว` };
+}
+
+/** แลกเงินภายในพอร์ต (เงินสดสกุลหนึ่ง → อีกสกุล) */
+export async function recordFx(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const { error } = await supabase.rpc("record_investment_fx", {
+    p_portfolio_asset_id: id,
+    p_tx: {
+      date: str(form.get("date")), amount: clean(form.get("amount")), currency: str(form.get("currency")),
+      counter_amount: clean(form.get("counter_amount")), counter_currency: str(form.get("counter_currency")),
+      fee: clean(form.get("fee")), notes: str(form.get("notes")),
+    },
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  return { ok: "บันทึกการแลกเงินแล้ว" };
+}
+
+const pct = (v: FormDataEntryValue | null) => num(v);
+
+/** รายละเอียด FCN / Structured Product (สร้างหรือแก้) */
+export async function saveFcn(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const holdingId = String(form.get("holding_id"));
+  const principal = num(form.get("principal"));
+  if (!str(form.get("issuer"))) return { error: "กรุณาใส่ผู้ออก (Issuer)" };
+  if (principal === null || Number.isNaN(principal) || principal < 0) return { error: "กรุณาใส่เงินต้น" };
+  const knock = form.get("knock_in_occurred") === "on";
+  const row = {
+    holding_id: holdingId, issuer: str(form.get("issuer")), principal,
+    trade_date: str(form.get("trade_date")), issue_date: str(form.get("issue_date")),
+    coupon_rate: pct(form.get("coupon_rate")), coupon_frequency: str(form.get("coupon_frequency")),
+    strike_level: pct(form.get("strike_level")), barrier_level: pct(form.get("barrier_level")),
+    autocall_level: pct(form.get("autocall_level")), observation_frequency: str(form.get("observation_frequency")),
+    knock_in_occurred: knock, knock_in_date: knock ? str(form.get("knock_in_date")) : null,
+  };
+  for (const k of ["coupon_rate", "strike_level", "barrier_level", "autocall_level"] as const) {
+    if (row[k] !== null && Number.isNaN(row[k])) return { error: "อัตรา / ระดับต้องเป็นตัวเลข (%)" };
+  }
+  const fcnId = str(form.get("fcn_id"));
+  const { error } = fcnId
+    ? await supabase.from("fcn_details").update(row).eq("id", fcnId)
+    : await supabase.from("fcn_details").insert(row);
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  return { ok: "บันทึกรายละเอียดแล้ว" };
+}
+
+export async function addUnderlying(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const symbol = str(form.get("symbol"));
+  if (!symbol) return { error: "กรุณาใส่สัญลักษณ์หุ้นอ้างอิง" };
+  const { error } = await supabase.from("fcn_underlyings").insert({
+    fcn_id: String(form.get("fcn_id")), symbol: symbol.toUpperCase(), name: str(form.get("name")),
+    initial_price: num(form.get("initial_price")), strike_price: num(form.get("strike_price")), barrier_price: num(form.get("barrier_price")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(String(form.get("asset_id")));
+  return { ok: "เพิ่มหุ้นอ้างอิงแล้ว" };
 }

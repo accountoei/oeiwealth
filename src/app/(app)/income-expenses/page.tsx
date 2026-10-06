@@ -5,7 +5,7 @@ import RowActions from "@/components/RowActions";
 import { INCOME_TYPE_LABEL, MOVE_LABEL, money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import {
   ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
-  type Bank, type Card, type Liab,
+  type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
@@ -35,7 +35,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-    { data: reimbs }, { data: moves }] = await Promise.all([
+    { data: reimbs }, { data: moves }, { data: claimsRaw }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,status").is("deleted_at", null).neq("status", "CLOSED"),
@@ -54,6 +54,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,counter_amount,counter_currency,fee,is_derived,description")
       .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons(name))")
+      .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
   ]);
 
   const goLive = family?.go_live_date ?? "";
@@ -68,6 +70,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const name = new Map<string, string>([...banks.map((b) => [b.asset_id, b.name] as [string, string]),
     ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string])]);
   const pname = (p: unknown) => ((Array.isArray(p) ? p[0] : p) as { name: string } | null)?.name;
+  const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  const claims: Claim[] = (claimsRaw ?? []).map((c) => {
+    const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
+    return { id: c.id, currency: c.currency, label: [pol?.insurer, pol?.policy_no, pname(pol?.persons),
+      c.claim_date && `เคลม ${thDate(c.claim_date)}`, c.claimed_amount != null && money(c.claimed_amount, c.currency)].filter(Boolean).join(" · ") };
+  });
 
   const incomeList = incomes ?? [];
   const grossThb = incomeList.reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
@@ -265,7 +273,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                                 {REIMB[r?.reimbursement_status ?? "PENDING"]} {Number(r?.reimbursed_amount ?? 0) > 0 && `(${money(r?.reimbursed_amount)})`}
                               </div>
                               {canWrite && remaining > 0 && (
-                                <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards}
+                                <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims}
                                   today={today} minDate={goLive} />
                               )}
                             </>

@@ -31,6 +31,13 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     cvId ? supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId) : Promise.resolve({ data: null }),
     p.asset_id ? supabase.from("assets").select("name").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  const claimIds = (claims ?? []).map((c) => c.id);
+  const { data: linked } = claimIds.length
+    ? await supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,expense_items(description,date)")
+        .in("insurance_claim_id", claimIds).is("deleted_at", null).order("received_date")
+    : { data: [] };
+  const byClaim = new Map<string, NonNullable<typeof linked>>();
+  (linked ?? []).forEach((r) => { if (r.insurance_claim_id) byClaim.set(r.insurance_claim_id, [...(byClaim.get(r.insurance_claim_id) ?? []), r]); });
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
@@ -122,7 +129,12 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                   <td className="py-1.5">{thDate(c.claim_date)}</td><td>{thDate(c.incident_date)}</td>
                   <td className="text-right tabular-nums">{money(c.claimed_amount, c.currency)}</td>
                   <td className="text-right tabular-nums">{c.received_amount != null ? money(c.received_amount) : "-"}</td>
-                  <td className="pl-4">{CSTATUS[c.status] ?? c.status}{c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}</td>
+                  <td className="pl-4">{CSTATUS[c.status] ?? c.status}{c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}
+                    {(byClaim.get(c.id) ?? []).map((r) => {
+                      const e = (Array.isArray(r.expense_items) ? r.expense_items[0] : r.expense_items) as { description: string; date: string } | null;
+                      return <div key={r.id} className="text-xs text-emerald-700">รับคืน {thDate(r.received_date)} {money(r.amount, r.currency)}{e && ` · ${e.description} (${thDate(e.date)})`}</div>;
+                    })}
+                  </td>
                   <td className="pl-2 text-right">
                     {canWrite && <RowActions table="insurance_claims" id={c.id} paths={paths} canDelete={canDelete} fields={[
                       { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claim_date },
@@ -136,6 +148,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             </tbody>
           </table>
         )}
+        <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
         {canWrite && <ClaimForm policyId={id} currency={ccy} today={today} />}
       </section>
 

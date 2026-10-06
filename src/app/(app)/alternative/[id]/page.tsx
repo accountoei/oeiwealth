@@ -8,6 +8,8 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
+import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
+import AssetTradeHistory from "@/components/AssetTradeHistory";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 
@@ -15,19 +17,21 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: family }, { data: persons }] = await Promise.all([
+  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banks }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_group", "ALTERNATIVE").is("deleted_at", null).maybeSingle(),
     supabase.from("alternative_asset_details").select("*, asset_categories(category_name)").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
   ]);
   if (!a || !d) notFound();
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
-  const paths = [`/alternative/${id}`, "/alternative"];
+  const paths = [`/alternative/${id}`, "/alternative", "/income-expenses"];
+  const goLive = family?.go_live_date ?? "";
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
   const cat = (Array.isArray(d.asset_categories) ? d.asset_categories[0] : d.asset_categories)?.category_name;
@@ -74,9 +78,18 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
       {canWrite && a.status === "ACTIVE" && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-3 font-medium text-slate-900">อัปเดตมูลค่า</h2>
-          <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths} />
+          <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />
         </section>
       )}
+
+      {canWrite && a.status === "ACTIVE" && (
+        <div className="flex flex-wrap gap-2">
+          <PayAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+          <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+        </div>
+      )}
+      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+        paths={paths} canWrite={canWrite} canDelete={canDelete} />
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-3 font-medium text-slate-900">ประวัติมูลค่า</h2>

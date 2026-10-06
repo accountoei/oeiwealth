@@ -10,6 +10,7 @@ import { CURRENCIES, EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, money } from "@/lib/
 export type Bank = { asset_id: string; name: string; currency: string };
 export type Card = { id: string; label: string; currency: string; outstanding_balance: number };
 export type Person = { id: string; name: string };
+export type Claim = { id: string; label: string; currency: string };
 export type Liab = { id: string; name: string; currency: string; outstanding_amount: number | null };
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -292,8 +293,8 @@ export function MonthStatusForm({ month, status }: { month: string; status: stri
   );
 }
 
-export function ReimbursementForm({ itemId, remaining, currency, banks, cards, today, minDate }: {
-  itemId: string; remaining: number; currency: string; banks: Bank[]; cards: Card[]; today: string; minDate: string;
+export function ReimbursementForm({ itemId, remaining, currency, banks, cards, claims = [], today, minDate }: {
+  itemId: string; remaining: number; currency: string; banks: Bank[]; cards: Card[]; claims?: Claim[]; today: string; minDate: string;
 }) {
   const [open, setOpen] = useState(false);
   const [via, setVia] = useState("bank");
@@ -321,6 +322,14 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, t
         <select name="card_id" required className={small}>
           {cards.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
+      )}
+      {claims.some((c) => c.currency === currency) && (
+        <label className="text-xs">จากเคลมประกัน
+          <select name="insurance_claim_id" defaultValue="" className={`mt-1 block max-w-64 ${small}`}>
+            <option value="">— ไม่ผูก —</option>
+            {claims.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </label>
       )}
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
