@@ -221,6 +221,9 @@ async function upload(req: Request) {
   const stamp = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const name = `${stamp} ${title}`.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 150) + ext;
   const bytes = await file.arrayBuffer();
+  const sha = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (x) => x.toString(16).padStart(2, "0")).join("");
+  const { data: dup } = await me.db.from("documents").select("id,title").eq("content_sha256", sha).is("deleted_at", null).limit(1).maybeSingle();
+  if (dup) return json({ error: `ไฟล์นี้มีอยู่ในระบบแล้ว ชื่อ "${dup.title}"`, duplicate: { id: dup.id, title: dup.title } }, 409);
 
   let folder = await moduleFolder(token, cfg, module);
   let r = await uploadFile(token, folder, name, mime, bytes);
@@ -232,7 +235,7 @@ async function upload(req: Request) {
   if (!r.ok || !up.id) throw new HttpError(502, `อัปโหลดเข้า Google Drive ไม่สำเร็จ (${r.status} ${up?.error?.message ?? ""})`);
 
   const { data: docId, error } = await me.db.rpc("add_document", { p: {
-    ...meta, module, title, drive_file_id: up.id, mime_type: mime, file_size: file.size,
+    ...meta, module, title, drive_file_id: up.id, mime_type: mime, file_size: file.size, content_sha256: sha,
   } });
   if (error) {
     await gfetch(token, `https://www.googleapis.com/drive/v3/files/${up.id}`, { method: "DELETE" });   // ไม่ให้เหลือไฟล์ค้าง
