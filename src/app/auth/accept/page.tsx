@@ -59,7 +59,7 @@ function AcceptForm() {
           <>
             <p className="text-sm text-slate-600">กดปุ่มด้านล่างเพื่อยืนยันตัวตน แล้วตั้งรหัสผ่านสำหรับเข้าระบบ</p>
             <button onClick={verify} disabled={busy}
-              className="w-full rounded-md bg-slate-900 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+              className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
               {busy ? "กำลังตรวจสอบ…" : "ยืนยันและตั้งรหัสผ่าน"}
             </button>
           </>
@@ -73,7 +73,7 @@ function AcceptForm() {
               <input type="password" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
                 className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" />
             </label>
-            <button disabled={busy} className="w-full rounded-md bg-slate-900 py-2 text-sm font-medium text-white disabled:opacity-50">
+            <button disabled={busy} className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white disabled:opacity-50">
               {busy ? "กำลังบันทึก…" : "บันทึกรหัสผ่านและเข้าระบบ"}
             </button>
           </form>

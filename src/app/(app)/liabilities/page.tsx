@@ -39,7 +39,7 @@ export default async function LiabilitiesPage() {
         {me.role !== "VIEWER" && (
           <div className="flex gap-2">
             <Link href="/family/cards" className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">บัตรเครดิต</Link>
-            <Link href="/liabilities/new" className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">+ เพิ่มเงินกู้</Link>
+            <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้</Link>
           </div>
         )}
       </div>

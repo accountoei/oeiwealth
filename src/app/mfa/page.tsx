@@ -84,7 +84,7 @@ export default function MfaPage() {
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="123456"
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-center tracking-widest text-lg" />
             <button type="submit" disabled={busy || code.length !== 6}
-              className="w-full rounded-md bg-slate-900 text-white py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
+              className="w-full rounded-md bg-blue-600 text-white py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
               {busy ? "กำลังตรวจสอบ…" : "ยืนยัน"}
             </button>
           </>

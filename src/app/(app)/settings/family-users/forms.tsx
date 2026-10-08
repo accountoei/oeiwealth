@@ -14,7 +14,7 @@ const PERSON_STATUS: Record<string, string> = { ACTIVE: "ใช้งาน", IN
 const ROLES: Record<string, string> = { ADMIN: "ผู้ดูแลระบบ", EDITOR: "ผู้แก้ไข", CONTRIBUTOR: "ผู้บันทึก", VIEWER: "ผู้ดู" };
 
 const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
-const btn = "rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-50";
+const btn = "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <span className="text-xs text-red-600">{s.error}</span>;

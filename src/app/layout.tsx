@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import "@fontsource/ibm-plex-sans-thai/400.css";
 import "@fontsource/ibm-plex-sans-thai/500.css";
 import "@fontsource/ibm-plex-sans-thai/600.css";
+import "@fontsource/ibm-plex-sans-thai/700.css";
 import "./globals.css";
+import NumberInputs from "@/components/NumberInputs";
 
 export const metadata: Metadata = {
   title: "Family Wealth Vault",
@@ -13,7 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th">
-      <body className="antialiased text-slate-900">{children}</body>
+      <body className="antialiased text-slate-900">{children}<NumberInputs /></body>
     </html>
   );
 }

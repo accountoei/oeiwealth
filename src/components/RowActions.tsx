@@ -52,7 +52,7 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
               )}
             </label>
           ))}
-          <button disabled={saving} className="rounded-md bg-slate-900 px-3 py-1 text-xs text-white disabled:opacity-50">{saving ? "…" : "บันทึก"}</button>
+          <button disabled={saving} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50">{saving ? "…" : "บันทึก"}</button>
           <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500">ปิด</button>
           {es.error && <span className="w-full text-xs text-red-600">{es.error}</span>}
           {es.ok && <span className="w-full text-xs text-emerald-700">{es.ok}</span>}

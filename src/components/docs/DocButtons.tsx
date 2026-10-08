@@ -51,7 +51,7 @@ export function ConnectDrive({ label = "เชื่อม Google Drive" }: { la
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-3">
-      <button type="button" onClick={go} disabled={busy} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50">
+      <button type="button" onClick={go} disabled={busy} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">
         {busy ? "กำลังไปหน้า Google…" : label}
       </button>
       {err && <span className="text-sm text-red-600">{err}</span>}

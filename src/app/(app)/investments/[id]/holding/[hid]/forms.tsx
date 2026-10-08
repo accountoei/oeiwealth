@@ -6,7 +6,7 @@ import { COUPON_FREQ_LABEL } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const btn = "rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50";
+const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
 type Bank = { asset_id: string; name: string; currency: string };
 
@@ -74,7 +74,7 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
       <label className="text-xs">ราคาเริ่มต้น<input name="initial_price" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
       <label className="text-xs">ราคา Strike<input name="strike_price" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
       <label className="text-xs">ราคา Barrier<input name="barrier_price" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
-      <button disabled={pending} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white disabled:opacity-50">เพิ่ม</button>
+      <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">เพิ่ม</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <Msg s={state} />
     </form>

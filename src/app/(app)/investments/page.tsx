@@ -59,7 +59,7 @@ export default async function InvestmentsPage() {
           <p className="text-sm text-slate-500">ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และ FX ล่าสุดของ ธปท.</p>
         </div>
         {me.role !== "VIEWER" && (
-          <Link href="/investments/new" className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">+ เพิ่มพอร์ต</Link>
+          <Link href="/investments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มพอร์ต</Link>
         )}
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}

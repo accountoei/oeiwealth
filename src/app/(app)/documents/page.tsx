@@ -135,9 +135,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Link href={href({ m: undefined })} className={`rounded-full px-3 py-1 ${!sp.m ? "bg-slate-900 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>ทั้งหมด</Link>
+          <Link href={href({ m: undefined })} className={`rounded-full px-3 py-1 ${!sp.m ? "bg-blue-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>ทั้งหมด</Link>
           {Object.entries(DOC_MODULE_LABEL).map(([k, v]) => (
-            <Link key={k} href={href({ m: k })} className={`rounded-full px-3 py-1 ${sp.m === k ? "bg-slate-900 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>{v}</Link>
+            <Link key={k} href={href({ m: k })} className={`rounded-full px-3 py-1 ${sp.m === k ? "bg-blue-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>{v}</Link>
           ))}
         </div>
         <form className="flex flex-wrap items-center gap-2 text-sm" action="/documents">

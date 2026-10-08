@@ -5,7 +5,7 @@ import { createCard, updateCardBalance, updateCardStatus, type ActionState } fro
 import { CURRENCIES } from "@/lib/format";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
-const btn = "rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50";
+const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
@@ -78,7 +78,7 @@ export function CardBalanceForm({ cardId, currency, today, minDate }:
       <label className="text-xs">หมายเหตุ (ไม่บังคับ)
         <input name="notes" className="mt-1 block w-40 rounded-md border border-slate-300 px-2 py-1 text-sm" />
       </label>
-      <button disabled={pending} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
+      <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

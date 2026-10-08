@@ -26,7 +26,7 @@ export default async function InsurancePage() {
           <h1 className="text-2xl font-semibold text-slate-900">Insurance</h1>
           <p className="text-sm text-slate-500">กรมธรรม์ทั้งหมด · มูลค่าเวนคืนนับเป็นสินทรัพย์ (หมวดการเงิน)</p>
         </div>
-        {me.role !== "VIEWER" && <Link href="/insurance/new" className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">+ เพิ่มกรมธรรม์</Link>}
+        {me.role !== "VIEWER" && <Link href="/insurance/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มกรมธรรม์</Link>}
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       {cvTotal > 0 && (

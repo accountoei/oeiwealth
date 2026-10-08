@@ -56,7 +56,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://x.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=dum
 
 All three must pass before pushing. Pushing to `main` deploys to production on Vercel automatically.
 
-- UI text is **Thai**. Dates use `thDate`, money uses `money` from `src/lib/format.ts`.
+- UI text is **Thai**. Dates use `thDate`, money uses `money` from `src/lib/format.ts` (always thousands separators + 2 decimals; unit prices may pass `digits = 4`).
+- Number inputs: use `inputMode="decimal"` — `src/components/NumberInputs.tsx` formats them globally (commas while typing, `.00` on blur; names matching quantity/percent/rate/level/day get no `.00`; `data-money="off"` opts out of `.00`, `data-plain` opts out entirely). Server actions must strip commas before `Number()` (use `numOrNull`).
+- Theme lives in `src/app/globals.css` (`@theme` overrides): primary buttons `bg-blue-600 hover:bg-blue-700`, cards `rounded-xl border border-slate-200 bg-white`.
 - `"use client"` files must not export constants used by server components — put shared constants/labels in `src/lib/format.ts`.
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.
 - Every page calls `requireAppUser()` and hides write controls for `VIEWER`; the database still enforces permissions.

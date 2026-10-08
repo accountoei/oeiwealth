@@ -36,7 +36,7 @@ export default async function CashPage() {
           <p className="text-sm text-slate-500">บัญชีเงินฝากทั้งหมดของครอบครัว</p>
         </div>
         {me.role !== "VIEWER" && (
-          <Link href="/financial/cash/new" className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+          <Link href="/financial/cash/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
             + เพิ่มบัญชี
           </Link>
         )}

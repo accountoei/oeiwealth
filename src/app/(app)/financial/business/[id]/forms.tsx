@@ -16,7 +16,7 @@ function Box({ title, label, children, action, pending, state }: {
       <h3 className="font-medium text-slate-900">{title}</h3>
       {children}
       <div className="flex items-center gap-3">
-        <button disabled={pending} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}

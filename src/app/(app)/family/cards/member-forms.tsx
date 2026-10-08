@@ -16,7 +16,7 @@ function Shell({ label, title, action, pending, state, children }: {
       <h3 className="font-medium text-slate-900">{title}</h3>
       {children}
       <div className="flex items-center gap-3">
-        <button disabled={pending} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
@@ -51,7 +51,7 @@ export function PointsForm({ persons, links, today }: { persons: P[]; links: { v
         <label className="text-sm">ผูกกับ
           <select name="link" defaultValue="" className={input}><option value="">— ไม่ผูก —</option>{links.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}</select>
         </label>
-        <label className="text-sm">ยอดแต้มคงเหลือ<input name="balance" inputMode="decimal" className={input} /></label>
+        <label className="text-sm">ยอดแต้มคงเหลือ<input name="balance" inputMode="decimal" data-money="off" className={input} /></label>
         <label className="text-sm">ณ วันที่<input name="balance_date" type="date" defaultValue={today} max={today} className={input} /></label>
         <label className="text-sm">แต้มหมดอายุ<input name="expiry_date" type="date" className={input} /></label>
       </div>

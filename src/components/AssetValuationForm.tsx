@@ -22,7 +22,7 @@ export default function AssetValuationForm({ assetId, currency, today, minDate, 
         </select>
       </label>
       <label className="min-w-48 flex-1 text-sm">หมายเหตุ<input name="notes" className={`mt-1 block w-full ${input}`} /></label>
-      <button disabled={pending} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกมูลค่า"}</button>
+      <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกมูลค่า"}</button>
       <div className="w-full">
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
         {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}

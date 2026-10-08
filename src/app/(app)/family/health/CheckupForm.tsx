@@ -17,7 +17,7 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
   const [rows, setRows] = useState<R[]>(["SYSTOLIC_BP", "DIASTOLIC_BP", "FBS", "CHOLESTEROL", "LDL", "HDL"].map(blank));
   const [state, action, pending] = useActionState<ActionState, FormData>(addCheckup, {});
   const set = (i: number, p: Partial<R>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...p } : r)));
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">+ บันทึกผลตรวจสุขภาพ</button>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ บันทึกผลตรวจสุขภาพ</button>;
   const payload = rows.filter((r) => r.metric && r.value.trim()).map((r) => {
     const n = Number(r.value.replace(/,/g, ""));
     const numeric = r.value.trim() !== "" && !Number.isNaN(n);
@@ -66,7 +66,7 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
       <button type="button" onClick={() => setRows([...rows, blank("WEIGHT")])} className="text-xs text-slate-700 underline">+ เพิ่มรายการ</button>
       <p className="text-xs text-slate-500">เว้นช่องผลว่างได้ (ไม่บันทึก) · &ldquo;อัตโนมัติ&rdquo; = ระบบเทียบกับค่าปกติที่กรอกให้ · ค่าปกติเริ่มต้นเป็นค่าทั่วไป ควรแก้ตามใบผลแล็บ</p>
       <div className="flex items-center gap-3">
-        <button disabled={pending} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}

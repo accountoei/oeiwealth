@@ -88,7 +88,7 @@ export default function NewPolicyForm(props: {
 
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       <div className="flex gap-3">
-        <button disabled={pending} className="rounded-md bg-slate-900 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <Link href="/insurance" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
       </div>
     </form>

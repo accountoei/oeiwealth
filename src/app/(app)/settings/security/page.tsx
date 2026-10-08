@@ -63,7 +63,7 @@ export default async function SecurityPage({ searchParams }: { searchParams: Sp 
               <option value="">ทุกผู้ใช้</option>{users.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
             </select>
             <input name="entity" defaultValue={sp.entity ?? ""} placeholder="ตาราง เช่น assets" className="rounded-md border border-slate-300 px-2 py-1.5" />
-            <button className="rounded-md bg-slate-900 px-3 py-1.5 text-white">กรอง</button>
+            <button className="rounded-md bg-blue-600 px-3 py-1.5 text-white">กรอง</button>
             <Link href="/settings/security" className="text-xs text-slate-500 underline">ล้าง</Link>
           </form>
           <div className="overflow-x-auto">

@@ -61,7 +61,7 @@ function LoginForm() {
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button type="submit" disabled={busy}
-          className="w-full rounded-md bg-slate-900 text-white py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
+          className="w-full rounded-md bg-blue-600 text-white py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
           {busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
         </button>
         <p className="text-xs text-slate-400">ระบบนี้เปิดให้เฉพาะผู้ที่ได้รับเชิญเท่านั้น · ลืมรหัสผ่านหรือทำมือถือ (MFA) หาย ติดต่อผู้ดูแลระบบเพื่อขอลิงก์ตั้งรหัสใหม่</p>

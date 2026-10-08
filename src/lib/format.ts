@@ -1,7 +1,10 @@
+/** จำนวนเงินแบบการเงิน: คอมมาคั่นหลักพัน + ทศนิยม 2 ตำแหน่งเสมอ (ราคาต่อหน่วยส่ง digits = 4 ได้) */
 export function money(value: number | string | null | undefined, currency?: string, digits = 2): string {
   if (value === null || value === undefined || value === "") return "-";
-  const n = typeof value === "string" ? Number(value) : value;
-  const s = n.toLocaleString("th-TH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const n = typeof value === "string" ? Number(String(value).replace(/,/g, "")) : value;
+  if (Number.isNaN(n)) return "-";
+  const d = Math.max(digits, 2);
+  const s = n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: d });
   return currency ? `${s} ${currency}` : s;
 }
 

@@ -209,7 +209,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <button disabled={busy || !!pending} className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50">{busy && !pending ? "กำลังตรวจ / อัปโหลด…" : "อัปโหลด"}</button>
+        <button disabled={busy || !!pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{busy && !pending ? "กำลังตรวจ / อัปโหลด…" : "อัปโหลด"}</button>
         <button type="button" onClick={() => { setOpen(false); setPending(null); setDup(null); }} className="text-sm text-slate-500">ปิด</button>
         {msg.error && <span className="text-sm text-red-600">{msg.error}</span>}
       </div>

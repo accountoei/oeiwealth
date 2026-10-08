@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 type Factor = { id: string; friendly_name?: string; status: string; created_at: string };
 const box = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
-const btn = "rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50";
+const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
   const supabase = createClient();

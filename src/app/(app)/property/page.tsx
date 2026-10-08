@@ -36,7 +36,7 @@ export default async function PropertyPage() {
           <p className="text-sm text-slate-500">อสังหาริมทรัพย์ทุกการใช้งาน · สัญญาเช่า · ค่าเช่า · เงินประกัน</p>
         </div>
         {me.role !== "VIEWER" && (
-          <Link href="/property/new" className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">+ เพิ่มทรัพย์สิน</Link>
+          <Link href="/property/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มทรัพย์สิน</Link>
         )}
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}

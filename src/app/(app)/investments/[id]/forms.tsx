@@ -8,7 +8,7 @@ import { CURRENCIES, HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const btn = "rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50";
+const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
 const lbl = "block text-sm text-slate-700";
 
@@ -407,7 +407,7 @@ export function MaturityForm({ assetId, holding, banks, today, minDate }:
       </div>
       <p className="text-xs text-slate-500">เงินต้นไม่ใช่รายได้ · Coupon งวดสุดท้ายให้บันทึกแยกเป็นรายการ Coupon</p>
       <div className="flex items-center gap-2">
-        <button disabled={pending} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
         <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />

@@ -10,8 +10,8 @@ import { PROPERTY_TYPE_LABEL, USAGE_LABEL, landParts, money } from "@/lib/format
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const btn = "rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50";
-const sbtn = "rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white disabled:opacity-50";
+const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
+const sbtn = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50";
 const link = "text-xs text-slate-700 underline";
 
 function Msg({ s }: { s: ActionState }) {
