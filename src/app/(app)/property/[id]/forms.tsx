@@ -2,11 +2,11 @@
 
 import { useActionState, useState } from "react";
 import {
-  addUtility, addValuation, createLease, recordRent, setUsage, settleDeposit, terminateLease, updatePropertyInfo,
-  type ActionState,
+  addUtility, addValuation, createLease, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
+  updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
-import { PROPERTY_TYPE_LABEL, USAGE_LABEL, landParts, money } from "@/lib/format";
+import { PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -234,25 +234,123 @@ export function EditPropertyForm({ p }: { p: Info }) {
   );
 }
 
-export function UtilityForm({ assetId, propertyId }: { assetId: string; propertyId: string }) {
+export function UtilityForm({ assetId, propertyId, currency }: { assetId: string; propertyId: string; currency: string }) {
   const [open, setOpen] = useState(false);
+  const [freq, setFreq] = useState("");
+  const [type, setType] = useState("COMMON_FEE");
   const [state, action, pending] = useActionState<ActionState, FormData>(addUtility, {});
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>+ เพิ่มมิเตอร์ / บัญชีสาธารณูปโภค</button>;
+  if (!open) return <button onClick={() => setOpen(true)} className={link}>+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค</button>;
+  const meter = type === "ELECTRICITY" || type === "WATER";
   return (
-    <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
+    <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="property_id" value={propertyId} />
-      <label className="text-xs">ประเภท
-        <select name="utility_type" className={`mt-1 block ${small}`}>
-          <option value="ELECTRICITY">ไฟฟ้า</option><option value="WATER">ประปา</option><option value="OTHER">อื่น ๆ</option>
+      <input type="hidden" name="currency" value={currency} />
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs">ประเภท
+          <select name="utility_type" value={type} onChange={(e) => setType(e.target.value)} className={`mt-1 block ${small}`}>
+            {Object.entries(UTIL_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label className="text-xs">{type === "LAND_TAX" ? "หน่วยงาน" : type === "COMMON_FEE" ? "นิติบุคคล / ผู้เก็บ" : "ผู้ให้บริการ"}
+          <input name="provider" placeholder={type === "LAND_TAX" ? "เช่น อบต. / เขต" : type === "COMMON_FEE" ? "" : "เช่น กฟน."} className={`mt-1 block w-36 ${small}`} />
+        </label>
+        {meter && <>
+          <label className="text-xs">เลขที่ผู้ใช้<input name="account_no" className={`mt-1 block w-32 ${small}`} /></label>
+          <label className="text-xs">เลขมิเตอร์<input name="meter_no" className={`mt-1 block w-32 ${small}`} /></label>
+        </>}
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs">ยอดประมาณ ({currency})
+          <input name="expected_amount" inputMode="decimal" placeholder="เว้นว่าง = ไม่ติดตาม" className={`mt-1 block w-36 ${small}`} />
+        </label>
+        <label className="text-xs">จ่าย
+          <select name="frequency" value={freq} onChange={(e) => setFreq(e.target.value)} className={`mt-1 block ${small}`}>
+            <option value="">— ไม่ติดตาม —</option>
+            <option value="MONTHLY">รายเดือน</option><option value="QUARTERLY">ราย 3 เดือน</option><option value="YEARLY">รายปี</option>
+          </select>
+        </label>
+        {(freq === "YEARLY" || freq === "QUARTERLY") && (
+          <label className="text-xs">{freq === "YEARLY" ? "เดือนที่ครบกำหนด" : "เริ่มเดือน"}
+            <select name="due_month" defaultValue={type === "LAND_TAX" ? "4" : "1"} className={`mt-1 block ${small}`}>
+              {TH_MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+          </label>
+        )}
+        {freq && (
+          <label className="text-xs">ทุกวันที่
+            <input name="due_day" inputMode="numeric" placeholder="1–31" className={`mt-1 block w-16 ${small}`} />
+          </label>
+        )}
+        <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-40 ${small}`} /></label>
+      </div>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={sbtn}>เพิ่ม</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  );
+}
+
+type Card = { id: string; label: string; currency: string };
+type Person = { id: string; name: string };
+
+/** บันทึกจ่ายค่าใช้จ่ายประจำ 1 งวด (ใช้ทั้งหน้ารายละเอียดและหน้ารวม) */
+export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today }: {
+  assetId: string; utilityId: string; period: string; label: string; expected: number; currency: string; category: string;
+  banks: Bank[]; cards: Card[]; persons: Person[]; today: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
+  const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
+  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (!open) return <button onClick={() => setOpen(true)} className={link}>บันทึกจ่าย</button>;
+  const sameBanks = banks.filter((b) => b.currency === currency);
+  const sameCards = cards.filter((c) => c.currency === currency);
+  return (
+    <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="utility_id" value={utilityId} />
+      <input type="hidden" name="cost_period" value={period} />
+      <input type="hidden" name="currency" value={currency} />
+      <input type="hidden" name="expense_category" value={category} />
+      <input type="hidden" name="description" value={label} />
+      <label className="text-xs">ยอดที่จ่าย
+        <input name="amount" required inputMode="decimal" defaultValue={expected > 0 ? String(expected) : ""} className={`mt-1 block w-28 ${small}`} />
+      </label>
+      <label className="text-xs">วันที่จ่าย
+        <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
+      </label>
+      <label className="text-xs">จ่ายจาก
+        <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={`mt-1 block ${small}`}>
+          <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
         </select>
       </label>
-      <label className="text-xs">ผู้ให้บริการ<input name="provider" placeholder="เช่น กฟน." className={`mt-1 block w-28 ${small}`} /></label>
-      <label className="text-xs">เลขที่ผู้ใช้<input name="account_no" className={`mt-1 block w-32 ${small}`} /></label>
-      <label className="text-xs">เลขมิเตอร์<input name="meter_no" className={`mt-1 block w-32 ${small}`} /></label>
+      {via === "bank" && (
+        <label className="text-xs">บัญชี
+          <select name="bank_asset_id" required className={`mt-1 block ${small}`}>
+            {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+        </label>
+      )}
+      {via === "card" && (
+        <label className="text-xs">บัตร
+          <select name="card_id" required className={`mt-1 block ${small}`}>
+            {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </label>
+      )}
+      {via === "cash" && (
+        <label className="text-xs">ผู้จ่าย
+          <select name="person_id" required className={`mt-1 block ${small}`}>
+            {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      )}
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
-      <button disabled={pending} className={sbtn}>เพิ่ม</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+      <button disabled={pending} className={sbtn}>บันทึก</button>
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   );

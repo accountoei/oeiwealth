@@ -13,7 +13,13 @@ export const NAV: NavGroup[] = [
     ],
   },
   { label: "Investments", href: "/investments", ready: true },
-  { label: "Property", href: "/property", ready: true },
+  {
+    label: "Property",
+    items: [
+      { label: "อสังหาริมทรัพย์", href: "/property", ready: true },
+      { label: "ค่าใช้จ่ายประจำ", href: "/property/costs", ready: true },
+    ],
+  },
   { label: "Alternative Assets", href: "/alternative", ready: true },
   { label: "Income & Expenses", href: "/income-expenses", ready: true },
   { label: "Insurance", href: "/insurance", ready: true },
@@ -38,3 +44,7 @@ export const NAV: NavGroup[] = [
     ],
   },
 ];
+
+/** ทุก href ในเมนู (ใช้เลือกเมนูที่ตรงที่สุดตอนไฮไลต์) */
+export const NAV_HREFS: string[] = NAV.flatMap((g) => (g.items ? g.items.map((i) => i.href) : g.href ? [g.href] : []))
+  .map((h) => h.split("#")[0]);

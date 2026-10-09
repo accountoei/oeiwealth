@@ -412,6 +412,39 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p
               WHERE n.nspname IN ('public','private') AND p.prosecdef
                 AND NOT coalesce('search_path=""' = ANY (p.proconfig), false)), 'ทุก SECURITY DEFINER ตั้ง search_path = ''''');
 
+\echo '== 13d. ค่าใช้จ่ายประจำอสังหาฯ (ประมาณ vs จ่ายจริง)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$INSERT INTO public.property_utilities(property_id, utility_type, expected_amount)
+  SELECT id, 'COMMON_FEE', 1000 FROM public.property_details WHERE asset_id = t.a('บ้าน A')$$,
+  'pu_schedule_pair', 'ยอดประมาณต้องมีความถี่คู่กัน');
+INSERT INTO public.property_utilities(property_id, utility_type, provider, expected_amount, frequency, due_day)
+  SELECT id, 'COMMON_FEE', 'นิติบุคคล', 1500, 'MONTHLY', 1 FROM public.property_details WHERE asset_id = t.a('บ้าน A');
+INSERT INTO public.property_utilities(property_id, utility_type, expected_amount, frequency, due_day, due_month)
+  SELECT id, 'LAND_TAX', 3000, 'YEARLY', 30, (extract(month FROM current_date)::int % 12) + 1
+    FROM public.property_details WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT count(*) FROM public.v_property_cost_tracking WHERE utility_type = 'COMMON_FEE') = 1
+            AND (SELECT status FROM public.v_property_cost_tracking WHERE utility_type = 'COMMON_FEE') IN ('OVERDUE','PENDING'),
+            'ค่าส่วนกลางรายเดือน: เริ่มงวดเดือนที่เพิ่มรายการ · ยังไม่จ่าย');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_property_cost_tracking WHERE utility_type = 'LAND_TAX'),
+            'ภาษีที่ดินรายปี (ครบกำหนดเดือนหน้า) ยังไม่ขึ้นงวด');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ค่าส่วนกลาง บ้าน A', 'amount', 1500,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'expense_category', 'บ้าน / สาธารณูปโภค',
+  'property_utility_id', (SELECT id FROM public.property_utilities WHERE utility_type = 'COMMON_FEE'),
+  'cost_period', date_trunc('month', current_date)::date));
+SELECT t.ok((SELECT status = 'PAID' AND paid_amount = 1500 AND gap = 0 FROM public.v_property_cost_tracking WHERE utility_type = 'COMMON_FEE'),
+            'บันทึกจ่าย → PAID · ยอดจ่าย = ประมาณ');
+SELECT t.ok((SELECT related_asset_id = t.a('บ้าน A') AND cost_period = date_trunc('month', current_date)::date
+               FROM public.expense_items WHERE property_utility_id IS NOT NULL),
+            'ค่าใช้จ่ายผูกทรัพย์สิน + งวดให้เอง');
+SELECT t.fails($$INSERT INTO public.expense_items(monthly_expense_id, date, description, amount, property_utility_id)
+  SELECT m.id, current_date, 'x', 1, u.id FROM public.monthly_expenses m, public.property_utilities u
+   WHERE m.year_month = date_trunc('month', current_date)::date LIMIT 1$$,
+  'exp_cost_period_pair', 'ผูกรายการต้องมีงวดเสมอ');
+UPDATE public.expense_items SET deleted_at = now() WHERE property_utility_id IS NOT NULL;
+SELECT t.ok((SELECT status <> 'PAID' FROM public.v_property_cost_tracking WHERE utility_type = 'COMMON_FEE'),
+            'ลบรายการจ่าย → กลับเป็นยังไม่จ่าย');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
