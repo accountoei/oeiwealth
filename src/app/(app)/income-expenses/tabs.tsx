@@ -32,10 +32,10 @@ export function TabNav({ tabs }: { tabs: [string, string][] }) {
   );
 }
 
-/** ปุ่มเลื่อนเดือน (โหลดข้อมูลเดือนใหม่จาก Server) · คงแท็บที่เปิดอยู่ */
-export function MonthNav({ prev, next, label }: { prev: string; next: string; label: string }) {
+/** ปุ่มเลื่อนเดือน (โหลดข้อมูลเดือนใหม่จาก Server) · คงแท็บและสมาชิกที่เลือกไว้ */
+export function MonthNav({ prev, next, label, person }: { prev: string; next: string; label: string; person?: string }) {
   const { active } = useContext(Ctx);
-  const href = (m: string) => `/income-expenses?tab=${active}&m=${m}`;
+  const href = (m: string) => `/income-expenses?tab=${active}&m=${m}${person ? `&p=${person}` : ""}`;
   return (
     <div className="flex items-center gap-2 text-sm">
       <Link href={href(prev)} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">←</Link>

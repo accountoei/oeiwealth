@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, money, thDate } from "@/lib/format";
+import { loadPersonView } from "@/lib/person-view";
+import PersonFilter from "@/components/PersonFilter";
 
 type Row = {
   asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
@@ -10,9 +12,10 @@ type Row = {
 type Bal = { asset_id: string; confirmed_balance: number | null; confirmed_date: string | null;
   calculated_balance: number | null; balance_label: string };
 
-export default async function CashPage() {
+export default async function CashPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const me = await requireAppUser();
   const supabase = await createClient();
+  const pv = await loadPersonView((await searchParams).p);
   const [{ data: accounts, error }, { data: balances }, { data: owners }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status").order("name"),
     supabase.from("v_bank_balance_current").select("asset_id,confirmed_balance,confirmed_date,calculated_balance,balance_label"),
@@ -22,9 +25,10 @@ export default async function CashPage() {
   const ownersOf = (id: string) => (owners ?? []).filter((o) => o.asset_id === id && !o.end_date)
     .map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ");
 
+  const list = (accounts as Row[] | null ?? []).filter((a) => pv.showAsset(a.asset_id));
   const totals = new Map<string, number>();
-  (accounts as Row[] | null ?? []).filter((a) => a.status === "ACTIVE").forEach((a) => {
-    const v = Number(bal.get(a.asset_id)?.calculated_balance ?? 0);
+  list.filter((a) => a.status === "ACTIVE").forEach((a) => {
+    const v = Number(bal.get(a.asset_id)?.calculated_balance ?? 0) * pv.assetShare(a.asset_id);
     totals.set(a.currency, (totals.get(a.currency) ?? 0) + v);
   });
 
@@ -35,11 +39,14 @@ export default async function CashPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Cash &amp; Deposits</h1>
           <p className="text-sm text-slate-500">บัญชีเงินฝากทั้งหมดของครอบครัว</p>
         </div>
-        {me.role !== "VIEWER" && (
-          <Link href="/financial/cash/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
-            + เพิ่มบัญชี
-          </Link>
-        )}
+        <div className="flex items-start gap-2">
+          <PersonFilter persons={pv.persons} value={pv.personId} />
+          {me.role !== "VIEWER" && (
+            <Link href="/financial/cash/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
+              + เพิ่มบัญชี
+            </Link>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
@@ -64,10 +71,10 @@ export default async function CashPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {(accounts as Row[] | null ?? []).length === 0 && (
-              <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">ยังไม่มีบัญชี</td></tr>
+            {list.length === 0 && (
+              <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"}</td></tr>
             )}
-            {(accounts as Row[] | null ?? []).map((a) => {
+            {list.map((a) => {
               const b = bal.get(a.asset_id);
               return (
                 <tr key={a.asset_id} className="hover:bg-slate-50">
@@ -80,7 +87,10 @@ export default async function CashPage() {
                     </div>
                   </td>
                   <td className="px-4 text-slate-600">{ownersOf(a.asset_id) || <span className="text-amber-700">ยังไม่ระบุเจ้าของ</span>}</td>
-                  <td className="px-4 text-right tabular-nums">{money(b?.calculated_balance, a.currency)}</td>
+                  <td className="px-4 text-right tabular-nums">
+                    {money(b?.calculated_balance == null ? null : Number(b.calculated_balance) * pv.assetShare(a.asset_id), a.currency)}
+                    {pv.assetPct(a.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(a.asset_id)}% ของ {money(b?.calculated_balance, a.currency)}</div>}
+                  </td>
                   <td className="px-4 text-xs">
                     {b?.balance_label === "CALCULATED"
                       ? <span className="text-amber-700">คำนวณ (ยืนยันล่าสุด {thDate(b?.confirmed_date)})</span>

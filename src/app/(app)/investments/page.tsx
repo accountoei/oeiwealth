@@ -2,15 +2,18 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { HOLDING_TYPE_LABEL, ITX_LABEL, money, thDate, todayBangkok, addDays, blueAt } from "@/lib/format";
+import { loadPersonView } from "@/lib/person-view";
+import PersonFilter from "@/components/PersonFilter";
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null };
 type H = { id: string; portfolio_asset_id: string; holding_type: string; currency: string; current_value: number | null;
   status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean };
 
-export default async function InvestmentsPage() {
+export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const me = await requireAppUser();
   const supabase = await createClient();
+  const pv = await loadPersonView((await searchParams).p);
   const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: fx }, { data: family }, { data: txs }] = await Promise.all([
     supabase.from("v_portfolio_values").select("*").order("name"),
     supabase.from("investment_portfolios").select("asset_id,institution,status").is("deleted_at", null),
@@ -19,23 +22,39 @@ export default async function InvestmentsPage() {
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("investment_transactions")
       .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
-      .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
+      .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(pv.personId ? 60 : 10),
   ]);
   const goLive = family?.go_live_date ?? "";
-  const { data: income } = await supabase.from("income_transactions").select("base_amount")
-    .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", goLive || "1900-01-01");
+  // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
+  const { data: income } = pv.personId
+    ? await supabase.from("v_income_by_person").select("base_amount:base_amount_share").eq("person_id", pv.personId)
+        .eq("is_investment_income", true).gte("date", goLive || "1900-01-01")
+    : await supabase.from("income_transactions").select("base_amount")
+        .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", goLive || "1900-01-01");
 
-  const list = (pvs as PV[] | null) ?? [];
+  // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน · มูลค่า × สัดส่วน
+  const sh = (assetId: string) => pv.assetShare(assetId);
+  const list = ((pvs as PV[] | null) ?? []).filter((p) => pv.showAsset(p.asset_id)).map((p) => ({ ...p,
+    full_display_value: p.display_value,
+    display_value: p.display_value == null ? null : Number(p.display_value) * sh(p.asset_id),
+    thb_value: p.thb_value == null ? null : Number(p.thb_value) * sh(p.asset_id),
+    in_transit_thb: p.in_transit_thb == null ? null : Number(p.in_transit_thb) * sh(p.asset_id) }));
   type R = { unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
   const retRows = await Promise.all(list.map(async (p) => {
     const { data } = await supabase.rpc("investment_returns", { p_portfolio_asset_id: p.asset_id });
     const rs = (data as R[] | null) ?? [];
     const sum = (k: keyof R) => rs.reduce((t, r) => t + Number(r[k] ?? 0), 0);
-    return { asset_id: p.asset_id, name: p.name, unreal: sum("unrealized_thb"), unrealFx: sum("unrealized_fx_thb"), real: sum("realized_thb"),
-      realFx: sum("realized_fx_thb"), income: sum("income_thb") - sum("fees_thb"), total: sum("total_thb") };
+    const k = sh(p.asset_id);
+    return { asset_id: p.asset_id, name: p.name, unreal: sum("unrealized_thb") * k, unrealFx: sum("unrealized_fx_thb") * k, real: sum("realized_thb") * k,
+      realFx: sum("realized_fx_thb") * k, income: (sum("income_thb") - sum("fees_thb")) * k, total: sum("total_thb") * k };
   }));
+  const recent = (txs ?? []).filter((t) => {
+    const pa = (Array.isArray(t.investment_portfolios) ? t.investment_portfolios[0] : t.investment_portfolios) as { asset_id: string } | null;
+    return !pa || pv.showAsset(pa.asset_id);
+  }).slice(0, 10);
   const inst = new Map((pfs ?? []).map((p) => [p.asset_id, p.institution]));
-  const holdings = ((hs as H[] | null) ?? []).filter((h) => h.status === "ACTIVE");
+  const holdings = ((hs as H[] | null) ?? []).filter((h) => h.status === "ACTIVE" && pv.showAsset(h.portfolio_asset_id))
+    .map((h) => ({ ...h, current_value: h.current_value == null ? null : Number(h.current_value) * sh(h.portfolio_asset_id) }));
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null, c: string) => (v == null || !rate.get(c) ? 0 : Number(v) * (rate.get(c) as number));
   const total = list.reduce((s, p) => s + Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), 0);
@@ -58,9 +77,12 @@ export default async function InvestmentsPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Investments</h1>
           <p className="text-sm text-slate-500">ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และ FX ล่าสุดของ ธปท.</p>
         </div>
-        {me.role !== "VIEWER" && (
-          <Link href="/investments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มพอร์ต</Link>
-        )}
+        <div className="flex items-start gap-2">
+          <PersonFilter persons={pv.persons} value={pv.personId} />
+          {me.role !== "VIEWER" && (
+            <Link href="/investments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มพอร์ต</Link>
+          )}
+        </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
@@ -72,7 +94,7 @@ export default async function InvestmentsPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {list.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีพอร์ต</p>}
+        {list.length === 0 && <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>}
         {list.map((p) => {
           const n = holdings.filter((h) => h.portfolio_asset_id === p.asset_id && h.holding_type !== "CASH").length;
           const atCost = holdings.some((h) => h.portfolio_asset_id === p.asset_id && h.valued_at_cost);
@@ -82,6 +104,7 @@ export default async function InvestmentsPage() {
               <div className="font-medium text-slate-900">{p.name}</div>
               <div className="text-xs text-slate-500">{inst.get(p.asset_id)} · {p.portfolio_currency} · {n} หลักทรัพย์</div>
               <div className="mt-3 text-xl font-semibold tabular-nums">{money(p.display_value, p.portfolio_currency, 0)}</div>
+              {pv.assetPct(p.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(p.asset_id)}% ของ {money(p.full_display_value, p.portfolio_currency, 0)}</div>}
               <div className="text-xs text-slate-500">
                 {p.portfolio_currency !== "THB" && `≈ ${money(Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), "THB", 0)} · `}
                 ณ {thDate(p.display_value_date)}
@@ -130,9 +153,9 @@ export default async function InvestmentsPage() {
       <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-2 font-medium text-slate-900">รายการล่าสุด</h2>
-          {(txs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
+          {recent.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
             <ul className="space-y-1 text-sm">
-              {(txs ?? []).map((t) => {
+              {recent.map((t) => {
                 const hn = (Array.isArray(t.investment_holdings) ? t.investment_holdings[0] : t.investment_holdings) as { name: string } | null;
                 const pa = (Array.isArray(t.investment_portfolios) ? t.investment_portfolios[0] : t.investment_portfolios) as { asset_id: string } | null;
                 return (

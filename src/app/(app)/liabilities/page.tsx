@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { LIABILITY_TYPE_LABEL, money, thDate } from "@/lib/format";
+import { loadPersonView } from "@/lib/person-view";
+import PersonFilter from "@/components/PersonFilter";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
   amount: number | null; balance_date: string | null; due_date: string | null; monthly_payment: number | null;
@@ -21,11 +23,17 @@ function linkOf(r: Row) {
   return "/property";
 }
 
-export default async function LiabilitiesPage() {
+export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const { data, error } = await supabase.from("v_liabilities_all").select("*").order("liability_source").order("name");
-  const rows = (data as Row[] | null) ?? [];
+  const [pv, { data, error }] = await Promise.all([
+    searchParams.then((sp) => loadPersonView(sp.p, { liabilities: true })),
+    supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
+  ]);
+  // มุมมองรายบุคคล: เฉพาะหนี้ที่คนนั้นมีส่วน · ยอด × สัดส่วน (เงินกู้ตามผู้รับผิดชอบ · บัตรตามเจ้าของบัตร · เงินประกันตามเจ้าของทรัพย์)
+  const rows = ((data as Row[] | null) ?? []).filter((r) => pv.showLiability(r.source_id))
+    .map((r) => ({ ...r, full_amount: r.amount, pct: pv.liabilityPct(r.source_id),
+      amount: r.amount == null ? null : Number(r.amount) * pv.liabilityShare(r.source_id) }));
   const totals = new Map<string, number>();
   rows.forEach((r) => totals.set(r.currency, (totals.get(r.currency) ?? 0) + Number(r.amount ?? 0)));
 
@@ -36,19 +44,22 @@ export default async function LiabilitiesPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Liabilities</h1>
           <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า (ยอดคงค้างที่ยืนยันล่าสุด)</p>
         </div>
+        <div className="flex flex-wrap items-start gap-2">
+        <PersonFilter persons={pv.persons} value={pv.personId} />
         {me.role !== "VIEWER" && (
           <div className="flex gap-2">
             <Link href="/family/cards" className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">บัตรเครดิต</Link>
             <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้</Link>
           </div>
         )}
+        </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       {totals.size > 0 && (
         <div className="flex flex-wrap gap-3">
           {[...totals.entries()].map(([ccy, v]) => (
             <div key={ccy} className="rounded-xl border border-slate-200 bg-white px-5 py-3">
-              <div className="text-xs text-slate-500">หนี้รวม {ccy}</div>
+              <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้รวม"} {ccy}</div>
               <div className="text-lg font-semibold tabular-nums text-red-700">{money(v, ccy)}</div>
             </div>
           ))}
@@ -61,7 +72,7 @@ export default async function LiabilitiesPage() {
               <th className="px-4">ค่างวด / ครบกำหนด</th><th className="px-4">หมายเหตุ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหนี้สิน</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีหนี้สินของ ${pv.personName}` : "ยังไม่มีหนี้สิน"}</td></tr>}
             {rows.map((r) => (
               <tr key={`${r.liability_source}-${r.source_id}`} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
@@ -70,7 +81,8 @@ export default async function LiabilitiesPage() {
                     {SOURCE_LABEL[r.liability_source]}{r.liability_source === "LOAN" && ` · ${LIABILITY_TYPE_LABEL[r.subtype] ?? r.subtype}`}
                   </div>
                 </td>
-                <td className="px-4 text-right tabular-nums">{money(r.amount, r.currency)}</td>
+                <td className="px-4 text-right tabular-nums">{money(r.amount, r.currency)}
+                  {r.pct != null && <div className="text-xs text-slate-500">{r.pct}% ของ {money(r.full_amount, r.currency)}</div>}</td>
                 <td className="px-4">{thDate(r.balance_date)}</td>
                 <td className="px-4 text-slate-600">
                   {r.monthly_payment ? `${money(r.monthly_payment)}/เดือน` : ""}
