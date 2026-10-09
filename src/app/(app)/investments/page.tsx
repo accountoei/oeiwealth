@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { HOLDING_TYPE_LABEL, ITX_LABEL, money, thDate, todayBangkok, addDays } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, ITX_LABEL, money, thDate, todayBangkok, addDays, blueAt } from "@/lib/format";
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null };
@@ -177,16 +177,24 @@ function Alloc({ title, rows, total }: { title: string; rows: [string, number][]
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <h2 className="mb-3 font-medium text-slate-900">{title}</h2>
       <ul className="space-y-2 text-sm">
-        {rows.sort((a, b) => b[1] - a[1]).map(([k, v]) => {
+        {rows.sort((a, b) => b[1] - a[1]).map(([k, v], i) => {
           const pct = (v / total) * 100;
           return (
             <li key={k}>
-              <div className="flex justify-between"><span>{k}</span><span className="tabular-nums text-slate-600">{pct.toFixed(1)}% · {money(v, undefined, 0)}</span></div>
-              <div className="mt-1 h-1.5 rounded bg-slate-100"><div className="h-1.5 rounded bg-slate-700" style={{ width: `${pct}%` }} /></div>
+              <div className="flex justify-between gap-2">
+                <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: blueAt(i) }} />{k}</span>
+                <span className="tabular-nums text-slate-600"><span className="font-medium text-slate-800">{pct.toFixed(1)}%</span> · {money(v, undefined, 0)}</span>
+              </div>
+              <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-blue-50">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${blueAt(i)}, ${blueAt(i + 1)})` }} />
+              </div>
             </li>
           );
         })}
       </ul>
+      <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-blue-50" aria-hidden>
+        {rows.map(([k, v], i) => <div key={k} style={{ width: `${(v / total) * 100}%`, background: blueAt(i) }} className="h-full border-r border-white/70 last:border-r-0" />)}
+      </div>
     </div>
   );
 }

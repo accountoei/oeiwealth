@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { money, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 
 type Preview = {
@@ -177,14 +177,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <h2 className="mb-3 font-medium text-slate-900">สัดส่วนสินทรัพย์</h2>
           {person ? <PersonItems items={(items as Item[] | null) ?? []} /> : (
             <ul className="space-y-2.5 text-sm">
-              {GROUP.map(([k, label]) => {
+              {GROUP.map(([k, label], gi) => {
                 const v = Number((dm as unknown as Record<string, number> | null)?.[k] ?? 0);
                 const pct = dm?.total_assets ? (v / Number(dm.total_assets)) * 100 : 0;
                 return (
                   <li key={k}>
-                    <div className="flex justify-between gap-2"><span>{label}</span><span className="tabular-nums text-slate-600">{pct.toFixed(1)}%</span></div>
-                    <div className="mt-1 h-2 rounded bg-slate-100" title={money(v, "THB", 0)}>
-                      <div className="h-2 rounded bg-slate-700" style={{ width: `${pct}%` }} />
+                    <div className="flex justify-between gap-2">
+                      <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: blueAt(gi) }} />{label}</span>
+                      <span className="tabular-nums font-medium text-slate-700">{pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-blue-50" title={money(v, "THB", 0)}>
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${blueAt(gi)}, ${blueAt(gi + 1)})` }} />
                     </div>
                     <div className="mt-0.5 text-xs tabular-nums text-slate-500">{money(v, "THB", 0)}</div>
                   </li>
@@ -330,18 +333,25 @@ function TrendChart({ points, selected }: { points: { label: string; date: strin
   const path = points.map((pt, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(pt.v).toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="กราฟ Net Worth">
+      <defs>
+        <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1f5eff" stopOpacity={0.22} />
+          <stop offset="100%" stopColor="#1f5eff" stopOpacity={0} />
+        </linearGradient>
+      </defs>
       {ticks.map((t, i) => (
         <g key={i}>
-          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e2e8f0" strokeWidth={1} />
+          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e6ecf7" strokeWidth={1} strokeDasharray="3 4" />
           <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#64748b">{fmt(t)}</text>
         </g>
       ))}
-      <path d={path} fill="none" stroke="#0f172a" strokeWidth={2} strokeLinejoin="round" />
+      <path d={`${path} L${x(points.length - 1).toFixed(1)},${H - B} L${x(0).toFixed(1)},${H - B} Z`} fill="url(#nwFill)" stroke="none" />
+      <path d={path} fill="none" stroke="#1f5eff" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
       {points.map((pt, i) => (
         <g key={i}>
           <circle cx={x(i)} cy={y(pt.v)} r={14} fill="transparent"><title>{`${pt.label} (${pt.date}): ${pt.v.toLocaleString("th-TH", { maximumFractionDigits: 0 })} บาท`}</title></circle>
-          {i === selected && <circle cx={x(i)} cy={y(pt.v)} r={10} fill="none" stroke="#94a3b8" strokeWidth={2} pointerEvents="none" />}
-          <circle cx={x(i)} cy={y(pt.v)} r={5} fill={pt.solid ? "#0f172a" : "#ffffff"} stroke="#0f172a" strokeWidth={2} pointerEvents="none" />
+          {i === selected && <circle cx={x(i)} cy={y(pt.v)} r={10} fill="none" stroke="#86afff" strokeWidth={2.5} pointerEvents="none" />}
+          <circle cx={x(i)} cy={y(pt.v)} r={5} fill={pt.solid ? "#1f5eff" : "#ffffff"} stroke="#1f5eff" strokeWidth={2} pointerEvents="none" />
           {(i === 0 || i === points.length - 1 || points.length <= 8) && (
             <text x={x(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"} fontSize={11} fill="#64748b">{pt.label}</text>
           )}

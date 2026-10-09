@@ -194,3 +194,7 @@ export function extFromMime(m: string | null | undefined) {
   };
   return map[m ?? ""] ?? "";
 }
+
+/** โทนน้ำเงินสำหรับกราฟ / แถบสัดส่วน (เข้ม → อ่อน) */
+export const BLUES = ["#1442b8", "#1f5eff", "#3d78ff", "#5f92ff", "#86afff", "#a9c6ff", "#c7daff"];
+export const blueAt = (i: number) => BLUES[Math.min(i, BLUES.length - 1)];
