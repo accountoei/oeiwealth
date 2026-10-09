@@ -12,6 +12,8 @@ import {
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { MonthNav, TabNav, TabPanel, TabsProvider } from "./tabs";
+import { loadPersonView } from "@/lib/person-view";
+import PersonFilter from "@/components/PersonFilter";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "โอน & จ่ายหนี้"]];
@@ -25,7 +27,7 @@ const TRACK: Record<string, { text: string; cls: string }> = {
 };
 const REIMB: Record<string, string> = { PENDING: "รอรับเงินคืน", PARTIAL: "ได้คืนบางส่วน", FULL: "ได้คืนครบ" };
 
-type Sp = Promise<{ tab?: string; m?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -37,6 +39,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const { start, end, prev, next } = monthRange(ym);
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
+  const pv = await loadPersonView(sp.p, { liabilities: true });
+  // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (ตามกติกาเดียวกับ Dashboard: person → 100% · ทรัพย์สิน → สัดส่วนเจ้าของ)
+  const [{ data: incShares }, { data: expShares }] = pv.personId ? await Promise.all([
+    supabase.from("v_income_by_person").select("income_id,share_percent,amount_share,tax_share,base_amount_share")
+      .eq("person_id", pv.personId).gte("date", start).lte("date", end),
+    supabase.from("v_expense_by_person").select("expense_item_id,share_percent,amount_share,base_amount_share")
+      .eq("person_id", pv.personId).gte("date", start).lte("date", end),
+  ]) : [{ data: null }, { data: null }];
+  const incShare = new Map((incShares ?? []).map((r) => [r.income_id as string, r]));
+  const expShare = new Map((expShares ?? []).map((r) => [r.expense_item_id as string, r]));
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
@@ -94,25 +106,46 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     cost_period: string; due_date: string; expected_amount: number; paid_amount: number; currency: string; status: string };
   type Util = { id: string; utility_type: string; provider: string | null; expected_amount: number; currency: string; frequency: string;
     due_day: number | null; due_month: number | null; property_details: { asset_id: string; assets: { name: string; status: string; deleted_at: string | null } } };
-  const costs = (costRows as Cost[] | null) ?? [];
+  const costs = ((costRows as Cost[] | null) ?? []).filter((c) => pv.showAsset(c.property_asset_id));
   const utils = ((utilRows as unknown as Util[] | null) ?? [])
-    .filter((u) => !u.property_details.assets.deleted_at && u.property_details.assets.status === "ACTIVE")
+    .filter((u) => !u.property_details.assets.deleted_at && u.property_details.assets.status === "ACTIVE" && pv.showAsset(u.property_details.asset_id))
     .sort((a, b) => a.property_details.assets.name.localeCompare(b.property_details.assets.name, "th"));
   const properties: PropertyPick[] = ((propRows ?? []) as unknown as { id: string; asset_id: string;
     assets: { name: string; currency: string; status: string; deleted_at: string | null } }[])
     .filter((p) => !p.assets.deleted_at && p.assets.status === "ACTIVE")
     .map((p) => ({ id: p.id, assetId: p.asset_id, name: p.assets.name, currency: p.assets.currency }))
     .sort((a, b) => a.name.localeCompare(b.name, "th"));
-  const costYear = utils.reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0)), new Map<string, number>());
+  const costYear = utils.reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0) * pv.assetShare(u.property_details.asset_id)), new Map<string, number>());
   const utilName = (t: string, p: string | null) => [UTIL_LABEL[t] ?? t, p].filter(Boolean).join(" · ");
 
-  const incomeList = incomes ?? [];
+  // รายได้ / ค่าใช้จ่าย: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = เฉพาะรายการที่มีส่วน · ยอด × สัดส่วน (เก็บยอดเต็มไว้แสดงประกอบ)
+  const incomeList = (incomes ?? []).filter((i) => !pv.personId || incShare.has(i.id)).map((i) => {
+    const sh = incShare.get(i.id);
+    return !sh ? { ...i, full_amount: i.amount, full_tax: i.tax, pct: null as number | null } : { ...i, full_amount: i.amount, full_tax: i.tax,
+      pct: Number(sh.share_percent) < 100 ? Number(sh.share_percent) : null,
+      amount: Number(sh.amount_share), tax: Number(sh.tax_share), base_amount: Number(sh.base_amount_share) };
+  });
   const grossThb = incomeList.reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const taxThb = incomeList.reduce((s, i) => s + (Number(i.amount) ? Number(i.tax ?? 0) * Number(i.base_amount ?? 0) / Number(i.amount) : 0), 0);
   const investThb = incomeList.filter((i) => i.source_transaction_id).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const track = month?.tracking_status ?? "NOT_TRACKED";
-  const expenseThb = Number(month?.total_amount ?? 0);
-  const reimbThb = (reimbs ?? []).reduce((s, r) => s + thb(r.amount, r.currency), 0);
+  const itemList = (items ?? []).filter((i) => !pv.personId || expShare.has(i.id)).map((i) => {
+    const sh = expShare.get(i.id);
+    return { ...i, full_amount: i.amount, share: sh ? Number(sh.share_percent) / 100 : 1,
+      pct: sh && Number(sh.share_percent) < 100 ? Number(sh.share_percent) : null,
+      amount: sh ? Number(sh.amount_share) : i.amount };
+  });
+  const itemShare = new Map(itemList.map((i) => [i.id, i.share]));
+  const expenseThb = pv.personId ? (expShares ?? []).reduce((s, r) => s + Number(r.base_amount_share ?? 0), 0) : Number(month?.total_amount ?? 0);
+  const reimbThb = (reimbs ?? []).filter((r) => !pv.personId || itemShare.has(r.expense_item_id))
+    .reduce((s, r) => s + thb(r.amount, r.currency) * (itemShare.get(r.expense_item_id) ?? 1), 0);
+  // รายได้ที่คาดไว้: รายได้ประจำตามเจ้าของ · ค่าเช่าตามเจ้าของทรัพย์สิน
+  const expectedList = (expected ?? []).filter((e) => (e.source_type === "LEASE" ? pv.showAsset(e.asset_id) : pv.isPerson(e.person_id)))
+    .map((e) => ({ ...e, pct: e.source_type === "LEASE" ? pv.assetPct(e.asset_id) : null }));
+  const templateList = (templates ?? []).filter((t) => pv.isPerson(t.person_id));
+  // โอน & จ่ายหนี้: รายการที่แตะบัญชี / บัตร / หนี้ ของคนนั้น (แสดงยอดเต็ม)
+  const moveList = (moves ?? []).filter((m) => !pv.personId || [m.from_asset_id, m.to_asset_id].some((id) => id && pv.showAsset(id))
+    || [m.to_credit_card_id, m.to_liability_id].some((id) => id && pv.showLiability(id)));
   const savings = grossThb - taxThb - (expenseThb - reimbThb);
   const rs = new Map((reimbStatus ?? []).map((r) => [r.expense_item_id, r]));
   const inMonth = start <= today && (!goLive || end >= goLive);
@@ -125,7 +158,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <h1 className="text-2xl font-semibold text-slate-900">Income &amp; Expenses</h1>
           <p className="text-sm text-slate-500">รายได้ · ค่าใช้จ่าย (ไม่บังคับบันทึก) · เงินคืน · โอนและจ่ายหนี้</p>
         </div>
-        <MonthNav prev={prev} next={next} label={thMonth(start)} />
+        <div className="flex flex-wrap items-start gap-3">
+          <PersonFilter persons={pv.persons} value={pv.personId} />
+          <MonthNav prev={prev} next={next} label={thMonth(start)} person={pv.personId} />
+        </div>
       </div>
 
       <TabNav tabs={TABS} />
@@ -144,7 +180,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-2 font-medium text-slate-900">ความเคลื่อนไหวของเงินในเดือนนี้</h2>
-            <MovesTable moves={moves ?? []} name={name} />
+            <MovesTable moves={moveList} name={name} />
           </section>
       </TabPanel>
 
@@ -154,9 +190,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำและสัญญาเช่า · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
-            {(expected ?? []).length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
+            {expectedList.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
-                {(expected ?? []).map((e) => {
+                {expectedList.map((e) => {
                   const tpl = (templates ?? []).find((t) => t.id === e.source_id);
                   return (
                     <div key={`${e.source_type}-${e.source_id}`} className="rounded-lg border border-slate-200 p-3 text-sm">
@@ -170,6 +206,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <div className="mt-1 tabular-nums">
                         คาดไว้ {money(e.expected_amount, e.currency)}
                         {e.received_amount != null && <span className="text-emerald-700"> · ได้รับ {money(e.received_amount)}</span>}
+                        {e.pct != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {e.pct}%</div>}
                       </div>
                       {canWrite && (e.status === "PENDING" || e.status === "OVERDUE") && (
                         <div className="mt-2">
@@ -203,15 +240,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           : pname(i.persons) ?? "ส่วนกลาง"}
                         {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
                       </td>
-                      <td className="text-right tabular-nums">{money(i.amount, i.currency)}</td>
+                      <td className="text-right tabular-nums">{money(i.amount, i.currency)}
+                        {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
                         {canWrite && !i.source_transaction_id && (
                           <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                             { name: "date", label: "วันที่", type: "date", value: i.date },
-                            { name: "amount", label: "Gross", type: "number", value: i.amount },
-                            { name: "tax", label: "ภาษี", type: "number", value: i.tax },
+                            { name: "amount", label: "Gross", type: "number", value: i.full_amount },
+                            { name: "tax", label: "ภาษี", type: "number", value: i.full_tax },
                             { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]} />
                         )}
                       </td>
@@ -224,9 +262,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
-            {(templates ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
+            {templateList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
               <ul className="space-y-1 text-sm">
-                {(templates ?? []).map((t) => (
+                {templateList.map((t) => (
                   <li key={t.id} className={t.active ? "" : "opacity-50"}>
                     {t.name} · {pname(t.persons) ?? "ส่วนกลาง"} · {money(t.expected_amount, t.currency)}
                     {" "}{t.frequency === "MONTHLY" ? "ทุกเดือน" : t.frequency === "QUARTERLY" ? "ทุก 3 เดือน" : "ทุกปี"}
@@ -273,6 +311,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     <div className="mt-1 tabular-nums">
                       คาดไว้ {money(c.expected_amount, c.currency)}
                       {Number(c.paid_amount) > 0 && <span className="text-emerald-700"> · จ่ายจริง {money(c.paid_amount)}</span>}
+                      {pv.assetPct(c.property_asset_id) != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {pv.assetPct(c.property_asset_id)}%</div>}
                     </div>
                     {canWrite && c.status !== "PAID" && (
                       <div className="mt-2">
@@ -298,15 +337,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               </div>
               {canWrite && track !== "NOT_TRACKED" && inMonth && <MonthStatusForm month={start} status={track} />}
             </div>
-            {(items ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
+            {itemList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
                   <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th className="pl-4">เงินคืน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(items ?? []).map((i) => {
+                  {itemList.map((i) => {
                     const r = rs.get(i.id);
-                    const cap = Number(i.expected_reimbursement_amount ?? i.amount);
+                    const cap = Number(i.expected_reimbursement_amount ?? i.full_amount);   // เงินคืนคิดจากยอดเต็มของรายการ
                     const remaining = cap - Number(r?.reimbursed_amount ?? 0);
                     return (
                       <tr key={i.id} className="align-top">
@@ -319,7 +358,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
                             : `เงินสด · ${pname(i.persons) ?? "ส่วนกลาง"}`}
                         </td>
-                        <td className="text-right tabular-nums">{money(i.amount, i.currency)}</td>
+                        <td className="text-right tabular-nums">{money(i.amount, i.currency)}
+                          {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
                         <td className="pl-4 text-xs">
                           {i.is_reimbursable && (
                             <>
@@ -338,7 +378,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                               { name: "date", label: "วันที่", type: "date", value: i.date },
                               { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },
-                              { name: "amount", label: "จำนวน", type: "number", value: i.amount },
+                              { name: "amount", label: "จำนวน", type: "number", value: i.full_amount },
                               { name: "expense_category", label: "หมวด", value: i.expense_category },
                               ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]} />
                           )}
@@ -379,7 +419,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <MovesTable moves={moves ?? []} name={name} actions={canWrite} canDelete={canDelete} />
+            <MovesTable moves={moveList} name={name} actions={canWrite} canDelete={canDelete} />
           </section>
       </TabPanel>
     </div>
