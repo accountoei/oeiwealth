@@ -21,7 +21,10 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // getClaims() ตรวจลายเซ็น JWT ในเครื่อง (คีย์ ES256) ไม่ต้องยิงไป Supabase ทุกคลิก · ถ้า Session หมดอายุจะ Refresh ให้เอง
+  // การตรวจสิทธิ์จริงอยู่ที่ requireAppUser() + RLS ในฐานข้อมูล
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub ? data.claims : null;
   const path = request.nextUrl.pathname;
   const isPublic = path.startsWith("/login") || path.startsWith("/auth");
 
