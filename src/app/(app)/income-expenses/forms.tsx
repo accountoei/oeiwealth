@@ -39,7 +39,7 @@ export function IncomeForm({ banks, persons, today, minDate }: { banks: Bank[]; 
   const [bank, setBank] = useState(banks[0]?.asset_id ?? "");
   const ccy = banks.find((b) => b.asset_id === bank)?.currency;
   return (
-    <Toggle label="+ รายได้">
+    <Toggle label="+ บันทึกรายได้">
       {(close) => (
         <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="font-medium text-slate-900">บันทึกรายได้</h3>
@@ -78,7 +78,7 @@ export function IncomeForm({ banks, persons, today, minDate }: { banks: Bank[]; 
               {bank ? ` · เงินเข้าบัญชีจริง ${money(n(amt) - n(tax), ccy)} (ระบบสร้างรายการเงินเข้าให้)` : " · ไม่มีเงินเข้าบัญชีในระบบ"}
             </p>
           )}
-          <p className="text-xs text-slate-500">ปันผล / ดอกเบี้ยจากพอร์ต บันทึกที่หน้า Investments · ค่าเช่าบันทึกจากการ์ด &ldquo;รายได้ที่คาดไว้&rdquo; หรือหน้า Property</p>
+          <p className="text-xs text-slate-500">ปันผล / ดอกเบี้ยจากพอร์ต บันทึกที่หน้า Investments · ค่าเช่าบันทึกจากการ์ดใน &ldquo;รายได้ที่ต้องได้รับ&rdquo; หรือหน้า Property</p>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
             <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
@@ -148,7 +148,7 @@ export function TemplateForm({ banks, persons, today }: { banks: Bank[]; persons
         <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
           <div>
             <h3 className="font-medium text-slate-900">รายได้ประจำ (เช่น เงินเดือน)</h3>
-            <p className="text-xs text-slate-500">ระบบแสดงเป็น &ldquo;รายได้ที่คาดไว้&rdquo; ทุกงวด ให้กดบันทึกยอดจริงเอง (ไม่สร้างรายได้อัตโนมัติ)</p>
+            <p className="text-xs text-slate-500">ระบบแสดงใน &ldquo;รายได้ที่ต้องได้รับ&rdquo; ทุกงวด ให้กดบันทึกยอดจริงเอง (ไม่สร้างรายได้อัตโนมัติ)</p>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <label className={lbl}>ชื่อ *<input name="name" required placeholder="เช่น เงินเดือน บริษัท A" className={input} /></label>
@@ -210,7 +210,7 @@ export function ExpenseForm({ banks, cards, persons, today, minDate }:
   const [via, setVia] = useState(banks.length ? "bank" : "cash");
   const [reimb, setReimb] = useState(false);
   return (
-    <Toggle label="+ ค่าใช้จ่าย">
+    <Toggle label="+ บันทึกค่าใช้จ่าย">
       {(close) => (
         <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="font-medium text-slate-900">บันทึกค่าใช้จ่าย</h3>

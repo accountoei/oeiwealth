@@ -8,7 +8,7 @@ import { NAV, NAV_HREFS } from "./nav";
 function NavLink({ href, label, ready, nested }: { href: string; label: string; ready?: boolean; nested?: boolean }) {
   const pathname = usePathname();
   const base = href.split("#")[0];
-  // เลือกเมนูที่ตรงที่สุด: /property/costs ไฮไลต์ "ค่าใช้จ่ายประจำ" ไม่ใช่ "อสังหาริมทรัพย์"
+  // เลือกเมนูที่ตรงที่สุด (ถ้ามีเมนูย่อยที่ path ยาวกว่า ให้ไฮไลต์เมนูย่อยนั้นแทน)
   const match = (h: string) => (h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(`${h}/`));
   const active = match(base) && !NAV_HREFS.some((h) => h !== base && h.startsWith(`${base}/`) && match(h));
   return (

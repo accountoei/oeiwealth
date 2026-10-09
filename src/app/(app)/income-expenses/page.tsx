@@ -2,7 +2,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import RowActions from "@/components/RowActions";
-import { INCOME_TYPE_LABEL, MOVE_LABEL, money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import {
+  COST_STATUS, INCOME_TYPE_LABEL, MOVE_LABEL, PERIODS_PER_YEAR, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthRange, scheduleText,
+  thDate, thMonth, todayBangkok,
+} from "@/lib/format";
+import { RecordCostForm, UtilityForm, type PropertyPick } from "../property/[id]/forms";
 import {
   ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
@@ -35,7 +39,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-    { data: reimbs }, { data: moves }, { data: claimsRaw }] = await Promise.all([
+    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,status").is("deleted_at", null).neq("status", "CLOSED"),
@@ -56,6 +60,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons(name))")
       .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
+    // ค่าใช้จ่ายประจำ (อสังหาฯ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+    supabase.from("v_property_cost_tracking")
+      .select("utility_id,property_asset_id,property_name,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status")
+      .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
+    supabase.from("property_utilities")
+      .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,assets!inner(name,status,deleted_at))")
+      .is("deleted_at", null).eq("active", true).not("frequency", "is", null),
+    supabase.from("property_details").select("id,asset_id,assets!inner(name,currency,status,deleted_at)").is("deleted_at", null),
   ]);
 
   const goLive = family?.go_live_date ?? "";
@@ -76,6 +88,22 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     return { id: c.id, currency: c.currency, label: [pol?.insurer, pol?.policy_no, pname(pol?.persons),
       c.claim_date && `เคลม ${thDate(c.claim_date)}`, c.claimed_amount != null && money(c.claimed_amount, c.currency)].filter(Boolean).join(" · ") };
   });
+
+  type Cost = { utility_id: string; property_asset_id: string; property_name: string; utility_type: string; provider: string | null;
+    cost_period: string; due_date: string; expected_amount: number; paid_amount: number; currency: string; status: string };
+  type Util = { id: string; utility_type: string; provider: string | null; expected_amount: number; currency: string; frequency: string;
+    due_day: number | null; due_month: number | null; property_details: { asset_id: string; assets: { name: string; status: string; deleted_at: string | null } } };
+  const costs = (costRows as Cost[] | null) ?? [];
+  const utils = ((utilRows as unknown as Util[] | null) ?? [])
+    .filter((u) => !u.property_details.assets.deleted_at && u.property_details.assets.status === "ACTIVE")
+    .sort((a, b) => a.property_details.assets.name.localeCompare(b.property_details.assets.name, "th"));
+  const properties: PropertyPick[] = ((propRows ?? []) as unknown as { id: string; asset_id: string;
+    assets: { name: string; currency: string; status: string; deleted_at: string | null } }[])
+    .filter((p) => !p.assets.deleted_at && p.assets.status === "ACTIVE")
+    .map((p) => ({ id: p.id, assetId: p.asset_id, name: p.assets.name, currency: p.assets.currency }))
+    .sort((a, b) => a.name.localeCompare(b.name, "th"));
+  const costYear = utils.reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0)), new Map<string, number>());
+  const utilName = (t: string, p: string | null) => [UTIL_LABEL[t] ?? t, p].filter(Boolean).join(" · ");
 
   const incomeList = incomes ?? [];
   const grossThb = incomeList.reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
@@ -135,7 +163,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         <>
           {canWrite && inMonth && <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">รายได้ที่คาดไว้ ({thMonth(start)})</h2>
+            <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำและสัญญาเช่า · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
             {(expected ?? []).length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
@@ -206,7 +234,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           </section>
 
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">รายได้ประจำ</h2>
+            <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
             {(templates ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
               <ul className="space-y-1 text-sm">
                 {(templates ?? []).map((t) => (
@@ -233,17 +261,56 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       {/* ============================================================ ค่าใช้จ่าย */}
       {tab === "expense" && (
         <>
-          <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5">
-            <div>
-              <div className="text-xs text-slate-500">ค่าใช้จ่าย {thMonth(start)}</div>
-              <div className="text-xl font-semibold tabular-nums">{track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}</div>
-              <div className={`text-xs ${TRACK[track].cls}`}>{TRACK[track].text}</div>
-            </div>
-            {canWrite && track !== "NOT_TRACKED" && inMonth && <MonthStatusForm month={start} status={track} />}
-          </section>
           {canWrite && inMonth && <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้</p>
+
           <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
+            <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
+            {costs.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {costs.map((c) => (
+                  <div key={`${c.utility_id}-${c.cost_period}`} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{utilName(c.utility_type, c.provider)}</div>
+                        <div className="text-xs text-slate-500">
+                          <Link href={`/property/${c.property_asset_id}`} className="hover:underline">{c.property_name}</Link>
+                          {" · "}ครบ {thDate(c.due_date)}{c.cost_period < start && ` · งวด ${thMonth(c.cost_period)}`}
+                        </div>
+                      </div>
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${c.status === "PAID" ? "bg-emerald-50" : c.status === "OVERDUE" ? "bg-red-50" : "bg-slate-100"} ${COST_STATUS[c.status]?.cls ?? ""}`}>
+                        {COST_STATUS[c.status]?.text ?? c.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 tabular-nums">
+                      คาดไว้ {money(c.expected_amount, c.currency)}
+                      {Number(c.paid_amount) > 0 && <span className="text-emerald-700"> · จ่ายจริง {money(c.paid_amount)}</span>}
+                    </div>
+                    {canWrite && c.status !== "PAID" && (
+                      <div className="mt-2">
+                        <RecordCostForm assetId={c.property_asset_id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
+                          label={`${utilName(c.utility_type, c.provider)} · ${c.property_name} (${thMonth(c.cost_period)})`}
+                          category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
+                          banks={banks} cards={cards} persons={persons ?? []} today={today} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-medium text-slate-900">ค่าใช้จ่ายที่บันทึกแล้ว</h2>
+                <div className="mt-0.5 text-sm">
+                  <span className="font-semibold tabular-nums">{track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}</span>
+                  <span className={`ml-2 text-xs ${TRACK[track].cls}`}>{TRACK[track].text}</span>
+                </div>
+              </div>
+              {canWrite && track !== "NOT_TRACKED" && inMonth && <MonthStatusForm month={start} status={track} />}
+            </div>
             {(items ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
@@ -297,6 +364,27 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             )}
           </section>
           <p className="text-xs text-slate-500">เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม · รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ</p>
+
+          <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-medium text-slate-900">ตั้งค่าค่าใช้จ่ายประจำ</h2>
+              {[...costYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
+                <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
+              ))}
+            </div>
+            {utils.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
+              <ul className="space-y-1 text-sm">
+                {utils.map((u) => (
+                  <li key={u.id}>
+                    <Link href={`/property/${u.property_details.asset_id}`} className="hover:underline">{u.property_details.assets.name}</Link>
+                    {" · "}{utilName(u.utility_type, u.provider)} · {money(u.expected_amount, u.currency)} · {scheduleText(u.frequency, u.due_day, u.due_month)}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs text-slate-500">แก้ไข / ลบ ได้ที่หน้าทรัพย์สินแต่ละรายการ (กดชื่อทรัพย์สิน)</p>
+            {canWrite && properties.length > 0 && <UtilityForm properties={properties} label="+ ค่าใช้จ่ายประจำ" tracked />}
+          </section>
         </>
       )}
 
