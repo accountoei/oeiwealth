@@ -31,15 +31,56 @@ export function addMonthsKeepDay(iso: string, months: number): string {
   return `${yy}-${pad(mm)}-${pad(Math.min(d, last))}`;
 }
 
-/** สร้างตารางผ่อนจากสูตร · ปัดเศษ 2 ตำแหน่ง · งวดสุดท้ายปรับเงินต้นให้ครบยอดพอดี */
-export function generateSchedule(p: { method: SchedMethod; amount: number; ratePct: number; periods: number; firstDue: string; everyMonths: number }): SchedLine[] {
-  const { method, amount, ratePct, periods: n, firstDue, everyMonths } = p;
-  if (!(amount > 0) || !(n >= 1) || !firstDue) return [];
+/** วิธีกำหนดตาราง: ใส่จำนวนงวด หรือ ใส่ยอดผ่อนต่องวด (ระบบนับจำนวนงวดให้) */
+export type SchedBasis = "PERIODS" | "PAYMENT";
+export const MAX_PERIODS = 600;
+
+/** ช่อง "ยอดต่องวด" ของแต่ละวิธีหมายถึงอะไร (ดอกคงที่ / ผ่อนเท่ากัน = รวมดอก · ต้นเท่ากัน = เฉพาะเงินต้น) */
+export const PAYMENT_LABEL: Record<SchedMethod, string> = {
+  EQUAL_PAYMENT: "ยอดผ่อนต่องวด (รวมดอกเบี้ย)",
+  EQUAL_PRINCIPAL: "เงินต้นต่องวด (ไม่รวมดอกเบี้ย)",
+  FLAT: "ยอดผ่อนต่องวด (รวมดอกเบี้ย)",
+  INTEREST_ONLY: "",
+};
+
+/**
+ * สร้างตารางผ่อนจากสูตร · ปัดเศษ 2 ตำแหน่ง
+ * - basis PERIODS: ใส่จำนวนงวด → งวดสุดท้ายปรับเงินต้นให้ครบยอดพอดี
+ * - basis PAYMENT: ใส่ยอดต่องวด → ผ่อนไปจนหมด งวดสุดท้ายเท่าที่เหลือ (จ่ายดอกอย่างเดียวใช้แบบนี้ไม่ได้)
+ */
+export function generateSchedule(p: { method: SchedMethod; basis?: SchedBasis; amount: number; ratePct: number; periods?: number;
+  payment?: number; firstDue: string; everyMonths: number }): { lines: SchedLine[]; error?: string } {
+  const { method, amount, ratePct, firstDue, everyMonths } = p;
+  const basis = method === "INTEREST_ONLY" ? "PERIODS" : p.basis ?? "PERIODS";
+  if (!(amount > 0)) return { lines: [], error: "กรุณาใส่ยอดเงินต้น" };
+  if (!firstDue) return { lines: [], error: "กรุณาใส่วันครบกำหนดงวดแรก" };
   const r = (ratePct / 100) * (everyMonths / 12);
-  const pmt = r === 0 ? amount / n : (amount * r) / (1 - Math.pow(1 + r, -n));
   const flatInterest = r2(amount * r);
   const out: SchedLine[] = [];
   let bal = amount;
+
+  if (basis === "PAYMENT") {
+    const pay = p.payment ?? 0;
+    if (!(pay > 0)) return { lines: [], error: "กรุณาใส่ยอดต่องวด" };
+    // เงินต้นที่ลดได้ในงวดแรก ต้องมากกว่า 0 ไม่อย่างนั้นผ่อนไม่มีวันหมด
+    const firstPrincipal = method === "EQUAL_PRINCIPAL" ? pay : method === "FLAT" ? pay - flatInterest : pay - r2(bal * r);
+    if (firstPrincipal <= 0) {
+      return { lines: [], error: `ยอดต่องวดต้องมากกว่าดอกเบี้ยต่องวด (${(method === "FLAT" ? flatInterest : r2(bal * r)).toLocaleString("en-US", { minimumFractionDigits: 2 })})` };
+    }
+    for (let i = 0; bal > 0.004; i++) {
+      if (i >= MAX_PERIODS) return { lines: [], error: `ยอดต่องวดน้อยเกินไป — เกิน ${MAX_PERIODS} งวด` };
+      const interest = method === "FLAT" ? flatInterest : r2(bal * r);
+      const principal = r2(Math.min(bal, method === "EQUAL_PRINCIPAL" ? pay : pay - interest));
+      bal = r2(bal - principal);
+      out.push({ due_date: addMonthsKeepDay(firstDue, i * everyMonths), principal, interest });
+    }
+    return { lines: out };
+  }
+
+  const n = Math.floor(p.periods ?? 0);
+  if (!(n >= 1)) return { lines: [], error: "กรุณาใส่จำนวนงวด" };
+  if (n > MAX_PERIODS) return { lines: [], error: `จำนวนงวดเกิน ${MAX_PERIODS}` };
+  const pmt = r === 0 ? amount / n : (amount * r) / (1 - Math.pow(1 + r, -n));
   for (let i = 0; i < n; i++) {
     const last = i === n - 1;
     let interest: number; let principal: number;
@@ -53,7 +94,7 @@ export function generateSchedule(p: { method: SchedMethod; amount: number; rateP
     bal = r2(bal - principal);
     out.push({ due_date: addMonthsKeepDay(firstDue, i * everyMonths), principal, interest });
   }
-  return out;
+  return { lines: out };
 }
 
 /** แปลงตารางเป็นข้อความ (คั่นด้วย Tab) สำหรับแก้ในช่องข้อความ / วางกลับเข้า Excel */
