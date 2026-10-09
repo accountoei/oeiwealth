@@ -11,6 +11,7 @@ import {
   ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
+import { MonthNav, TabNav, TabPanel, TabsProvider } from "./tabs";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "โอน & จ่ายหนี้"]];
@@ -114,35 +115,25 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const reimbThb = (reimbs ?? []).reduce((s, r) => s + thb(r.amount, r.currency), 0);
   const savings = grossThb - taxThb - (expenseThb - reimbThb);
   const rs = new Map((reimbStatus ?? []).map((r) => [r.expense_item_id, r]));
-  const href = (t: string, m = ym) => `/income-expenses?tab=${t}&m=${m}`;
   const inMonth = start <= today && (!goLive || end >= goLive);
 
   return (
+    <TabsProvider initial={tab}>
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Income &amp; Expenses</h1>
           <p className="text-sm text-slate-500">รายได้ · ค่าใช้จ่าย (ไม่บังคับบันทึก) · เงินคืน · โอนและจ่ายหนี้</p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <Link href={href(tab, prev)} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">←</Link>
-          <span className="min-w-28 text-center font-medium">{thMonth(start)}</span>
-          <Link href={href(tab, next)} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">→</Link>
-        </div>
+        <MonthNav prev={prev} next={next} label={thMonth(start)} />
       </div>
 
-      <nav className="flex gap-1 border-b border-slate-200">
-        {TABS.map(([k, l]) => (
-          <Link key={k} href={href(k)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === k ? "border-slate-900 font-medium text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{l}</Link>
-        ))}
-      </nav>
+      <TabNav tabs={TABS} />
 
       {canWrite && !inMonth && <p className="text-sm text-slate-500">เดือนนี้อยู่นอกช่วงที่บันทึกได้ (ก่อน Go-live หรือเป็นเดือนในอนาคต)</p>}
 
       {/* ============================================================ ภาพรวม */}
-      {tab === "overview" && (
-        <>
+      <TabPanel id="overview">
           <section className="grid gap-4 md:grid-cols-4">
             <Kpi label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"} />
             <Kpi label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
@@ -155,12 +146,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <h2 className="mb-2 font-medium text-slate-900">ความเคลื่อนไหวของเงินในเดือนนี้</h2>
             <MovesTable moves={moves ?? []} name={name} />
           </section>
-        </>
-      )}
+      </TabPanel>
 
       {/* ============================================================ รายได้ */}
-      {tab === "income" && (
-        <>
+      <TabPanel id="income">
           {canWrite && inMonth && <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
@@ -255,12 +244,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             )}
             {canWrite && <TemplateForm banks={banks} persons={persons ?? []} today={today} />}
           </section>
-        </>
-      )}
+      </TabPanel>
 
       {/* ============================================================ ค่าใช้จ่าย */}
-      {tab === "expense" && (
-        <>
+      <TabPanel id="expense">
           {canWrite && inMonth && <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้</p>
 
@@ -385,20 +372,18 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <p className="text-xs text-slate-500">แก้ไข / ลบ ได้ที่หน้าทรัพย์สินแต่ละรายการ (กดชื่อทรัพย์สิน)</p>
             {canWrite && properties.length > 0 && <UtilityForm properties={properties} label="+ ค่าใช้จ่ายประจำ" tracked />}
           </section>
-        </>
-      )}
+      </TabPanel>
 
       {/* ============================================================ โอน & จ่ายหนี้ */}
-      {tab === "moves" && (
-        <>
+      <TabPanel id="moves">
           {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <MovesTable moves={moves ?? []} name={name} actions={canWrite} canDelete={canDelete} />
           </section>
-        </>
-      )}
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }
 
