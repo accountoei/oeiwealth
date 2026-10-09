@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { NAV } from "./nav";
+import { NAV, NAV_HREFS } from "./nav";
 
 function NavLink({ href, label, ready, nested }: { href: string; label: string; ready?: boolean; nested?: boolean }) {
   const pathname = usePathname();
-  const active = href === "/" ? pathname === "/" : pathname.startsWith(href.split("#")[0]);
+  const base = href.split("#")[0];
+  // เลือกเมนูที่ตรงที่สุด: /property/costs ไฮไลต์ "ค่าใช้จ่ายประจำ" ไม่ใช่ "อสังหาริมทรัพย์"
+  const match = (h: string) => (h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(`${h}/`));
+  const active = match(base) && !NAV_HREFS.some((h) => h !== base && h.startsWith(`${base}/`) && match(h));
   return (
     <Link href={href}
       className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${nested ? "pl-6" : ""} ${

@@ -24,6 +24,7 @@ function leaseFromForm(form: FormData) {
 
 function revalidateProperty(assetId?: string) {
   revalidatePath("/property");
+  revalidatePath("/property/costs");
   if (assetId) revalidatePath(`/property/${assetId}`);
   revalidatePath("/liabilities");
 }
@@ -172,12 +173,42 @@ export async function recordRent(_: ActionState, form: FormData): Promise<Action
 export async function addUtility(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
+  const amount = num(form.get("expected_amount"));
+  const frequency = str(form.get("frequency"));
+  if (amount != null && (Number.isNaN(amount) || amount < 0)) return { error: "ยอดประมาณไม่ถูกต้อง" };
+  if ((amount == null) !== (frequency == null)) return { error: "ถ้าจะติดตามค่าใช้จ่าย ให้ใส่ทั้งยอดประมาณและความถี่ (หรือเว้นว่างทั้งคู่)" };
+  const dueDay = num(form.get("due_day"));
+  const dueMonth = frequency && frequency !== "MONTHLY" ? num(form.get("due_month")) : null;
   const { error } = await supabase.from("property_utilities").insert({
     property_id: String(form.get("property_id")), utility_type: str(form.get("utility_type")) ?? "ELECTRICITY",
     provider: str(form.get("provider")), account_no: str(form.get("account_no")), meter_no: str(form.get("meter_no")),
-    notes: str(form.get("notes")),
+    notes: str(form.get("notes")), expected_amount: amount, frequency, currency: str(form.get("currency")) ?? "THB",
+    due_day: dueDay, due_month: dueMonth,
   });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty(id);
   return { ok: "เพิ่มแล้ว" };
+}
+
+/** บันทึกจ่ายค่าใช้จ่ายประจำ (ส่วนกลาง / ภาษีที่ดิน / ไฟ / น้ำ) ของงวดหนึ่ง → สร้างรายการค่าใช้จ่ายผูกกับรายการนั้น */
+export async function recordPropertyCost(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = str(form.get("asset_id"));
+  const amount = num(form.get("amount"));
+  if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
+  const via = String(form.get("pay_via") ?? "bank");
+  const { error } = await supabase.rpc("add_expense", { p: {
+    date: str(form.get("date")), description: str(form.get("description")), amount,
+    currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
+    paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
+    paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
+    person_id: via === "cash" ? str(form.get("person_id")) : null,
+    property_utility_id: str(form.get("utility_id")), cost_period: str(form.get("cost_period")),
+    notes: str(form.get("notes")),
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(assetId ?? undefined);
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  return { ok: "บันทึกจ่ายแล้ว" };
 }

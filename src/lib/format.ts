@@ -29,6 +29,8 @@ export function addDays(iso: string, days: number): string {
 export function friendlyError(message: string): string {
   if (/row-level security|permission denied/i.test(message)) return "คุณไม่มีสิทธิ์ทำรายการนี้";
   if (/duplicate key/i.test(message)) return "ข้อมูลนี้มีอยู่แล้ว";
+  if (/pu_schedule_pair/.test(message)) return "ใส่ยอดประมาณกับความถี่ให้ครบคู่กัน (หรือเว้นว่างทั้งคู่)";
+  if (/exp_cost_period_pair/.test(message)) return "ต้องระบุงวดของค่าใช้จ่ายประจำ";
   const m = message.match(/^[A-Z_]+: ([\s\S]*)$/);
   return m ? m[1] : message;
 }
@@ -73,6 +75,29 @@ export const USAGE_LABEL: Record<string, string> = {
 export const FREQ_LABEL: Record<string, string> = {
   MONTHLY: "รายเดือน", QUARTERLY: "ราย 3 เดือน", YEARLY: "รายปี", OTHER: "อื่น ๆ",
 };
+
+/** ค่าใช้จ่ายประจำของอสังหาฯ (ตาราง property_utilities) */
+export const UTIL_LABEL: Record<string, string> = {
+  ELECTRICITY: "ไฟฟ้า", WATER: "ประปา", COMMON_FEE: "ค่าส่วนกลาง", LAND_TAX: "ภาษีที่ดิน", OTHER: "อื่น ๆ",
+};
+/** หมวดที่ใช้ตอนบันทึกเป็นค่าใช้จ่าย */
+export const UTIL_EXPENSE_CATEGORY: Record<string, string> = {
+  ELECTRICITY: "บ้าน / สาธารณูปโภค", WATER: "บ้าน / สาธารณูปโภค", COMMON_FEE: "บ้าน / สาธารณูปโภค", LAND_TAX: "ภาษี", OTHER: "บ้าน / สาธารณูปโภค",
+};
+export const COST_STATUS: Record<string, { text: string; cls: string }> = {
+  PAID: { text: "จ่ายแล้ว", cls: "text-emerald-700" }, PENDING: { text: "รอจ่าย", cls: "text-slate-600" },
+  OVERDUE: { text: "เลยกำหนด", cls: "text-red-600" },
+};
+export const PERIODS_PER_YEAR: Record<string, number> = { MONTHLY: 12, QUARTERLY: 4, YEARLY: 1 };
+export const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+/** "รายเดือน · ทุกวันที่ 5" / "รายปี · ทุก 30 เม.ย." */
+export function scheduleText(frequency: string | null, dueDay: number | null, dueMonth: number | null): string {
+  if (!frequency) return "";
+  const f = FREQ_LABEL[frequency] ?? frequency;
+  if (frequency === "YEARLY" && dueMonth) return `${f} · ทุก ${dueDay ?? "สิ้น"} ${TH_MONTHS[dueMonth - 1]}`;
+  if (frequency === "QUARTERLY" && dueMonth) return `${f} · เริ่ม ${TH_MONTHS[dueMonth - 1]}${dueDay ? ` วันที่ ${dueDay}` : ""}`;
+  return dueDay ? `${f} · ทุกวันที่ ${dueDay}` : f;
+}
 
 /** ตารางวารวม → "3-1-71 ไร่ (1,371 ตร.ว. · 5,484 ตร.ม.)" */
 export function landText(sqwa: number | string | null | undefined): string {
