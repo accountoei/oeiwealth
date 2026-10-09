@@ -69,6 +69,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 
 - `invite-user` — invite / resend / reset password link / reset MFA (ADMIN + MFA only).
 - `drive` — Google Drive connect (OAuth, scope `drive.file` only), upload, view/download with audit log, duplicate (SHA-256) check.
+  Also `backup` / `backup_log` actions: accept **only** a Supabase secret key (checked by calling a service-role-only RPC); used by `.github/workflows/db-backup.yml` to store the encrypted weekly backup in Drive folder "10 สำรองข้อมูล (เข้ารหัส)". Never accept an unencrypted file there. See `docs/BACKUP_RESTORE.md`.
 - Deployed by the owner via Supabase dashboard (Edge Functions → function → Code → paste → Deploy). After changing a function, tell the owner exactly which function to redeploy and to keep **Verify JWT off**.
 
 ## 5. Handing work back to the owner
@@ -82,5 +83,5 @@ Do not press or ask the owner to press **Confirm Go-live** with test data, and d
 
 ## 6. Pending / planned (check with the owner before starting)
 
-- Monthly PDF report at month closing (stored in Drive via `server_attach_month_pdf`), then backup.
+- Monthly PDF report at month closing (stored in Drive via `server_attach_month_pdf`). (Weekly backup is done — `docs/BACKUP_RESTORE.md`.)
 - Before real use: decide account ownership (Supabase, GitHub, Google Drive, Vault key) with the family owner, upgrade Supabase to Pro, pick a new go-live date, reset and re-bootstrap, disable test users, ADMINs set MFA on separate phones.

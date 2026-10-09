@@ -1,0 +1,149 @@
+# สำรองฐานข้อมูลทุกสัปดาห์ → เข้ารหัส → เก็บใน Google Drive (โฟลเดอร์ "10 สำรองข้อมูล (เข้ารหัส)")
+#
+#   1) ดึงโครงสร้าง + ข้อมูลทั้งหมดด้วย Supabase CLI (roles / schema / data)
+#   2) รวมเป็นไฟล์เดียวแล้วเข้ารหัส AES-256 ด้วย BACKUP_PASSPHRASE → ไฟล์ .gpg
+#   3) ส่งไฟล์ที่เข้ารหัสแล้วให้ Edge Function "drive" อัปโหลดเข้า Google Drive ที่เชื่อมไว้ในแอป
+#      (ข้อมูลที่ยังไม่เข้ารหัสไม่ออกนอกเครื่อง GitHub ที่รันงาน และถูกลบทิ้งทันทีหลังเข้ารหัส)
+#   4) ผลลัพธ์ทุกครั้งบันทึกใน system_job_runs → ดูได้ที่หน้า Settings → System ของแอป
+#
+# Repository secrets ที่ต้องมี:
+#   SUPABASE_DB_URL      Connection string แบบ "Session pooler" (มีรหัสผ่านฐานข้อมูล)  ← ใหม่
+#   BACKUP_PASSPHRASE    รหัสผ่านสำหรับเข้ารหัสไฟล์สำรอง (เก็บสำเนาไว้นอกระบบด้วย)     ← ใหม่
+#   SUPABASE_URL         มีอยู่แล้ว (ใช้กับ FX Job / Keep-alive)
+#   SUPABASE_SECRET_KEY  มีอยู่แล้ว (ใช้กับ FX Job)
+# วิธีกู้คืน: docs/BACKUP_RESTORE.md
+name: Database backup (weekly)
+
+on:
+  schedule:
+    - cron: "0 19 * * 6"    # ตี 2 คืนวันเสาร์ → วันอาทิตย์ เวลาไทย (GitHub ใช้เวลา UTC)
+  workflow_dispatch: {}      # กดรันเองได้จากแท็บ Actions
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check secrets
+        run: |
+          missing=""
+          for v in SUPABASE_DB_URL BACKUP_PASSPHRASE SUPABASE_URL SUPABASE_SECRET_KEY; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::ยังไม่ได้ตั้ง Repository secrets:$missing"
+            exit 1
+          fi
+          if [ "${#BACKUP_PASSPHRASE}" -lt 20 ]; then
+            echo "::error::BACKUP_PASSPHRASE สั้นเกินไป (ต้องยาวอย่างน้อย 20 ตัวอักษร)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.48.3
+
+      - name: Dump database
+        id: dump
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/dump"
+          cd "$RUNNER_TEMP/dump"
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f data.sql --data-only --use-copy
+
+          # ตรวจว่าได้ของครบจริง ไม่ใช่ไฟล์ว่าง
+          grep -q '"public"."assets"' schema.sql || { echo "::error::schema.sql ไม่มีตาราง assets"; exit 1; }
+          grep -q '"public"."assets"' data.sql   || { echo "::error::data.sql ไม่มีข้อมูล assets"; exit 1; }
+
+          schema_version="$(ls "$GITHUB_WORKSPACE/supabase/migrations" | sort | tail -1 | sed 's/\.sql$//')"
+          stamp="$(TZ=Asia/Bangkok date +%Y-%m-%d_%H%M)"
+          {
+            echo "Family Wealth Vault — database backup"
+            echo "created_at_th: $(TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M:%S')"
+            echo "latest_migration_in_repo: $schema_version"
+            echo "github_run: $RUN_URL"
+            echo "files:"
+            sha256sum roles.sql schema.sql data.sql
+          } > MANIFEST.txt
+
+          echo "schema_version=$schema_version" >> "$GITHUB_OUTPUT"
+          echo "name=fwv-backup_${stamp}.tar.gz.gpg" >> "$GITHUB_OUTPUT"
+
+      - name: Pack and encrypt
+        id: pack
+        run: |
+          set -euo pipefail
+          umask 077
+          cd "$RUNNER_TEMP/dump"
+          name="${{ steps.dump.outputs.name }}"
+          tar -czf backup.tar.gz MANIFEST.txt roles.sql schema.sql data.sql
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 --s2k-digest-algo SHA512 --s2k-count 65011712 -o "$name" backup.tar.gz
+
+          # ทดลองถอดรหัสกลับ เพื่อยืนยันว่าไฟล์เปิดได้จริงด้วยรหัสนี้
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 0 \
+            --decrypt "$name" | tar -tzf - | grep -q '^data.sql$'
+
+          # ลบไฟล์ที่ยังไม่เข้ารหัสทันที
+          shred -u roles.sql schema.sql data.sql backup.tar.gz
+          echo "sha256=$(sha256sum "$name" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "bytes=$(stat -c %s "$name")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Google Drive
+        id: upload
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dump"
+          name="${{ steps.dump.outputs.name }}"
+          query="$(jq -rn \
+            --arg name "$name" --arg sha "${{ steps.pack.outputs.sha256 }}" \
+            --arg sv "${{ steps.dump.outputs.schema_version }}" --arg run "$RUN_URL" \
+            '"action=backup&name=\($name|@uri)&sha256=\($sha)&schema_version=\($sv|@uri)&run_url=\($run|@uri)"')"
+          status=$(curl -sS -o response.json -w "%{http_code}" --retry 2 --retry-delay 15 --max-time 600 \
+            -X POST "${SUPABASE_URL%/}/functions/v1/drive?${query}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$name")
+          echo "HTTP ${status}: $(cat response.json)"
+          if [ "$status" != "200" ]; then
+            echo "::error::อัปโหลดไฟล์สำรองไม่สำเร็จ (HTTP ${status})"
+            exit 1
+          fi
+          echo "### ✅ สำรองข้อมูลสำเร็จ" >> "$GITHUB_STEP_SUMMARY"
+          echo "ไฟล์ \`$name\` (${{ steps.pack.outputs.bytes }} bytes) อยู่ใน Google Drive โฟลเดอร์ \"10 สำรองข้อมูล (เข้ารหัส)\"" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/dump"
+
+      # ถ้าพังก่อนถึงขั้นอัปโหลด ให้บันทึก FAILED ลงระบบด้วย (ขั้นอัปโหลดบันทึกเองอยู่แล้ว)
+      - name: Record failure in app
+        if: failure() && steps.upload.outcome != 'failure' && env.SUPABASE_URL != '' && env.SUPABASE_SECRET_KEY != ''
+        run: |
+          stage="setup"
+          [ "${{ steps.dump.outcome }}" = "failure" ] && stage="dump"
+          [ "${{ steps.pack.outcome }}" = "failure" ] && stage="encrypt"
+          body="$(jq -cn --arg stage "$stage" --arg run "$RUN_URL" \
+            '{action:"backup_log", stage:$stage, error:"ดูรายละเอียดที่ GitHub Actions", run_url:$run}')"
+          curl -sS -X POST "${SUPABASE_URL%/}/functions/v1/drive" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Content-Type: application/json" -d "$body" || true

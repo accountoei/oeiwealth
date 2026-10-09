@@ -5,6 +5,9 @@
 //   GET  ?code=…&state=…                      Google ส่งกลับมา → เก็บ Refresh Token ใน Vault → กลับหน้าเว็บ
 //   POST multipart (file + meta)              อัปโหลดเอกสาร (ทุกสิทธิ์ยกเว้น VIEWER)
 //   POST {action:"download", id, mode}        เปิด / ดาวน์โหลดเอกสาร (ทุกสิทธิ์ · บันทึก Audit)
+//   POST octet-stream ?action=backup&…        ไฟล์สำรองข้อมูล (เข้ารหัสแล้ว) จาก GitHub Actions → โฟลเดอร์ "10 สำรองข้อมูล"
+//   POST {action:"backup_log", …}             บันทึกผล Backup ที่ล้มเหลวลง system_job_runs
+//                                              (2 อันนี้รับเฉพาะ Supabase secret key — ผู้ใช้ทั่วไปเรียกไม่ได้)
 //
 // Secrets ที่ต้องตั้งใน Supabase (Edge Functions → Secrets): GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 // สิทธิ์ Google = drive.file → ระบบเห็นเฉพาะไฟล์ / โฟลเดอร์ที่ระบบสร้างเอง ไม่เห็นไฟล์อื่นใน Drive
@@ -261,6 +264,101 @@ async function download(req: Request, body: Record<string, unknown>) {
     "Cache-Control": "private, no-store" } });
 }
 
+// ---------------------------------------------------------------- Backup (GitHub Actions เท่านั้น)
+const BACKUP_KEY = "BACKUP";
+const BACKUP_FOLDER = "10 สำรองข้อมูล (เข้ารหัส)";
+const BACKUP_MAX_BYTES = 50 * 1024 * 1024;
+const BACKUP_KEEP = 52;                       // เก็บย้อนหลัง 52 ไฟล์ (สัปดาห์ละ 1 ไฟล์ ≈ 1 ปี) ที่เก่ากว่านั้นย้ายไปถังขยะของ Drive
+
+// ผ่านเฉพาะผู้ที่ถือ Supabase secret / service_role key: ลองเรียก server_* ที่ให้สิทธิ์แค่ service_role
+async function requireServiceKey(req: Request) {
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw new HttpError(401, "ต้องใช้ Supabase secret key");
+  const probe = createClient(URL_, token, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { error } = await probe.rpc("server_drive_config");
+  if (error) throw new HttpError(403, "key ไม่ถูกต้อง หรือไม่ใช่ secret key");
+}
+
+async function logBackup(row: { started_at: string; result: string; schema_version?: string | null;
+  checksum?: string | null; details: Record<string, unknown> }) {
+  const { error } = await admin.from("system_job_runs").insert({
+    job_type: "BACKUP", started_at: row.started_at, finished_at: new Date().toISOString(),
+    result: row.result, schema_version: row.schema_version ?? null, checksum: row.checksum ?? null, details: row.details,
+  });
+  if (error) console.error("log backup failed", error.message);
+}
+
+async function backupFolder(token: string, cfg: Awaited<ReturnType<typeof config>>, fresh = false) {
+  if (!cfg.root_folder_id) throw new HttpError(409, "ยังไม่ได้เชื่อม Google Drive");
+  const have = cfg.folder_ids?.[BACKUP_KEY];
+  if (have && !fresh) return have;
+  const id = await createFolder(token, BACKUP_FOLDER, cfg.root_folder_id);
+  await admin.rpc("server_drive_set_folder", { p_key: BACKUP_KEY, p_folder_id: id });
+  cfg.folder_ids = { ...(cfg.folder_ids ?? {}), [BACKUP_KEY]: id };
+  return id;
+}
+
+async function pruneBackups(token: string, folder: string) {
+  const q = encodeURIComponent(`'${folder}' in parents and trashed = false`);
+  const r = await gfetch(token, `https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime desc&pageSize=500&fields=files(id,name)`);
+  if (!r.ok) return 0;
+  const files = ((await r.json().catch(() => ({}))).files ?? []) as { id: string; name: string }[];
+  let trashed = 0;
+  for (const f of files.slice(BACKUP_KEEP)) {
+    const d = await gfetch(token, `https://www.googleapis.com/drive/v3/files/${f.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trashed: true }),
+    });
+    if (d.ok) trashed++;
+  }
+  return trashed;
+}
+
+async function backupUpload(req: Request, url: URL) {
+  const started = new Date().toISOString();
+  await requireServiceKey(req);
+  const run = url.searchParams.get("run_url") ?? null;
+  const schema = url.searchParams.get("schema_version") ?? null;
+  try {
+    const name = (url.searchParams.get("name") ?? "").replace(/[\\/:*?"<>|]+/g, "-").slice(0, 150);
+    if (!/\.gpg$/.test(name)) throw new HttpError(400, "รับเฉพาะไฟล์ที่เข้ารหัสแล้ว (.gpg)");
+    const bytes = await req.arrayBuffer();
+    if (bytes.byteLength === 0) throw new HttpError(400, "ไฟล์ว่าง");
+    if (bytes.byteLength > BACKUP_MAX_BYTES) throw new HttpError(413, "ไฟล์สำรองใหญ่เกิน 50 MB");
+    const sha = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (x) => x.toString(16).padStart(2, "0")).join("");
+    const expect = (url.searchParams.get("sha256") ?? "").toLowerCase();
+    if (expect && expect !== sha) throw new HttpError(400, "ไฟล์เสียระหว่างส่ง (SHA-256 ไม่ตรง)");
+
+    const cfg = await config();
+    const token = await accessToken(cfg.refresh_token);
+    let folder = await backupFolder(token, cfg);
+    let r = await uploadFile(token, folder, name, "application/octet-stream", bytes);
+    if (r.status === 404) {                     // โฟลเดอร์ถูกลบใน Drive → สร้างใหม่แล้วลองอีกครั้ง
+      folder = await backupFolder(token, cfg, true);
+      r = await uploadFile(token, folder, name, "application/octet-stream", bytes);
+    }
+    const up = await r.json().catch(() => ({}));
+    if (!r.ok || !up.id) throw new HttpError(502, `อัปโหลดเข้า Google Drive ไม่สำเร็จ (${r.status} ${up?.error?.message ?? ""})`);
+    const trashed = await pruneBackups(token, folder);
+    await logBackup({ started_at: started, result: "SUCCESS", schema_version: schema, checksum: sha,
+      details: { file: name, drive_file_id: up.id, bytes: bytes.byteLength, old_files_trashed: trashed, run_url: run } });
+    return json({ ok: true, file: name, drive_file_id: up.id, bytes: bytes.byteLength, sha256: sha, old_files_trashed: trashed });
+  } catch (e) {
+    await logBackup({ started_at: started, result: "FAILED", schema_version: schema,
+      details: { error: e instanceof Error ? e.message : String(e), stage: "upload", run_url: run } });
+    throw e;
+  }
+}
+
+async function backupLog(req: Request, body: Record<string, unknown>) {
+  await requireServiceKey(req);
+  await logBackup({ started_at: new Date().toISOString(), result: "FAILED",
+    details: { error: String(body.error ?? "ไม่ทราบสาเหตุ").slice(0, 500), stage: String(body.stage ?? "dump"), run_url: body.run_url ?? null } });
+  return json({ ok: true });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (!URL_ || !SERVICE || !ANON) return json({ error: "ระบบยังไม่ได้ตั้งค่า Edge Function" }, 500);
@@ -269,9 +367,13 @@ Deno.serve(async (req) => {
     if (req.method === "GET" && url.searchParams.has("state")) return await callback(url);
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
     if ((req.headers.get("Content-Type") ?? "").startsWith("multipart/form-data")) return await upload(req);
+    if ((req.headers.get("Content-Type") ?? "").startsWith("application/octet-stream") && url.searchParams.get("action") === "backup") {
+      return await backupUpload(req, url);
+    }
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     if (body.action === "connect") return await connect(req, body);
     if (body.action === "download") return await download(req, body);
+    if (body.action === "backup_log") return await backupLog(req, body);
     return json({ error: "action ไม่ถูกต้อง" }, 400);
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message }, e.status);
