@@ -234,18 +234,33 @@ export function EditPropertyForm({ p }: { p: Info }) {
   );
 }
 
-export function UtilityForm({ assetId, propertyId, currency }: { assetId: string; propertyId: string; currency: string }) {
+export type PropertyPick = { id: string; assetId: string; name: string; currency: string };
+
+/** เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค · หน้ารายละเอียดทรัพย์สินส่ง propertyId มา · หน้า Income & Expenses ส่งรายการทรัพย์สินให้เลือก */
+export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false }: {
+  assetId?: string; propertyId?: string; currency?: string; properties?: PropertyPick[]; label?: string; tracked?: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  const [freq, setFreq] = useState("");
+  const [freq, setFreq] = useState(tracked ? "MONTHLY" : "");
   const [type, setType] = useState("COMMON_FEE");
+  const [pick, setPick] = useState(properties?.[0]?.id ?? "");
   const [state, action, pending] = useActionState<ActionState, FormData>(addUtility, {});
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค</button>;
+  if (!open) return <button onClick={() => setOpen(true)} className={link}>{label}</button>;
   const meter = type === "ELECTRICITY" || type === "WATER";
+  const chosen = properties?.find((x) => x.id === pick);
+  const ccy = chosen?.currency ?? currency ?? "THB";
   return (
     <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3">
-      <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="property_id" value={propertyId} />
-      <input type="hidden" name="currency" value={currency} />
+      <input type="hidden" name="asset_id" value={chosen?.assetId ?? assetId ?? ""} />
+      <input type="hidden" name="property_id" value={chosen?.id ?? propertyId ?? ""} />
+      <input type="hidden" name="currency" value={ccy} />
+      {properties && (
+        <label className="block text-xs">ทรัพย์สิน
+          <select value={pick} onChange={(e) => setPick(e.target.value)} required className={`mt-1 block max-w-full ${small}`}>
+            {properties.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>
+      )}
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs">ประเภท
           <select name="utility_type" value={type} onChange={(e) => setType(e.target.value)} className={`mt-1 block ${small}`}>
@@ -261,7 +276,7 @@ export function UtilityForm({ assetId, propertyId, currency }: { assetId: string
         </>}
       </div>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs">ยอดประมาณ ({currency})
+        <label className="text-xs">ยอดประมาณ ({ccy})
           <input name="expected_amount" inputMode="decimal" placeholder="เว้นว่าง = ไม่ติดตาม" className={`mt-1 block w-36 ${small}`} />
         </label>
         <label className="text-xs">จ่าย

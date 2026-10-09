@@ -24,7 +24,7 @@ function leaseFromForm(form: FormData) {
 
 function revalidateProperty(assetId?: string) {
   revalidatePath("/property");
-  revalidatePath("/property/costs");
+  revalidatePath("/income-expenses");
   if (assetId) revalidatePath(`/property/${assetId}`);
   revalidatePath("/liabilities");
 }
