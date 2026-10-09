@@ -28,7 +28,8 @@
 - ✅ แก้ไข / ลบรายการ (Soft Delete) · แก้สัดส่วนเจ้าของ / ผู้รับผิดชอบหนี้ / ผู้รับผลประโยชน์
 - ✅ ซื้อ / ขายทรัพย์สินผ่านบัญชี · แลกเงินในพอร์ต · ผลตอบแทนการลงทุน (Realized / Unrealized / FX) · หน้า Holding / FCN · เงินคืนผูกเคลมประกัน
 - ✅ Documents + Google Drive (ฉบับใหม่ / ฉบับเก่า · กันไฟล์ซ้ำ)
-- ⬜ PDF รายเดือน · Backup
+- ✅ Backup รายสัปดาห์ (เข้ารหัส → Google Drive)
+- ⬜ PDF รายเดือน
 
 ## Supabase Keep-alive (GitHub Actions)
 
@@ -47,6 +48,12 @@ Repository secrets: `BOT_API_TOKEN`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (เ�
 action: invite · resend · reset_password · reset_mfa (ADMIN + MFA เท่านั้น)
 ระบบ **ไม่ส่งอีเมล** แต่สร้างลิงก์ `/auth/accept?...` ให้ ADMIN คัดลอกไปส่งเอง (ไม่ต้องตั้ง SMTP)
 ติดตั้ง: Supabase → Edge Functions → Deploy a new function → Via Editor → ชื่อ `invite-user` → วางโค้ด → ปิด "Verify JWT" (ฟังก์ชันตรวจสิทธิ์เอง)
+
+## Backup รายสัปดาห์ (GitHub Actions)
+
+`.github/workflows/db-backup.yml` รันทุกวันอาทิตย์ ตี 2 (และกดรันเองได้) · ดึงทั้งฐานข้อมูลด้วย Supabase CLI → เข้ารหัส AES-256 → ส่งให้ Edge Function `drive` เก็บใน Google Drive โฟลเดอร์ "10 สำรองข้อมูล (เข้ารหัส)" (เก็บ 52 ไฟล์ล่าสุด) · ผลบันทึกใน `system_job_runs` (หน้า Settings → System)
+Repository secrets: `SUPABASE_DB_URL` (Session pooler), `BACKUP_PASSPHRASE` + `SUPABASE_URL`, `SUPABASE_SECRET_KEY` ที่มีอยู่แล้ว
+วิธีติดตั้งและกู้คืน: **[docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)**
 
 ## Edge Function: drive (Documents + Google Drive)
 
