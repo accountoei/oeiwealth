@@ -3,6 +3,7 @@
 ระบบบันทึกทรัพย์สิน หนี้สิน และ Net Worth ของครอบครัว (Next.js + Supabase)
 
 > AI หรือนักพัฒนาที่จะแก้โค้ด: อ่าน **[AGENTS.md](AGENTS.md)** ก่อนเริ่มงานทุกครั้ง
+> สถานะงานและสิ่งที่ต้องทำก่อนใช้งานจริง: **[docs/PRE_LAUNCH_CHECKLIST.md](docs/PRE_LAUNCH_CHECKLIST.md)**
 
 | โฟลเดอร์ | เนื้อหา |
 |---|---|
