@@ -12,6 +12,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 ## 0. Before you start
 
 1. `git pull` — another AI or person may have pushed since you last looked. Never work on a stale copy.
+   Then read **`docs/PRE_LAUNCH_CHECKLIST.md`** — current status, agreed decisions and what is still open.
 2. Only one agent should change code at a time. If you are not the primary agent, work on a **branch and open a Pull Request**; do not push to `main`.
 3. Read the relevant migration(s) and page(s) before changing them. The database is the source of truth for business rules.
 
@@ -74,6 +75,8 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 
 ## 5. Handing work back to the owner
 
+**Every Pull Request must also update `docs/PRE_LAUNCH_CHECKLIST.md`** (tick what is done, add new open items / decisions, add a row to the PR history). This repo is **public**: never put real family data (names, addresses, deed or account numbers, amounts) in the repo, including that file and test files.
+
 Always finish with, in Thai:
 1. What changed (short, non-technical).
 2. Exactly what they must do: which migration file(s) to run, which Edge Function to redeploy, any setting to change.
@@ -82,6 +85,9 @@ Always finish with, in Thai:
 Do not press or ask the owner to press **Confirm Go-live** with test data, and do not reset or delete production data without an explicit request.
 
 ## 6. Pending / planned (check with the owner before starting)
+
+The full, current list lives in **`docs/PRE_LAUNCH_CHECKLIST.md`**. Agreed plan: finish menu / feature changes and testing on the current (near-real) data → wipe the database → re-bootstrap → an AI re-imports the real data from the owner's source files → Confirm Go-live.
+
 
 - Monthly PDF report at month closing (stored in Drive via `server_attach_month_pdf`). (Weekly backup is done — `docs/BACKUP_RESTORE.md`.)
 - Before real use: decide account ownership (Supabase, GitHub, Google Drive, Vault key) with the family owner, upgrade Supabase to Pro, pick a new go-live date, reset and re-bootstrap, disable test users, ADMINs set MFA on separate phones.
