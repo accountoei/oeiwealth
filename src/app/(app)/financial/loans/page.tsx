@@ -14,9 +14,22 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const me = await requireAppUser();
   const supabase = await createClient();
   const pv = await loadPersonView((await searchParams).p);
-  const { data, error } = await supabase.from("v_loans_status")
-    .select("asset_id,name,currency,borrower_name,principal,outstanding_principal,interest_rate,due_date,status,derived_status")
-    .order("status").order("name");
+  const [{ data, error }, { data: sched }] = await Promise.all([
+    supabase.from("v_loans_status")
+      .select("asset_id,name,currency,borrower_name,principal,outstanding_principal,interest_rate,due_date,status,derived_status")
+      .order("status").order("name"),
+    supabase.from("v_loan_schedule_status").select("loan_asset_id,due_date,total_remaining,status")
+      .in("status", ["OVERDUE", "PARTIAL", "PENDING"]).order("due_date"),
+  ]);
+  // ตารางผ่อน: งวดถัดไป + งวดที่เลยกำหนด ของแต่ละสัญญา
+  const nextDue = new Map<string, { due_date: string; amount: number }>();
+  const overdue = new Map<string, { n: number; amount: number }>();
+  (sched ?? []).forEach((x) => {
+    if (x.status === "OVERDUE") {
+      const o = overdue.get(x.loan_asset_id) ?? { n: 0, amount: 0 };
+      overdue.set(x.loan_asset_id, { n: o.n + 1, amount: o.amount + Number(x.total_remaining) });
+    } else if (!nextDue.has(x.loan_asset_id)) nextDue.set(x.loan_asset_id, { due_date: x.due_date, amount: Number(x.total_remaining) });
+  });
   const rows = (data ?? []).filter((r) => pv.showAsset(r.asset_id));
   const totals = new Map<string, number>();
   rows.filter((r) => r.status !== "CLOSED" && r.status !== "WRITTEN_OFF")
@@ -47,10 +60,10 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-4 py-2">รายการ</th><th className="px-4 text-right">เงินต้นคงเหลือ</th><th className="px-4">ครบกำหนด</th><th className="px-4">สถานะ</th></tr>
+            <tr><th className="px-4 py-2">รายการ</th><th className="px-4 text-right">เงินต้นคงเหลือ</th><th className="px-4">งวดถัดไป</th><th className="px-4">ครบกำหนดสัญญา</th><th className="px-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีเงินให้กู้ของ ${pv.personName}` : "ยังไม่มีเงินให้กู้"}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีเงินให้กู้ของ ${pv.personName}` : "ยังไม่มีเงินให้กู้"}</td></tr>}
             {rows.map((r) => (
               <tr key={r.asset_id} className={r.status === "CLOSED" || r.status === "WRITTEN_OFF" ? "opacity-50" : ""}>
                 <td className="px-4 py-3">
@@ -60,6 +73,11 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
                 <td className="px-4 text-right tabular-nums">
                   {money(r.outstanding_principal == null ? null : Number(r.outstanding_principal) * pv.assetShare(r.asset_id), r.currency)}
                   {pv.assetPct(r.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(r.asset_id)}% ของ {money(r.outstanding_principal, r.currency)}</div>}
+                </td>
+                <td className="px-4">
+                  {nextDue.get(r.asset_id) ? <>{thDate(nextDue.get(r.asset_id)?.due_date)}
+                    <div className="text-xs tabular-nums text-slate-500">{money(nextDue.get(r.asset_id)?.amount, r.currency)}</div></> : <span className="text-slate-400">-</span>}
+                  {overdue.get(r.asset_id) && <div className="text-xs text-red-600">เลยกำหนด {overdue.get(r.asset_id)?.n} งวด · {money(overdue.get(r.asset_id)?.amount)}</div>}
                 </td>
                 <td className="px-4">{thDate(r.due_date)}</td>
                 <td className="px-4 text-xs">{STATUS[r.status] ?? r.status}

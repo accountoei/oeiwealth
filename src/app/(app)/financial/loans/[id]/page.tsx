@@ -9,12 +9,17 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { ScheduleEditor } from "./schedule-editor";
+import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
+
+type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
+  notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
 
 export default async function LoanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: l }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }] = await Promise.all([
+  const [{ data: l }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }] = await Promise.all([
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived")
@@ -24,6 +29,8 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status")
+      .eq("loan_asset_id", id).order("due_date").order("installment_no"),
   ]);
   if (!l) notFound();
   const canWrite = me.role !== "VIEWER";
@@ -35,6 +42,15 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
   const repaid = (moves ?? []).filter((m) => m.movement_type === "LOAN_PRINCIPAL_RECEIPT").reduce((s, m) => s + Number(m.amount), 0);
   const interest = (incomes ?? []).reduce((s, i) => s + Number(i.amount), 0);
+  // ตารางผ่อน: งวดที่ยังไม่ครบ = เลยกำหนด / รับบางส่วน / งวดถัดไป → มีปุ่มบันทึกรับ (เติมยอดคงค้างของงวดให้)
+  const sched = (schedRaw as Sched[] | null) ?? [];
+  const open = sched.filter((x) => x.status !== "PAID" && x.status !== "WRITTEN_OFF");
+  const nextDue = open.find((x) => x.status !== "OVERDUE");
+  const overdue = open.filter((x) => x.status === "OVERDUE");
+  const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
+  const payable = new Set([...overdue.map((x) => x.id), ...(nextDue ? [nextDue.id] : [])]);
+  const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
+  const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id, b.name]));
 
   return (
@@ -79,6 +95,76 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
           <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
         </div>
       )}
+
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-slate-900">ตารางผ่อนชำระ</h2>
+            {sched.length > 0 ? (
+              <div className="mt-0.5 text-sm text-slate-600">
+                {sched.length} งวด · รวมเงินต้นตามตาราง {money(schedP, l.currency)}
+                {nextDue && <> · งวดถัดไป {thDate(nextDue.due_date)} <span className="tabular-nums">{money(nextDue.total_remaining)}</span></>}
+                {overdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {overdue.length} งวด รวม {money(overdueAmt)}</span>}
+                {open.length === 0 && <span className="text-emerald-700"> · รับครบทุกงวดแล้ว</span>}
+              </div>
+            ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
+            {sched.length > 0 && Math.abs(schedP - Number(l.principal)) > 0.01 && (
+              <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา ({money(l.principal)}) — สถานะ &ldquo;รับแล้ว&rdquo; อาจคลาดเคลื่อน</p>
+            )}
+          </div>
+          {canDelete && loanOpen && (
+            <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
+              current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
+              defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0),
+                firstDue: addMonthsKeepDay(l.loan_date ?? today, 1) }} />
+          )}
+        </div>
+        {sched.length > 0 && (
+          <div className="max-h-[28rem] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white text-left text-xs text-slate-500">
+                <tr><th className="py-1">งวด</th><th>ครบกำหนด</th><th className="text-right">เงินต้น</th><th className="text-right">ดอกเบี้ย</th>
+                  <th className="text-right">รวม</th><th className="pl-4">สถานะ</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sched.map((x) => {
+                  const st = LOAN_SCHED_STATUS[x.status];
+                  const part = x.status !== "PAID" && Number(x.total_remaining) < Number(x.total_due);
+                  return (
+                    <tr key={x.id} className={`align-top ${x.status === "PAID" ? "text-slate-400" : ""}`}>
+                      <td className="py-1.5">{x.installment_no}</td>
+                      <td>{thDate(x.due_date)}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
+                      <td className="text-right tabular-nums">{money(x.principal_due)}</td>
+                      <td className="text-right tabular-nums">{money(x.interest_due)}</td>
+                      <td className="text-right tabular-nums">{money(x.total_due)}</td>
+                      <td className="pl-4">
+                        <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? x.status}</span>
+                        {part && <div className="text-xs text-slate-500">ค้าง {money(x.total_remaining)}</div>}
+                      </td>
+                      <td className="pl-2 text-right">
+                        {canWrite && loanOpen && payable.has(x.id) && (
+                          <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} small button="บันทึกรับ"
+                            title={`รับชำระงวดที่ ${x.installment_no} (ครบ ${thDate(x.due_date)})`}
+                            principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)} />
+                        )}
+                        {canWrite && <div className="mt-1"><RowActions table="loan_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
+                          { name: "due_date", label: "ครบกำหนด", type: "date", value: x.due_date },
+                          { name: "principal_due", label: "เงินต้น", type: "number", value: x.principal_due },
+                          { name: "interest_due", label: "ดอกเบี้ย", type: "number", value: x.interest_due },
+                          { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }]} /></div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {sched.length > 0 && <p className="text-xs text-slate-500">
+          สถานะคิดจากยอดที่รับจริง: เงินต้นที่ลดลงแล้วตัดงวดเรียงจากงวดแรก · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
+          ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
+        </p>}
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-3 font-medium text-slate-900">ประวัติให้กู้ / รับชำระ</h2>

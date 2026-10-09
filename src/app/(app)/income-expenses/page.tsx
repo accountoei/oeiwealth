@@ -14,6 +14,8 @@ import {
 import { MonthNav, TabNav, TabPanel, TabsProvider } from "./tabs";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
+import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "โอน & จ่ายหนี้"]];
@@ -52,7 +54,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }] = await Promise.all([
+    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }, { data: loanRows }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,status").is("deleted_at", null).neq("status", "CLOSED"),
@@ -81,6 +83,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,assets!inner(name,status,deleted_at))")
       .is("deleted_at", null).eq("active", true).not("frequency", "is", null),
     supabase.from("property_details").select("id,asset_id,assets!inner(name,currency,status,deleted_at)").is("deleted_at", null),
+    // งวดเงินให้กู้: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+    supabase.from("v_loan_schedule_status")
+      .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
+      .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
+      .neq("status", "WRITTEN_OFF").order("due_date"),
   ]);
 
   const goLive = family?.go_live_date ?? "";
@@ -143,6 +150,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const expectedList = (expected ?? []).filter((e) => (e.source_type === "LEASE" ? pv.showAsset(e.asset_id) : pv.isPerson(e.person_id)))
     .map((e) => ({ ...e, pct: e.source_type === "LEASE" ? pv.assetPct(e.asset_id) : null }));
   const templateList = (templates ?? []).filter((t) => pv.isPerson(t.person_id));
+  type LoanDue = { id: string; loan_asset_id: string; loan_name: string; borrower_name: string; currency: string; installment_no: number;
+    due_date: string; principal_due: number; interest_due: number; total_due: number; principal_remaining: number;
+    interest_remaining: number; total_remaining: number; status: string };
+  const loanDue = ((loanRows as LoanDue[] | null) ?? []).filter((x) => pv.showAsset(x.loan_asset_id));
   // โอน & จ่ายหนี้: รายการที่แตะบัญชี / บัตร / หนี้ ของคนนั้น (แสดงยอดเต็ม)
   const moveList = (moves ?? []).filter((m) => !pv.personId || [m.from_asset_id, m.to_asset_id].some((id) => id && pv.showAsset(id))
     || [m.to_credit_card_id, m.to_liability_id].some((id) => id && pv.showLiability(id)));
@@ -189,8 +200,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {canWrite && inMonth && <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
-            <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำและสัญญาเช่า · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
-            {expectedList.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
+            <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำ สัญญาเช่า และตารางผ่อนเงินให้กู้ · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
+            {expectedList.length === 0 && loanDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
                 {expectedList.map((e) => {
                   const tpl = (templates ?? []).find((t) => t.id === e.source_id);
@@ -218,6 +229,32 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     </div>
                   );
                 })}
+                {loanDue.map((x) => (
+                  <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <Link href={`/financial/loans/${x.loan_asset_id}`} className="font-medium hover:underline">{x.loan_name}</Link>
+                        <div className="text-xs text-slate-500">
+                          เงินให้กู้ · {x.borrower_name} · งวดที่ {x.installment_no} · ครบ {thDate(x.due_date)}{x.due_date < start && ` (${thMonth(x.due_date)})`}
+                        </div>
+                      </div>
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${LOAN_SCHED_STATUS[x.status]?.cls ?? ""}`}>{LOAN_SCHED_STATUS[x.status]?.text ?? x.status}</span>
+                    </div>
+                    <div className="mt-1 tabular-nums">
+                      เงินต้น {money(x.principal_due, x.currency)} · ดอกเบี้ย {money(x.interest_due)}
+                      {x.status !== "PAID" && Number(x.total_remaining) < Number(x.total_due) && <span className="text-amber-700"> · ค้าง {money(x.total_remaining)}</span>}
+                      {pv.assetPct(x.loan_asset_id) != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {pv.assetPct(x.loan_asset_id)}%</div>}
+                    </div>
+                    <div className="text-xs text-slate-400">เงินต้นที่ได้คืนไม่นับเป็นรายได้ · ดอกเบี้ยนับเป็นรายได้</div>
+                    {canWrite && x.status !== "PAID" && (
+                      <div className="mt-2">
+                        <LoanPaymentForm assetId={x.loan_asset_id} currency={x.currency} banks={banks} today={today} minDate={goLive} small button="บันทึกรับ"
+                          title={`รับชำระ ${x.loan_name} งวดที่ ${x.installment_no}`}
+                          principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)} />
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </section>
