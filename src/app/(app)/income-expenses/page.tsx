@@ -163,7 +163,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         <>
           {canWrite && inMonth && <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">รายได้ที่คาดไว้ ({thMonth(start)})</h2>
+            <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำและสัญญาเช่า · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
             {(expected ?? []).length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
@@ -234,7 +234,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           </section>
 
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">รายได้ประจำ</h2>
+            <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
             {(templates ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
               <ul className="space-y-1 text-sm">
                 {(templates ?? []).map((t) => (
@@ -261,19 +261,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       {/* ============================================================ ค่าใช้จ่าย */}
       {tab === "expense" && (
         <>
-          <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5">
-            <div>
-              <div className="text-xs text-slate-500">ค่าใช้จ่าย {thMonth(start)}</div>
-              <div className="text-xl font-semibold tabular-nums">{track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}</div>
-              <div className={`text-xs ${TRACK[track].cls}`}>{TRACK[track].text}</div>
-            </div>
-            {canWrite && track !== "NOT_TRACKED" && inMonth && <MonthStatusForm month={start} status={track} />}
-          </section>
           {canWrite && inMonth && <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้</p>
 
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่คาดไว้ ({thMonth(start)})</h2>
+            <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
             {costs.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
@@ -309,6 +301,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             )}
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-medium text-slate-900">ค่าใช้จ่ายที่บันทึกแล้ว</h2>
+                <div className="mt-0.5 text-sm">
+                  <span className="font-semibold tabular-nums">{track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}</span>
+                  <span className={`ml-2 text-xs ${TRACK[track].cls}`}>{TRACK[track].text}</span>
+                </div>
+              </div>
+              {canWrite && track !== "NOT_TRACKED" && inMonth && <MonthStatusForm month={start} status={track} />}
+            </div>
             {(items ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
@@ -365,7 +367,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ</h2>
+              <h2 className="font-medium text-slate-900">ตั้งค่าค่าใช้จ่ายประจำ</h2>
               {[...costYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
                 <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
               ))}
