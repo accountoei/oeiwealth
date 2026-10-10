@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, type ActionState } from "../actions";
 
@@ -20,10 +21,12 @@ const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
 /**
  * บันทึกรับชำระ · ใช้จากตารางผ่อนได้ (เติมเงินต้น / ดอกเบี้ยของงวดให้ แก้ได้ถ้ารับจริงไม่เท่า)
  * interestOwed: ดอกเบี้ยค้างตามตาราง → มีช่อง "ยอดรวมที่รับ" แบ่งให้เอง: หักดอกเบี้ยค้างก่อน ที่เหลือเป็นเงินต้น
+ * principalDue: เงินต้นที่ถึงกำหนดตามตาราง → บันทึกแล้วถ้ารับเงินต้นเกิน ถามต่อว่าจะคำนวณงวดที่เหลือใหม่ไหม
  */
-export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, title, button = "บันทึกรับชำระ", small = false }: {
+export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, principalDue, title,
+  button = "บันทึกรับชำระ", small = false }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
-  principal?: number; interest?: number; interestOwed?: number; title?: string; button?: string; small?: boolean;
+  principal?: number; interest?: number; interestOwed?: number; principalDue?: number; title?: string; button?: string; small?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
@@ -38,6 +41,23 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
     setI(amt(Math.round(ii * 100) / 100)); setP(amt(Math.round((t - ii) * 100) / 100));
   };
   const sumOf = (pp: string, iv: string) => setTotal(amt(num(pp) + num(iv)));
+  const extra = principalDue != null ? Math.round((num(p) - principalDue) * 100) / 100 : 0;
+  const [dismissed, setDismissed] = useState(false);
+  if (state.ok && extra > 0.01 && !dismissed) {
+    const href = (k: string) => `/financial/loans/${assetId}?restructure=${k}`;
+    return (
+      <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm">
+        <p className="text-emerald-700">{state.ok}</p>
+        <p className="font-medium text-slate-900">รับเงินต้นเกินงวด {amt(extra)} — จะคำนวณงวดที่เหลือใหม่เลยไหม?</p>
+        <div className="flex flex-wrap gap-2">
+          <Link href={href("end")} className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700">ลดค่างวด (จบวันเดิม)</Link>
+          <Link href={href("payment")} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">จบเร็วขึ้น (ค่างวดเดิม)</Link>
+          <button type="button" onClick={() => setDismissed(true)} className="px-2 text-slate-500 underline">ไม่ต้อง (จ่ายล่วงหน้า ตารางเดิม)</button>
+        </div>
+        <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — ส่วนที่เกินจะหักงวดถัดไปตามลำดับ</p>
+      </div>
+    );
+  }
   if (state.ok && small) return <span className="text-xs text-emerald-700">{state.ok}</span>;
   if (!open) return <button type="button" onClick={() => setOpen(true)}
     className={small ? "rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" : btn}>{button}</button>;

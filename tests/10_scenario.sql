@@ -169,6 +169,8 @@ SELECT t.ok(public.set_loan_schedule(t.a('เงินกู้ญาติ'), j
 SELECT t.ok((SELECT count(*) FROM public.loan_schedule_lines WHERE deleted_at IS NULL) = 7
             AND (SELECT count(*) FROM public.loan_schedule_lines WHERE deleted_at IS NOT NULL) = 1,
             'แก้ทั้งชุด → แทนที่ของเดิม (soft delete)');
+SELECT t.ok((SELECT due_date = current_date + 20 AND derived_status = 'DUE_SOON' FROM public.v_loans_status),
+            'วันครบกำหนดสัญญา = งวดสุดท้ายของตาราง · เตือนใกล้ครบ');
 SELECT t.ok((SELECT installment_no = 1 FROM public.loan_schedule_lines WHERE due_date = '2026-02-28' AND deleted_at IS NULL),
             'เรียงเลขงวดตามวันที่ให้เอง');
 UPDATE public.loan_schedule_lines SET notes = 'ตรวจตารางที่นำเข้า' WHERE installment_no = 1 AND deleted_at IS NULL;
@@ -531,6 +533,7 @@ SELECT t.ok((SELECT status = 'PENDING' AND interest_remaining = 3000 AND princip
 SELECT t.ok((SELECT sum(principal_due) FROM public.loan_schedule_lines WHERE deleted_at IS NULL)
               - (SELECT outstanding_principal FROM public.loan_details) = 150000,
             'เงินต้นตามตาราง − คงเหลือ = ส่วนที่ได้คืนแล้ว (สอดคล้องหลังปรับ)');
+SELECT t.ok((SELECT due_date = '2027-02-28' FROM public.loan_details), 'ปรับตาราง (ต่อสัญญา) → วันครบกำหนดสัญญาเลื่อนตาม');
 SELECT t.fails($$UPDATE public.loan_schedule_lines SET notes = 'x' WHERE installment_no = 6 AND deleted_at IS NULL$$,
   'LOCKED', 'หลังปรับ: งวดที่ตัดแล้ว (รับแล้ว) แก้ไม่ได้');
 RESET ROLE;

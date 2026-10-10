@@ -5,6 +5,7 @@ import { saveSchedule, type ActionState } from "../actions";
 import { generateSchedule, parseScheduleRows, parseScheduleText, PAYMENT_LABEL, scheduleToText, SCHED_METHOD_LABEL,
   type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate } from "@/lib/format";
+import { DayCountFields } from "./day-count";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -21,7 +22,7 @@ type Mode = "FORMULA" | "TEXT";
 type XSheet = { sheet: string; data: unknown[][] };
 export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedule }: {
   assetId: string; currency: string; current: SchedLine[]; hasSchedule: boolean;
-  defaults: { amount: number; ratePct: number; firstDue: string };
+  defaults: { amount: number; ratePct: number; firstDue: string; interestFrom?: string };
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>(hasSchedule ? "TEXT" : "FORMULA");
@@ -35,6 +36,8 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const [rate, setRate] = useState(defaults.ratePct ? String(defaults.ratePct) : "");
   const [periods, setPeriods] = useState("12");
   const [every, setEvery] = useState("1");
+  const [actual, setActual] = useState(false);
+  const [from, setFrom] = useState(defaults.interestFrom ?? "");
   const [first, setFirst] = useState(defaults.firstDue);
   const [sheets, setSheets] = useState<XSheet[]>([]);
   const [fileName, setFileName] = useState("");
@@ -76,7 +79,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
 
   const calc = () => {
     const r = generateSchedule({ method, basis, amount: num(amount), ratePct: num(rate), periods: num(periods), payment: num(payment),
-      firstDue: first, everyMonths: Number(every) });
+      firstDue: first, everyMonths: Number(every), dayCount: actual ? "ACTUAL_365" : "MONTHLY", interestFrom: from || undefined });
     setCalcError(r.error ?? "");
     setGenerated(r.error ? null : r.lines);
     if (!r.error) setText(scheduleToText(r.lines));   // ส่งต่อให้วิธีที่ 2 แก้ทีละงวดได้
@@ -126,6 +129,8 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
               ? <label className="text-sm">{PAYMENT_LABEL[method]}<input value={payment} onChange={(e) => setPayment(e.target.value)} inputMode="decimal" className={input} /></label>
               : <label className="text-sm">จำนวนงวด<input value={periods} onChange={(e) => setPeriods(e.target.value)} name="quantity" inputMode="decimal" className={input} /></label>}
             <label className="text-sm">ครบกำหนดงวดแรก<input type="date" value={first} onChange={(e) => setFirst(e.target.value)} className={input} /></label>
+            <DayCountFields actual={actual} setActual={(v) => { setActual(v); setGenerated(null); }} from={from}
+              setFrom={(v) => { setFrom(v); setGenerated(null); }} hint="ตั้งต้น = วันที่ให้กู้" />
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={calc} className={obtn}>คำนวณ</button>

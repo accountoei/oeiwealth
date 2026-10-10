@@ -16,8 +16,12 @@ import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
 
-export default async function LoanDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LoanDetailPage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string }>;
+}) {
   const { id } = await params;
+  const rs = (await searchParams).restructure;
+  const preset = rs === "end" || rs === "payment" ? rs : undefined;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: l }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }] = await Promise.all([
@@ -52,6 +56,12 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
   const payable = new Set([...overdue.map((x) => x.id), ...(nextDue ? [nextDue.id] : [])]);
   // ดอกเบี้ยค้างสะสมถึงงวดนั้น (ใช้แบ่งยอดรวมที่รับ: หักดอกก่อน ที่เหลือเป็นต้น)
   const interestOwedUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.interest_remaining), 0);
+  const principalDueUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.principal_remaining), 0);
+  // คำนวณงวดที่เหลือใหม่: ค่าตั้งต้น
+  const restartAt = nextDue?.due_date ?? addMonthsKeepDay(today, 1);
+  const periodsLeft = open.filter((x) => x.due_date >= restartAt).length || open.length;
+  const prevDue = sched.filter((x) => x.due_date < restartAt).at(-1)?.due_date ?? l.loan_date ?? undefined;
+  const methodGuess = open.length > 1 && open.slice(0, -1).every((x) => Number(x.principal_due) === 0) ? "INTEREST_ONLY" as const : "EQUAL_PAYMENT" as const;
   const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
   // บันทึกรับชำระแล้ว → แก้ตารางทั้งชุดไม่ได้ · งวดที่รับแล้วแก้ / ลบไม่ได้ (ฐานข้อมูลบังคับ: 20261010000200_loan_schedule_locks)
@@ -122,7 +132,8 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
       {canWrite && l.status !== "CLOSED" && l.status !== "WRITTEN_OFF" && (
         <div className="flex flex-wrap gap-2">
           <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
-            interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
+            interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
+            principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
           <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
         </div>
       )}
@@ -146,15 +157,15 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
           {canDelete && loanOpen && open.length > 0 && (
             <RestructureEditor assetId={id} currency={l.currency} outstanding={Number(l.outstanding_principal ?? 0)}
               ratePct={Number(l.interest_rate ?? 0)}
-              startDefault={nextDue?.due_date ?? addMonthsKeepDay(today, 1)}
+              startDefault={restartAt} methodGuess={methodGuess} interestFrom={prevDue} preset={preset} periodsDefault={periodsLeft}
               overdueInterest={Math.round(open.filter((x) => x.due_date <= today).reduce((s, x) => s + Number(x.interest_remaining), 0) * 100) / 100}
-              old={{ count: open.length, firstTotal: Number(open[0]?.total_remaining ?? 0),
+              old={{ count: open.length, firstTotal: Number(nextDue?.total_due ?? open[0]?.total_due ?? 0),
                 interest: open.reduce((s, x) => s + Number(x.interest_remaining), 0), lastDue: open.at(-1)?.due_date ?? null }} />
           )}
           {canDelete && loanOpen && (!hasPayments || sched.length === 0) && (
             <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
               current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
-              defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0),
+              defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0), interestFrom: l.loan_date ?? undefined,
                 firstDue: addMonthsKeepDay(l.loan_date ?? today, 1) }} />
           )}
         </div>
@@ -185,7 +196,7 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
                           <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} small button="บันทึกรับ"
                             title={`รับชำระงวดที่ ${x.installment_no} (ครบ ${thDate(x.due_date)})`}
                             principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
-                            interestOwed={interestOwedUpTo(x.due_date)} />
+                            interestOwed={interestOwedUpTo(x.due_date)} principalDue={principalDueUpTo(x.due_date)} />
                         )}
                         {canWrite && !(hasPayments && x.status === "PAID") && <div className="mt-1"><RowActions table="loan_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
                           { name: "due_date", label: "ครบกำหนด", type: "date", value: x.due_date },

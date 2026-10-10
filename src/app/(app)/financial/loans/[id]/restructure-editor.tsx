@@ -1,9 +1,11 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { restructureSchedule, type ActionState } from "../actions";
 import { generateSchedule, PAYMENT_LABEL, SCHED_METHOD_LABEL, type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate } from "@/lib/format";
+import { DayCountFields } from "./day-count";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -18,24 +20,35 @@ export type OldSummary = { count: number; firstTotal: number; interest: number; 
  * งวดที่รับแล้วเก็บไว้ · งวดที่ยังไม่ครบถูกแทนด้วยตารางใหม่ (ฐานข้อมูลทำให้ในครั้งเดียว: restructure_loan_schedule)
  * ดอกเบี้ยค้าง (งวดที่ถึงกำหนดแล้วแต่ยังไม่ได้รับดอก) เลือกรวมเข้างวดแรกของตารางใหม่ได้ ไม่ให้หายไป
  */
-export function RestructureEditor({ assetId, currency, outstanding, ratePct, startDefault, overdueInterest, old }: {
+export function RestructureEditor({ assetId, currency, outstanding, ratePct, startDefault, overdueInterest, old, methodGuess = "EQUAL_PAYMENT",
+  interestFrom, preset, periodsDefault }: {
   assetId: string; currency: string; outstanding: number; ratePct: number; startDefault: string;
-  overdueInterest: number; old: OldSummary;
+  overdueInterest: number; old: OldSummary; methodGuess?: SchedMethod; interestFrom?: string;
+  /** เปิดมาจากคำถามหลังรับเงินต้นเกินงวด: end = ลดค่างวด (จบวันเดิม) · payment = จบเร็วขึ้น (ค่างวดเดิม) */
+  preset?: "end" | "payment"; periodsDefault?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [method, setMethod] = useState<SchedMethod>("EQUAL_PAYMENT");
-  const [basis, setBasis] = useState<SchedBasis>("PERIODS");
+  const router = useRouter();
+  const pathname = usePathname();
+  const box = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(!!preset);
+  const [method, setMethod] = useState<SchedMethod>(methodGuess);
+  const [basis, setBasis] = useState<SchedBasis>(preset === "payment" && methodGuess !== "INTEREST_ONLY" ? "PAYMENT" : "PERIODS");
   const [amount, setAmount] = useState(fmt2(outstanding));
   const [rate, setRate] = useState(ratePct ? String(ratePct) : "");
-  const [periods, setPeriods] = useState(String(Math.max(1, old.count)));
+  const [periods, setPeriods] = useState(String(Math.max(1, periodsDefault ?? old.count)));
   const [payment, setPayment] = useState(old.firstTotal ? fmt2(old.firstTotal) : "");
   const [every, setEvery] = useState("1");
+  const [actual, setActual] = useState(false);
+  const [from, setFrom] = useState(interestFrom ?? "");
   const [first, setFirst] = useState(startDefault);
   const [carry, setCarry] = useState(overdueInterest > 0);
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<SchedLine[] | null>(null);
   const [err, setErr] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(restructureSchedule, {});
+  useEffect(() => { if (preset) box.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [preset]);
+  // บันทึกแล้ว: เอา ?restructure= ออกจากลิงก์ (กด Refresh จะได้ไม่เปิดซ้ำ)
+  useEffect(() => { if (state.ok && preset) router.replace(pathname, { scroll: false }); }, [state.ok, preset, pathname, router]);
   const neu = useMemo(() => (lines ? {
     count: lines.length, firstTotal: lines[0] ? lines[0].principal + lines[0].interest : 0,
     interest: lines.reduce((s, l) => s + l.interest, 0), lastDue: lines.at(-1)?.due_date ?? null,
@@ -47,7 +60,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   const byPayment = basis === "PAYMENT" && method !== "INTEREST_ONLY";
   const calc = () => {
     const r = generateSchedule({ method, basis, amount: num(amount), ratePct: num(rate), periods: num(periods), payment: num(payment),
-      firstDue: first, everyMonths: Number(every) });
+      firstDue: first, everyMonths: Number(every), dayCount: actual ? "ACTUAL_365" : "MONTHLY", interestFrom: from || undefined });
     setErr(r.error ?? "");
     if (r.error) { setLines(null); return; }
     const out = r.lines.map((l) => ({ ...l }));
@@ -60,7 +73,12 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   const reset = () => setLines(null);
 
   return (
-    <div className="w-full space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-5">
+    <div ref={box} className="w-full scroll-mt-4 space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-5">
+      {preset && !state.ok && (
+        <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">
+          {preset === "end" ? "ลดค่างวด — จบวันเดิม: ใส่จำนวนงวดที่เหลือเท่าเดิมไว้ให้แล้ว" : "จบเร็วขึ้น — ค่างวดเดิม: ใส่ยอดผ่อนต่องวดเดิมไว้ให้แล้ว"} · ตรวจแล้วกด &ldquo;คำนวณ&rdquo;
+        </p>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-medium text-slate-900">คำนวณงวดที่เหลือใหม่</h3>
@@ -106,6 +124,8 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
           <label className="text-sm">ครบกำหนดงวดแรกของตารางใหม่
             <input type="date" value={first} onChange={(e) => { setFirst(e.target.value); reset(); }} className={input} />
           </label>
+          <DayCountFields actual={actual} setActual={(v) => { setActual(v); reset(); }} from={from}
+            setFrom={(v) => { setFrom(v); reset(); }} hint="ตั้งต้น = วันครบกำหนดงวดล่าสุดที่รับแล้ว" />
           {overdueInterest > 0 && (
             <label className="flex items-start gap-2 text-sm md:col-span-3">
               <input type="checkbox" checked={carry} onChange={(e) => { setCarry(e.target.checked); reset(); }} className="mt-1" />
