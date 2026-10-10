@@ -36,7 +36,7 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Cash &amp; Deposits</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Cash &amp; Bank Accounts</h1>
           <p className="text-sm text-slate-500">บัญชีเงินฝากทั้งหมดของครอบครัว</p>
         </div>
         <div className="flex items-start gap-2">

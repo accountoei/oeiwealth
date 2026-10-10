@@ -69,7 +69,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Cash &amp; Deposits</Link>
+        <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Cash &amp; Bank Accounts</Link>
         <h1 className="mt-1 text-2xl font-semibold text-slate-900">{acc.name}</h1>
         <p className="text-sm text-slate-500">
           {acc.bank_name} · {ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type} · {acc.currency}

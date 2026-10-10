@@ -17,7 +17,7 @@ type Preview = {
 };
 
 const CAT: Record<string, string> = {
-  CASH: "Cash & Deposits (กระทบยอดธนาคาร)", INVESTMENTS: "Investments", PROPERTY_OTHER: "Property / สินทรัพย์อื่น",
+  CASH: "Cash & Bank Accounts (กระทบยอดธนาคาร)", INVESTMENTS: "Investments", PROPERTY_OTHER: "Property / สินทรัพย์อื่น",
   LIABILITIES: "Liabilities / บัตรเครดิต", INCOME_EXPENSES: "Income & Expenses", OWNERSHIP: "สัดส่วนเจ้าของ", FX_SYSTEM: "FX & ระบบ",
 };
 const PILL: Record<string, string> = {
