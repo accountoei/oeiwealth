@@ -2,7 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { saveSchedule, type ActionState } from "../actions";
-import { generateSchedule, parseScheduleText, PAYMENT_LABEL, scheduleToText, SCHED_METHOD_LABEL,
+import { generateSchedule, parseScheduleRows, parseScheduleText, PAYMENT_LABEL, scheduleToText, SCHED_METHOD_LABEL,
   type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate } from "@/lib/format";
 
@@ -13,10 +13,12 @@ const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
 
 /**
  * ตั้ง / แก้ตารางผ่อนทั้งชุด — เลือกวิธีจาก Dropdown แสดงเฉพาะวิธีนั้น
- * 1) คำนวณจากสูตร (ใส่จำนวนงวด หรือ ยอดผ่อนต่องวด)  2) วางจาก Excel / แก้ทีละงวด
+ * 1) คำนวณจากสูตร (ใส่จำนวนงวด หรือ ยอดผ่อนต่องวด)  2) อัปโหลดไฟล์ / วางจาก Excel / แก้ทีละงวด
+ *    ไฟล์ .xlsx อ่านในเบราว์เซอร์ (ไม่ส่งไฟล์ขึ้น Server · ไม่เก็บไฟล์) → แปลงเป็นข้อความให้ตรวจ / แก้ก่อนบันทึก
  * ผลคำนวณจากวิธีที่ 1 ส่งต่อไปแก้ทีละงวดในวิธีที่ 2 ได้ · ดูตัวอย่างก่อนบันทึก · บันทึก = แทนที่ตารางเดิมทั้งชุด
  */
 type Mode = "FORMULA" | "TEXT";
+type XSheet = { sheet: string; data: unknown[][] };
 export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedule }: {
   assetId: string; currency: string; current: SchedLine[]; hasSchedule: boolean;
   defaults: { amount: number; ratePct: number; firstDue: string };
@@ -34,6 +36,9 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const [periods, setPeriods] = useState("12");
   const [every, setEvery] = useState("1");
   const [first, setFirst] = useState(defaults.firstDue);
+  const [sheets, setSheets] = useState<XSheet[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [fileMsg, setFileMsg] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(saveSchedule, {});
   const parsed = useMemo(() => parseScheduleText(text), [text]);
   const lines = mode === "FORMULA" ? generated ?? [] : parsed.lines;
@@ -43,6 +48,31 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const byPayment = basis === "PAYMENT" && method !== "INTEREST_ONLY";
 
   if (!open) return <button type="button" onClick={() => setOpen(true)} className={hasSchedule ? obtn : btn}>{hasSchedule ? "แก้ตารางผ่อนทั้งชุด" : "+ ตั้งตารางผ่อน"}</button>;
+
+  // อ่านแผ่นงาน → ข้อความในช่อง (ใช้หัวตาราง "เงินต้น" / "ดอกเบี้ย" · ข้ามแถวยอด 0 · วันที่ พ.ศ. แปลงให้)
+  const pickSheet = (list: XSheet[], name: string) => {
+    const sh = list.find((x) => x.sheet === name);
+    if (!sh) return;
+    const r = parseScheduleRows(sh.data);
+    setText(scheduleToText(r.lines));
+    setFileMsg(r.lines.length === 0
+      ? `แผ่นงาน "${name}" ไม่พบงวดผ่อน — ต้องมีหัวตาราง "เงินต้น" และ "ดอกเบี้ย" หรือคอลัมน์ วันที่ · เงินต้น · ดอกเบี้ย`
+      : `อ่านแผ่นงาน "${name}" ได้ ${r.lines.length} งวด${r.skipped ? ` · ข้ามงวดที่ยอดเป็น 0 จำนวน ${r.skipped} แถว` : ""}${r.errors.length ? ` · มีปัญหา ${r.errors.length} แถว: ${r.errors.slice(0, 3).join(", ")}` : ""}`);
+  };
+  const onFile = async (f: File | undefined) => {
+    if (!f) return;
+    setFileName(f.name); setFileMsg("กำลังอ่านไฟล์…"); setSheets([]);
+    try {
+      const { default: readXlsxFile } = await import("read-excel-file/universal");
+      const list = (await readXlsxFile(f)) as XSheet[];
+      setSheets(list);
+      // เลือกแผ่นงานแรกที่อ่านงวดได้
+      const first = list.find((x) => parseScheduleRows(x.data).lines.length > 0) ?? list[0];
+      if (first) pickSheet(list, first.sheet);
+    } catch {
+      setFileMsg("อ่านไฟล์ไม่ได้ — รองรับเฉพาะไฟล์ .xlsx (ถ้าเป็น .xls ให้เปิดใน Excel แล้ว Save As เป็น .xlsx)");
+    }
+  };
 
   const calc = () => {
     const r = generateSchedule({ method, basis, amount: num(amount), ratePct: num(rate), periods: num(periods), payment: num(payment),
@@ -65,7 +95,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
       <label className="block text-sm">วิธีใส่ตารางผ่อน
         <select value={mode} onChange={(e) => setMode(e.target.value as Mode)} className={input}>
           <option value="FORMULA">ทางที่ 1 · คำนวณจากสูตร</option>
-          <option value="TEXT">ทางที่ 2 · วางจาก Excel / แก้ทีละงวด</option>
+          <option value="TEXT">ทางที่ 2 · อัปโหลด / วางจาก Excel / แก้ทีละงวด</option>
         </select>
       </label>
 
@@ -110,9 +140,28 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
 
       {mode === "TEXT" && (
         <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-sm">อัปโหลดไฟล์ Excel (.xlsx)
+              <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => onFile(e.target.files?.[0])}
+                className="mt-1 block text-sm file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm" />
+            </label>
+            {sheets.length > 1 && (
+              <label className="text-sm">แผ่นงาน
+                <select onChange={(e) => pickSheet(sheets, e.target.value)} defaultValue={sheets.find((x) => parseScheduleRows(x.data).lines.length > 0)?.sheet}
+                  className={input}>
+                  {sheets.map((x) => <option key={x.sheet} value={x.sheet}>{x.sheet}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+          {fileMsg && <p className={`text-xs ${fileMsg.startsWith("อ่านแผ่นงาน") ? "text-emerald-700" : fileMsg.startsWith("กำลัง") ? "text-slate-500" : "text-red-600"}`}>
+            {fileName && <span className="text-slate-500">{fileName} · </span>}{fileMsg}</p>}
+          <p className="text-xs text-slate-500">ไฟล์อ่านในเครื่องของคุณเท่านั้น ไม่ถูกอัปโหลดหรือเก็บไว้ในระบบ · ผลที่อ่านได้จะขึ้นในช่องด้านล่าง ตรวจ / แก้ได้ก่อนบันทึก</p>
           <p className="text-xs text-slate-500">
-            1 บรรทัด = 1 งวด · คอลัมน์ตามลำดับ: <b>วันครบกำหนด · เงินต้น · ดอกเบี้ย · หมายเหตุ (ถ้ามี)</b> — มีคอลัมน์เลขงวดนำหน้าก็ได้ ·
-            หัวตาราง / บรรทัดรวม ข้ามให้เอง · วันที่ใช้ 05/11/2569, 5/11/2026 หรือ 2026-11-05 ได้
+            หรือคัดลอกจาก Excel มาวาง: 1 บรรทัด = 1 งวด · ถ้าคัดลอกหัวตารางมาด้วย ระบบใช้คอลัมน์ <b>&ldquo;เงินต้น&rdquo;</b> และ <b>&ldquo;ดอกเบี้ย&rdquo;</b> ตามหัวตาราง ·
+            ไม่มีหัวตาราง: <b>วันครบกำหนด · เงินต้น · ดอกเบี้ย · หมายเหตุ</b> · บรรทัดรวม / งวดที่ยอดเป็น 0 ข้ามให้เอง ·
+            วันที่ใช้ 15 มิ.ย. 68, 15/06/2568 หรือ 2025-06-15 ได้
           </p>
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} data-plain
             placeholder={"2026-11-05\t10000.00\t500.00\n2026-12-05\t10000.00\t450.00"}
