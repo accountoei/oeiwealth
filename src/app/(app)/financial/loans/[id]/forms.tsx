@@ -14,15 +14,30 @@ function Msg({ s }: { s: ActionState }) {
   return null;
 }
 
-/** บันทึกรับชำระ · ใช้จากตารางผ่อนได้ (เติมเงินต้น / ดอกเบี้ยของงวดให้ แก้ได้ถ้ารับจริงไม่เท่า) */
-export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, title, button = "บันทึกรับชำระ", small = false }: {
+const amt = (v?: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
+const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
+
+/**
+ * บันทึกรับชำระ · ใช้จากตารางผ่อนได้ (เติมเงินต้น / ดอกเบี้ยของงวดให้ แก้ได้ถ้ารับจริงไม่เท่า)
+ * interestOwed: ดอกเบี้ยค้างตามตาราง → มีช่อง "ยอดรวมที่รับ" แบ่งให้เอง: หักดอกเบี้ยค้างก่อน ที่เหลือเป็นเงินต้น
+ */
+export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, title, button = "บันทึกรับชำระ", small = false }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
-  principal?: number; interest?: number; title?: string; button?: string; small?: boolean;
+  principal?: number; interest?: number; interestOwed?: number; title?: string; button?: string; small?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
+  const [p, setP] = useState(amt(principal));
+  const [i, setI] = useState(amt(interest));
+  const [total, setTotal] = useState(amt((principal ?? 0) + (interest ?? 0)));
   const list = banks.filter((b) => b.currency === currency);
-  const amt = (v?: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
+  const split = (v: string) => {
+    setTotal(v);
+    const t = num(v);
+    const ii = Math.min(t, Math.max(0, interestOwed ?? 0));
+    setI(amt(Math.round(ii * 100) / 100)); setP(amt(Math.round((t - ii) * 100) / 100));
+  };
+  const sumOf = (pp: string, iv: string) => setTotal(amt(num(pp) + num(iv)));
   if (state.ok && small) return <span className="text-xs text-emerald-700">{state.ok}</span>;
   if (!open) return <button type="button" onClick={() => setOpen(true)}
     className={small ? "rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" : btn}>{button}</button>;
@@ -36,8 +51,18 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
           <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
         </label>
         <span />
-        <label className="text-sm">ส่วนเงินต้น<input name="principal" inputMode="decimal" defaultValue={amt(principal)} className={input} /></label>
-        <label className="text-sm">ส่วนดอกเบี้ย (Gross)<input name="interest" inputMode="decimal" defaultValue={amt(interest)} className={input} /></label>
+        {interestOwed != null && (
+          <label className="text-sm md:col-span-3">ยอดรวมที่รับ (ตาม Statement)
+            <input value={total} onChange={(e) => split(e.target.value)} inputMode="decimal" data-money="off" className={`${input} md:w-1/3`} />
+            <span className="mt-1 block text-xs text-slate-500">
+              แบ่งให้เอง: หักดอกเบี้ยค้าง {amt(interestOwed) || "0.00"} ก่อน ที่เหลือเป็นเงินต้น · แก้ 2 ช่องด้านล่างเองได้
+            </span>
+          </label>
+        )}
+        <label className="text-sm">ส่วนเงินต้น<input name="principal" inputMode="decimal" value={p}
+          onChange={(e) => { setP(e.target.value); sumOf(e.target.value, i); }} className={input} /></label>
+        <label className="text-sm">ส่วนดอกเบี้ย (Gross)<input name="interest" inputMode="decimal" value={i}
+          onChange={(e) => { setI(e.target.value); sumOf(p, e.target.value); }} className={input} /></label>
         <label className="text-sm">ภาษีหัก ณ ที่จ่ายของดอกเบี้ย<input name="interest_tax" inputMode="decimal" className={input} /></label>
         <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" className={input} /></label>
       </div>
