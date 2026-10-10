@@ -14,23 +14,30 @@ function Msg({ s }: { s: ActionState }) {
   return null;
 }
 
-export function PaymentForm({ assetId, currency, banks, today, minDate }: { assetId: string; currency: string; banks: Bank[]; today: string; minDate: string }) {
+/** บันทึกรับชำระ · ใช้จากตารางผ่อนได้ (เติมเงินต้น / ดอกเบี้ยของงวดให้ แก้ได้ถ้ารับจริงไม่เท่า) */
+export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, title, button = "บันทึกรับชำระ", small = false }: {
+  assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
+  principal?: number; interest?: number; title?: string; button?: string; small?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
   const list = banks.filter((b) => b.currency === currency);
-  if (!open) return <button onClick={() => setOpen(true)} className={btn}>บันทึกรับชำระ</button>;
+  const amt = (v?: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
+  if (state.ok && small) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)}
+    className={small ? "rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" : btn}>{button}</button>;
   return (
-    <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+    <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
-      <h3 className="font-medium text-slate-900">รับชำระเงินกู้</h3>
+      <h3 className="font-medium text-slate-900">{title ?? "รับชำระเงินกู้"}</h3>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-sm">วันที่ได้รับ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">เข้าบัญชี *
           <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
         </label>
         <span />
-        <label className="text-sm">ส่วนเงินต้น<input name="principal" inputMode="decimal" className={input} /></label>
-        <label className="text-sm">ส่วนดอกเบี้ย (Gross)<input name="interest" inputMode="decimal" className={input} /></label>
+        <label className="text-sm">ส่วนเงินต้น<input name="principal" inputMode="decimal" defaultValue={amt(principal)} className={input} /></label>
+        <label className="text-sm">ส่วนดอกเบี้ย (Gross)<input name="interest" inputMode="decimal" defaultValue={amt(interest)} className={input} /></label>
         <label className="text-sm">ภาษีหัก ณ ที่จ่ายของดอกเบี้ย<input name="interest_tax" inputMode="decimal" className={input} /></label>
         <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" className={input} /></label>
       </div>

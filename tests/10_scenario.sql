@@ -445,6 +445,49 @@ SELECT t.ok((SELECT status <> 'PAID' FROM public.v_property_cost_tracking WHERE 
             'ลบรายการจ่าย → กลับเป็นยังไม่จ่าย');
 RESET ROLE;
 
+\echo '== 13e. ตารางผ่อนเงินให้กู้'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.set_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2026-02-28","principal":1}]')$$,
+  'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางผ่อนทั้งชุดไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$SELECT public.set_loan_schedule(t.a('บ้าน A'), '[{"due_date":"2026-02-28","principal":1}]')$$,
+  'ไม่พบเงินให้กู้', 'ตารางผ่อนผูกได้เฉพาะเงินให้กู้');
+SELECT t.fails($$SELECT public.set_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2026-02-28","principal":0}]')$$,
+  'มากกว่า 0', 'งวดยอด 0 ไม่ได้');
+-- ทั้งสัญญา 600,000: 6 งวด ๆ ละ 100,000 + ดอก 2,500 (ก.พ.–ก.ค.) + งวดอนาคต (ดอกอย่างเดียว)
+SELECT t.ok(public.set_loan_schedule(t.a('เงินกู้ญาติ'), jsonb_build_array(
+  jsonb_build_object('due_date', '2026-07-31', 'principal', 100000, 'interest', 2500),
+  jsonb_build_object('due_date', '2026-02-28', 'principal', 100000, 'interest', 2500),
+  jsonb_build_object('due_date', '2026-03-31', 'principal', 100000, 'interest', 2500),
+  jsonb_build_object('due_date', '2026-04-30', 'principal', 100000, 'interest', 2500),
+  jsonb_build_object('due_date', '2026-05-31', 'principal', 100000, 'interest', 2500),
+  jsonb_build_object('due_date', '2026-06-30', 'principal', 100000, 'interest', 2500),
+  jsonb_build_object('due_date', current_date + 20, 'interest', 2500))) = 7, 'ตั้งตารางผ่อน 7 งวด');
+SELECT t.ok((SELECT installment_no = 1 FROM public.loan_schedule_lines WHERE due_date = '2026-02-28' AND deleted_at IS NULL),
+            'เรียงเลขงวดตามวันที่ให้เอง');
+SELECT t.ok((SELECT principal_covered = 600000 - (SELECT outstanding_principal FROM public.loan_details)
+               FROM public.v_loan_schedule_status WHERE installment_no = 1),
+            'เงินต้นที่ได้คืน = ยอดตามตาราง − เงินต้นคงเหลือจริง');
+SELECT t.ok((SELECT status = 'PAID' AND total_remaining = 0 FROM public.v_loan_schedule_status WHERE installment_no = 1),
+            'งวดแรกได้คืนครบ → PAID');
+SELECT t.ok((SELECT status = 'OVERDUE' AND principal_remaining > 0 AND interest_remaining = 0
+               FROM public.v_loan_schedule_status WHERE installment_no = 5),
+            'งวด มิ.ย. (ก่อนยอดตั้งต้น): ดอกถือว่าเรียบร้อย · เงินต้นยังค้าง → OVERDUE');
+SELECT t.ok((SELECT interest_remaining = 0 FROM public.v_loan_schedule_status WHERE installment_no = 6),
+            'งวด ก.ค.: ดอกเบี้ย 2,500 บันทึกรับแล้ว');
+SELECT t.ok((SELECT status = 'PENDING' AND total_remaining = 2500 FROM public.v_loan_schedule_status WHERE installment_no = 7),
+            'งวดอนาคต → PENDING');
+SELECT t.ok(public.set_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2027-01-31","principal":450000}]') = 1, 'ตั้งตารางใหม่ 1 งวด');
+SELECT t.ok((SELECT count(*) FROM public.loan_schedule_lines WHERE deleted_at IS NULL) = 1
+            AND (SELECT count(*) FROM public.loan_schedule_lines WHERE deleted_at IS NOT NULL) = 7,
+            'ตั้งใหม่ → แทนที่ทั้งชุด (ของเดิม soft delete)');
+SELECT t.fails($$UPDATE public.loan_schedule_lines SET loan_asset_id = t.a('บ้าน A') WHERE deleted_at IS NULL$$, 'IMMUTABLE', 'ย้ายงวดไปสัญญาอื่นไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.v_loan_schedule_status) = 1, 'VIEWER อ่านตารางผ่อนได้');
+SELECT t.fails($$SELECT public.set_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2027-01-31","principal":1}]')$$,
+  'PERMISSION_DENIED', 'VIEWER แก้ตารางผ่อนไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

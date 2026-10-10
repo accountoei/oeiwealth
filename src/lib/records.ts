@@ -27,6 +27,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   investment_holdings: { name: "str", symbol: "str", maturity_date: "date", notes: "str", status: "str" },
   fcn_underlyings: { symbol: "str", name: "str", initial_price: "num", strike_price: "num", barrier_price: "num" },
   loan_details: { borrower_name: "str", interest_rate: "num", due_date: "date", status: "str", notes: "str" },
+  loan_schedule_lines: { due_date: "date", principal_due: "num", interest_due: "num", notes: "str" },
   alternative_asset_details: { brand: "str", model: "str", serial_no: "str", quantity: "num", storage_location: "str", condition: "str", details: "str" },
   insurance_policies: { insurer: "str", policy_no: "str", start_date: "date", end_date: "date", insured_amount: "num", premium: "num", status: "str", notes: "str" },
   assets: { name: "str", acquisition_date: "date", acquisition_cost: "num", status: "str", notes: "str" },
@@ -40,7 +41,8 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
 };
 const DELETABLE = new Set(["income_transactions", "expense_items", "cash_movements", "investment_transactions", "asset_valuations",
   "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "property_utilities",
-  "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings", "documents", "document_links"]);
+  "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings", "documents", "document_links",
+  "loan_schedule_lines"]);
 
 function refresh(form: FormData) {
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));

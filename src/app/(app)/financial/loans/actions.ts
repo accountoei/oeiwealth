@@ -59,3 +59,15 @@ export async function disburseMore(_: ActionState, form: FormData): Promise<Acti
   if (error) return { error: friendlyError(error.message) };
   return done(id, "บันทึกการให้กู้เพิ่มแล้ว");
 }
+
+/** ตั้ง / แทนที่ตารางผ่อนทั้งชุด (ADMIN / EDITOR · ฐานข้อมูลตรวจซ้ำ) */
+export async function saveSchedule(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  let lines: unknown;
+  try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "อ่านตารางผ่อนไม่ได้" }; }
+  if (!Array.isArray(lines) || lines.length === 0) return { error: "ตารางผ่อนต้องมีอย่างน้อย 1 งวด" };
+  const { data, error } = await supabase.rpc("set_loan_schedule", { p_loan_asset_id: id, p_lines: lines });
+  if (error) return { error: friendlyError(error.message) };
+  return done(id, `บันทึกตารางผ่อน ${data} งวดแล้ว`);
+}
