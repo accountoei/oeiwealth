@@ -10,6 +10,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ScheduleEditor } from "./schedule-editor";
+import { RestructureEditor } from "./restructure-editor";
 import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
@@ -49,6 +50,8 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
   const overdue = open.filter((x) => x.status === "OVERDUE");
   const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
   const payable = new Set([...overdue.map((x) => x.id), ...(nextDue ? [nextDue.id] : [])]);
+  // ดอกเบี้ยค้างสะสมถึงงวดนั้น (ใช้แบ่งยอดรวมที่รับ: หักดอกก่อน ที่เหลือเป็นต้น)
+  const interestOwedUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.interest_remaining), 0);
   const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
   // ประวัติ: การรับชำระครั้งเดียว (เงินต้น + ดอกเบี้ย) แสดงเป็น 1 แถว ยอดรวมตรงกับ Statement ธนาคาร
@@ -116,7 +119,8 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
 
       {canWrite && l.status !== "CLOSED" && l.status !== "WRITTEN_OFF" && (
         <div className="flex flex-wrap gap-2">
-          <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
+          <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
+            interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
           <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
         </div>
       )}
@@ -137,6 +141,14 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
               <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา ({money(l.principal)}) — สถานะ &ldquo;รับแล้ว&rdquo; อาจคลาดเคลื่อน</p>
             )}
           </div>
+          {canDelete && loanOpen && open.length > 0 && (
+            <RestructureEditor assetId={id} currency={l.currency} outstanding={Number(l.outstanding_principal ?? 0)}
+              ratePct={Number(l.interest_rate ?? 0)}
+              startDefault={nextDue?.due_date ?? addMonthsKeepDay(today, 1)}
+              overdueInterest={Math.round(open.filter((x) => x.due_date <= today).reduce((s, x) => s + Number(x.interest_remaining), 0) * 100) / 100}
+              old={{ count: open.length, firstTotal: Number(open[0]?.total_remaining ?? 0),
+                interest: open.reduce((s, x) => s + Number(x.interest_remaining), 0), lastDue: open.at(-1)?.due_date ?? null }} />
+          )}
           {canDelete && loanOpen && (
             <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
               current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
@@ -170,7 +182,8 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
                         {canWrite && loanOpen && payable.has(x.id) && (
                           <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} small button="บันทึกรับ"
                             title={`รับชำระงวดที่ ${x.installment_no} (ครบ ${thDate(x.due_date)})`}
-                            principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)} />
+                            principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
+                            interestOwed={interestOwedUpTo(x.due_date)} />
                         )}
                         {canWrite && <div className="mt-1"><RowActions table="loan_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
                           { name: "due_date", label: "ครบกำหนด", type: "date", value: x.due_date },

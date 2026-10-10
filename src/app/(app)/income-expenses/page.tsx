@@ -250,7 +250,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <div className="mt-2">
                         <LoanPaymentForm assetId={x.loan_asset_id} currency={x.currency} banks={banks} today={today} minDate={goLive} small button="บันทึกรับ"
                           title={`รับชำระ ${x.loan_name} งวดที่ ${x.installment_no}`}
-                          principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)} />
+                          principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
+                          interestOwed={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
+                            .reduce((s, y) => s + Number(y.interest_remaining), 0)} />
                       </div>
                     )}
                   </div>

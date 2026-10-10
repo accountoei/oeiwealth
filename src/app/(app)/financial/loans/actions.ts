@@ -71,3 +71,17 @@ export async function saveSchedule(_: ActionState, form: FormData): Promise<Acti
   if (error) return { error: friendlyError(error.message) };
   return done(id, `บันทึกตารางผ่อน ${data} งวดแล้ว`);
 }
+
+/** คำนวณงวดที่เหลือใหม่: เก็บงวดที่รับแล้ว · ตัดงวดรับบางส่วน · แทนงวดที่ยังไม่ได้รับด้วยตารางใหม่ (ADMIN / EDITOR) */
+export async function restructureSchedule(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  let lines: unknown;
+  try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "อ่านตารางใหม่ไม่ได้" }; }
+  if (!Array.isArray(lines) || lines.length === 0) return { error: "ตารางใหม่ต้องมีอย่างน้อย 1 งวด" };
+  const { data, error } = await supabase.rpc("restructure_loan_schedule", {
+    p_loan_asset_id: id, p_lines: lines, p_note: str(form.get("note")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  return done(id, `ปรับตารางแล้ว · งวดใหม่ ${data} งวด`);
+}

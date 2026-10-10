@@ -488,6 +488,38 @@ SELECT t.fails($$SELECT public.set_loan_schedule(t.a('เงินกู้ญ�
   'PERMISSION_DENIED', 'VIEWER แก้ตารางผ่อนไม่ได้');
 RESET ROLE;
 
+\echo '== 13f. ปรับตารางผ่อน (คำนวณงวดที่เหลือใหม่)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT outstanding_principal FROM public.loan_details) = 450000, 'เงินต้นคงเหลือ 450,000 ก่อนปรับตาราง');
+-- 600,000: งวด มิ.ย. (ก่อนยอดตั้งต้น) 150,000 · ก.ค. 100,000 + ดอก 2,500 · ส.ค. / ก.ย. 175,000 + ดอก 2,500
+SELECT public.set_loan_schedule(t.a('เงินกู้ญาติ'), '[
+  {"due_date":"2026-06-30","principal":150000},
+  {"due_date":"2026-07-31","principal":100000,"interest":2500},
+  {"due_date":"2026-08-31","principal":175000,"interest":2500},
+  {"due_date":"2026-09-30","principal":175000,"interest":2500}]');
+SELECT t.ok((SELECT status = 'OVERDUE' AND principal_remaining = 100000 AND interest_remaining = 0
+               FROM public.v_loan_schedule_status WHERE installment_no = 2),
+            'ก่อนปรับ: งวด ก.ค. ได้ดอกแล้ว ค้างเงินต้น 100,000');
+SELECT t.fails($$SELECT public.restructure_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2026-06-01","principal":450000}]')$$,
+  'หลังงวดที่รับครบแล้ว', 'ตารางใหม่เริ่มก่อนงวดที่รับครบแล้วไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.restructure_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2027-01-31","principal":450000}]')$$,
+  'PERMISSION_DENIED', 'CONTRIBUTOR ปรับตารางไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(public.restructure_loan_schedule(t.a('เงินกู้ญาติ'), '[
+  {"due_date":"2027-01-31","principal":225000,"interest":3000},
+  {"due_date":"2027-02-28","principal":225000,"interest":1500}]', 'ผู้กู้ขอขยายเวลา') = 2, 'ปรับตาราง: ใส่งวดใหม่ 2 งวด');
+SELECT t.ok((SELECT count(*) FROM public.loan_schedule_lines WHERE deleted_at IS NULL) = 4, 'เหลือ 4 งวด (เดิมที่รับแล้ว 2 + ใหม่ 2)');
+SELECT t.ok((SELECT status = 'PAID' AND principal_due = 0 AND interest_due = 2500 FROM public.v_loan_schedule_status WHERE installment_no = 2),
+            'งวด ก.ค. ถูกตัดเหลือส่วนที่รับแล้ว (ดอก 2,500) → รับแล้ว');
+SELECT t.ok((SELECT status = 'PENDING' AND interest_remaining = 3000 AND principal_remaining = 225000
+               AND notes LIKE '%ผู้กู้ขอขยายเวลา%' FROM public.v_loan_schedule_status WHERE installment_no = 3),
+            'งวดใหม่แรก: ดอกที่รับไปแล้วไม่ถูกนำมาหัก · มีหมายเหตุการปรับ');
+SELECT t.ok((SELECT sum(principal_due) FROM public.loan_schedule_lines WHERE deleted_at IS NULL)
+              - (SELECT outstanding_principal FROM public.loan_details) = 150000,
+            'เงินต้นตามตาราง − คงเหลือ = ส่วนที่ได้คืนแล้ว (สอดคล้องหลังปรับ)');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
