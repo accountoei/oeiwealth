@@ -71,7 +71,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,counter_amount,counter_currency,fee,is_derived,description")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,counter_amount,counter_currency,fee,is_derived,description,movement_group_id")
       .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons(name))")
       .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
@@ -466,13 +466,33 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
 type Move = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
   to_credit_card_id: string | null; to_liability_id: string | null; amount: number; currency: string; counter_amount: number | null;
-  counter_currency: string | null; fee: number | null; is_derived: boolean; description: string | null };
+  counter_currency: string | null; fee: number | null; is_derived: boolean; description: string | null; movement_group_id?: string | null;
+  parts?: Move[] };
+
+/** รับชำระเงินให้กู้ครั้งเดียว (เงินต้น + ดอกเบี้ย) เข้าบัญชีเดียวกัน → รวมเป็น 1 แถว ให้ตรงกับ Statement */
+function mergeGroups(moves: Move[]): Move[] {
+  const out: Move[] = []; const byGroup = new Map<string, Move>();
+  moves.forEach((m) => {
+    const g = m.movement_group_id;
+    const merged = g ? byGroup.get(g) : undefined;
+    if (merged && merged.to_asset_id && merged.to_asset_id === m.to_asset_id) {
+      merged.parts = [...(merged.parts ?? [merged]), m];
+      merged.amount = Number(merged.amount) + Number(m.amount);
+      return;
+    }
+    const r = { ...m }; out.push(r);
+    if (g) byGroup.set(g, r);
+  });
+  return out;
+}
 
 const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PAYMENT", "OTHER_IN", "OTHER_OUT",
   "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "SECURITY_DEPOSIT_IN"];
 
 function MovesTable({ moves, name, actions = false, canDelete = false }: { moves: Move[]; name: Map<string, string>; actions?: boolean; canDelete?: boolean }) {
   if (!moves.length) return <p className="text-sm text-slate-500">ยังไม่มีรายการในเดือนนี้</p>;
+  const rows = mergeGroups(moves);
+  const partLabel = (m: Move) => (m.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "เงินต้น" : m.movement_type === "INCOME" ? "ดอกเบี้ย" : MOVE_LABEL[m.movement_type] ?? m.movement_type);
   const label = (id: string | null) => (id ? name.get(id) ?? "พอร์ต / ทรัพย์สิน" : "ภายนอก");
   return (
     <table className="w-full text-sm">
@@ -480,10 +500,10 @@ function MovesTable({ moves, name, actions = false, canDelete = false }: { moves
         <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>จาก → ไป</th><th className="text-right">จำนวน</th><th className="pl-4">รายละเอียด</th>{actions && <th></th>}</tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {moves.map((m) => (
+        {rows.map((m) => (
           <tr key={m.id} className="align-top">
             <td className="py-1.5">{thDate(m.movement_date)}</td>
-            <td className={m.movement_type === "REIMBURSEMENT_IN" ? "text-sky-700" : ""}>{MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
+            <td className={m.movement_type === "REIMBURSEMENT_IN" ? "text-sky-700" : ""}>{m.parts ? "รับชำระเงินกู้" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
             <td className="text-xs text-slate-600">
               {label(m.from_asset_id)} → {m.to_credit_card_id ? `บัตร ${label(m.to_credit_card_id)}` : m.to_liability_id ? label(m.to_liability_id) : label(m.to_asset_id)}
             </td>
@@ -492,10 +512,10 @@ function MovesTable({ moves, name, actions = false, canDelete = false }: { moves
               {m.counter_amount != null && <div className="text-xs text-slate-500">→ {money(m.counter_amount, m.counter_currency ?? undefined)}</div>}
               {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
             </td>
-            <td className="pl-4 text-xs text-slate-500">{m.description}{m.is_derived && <span className="ml-1 text-slate-400">(ระบบสร้าง · แก้ที่รายการต้นทาง)</span>}</td>
+            <td className="pl-4 text-xs text-slate-500">{m.parts ? m.parts.map((x) => `${partLabel(x)} ${money(x.amount)}`).join(" + ") : m.description}{!m.parts && m.is_derived && <span className="ml-1 text-slate-400">(ระบบสร้าง · แก้ที่รายการต้นทาง)</span>}</td>
             {actions && (
               <td className="pl-2 text-right">
-                {!m.is_derived && EDITABLE_MOVES.includes(m.movement_type) && (
+                {!m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) && (
                   <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
                     deleteNote={m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN" ? "รายการฝาก/ถอนในพอร์ตจะถูกลบตาม" : undefined}
                     fields={[
