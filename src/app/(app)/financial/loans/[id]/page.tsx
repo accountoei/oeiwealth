@@ -54,6 +54,8 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
   const interestOwedUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.interest_remaining), 0);
   const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
+  // บันทึกรับชำระแล้ว → แก้ตารางทั้งชุดไม่ได้ · งวดที่รับแล้วแก้ / ลบไม่ได้ (ฐานข้อมูลบังคับ: 20261010000200_loan_schedule_locks)
+  const hasPayments = (moves ?? []).some((m) => m.movement_type === "LOAN_PRINCIPAL_RECEIPT") || (incomes ?? []).length > 0;
   // ประวัติ: การรับชำระครั้งเดียว (เงินต้น + ดอกเบี้ย) แสดงเป็น 1 แถว ยอดรวมตรงกับ Statement ธนาคาร
   // จับคู่ด้วย movement_group_id ที่ receive_loan_payment ใส่ให้ทั้งรายการเงินต้นและรายการเงินเข้าของดอกเบี้ย
   const incomeIds = (incomes ?? []).map((i) => i.id);
@@ -149,7 +151,7 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
               old={{ count: open.length, firstTotal: Number(open[0]?.total_remaining ?? 0),
                 interest: open.reduce((s, x) => s + Number(x.interest_remaining), 0), lastDue: open.at(-1)?.due_date ?? null }} />
           )}
-          {canDelete && loanOpen && (
+          {canDelete && loanOpen && (!hasPayments || sched.length === 0) && (
             <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
               current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
               defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0),
@@ -185,7 +187,7 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
                             principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
                             interestOwed={interestOwedUpTo(x.due_date)} />
                         )}
-                        {canWrite && <div className="mt-1"><RowActions table="loan_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
+                        {canWrite && !(hasPayments && x.status === "PAID") && <div className="mt-1"><RowActions table="loan_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
                           { name: "due_date", label: "ครบกำหนด", type: "date", value: x.due_date },
                           { name: "principal_due", label: "เงินต้น", type: "number", value: x.principal_due },
                           { name: "interest_due", label: "ดอกเบี้ย", type: "number", value: x.interest_due },
@@ -199,6 +201,7 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
           </div>
         )}
         {sched.length > 0 && <p className="text-xs text-slate-500">
+          {hasPayments && <>มีการรับชำระแล้ว: งวดที่รับแล้วแก้ / ลบไม่ได้ (ถ้าบันทึกรับผิด ให้แก้ / ลบรายการในประวัติด้านล่าง) · เปลี่ยนงวดที่เหลือใช้ &ldquo;คำนวณงวดที่เหลือใหม่&rdquo; · </>}
           สถานะคิดจากยอดที่รับจริง: เงินต้นที่ลดลงแล้วตัดงวดเรียงจากงวดแรก · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
           ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
         </p>}

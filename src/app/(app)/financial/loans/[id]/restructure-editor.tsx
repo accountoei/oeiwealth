@@ -68,6 +68,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
             ใช้เมื่อชำระเกิน หรือผู้กู้ขอเปลี่ยนจำนวนงวด / ค่างวด / ดอกเบี้ย / พักชำระ · งวดที่รับแล้วเก็บไว้เหมือนเดิม ·
             งวดที่รับบางส่วนตัดเหลือส่วนที่รับแล้ว · งวดที่เหลือถูกแทนด้วยตารางใหม่
           </p>
+          <p className="mt-1 text-xs font-medium text-amber-800">ถ้าผู้กู้จ่ายเกิน: บันทึกรับด้วยยอดจริงก่อน แล้วค่อยปรับตาราง (ระบบคำนวณจากเงินต้นคงเหลือหลังหักส่วนที่จ่ายเกิน)</p>
         </div>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
