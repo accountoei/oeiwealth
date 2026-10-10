@@ -102,52 +102,109 @@ export function scheduleToText(lines: SchedLine[]): string {
   return lines.map((l) => [l.due_date, l.principal.toFixed(2), l.interest.toFixed(2), l.notes ?? ""].join("\t").trimEnd()).join("\n");
 }
 
-/** อ่านวันที่: 2026-11-05 · 5/11/2026 · 5/11/2569 (พ.ศ.) · 5-11-26 → YYYY-MM-DD (วัน/เดือน/ปี) */
-function parseDate(s: string): string | null {
-  const t = s.trim();
-  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  let y: number, mo: number, d: number;
-  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
-  else {
-    m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
-    if (!m) return null;
-    d = +m[1]; mo = +m[2]; y = +m[3];
-    if (y < 100) y += y > 50 ? 2500 : 2000;   // ปี 2 หลัก: 69 → 2569 (พ.ศ.) · 26 → 2026
-  }
+// ชื่อเดือนภาษาไทย (เต็ม / ย่อ) และอังกฤษ (ย่อ 3 ตัว) → เลขเดือน
+const TH_MONTH_NAMES: [RegExp, number][] = [
+  [/^(มกราคม|ม\.?ค\.?)$/, 1], [/^(กุมภาพันธ์|ก\.?พ\.?)$/, 2], [/^(มีนาคม|มี\.?ค\.?)$/, 3], [/^(เมษายน|เม\.?ย\.?)$/, 4],
+  [/^(พฤษภาคม|พ\.?ค\.?)$/, 5], [/^(มิถุนายน|มิ\.?ย\.?)$/, 6], [/^(กรกฎาคม|ก\.?ค\.?)$/, 7], [/^(สิงหาคม|ส\.?ค\.?)$/, 8],
+  [/^(กันยายน|ก\.?ย\.?)$/, 9], [/^(ตุลาคม|ต\.?ค\.?)$/, 10], [/^(พฤศจิกายน|พ\.?ย\.?)$/, 11], [/^(ธันวาคม|ธ\.?ค\.?)$/, 12],
+];
+const EN_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function monthFromName(n: string): number | null {
+  const t = n.trim().toLowerCase();
+  for (const [re, m] of TH_MONTH_NAMES) if (re.test(t)) return m;
+  const e = EN_MONTHS.indexOf(t.slice(0, 3));
+  return e >= 0 ? e + 1 : null;
+}
+
+function ymd(y: number, mo: number, d: number): string | null {
   if (y > 2400) y -= 543;                      // พ.ศ. → ค.ศ.
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1) return null;
   const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
   if (d > last) return null;
   return `${y}-${pad(mo)}-${pad(d)}`;
 }
-const parseNum = (s: string) => {
-  const t = s.trim().replace(/[,\s฿]/g, "");
-  if (t === "" || t === "-") return 0;
-  return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
-};
 
 /**
- * อ่านข้อความที่คัดลอกจาก Excel: ต่อ 1 บรรทัด = 1 งวด
- * ลำดับคอลัมน์: [เลขงวด] วันครบกำหนด · เงินต้น · ดอกเบี้ย · [หมายเหตุ]  (คอลัมน์ "รวม" / "คงเหลือ" ท้ายตารางถูกข้าม)
- * บรรทัดหัวตาราง / บรรทัดว่าง ข้ามให้เอง
+ * อ่านวันที่ → YYYY-MM-DD (ปี พ.ศ. แปลงเป็น ค.ศ. ให้)
+ * รับ: 2026-11-05 · 5/11/2026 · 5/11/2569 · 5-11-26 · 15 มิถุนายน 68 · 15 มิ.ย. 2568 · 15-Jun-25 · ค่าวันที่จากไฟล์ Excel
+ * ปี 2 หลัก: มากกว่า 50 = พ.ศ. (68 → 2568) · ไม่เกิน 50 = ค.ศ. (26 → 2026)
  */
-export function parseScheduleText(text: string): { lines: SchedLine[]; errors: string[] } {
+export function toIsoDate(v: unknown): string | null {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : ymd(v.getUTCFullYear(), v.getUTCMonth() + 1, v.getUTCDate());
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  const yy = (n: number) => (n < 100 ? n + (n > 50 ? 2500 : 2000) : n);
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(T[\d:.]+Z?)?$/);
+  if (m) return ymd(+m[1], +m[2], +m[3]);
+  m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (m) return ymd(yy(+m[3]), +m[2], +m[1]);
+  m = t.match(/^(\d{1,2})[\s-]*([ก-๙A-Za-z.]+)[\s-]*(\d{2,4})$/);
+  if (m) { const mo = monthFromName(m[2]); return mo ? ymd(yy(+m[3]), mo, +m[1]) : null; }
+  return null;
+}
+function toNum(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (v == null) return 0;
+  if (typeof v !== "string") return NaN;
+  const t = v.trim().replace(/[,\s฿]/g, "").replace(/^\((.*)\)$/, "-$1");
+  if (t === "" || /^-+$/.test(t)) return 0;      // ช่องว่าง / "-" (รูปแบบบัญชีของ Excel) = 0
+  return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+}
+const isText = (v: unknown) => typeof v === "string" && /[ก-๙a-zA-Z]/.test(v) && toIsoDate(v) === null;
+
+export type ParseResult = { lines: SchedLine[]; errors: string[]; skipped: number; header: boolean };
+
+/**
+ * อ่านตารางผ่อนจากแถวข้อมูล (ไฟล์ Excel หรือข้อความที่คัดลอกมา)
+ * - มีหัวตาราง (คอลัมน์ "เงินต้น" + "ดอกเบี้ย"): ใช้ตามหัวตาราง — คอลัมน์อื่น เช่น เงินต้นคงเหลือ / รวม / ยอดคงเหลือ ไม่ใช้
+ *   คอลัมน์วันที่ = หัว "วันที่ / เดือน / ครบกำหนด" (ไม่มี = ช่องแรกที่เป็นวันที่)
+ * - ไม่มีหัวตาราง: [เลขงวด] วันครบกำหนด · เงินต้น · ดอกเบี้ย · [หมายเหตุ]
+ * - ข้ามเงียบ ๆ: บรรทัดว่าง · ข้อความ (หัวตาราง / บรรทัดรวม) · งวดที่ยอดเป็น 0 ทั้งเงินต้นและดอกเบี้ย (นับไว้ใน skipped)
+ */
+export function parseScheduleRows(rows: unknown[][]): ParseResult {
   const lines: SchedLine[] = []; const errors: string[] = [];
-  text.split(/\r?\n/).forEach((raw, idx) => {
-    if (!raw.trim()) return;
-    const cells = (raw.includes("\t") ? raw.split("\t") : raw.trim().split(/\s{2,}|\s*;\s*/)).map((c) => c.trim());
-    const di = cells.findIndex((c) => parseDate(c) !== null);
-    if (di < 0) {
-      if (!/[ก-๙a-zA-Z]/.test(raw)) errors.push(`บรรทัด ${idx + 1}: ไม่พบวันที่`);
-      return;   // หัวตาราง / บรรทัดรวม (มีตัวหนังสือ) ข้ามเงียบ ๆ
+  let skipped = 0;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  // หาหัวตาราง
+  let start = 0; let dCol = -1; let pCol = -1; let iCol = -1; let nCol = -1; let header = false;
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rows[r].map(str);
+    const p = cells.findIndex((c) => /^(เงินต้น(ที่)?(ชำระ|จ่าย|ผ่อน)?|principal)$/i.test(c.replace(/\s/g, "")));
+    const i = cells.findIndex((c) => /^(ดอกเบี้ย(ที่)?(ชำระ|จ่าย)?|interest)$/i.test(c.replace(/\s/g, "")));
+    if (p >= 0 && i >= 0) {
+      header = true; start = r + 1; pCol = p; iCol = i;
+      dCol = cells.findIndex((c) => /(วันที่|เดือน|ครบ|กำหนด|งวดวันที่|date|month)/i.test(c) && !/^งวด(ที่)?$/.test(c));
+      nCol = cells.findIndex((c) => /(หมายเหตุ|note)/i.test(c));
+      break;
     }
-    const principal = parseNum(cells[di + 1] ?? "");
-    const interest = parseNum(cells[di + 2] ?? "");
-    if (Number.isNaN(principal) || Number.isNaN(interest)) { errors.push(`บรรทัด ${idx + 1}: เงินต้น / ดอกเบี้ย ไม่ใช่ตัวเลข`); return; }
-    if (principal < 0 || interest < 0 || principal + interest <= 0) { errors.push(`บรรทัด ${idx + 1}: ยอดต้องมากกว่า 0`); return; }
-    const rest = cells.slice(di + 3).filter((c) => c && Number.isNaN(parseNum(c)));
-    lines.push({ due_date: parseDate(cells[di]) as string, principal: r2(principal), interest: r2(interest), notes: rest.join(" ") || undefined });
-  });
+  }
+  for (let r = start; r < rows.length; r++) {
+    const row = rows[r] ?? [];
+    const label = `แถว ${r + 1}`;
+    if (row.every((c) => c == null || (typeof c === "string" && c.trim() === ""))) continue;
+    const di = header && dCol >= 0 ? dCol : row.findIndex((c) => toIsoDate(c) !== null);
+    const date = di >= 0 ? toIsoDate(row[di]) : null;
+    if (!date) {
+      // มีตัวเลขที่ไม่ใช่ 0 แต่ไม่มีวันที่และไม่มีข้อความกำกับ = น่าจะพิมพ์วันที่ผิด → แจ้ง
+      if (!row.some(isText) && row.some((c) => { const n = toNum(c); return !Number.isNaN(n) && n !== 0; })) errors.push(`${label}: ไม่พบวันที่`);
+      continue;   // หัวตาราง / บรรทัดรวม / ยอดยกมา / แถวว่างที่เป็น 0
+    }
+    const principal = toNum(row[header ? pCol : di + 1]);
+    const interest = toNum(row[header ? iCol : di + 2]);
+    if (Number.isNaN(principal) || Number.isNaN(interest)) { errors.push(`${label}: เงินต้น / ดอกเบี้ย ไม่ใช่ตัวเลข`); continue; }
+    if (principal < 0 || interest < 0) { errors.push(`${label}: ยอดติดลบ`); continue; }
+    if (principal + interest === 0) { skipped++; continue; }
+    const notes = header
+      ? (nCol >= 0 ? str(row[nCol]) : "")
+      : row.slice(di + 3).filter((c) => typeof c === "string" && Number.isNaN(toNum(c))).map(str).join(" ");
+    lines.push({ due_date: date, principal: r2(principal), interest: r2(interest), notes: notes || undefined });
+  }
   lines.sort((a, b) => a.due_date.localeCompare(b.due_date));
-  return { lines, errors };
+  return { lines, errors, skipped, header };
+}
+
+/** อ่านข้อความที่คัดลอกจาก Excel (คั่นด้วย Tab) หรือพิมพ์เอง (คั่นด้วยเว้นวรรค 2 ช่องขึ้นไป / ;) */
+export function parseScheduleText(text: string): ParseResult {
+  const rows = text.split(/\r?\n/).map((raw) => (raw.includes("\t") ? raw.split("\t") : raw.trim().split(/\s{2,}|\s*;\s*/)));
+  return parseScheduleRows(rows);
 }
