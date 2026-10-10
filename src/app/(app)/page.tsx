@@ -242,7 +242,7 @@ async function ChartBody({ start, isCurrent }: { start: string; isCurrent: boole
 
 async function AttentionBody({ family, isSetup, today }: { family: Family | null; isSetup: boolean; today: string }) {
   const supabase = await createClient();
-  const [h, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }] = await Promise.all([
+  const [h, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }] = await Promise.all([
     getHistory(),
     isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
     supabase.from("v_fx_status").select("currency,latest_rate_date,is_stale"),
@@ -250,6 +250,8 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
     supabase.from("v_liabilities_all").select("name,liability_source,derived_status").not("derived_status", "is", null),
     supabase.from("v_holdings_active").select("name,portfolio_asset_id,status,derived_status,valued_at_cost,maturity_date").eq("status", "ACTIVE"),
     supabase.from("v_lease_status").select("tenant_name,unit_label,end_date,property_asset_id,lease_status").eq("lease_status", "EXPIRING_SOON"),
+    supabase.from("v_insurance_schedule_status").select("policy_id,kind").eq("status", "OVERDUE"),
+    supabase.from("insurance_followups").select("id").is("deleted_at", null).in("status", ["OPEN", "IN_PROGRESS"]),
   ]);
   const finals = (h?.snapshots ?? []).filter((s) => s.status === "FINAL");
 
@@ -264,6 +266,9 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
     if (monthRange(toClose).end < today) attention.push({ text: `ปิดเดือน ${thMonth(`${toClose}-01`)}`, href: `/month-closing?m=${toClose}`, tone: "red" });
   }
   (fx ?? []).filter((f) => f.is_stale).forEach((f) => attention.push({ text: `อัตราแลกเปลี่ยน ${f.currency} ไม่อัปเดต (ล่าสุด ${thDate(f.latest_rate_date)})`, href: "/settings/system", tone: "red" }));
+  if ((fups ?? []).length) attention.push({ text: `ติดตามกรมธรรม์หลังเสียชีวิต ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
+  const premOver = (insOverdue ?? []).filter((x) => x.kind === "PREMIUM").length;
+  if (premOver) attention.push({ text: `เบี้ยประกันเลยกำหนด ${premOver} งวด`, href: "/income-expenses?tab=expense", tone: "red" });
   if ((expected ?? []).length) attention.push({ text: `รายได้เลยกำหนดยังไม่ได้รับ ${(expected ?? []).length} รายการ`, href: "/income-expenses?tab=income", tone: "amber" });
   (liabs ?? []).forEach((l) => {
     if (l.derived_status === "PAID_AFTER_BALANCE_DATE") attention.push({ text: `${l.name}: จ่ายบัตรแล้ว ยังไม่อัปเดตยอด`, href: "/family/cards", tone: "amber" });

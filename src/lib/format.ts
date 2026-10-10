@@ -155,7 +155,7 @@ export function qty(value: number | string | null | undefined): string {
 
 export const INCOME_TYPE_LABEL: Record<string, string> = {
   SALARY: "เงินเดือน", BONUS: "โบนัส", INTEREST: "ดอกเบี้ย", DIVIDEND: "ปันผล", COUPON: "Coupon", RENT: "ค่าเช่า",
-  LOAN_INTEREST: "ดอกเบี้ยเงินให้กู้", BUSINESS_DIVIDEND: "ปันผลกิจการ", OTHER: "รายได้อื่น",
+  LOAN_INTEREST: "ดอกเบี้ยเงินให้กู้", BUSINESS_DIVIDEND: "ปันผลกิจการ", INSURANCE_BENEFIT: "ผลประโยชน์ประกัน", OTHER: "รายได้อื่น",
 };
 export const MOVE_LABEL: Record<string, string> = {
   INCOME: "รายได้", EXPENSE: "ค่าใช้จ่าย", TRANSFER: "โอนระหว่างบัญชี", FX_EXCHANGE: "แลกเงิน", INVESTMENT_OUT: "โอนเข้าพอร์ต",
@@ -223,3 +223,24 @@ export function extFromMime(m: string | null | undefined) {
 /** โทนน้ำเงินสำหรับกราฟ / แถบสัดส่วน (เข้ม → อ่อน) */
 export const BLUES = ["#1442b8", "#1f5eff", "#3d78ff", "#5f92ff", "#86afff", "#a9c6ff", "#c7daff"];
 export const blueAt = (i: number) => BLUES[Math.min(i, BLUES.length - 1)];
+
+// ---------------------------------------------------------------- ประกัน: ความคุ้มครอง / ตารางเบี้ย / ผลประโยชน์ / ติดตาม
+/** ความคุ้มครอง: [ชื่อ, หน่วย] · หน่วยใช้แสดงผล (ต่อปี / ต่อวัน / ต่อครั้ง) */
+export const COVERAGE_LABEL: Record<string, [string, string]> = {
+  LIFE: ["เสียชีวิต", ""], ACCIDENT_DEATH: ["เสียชีวิต / ทุพพลภาพ จากอุบัติเหตุ", ""], DISABILITY: ["ทุพพลภาพ", ""],
+  CRITICAL_ILLNESS: ["โรคร้ายแรง", ""], IPD_ANNUAL: ["ค่ารักษาผู้ป่วยใน (IPD)", "ต่อปี"], IPD_PER_ADMIT: ["ค่ารักษาผู้ป่วยใน (IPD)", "ต่อครั้ง"],
+  ROOM_PER_DAY: ["ค่าห้อง", "ต่อวัน"], OPD_PER_VISIT: ["ผู้ป่วยนอก (OPD)", "ต่อครั้ง"], OPD_ANNUAL: ["ผู้ป่วยนอก (OPD)", "ต่อปี"],
+  HOSPITAL_CASH_PER_DAY: ["ค่าชดเชยรายวัน", "ต่อวัน"], OTHER: ["อื่น ๆ", ""],
+};
+/** ความคุ้มครองที่วงเงินเป็น "ต่อปี" → หักยอดเคลมในปีนั้นเพื่อดูวงเงินคงเหลือ */
+export const COVERAGE_ANNUAL = ["IPD_ANNUAL", "OPD_ANNUAL"];
+export const BENEFIT_TYPE_LABEL: Record<string, string> = {
+  CASH_BACK: "เงินคืนระหว่างสัญญา", ANNUITY: "บำนาญ / รายงวด", MATURITY: "ครบสัญญา", OTHER: "อื่น ๆ",
+};
+export const INS_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
+  PAID: { text: "ชำระแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PARTIAL: { text: "บางส่วน", cls: "bg-amber-50 text-amber-700" },
+  PENDING: { text: "รอ", cls: "bg-slate-100 text-slate-700" }, OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" },
+  CLOSED: { text: "ไม่ต้องชำระ (ปิดกรมธรรม์)", cls: "bg-slate-100 text-slate-500" },
+};
+export const FOLLOWUP_ROLE: Record<string, string> = { INSURED: "ผู้เอาประกัน", PAYER: "ผู้จ่ายเบี้ย", BENEFICIARY: "ผู้รับผลประโยชน์" };
+export const FOLLOWUP_STATUS: [string, string][] = [["OPEN", "ยังไม่เริ่ม"], ["IN_PROGRESS", "กำลังดำเนินการ"], ["DONE", "เสร็จแล้ว"], ["NOT_APPLICABLE", "ไม่ต้องทำ"]];

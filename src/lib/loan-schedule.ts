@@ -158,7 +158,7 @@ export function toIsoDate(v: unknown): string | null {
   if (m) { const mo = monthFromName(m[2]); return mo ? ymd(yy(+m[3]), mo, +m[1]) : null; }
   return null;
 }
-function toNum(v: unknown): number {
+export function toNum(v: unknown): number {
   if (typeof v === "number") return v;
   if (v == null) return 0;
   if (typeof v !== "string") return NaN;

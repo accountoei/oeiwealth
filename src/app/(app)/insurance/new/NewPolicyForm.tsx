@@ -44,6 +44,13 @@ export default function NewPolicyForm(props: {
             </select>
           </label>
         )}
+        {type !== "PROPERTY" && (
+          <label className={label}>ผู้จ่ายเบี้ย
+            <select name="payer_person_id" defaultValue="" className={input}>
+              <option value="">— คนเดียวกับผู้เอาประกัน —</option>{persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+        )}
         <label className={label}>วันเริ่มคุ้มครอง<input name="start_date" type="date" className={input} /></label>
         <label className={label}>วันสิ้นสุด / ครบสัญญา<input name="end_date" type="date" className={input} /></label>
         <label className={label}>ทุนประกัน<input name="insured_amount" inputMode="decimal" className={input} /></label>

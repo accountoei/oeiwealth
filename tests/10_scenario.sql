@@ -538,6 +538,81 @@ SELECT t.fails($$UPDATE public.loan_schedule_lines SET notes = 'x' WHERE install
   'LOCKED', 'หลังปรับ: งวดที่ตัดแล้ว (รับแล้ว) แก้ไม่ได้');
 RESET ROLE;
 
+\echo '== 13g. ประกัน: ผู้จ่ายเบี้ย · ตารางเบี้ย / ผลประโยชน์ · รับผลประโยชน์ · ติดตามหลังเสียชีวิต'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE IF NOT EXISTS tp(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tp TO authenticated;
+INSERT INTO tp SELECT 'pol', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ประกันทดสอบ', 'policy_no', 'T-001',
+  'insured_amount', 1000000, 'premium', 20000, 'currency', 'THB', 'has_cash_value', true,
+  'cash_value', 100000, 'cash_value_date', current_date,
+  'owners', jsonb_build_array(jsonb_build_object('person_id', t.p('คุณแม่'), 'percent', 100))));
+UPDATE public.insurance_policies SET payer_person_id = t.p('คุณพ่อ') WHERE id = (SELECT id FROM tp WHERE k = 'pol');
+SELECT t.ok((SELECT payer_person_id = t.p('คุณพ่อ') AND person_id = t.p('คุณแม่') FROM public.v_insurance_status WHERE id = (SELECT id FROM tp WHERE k = 'pol')),
+            'ผู้จ่ายเบี้ยแยกจากผู้เอาประกันได้');
+SELECT t.ok(public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'pol'), 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', current_date - 5, 'amount', 20000),
+  jsonb_build_object('due_date', current_date + 300, 'amount', 20000))) = 2, 'ตั้งตารางเบี้ย 2 งวด');
+SELECT t.ok((SELECT status = 'OVERDUE' AND payer_person_id = t.p('คุณพ่อ') FROM public.v_insurance_schedule_status WHERE installment_no = 1 AND kind = 'PREMIUM'),
+            'งวดเบี้ยเลยกำหนด · ผู้จ่ายเบี้ย = คุณพ่อ');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'เบี้ยประกันทดสอบ', 'amount', 20000,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurance_schedule_line_id', (SELECT id FROM public.insurance_schedule_lines WHERE kind = 'PREMIUM' AND installment_no = 1 AND deleted_at IS NULL)));
+SELECT t.ok((SELECT status = 'PAID' FROM public.v_insurance_schedule_status WHERE installment_no = 1 AND kind = 'PREMIUM')
+            AND (SELECT expense_category = 'ประกัน' FROM public.expense_items WHERE insurance_schedule_line_id IS NOT NULL),
+            'บันทึกจ่ายเบี้ย → ชำระแล้ว · หมวด "ประกัน"');
+SELECT t.fails($$UPDATE public.insurance_schedule_lines SET amount = 1 WHERE kind = 'PREMIUM' AND installment_no = 1 AND deleted_at IS NULL$$,
+  'LOCKED', 'งวดเบี้ยที่ชำระแล้วแก้ไม่ได้');
+SELECT t.fails($$SELECT public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'pol'), 'PREMIUM',
+  jsonb_build_array(jsonb_build_object('due_date', current_date - 30, 'amount', 1)))$$, 'หลังงวดที่มีการชำระแล้ว', 'ตารางใหม่ต้องอยู่หลังงวดที่ชำระแล้ว');
+SELECT t.ok(public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'pol'), 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', current_date + 360, 'amount', 21000))) = 1
+  AND (SELECT count(*) FROM public.insurance_schedule_lines WHERE kind = 'PREMIUM' AND deleted_at IS NULL) = 2,
+  'ตั้งตารางเบี้ยใหม่: เก็บงวดที่ชำระแล้ว · แทนงวดที่ยังไม่ชำระ');
+-- ผลประโยชน์รายงวด: ถอนจากมูลค่าเวนคืน (100,000) ก่อน
+SELECT public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'pol'), 'BENEFIT',
+  jsonb_build_array(jsonb_build_object('due_date', current_date - 1, 'amount', 30000, 'benefit_type', 'CASH_BACK')));
+SELECT public.receive_insurance_benefit(jsonb_build_object('policy_id', (SELECT id FROM tp WHERE k = 'pol'),
+  'line_id', (SELECT id FROM public.insurance_schedule_lines WHERE kind = 'BENEFIT' AND deleted_at IS NULL),
+  'date', current_date, 'amount', 30000, 'bank_asset_id', t.a('KBank ออมทรัพย์')));
+SELECT t.ok((SELECT status = 'PAID' FROM public.v_insurance_schedule_status WHERE kind = 'BENEFIT')
+            AND (SELECT current_value = 70000 FROM public.assets WHERE asset_type = 'INSURANCE_CASH_VALUE')
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE income_type = 'INSURANCE_BENEFIT'),
+            'เงินคืนรายงวด 30,000 = ถอนจากมูลค่าเวนคืน (เหลือ 70,000) · ไม่ใช่รายได้');
+-- ครบสัญญา 120,000: 70,000 จากมูลค่าเวนคืน · 50,000 รายได้ · ปิดกรมธรรม์
+SELECT t.ok((SELECT (r->>'income_part')::numeric = 50000 FROM public.receive_insurance_benefit(jsonb_build_object(
+  'policy_id', (SELECT id FROM tp WHERE k = 'pol'), 'date', current_date, 'amount', 120000,
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'outcome', 'MATURED')) r), 'ครบสัญญา: ส่วนเกินมูลค่าเวนคืน 50,000 = รายได้');
+SELECT t.ok((SELECT status = 'MATURED' FROM public.insurance_policies WHERE id = (SELECT id FROM tp WHERE k = 'pol'))
+            AND (SELECT status = 'CLOSED' AND current_value = 0 FROM public.assets WHERE asset_type = 'INSURANCE_CASH_VALUE')
+            AND (SELECT amount = 50000 AND asset_id IS NOT NULL FROM public.income_transactions WHERE income_type = 'INSURANCE_BENEFIT'),
+            'ปิดกรมธรรม์ · มูลค่าเวนคืน 0 · รายได้แบ่งตามเจ้าของมูลค่าเวนคืน');
+SELECT t.ok((SELECT status = 'CLOSED' FROM public.v_insurance_schedule_status WHERE kind = 'PREMIUM' AND installment_no = 2),
+            'กรมธรรม์ปิดแล้ว → งวดเบี้ยที่เหลือไม่ต้องจ่าย');
+-- ความคุ้มครอง
+INSERT INTO public.insurance_coverages(policy_id, coverage_type, limit_amount) VALUES ((SELECT id FROM tp WHERE k = 'pol'), 'LIFE', 1000000);
+SELECT t.ok((SELECT count(*) FROM public.insurance_coverages) = 1, 'เพิ่มความคุ้มครองได้');
+-- ติดตามหลังเสียชีวิต
+INSERT INTO public.persons(family_id, name, relationship) SELECT id, 'ญาติทดสอบ', 'OTHER' FROM public.families;
+INSERT INTO tp SELECT 'health', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'HEALTH', 'person_id', t.p('ญาติทดสอบ'), 'insurer', 'สุขภาพทดสอบ', 'currency', 'THB'));
+INSERT INTO tp SELECT 'life2', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ชีวิตทดสอบ 2', 'currency', 'THB',
+  'beneficiaries', jsonb_build_array(jsonb_build_object('person_id', t.p('ญาติทดสอบ'), 'percent', 100))));
+UPDATE public.insurance_policies SET payer_person_id = t.p('ญาติทดสอบ') WHERE id = (SELECT id FROM tp WHERE k = 'life2');
+UPDATE public.persons SET status = 'DECEASED' WHERE name = 'ญาติทดสอบ';
+SELECT t.ok((SELECT count(*) FROM public.insurance_followups WHERE person_id = t.p('ญาติทดสอบ')) = 3
+            AND EXISTS (SELECT 1 FROM public.insurance_followups WHERE role = 'INSURED' AND policy_id = (SELECT id FROM tp WHERE k = 'health'))
+            AND EXISTS (SELECT 1 FROM public.insurance_followups WHERE role = 'PAYER' AND policy_id = (SELECT id FROM tp WHERE k = 'life2'))
+            AND EXISTS (SELECT 1 FROM public.insurance_followups WHERE role = 'BENEFICIARY' AND policy_id = (SELECT id FROM tp WHERE k = 'life2')),
+            'เสียชีวิต → รายการติดตาม 3 บทบาท (ผู้เอาประกัน · ผู้จ่ายเบี้ย · ผู้รับประโยชน์)');
+UPDATE public.persons SET notes = 'x' WHERE name = 'ญาติทดสอบ';
+SELECT t.ok((SELECT count(*) FROM public.insurance_followups) = 3, 'แก้ข้อมูลอื่นของสมาชิก → ไม่สร้างรายการซ้ำ');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'health'), 'PREMIUM',
+  '[{"due_date":"2027-01-01","amount":1}]')$$, 'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางเบี้ยไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
