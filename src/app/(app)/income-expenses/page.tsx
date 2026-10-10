@@ -61,7 +61,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,person_id,lease_id,source_transaction_id,asset_id,notes,persons(name)")
+    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,person_id,lease_id,source_transaction_id,asset_id,notes,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
     supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,persons(name)")
@@ -241,7 +241,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <span className={`rounded px-1.5 py-0.5 text-xs ${LOAN_SCHED_STATUS[x.status]?.cls ?? ""}`}>{LOAN_SCHED_STATUS[x.status]?.text ?? x.status}</span>
                     </div>
                     <div className="mt-1 tabular-nums">
-                      เงินต้น {money(x.principal_due, x.currency)} · ดอกเบี้ย {money(x.interest_due)}
+                      <span className="text-slate-500">ตามตาราง:</span> เงินต้น {money(x.principal_due, x.currency)} · ดอกเบี้ย {money(x.interest_due)}
                       {x.status !== "PAID" && Number(x.total_remaining) < Number(x.total_due) && <span className="text-amber-700"> · ค้าง {money(x.total_remaining)}</span>}
                       {pv.assetPct(x.loan_asset_id) != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {pv.assetPct(x.loan_asset_id)}%</div>}
                     </div>
@@ -274,7 +274,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="text-slate-600">
                         {i.source_transaction_id ? <Link href={`/investments/${i.asset_id}`} className="underline">จากพอร์ตลงทุน (แก้ที่รายการลงทุน)</Link>
                           : i.lease_id ? <Link href={`/property/${i.asset_id}`} className="underline">ค่าเช่า (แบ่งตามเจ้าของทรัพย์สิน)</Link>
-                          : pname(i.persons) ?? "ส่วนกลาง"}
+                          : i.income_type === "LOAN_INTEREST" && i.asset_id
+                            ? <Link href={`/financial/loans/${i.asset_id}`} className="underline">ดอกเบี้ยจาก {pname(i.src_asset) ?? "เงินให้กู้"} (แบ่งตามเจ้าของ)</Link>
+                          : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)` : "ส่วนกลาง")}
                         {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
                       </td>
                       <td className="text-right tabular-nums">{money(i.amount, i.currency)}
