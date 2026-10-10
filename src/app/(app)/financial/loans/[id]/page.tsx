@@ -22,9 +22,9 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
   const [{ data: l }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }] = await Promise.all([
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null).order("movement_date", { ascending: false }),
-    supabase.from("income_transactions").select("id,date,amount,tax,currency,notes").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
+    supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,received_to_asset_id").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
       .is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
@@ -51,6 +51,31 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
   const payable = new Set([...overdue.map((x) => x.id), ...(nextDue ? [nextDue.id] : [])]);
   const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
+  // ประวัติ: การรับชำระครั้งเดียว (เงินต้น + ดอกเบี้ย) แสดงเป็น 1 แถว ยอดรวมตรงกับ Statement ธนาคาร
+  // จับคู่ด้วย movement_group_id ที่ receive_loan_payment ใส่ให้ทั้งรายการเงินต้นและรายการเงินเข้าของดอกเบี้ย
+  const incomeIds = (incomes ?? []).map((i) => i.id);
+  const { data: incMoves } = incomeIds.length
+    ? await supabase.from("cash_movements").select("source_entity_id,movement_group_id")
+        .eq("source_entity_type", "INCOME").in("source_entity_id", incomeIds).is("deleted_at", null)
+    : { data: [] as { source_entity_id: string; movement_group_id: string | null }[] };
+  const incGroup = new Map((incMoves ?? []).map((m) => [m.source_entity_id as string, m.movement_group_id as string | null]));
+  type Mv = NonNullable<typeof moves>[number];
+  type Inc = NonNullable<typeof incomes>[number];
+  type Entry = { key: string; date: string; disburse?: Mv; principal?: Mv; interest?: Inc; bank: string | null };
+  const entries = new Map<string, Entry>();
+  (moves ?? []).forEach((m) => {
+    if (m.movement_type === "LOAN_PRINCIPAL_RECEIPT") {
+      const k = m.movement_group_id ?? m.id;
+      entries.set(k, { ...(entries.get(k) ?? { key: k, date: m.movement_date, bank: m.to_asset_id }), principal: m });
+    } else entries.set(m.id, { key: m.id, date: m.movement_date, disburse: m, bank: m.from_asset_id === id ? m.to_asset_id : m.from_asset_id });
+  });
+  (incomes ?? []).forEach((i) => {
+    const g = incGroup.get(i.id);
+    const k = g && entries.has(g) ? g : g ?? i.id;
+    const e = entries.get(k);
+    entries.set(k, e ? { ...e, interest: i } : { key: k, date: i.date, bank: i.received_to_asset_id, interest: i });
+  });
+  const history = [...entries.values()].sort((a, b) => b.date.localeCompare(a.date));
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id, b.name]));
 
   return (
@@ -168,37 +193,52 @@ export default async function LoanDetailPage({ params }: { params: Promise<{ id:
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-3 font-medium text-slate-900">ประวัติให้กู้ / รับชำระ</h2>
-        {(moves ?? []).length === 0 && (incomes ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ (ยอดตั้งต้นอยู่ด้านบน)</p> : (
+        {history.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ (ยอดตั้งต้นอยู่ด้านบน)</p> : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ประเภท</th><th>บัญชี</th><th className="text-right">จำนวน</th><th></th></tr></thead>
+            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ประเภท</th><th>บัญชี</th><th className="text-right">จำนวน</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {(moves ?? []).map((m) => (
-                <tr key={m.id}>
-                  <td className="py-1.5">{thDate(m.movement_date)}</td>
-                  <td>{m.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "รับคืนเงินต้น" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
-                  <td className="text-xs text-slate-500">{bankName.get(m.from_asset_id === id ? m.to_asset_id : m.from_asset_id) ?? ""}</td>
-                  <td className={`text-right tabular-nums ${m.movement_type === "LOAN_DISBURSEMENT" ? "" : "text-emerald-700"}`}>{money(m.amount)}</td>
-                  <td className="pl-2 text-right">
-                    {canWrite && !m.is_derived && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete} fields={[
-                      { name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
-                      { name: "amount", label: "จำนวน", type: "number", value: m.amount }]} />}
-                  </td>
-                </tr>
-              ))}
-              {(incomes ?? []).map((i) => (
-                <tr key={i.id}>
-                  <td className="py-1.5">{thDate(i.date)}</td><td>ดอกเบี้ยรับ (รายได้)</td><td className="text-xs text-slate-500">{Number(i.tax ?? 0) ? `ภาษี ${money(i.tax)}` : ""}</td>
-                  <td className="text-right tabular-nums text-emerald-700">{money(i.amount)}</td>
-                  <td className="pl-2 text-right">
-                    {canWrite && <RowActions table="income_transactions" id={i.id} paths={paths} canDelete={canDelete} fields={[
-                      { name: "date", label: "วันที่", type: "date", value: i.date }, { name: "amount", label: "ดอกเบี้ย", type: "number", value: i.amount },
-                      { name: "tax", label: "ภาษี", type: "number", value: i.tax }]} />}
-                  </td>
-                </tr>
-              ))}
+              {history.map((e) => {
+                const total = e.disburse ? Number(e.disburse.amount) : Number(e.principal?.amount ?? 0) + Number(e.interest?.amount ?? 0);
+                const both = !!(e.principal && e.interest);
+                return (
+                  <tr key={e.key} className="align-top">
+                    <td className="py-2">{thDate(e.date)}</td>
+                    <td className="py-2">
+                      {e.disburse ? (MOVE_LABEL[e.disburse.movement_type] ?? e.disburse.movement_type)
+                        : both ? "รับชำระ" : e.principal ? "รับคืนเงินต้น" : "ดอกเบี้ยรับ (รายได้)"}
+                      {/* แยกส่วน: เงินต้น (ลดยอดเงินให้กู้) · ดอกเบี้ย (รายได้) — แก้ / ลบ แยกกันได้ */}
+                      {e.principal && (
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                          <span>เงินต้น <span className="tabular-nums">{money(e.principal.amount)}</span></span>
+                          {canWrite && !e.principal.is_derived && <RowActions table="cash_movements" id={e.principal.id} paths={paths} canDelete={canDelete} fields={[
+                            { name: "movement_date", label: "วันที่", type: "date", value: e.principal.movement_date },
+                            { name: "amount", label: "เงินต้น", type: "number", value: e.principal.amount }]} />}
+                        </div>
+                      )}
+                      {e.interest && (
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                          <span>ดอกเบี้ย (รายได้) <span className="tabular-nums">{money(e.interest.amount)}</span>
+                            {Number(e.interest.tax ?? 0) ? ` · ภาษีหัก ณ ที่จ่าย ${money(e.interest.tax)}` : ""}</span>
+                          {canWrite && <RowActions table="income_transactions" id={e.interest.id} paths={paths} canDelete={canDelete} fields={[
+                            { name: "date", label: "วันที่", type: "date", value: e.interest.date }, { name: "amount", label: "ดอกเบี้ย", type: "number", value: e.interest.amount },
+                            { name: "tax", label: "ภาษี", type: "number", value: e.interest.tax }]} />}
+                        </div>
+                      )}
+                      {e.disburse && canWrite && !e.disburse.is_derived && (
+                        <div className="mt-0.5 text-xs"><RowActions table="cash_movements" id={e.disburse.id} paths={paths} canDelete={canDelete} fields={[
+                          { name: "movement_date", label: "วันที่", type: "date", value: e.disburse.movement_date },
+                          { name: "amount", label: "จำนวน", type: "number", value: e.disburse.amount }]} /></div>
+                      )}
+                    </td>
+                    <td className="py-2 text-xs text-slate-500">{e.bank ? bankName.get(e.bank) ?? "บัญชี" : ""}</td>
+                    <td className={`py-2 text-right tabular-nums ${e.disburse ? "" : "text-emerald-700"}`}>{money(total)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
+        <p className="mt-2 text-xs text-slate-500">การรับชำระแต่ละครั้งแสดงเป็นยอดรวม (ตรงกับ Statement) · ข้างในแยก เงินต้น = ลดยอดเงินให้กู้ · ดอกเบี้ย = รายได้</p>
       </section>
 
       {canWrite && (

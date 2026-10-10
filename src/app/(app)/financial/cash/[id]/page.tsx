@@ -32,7 +32,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,unexplained_difference,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,description,is_derived,source_entity_type")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,description,is_derived,source_entity_type,movement_group_id")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null)
       .order("movement_date", { ascending: false }).limit(50),
     supabase.from("families").select("go_live_date").maybeSingle(),
@@ -45,6 +45,25 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const paths = [`/financial/cash/${id}`, "/financial/cash", "/income-expenses"];
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
+  // รับชำระเงินให้กู้ครั้งเดียว (เงินต้น + ดอกเบี้ย) = 2 รายการในระบบ → แสดงรวมเป็น 1 แถว ให้ตรงกับ Statement
+  type Mv = NonNullable<typeof moves>[number];
+  type Row = Mv & { parts?: Mv[] };
+  const rows: Row[] = [];
+  const byGroup = new Map<string, Row>();
+  (moves ?? []).forEach((m) => {
+    const g = m.movement_group_id;
+    const merged = g ? byGroup.get(g) : undefined;
+    if (merged && merged.to_asset_id === id && m.to_asset_id === id) {
+      merged.parts = [...(merged.parts ?? [merged]), m];
+      merged.amount = Number(merged.amount) + Number(m.amount);
+      return;
+    }
+    const r: Row = { ...m };
+    rows.push(r);
+    if (g) byGroup.set(g, r);
+  });
+  const partLabel = (m: Mv) => (m.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "เงินต้น" : m.movement_type === "INCOME" ? "ดอกเบี้ย" : MOVE_LABEL[m.movement_type] ?? m.movement_type);
+  const loanOf = (r: Row) => (r.parts ?? [r]).find((x) => x.movement_type === "LOAN_PRINCIPAL_RECEIPT")?.from_asset_id;
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
 
   return (
@@ -143,25 +162,29 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
               <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>รายละเอียด</th><th className="text-right">เข้า</th><th className="text-right">ออก</th><th></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(moves ?? []).map((m) => {
+              {rows.map((m) => {
                 const isIn = m.to_asset_id === id;
                 const inAmt = isIn ? (m.movement_type === "FX_EXCHANGE" ? m.counter_amount : m.amount) : null;
                 const outAmt = !isIn ? Number(m.amount) + Number(m.fee ?? 0) : null;
                 return (
                   <tr key={m.id}>
                     <td className="py-1.5">{thDate(m.movement_date)}</td>
-                    <td>{MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
-                    <td className="text-slate-500">{m.description}</td>
+                    <td>{m.parts ? "รับชำระเงินกู้" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
+                    <td className="text-slate-500">
+                      {m.parts ? <>รับชำระเงินให้กู้
+                        <div className="text-xs">{m.parts.map((x) => `${partLabel(x)} ${money(x.amount)}`).join(" + ")}</div></> : m.description}
+                    </td>
                     <td className="text-right tabular-nums text-emerald-700">{inAmt != null ? money(inAmt) : ""}</td>
                     <td className="text-right tabular-nums text-red-700">{outAmt != null ? money(outAmt) : ""}</td>
                     <td className="pl-2 text-right">
-                      {canWrite && !m.is_derived && !["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type) && (
+                      {m.parts && loanOf(m) && <Link href={`/financial/loans/${loanOf(m)}`} className="text-xs text-slate-500 underline">แก้ที่หน้าเงินให้กู้</Link>}
+                      {!m.parts && canWrite && !m.is_derived && !["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type) && (
                         <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
                           fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
                             { name: "amount", label: "จำนวน", type: "number", value: m.amount },
                             { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />
                       )}
-                      {m.is_derived && <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>}
+                      {!m.parts && m.is_derived && <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>}
                     </td>
                   </tr>
                 );
