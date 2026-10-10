@@ -16,6 +16,8 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
+import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
+import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "โอน & จ่ายหนี้"]];
@@ -54,7 +56,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }, { data: loanRows }] = await Promise.all([
+    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }, { data: loanRows }, { data: insRows }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,status").is("deleted_at", null).neq("status", "CLOSED"),
@@ -88,6 +90,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
       .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
       .neq("status", "WRITTEN_OFF").order("due_date"),
+    // งวดเบี้ยประกัน / ผลประโยชน์: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+    supabase.from("v_insurance_schedule_status")
+      .select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,remaining,status,insurer,policy_no,person_id,payer_person_id,cash_value_asset_id")
+      .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
+      .neq("status", "CLOSED").order("due_date"),
   ]);
 
   const goLive = family?.go_live_date ?? "";
@@ -154,6 +161,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     due_date: string; principal_due: number; interest_due: number; total_due: number; principal_remaining: number;
     interest_remaining: number; total_remaining: number; status: string };
   const loanDue = ((loanRows as LoanDue[] | null) ?? []).filter((x) => pv.showAsset(x.loan_asset_id));
+  type InsDue = { id: string; policy_id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string;
+    benefit_type: string | null; remaining: number; status: string; insurer: string; policy_no: string | null; person_id: string | null;
+    payer_person_id: string | null; cash_value_asset_id: string | null };
+  const insDue = ((insRows as InsDue[] | null) ?? []).filter((x) => pv.isPerson(x.payer_person_id) || pv.isPerson(x.person_id));
+  const premiumDue = insDue.filter((x) => x.kind === "PREMIUM");
+  const benefitDue = insDue.filter((x) => x.kind === "BENEFIT");
+  const insName = (x: InsDue) => `${x.insurer}${x.policy_no ? ` ${x.policy_no}` : ""}`;
   // โอน & จ่ายหนี้: รายการที่แตะบัญชี / บัตร / หนี้ ของคนนั้น (แสดงยอดเต็ม)
   const moveList = (moves ?? []).filter((m) => !pv.personId || [m.from_asset_id, m.to_asset_id].some((id) => id && pv.showAsset(id))
     || [m.to_credit_card_id, m.to_liability_id].some((id) => id && pv.showLiability(id)));
@@ -200,8 +214,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {canWrite && inMonth && <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
-            <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำ สัญญาเช่า และตารางผ่อนเงินให้กู้ · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
-            {expectedList.length === 0 && loanDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
+            <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
+            {expectedList.length === 0 && loanDue.length === 0 && benefitDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
                 {expectedList.map((e) => {
                   const tpl = (templates ?? []).find((t) => t.id === e.source_id);
@@ -255,6 +269,25 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             .reduce((s, y) => s + Number(y.interest_remaining), 0)}
                           principalDue={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
                             .reduce((s, y) => s + Number(y.principal_remaining), 0)} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {benefitDue.map((x) => (
+                  <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <Link href={`/insurance/${x.policy_id}`} className="font-medium hover:underline">{insName(x)}</Link>
+                        <div className="text-xs text-slate-500">ผลประโยชน์ประกัน · {BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]} · ครบ {thDate(x.due_date)}</div>
+                      </div>
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span>
+                    </div>
+                    <div className="mt-1 tabular-nums">คาดไว้ {money(x.amount, x.currency)}{Number(x.remaining) < Number(x.amount) && x.status !== "PAID" && <span className="text-amber-700"> · ค้าง {money(x.remaining)}</span>}</div>
+                    {x.cash_value_asset_id && <div className="text-xs text-slate-400">ถอนจากมูลค่าเวนคืนก่อน · ส่วนที่เกินนับเป็นรายได้</div>}
+                    {canWrite && x.status !== "PAID" && (
+                      <div className="mt-2">
+                        <BenefitForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks}
+                          persons={persons ?? []} hasCashValue={!!x.cash_value_asset_id} today={today} small canClose={canDelete} />
                       </div>
                     )}
                   </div>
@@ -334,8 +367,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
-            <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
-            {costs.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
+            <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) และตารางเบี้ยประกัน · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
+            {costs.length === 0 && premiumDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <div className="grid gap-3 md:grid-cols-2">
                 {costs.map((c) => (
                   <div key={`${c.utility_id}-${c.cost_period}`} className="rounded-lg border border-slate-200 p-3 text-sm">
@@ -362,6 +395,28 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           label={`${utilName(c.utility_type, c.provider)} · ${c.property_name} (${thMonth(c.cost_period)})`}
                           category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
                           banks={banks} cards={cards} persons={persons ?? []} today={today} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {premiumDue.map((x) => (
+                  <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">เบี้ยประกัน งวดที่ {x.installment_no}</div>
+                        <div className="text-xs text-slate-500">
+                          <Link href={`/insurance/${x.policy_id}`} className="hover:underline">{insName(x)}</Link>
+                          {" · "}ครบ {thDate(x.due_date)}{x.payer_person_id && ` · ผู้จ่าย ${persons?.find((p) => p.id === x.payer_person_id)?.name ?? ""}`}
+                        </div>
+                      </div>
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span>
+                    </div>
+                    <div className="mt-1 tabular-nums">คาดไว้ {money(x.amount, x.currency)}{Number(x.remaining) < Number(x.amount) && x.status !== "PAID" && <span className="text-amber-700"> · ค้าง {money(x.remaining)}</span>}</div>
+                    {canWrite && x.status !== "PAID" && (
+                      <div className="mt-2">
+                        <PayPremiumForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency}
+                          label={`เบี้ยประกัน ${insName(x)} งวดที่ ${x.installment_no}`} banks={banks} cards={cards} persons={persons ?? []}
+                          defaultPerson={x.payer_person_id} today={today} />
                       </div>
                     )}
                   </div>
