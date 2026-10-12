@@ -23,12 +23,16 @@ type Hist = {
   snapshots: { month: string; date: string; status: string; total_assets: number; total_liabilities: number; net_worth: number }[];
 };
 type Item = { item_type: string; item_name: string; item_group: string; base_value: number | null; ownership_percent: number | null };
+type PersonDash = {
+  opening: { date: string; net_worth: number };
+  snapshots: { month: string; date: string; status: string; net_worth: number }[];
+  prev_net_worth: number | null; prev_label: string | null; prev_date: string | null;
+  income: number; investment_income: number; expenses: number; reimbursements: number;
+};
 type Family = { name: string; go_live_date: string; system_status: string };
 
 const GROUP: [string, string][] = [["financial", "เงินฝาก / เงินสด"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
-const GROUP_KEY: Record<string, string> = { FINANCIAL: "เงินฝาก / เงินสด", LOANS: "เงินให้กู้", INVESTMENT: "การลงทุน", BUSINESS: "ธุรกิจ",
-  PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น", INSURANCE: "ประกัน" };
 /** item_group ของรายการรายคน → คีย์หมวดบน Dashboard */
 const GROUP_FIELD: Record<string, string> = { FINANCIAL: "financial", LOANS: "loans", INVESTMENT: "investment", BUSINESS: "business",
   PROPERTY: "property", ALTERNATIVE: "alternative", INSURANCE: "insurance" };
@@ -49,6 +53,10 @@ const getHistory = cache(async () =>
   ((await (await createClient()).rpc("net_worth_history")).data ?? null) as Hist | null);
 const getItems = cache(async (start: string, person: string) =>
   ((await (await createClient()).rpc("month_person_items", { p_month: start, p_person: person })).data ?? null) as Item[] | null);
+const getFamilyItems = cache(async (start: string) =>
+  ((await (await createClient()).rpc("month_family_items", { p_month: start })).data ?? null) as Item[] | null);
+const getPersonDash = cache(async (start: string, person: string) =>
+  ((await (await createClient()).rpc("person_dashboard", { p_month: start, p_person: person })).data ?? null) as PersonDash | null);
 const getTrack = cache(async (start: string) => {
   const { data } = await (await createClient()).from("monthly_expenses").select("tracking_status")
     .eq("year_month", start).is("deleted_at", null).maybeSingle();
@@ -85,7 +93,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // เริ่มคำนวณส่วนที่ช้าทันที (ไม่รอ) — การ์ดด้านล่างจะรับผลจากคำขอเดียวกันนี้
   void getMonth(start); void getPreview(start); void getHistory(); void getTrack(start);
-  if (personId) void getItems(start, personId);
+  if (personId) { void getItems(start, personId); void getPersonDash(start, personId); } else void getFamilyItems(start);
 
   return (
     <div className="space-y-6">
@@ -109,10 +117,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ กราฟ */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="font-medium text-slate-900">Net Worth ครอบครัว</h2>
+          <h2 className="font-medium text-slate-900">Net Worth {personName || "ครอบครัว"}</h2>
           <p className="mb-3 text-xs text-slate-500">● ทึบ = ยอดตั้งต้น / ปิดเดือนแล้ว · ○ กลวง = ยังไม่ปิด (ประมาณการ)</p>
           <Suspense fallback={<div className="h-48 animate-pulse rounded-lg bg-slate-100" />}>
-            <ChartBody start={start} isCurrent={isCurrent} />
+            <ChartBody start={start} isCurrent={isCurrent} personId={personId} />
           </Suspense>
         </div>
 
@@ -126,29 +134,32 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        {/* ------------------------------------------------ สัดส่วนสินทรัพย์ */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">สัดส่วนสินทรัพย์</h2>
-          <Suspense fallback={<Lines n={4} />}>
+        {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์{personName ? ` · ${personName}` : ""}</h2>
+          <p className="mb-3 text-xs text-slate-500">กดที่หมวดเพื่อดูรายการ</p>
+          <Suspense fallback={<Lines n={7} />}>
             <AllocationBody start={start} personId={personId} />
           </Suspense>
         </div>
 
-        {/* ------------------------------------------------ เปลี่ยนเพราะอะไร */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">{thMonth(start)} ความมั่งคั่งเปลี่ยนเพราะอะไร</h2>
-          <Suspense fallback={<Lines n={6} />}>
-            <ChangeBody start={start} isCurrent={isCurrent} />
-          </Suspense>
-        </div>
+        <div className="flex flex-col gap-4">
+          {/* ------------------------------------------------ เปลี่ยนเพราะอะไร */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-2 font-medium text-slate-900">{thMonth(start)} ความมั่งคั่งเปลี่ยนเพราะอะไร{personName ? ` · ${personName}` : ""}</h2>
+            <Suspense fallback={<Lines n={6} />}>
+              <ChangeBody start={start} isCurrent={isCurrent} personId={personId} />
+            </Suspense>
+          </div>
 
-        {/* ------------------------------------------------ รายได้ / ค่าใช้จ่าย */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">รายได้ &amp; ค่าใช้จ่าย {thMonth(start)}</h2>
-          <Suspense fallback={<Lines n={3} />}>
-            <IncomeBody start={start} />
-          </Suspense>
-          <Link href={`/income-expenses?m=${ym}`} className="mt-3 inline-block text-xs text-slate-700 underline">ดูรายละเอียด</Link>
+          {/* ------------------------------------------------ รายได้ / ค่าใช้จ่าย (ทั้งครอบครัว) */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-2 font-medium text-slate-900">รายได้ &amp; ค่าใช้จ่าย {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> (ทั้งครอบครัว)</span> : null}</h2>
+            <Suspense fallback={<Lines n={3} />}>
+              <IncomeBody start={start} />
+            </Suspense>
+            <Link href={`/income-expenses?m=${ym}`} className="mt-3 inline-block text-xs text-slate-700 underline">ดูรายละเอียด</Link>
+          </div>
         </div>
       </section>
 
@@ -235,7 +246,17 @@ async function TopCards({ start, personId, personName }: { start: string; person
   );
 }
 
-async function ChartBody({ start, isCurrent }: { start: string; isCurrent: boolean }) {
+async function ChartBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
+  if (personId) {
+    const [dm, h] = await Promise.all([getMonth(start), getPersonDash(start, personId)]);
+    const cur = Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0);
+    const points = [
+      ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
+      ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
+      ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: cur, solid: false }] : []),
+    ];
+    return <TrendChart points={points} selected={points.findIndex((pt) => pt.date === dm?.as_of)} />;
+  }
   const [dm, h] = await Promise.all([getMonth(start), getHistory()]);
   // จุดบนกราฟ: ยอดตั้งต้น + Snapshot (ทึบ) + ยอดวันนี้ (กลวง)
   const points = [
@@ -301,37 +322,104 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
 }
 
 async function AllocationBody({ start, personId }: { start: string; personId: string }) {
-  if (personId) return <PersonItems items={(await getItems(start, personId)) ?? []} />;
-  const dm = await getMonth(start);
-  const rec = (dm as unknown as Record<string, number> | null) ?? {};
-  return <AllocationBars values={Object.fromEntries(GROUP.map(([k]) => [k, Number(rec[k] ?? 0)]))} total={Number(dm?.total_assets ?? 0)} />;
+  const items = (personId ? await getItems(start, personId) : await getFamilyItems(start)) ?? [];
+  return <Allocation items={items} showShare={!!personId} />;
 }
 
-/** แถบสัดส่วน 7 หมวด (ใช้ทั้งภาพรวมครอบครัวและรายคน) */
-function AllocationBars({ values, total }: { values: Record<string, number>; total: number }) {
+/** สัดส่วน 7 หมวด แถวละหมวด · กดหมวดเพื่อกางรายการใต้แถว · หนี้สินอยู่แถวสุดท้าย (ใช้ทั้งภาพรวมครอบครัวและรายคน) */
+function Allocation({ items, showShare }: { items: Item[]; showShare: boolean }) {
+  const assets = items.filter((i) => i.item_type === "ASSET").sort((a, b) => Number(b.base_value) - Number(a.base_value));
+  const liabs = items.filter((i) => i.item_type === "LIABILITY").sort((a, b) => Number(b.base_value) - Number(a.base_value));
+  const total = assets.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
+  const byKey: Record<string, Item[]> = {};
+  for (const i of assets) (byKey[GROUP_FIELD[i.item_group] ?? "alternative"] ??= []).push(i);
+  const sum = (xs: Item[]) => xs.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
+  const liabTotal = sum(liabs);
   return (
-    <ul className="space-y-2.5 text-sm">
+    <div className="divide-y divide-slate-100 text-sm">
       {GROUP.map(([k, label], gi) => {
-        const v = values[k] ?? 0;
+        const list = byKey[k] ?? [];
+        const v = sum(list);
         const pct = total ? (v / total) * 100 : 0;
+        const head = (
+          <AllocRow dot={blueAt(gi)} label={label} pct={pct} value={v} count={list.length}
+            bar={`linear-gradient(90deg, ${blueAt(gi)}, ${blueAt(gi + 1)})`} />
+        );
+        if (!list.length) return <div key={k} className="py-2.5 opacity-50">{head}</div>;
         return (
-          <li key={k}>
-            <div className="flex justify-between gap-2">
-              <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: blueAt(gi) }} />{label}</span>
-              <span className="tabular-nums font-medium text-slate-700">{pct.toFixed(1)}%</span>
-            </div>
-            <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-blue-50" title={money(v, "THB", 0)}>
-              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${blueAt(gi)}, ${blueAt(gi + 1)})` }} />
-            </div>
-            <div className="mt-0.5 text-xs tabular-nums text-slate-500">{money(v, "THB", 0)}</div>
-          </li>
+          <details key={k} className="group py-2.5">
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">{head}</summary>
+            <ItemList items={list} showShare={showShare} />
+          </details>
         );
       })}
+      {liabs.length > 0 && (
+        <details className="group py-2.5">
+          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <AllocRow dot="#dc2626" label="หนี้สิน" value={-liabTotal} count={liabs.length} />
+          </summary>
+          <ItemList items={liabs} showShare={showShare} negative />
+        </details>
+      )}
+    </div>
+  );
+}
+
+function AllocRow({ dot, label, pct, value, count, bar }: { dot: string; label: string; pct?: number; value: number; count: number; bar?: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
+      <span className="flex items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: dot }} />{label}
+        <span className="text-xs text-slate-400">{count ? `(${count})` : ""}</span>
+      </span>
+      <div className="col-span-2 row-start-2 h-2.5 overflow-hidden rounded-full bg-blue-50 sm:col-span-1 sm:row-start-auto">
+        {pct != null && <div className="h-full rounded-full" style={{ width: `${pct}%`, background: bar }} />}
+      </div>
+      <span className="hidden text-right tabular-nums font-medium text-slate-700 sm:block">{pct != null ? `${pct.toFixed(1)}%` : ""}</span>
+      <span className={`text-right tabular-nums ${value < 0 ? "text-red-700" : "text-slate-700"}`}>
+        <span className="mr-2 font-medium sm:hidden">{pct != null ? `${pct.toFixed(1)}%` : ""}</span>{money(value, undefined, 0)}
+      </span>
+      <span className="hidden text-slate-400 transition-transform group-open:rotate-90 sm:block">{count ? "▸" : ""}</span>
+    </div>
+  );
+}
+
+function ItemList({ items, showShare, negative }: { items: Item[]; showShare: boolean; negative?: boolean }) {
+  return (
+    <ul className="mt-2 space-y-1 rounded-lg bg-slate-50 px-3 py-2 sm:ml-[1.125rem] sm:mr-7">
+      {items.map((i, k) => (
+        <li key={k} className="flex justify-between gap-3">
+          <span>{i.item_name}{showShare && i.ownership_percent && Number(i.ownership_percent) < 100
+            ? <span className="text-xs text-slate-400"> · ถือ {Number(i.ownership_percent)}%</span> : null}</span>
+          <span className={`shrink-0 tabular-nums ${negative ? "text-red-700" : ""}`}>{negative ? "−" : ""}{money(i.base_value, undefined, 0)}</span>
+        </li>
+      ))}
     </ul>
   );
 }
 
-async function ChangeBody({ start, isCurrent }: { start: string; isCurrent: boolean }) {
+async function ChangeBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
+  if (personId) {
+    const [dm, p] = await Promise.all([getMonth(start), getPersonDash(start, personId)]);
+    if (p?.prev_net_worth == null) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
+    const cur = Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0);
+    const other = cur - Number(p.prev_net_worth) - Number(p.income) - Number(p.investment_income) + (Number(p.expenses) - Number(p.reimbursements));
+    return (
+      <>
+        <table className="w-full text-sm">
+          <tbody className="divide-y divide-slate-100">
+            <BRow label={p.prev_label ?? "ยอดงวดก่อน"} v={p.prev_net_worth} bold />
+            <BRow label="+ รายได้ (หลังภาษี)" v={p.income} />
+            <BRow label="− ค่าใช้จ่ายที่ระบุชื่อ" v={-(p.expenses - p.reimbursements)} />
+            <BRow label="+ รายได้ลงทุน (ตามสัดส่วนถือ)" v={p.investment_income} />
+            <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={other} />
+            <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
+          </tbody>
+        </table>
+        <p className="mt-2 text-xs text-slate-500">ค่าใช้จ่ายที่ไม่ได้ระบุชื่อคน รวมอยู่ใน &ldquo;อื่น ๆ&rdquo;</p>
+      </>
+    );
+  }
   const [dm, p] = await Promise.all([getMonth(start), getPreview(start)]);
   if (p?.prev_net_worth == null) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
   const otherChange = dm
@@ -431,35 +519,6 @@ function BRow({ label, v, bold }: { label: string; v: number; bold?: boolean }) 
       <td className="py-1.5 pr-2">{label}</td>
       <td className={`text-right tabular-nums ${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{money(v, undefined, 0)}</td>
     </tr>
-  );
-}
-
-function PersonItems({ items }: { items: Item[] }) {
-  const assets = items.filter((i) => i.item_type === "ASSET").sort((a, b) => Number(b.base_value) - Number(a.base_value));
-  const liabs = items.filter((i) => i.item_type === "LIABILITY");
-  const values: Record<string, number> = {};
-  for (const i of assets) { const k = GROUP_FIELD[i.item_group] ?? "alternative"; values[k] = (values[k] ?? 0) + Number(i.base_value ?? 0); }
-  const total = assets.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
-  return (
-    <div className="space-y-4 text-sm">
-      <AllocationBars values={values} total={total} />
-      <details className="border-t border-slate-100 pt-3">
-        <summary className="cursor-pointer text-blue-700">ดูรายการทรัพย์สิน / หนี้สิน ({assets.length + liabs.length})</summary>
-      <ul className="mt-2 space-y-1">
-        {assets.map((i, k) => (
-          <li key={k} className="flex justify-between gap-2">
-            <span>{i.item_name} <span className="text-xs text-slate-400">{GROUP_KEY[i.item_group] ?? ""}{i.ownership_percent && Number(i.ownership_percent) < 100 ? ` · ${Number(i.ownership_percent)}%` : ""}</span></span>
-            <span className="tabular-nums">{money(i.base_value, undefined, 0)}</span>
-          </li>
-        ))}
-      </ul>
-      {liabs.length > 0 && (
-        <ul className="space-y-1 border-t border-slate-100 pt-2 text-red-700">
-          {liabs.map((i, k) => <li key={k} className="flex justify-between gap-2"><span>{i.item_name}</span><span className="tabular-nums">−{money(i.base_value, undefined, 0)}</span></li>)}
-        </ul>
-      )}
-      </details>
-    </div>
   );
 }
 
