@@ -13,7 +13,7 @@ type Preview = {
   by_person: { person_id: string | null; name: string; assets: number; liabilities: number; net_worth: number }[];
 };
 type DM = {
-  month: string; source: string; as_of: string; financial: number; investment: number; property: number; alternative: number;
+  month: string; source: string; as_of: string; financial: number; business: number; investment: number; property: number; alternative: number;
   total_assets: number; total_liabilities: number; net_worth: number;
   by_person: { person_id: string | null; name: string; assets: number; liabilities: number; net_worth: number }[];
   base: { label: string; date: string; total_assets: number; total_liabilities: number; net_worth: number } | null;
@@ -25,8 +25,8 @@ type Hist = {
 type Item = { item_type: string; item_name: string; item_group: string; base_value: number | null; ownership_percent: number | null };
 type Family = { name: string; go_live_date: string; system_status: string };
 
-const GROUP: [string, string][] = [["financial", "การเงิน (เงินฝาก เงินให้กู้ ประกัน)"], ["investment", "การลงทุน"], ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"]];
-const GROUP_KEY: Record<string, string> = { FINANCIAL: "การเงิน", INVESTMENT: "การลงทุน", PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น" };
+const GROUP: [string, string][] = [["financial", "การเงิน (เงินฝาก เงินให้กู้ ประกัน)"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"], ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"]];
+const GROUP_KEY: Record<string, string> = { FINANCIAL: "การเงิน", BUSINESS: "ธุรกิจ", INVESTMENT: "การลงทุน", PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น" };
 const FIELD: Record<string, string> = {
   document: "เอกสาร", ownership: "เจ้าของครบ 100%", valuation: "มูลค่า", acquisition_date: "วันที่ได้มา",
   acquisition_cost: "ราคาที่ได้มา", account_no: "เลขบัญชี", title_deed_no: "เลขโฉนด", land_area_sq_wa: "เนื้อที่",
