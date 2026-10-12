@@ -112,6 +112,21 @@ export async function receiveBenefit(_: ActionState, form: FormData): Promise<Ac
   return { ok: r ? `บันทึกแล้ว · จากมูลค่าเวนคืน ${fmt(r.cash_value_part)} · รายได้ ${fmt(r.income_part)}` : "บันทึกแล้ว" };
 }
 
+/** เพิ่มมูลค่าเวนคืน (รวมเงินปันผลสะสม) ให้กรมธรรม์ที่ยังไม่มี */
+export async function addCashValue(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("policy_id"));
+  const value = num(form.get("value"));
+  if (value == null || Number.isNaN(value) || value < 0) return { error: "กรุณาใส่มูลค่าเวนคืน" };
+  const { error } = await supabase.rpc("add_insurance_cash_value", { p_policy_id: id, p: {
+    value, valuation_date: str(form.get("valuation_date")), owner_person_id: str(form.get("owner_person_id")),
+    notes: str(form.get("notes")),
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  refresh(id);
+  return { ok: "เพิ่มมูลค่าเวนคืนแล้ว" };
+}
+
 export async function addCoverage(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("policy_id"));
