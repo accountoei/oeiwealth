@@ -9,7 +9,7 @@ const label = "block text-sm text-slate-700";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 export type PersonDetails = {
-  id: string; name: string; relationship: string | null; status: string;
+  id: string; name: string; relationship: string | null; status: string; death_date: string | null;
   father_id: string | null; mother_id: string | null; spouse_id: string | null; title_prefix: string | null; full_name_th: string | null; full_name_en: string | null; nickname: string | null;
   birth_date: string | null; photo: string | null; phone: string | null; email: string | null; address: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; national_id: string | null;
@@ -36,7 +36,7 @@ export function PersonDetailsForm({ p, others }: { p: PersonDetails; others: { i
   const [newPhoto, setNewPhoto] = useState("");
   const [clear, setClear] = useState(false);
   const [photoErr, setPhotoErr] = useState("");
-  const [deceased, setDeceased] = useState(false);
+  const [status, setStatus] = useState(p.status);
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePersonDetails, {});
 
   if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">แก้ไขข้อมูล</button>;
@@ -79,11 +79,17 @@ export function PersonDetailsForm({ p, others }: { p: PersonDetails; others: { i
           </select>
         </label>
         <label className={label}>สถานะ
-          <select name="status" defaultValue={p.status} onChange={(e) => setDeceased(e.target.value === "DECEASED" && p.status !== "DECEASED")} className={input}>
+          <select name="status" defaultValue={p.status} onChange={(e) => setStatus(e.target.value)} className={input}>
             {Object.entries(PERSON_STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
-        {deceased && <p className="text-xs text-amber-700 md:col-span-4">ตั้งเป็น &ldquo;เสียชีวิต&rdquo; → ระบบจะสร้างรายการติดตามกรมธรรม์ที่เกี่ยวข้องให้ (เคลม / เวนคืน / เปลี่ยนผู้รับผลประโยชน์)</p>}
+        {status === "DECEASED" && (
+          <>
+            <label className={label}>วันที่เสียชีวิต<input type="date" name="death_date" defaultValue={p.death_date ?? ""} className={input} /></label>
+            {p.status !== "DECEASED" && <p className="self-end text-xs text-amber-700 md:col-span-3">ตั้งเป็น Archived → ระบบจะสร้างรายการติดตามกรมธรรม์ที่เกี่ยวข้องให้ (เคลม / เวนคืน / เปลี่ยนผู้รับผลประโยชน์) และซ่อนจากรายชื่อหลัก</p>}
+          </>
+        )}
+        {status === "INACTIVE" && <p className="text-xs text-slate-500 md:col-span-4">Inactive: ไม่ขึ้นในช่องเลือกคนตอนสร้างรายการใหม่ · รายการเดิมยังอยู่และนับใน Net Worth ตามปกติ</p>}
         <label className={label}>คำนำหน้า
           <input name="title_prefix" list="title-prefixes" defaultValue={p.title_prefix ?? ""} className={input} />
           <datalist id="title-prefixes">{TITLE_PREFIXES.map((t) => <option key={t} value={t} />)}</datalist>

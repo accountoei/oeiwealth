@@ -8,18 +8,31 @@ import { FamilyTree } from "./tree";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
-export default async function MembersPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const tree = (await searchParams).view === "tree";
+export default async function MembersPage({ searchParams }: { searchParams: Promise<{ view?: string; archived?: string; order?: string }> }) {
+  const sp = await searchParams;
+  const tree = sp.view === "tree";
   const me = await requireAppUser();
   const supabase = await createClient();
   const canEdit = me.role === "ADMIN" || me.role === "EDITOR";
   const isAdmin = me.role === "ADMIN";
+  const ordering = canEdit && !tree && sp.order === "1";
+  const showArchived = sp.archived === "1" || ordering;   // โหมดจัดลำดับ: แสดงทุกคน (ลำดับนับรวมคนที่ซ่อน)
+  const url = (q: { view?: string; archived?: boolean; order?: boolean }) => {
+    const u = new URLSearchParams();
+    if (q.view) u.set("view", q.view);
+    if (q.archived) u.set("archived", "1");
+    if (q.order) u.set("order", "1");
+    const t = u.toString();
+    return `/family/members${t ? `?${t}` : ""}`;
+  };
 
   const [{ data: family }, { data: persons, error }] = await Promise.all([
     supabase.from("families").select("name,head_person_id").maybeSingle(),
     supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,title_prefix,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
-  const list = persons ?? [];
+  const all = persons ?? [];
+  const archivedCount = all.filter((p) => p.status === "DECEASED").length;
+  const list = showArchived ? all : all.filter((p) => p.status !== "DECEASED");
   const today = todayBangkok();
 
   return (
@@ -31,7 +44,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">ชื่อครอบครัว</h2>
-        <p className="mb-3 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard{!isAdmin && " · แก้ได้เฉพาะผู้ดูแลระบบ"}</p>
+        <p className="mb-3 mt-2 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard{!isAdmin && " · แก้ได้เฉพาะผู้ดูแลระบบ"}</p>
         {isAdmin ? <FamilyNameForm name={family?.name ?? ""} /> : <p className="text-sm">{family?.name ?? "-"}</p>}
       </section>
 
@@ -39,13 +52,24 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
           <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm">
-            <Link href="/family/members" className={`px-3 py-1 ${!tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
-            <Link href="/family/members?view=tree" className={`border-l border-slate-300 px-3 py-1 ${tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
+            <Link href={url({ archived: sp.archived === "1" })} className={`px-3 py-1 ${!tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
+            <Link href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-3 py-1 ${tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
           </div>
         </div>
-        <p className="mb-3 text-xs text-slate-500">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          {archivedCount > 0 && !ordering && (
+            <Link href={url({ view: tree ? "tree" : undefined, archived: sp.archived !== "1" })}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50">
+              {sp.archived === "1" ? "ซ่อน Archived" : `แสดง Archived (${archivedCount})`}
+            </Link>
+          )}
+          {canEdit && !tree && (ordering
+            ? <Link href={url({ archived: sp.archived === "1" })} className="rounded-md bg-blue-600 px-2.5 py-1 text-white hover:bg-blue-700">เสร็จสิ้น</Link>
+            : <Link href={url({ archived: sp.archived === "1", order: true })} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50">จัดลำดับ</Link>)}
+        </div>
+        <p className="mb-3 mt-2 text-xs text-slate-500">
           รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
-          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{canEdit && " · กด ↑ ↓ เพื่อจัดลำดับ"}
+          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{ordering && " · โหมดจัดลำดับ: กด ↑ ↓ (มีผลทันที) แล้วกด เสร็จสิ้น"}
         </p>
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         {tree ? <div className="mt-4"><FamilyTree people={list} headId={family?.head_person_id ?? null} /></div> : (
@@ -54,7 +78,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
           {list.map((p, i) => (
             <div key={p.id} className="flex flex-wrap items-center gap-3 py-2">
               <span className="w-6 text-right text-xs text-slate-400">{i + 1}</span>
-              {canEdit && (
+              {ordering && (
                 <div className="flex gap-1">
                   <form action={movePerson}>
                     <input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="-1" />
@@ -67,7 +91,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                 </div>
               )}
               <Link href={`/family/members/${p.id}`}
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50">
+                className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50 ${p.status === "DECEASED" ? "opacity-60" : ""}`}>
                 {p.photo
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={p.photo} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />

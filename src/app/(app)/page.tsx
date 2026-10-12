@@ -59,7 +59,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const [{ data: familyRaw }, { data: personsRaw }] = await Promise.all([
     supabase.from("families").select("name,go_live_date,system_status").maybeSingle(),
-    supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,status").is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   const family = familyRaw as Family | null;
   const isSetup = family?.system_status === "SETUP";
@@ -73,7 +73,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const ym = months.some((x) => x.value === sp.m) ? (sp.m as string) : curYm;
   const isCurrent = ym === curYm;
   const { start } = monthRange(ym);
-  const persons = (personsRaw ?? []) as { id: string; name: string }[];
+  const persons = ((personsRaw ?? []) as { id: string; name: string; status: string }[])
+    .filter((x) => x.status !== "DECEASED" || x.id === sp.p);   // ตัวกรองไม่แสดง Archived (ยกเว้นคนที่เลือกอยู่)
   const personId = persons.some((x) => x.id === sp.p) ? (sp.p as string) : "";
   const personName = persons.find((x) => x.id === personId)?.name ?? "";
 
@@ -266,7 +267,7 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
     if (monthRange(toClose).end < today) attention.push({ text: `ปิดเดือน ${thMonth(`${toClose}-01`)}`, href: `/month-closing?m=${toClose}`, tone: "red" });
   }
   (fx ?? []).filter((f) => f.is_stale).forEach((f) => attention.push({ text: `อัตราแลกเปลี่ยน ${f.currency} ไม่อัปเดต (ล่าสุด ${thDate(f.latest_rate_date)})`, href: "/settings/system", tone: "red" }));
-  if ((fups ?? []).length) attention.push({ text: `ติดตามกรมธรรม์หลังเสียชีวิต ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
+  if ((fups ?? []).length) attention.push({ text: `กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
   const premOver = (insOverdue ?? []).filter((x) => x.kind === "PREMIUM").length;
   if (premOver) attention.push({ text: `เบี้ยประกันเลยกำหนด ${premOver} งวด`, href: "/income-expenses?tab=expense", tone: "red" });
   if ((expected ?? []).length) attention.push({ text: `รายได้เลยกำหนดยังไม่ได้รับ ${(expected ?? []).length} รายการ`, href: "/income-expenses?tab=income", tone: "amber" });

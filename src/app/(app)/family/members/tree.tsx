@@ -67,7 +67,7 @@ export function FamilyTree({ people, headId }: { people: TreePerson[]; headId: s
         : <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-500">{p.name.slice(0, 1)}</span>}
       <span className="mt-1 w-full truncate text-sm font-medium text-slate-900">{p.name}</span>
       <span className="w-full truncate text-[11px] text-slate-500">
-        {p.id === headId ? "★ หัวหน้าครอบครัว" : RELATIONSHIP_LABEL[p.relationship ?? ""] ?? ""}{p.status === "DECEASED" && " · เสียชีวิต"}
+        {p.id === headId ? "★ หัวหน้าครอบครัว" : RELATIONSHIP_LABEL[p.relationship ?? ""] ?? ""}{p.status === "DECEASED" && " · Archived"}
       </span>
     </Link>
   );
