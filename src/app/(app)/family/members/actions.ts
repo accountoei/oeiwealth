@@ -27,20 +27,6 @@ export async function addPerson(_: ActionState, form: FormData): Promise<ActionS
   return { ok: `เพิ่ม ${name} แล้ว` };
 }
 
-export async function updatePerson(_: ActionState, form: FormData): Promise<ActionState> {
-  const supabase = await createClient();
-  const id = String(form.get("id"));
-  const name = String(form.get("name") ?? "").trim();
-  const relationship = String(form.get("relationship") ?? "");
-  const status = String(form.get("status") ?? "ACTIVE");
-  if (!name) return { error: "กรุณาใส่ชื่อ" };
-  const { data, error } = await supabase.from("persons").update({ name, relationship, status }).eq("id", id).select("id");
-  if (error) return { error: friendly(error.message) };
-  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
-  refresh();
-  return { ok: "บันทึกแล้ว" };
-}
-
 /** ย้ายลำดับขึ้น (-1) / ลง (+1) */
 export async function movePerson(form: FormData): Promise<void> {
   const supabase = await createClient();
@@ -72,7 +58,13 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
   const supabase = await createClient();
   const id = String(form.get("id"));
   const s = (k: string) => { const v = String(form.get(k) ?? "").trim(); return v === "" ? null : v; };
-  const row: Record<string, string | null> = {};
+  const name = s("name");
+  if (!name) return { error: "กรุณาใส่ชื่อ" };
+  const relationship = String(form.get("relationship") ?? "");
+  if (!(relationship in RELATIONSHIP_LABEL)) return { error: "กรุณาเลือกความสัมพันธ์" };
+  const status = String(form.get("status") ?? "ACTIVE");
+  if (!["ACTIVE", "INACTIVE", "DECEASED"].includes(status)) return { error: "สถานะไม่ถูกต้อง" };
+  const row: Record<string, string | null> = { name, relationship, status };
   for (const k of TEXT_FIELDS) row[k] = s(k);
   const nid = String(form.get("national_id") ?? "").replace(/\D/g, "");
   if (nid && nid.length !== 13) return { error: "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก" };

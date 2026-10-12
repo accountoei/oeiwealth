@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { PERSON_STATUS_LABEL, RELATIONSHIP_LABEL } from "@/lib/format";
+import { ageFrom, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, todayBangkok } from "@/lib/format";
 import { movePerson } from "./actions";
-import { AddPersonForm, FamilyNameForm, PersonRow } from "./forms";
+import { AddPersonForm, FamilyNameForm } from "./forms";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
@@ -15,9 +15,10 @@ export default async function MembersPage() {
 
   const [{ data: family }, { data: persons, error }] = await Promise.all([
     supabase.from("families").select("name").maybeSingle(),
-    supabase.from("persons").select("id,name,relationship,status,photo,nickname").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,title_prefix").is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   const list = persons ?? [];
+  const today = todayBangkok();
 
   return (
     <div className="space-y-8">
@@ -36,7 +37,7 @@ export default async function MembersPage() {
         <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
         <p className="mb-3 text-xs text-slate-500">
           รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
-          {canEdit && " · กด ↑ ↓ เพื่อจัดลำดับ"} · กดรูปหรือ &ldquo;ข้อมูลส่วนตัว&rdquo; เพื่อดู / แก้รายละเอียดของแต่ละคน
+          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{canEdit && " · กด ↑ ↓ เพื่อจัดลำดับ"}
         </p>
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         <div className="divide-y divide-slate-100">
@@ -56,20 +57,29 @@ export default async function MembersPage() {
                   </form>
                 </div>
               )}
-              <Link href={`/family/members/${p.id}`} className="flex items-center gap-2" title="ดูข้อมูลส่วนตัว">
+              <Link href={`/family/members/${p.id}`}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50">
                 {p.photo
                   // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={p.photo} alt="" className="h-9 w-9 rounded-full object-cover" />
-                  : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-500">{p.name.slice(0, 1)}</span>}
-              </Link>
-              {canEdit ? <><PersonRow p={p} /><Link href={`/family/members/${p.id}`} className="text-xs text-blue-700 hover:underline">ข้อมูลส่วนตัว →</Link></> : (
-                <div className="text-sm">
-                  <Link href={`/family/members/${p.id}`} className="text-blue-700 hover:underline">{p.name}</Link>{p.nickname && ` (${p.nickname})`}
-                  <span className="ml-2 text-xs text-slate-500">
-                    {RELATIONSHIP_LABEL[p.relationship ?? ""] ?? ""}{p.status !== "ACTIVE" && ` · ${PERSON_STATUS_LABEL[p.status]}`}
-                  </span>
+                  ? <img src={p.photo} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
+                  : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-base text-slate-500">{p.name.slice(0, 1)}</span>}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-slate-900">
+                    {p.name}{p.nickname && <span className="font-normal text-slate-500"> ({p.nickname})</span>}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-"}
+                    {(() => { const a = ageFrom(p.birth_date, today); return a != null ? ` · ${a} ปี` : ""; })()}
+                    {p.full_name_th && ` · ${[p.title_prefix, p.full_name_th].filter(Boolean).join(" ")}`}
+                  </div>
                 </div>
-              )}
+                {p.status !== "ACTIVE" && (
+                  <span className={`ml-auto shrink-0 rounded px-2 py-0.5 text-xs ${p.status === "DECEASED" ? "bg-slate-200 text-slate-700" : "bg-amber-50 text-amber-700"}`}>
+                    {PERSON_STATUS_LABEL[p.status]}
+                  </span>
+                )}
+                <span className="shrink-0 text-slate-300">›</span>
+              </Link>
             </div>
           ))}
         </div>

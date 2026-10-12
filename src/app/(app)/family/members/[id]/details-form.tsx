@@ -2,14 +2,14 @@
 
 import { useActionState, useState } from "react";
 import { updatePersonDetails, type ActionState } from "../actions";
-import { TITLE_PREFIXES } from "@/lib/format";
+import { PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 export type PersonDetails = {
-  id: string; title_prefix: string | null; full_name_th: string | null; full_name_en: string | null; nickname: string | null;
+  id: string; name: string; relationship: string | null; status: string; title_prefix: string | null; full_name_th: string | null; full_name_en: string | null; nickname: string | null;
   birth_date: string | null; photo: string | null; phone: string | null; email: string | null; address: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; national_id: string | null;
   passport_no: string | null; passport_expiry: string | null; house_registration_no: string | null; notes: string | null;
@@ -35,9 +35,10 @@ export function PersonDetailsForm({ p }: { p: PersonDetails }) {
   const [newPhoto, setNewPhoto] = useState("");
   const [clear, setClear] = useState(false);
   const [photoErr, setPhotoErr] = useState("");
+  const [deceased, setDeceased] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePersonDetails, {});
 
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">แก้ไขข้อมูลส่วนตัว</button>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">แก้ไขข้อมูล</button>;
 
   async function pick(f: File | undefined) {
     setPhotoErr("");
@@ -69,6 +70,19 @@ export function PersonDetailsForm({ p }: { p: PersonDetails }) {
 
       <fieldset className="grid gap-4 md:grid-cols-4">
         <legend className="mb-2 text-sm font-medium text-slate-900">ข้อมูลทั่วไป</legend>
+        <label className={`${label} md:col-span-2`}>ชื่อที่ใช้ในระบบ *<input name="name" required defaultValue={p.name} className={input} /></label>
+        <label className={label}>ความสัมพันธ์ *
+          <select name="relationship" required defaultValue={p.relationship ?? ""} className={input}>
+            <option value="" disabled>เลือก…</option>
+            {Object.entries(RELATIONSHIP_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label className={label}>สถานะ
+          <select name="status" defaultValue={p.status} onChange={(e) => setDeceased(e.target.value === "DECEASED" && p.status !== "DECEASED")} className={input}>
+            {Object.entries(PERSON_STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        {deceased && <p className="text-xs text-amber-700 md:col-span-4">ตั้งเป็น &ldquo;เสียชีวิต&rdquo; → ระบบจะสร้างรายการติดตามกรมธรรม์ที่เกี่ยวข้องให้ (เคลม / เวนคืน / เปลี่ยนผู้รับผลประโยชน์)</p>}
         <label className={label}>คำนำหน้า
           <input name="title_prefix" list="title-prefixes" defaultValue={p.title_prefix ?? ""} className={input} />
           <datalist id="title-prefixes">{TITLE_PREFIXES.map((t) => <option key={t} value={t} />)}</datalist>
