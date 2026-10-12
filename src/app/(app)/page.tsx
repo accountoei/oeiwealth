@@ -29,6 +29,9 @@ const GROUP: [string, string][] = [["financial", "เงินฝาก / เง
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
 const GROUP_KEY: Record<string, string> = { FINANCIAL: "เงินฝาก / เงินสด", LOANS: "เงินให้กู้", INVESTMENT: "การลงทุน", BUSINESS: "ธุรกิจ",
   PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น", INSURANCE: "ประกัน" };
+/** item_group ของรายการรายคน → คีย์หมวดบน Dashboard */
+const GROUP_FIELD: Record<string, string> = { FINANCIAL: "financial", LOANS: "loans", INVESTMENT: "investment", BUSINESS: "business",
+  PROPERTY: "property", ALTERNATIVE: "alternative", INSURANCE: "insurance" };
 const FIELD: Record<string, string> = {
   document: "เอกสาร", ownership: "เจ้าของครบ 100%", valuation: "มูลค่า", acquisition_date: "วันที่ได้มา",
   acquisition_cost: "ราคาที่ได้มา", account_no: "เลขบัญชี", title_deed_no: "เลขโฉนด", land_area_sq_wa: "เนื้อที่",
@@ -300,11 +303,17 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
 async function AllocationBody({ start, personId }: { start: string; personId: string }) {
   if (personId) return <PersonItems items={(await getItems(start, personId)) ?? []} />;
   const dm = await getMonth(start);
+  const rec = (dm as unknown as Record<string, number> | null) ?? {};
+  return <AllocationBars values={Object.fromEntries(GROUP.map(([k]) => [k, Number(rec[k] ?? 0)]))} total={Number(dm?.total_assets ?? 0)} />;
+}
+
+/** แถบสัดส่วน 7 หมวด (ใช้ทั้งภาพรวมครอบครัวและรายคน) */
+function AllocationBars({ values, total }: { values: Record<string, number>; total: number }) {
   return (
     <ul className="space-y-2.5 text-sm">
       {GROUP.map(([k, label], gi) => {
-        const v = Number((dm as unknown as Record<string, number> | null)?.[k] ?? 0);
-        const pct = dm?.total_assets ? (v / Number(dm.total_assets)) * 100 : 0;
+        const v = values[k] ?? 0;
+        const pct = total ? (v / total) * 100 : 0;
         return (
           <li key={k}>
             <div className="flex justify-between gap-2">
@@ -428,10 +437,16 @@ function BRow({ label, v, bold }: { label: string; v: number; bold?: boolean }) 
 function PersonItems({ items }: { items: Item[] }) {
   const assets = items.filter((i) => i.item_type === "ASSET").sort((a, b) => Number(b.base_value) - Number(a.base_value));
   const liabs = items.filter((i) => i.item_type === "LIABILITY");
+  const values: Record<string, number> = {};
+  for (const i of assets) { const k = GROUP_FIELD[i.item_group] ?? "alternative"; values[k] = (values[k] ?? 0) + Number(i.base_value ?? 0); }
+  const total = assets.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
   return (
-    <div className="space-y-3 text-sm">
-      <ul className="space-y-1">
-        {assets.slice(0, 12).map((i, k) => (
+    <div className="space-y-4 text-sm">
+      <AllocationBars values={values} total={total} />
+      <details className="border-t border-slate-100 pt-3">
+        <summary className="cursor-pointer text-blue-700">ดูรายการทรัพย์สิน / หนี้สิน ({assets.length + liabs.length})</summary>
+      <ul className="mt-2 space-y-1">
+        {assets.map((i, k) => (
           <li key={k} className="flex justify-between gap-2">
             <span>{i.item_name} <span className="text-xs text-slate-400">{GROUP_KEY[i.item_group] ?? ""}{i.ownership_percent && Number(i.ownership_percent) < 100 ? ` · ${Number(i.ownership_percent)}%` : ""}</span></span>
             <span className="tabular-nums">{money(i.base_value, undefined, 0)}</span>
@@ -443,6 +458,7 @@ function PersonItems({ items }: { items: Item[] }) {
           {liabs.map((i, k) => <li key={k} className="flex justify-between gap-2"><span>{i.item_name}</span><span className="tabular-nums">−{money(i.base_value, undefined, 0)}</span></li>)}
         </ul>
       )}
+      </details>
     </div>
   );
 }
