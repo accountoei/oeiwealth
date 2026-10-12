@@ -1,44 +1,31 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
-import { AddPersonForm, InviteForm, PersonRow, ResendInviteForm, UserRecovery, UserRoleForm, UserStatusForm } from "./forms";
+import { InviteForm, ResendInviteForm, UserRecovery, UserRoleForm, UserStatusForm } from "./forms";
 
 const USER_STATUS: Record<string, string> = { INVITED: "รอเข้าใช้ครั้งแรก", ACTIVE: "ใช้งาน", DISABLED: "ปิดการใช้งาน" };
 
-export default async function FamilyUsersPage() {
+export default async function UsersPage() {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const canEdit = me.role === "ADMIN" || me.role === "EDITOR";
   const isAdmin = me.role === "ADMIN";
 
-  const [{ data: family }, { data: persons, error: personsError }, { data: users, error: usersError }] = await Promise.all([
+  const [{ data: family }, { data: persons }, { data: users, error: usersError }] = await Promise.all([
     supabase.from("families").select("name,go_live_date,system_status").maybeSingle(),
-    supabase.from("persons").select("id,name,relationship,status").is("deleted_at", null).order("created_at"),
+    supabase.from("persons").select("id,name,status").is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("app_users").select("id,email,role,status,last_login_at,person_id,persons!app_users_person_id_fkey(name)").order("created_at"),
   ]);
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Family &amp; Users</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Users</h1>
         <p className="text-sm text-slate-500">{family?.name} · Go-live {family?.go_live_date} · {family?.system_status}</p>
       </div>
 
-      <section id="members" className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
-        </p>
-        {personsError && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {personsError.message}</p>}
-        <div className="divide-y divide-slate-100">
-          {(persons ?? []).length === 0 && <p className="py-2 text-sm text-slate-500">ยังไม่มีสมาชิก</p>}
-          {(persons ?? []).map((p) => canEdit
-            ? <PersonRow key={p.id} p={p} />
-            : <div key={p.id} className="py-2 text-sm">{p.name}</div>)}
-        </div>
-        {me.role !== "VIEWER" && (
-          <div className="mt-4 border-t border-slate-100 pt-4"><AddPersonForm /></div>
-        )}
-      </section>
+      <p className="text-sm text-slate-500">
+        รายชื่อสมาชิกครอบครัวย้ายไปอยู่เมนู <Link href="/family/members" className="text-blue-700 hover:underline">Family → Members</Link>
+      </p>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">ผู้ใช้ระบบ</h2>

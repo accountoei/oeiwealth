@@ -20,7 +20,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Family",
     items: [
-      { label: "Members", href: "/settings/family-users#members", ready: true },
+      { label: "Members", href: "/family/members", ready: true },
       { label: "Health", href: "/family/health", ready: true },
       { label: "Cards & Membership", href: "/family/cards", ready: true },
     ],
@@ -31,7 +31,7 @@ export const NAV: NavGroup[] = [
   {
     label: "Settings",
     items: [
-      { label: "Family & Users", href: "/settings/family-users", ready: true },
+      { label: "Users", href: "/settings/family-users", ready: true },
       { label: "System", href: "/settings/system", ready: true },
       { label: "Opening Setup", href: "/settings/opening", ready: true },
       { label: "Security", href: "/settings/security", ready: true },

@@ -27,7 +27,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
       .is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!a || !d) notFound();
   const canWrite = me.role !== "VIEWER";

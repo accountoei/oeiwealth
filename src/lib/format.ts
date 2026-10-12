@@ -244,3 +244,11 @@ export const INS_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
 };
 export const FOLLOWUP_ROLE: Record<string, string> = { INSURED: "ผู้เอาประกัน", PAYER: "ผู้จ่ายเบี้ย", BENEFICIARY: "ผู้รับผลประโยชน์" };
 export const FOLLOWUP_STATUS: [string, string][] = [["OPEN", "ยังไม่เริ่ม"], ["IN_PROGRESS", "กำลังดำเนินการ"], ["DONE", "เสร็จแล้ว"], ["NOT_APPLICABLE", "ไม่ต้องทำ"]];
+
+/** ความสัมพันธ์ของสมาชิกครอบครัว */
+export const RELATIONSHIP_LABEL: Record<string, string> = {
+  SELF: "หัวหน้าครอบครัว", SPOUSE: "คู่สมรส", CHILD: "บุตร", CHILD_IN_LAW: "ลูกเขย / ลูกสะใภ้",
+  GRANDCHILD: "หลาน", PARENT: "บิดา / มารดา", PARENT_IN_LAW: "พ่อตา แม่ยาย / พ่อแม่สามี",
+  SIBLING: "พี่น้อง", RELATIVE: "ญาติอื่น ๆ", OTHER: "อื่น ๆ",
+};
+export const PERSON_STATUS_LABEL: Record<string, string> = { ACTIVE: "ใช้งาน", INACTIVE: "ไม่ใช้งาน", DECEASED: "เสียชีวิต" };

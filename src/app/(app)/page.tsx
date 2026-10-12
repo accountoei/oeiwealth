@@ -59,7 +59,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const [{ data: familyRaw }, { data: personsRaw }] = await Promise.all([
     supabase.from("families").select("name,go_live_date,system_status").maybeSingle(),
-    supabase.from("persons").select("id,name").is("deleted_at", null).order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   const family = familyRaw as Family | null;
   const isSetup = family?.system_status === "SETUP";

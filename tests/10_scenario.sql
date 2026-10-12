@@ -643,6 +643,21 @@ SELECT t.fails($$SELECT public.set_insurance_schedule((SELECT id FROM tp WHERE k
   '[{"due_date":"2027-01-01","amount":1}]')$$, 'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางเบี้ยไม่ได้');
 RESET ROLE;
 
+\echo '== 13h. ลำดับสมาชิกครอบครัว'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.persons WHERE sort_order IS NULL), 'สมาชิกทุกคนมีลำดับ');
+INSERT INTO public.persons(family_id, name, relationship) SELECT id, 'หลานทดสอบ', 'GRANDCHILD' FROM public.families;
+SELECT t.ok((SELECT sort_order FROM public.persons WHERE name = 'หลานทดสอบ') = (SELECT max(sort_order) FROM public.persons),
+            'เพิ่มสมาชิกใหม่ → ต่อท้าย');
+SELECT public.move_person(t.p('หลานทดสอบ'), -1);
+SELECT t.ok((SELECT count(*) FROM public.persons p WHERE p.deleted_at IS NULL
+              AND p.sort_order > (SELECT sort_order FROM public.persons WHERE name = 'หลานทดสอบ')) = 1
+            AND (SELECT count(DISTINCT sort_order) = count(*) FROM public.persons WHERE deleted_at IS NULL),
+            'ย้ายขึ้น 1 ตำแหน่ง · ลำดับไม่ซ้ำกัน');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.move_person(t.p('หลานทดสอบ'), 1)$$, 'PERMISSION_DENIED', 'CONTRIBUTOR ย้ายลำดับสมาชิกไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

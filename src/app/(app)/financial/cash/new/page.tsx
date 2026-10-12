@@ -8,7 +8,7 @@ export default async function NewAccountPage() {
   const supabase = await createClient();
   const [{ data: family }, { data: persons }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (me.role === "VIEWER") return <p className="text-sm text-slate-600">สิทธิ์ผู้ดูเพิ่มบัญชีไม่ได้</p>;
   if (!family) return <p className="text-sm text-red-600">ไม่พบข้อมูลครอบครัว</p>;

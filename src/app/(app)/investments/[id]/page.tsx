@@ -38,7 +38,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!a || !pf) notFound();
   const [{ data: txs }, { data: income }, { data: rets }] = await Promise.all([
