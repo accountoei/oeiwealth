@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import {
-  addHolding, recordFx, recordMaturity, recordTx, saveValuations, transferMoney, type ActionState,
+  addCashAccount, addHolding, recordFx, recordMaturity, recordTx, saveValuations, transferCash, transferMoney, type ActionState,
 } from "../actions";
 import { CURRENCIES, HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 
@@ -15,6 +15,25 @@ const lbl = "block text-sm text-slate-700";
 export type Holding = { id: string; name: string; symbol: string | null; holding_type: string; currency: string;
   quantity: number; current_price: number | null; status: string };
 export type Bank = { asset_id: string; name: string; currency: string };
+/** บัญชีเงินสดในพอร์ต (CASH holding) */
+export type CashAcct = { id: string; name: string; currency: string; is_default_cash: boolean };
+
+/** เลือกบัญชีเงินสดในพอร์ต — แสดงเฉพาะเมื่อสกุลนั้นมีมากกว่า 1 บัญชี (บัญชีเดียว = ใช้บัญชีนั้นอัตโนมัติ) */
+export function CashAccountSelect({ accounts, currency, name = "cash_holding_id", label, compact }: {
+  accounts: CashAcct[]; currency: string; name?: string; label: string; compact?: boolean;
+}) {
+  const list = accounts.filter((a) => a.currency === currency);
+  if (list.length < 2) return null;
+  const def = list.find((a) => a.is_default_cash) ?? list[0];
+  const sel = (
+    <select key={`${name}-${currency}`} name={name} defaultValue={def.id} className={compact ? small : input}>
+      {list.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_default_cash ? " ★" : ""}</option>)}
+    </select>
+  );
+  return compact
+    ? <label className="text-xs">{label} {sel}</label>
+    : <label className={lbl}>{label}{sel}</label>;
+}
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
@@ -82,8 +101,8 @@ const TX_TYPES: [string, string][] = [
   ["REDEMPTION", "ไถ่ถอน / ขายคืนกองทุน"], ["FEE", "ค่าธรรมเนียม"], ["TAX", "ภาษี"], ["ADJUSTMENT", "ปรับปรุงจำนวน / เงินสด"],
 ];
 
-export function TxForm({ assetId, portfolioCurrency, holdings, banks, today, minDate }: {
-  assetId: string; portfolioCurrency: string; holdings: Holding[]; banks: Bank[]; today: string; minDate: string;
+export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccounts, today, minDate }: {
+  assetId: string; portfolioCurrency: string; holdings: Holding[]; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
@@ -111,6 +130,9 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, today, min
   const bankList = banks.filter((b) => b.currency === ccy);
   const holdingOptions = type === "BUY" ? securities : optionalHolding ? active : securities;
   const isCashAdj = type === "ADJUSTMENT" && (!h || h.holding_type === "CASH");
+  // เลือกบัญชีเงินสด: รายการของหลักทรัพย์ที่เงินเข้า/ออกเงินสดในพอร์ต (ถ้าเลือกบัญชีเงินสดเป็น "หลักทรัพย์" อยู่แล้ว ไม่ต้องเลือกซ้ำ)
+  const pickCash = (!canBank || mode === "cash") && h?.holding_type !== "CASH"
+    && !(type === "ADJUSTMENT" && h && h.holding_type !== "CASH");
 
   if (!open) return <button onClick={() => setOpen(true)} className={btn}>+ รายการ</button>;
 
@@ -201,6 +223,10 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, today, min
             </div>
           </div>
         )}
+        {pickCash && (
+          <CashAccountSelect accounts={cashAccounts} currency={ccy}
+            label={type === "BUY" || ["FEE", "TAX"].includes(type) ? "จ่ายจากบัญชีเงินสด" : "เข้าบัญชีเงินสด"} />
+        )}
         {canBank && mode === "bank" && (
           <>
             <label className={lbl}>บัญชีธนาคาร ({ccy}) *
@@ -278,8 +304,8 @@ export function TransferForm({ assetId, currency, banks, today, minDate }:
 }
 
 /* ------------------------------------------------------------------ แลกเงินในพอร์ต */
-export function FxForm({ assetId, cashCurrencies, today, minDate }:
-  { assetId: string; cashCurrencies: string[]; today: string; minDate: string }) {
+export function FxForm({ assetId, cashCurrencies, cashAccounts, today, minDate }:
+  { assetId: string; cashCurrencies: string[]; cashAccounts: CashAcct[]; today: string; minDate: string }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(recordFx, {});
   const [from, setFrom] = useState(cashCurrencies[0] ?? "THB");
@@ -304,6 +330,8 @@ export function FxForm({ assetId, cashCurrencies, today, minDate }:
             {CURRENCIES.filter((c) => c !== from).map((c) => <option key={c}>{c}</option>)}
           </select>
         </label>
+        <CashAccountSelect accounts={cashAccounts} currency={from} label={`จากบัญชี (${from})`} />
+        <CashAccountSelect accounts={cashAccounts} currency={to} name="counter_cash_holding_id" label={`เข้าบัญชี (${to})`} />
         <label className={lbl}>ยอดที่แลกออก ({from}) *<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={input} /></label>
         <label className={lbl}>ยอดที่ได้รับ ({to}) *<input name="counter_amount" required inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} className={input} /></label>
         <label className={lbl}>ค่าธรรมเนียม ({from})<input name="fee" inputMode="decimal" className={input} /></label>
@@ -374,8 +402,8 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
 }
 
 /* ------------------------------------------------------------------ ครบกำหนด */
-export function MaturityForm({ assetId, holding, banks, today, minDate }:
-  { assetId: string; holding: Holding; banks: Bank[]; today: string; minDate: string }) {
+export function MaturityForm({ assetId, holding, banks, cashAccounts = [], today, minDate }:
+  { assetId: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
@@ -395,6 +423,7 @@ export function MaturityForm({ assetId, holding, banks, today, minDate }:
       <div className="flex flex-wrap items-end gap-3 text-xs">
         <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เก็บในพอร์ต</label>
         <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> เข้าบัญชีธนาคาร</label>
+        {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={holding.currency} label="บัญชี" compact />}
         {mode === "bank" && (
           <>
             <select name="bank_asset_id" required className={small}>
@@ -411,6 +440,84 @@ export function MaturityForm({ assetId, holding, banks, today, minDate }:
         <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------------ โอนระหว่างบัญชีเงินสดในพอร์ต */
+export function CashTransferForm({ assetId, cashAccounts, today, minDate }:
+  { assetId: string; cashAccounts: CashAcct[]; today: string; minDate: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(transferCash, {});
+  const multi = cashAccounts.filter((a) => cashAccounts.filter((b) => b.currency === a.currency).length > 1);
+  const [from, setFrom] = useState(multi[0]?.id ?? "");
+  if (multi.length === 0) return null;
+  const ccy = multi.find((a) => a.id === from)?.currency ?? "";
+  const targets = multi.filter((a) => a.currency === ccy && a.id !== from);
+  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>โอนระหว่างบัญชีในพอร์ต</button>;
+  return (
+    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <h3 className="font-medium text-slate-900">โอนระหว่างบัญชีเงินสดในพอร์ต</h3>
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className={lbl}>จากบัญชี *
+          <select name="from_holding_id" value={from} onChange={(e) => setFrom(e.target.value)} className={input}>
+            {multi.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+          </select>
+        </label>
+        <label className={lbl}>เข้าบัญชี *
+          <select key={from} name="to_holding_id" required defaultValue={targets[0]?.id ?? ""} className={input}>
+            {targets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </label>
+        <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className={lbl}>จำนวนเงิน ({ccy}) *<input name="amount" required inputMode="decimal" className={input} /></label>
+        <label className={lbl}>ค่าธรรมเนียม ({ccy})<input name="fee" inputMode="decimal" className={input} /></label>
+        <label className={lbl}>หมายเหตุ<input name="notes" className={input} /></label>
+      </div>
+      <p className="text-xs text-slate-500">ย้ายเงินระหว่างบัญชีสกุลเดียวกันในพอร์ต · ยอดรวมพอร์ตไม่เปลี่ยน (ยกเว้นค่าธรรมเนียม) · ไม่ใช่รายได้หรือค่าใช้จ่าย · คนละสกุลใช้ &ldquo;แลกเงินในพอร์ต&rdquo;</p>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------------ เพิ่มบัญชีเงินสดในพอร์ต */
+export function AddCashAccountForm({ assetId, currency, isSetup, openingDate }:
+  { assetId: string; currency: string; isSetup: boolean; openingDate: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(addCashAccount, {});
+  const [ccy, setCcy] = useState(currency);
+  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>+ บัญชีเงินสด</button>;
+  return (
+    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <div>
+        <h3 className="font-medium text-slate-900">เพิ่มบัญชีเงินสด / เงินฝากในพอร์ต</h3>
+        <p className="text-xs text-slate-500">สกุลเดียวกันมีได้หลายบัญชี (เช่น แยกตามอัตราดอกเบี้ย / วัตถุประสงค์) · บัญชีแรกของสกุลเป็นบัญชีหลักอัตโนมัติ</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className={lbl}>ชื่อบัญชี *<input name="name" required placeholder="เช่น เงินสด USD · Brokerage Cash" className={input} /></label>
+        <label className={lbl}>สกุลเงิน
+          <select name="currency" value={ccy} onChange={(e) => setCcy(e.target.value)} className={input}>
+            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className={lbl}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" data-money="off" className={input} /></label>
+        <label className={`${lbl} md:col-span-2`}>วัตถุประสงค์<input name="purpose" placeholder="เช่น พักเงินรอลงทุน / รับคูปอง" className={input} /></label>
+        {isSetup && (
+          <label className={lbl}>ยอดตั้งต้น ณ {thDate(openingDate)} ({ccy})<input name="opening" inputMode="decimal" className={input} /></label>
+        )}
+      </div>
+      {!isSetup && <p className="text-xs text-slate-500">ยอดเงินในบัญชีใหม่: ใส่ตาม Statement (อัปเดตราคา / Statement) หรือโอนเข้าจากบัญชีอื่นในพอร์ต</p>}
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "เพิ่มบัญชี"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <Msg s={state} />
+      </div>
     </form>
   );
 }

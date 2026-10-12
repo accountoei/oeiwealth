@@ -5,7 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
-import { MaturityForm, type Holding } from "../../forms";
+import { MaturityForm, type CashAcct, type Holding } from "../../forms";
 import ReturnsTable, { type Ret } from "../../ReturnsTable";
 import { FcnForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 
@@ -23,7 +23,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const { id, hid } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }] = await Promise.all([
+  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }] = await Promise.all([
     supabase.from("v_holdings_active").select("*").eq("id", hid).eq("portfolio_asset_id", id).maybeSingle(),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
@@ -35,7 +35,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .eq("holding_id", hid).is("deleted_at", null).maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
+    supabase.from("v_holdings_active").select("id,name,currency,is_default_cash").eq("portfolio_asset_id", id)
+      .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
   ]);
+  const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow as H | null;
   if (!h || !a || h.holding_type === "CASH") notFound();
 
@@ -78,9 +81,9 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
 
       {canWrite && h.status === "ACTIVE" && (
         <div className="flex flex-wrap items-start gap-3">
-          <IncomeForm assetId={id} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} today={today} minDate={goLive} />
+          <IncomeForm assetId={id} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
           {canMature && <div className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm">
-            <MaturityForm assetId={id} holding={h} banks={banks ?? []} today={today} minDate={goLive} />
+            <MaturityForm assetId={id} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
           </div>}
           <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
         </div>
