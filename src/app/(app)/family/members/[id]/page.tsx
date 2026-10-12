@@ -9,7 +9,7 @@ import { PersonDetailsForm, type PersonDetails } from "./details-form";
 import { setFamilyHead } from "../actions";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
-  "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id";
+  "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id,death_date";
 
 type Doc = { id: string; title: string; document_type: string; mime_type: string | null; version_status: string; deleted_at: string | null; created_at: string };
 
@@ -50,7 +50,8 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
   const PLink = ({ pid }: { pid: string | null }) => pid && nameOf.has(pid)
     ? <Link href={`/family/members/${pid}`} className="text-blue-700 hover:underline">{nameOf.get(pid)}</Link> : null;
   const today = todayBangkok();
-  const age = ageFrom(p.birth_date, today);
+  const archived = p.status === "DECEASED";
+  const age = ageFrom(p.birth_date, archived && p.death_date ? p.death_date : today);
   const connected = !!(status as { connected?: boolean } | null)?.connected;
   const docs = (links ?? []).map((l) => (Array.isArray(l.documents) ? l.documents[0] : l.documents) as Doc | null)
     .filter((d): d is Doc => !!d && !d.deleted_at && d.version_status === "CURRENT")
@@ -83,7 +84,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             {isHead && <span className="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">★ หัวหน้าครอบครัว</span>}
             {!isHead && (RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-")}
             {age != null && ` · อายุ ${age} ปี`}
-            {p.status !== "ACTIVE" && ` · ${PERSON_STATUS_LABEL[p.status]}`}
+            {p.status !== "ACTIVE" && <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{PERSON_STATUS_LABEL[p.status]}</span>}
           </p>
         </div>
         <div className="text-right">
@@ -108,6 +109,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             <Item label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>
             <Item label="ชื่อเล่น">{p.nickname}</Item>
             <Item label="วันเกิด">{p.birth_date ? `${thDate(p.birth_date)}${age != null ? ` (${age} ปี)` : ""}` : ""}</Item>
+            {archived && <Item label="วันที่เสียชีวิต">{p.death_date ? thDate(p.death_date) : ""}</Item>}
             <div className="sm:col-span-2"><Item label="หมายเหตุ">{p.notes}</Item></div>
           </dl>
         </section>

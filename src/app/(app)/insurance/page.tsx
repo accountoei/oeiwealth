@@ -72,7 +72,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       {fupRows.length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <h2 className="font-medium text-slate-900">ติดตามหลังเสียชีวิต · ค้าง {fupRows.length} รายการ</h2>
+          <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) · ค้าง {fupRows.length} รายการ</h2>
           <ul className="space-y-1 text-sm">
             {fupRows.map((f) => (
               <li key={f.id}>

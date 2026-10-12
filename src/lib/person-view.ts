@@ -11,8 +11,10 @@ export type PersonOpt = { id: string; name: string };
  */
 export async function loadPersonView(p: string | undefined, opts: { liabilities?: boolean } = {}) {
   const supabase = await createClient();
-  const { data } = await supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order").order("created_at");
-  const persons = (data ?? []) as PersonOpt[];
+  const { data } = await supabase.from("persons").select("id,name,status").is("deleted_at", null).order("sort_order").order("created_at");
+  // ตัวกรองไม่แสดงสมาชิก Archived (ยกเว้นคนที่กำลังเลือกอยู่ เช่น เปิดจากหน้าข้อมูลของคนนั้น)
+  const persons = ((data ?? []) as (PersonOpt & { status: string })[])
+    .filter((x) => x.status !== "DECEASED" || x.id === p).map(({ id, name }) => ({ id, name }));
   const personId = p && persons.some((x) => x.id === p) ? p : "";
   const personName = persons.find((x) => x.id === personId)?.name ?? "";
   const asset = new Map<string, number>();

@@ -689,6 +689,10 @@ SELECT t.ok((SELECT count(*) FROM public.persons WHERE relationship = 'SELF' AND
 SELECT t.fails($$UPDATE public.persons SET father_id = id WHERE name = 'คุณแม่'$$, 'persons_links_not_self', 'เป็นพ่อ / แม่ของตัวเองไม่ได้');
 SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT t.fails($$SELECT public.set_family_head(t.p('คุณแม่'))$$, 'PERMISSION_DENIED', 'EDITOR โอนหัวหน้าครอบครัวไม่ได้ (ADMIN เท่านั้น)');
+SELECT t.fails($$UPDATE public.persons SET death_date = current_date WHERE name = 'คุณแม่'$$, 'persons_death_date_status',
+  'วันที่เสียชีวิตใส่ได้เฉพาะสมาชิก Archived');
+UPDATE public.persons SET death_date = current_date - 3 WHERE name = 'ญาติทดสอบ';
+SELECT t.ok((SELECT death_date = current_date - 3 FROM public.persons WHERE name = 'ญาติทดสอบ'), 'สมาชิก Archived ใส่วันที่เสียชีวิตได้');
 RESET ROLE;
 
 \echo '== 14. Views'

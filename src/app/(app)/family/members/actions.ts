@@ -76,6 +76,7 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
   }
   if (row.father_id && row.father_id === row.mother_id) return { error: "พ่อกับแม่ต้องเป็นคนละคน" };
   row.birth_date = s("birth_date");
+  row.death_date = status === "DECEASED" ? s("death_date") : null;
   row.passport_expiry = s("passport_expiry");
   const photo = String(form.get("photo") ?? "");
   if (form.get("photo_clear") === "1") row.photo = null;

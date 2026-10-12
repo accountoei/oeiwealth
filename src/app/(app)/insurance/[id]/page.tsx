@@ -163,7 +163,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
 
       {(fups ?? []).length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <h2 className="font-medium text-slate-900">ติดตามหลังเสียชีวิต</h2>
+          <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived)</h2>
           <ul className="space-y-2 text-sm">
             {(fups ?? []).map((f) => (
               <li key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">

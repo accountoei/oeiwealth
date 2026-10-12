@@ -31,6 +31,7 @@ export function friendlyError(message: string): string {
   if (/duplicate key/i.test(message)) return "ข้อมูลนี้มีอยู่แล้ว";
   if (/pu_schedule_pair/.test(message)) return "ใส่ยอดประมาณกับความถี่ให้ครบคู่กัน (หรือเว้นว่างทั้งคู่)";
   if (/exp_cost_period_pair/.test(message)) return "ต้องระบุงวดของค่าใช้จ่ายประจำ";
+  if (/persons_death_date_status/.test(message)) return "วันที่เสียชีวิตใส่ได้เฉพาะสมาชิกที่เป็น Archived";
   if (/persons_national_id_format/.test(message)) return "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก";
   if (/persons_photo_format/.test(message)) return "รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพ (JPG / PNG / WEBP) และไม่ใหญ่เกินไป";
   const m = message.match(/^[A-Z_]+: ([\s\S]*)$/);
@@ -253,7 +254,7 @@ export const RELATIONSHIP_LABEL: Record<string, string> = {
   GRANDCHILD: "หลาน", PARENT: "บิดา / มารดา", GRANDPARENT: "ปู่ ย่า ตา ยาย", PARENT_IN_LAW: "พ่อตา แม่ยาย / พ่อแม่สามี",
   SIBLING: "พี่น้อง", RELATIVE: "ญาติอื่น ๆ", OTHER: "อื่น ๆ",
 };
-export const PERSON_STATUS_LABEL: Record<string, string> = { ACTIVE: "ใช้งาน", INACTIVE: "ไม่ใช้งาน", DECEASED: "เสียชีวิต" };
+export const PERSON_STATUS_LABEL: Record<string, string> = { ACTIVE: "Active", INACTIVE: "Inactive", DECEASED: "Archived" };
 
 /** คำนำหน้าชื่อที่ใช้บ่อย (พิมพ์เองได้) */
 export const TITLE_PREFIXES = ["นาย", "นาง", "นางสาว", "เด็กชาย", "เด็กหญิง", "Mr.", "Mrs.", "Ms."];
