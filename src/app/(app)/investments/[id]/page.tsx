@@ -19,7 +19,8 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
-  is_default_cash: boolean; interest_rate: number | null; purpose: string | null };
+  is_default_cash: boolean; interest_rate: number | null; purpose: string | null;
+  value_thb: number | null; fx_rate: number | null; fx_rate_date: string | null };
 type Tx = { id: string; holding_id: string | null; transaction_date: string; settlement_date: string | null;
   transaction_type: string; quantity: number | null; price: number | null; amount: number; currency: string;
   fee: number | null; tax: number | null; direction: string | null; settle_from_asset_id: string | null;
@@ -34,15 +35,14 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
-    { data: fx }, { data: unsettled }, { data: persons }] = await Promise.all([
+    { data: unsettled }, { data: persons }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
     supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb").eq("asset_id", id).maybeSingle(),
+    supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
     supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("holding_type").order("name"),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_fx_status").select("currency,rate_to_thb"),
     supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
@@ -64,10 +64,10 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   const openingDate = goLive ? addDays(goLive, -1) : today;
   const holdings = (hs as H[] | null) ?? [];
   const byId = new Map(holdings.map((h) => [h.id, h]));
-  const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
-  const thb = (v: number | null, c: string) => (v == null || !rate.get(c) ? null : Number(v) * (rate.get(c) as number));
+  // มูลค่าเป็นบาทรายตัว = ชุดเดียวกับ Net Worth (มูลค่าสกุลเดิม × อัตรา ณ วันนี้ จากฐานข้อมูล)
+  const thbOf = (h: H) => (h.value_thb == null ? null : Number(h.value_thb));
   const active = holdings.filter((h) => h.status === "ACTIVE");
-  const totalThb = active.reduce((s, h) => s + (thb(h.current_value, h.currency) ?? 0), 0);
+  const totalThb = active.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const cashHoldings = active.filter((h) => h.holding_type === "CASH");
   const securities = holdings.filter((h) => h.holding_type !== "CASH");
   const cashAccounts: CashAcct[] = cashHoldings.map((h) => ({ id: h.id, name: h.name, currency: h.currency, is_default_cash: h.is_default_cash }));
@@ -77,7 +77,10 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     const x = cashByCcy.get(c.currency) ?? { value: 0, count: 0 };
     cashByCcy.set(c.currency, { value: x.value + Number(c.current_value ?? 0), count: x.count + 1 });
   }
-  const cashThb = cashHoldings.reduce((s, h) => s + (thb(h.current_value, h.currency) ?? 0), 0);
+  const cashThb = cashHoldings.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
+  const secThb = securities.filter((h) => h.status === "ACTIVE").reduce((s, h) => s + (thbOf(h) ?? 0), 0);
+  const rateNote = (h: H) => h.currency === "THB" ? null
+    : h.fx_rate == null ? "ไม่มีอัตรา" : `@ ${money(h.fx_rate, undefined, 4)}${h.fx_rate_date ? ` (${thDate(h.fx_rate_date)})` : ""}`;
   const multiCash = [...cashByCcy.values()].some((x) => x.count > 1);
   const acctName = (hid: string | null) => (hid ? byId.get(hid)?.name ?? "" : "");
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
@@ -101,8 +104,11 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
           current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
       </div>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <Kpi label={`มูลค่าพอร์ต (${a.currency})`} value={money(a.current_value, undefined, 0)} sub={`ณ ${thDate(a.current_value_date)}`} />
+      <section className={`grid gap-4 ${a.currency === "THB" ? "md:grid-cols-3" : "md:grid-cols-4"}`}>
+        {a.currency !== "THB" && (
+          <Kpi label={`มูลค่าพอร์ต (${a.currency})`} value={money(pv?.portfolio_value ?? null, undefined, 0)}
+            sub={`แปลงทุกสกุลเป็น ${a.currency} ด้วยอัตราล่าสุด${pv?.portfolio_fx_rate ? ` (1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท)` : ""}`} />
+        )}
         <Kpi label="มูลค่าเป็นบาท (ใช้ใน Net Worth)" value={money(pv?.thb_value ?? null, "THB", 0)}
           sub={Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"} />
         <Kpi label="เงินสดในพอร์ต" value={[...cashByCcy.entries()].map(([c, x]) => money(x.value, c, 0)).join(" · ") || "-"}
@@ -149,9 +155,10 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             {[...cashByCcy.keys()].map((ccy) => {
               const rows = cashHoldings.filter((h) => h.currency === ccy);
               const sub = cashByCcy.get(ccy)!;
+              const subThb = rows.reduce((t, h) => t + (thbOf(h) ?? 0), 0);
               return [
                 ...rows.map((h) => {
-                  const v = thb(h.current_value, h.currency);
+                  const v = thbOf(h);
                   const share = v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
                   return (
                     <tr key={h.id} className="align-top">
@@ -172,7 +179,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                       </td>
                       <td className="px-3 text-right">
                         <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
-                        {h.currency !== "THB" && <div className="text-xs text-slate-500">{rate.get(h.currency) ? `@ ${money(rate.get(h.currency)!, undefined, 4)}` : "ไม่มีอัตรา"}</div>}
+                        {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
                       </td>
                       <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                       <td className="px-3 py-2.5 text-right">
@@ -196,7 +203,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                   <tr key={`sub-${ccy}`} className="bg-slate-50/60 text-xs text-slate-600">
                     <td className="px-4 py-1.5">รวม {ccy} ({sub.count} บัญชี)</td>
                     <td className="px-3 text-right tabular-nums">{money(sub.value, ccy)}</td>
-                    <td className="px-3 text-right tabular-nums">{thb(sub.value, ccy) == null ? "—" : money(thb(sub.value, ccy), undefined, 0)}</td>
+                    <td className="px-3 text-right tabular-nums">{money(subThb, undefined, 0)}</td>
                     <td colSpan={2}></td>
                   </tr>
                 )] : []),
@@ -221,7 +228,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             {securities.map((h) => {
               const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
               const gain = cost != null && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null;
-              const v = thb(h.current_value, h.currency);
+              const v = thbOf(h);
               const share = h.status === "ACTIVE" && v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
               const canMature = h.status === "ACTIVE" && ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
               return (
@@ -249,7 +256,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                   </td>
                   <td className="px-3 text-right">
                     <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
-                    {h.currency !== "THB" && <div className="text-xs text-slate-500">{rate.get(h.currency) ? `@ ${money(rate.get(h.currency)!, undefined, 4)}` : "ไม่มีอัตรา"}</div>}
+                    {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
                   </td>
                   <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                     {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? `${((gain / cost) * 100).toFixed(2)}%` : ""}</div></>}
@@ -264,9 +271,19 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                 </tr>
               );
             })}
+            {securities.length > 0 && (
+              <tr className="bg-slate-50/60 font-medium">
+                <td className="px-4 py-2" colSpan={5}>รวมหลักทรัพย์</td>
+                <td className="px-3 text-right tabular-nums">{money(secThb, undefined, 0)}</td>
+                <td colSpan={3}></td>
+              </tr>
+            )}
           </tbody>
         </table>
-        <p className="px-4 pb-3 pt-2 text-xs text-slate-500">มูลค่า (บาท) แปลงด้วยอัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · ดูทั้งหมดที่ Settings → System)</p>
+        <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
+          มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตรา ธปท. ล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
+          · เงินสด {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
+        </p>
       </section>
 
       <ReturnsTable rows={(rets as Ret[] | null) ?? []} hrefBase={`/investments/${id}/holding/`} />
