@@ -708,6 +708,20 @@ UPDATE public.persons SET death_date = current_date - 3 WHERE name = 'ญาต�
 SELECT t.ok((SELECT death_date = current_date - 3 FROM public.persons WHERE name = 'ญาติทดสอบ'), 'สมาชิก Archived ใส่วันที่เสียชีวิตได้');
 RESET ROLE;
 
+\echo '== 13i. Dashboard 5 หมวด (ธุรกิจแยกจากการเงิน)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE IF NOT EXISTS dm0 AS SELECT public.dashboard_month(current_date) AS d;
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'FINANCIAL', 'PRIVATE_BUSINESS', 'บริษัททดสอบ', 'THB' FROM public.families;
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source)
+  VALUES (t.a('บริษัททดสอบ'), current_date, 500000, 'USER_ESTIMATE', 'STATEMENT');
+SELECT t.ok((SELECT (d->>'business')::numeric = (SELECT (d->>'business')::numeric FROM dm0) + 500000
+                AND (d->>'financial')::numeric = (SELECT (d->>'financial')::numeric FROM dm0)
+                AND (d->>'total_assets')::numeric = (SELECT (d->>'total_assets')::numeric FROM dm0) + 500000
+             FROM (SELECT public.dashboard_month(current_date) AS d) x),
+            'Dashboard: ธุรกิจแยกเป็นหมวดของตัวเอง · การเงินไม่รวมธุรกิจ · ยอดรวมถูกต้อง');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
