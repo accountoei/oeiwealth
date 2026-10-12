@@ -37,9 +37,15 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
       .eq("entity_type", "PERSON").eq("entity_id", id).is("deleted_at", null),
     supabase.rpc("drive_status"),
     supabase.from("insurance_policies").select("id", { count: "exact", head: true }).eq("person_id", id).eq("status", "ACTIVE").is("deleted_at", null),
-    supabase.from("persons").select("id,name,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,status,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("families").select("head_person_id").maybeSingle(),
   ]);
+  // สมาชิก Archived: ทรัพย์สิน / หนี้ที่ยังมีชื่ออยู่ (ต้องโอนให้ทายาท / จัดการ)
+  const { data: estate } = (person as { status?: string } | null)?.status === "DECEASED"
+    ? await supabase.from("v_net_worth_items_current")
+        .select("item_type,asset_id,liability_id,credit_card_id,lease_id,item_name,item_group,value,currency,base_value,ownership_percent")
+        .eq("person_id", id)
+    : { data: null };
   if (!person) notFound();
   const p = person as unknown as PersonDetails & { name: string; relationship: string | null; status: string };
   const canEdit = me.role === "ADMIN" || me.role === "EDITOR";
@@ -128,7 +134,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-medium text-slate-900">ครอบครัว</h2>
-            {me.role === "ADMIN" && !isHead && (
+            {me.role === "ADMIN" && !isHead && p.status === "ACTIVE" && (
               <form action={setFamilyHead}>
                 <input type="hidden" name="id" value={id} />
                 <button className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">ตั้งเป็นหัวหน้าครอบครัว</button>
@@ -143,9 +149,40 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
           </dl>
           <p className="mt-2 text-xs text-slate-500">
             ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{nameOf.get(family?.head_person_id ?? "") ? ` (${nameOf.get(family?.head_person_id ?? "")})` : ""}
-            {me.role === "ADMIN" && !isHead && " · กดปุ่ม \"ตั้งเป็นหัวหน้าครอบครัว\" แล้วความสัมพันธ์ของทุกคนจะเปลี่ยนตาม"}
+            {me.role === "ADMIN" && !isHead && p.status === "ACTIVE" && " · กดปุ่ม \"ตั้งเป็นหัวหน้าครอบครัว\" แล้วความสัมพันธ์ของทุกคนจะเปลี่ยนตาม"}
           </p>
         </section>
+
+        {archived && (
+          <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-5 lg:col-span-2">
+            <h2 className="font-medium text-slate-900">ทรัพย์สินที่ต้องจัดการ</h2>
+            <p className="mb-3 text-xs text-slate-500">
+              รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับใน Net Worth ตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง
+            </p>
+            {(estate ?? []).length === 0 ? <p className="text-sm text-emerald-700">ไม่มีรายการค้าง — จัดการครบแล้ว</p> : (
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-slate-500">
+                  <tr><th className="py-1.5 pr-3">รายการ</th><th className="pr-3">ประเภท</th><th className="pr-3 text-right">สัดส่วน</th><th className="text-right">มูลค่าส่วนนี้ (บาท)</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(estate ?? []).map((e, i) => {
+                    const href = e.asset_id ? `/a/${e.asset_id}` : e.liability_id ? `/liabilities/${e.liability_id}`
+                      : e.credit_card_id ? "/family/cards" : e.lease_id ? "/property" : null;
+                    const debt = e.item_type !== "ASSET";
+                    return (
+                      <tr key={i}>
+                        <td className="py-1.5 pr-3">{href ? <Link href={href} className="text-blue-700 hover:underline">{e.item_name}</Link> : e.item_name}</td>
+                        <td className="pr-3 text-xs text-slate-500">{debt ? "หนี้สิน" : "สินทรัพย์"}{e.item_group ? ` · ${e.item_group}` : ""}</td>
+                        <td className="pr-3 text-right tabular-nums">{Number(e.ownership_percent)}%</td>
+                        <td className={`text-right tabular-nums ${debt ? "text-red-700" : ""}`}>{debt ? "-" : ""}{money(e.base_value, "THB", 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </section>
+        )}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว</h2>
@@ -163,7 +200,8 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         </section>
       </div>
 
-      {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))} />}
+      {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))}
+        isHead={isHead} headCandidates={people.filter((x) => x.id !== id && x.status === "ACTIVE").map((x) => ({ id: x.id, name: x.name }))} />}
 
       <EntityDocuments entityType="PERSON" entityId={id} module="FAMILY" role={me.role} title="เอกสารส่วนตัว" paths={[`/family/members/${id}`]} />
     </div>

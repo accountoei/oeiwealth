@@ -30,7 +30,9 @@ async function resizePhoto(file: File): Promise<string> {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function PersonDetailsForm({ p, others }: { p: PersonDetails; others: { id: string; name: string }[] }) {
+export function PersonDetailsForm({ p, others, isHead = false, headCandidates = [] }: {
+  p: PersonDetails; others: { id: string; name: string }[]; isHead?: boolean; headCandidates?: { id: string; name: string }[];
+}) {
   const [open, setOpen] = useState(false);
   const [photo, setPhoto] = useState<string | null>(p.photo);
   const [newPhoto, setNewPhoto] = useState("");
@@ -90,6 +92,17 @@ export function PersonDetailsForm({ p, others }: { p: PersonDetails; others: { i
           </>
         )}
         {p.status === "DECEASED" && status !== "DECEASED" && <p className="text-xs text-amber-700 md:col-span-4">เปลี่ยนจาก Archived → รายการติดตามกรมธรรม์ที่ยังไม่เริ่มจะถูกปิดเป็น &ldquo;ไม่ต้องทำ&rdquo; ให้เอง (ถ้าตั้ง Archived อีกครั้ง จะเปิดกลับให้)</p>}
+        {isHead && status !== "ACTIVE" && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 md:col-span-4">
+            <label className="block text-sm font-medium text-amber-900">คนนี้เป็นหัวหน้าครอบครัว — เลือกหัวหน้าครอบครัวคนใหม่ *
+              <select name="new_head_id" required defaultValue="" className={`${input} bg-white`}>
+                <option value="" disabled>เลือกสมาชิก (Active)…</option>
+                {headCandidates.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </label>
+            <p className="mt-1 text-xs text-amber-800">บันทึกแล้วระบบโอนหัวหน้าให้คนใหม่ก่อน แล้วจึงเปลี่ยนสถานะ · ความสัมพันธ์ของทุกคนจะคำนวณใหม่ (เฉพาะ ADMIN)</p>
+          </div>
+        )}
         {status === "INACTIVE" && <p className="text-xs text-slate-500 md:col-span-4">Inactive: ไม่ขึ้นในช่องเลือกคนตอนสร้างรายการใหม่ · รายการเดิมยังอยู่และนับใน Net Worth ตามปกติ</p>}
         <label className={label}>คำนำหน้า
           <input name="title_prefix" list="title-prefixes" defaultValue={p.title_prefix ?? ""} className={input} />

@@ -696,6 +696,9 @@ SELECT t.ok((SELECT relationship FROM public.persons WHERE name = 'หลาน�
 SELECT public.set_family_head(t.p('คุณพ่อ'));
 SELECT t.ok((SELECT count(*) FROM public.persons WHERE relationship = 'SELF' AND deleted_at IS NULL) = 1,
             'โอนกลับ → มีหัวหน้า ("ตัวเอง") คนเดียว');
+SELECT t.fails($$SELECT public.set_family_head(t.p('ญาติทดสอบ'))$$, 'ต้องเป็นสมาชิก Active', 'สมาชิก Archived / Inactive ตั้งเป็นหัวหน้าไม่ได้');
+SELECT t.fails($$UPDATE public.persons SET status = 'DECEASED' WHERE name = 'คุณพ่อ'$$, 'เลือกหัวหน้าครอบครัวคนใหม่ก่อน',
+  'เปลี่ยนหัวหน้าเป็น Archived ไม่ได้ถ้ายังไม่ตั้งหัวหน้าใหม่');
 SELECT t.fails($$UPDATE public.persons SET father_id = id WHERE name = 'คุณแม่'$$, 'persons_links_not_self', 'เป็นพ่อ / แม่ของตัวเองไม่ได้');
 SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT t.fails($$SELECT public.set_family_head(t.p('คุณแม่'))$$, 'PERMISSION_DENIED', 'EDITOR โอนหัวหน้าครอบครัวไม่ได้ (ADMIN เท่านั้น)');

@@ -84,11 +84,18 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
     if (!/^data:image\/(jpeg|png|webp);base64,/.test(photo) || photo.length > 300000) return { error: "รูปโปรไฟล์ใหญ่เกินไป หรือไม่ใช่ไฟล์รูปภาพ" };
     row.photo = photo;
   }
+  // เปลี่ยนสถานะหัวหน้าครอบครัว → โอนหัวหน้าให้คนใหม่ก่อน (ฐานข้อมูลบังคับลำดับนี้)
+  const newHead = s("new_head_id");
+  if (newHead && status !== "ACTIVE") {
+    if (newHead === id) return { error: "เลือกหัวหน้าครอบครัวคนอื่น" };
+    const { error: e1 } = await supabase.rpc("set_family_head", { p_person_id: newHead });
+    if (e1) return { error: friendly(e1.message) };
+  }
   const { data, error } = await supabase.from("persons").update(row).eq("id", id).select("id");
   if (error) return { error: friendly(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   refresh();
-  return { ok: "บันทึกข้อมูลแล้ว" };
+  return { ok: newHead && status !== "ACTIVE" ? "บันทึกแล้ว · โอนหัวหน้าครอบครัวแล้ว" : "บันทึกข้อมูลแล้ว" };
 }
 
 /** ตั้ง / โอนหัวหน้าครอบครัว (ADMIN) → ความสัมพันธ์ของทุกคนคำนวณใหม่ */
