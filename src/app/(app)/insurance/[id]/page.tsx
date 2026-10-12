@@ -98,6 +98,8 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             <li>{thDate(p.start_date)} – {thDate(p.end_date)}{p.derived_status === "EXPIRING_SOON" && <span className="text-amber-700"> · ใกล้ครบ</span>}</li>
           </ul>
           {canWrite && <div className="mt-2"><RowActions table="insurance_policies" id={id} paths={paths} canDelete={false} fields={[
+            ...(p.insurance_type !== "PROPERTY" ? [{ name: "person_id", label: "ผู้เอาประกัน", type: "select" as const, value: p.person_id ?? "",
+              options: (persons ?? []).map((x) => [x.id, x.name] as [string, string]) }] : []),
             { name: "insurer", label: "บริษัท", value: p.insurer }, { name: "policy_no", label: "เลขกรมธรรม์", value: p.policy_no },
             { name: "start_date", label: "เริ่ม", type: "date", value: p.start_date }, { name: "end_date", label: "สิ้นสุด", type: "date", value: p.end_date },
             { name: "insured_amount", label: "ทุน", type: "number", value: p.insured_amount }, { name: "premium", label: "เบี้ย", type: "number", value: p.premium },
@@ -121,14 +123,16 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
               <div className="mt-1 text-2xl font-semibold tabular-nums">{money(cvAsset.current_value, cvAsset.currency, 0)}</div>
               <div className="text-xs text-slate-500">ณ {thDate(cvAsset.current_value_date)}</div>
               <div className="mt-2 text-xs text-slate-600">เจ้าของ: {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}</div>
+              {p.person_id && !(activeOwners.length === 1 && activeOwners[0].person_id === p.person_id && Number(activeOwners[0].ownership_percent) === 100) && (
+                <div className="mt-1 text-xs text-amber-700">เจ้าของมูลค่าเวนคืนไม่ใช่ผู้เอาประกัน 100% — ตรวจว่าถูกต้อง</div>
+              )}
               {canWrite && <OwnershipEditor kind="asset" id={cvAsset.id} persons={persons ?? []} paths={paths} today={today}
                 current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
             </>
           ) : (
             <>
               <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>
-              {canDelete && <AddCashValueForm policyId={id} currency={ccy} persons={persons ?? []} defaultOwner={payerId}
-                today={today} goLive={family?.go_live_date ?? ""} />}
+              {canDelete && <AddCashValueForm policyId={id} currency={ccy} today={today} goLive={family?.go_live_date ?? ""} />}
             </>
           )}
         </div>

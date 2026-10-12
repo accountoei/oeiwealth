@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
-import OwnerShares from "@/components/OwnerShares";
 import { CURRENCIES, INS_TYPE, thDate } from "@/lib/format";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -88,7 +87,7 @@ export default function NewPolicyForm(props: {
                   : <input name="cash_value_date" type="date" required min={goLive} max={today} defaultValue={today} className={input} />}
               </label>
             </div>
-            <OwnerShares persons={persons} title="เจ้าของมูลค่าเวนคืน (ผู้ถือกรมธรรม์)" />
+            <p className="text-xs text-slate-500">ใส่ยอดรวม มูลค่าเวนคืน + เงินปันผลสะสม · เจ้าของมูลค่าเวนคืน = ผู้เอาประกัน 100% (กรณีพิเศษแก้ได้ในหน้ากรมธรรม์)</p>
           </>
         )}
       </section>
