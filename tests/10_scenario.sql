@@ -720,6 +720,15 @@ SELECT t.ok((SELECT (d->>'business')::numeric = (SELECT (d->>'business')::numeri
                 AND (d->>'total_assets')::numeric = (SELECT (d->>'total_assets')::numeric FROM dm0) + 500000
              FROM (SELECT public.dashboard_month(current_date) AS d) x),
             'Dashboard: ธุรกิจแยกเป็นหมวดของตัวเอง · การเงินไม่รวมธุรกิจ · ยอดรวมถูกต้อง');
+SELECT t.ok((SELECT (d->>'loans')::numeric = coalesce((SELECT sum(base_value) FROM public.v_net_worth_items_current
+                                                         WHERE item_type = 'ASSET' AND item_subtype = 'LOAN_RECEIVABLE'), 0)
+                AND (d->>'insurance')::numeric = coalesce((SELECT sum(base_value) FROM public.v_net_worth_items_current
+                                                         WHERE item_type = 'ASSET' AND item_subtype = 'INSURANCE_CASH_VALUE'), 0)
+                AND (d->>'financial')::numeric + (d->>'loans')::numeric + (d->>'insurance')::numeric + (d->>'business')::numeric
+                    + (d->>'investment')::numeric + (d->>'property')::numeric + (d->>'alternative')::numeric = (d->>'total_assets')::numeric
+                AND (d->>'total_assets')::numeric = (SELECT sum(base_value) FROM public.v_net_worth_items_current WHERE item_type = 'ASSET')
+             FROM (SELECT public.dashboard_month(current_date) AS d) x),
+            'Dashboard 7 หมวด: เงินให้กู้ · ประกันแยกออก · รวม 7 หมวด = ยอดสินทรัพย์ทั้งหมด');
 RESET ROLE;
 
 \echo '== 14. Views'
