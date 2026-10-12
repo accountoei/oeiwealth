@@ -729,6 +729,22 @@ SELECT t.ok((SELECT (d->>'loans')::numeric = coalesce((SELECT sum(base_value) FR
                 AND (d->>'total_assets')::numeric = (SELECT sum(base_value) FROM public.v_net_worth_items_current WHERE item_type = 'ASSET')
              FROM (SELECT public.dashboard_month(current_date) AS d) x),
             'Dashboard 7 หมวด: เงินให้กู้ · ประกันแยกออก · รวม 7 หมวด = ยอดสินทรัพย์ทั้งหมด');
+-- Dashboard รายคน: ยอดตั้งต้นของทุกคนรวมกัน + ส่วนที่ยังไม่ระบุเจ้าของ = ยอดตั้งต้นครอบครัว · รายได้แบ่งแล้วไม่เกินยอดครอบครัว
+CREATE TEMP TABLE pd AS SELECT p.id, public.person_dashboard(current_date, p.id) AS j FROM public.persons p WHERE p.deleted_at IS NULL;
+SELECT t.ok((SELECT sum((j->'opening'->>'net_worth')::numeric) FROM pd)
+              + (SELECT coalesce(sum(CASE WHEN n.item_type = 'ASSET' THEN n.base_value ELSE -n.base_value END), 0)
+                   FROM public.families f, private.net_worth_items(f.id, f.go_live_date - 1, true) n WHERE n.person_id IS NULL)
+            = (SELECT (public.net_worth_history()->'opening'->>'net_worth')::numeric),
+            'Dashboard รายคน: ยอดตั้งต้นทุกคน + ไม่ระบุเจ้าของ = ยอดตั้งต้นครอบครัว');
+SELECT t.ok((SELECT sum((j->>'income')::numeric + (j->>'investment_income')::numeric) FROM pd)
+              <= (SELECT (p->>'income')::numeric + (p->>'investment_income')::numeric FROM (SELECT public.month_net_worth_preview(current_date) AS p) x) + 0.01
+            AND (SELECT bool_and(j ? 'snapshots' AND j ? 'expenses' AND j ? 'reimbursements') FROM pd),
+            'Dashboard รายคน: รายได้ที่แบ่งให้แต่ละคนรวมแล้วไม่เกินรายได้ครอบครัว');
+SELECT t.ok((SELECT coalesce(sum(base_value) FILTER (WHERE item_type = 'ASSET'), 0) = (d->>'total_assets')::numeric
+                AND coalesce(sum(base_value) FILTER (WHERE item_type = 'ASSET' AND item_group = 'LOANS'), 0) = (d->>'loans')::numeric
+                AND coalesce(sum(base_value) FILTER (WHERE item_type = 'LIABILITY'), 0) = (d->>'total_liabilities')::numeric
+               FROM public.month_family_items(current_date), (SELECT public.dashboard_month(current_date) AS d) x GROUP BY d),
+            'Dashboard: รายการรายหมวดของครอบครัวรวมแล้วตรงกับยอดแต่ละหมวด');
 RESET ROLE;
 
 \echo '== 14. Views'
