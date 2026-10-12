@@ -854,6 +854,21 @@ INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quan
 SELECT t.ok((SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี')) = 0
             AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 2710,
             'Statement ของบัญชีที่รับเงิน → เงินระหว่างทางเคลียร์ · ยอดตาม Statement');
+-- มูลค่าเป็นบาทของพอร์ต = มูลค่าในสกุลเดิม × อัตรา ณ วันที่ดูยอด (ไม่ล็อกอัตราวัน Statement)
+SELECT t.ok((SELECT round(hv.value_thb, 2) = round(hv.value * private.fx_rate('USD', '2026-09-15'), 2)
+               FROM private.holding_value_at(t.h('AAPL'), '2026-09-15') hv)
+            AND (SELECT round(hv.value_thb, 2) = round(hv.value * private.fx_rate('USD', '2026-08-20'), 2)
+               FROM private.holding_value_at(t.h('AAPL'), '2026-08-20') hv)
+            AND private.fx_rate('USD', '2026-09-15') <> private.fx_rate('USD', '2026-08-20'),
+            'หลักทรัพย์ USD: บาท = มูลค่า × อัตรา ณ วันที่ดูยอด (คนละวัน = คนละอัตรา)');
+SELECT t.ok((SELECT round(hv.value_thb, 2) = round(hv.value * private.fx_rate('USD', '2026-09-15'), 2)
+               FROM private.holding_value_at(t.h('Cash USD'), '2026-09-15') hv),
+            'เงินสด USD ในพอร์ต: บาท = ยอด × อัตรา ณ วันที่ดูยอด');
+SELECT t.ok((SELECT round(sum(h.value_thb), 2) FROM public.v_holdings_active h WHERE h.portfolio_asset_id = t.a('พอร์ตหลายบัญชี'))
+            = (SELECT round(thb_value, 2) FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี'))
+            AND (SELECT round(portfolio_value * portfolio_fx_rate, 2) = round(thb_value, 2) FROM public.v_portfolio_values
+                  WHERE asset_id = t.a('พอร์ตหลายบัญชี')),
+            'หน้าพอร์ต: บาทรายตัวรวมกัน = มูลค่าเป็นบาท · มูลค่าสกุลพอร์ต × อัตรา = มูลค่าเป็นบาท');
 -- พอร์ตเดิม (บัญชีเดียว) ไม่ได้รับผลกระทบ
 SELECT t.ok((SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('Cash USD')), 'พอร์ตเดิม: เงินสดบัญชีเดียว = บัญชีหลัก');
 RESET ROLE;

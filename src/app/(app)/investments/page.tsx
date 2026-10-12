@@ -6,19 +6,20 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
-  display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null };
+  display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null;
+  portfolio_value: number | null; in_transit: number | null };
 type H = { id: string; portfolio_asset_id: string; holding_type: string; currency: string; current_value: number | null;
-  status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean };
+  status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
+  value_thb: number | null };
 
 export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const me = await requireAppUser();
   const supabase = await createClient();
   const pv = await loadPersonView((await searchParams).p);
-  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: fx }, { data: family }, { data: txs }] = await Promise.all([
+  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }] = await Promise.all([
     supabase.from("v_portfolio_values").select("*").order("name"),
     supabase.from("investment_portfolios").select("asset_id,institution,status").is("deleted_at", null),
-    supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost"),
-    supabase.from("v_fx_status").select("currency,rate_to_thb"),
+    supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("investment_transactions")
       .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
@@ -35,8 +36,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน · มูลค่า × สัดส่วน
   const sh = (assetId: string) => pv.assetShare(assetId);
   const list = ((pvs as PV[] | null) ?? []).filter((p) => pv.showAsset(p.asset_id)).map((p) => ({ ...p,
-    full_display_value: p.display_value,
-    display_value: p.display_value == null ? null : Number(p.display_value) * sh(p.asset_id),
+    // มูลค่าในสกุลพอร์ต ณ วันนี้ (อัตราเดียวกับ Net Worth) + เงินระหว่างทาง
+    full_display_value: p.portfolio_value == null ? null : Number(p.portfolio_value) + Number(p.in_transit ?? 0),
+    display_value: p.portfolio_value == null ? null : (Number(p.portfolio_value) + Number(p.in_transit ?? 0)) * sh(p.asset_id),
     thb_value: p.thb_value == null ? null : Number(p.thb_value) * sh(p.asset_id),
     in_transit_thb: p.in_transit_thb == null ? null : Number(p.in_transit_thb) * sh(p.asset_id) }));
   type R = { unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
@@ -54,17 +56,18 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   }).slice(0, 10);
   const inst = new Map((pfs ?? []).map((p) => [p.asset_id, p.institution]));
   const holdings = ((hs as H[] | null) ?? []).filter((h) => h.status === "ACTIVE" && pv.showAsset(h.portfolio_asset_id))
-    .map((h) => ({ ...h, current_value: h.current_value == null ? null : Number(h.current_value) * sh(h.portfolio_asset_id) }));
-  const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
-  const thb = (v: number | null, c: string) => (v == null || !rate.get(c) ? 0 : Number(v) * (rate.get(c) as number));
+    .map((h) => ({ ...h, current_value: h.current_value == null ? null : Number(h.current_value) * sh(h.portfolio_asset_id),
+      value_thb: h.value_thb == null ? null : Number(h.value_thb) * sh(h.portfolio_asset_id) }));
+  // บาทรายตัว = ชุดเดียวกับ Net Worth (อัตรา ณ วันนี้จากฐานข้อมูล)
+  const thb = (h: { value_thb: number | null }) => Number(h.value_thb ?? 0);
   const total = list.reduce((s, p) => s + Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), 0);
-  const cash = holdings.filter((h) => h.holding_type === "CASH").reduce((s, h) => s + thb(h.current_value, h.currency), 0)
+  const cash = holdings.filter((h) => h.holding_type === "CASH").reduce((s, h) => s + thb(h), 0)
     + list.reduce((s, p) => s + Number(p.in_transit_thb ?? 0), 0);
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const byType = new Map<string, number>();
-  holdings.forEach((h) => byType.set(h.holding_type, (byType.get(h.holding_type) ?? 0) + thb(h.current_value, h.currency)));
+  holdings.forEach((h) => byType.set(h.holding_type, (byType.get(h.holding_type) ?? 0) + thb(h)));
   const byCcy = new Map<string, number>();
-  holdings.forEach((h) => byCcy.set(h.currency, (byCcy.get(h.currency) ?? 0) + thb(h.current_value, h.currency)));
+  holdings.forEach((h) => byCcy.set(h.currency, (byCcy.get(h.currency) ?? 0) + thb(h)));
   const allocTotal = [...byType.values()].reduce((s, v) => s + v, 0);
   const soon = holdings.filter((h) => h.maturity_date && h.maturity_date >= todayBangkok() && h.maturity_date <= addDays(todayBangkok(), 60))
     .sort((x, y) => (x.maturity_date! < y.maturity_date! ? -1 : 1));
