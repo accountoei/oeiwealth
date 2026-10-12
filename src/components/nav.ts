@@ -5,19 +5,14 @@ export type NavGroup = { label: string; href?: string; ready?: boolean; items?: 
 export const NAV: NavGroup[] = [
   { label: "Dashboard", href: "/", ready: true },
   { label: "Income & Expenses", href: "/income-expenses", ready: true },
-  {
-    label: "Financial Assets",
-    items: [
-      { label: "Cash & Bank Accounts", href: "/financial/cash", ready: true },
-      { label: "Loans Receivable", href: "/financial/loans", ready: true },
-    ],
-  },
+  { label: "Cash & Bank Accounts", href: "/financial/cash", ready: true },
+  { label: "Loans Receivable", href: "/financial/loans", ready: true },
   { label: "Investments", href: "/investments", ready: true },
   { label: "Private Business", href: "/financial/business", ready: true },
   { label: "Property", href: "/property", ready: true },
   { label: "Alternative Assets", href: "/alternative", ready: true },
-  { label: "Liabilities", href: "/liabilities", ready: true },
   { label: "Insurance", href: "/insurance", ready: true },
+  { label: "Liabilities", href: "/liabilities", ready: true },
   {
     label: "Family",
     items: [
