@@ -6,7 +6,7 @@ import {
   BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, money, thDate, todayBangkok,
 } from "@/lib/format";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { BenefitForm, CoverageForm, InsScheduleEditor, PayPremiumForm } from "./ins-forms";
+import { AddCashValueForm, BenefitForm, CoverageForm, InsScheduleEditor, PayPremiumForm } from "./ins-forms";
 import BeneficiaryEditor from "../Beneficiaries";
 import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
@@ -124,7 +124,13 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
               {canWrite && <OwnershipEditor kind="asset" id={cvAsset.id} persons={persons ?? []} paths={paths} today={today}
                 current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
             </>
-          ) : <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>}
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>
+              {canDelete && <AddCashValueForm policyId={id} currency={ccy} persons={persons ?? []} defaultOwner={payerId}
+                today={today} goLive={family?.go_live_date ?? ""} />}
+            </>
+          )}
         </div>
       </section>
 

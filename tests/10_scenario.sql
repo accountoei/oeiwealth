@@ -608,7 +608,19 @@ SELECT t.ok((SELECT count(*) FROM public.insurance_followups WHERE person_id = t
             'เสียชีวิต → รายการติดตาม 3 บทบาท (ผู้เอาประกัน · ผู้จ่ายเบี้ย · ผู้รับประโยชน์)');
 UPDATE public.persons SET notes = 'x' WHERE name = 'ญาติทดสอบ';
 SELECT t.ok((SELECT count(*) FROM public.insurance_followups) = 3, 'แก้ข้อมูลอื่นของสมาชิก → ไม่สร้างรายการซ้ำ');
+-- เพิ่มมูลค่าเวนคืนให้กรมธรรม์ที่มีอยู่แล้ว
+INSERT INTO tp SELECT 'cv2', public.add_insurance_cash_value((SELECT id FROM tp WHERE k = 'life2'), jsonb_build_object(
+  'value', 55000, 'valuation_date', current_date, 'owner_person_id', t.p('คุณแม่'), 'notes', 'เวนคืน 50,000 + ปันผลสะสม 5,000'));
+SELECT t.ok((SELECT has_cash_value AND cash_value_asset_id = (SELECT id FROM tp WHERE k = 'cv2')
+               FROM public.insurance_policies WHERE id = (SELECT id FROM tp WHERE k = 'life2'))
+            AND (SELECT current_value = 55000 AND asset_type = 'INSURANCE_CASH_VALUE' FROM public.assets WHERE id = (SELECT id FROM tp WHERE k = 'cv2'))
+            AND (SELECT person_id = t.p('คุณแม่') AND ownership_percent = 100 FROM public.asset_ownerships WHERE asset_id = (SELECT id FROM tp WHERE k = 'cv2')),
+            'เพิ่มมูลค่าเวนคืนให้กรมธรรม์เดิม → สินทรัพย์ 55,000 ผูกกรมธรรม์ · เจ้าของตามที่เลือก');
+SELECT t.fails($$SELECT public.add_insurance_cash_value((SELECT id FROM tp WHERE k = 'life2'),
+  '{"value":1,"valuation_date":"2026-10-01"}')$$, 'มีมูลค่าเวนคืนแล้ว', 'เพิ่มมูลค่าเวนคืนซ้ำไม่ได้');
 SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.add_insurance_cash_value((SELECT id FROM tp WHERE k = 'health'),
+  jsonb_build_object('value', 1, 'valuation_date', current_date))$$, 'PERMISSION_DENIED', 'CONTRIBUTOR เพิ่มมูลค่าเวนคืนไม่ได้');
 SELECT t.fails($$SELECT public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'health'), 'PREMIUM',
   '[{"due_date":"2027-01-01","amount":1}]')$$, 'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางเบี้ยไม่ได้');
 RESET ROLE;

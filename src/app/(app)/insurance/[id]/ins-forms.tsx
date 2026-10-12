@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { addCoverage, payPremium, receiveBenefit, saveInsSchedule, type ActionState } from "../actions";
+import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, type ActionState } from "../actions";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, money, thDate } from "@/lib/format";
 
@@ -278,6 +278,42 @@ export function CoverageForm({ policyId, currency }: { policyId: string; currenc
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50">เพิ่ม</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <div className="w-full"><Msg s={state} /></div>
+    </form>
+  );
+}
+
+export function AddCashValueForm({ policyId, currency, persons, defaultOwner, today, goLive }: {
+  policyId: string; currency: string; persons: Person[]; defaultOwner: string | null; today: string; goLive: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState(today);
+  const [state, action, pending] = useActionState<ActionState, FormData>(addCashValue, {});
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className={`mt-2 ${sbtn}`}>+ เพิ่มมูลค่าเวนคืน</button>;
+  const opening = goLive !== "" && date !== "" && date < goLive;
+  return (
+    <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-left">
+      <input type="hidden" name="policy_id" value={policyId} />
+      <label className="block text-xs">มูลค่าเวนคืน + เงินปันผลสะสม ({currency})
+        <input name="value" required inputMode="decimal" className={`mt-1 block w-full ${small}`} />
+      </label>
+      <label className="block text-xs">ณ วันที่ (ตามหนังสือแจ้ง)
+        <input type="date" name="valuation_date" required value={date} max={today} onChange={(e) => setDate(e.target.value)}
+          className={`mt-1 block w-full ${small}`} />
+      </label>
+      {opening && <p className="text-xs text-amber-700">ก่อนวันเริ่มใช้ระบบ → บันทึกเป็นยอดตั้งต้น</p>}
+      <label className="block text-xs">เจ้าของมูลค่าเวนคืน
+        <select name="owner_person_id" defaultValue={defaultOwner ?? ""} className={`mt-1 block w-full ${small}`}>
+          {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs">หมายเหตุ
+        <input name="notes" placeholder="เช่น เวนคืน 80,000 + ปันผลสะสม 20,000" className={`mt-1 block w-full ${small}`} />
+      </label>
+      <div className="flex items-center gap-2">
+        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">บันทึก</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+      </div>
+      <Msg s={state} />
     </form>
   );
 }
