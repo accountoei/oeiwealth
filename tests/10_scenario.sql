@@ -666,6 +666,29 @@ SELECT t.fails($$UPDATE public.persons SET national_id = '123-45' WHERE name = '
   'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก');
 SELECT t.fails($$UPDATE public.persons SET photo = 'javascript:alert(1)' WHERE name = 'หลานทดสอบ'$$, 'persons_photo_format',
   'รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพเท่านั้น');
+-- ผังครอบครัว / หัวหน้าครอบครัว
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.ok((SELECT head_person_id = t.p('คุณพ่อ') FROM public.families), 'หัวหน้าครอบครัวตั้งต้น = สมาชิก "ตัวเอง" ตอนตั้งระบบ');
+UPDATE public.persons SET spouse_id = t.p('คุณแม่') WHERE name = 'คุณพ่อ';
+SELECT t.ok((SELECT spouse_id = t.p('คุณพ่อ') AND relationship = 'SPOUSE' FROM public.persons WHERE name = 'คุณแม่'),
+            'ตั้งคู่สมรส → ผูกกลับสองทาง · ความสัมพันธ์ = คู่สมรส');
+UPDATE public.persons SET father_id = t.p('คุณพ่อ'), mother_id = t.p('คุณแม่') WHERE name = 'หลานทดสอบ';
+UPDATE public.persons SET father_id = t.p('หลานทดสอบ') WHERE name = 'ญาติทดสอบ';
+SELECT t.ok((SELECT relationship FROM public.persons WHERE name = 'หลานทดสอบ') = 'CHILD'
+            AND (SELECT relationship FROM public.persons WHERE name = 'ญาติทดสอบ') = 'GRANDCHILD',
+            'ผูกพ่อแม่ → ความสัมพันธ์คำนวณเอง (ลูก · หลาน)');
+SELECT public.set_family_head(t.p('หลานทดสอบ'));
+SELECT t.ok((SELECT relationship FROM public.persons WHERE name = 'หลานทดสอบ') = 'SELF'
+            AND (SELECT relationship FROM public.persons WHERE name = 'คุณพ่อ') = 'PARENT'
+            AND (SELECT relationship FROM public.persons WHERE name = 'คุณแม่') = 'PARENT'
+            AND (SELECT relationship FROM public.persons WHERE name = 'ญาติทดสอบ') = 'CHILD',
+            'โอนหัวหน้าครอบครัว → ความสัมพันธ์ของทุกคนเปลี่ยนตาม');
+SELECT public.set_family_head(t.p('คุณพ่อ'));
+SELECT t.ok((SELECT count(*) FROM public.persons WHERE relationship = 'SELF' AND deleted_at IS NULL) = 1,
+            'โอนกลับ → มีหัวหน้า ("ตัวเอง") คนเดียว');
+SELECT t.fails($$UPDATE public.persons SET father_id = id WHERE name = 'คุณแม่'$$, 'persons_links_not_self', 'เป็นพ่อ / แม่ของตัวเองไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$SELECT public.set_family_head(t.p('คุณแม่'))$$, 'PERMISSION_DENIED', 'EDITOR โอนหัวหน้าครอบครัวไม่ได้ (ADMIN เท่านั้น)');
 RESET ROLE;
 
 \echo '== 14. Views'

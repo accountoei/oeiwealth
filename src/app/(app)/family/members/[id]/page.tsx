@@ -6,9 +6,10 @@ import { ageFrom, money, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, thDate, todayB
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { OpenDoc } from "@/components/docs/DocButtons";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
+import { setFamilyHead } from "../actions";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
-  "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes";
+  "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id";
 
 type Doc = { id: string; title: string; document_type: string; mime_type: string | null; version_status: string; deleted_at: string | null; created_at: string };
 
@@ -29,17 +30,25 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: person }, { data: nw }, { data: links }, { data: status }, { count: policies }] = await Promise.all([
+  const [{ data: person }, { data: nw }, { data: links }, { data: status }, { count: policies }, { data: all }, { data: family }] = await Promise.all([
     supabase.from("persons").select(FIELDS).eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_net_worth_by_person").select("total_assets,total_liabilities,net_worth").eq("person_id", id).maybeSingle(),
     supabase.from("document_links").select("documents(id,title,document_type,mime_type,version_status,deleted_at,created_at)")
       .eq("entity_type", "PERSON").eq("entity_id", id).is("deleted_at", null),
     supabase.rpc("drive_status"),
     supabase.from("insurance_policies").select("id", { count: "exact", head: true }).eq("person_id", id).eq("status", "ACTIVE").is("deleted_at", null),
+    supabase.from("persons").select("id,name,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("families").select("head_person_id").maybeSingle(),
   ]);
   if (!person) notFound();
   const p = person as unknown as PersonDetails & { name: string; relationship: string | null; status: string };
   const canEdit = me.role === "ADMIN" || me.role === "EDITOR";
+  const isHead = family?.head_person_id === id;
+  const people = all ?? [];
+  const nameOf = new Map(people.map((x) => [x.id, x.name]));
+  const children = people.filter((x) => x.father_id === id || x.mother_id === id);
+  const PLink = ({ pid }: { pid: string | null }) => pid && nameOf.has(pid)
+    ? <Link href={`/family/members/${pid}`} className="text-blue-700 hover:underline">{nameOf.get(pid)}</Link> : null;
   const today = todayBangkok();
   const age = ageFrom(p.birth_date, today);
   const connected = !!(status as { connected?: boolean } | null)?.connected;
@@ -71,7 +80,8 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
           {fullName && <p className="text-sm text-slate-700">{fullName}</p>}
           {p.full_name_en && <p className="text-sm text-slate-500">{p.full_name_en}</p>}
           <p className="mt-1 text-xs text-slate-500">
-            {RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-"}
+            {isHead && <span className="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">★ หัวหน้าครอบครัว</span>}
+            {!isHead && (RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-")}
             {age != null && ` · อายุ ${age} ปี`}
             {p.status !== "ACTIVE" && ` · ${PERSON_STATUS_LABEL[p.status]}`}
           </p>
@@ -114,6 +124,28 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-medium text-slate-900">ครอบครัว</h2>
+            {me.role === "ADMIN" && !isHead && (
+              <form action={setFamilyHead}>
+                <input type="hidden" name="id" value={id} />
+                <button className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">ตั้งเป็นหัวหน้าครอบครัว</button>
+              </form>
+            )}
+          </div>
+          <dl className="grid gap-3 sm:grid-cols-4">
+            <Item label="พ่อ"><PLink pid={p.father_id} /></Item>
+            <Item label="แม่"><PLink pid={p.mother_id} /></Item>
+            <Item label="คู่สมรส"><PLink pid={p.spouse_id} /></Item>
+            <Item label="ลูก">{children.length > 0 && children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<PLink pid={c.id} /></span>)}</Item>
+          </dl>
+          <p className="mt-2 text-xs text-slate-500">
+            ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{nameOf.get(family?.head_person_id ?? "") ? ` (${nameOf.get(family?.head_person_id ?? "")})` : ""}
+            {me.role === "ADMIN" && !isHead && " · กดปุ่ม \"ตั้งเป็นหัวหน้าครอบครัว\" แล้วความสัมพันธ์ของทุกคนจะเปลี่ยนตาม"}
+          </p>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว</h2>
           <dl className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1"><Item label="เลขบัตรประชาชน">{fmtNid(p.national_id)}</Item><DocLink types={["บัตรประชาชน"]} /></div>
@@ -129,7 +161,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         </section>
       </div>
 
-      {canEdit && <PersonDetailsForm p={p} />}
+      {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))} />}
 
       <EntityDocuments entityType="PERSON" entityId={id} module="FAMILY" role={me.role} title="เอกสารส่วนตัว" paths={[`/family/members/${id}`]} />
     </div>

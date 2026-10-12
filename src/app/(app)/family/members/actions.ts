@@ -69,6 +69,12 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
   const nid = String(form.get("national_id") ?? "").replace(/\D/g, "");
   if (nid && nid.length !== 13) return { error: "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก" };
   row.national_id = nid || null;
+  for (const k of ["father_id", "mother_id", "spouse_id"] as const) {
+    const v = s(k);
+    if (v === id) return { error: "เลือกตัวเองเป็นพ่อ / แม่ / คู่สมรสไม่ได้" };
+    row[k] = v;
+  }
+  if (row.father_id && row.father_id === row.mother_id) return { error: "พ่อกับแม่ต้องเป็นคนละคน" };
   row.birth_date = s("birth_date");
   row.passport_expiry = s("passport_expiry");
   const photo = String(form.get("photo") ?? "");
@@ -82,4 +88,11 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   refresh();
   return { ok: "บันทึกข้อมูลแล้ว" };
+}
+
+/** ตั้ง / โอนหัวหน้าครอบครัว (ADMIN) → ความสัมพันธ์ของทุกคนคำนวณใหม่ */
+export async function setFamilyHead(form: FormData): Promise<void> {
+  const supabase = await createClient();
+  await supabase.rpc("set_family_head", { p_person_id: String(form.get("id")) });
+  refresh();
 }

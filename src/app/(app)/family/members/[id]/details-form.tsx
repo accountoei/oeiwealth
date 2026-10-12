@@ -9,7 +9,8 @@ const label = "block text-sm text-slate-700";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 export type PersonDetails = {
-  id: string; name: string; relationship: string | null; status: string; title_prefix: string | null; full_name_th: string | null; full_name_en: string | null; nickname: string | null;
+  id: string; name: string; relationship: string | null; status: string;
+  father_id: string | null; mother_id: string | null; spouse_id: string | null; title_prefix: string | null; full_name_th: string | null; full_name_en: string | null; nickname: string | null;
   birth_date: string | null; photo: string | null; phone: string | null; email: string | null; address: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; national_id: string | null;
   passport_no: string | null; passport_expiry: string | null; house_registration_no: string | null; notes: string | null;
@@ -29,7 +30,7 @@ async function resizePhoto(file: File): Promise<string> {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function PersonDetailsForm({ p }: { p: PersonDetails }) {
+export function PersonDetailsForm({ p, others }: { p: PersonDetails; others: { id: string; name: string }[] }) {
   const [open, setOpen] = useState(false);
   const [photo, setPhoto] = useState<string | null>(p.photo);
   const [newPhoto, setNewPhoto] = useState("");
@@ -91,6 +92,19 @@ export function PersonDetailsForm({ p }: { p: PersonDetails }) {
         <label className={label}>ชื่อเล่น<input name="nickname" defaultValue={p.nickname ?? ""} className={input} /></label>
         <label className={`${label} md:col-span-2`}>ชื่อ-นามสกุล (อังกฤษ)<input name="full_name_en" defaultValue={p.full_name_en ?? ""} className={input} /></label>
         <label className={label}>วันเกิด<input type="date" name="birth_date" defaultValue={p.birth_date ?? ""} className={input} /></label>
+      </fieldset>
+
+      <fieldset className="grid gap-4 md:grid-cols-3">
+        <legend className="mb-2 text-sm font-medium text-slate-900">ครอบครัว (ใช้คำนวณความสัมพันธ์และผังครอบครัว)</legend>
+        {([["father_id", "พ่อ", p.father_id], ["mother_id", "แม่", p.mother_id], ["spouse_id", "คู่สมรส", p.spouse_id]] as const).map(([n, l, v]) => (
+          <label key={n} className={label}>{l}
+            <select name={n} defaultValue={v ?? ""} className={input}>
+              <option value="">— ไม่ระบุ / ไม่อยู่ในระบบ —</option>
+              {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+        ))}
+        <p className="text-xs text-slate-500 md:col-span-3">ผูกพ่อ / แม่ / คู่สมรสแล้ว ระบบคำนวณ &ldquo;ความสัมพันธ์&rdquo; เทียบกับหัวหน้าครอบครัวให้เอง (ค่าที่เลือกเองจะถูกแทน) · คู่สมรสผูกให้สองทาง</p>
       </fieldset>
 
       <fieldset className="grid gap-4 md:grid-cols-2">

@@ -250,7 +250,7 @@ export const FOLLOWUP_STATUS: [string, string][] = [["OPEN", "ยังไม่
 /** ความสัมพันธ์ของสมาชิกครอบครัว */
 export const RELATIONSHIP_LABEL: Record<string, string> = {
   SELF: "หัวหน้าครอบครัว", SPOUSE: "คู่สมรส", CHILD: "บุตร", CHILD_IN_LAW: "ลูกเขย / ลูกสะใภ้",
-  GRANDCHILD: "หลาน", PARENT: "บิดา / มารดา", PARENT_IN_LAW: "พ่อตา แม่ยาย / พ่อแม่สามี",
+  GRANDCHILD: "หลาน", PARENT: "บิดา / มารดา", GRANDPARENT: "ปู่ ย่า ตา ยาย", PARENT_IN_LAW: "พ่อตา แม่ยาย / พ่อแม่สามี",
   SIBLING: "พี่น้อง", RELATIVE: "ญาติอื่น ๆ", OTHER: "อื่น ๆ",
 };
 export const PERSON_STATUS_LABEL: Record<string, string> = { ACTIVE: "ใช้งาน", INACTIVE: "ไม่ใช้งาน", DECEASED: "เสียชีวิต" };
