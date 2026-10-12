@@ -747,6 +747,117 @@ SELECT t.ok((SELECT coalesce(sum(base_value) FILTER (WHERE item_type = 'ASSET'),
             'Dashboard: รายการรายหมวดของครอบครัวรวมแล้วตรงกับยอดแต่ละหมวด');
 RESET ROLE;
 
+\echo '== 13j. พอร์ต: เงินสดหลายบัญชีต่อสกุล (บัญชีหลัก · เลือกบัญชี · โอนภายใน · ไม่นับซ้ำ)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตหลายบัญชี', 'USD' FROM public.families;
+INSERT INTO public.investment_portfolios(asset_id, institution) VALUES (t.a('พอร์ตหลายบัญชี'), 'ธนาคารทดสอบ');
+SELECT public.add_holding(t.a('พอร์ตหลายบัญชี'), 'CASH', 'เงินสด USD บัญชี A', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS cash_a;
+SELECT public.add_holding(t.a('พอร์ตหลายบัญชี'), 'CASH', 'เงินสด USD บัญชี B', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS cash_b;
+SELECT public.add_holding(t.a('พอร์ตหลายบัญชี'), 'BOND', 'หุ้นกู้ทดสอบ X', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS bond_x;
+-- ยอดเริ่ม (งวดก่อนหน้าปิดแล้ว → ใช้รายการปรับปรุงวันนี้): A 1,000 · B 6,000 แล้วซื้อหุ้นกู้ 1,000 จาก B
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','ADJUSTMENT','direction','IN','date',current_date,'holding_id',t.h('เงินสด USD บัญชี A'),'amount',1000,'notes','ยอดเริ่มทดสอบ')) IS NOT NULL AS seed_a;
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','ADJUSTMENT','direction','IN','date',current_date,'holding_id',t.h('เงินสด USD บัญชี B'),'amount',6000,'notes','ยอดเริ่มทดสอบ')) IS NOT NULL AS seed_b;
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('หุ้นกู้ทดสอบ X'),'quantity',100,'price',10,
+                     'cash_holding_id',t.h('เงินสด USD บัญชี B'))) IS NOT NULL AS buy_from_b;
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 1000
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 5000,
+            'ปรับยอด / ซื้อ แยกตามบัญชีที่เลือก · ไม่นับซ้ำ');
+SELECT t.ok((SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A'))
+            AND NOT (SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')),
+            'บัญชีเงินสดแรกของสกุล = บัญชีหลักอัตโนมัติ');
+SELECT t.fails($$UPDATE public.investment_holdings SET is_default_cash = true WHERE name = 'เงินสด USD บัญชี B'$$,
+               'ih_default_cash_uq', 'บัญชีหลักมีได้สกุลละ 1 บัญชีต่อพอร์ต');
+UPDATE public.investment_holdings SET is_default_cash = true WHERE name = 'หุ้นกู้ทดสอบ X';
+SELECT t.ok((SELECT NOT is_default_cash FROM public.investment_holdings WHERE name = 'หุ้นกู้ทดสอบ X'), 'บัญชีหลักต้องเป็นเงินสด (หลักทรัพย์ตั้งไม่ได้)');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.set_default_cash_account(t.h('เงินสด USD บัญชี B'));
+SELECT t.ok((SELECT NOT is_default_cash FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A'))
+            AND (SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')),
+            'เปลี่ยนบัญชีหลักเป็นบัญชี B ได้');
+-- ดอกเบี้ยของบัญชี A (เลือกบัญชีเป็น holding) · Coupon ไม่ระบุบัญชี → บัญชีหลัก B
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','INTEREST','date',current_date,'holding_id',t.h('เงินสด USD บัญชี A'),'amount',10)) IS NOT NULL AS interest_a;
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','COUPON','date',current_date,'holding_id',t.h('หุ้นกู้ทดสอบ X'),'amount',20)) IS NOT NULL AS coupon_default;
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 1010
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 5020,
+            'ดอกเบี้ยเข้าเฉพาะบัญชี A · Coupon เข้าบัญชีหลัก B · ไม่นับซ้ำ 2 บัญชี');
+-- ซื้อโดยเลือกจ่ายจากบัญชี A
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('หุ้นกู้ทดสอบ X'),'quantity',10,'price',10,
+                     'cash_holding_id',t.h('เงินสด USD บัญชี A'))) IS NOT NULL AS buy_from_a;
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 910
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 5020
+            AND (SELECT quantity FROM public.investment_holdings WHERE id = t.h('หุ้นกู้ทดสอบ X')) = 110,
+            'ซื้อจากบัญชีที่เลือก (A) · บัญชี B ไม่เปลี่ยน');
+-- โอนภายในพอร์ต B → A
+SELECT public.transfer_portfolio_cash(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('from_holding_id',t.h('เงินสด USD บัญชี B'),'to_holding_id',t.h('เงินสด USD บัญชี A'),
+                     'amount',500,'date',current_date)) IS NOT NULL AS internal_transfer;
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 1410
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 4520,
+            'โอนระหว่างบัญชีในพอร์ต: B ลด 500 · A เพิ่ม 500');
+SELECT t.ok((SELECT net_cash FROM public.v_investment_transactions_net WHERE transaction_type = 'CASH_TRANSFER') = 0
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions i JOIN public.investment_transactions x ON x.id = i.source_transaction_id
+                             WHERE x.transaction_type = 'CASH_TRANSFER'),
+            'โอนภายในพอร์ต: ยอดสุทธิทั้งพอร์ต 0 · ไม่ใช่รายได้');
+SELECT t.fails($$SELECT public.transfer_portfolio_cash(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('from_holding_id',t.h('เงินสด USD บัญชี A'),'to_holding_id',t.h('เงินสด USD บัญชี A'),'amount',1,'date',current_date))$$,
+  'ต้องต่างกัน', 'โอนเข้าบัญชีเดิมไม่ได้');
+SELECT t.fails($$SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('type','COUPON','date',current_date,'holding_id',t.h('หุ้นกู้ทดสอบ X'),'amount',1,
+                     'cash_holding_id',t.h('Cash USD')))$$,
+  'ไม่ได้อยู่ในพอร์ตนี้', 'เลือกบัญชีเงินสดของพอร์ตอื่นไม่ได้');
+-- แลกเงิน: จากบัญชี A → THB (สร้างบัญชี THB ให้อัตโนมัติ เป็นบัญชีหลักของ THB)
+SELECT public.record_investment_fx(t.a('พอร์ตหลายบัญชี'),
+  jsonb_build_object('date',current_date,'currency','USD','counter_currency','THB','amount',100,'counter_amount',3500,
+                     'cash_holding_id',t.h('เงินสด USD บัญชี A'))) IS NOT NULL AS fx_from_a;
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 1310
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 4520
+            AND (SELECT current_value FROM public.investment_holdings WHERE name = 'เงินสด THB'
+                   AND portfolio_id = (SELECT id FROM public.investment_portfolios WHERE asset_id = t.a('พอร์ตหลายบัญชี'))) = 3500,
+            'แลกเงินจากบัญชีที่เลือก · บัญชี THB ใหม่ได้รับเงิน');
+-- ครบกำหนด: เงินต้นเข้าบัญชี A ที่เลือก
+SELECT public.record_holding_maturity(t.h('หุ้นกู้ทดสอบ X'), current_date, 1100, NULL, NULL, NULL, NULL, 'ครบกำหนดทดสอบ',
+                                      t.h('เงินสด USD บัญชี A')) IS NOT NULL AS matured;
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 2410
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 4520,
+            'ครบกำหนด: เงินต้นเข้าบัญชีที่เลือก (A)');
+-- Statement รายบัญชี: ใส่ยอดบัญชี B ตาม Statement → A ไม่เปลี่ยน
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+  VALUES (t.h('เงินสด USD บัญชี B'), current_date, 1, 4600, 4600, 'STATEMENT');
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 2410
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 4600,
+            'Statement รายบัญชี: ยอด B ตาม Statement · A คงเดิม');
+-- พอร์ตรวม = ผลรวมทุกบัญชี (สกุลพอร์ต USD · THB แปลงตามอัตรา)
+SELECT t.ok((SELECT a.current_value FROM public.assets a WHERE a.id = t.a('พอร์ตหลายบัญชี'))
+            = round(2410 + 4600 + 3500 / (SELECT private.fx_rate('USD', current_date)), 4),
+            'มูลค่าพอร์ต = ผลรวมเงินสดทุกบัญชี (หุ้นกู้ครบกำหนดแล้ว)');
+-- ลบบัญชีหลัก → บัญชีที่เหลือเป็นบัญชีหลักแทน
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.investment_holdings SET deleted_at = now() WHERE id = t.h('เงินสด USD บัญชี B');
+SELECT t.ok((SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')),
+            'ลบบัญชีหลัก → บัญชีที่เหลือเป็นบัญชีหลักแทน');
+-- เงินโอนเข้าพอร์ต = ระหว่างทาง จนบัญชีที่รับเงิน (บัญชีหลัก) มี Statement
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.transfer_money(t.a('BBL USD'), t.a('พอร์ตหลายบัญชี'), 300, current_date, 0, 'เติมเงินทดสอบ') IS NOT NULL AS transferred_in;
+SELECT t.ok((SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี')) = 300
+            AND (SELECT cash_holding_id FROM public.investment_transactions WHERE transaction_type = 'DEPOSIT'
+                  AND portfolio_id = (SELECT id FROM public.investment_portfolios WHERE asset_id = t.a('พอร์ตหลายบัญชี'))) = t.h('เงินสด USD บัญชี A'),
+            'โอนเข้าพอร์ต → เข้าบัญชีหลัก (A) เป็นเงินระหว่างทาง 300');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+  VALUES (t.h('เงินสด USD บัญชี A'), current_date, 1, 2710, 2710, 'STATEMENT');
+SELECT t.ok((SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี')) = 0
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 2710,
+            'Statement ของบัญชีที่รับเงิน → เงินระหว่างทางเคลียร์ · ยอดตาม Statement');
+-- พอร์ตเดิม (บัญชีเดียว) ไม่ได้รับผลกระทบ
+SELECT t.ok((SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('Cash USD')), 'พอร์ตเดิม: เงินสดบัญชีเดียว = บัญชีหลัก');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

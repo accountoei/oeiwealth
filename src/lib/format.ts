@@ -149,6 +149,7 @@ export const ITX_LABEL: Record<string, string> = {
   OPENING_BALANCE: "ยอดตั้งต้น", DEPOSIT: "โอนเข้าพอร์ต", WITHDRAWAL: "ถอนออกจากพอร์ต", BUY: "ซื้อ", SELL: "ขาย",
   DIVIDEND: "ปันผล", INTEREST: "ดอกเบี้ย", COUPON: "Coupon", FEE: "ค่าธรรมเนียม", TAX: "ภาษี",
   MATURITY: "ครบกำหนด", REDEMPTION: "ไถ่ถอน / ขายคืน", FX_EXCHANGE: "แลกเงิน", ADJUSTMENT: "ปรับปรุง",
+  CASH_TRANSFER: "โอนระหว่างบัญชีในพอร์ต",
 };
 /** จำนวนหน่วย (ไม่เกิน 4 ตำแหน่ง) */
 export function qty(value: number | string | null | undefined): string {

@@ -77,6 +77,7 @@ export async function recordTx(_: ActionState, form: FormData): Promise<ActionSt
       fee: clean(form.get("fee")), tax: clean(form.get("tax")),
       settle_bank_asset_id: form.get("settle_mode") === "bank" ? str(form.get("bank_asset_id")) : null,
       direction: str(form.get("direction")), notes: str(form.get("notes")),
+      cash_holding_id: str(form.get("cash_holding_id")),
     },
   });
   if (error) return { error: friendlyError(error.message) };
@@ -95,6 +96,7 @@ export async function recordMaturity(_: ActionState, form: FormData): Promise<Ac
     p_settle_to_asset_id: form.get("settle_mode") === "bank" ? str(form.get("bank_asset_id")) : null,
     p_settlement_date: str(form.get("settlement_date")), p_fee: num(form.get("fee")), p_tax: num(form.get("tax")),
     p_notes: str(form.get("notes")),
+    p_cash_holding_id: form.get("settle_mode") === "bank" ? null : str(form.get("cash_holding_id")),
   });
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
@@ -160,11 +162,59 @@ export async function recordFx(_: ActionState, form: FormData): Promise<ActionSt
       date: str(form.get("date")), amount: clean(form.get("amount")), currency: str(form.get("currency")),
       counter_amount: clean(form.get("counter_amount")), counter_currency: str(form.get("counter_currency")),
       fee: clean(form.get("fee")), notes: str(form.get("notes")),
+      cash_holding_id: str(form.get("cash_holding_id")), counter_cash_holding_id: str(form.get("counter_cash_holding_id")),
     },
   });
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
   return { ok: "บันทึกการแลกเงินแล้ว" };
+}
+
+/** โอนระหว่างบัญชีเงินสดในพอร์ต (สกุลเดียวกัน) */
+export async function transferCash(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const { error } = await supabase.rpc("transfer_portfolio_cash", {
+    p_portfolio_asset_id: id,
+    p_tx: {
+      from_holding_id: str(form.get("from_holding_id")), to_holding_id: str(form.get("to_holding_id")),
+      amount: clean(form.get("amount")), date: str(form.get("date")), fee: clean(form.get("fee")), notes: str(form.get("notes")),
+    },
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  return { ok: "บันทึกการโอนแล้ว" };
+}
+
+/** เพิ่มบัญชีเงินสดในพอร์ต (ช่วงตั้งค่าใส่ยอดตั้งต้นได้) */
+export async function addCashAccount(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const name = str(form.get("name"));
+  if (!name) return { error: "กรุณาใส่ชื่อบัญชี" };
+  const rate = num(form.get("interest_rate"));
+  if (rate !== null && (Number.isNaN(rate) || rate < 0)) return { error: "อัตราดอกเบี้ยต้องเป็นตัวเลข" };
+  const opening = clean(form.get("opening"));
+  const { data: hid, error } = await supabase.rpc("add_holding", {
+    p_portfolio_asset_id: id, p_holding_type: "CASH", p_name: name, p_symbol: null,
+    p_currency: str(form.get("currency")), p_maturity_date: null,
+    p_opening: opening ? { quantity: opening, price: "1", notes: "ยอดตั้งต้น" } : null, p_notes: null,
+  });
+  if (error) return { error: friendlyError(error.message) };
+  const purpose = str(form.get("purpose"));
+  if (hid && (purpose || rate !== null)) {
+    const { error: e2 } = await supabase.from("investment_holdings").update({ purpose, interest_rate: rate }).eq("id", hid);
+    if (e2) return { error: friendlyError(e2.message) };
+  }
+  revalidate(id);
+  return { ok: `เพิ่มบัญชี ${name} แล้ว` };
+}
+
+/** ตั้งบัญชีหลักของสกุล (ADMIN / EDITOR) */
+export async function setDefaultCash(form: FormData): Promise<void> {
+  const supabase = await createClient();
+  await supabase.rpc("set_default_cash_account", { p_holding_id: String(form.get("holding_id")) });
+  revalidate(String(form.get("asset_id")));
 }
 
 const pct = (v: FormDataEntryValue | null) => num(v);

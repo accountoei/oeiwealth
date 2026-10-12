@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { addUnderlying, recordTx, saveFcn, type ActionState } from "../../../actions";
 import { COUPON_FREQ_LABEL } from "@/lib/format";
+import { CashAccountSelect, type CashAcct } from "../../forms";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -82,8 +83,8 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ */
-export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, today, minDate }: {
-  assetId: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; today: string; minDate: string;
+export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, cashAccounts, today, minDate }: {
+  assetId: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("cash");
@@ -109,6 +110,7 @@ export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, today, 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เข้าเงินสดในพอร์ต</label>
         <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> เข้าบัญชีธนาคาร</label>
+        {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={currency} label="บัญชี" compact />}
         {mode === "bank" && (
           <>
             <select name="bank_asset_id" required className={small}>

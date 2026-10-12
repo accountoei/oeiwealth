@@ -5,7 +5,11 @@ import { requireAppUser } from "@/lib/auth";
 import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, todayBangkok,
 } from "@/lib/format";
-import { FxForm, MaturityForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm, type Holding } from "./forms";
+import {
+  AddCashAccountForm, CashTransferForm, FxForm, MaturityForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm,
+  type CashAcct, type Holding,
+} from "./forms";
+import { setDefaultCash } from "../actions";
 import ReturnsTable, { type Ret } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -14,12 +18,14 @@ import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
-  maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean };
+  maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
+  is_default_cash: boolean; interest_rate: number | null; purpose: string | null };
 type Tx = { id: string; holding_id: string | null; transaction_date: string; settlement_date: string | null;
   transaction_type: string; quantity: number | null; price: number | null; amount: number; currency: string;
   fee: number | null; tax: number | null; direction: string | null; settle_from_asset_id: string | null;
   settle_to_asset_id: string | null; cash_movement_id: string | null; notes: string | null; net_cash: number;
-  settlement_status: string; counter_amount: number | null; counter_currency: string | null };
+  settlement_status: string; counter_amount: number | null; counter_currency: string | null;
+  cash_holding_id: string | null; counter_cash_holding_id: string | null };
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
@@ -63,6 +69,17 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   const active = holdings.filter((h) => h.status === "ACTIVE");
   const totalThb = active.reduce((s, h) => s + (thb(h.current_value, h.currency) ?? 0), 0);
   const cashHoldings = active.filter((h) => h.holding_type === "CASH");
+  const securities = holdings.filter((h) => h.holding_type !== "CASH");
+  const cashAccounts: CashAcct[] = cashHoldings.map((h) => ({ id: h.id, name: h.name, currency: h.currency, is_default_cash: h.is_default_cash }));
+  // เงินสดรวมรายสกุล (หลายบัญชีต่อสกุลได้)
+  const cashByCcy = new Map<string, { value: number; count: number }>();
+  for (const c of cashHoldings) {
+    const x = cashByCcy.get(c.currency) ?? { value: 0, count: 0 };
+    cashByCcy.set(c.currency, { value: x.value + Number(c.current_value ?? 0), count: x.count + 1 });
+  }
+  const cashThb = cashHoldings.reduce((s, h) => s + (thb(h.current_value, h.currency) ?? 0), 0);
+  const multiCash = [...cashByCcy.values()].some((x) => x.count > 1);
+  const acctName = (hid: string | null) => (hid ? byId.get(hid)?.name ?? "" : "");
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
@@ -88,7 +105,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         <Kpi label={`มูลค่าพอร์ต (${a.currency})`} value={money(a.current_value, undefined, 0)} sub={`ณ ${thDate(a.current_value_date)}`} />
         <Kpi label="มูลค่าเป็นบาท (ใช้ใน Net Worth)" value={money(pv?.thb_value ?? null, "THB", 0)}
           sub={Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"} />
-        <Kpi label="เงินสดในพอร์ต" value={cashHoldings.map((h) => money(h.current_value, h.currency, 0)).join(" · ") || "-"}
+        <Kpi label="เงินสดในพอร์ต" value={[...cashByCcy.entries()].map(([c, x]) => money(x.value, c, 0)).join(" · ") || "-"}
           sub="คำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น" />
         <Kpi label="รายได้ลงทุน (ปันผล/ดอกเบี้ย)" value={money(incomeThb, "THB", 0)} sub="ตั้งแต่ Go-live · ก่อนหักภาษี" />
       </section>
@@ -96,10 +113,12 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
       {canWrite && (
         <section className="space-y-3">
           <div className="flex flex-wrap gap-2">
-            <TxForm assetId={id} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} today={today} minDate={goLive} />
+            <TxForm assetId={id} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <TransferForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} />
-            <FxForm assetId={id} cashCurrencies={cashHoldings.map((h) => h.currency)} today={today} minDate={goLive} />
+            <FxForm assetId={id} cashCurrencies={[...cashByCcy.keys()]} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+            <CashTransferForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
+            <AddCashAccountForm assetId={id} currency={a.currency} isSetup={isSetup} openingDate={openingDate} />
             {(isSetup || me.role === "ADMIN") && (
               <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
             )}
@@ -114,18 +133,93 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         </p>
       )}
 
+      {/* ------------------------------------------------ เงินสด / เงินฝากในพอร์ต (รายบัญชี) */}
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">เงินสด / เงินฝากในพอร์ต</h2>
+          <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(cashThb, "THB", 0)}</span></span>
+        </div>
+        <table className="mt-2 w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr><th className="px-4 py-2">บัญชี</th><th className="px-3 text-right">ยอดคงเหลือ</th><th className="px-3 text-right">มูลค่า (บาท)</th>
+              <th className="px-3 text-right">สัดส่วน</th><th className="px-3"></th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {cashHoldings.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีบัญชีเงินสด</td></tr>}
+            {[...cashByCcy.keys()].map((ccy) => {
+              const rows = cashHoldings.filter((h) => h.currency === ccy);
+              const sub = cashByCcy.get(ccy)!;
+              return [
+                ...rows.map((h) => {
+                  const v = thb(h.current_value, h.currency);
+                  const share = v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
+                  return (
+                    <tr key={h.id} className="align-top">
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium text-slate-900">
+                          {h.name}
+                          {h.is_default_cash && sub.count > 1 && <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-normal text-blue-700" title="บัญชีหลักของสกุลนี้ — รายการที่ไม่ได้เลือกบัญชีจะเข้าบัญชีนี้">★ บัญชีหลัก</span>}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {h.currency}
+                          {h.interest_rate != null && ` · ดอกเบี้ย ${Number(h.interest_rate)}% ต่อปี`}
+                          {h.purpose && ` · ${h.purpose}`}
+                        </div>
+                      </td>
+                      <td className="px-3 text-right">
+                        <div className="tabular-nums">{money(h.current_value, h.currency)}</div>
+                        <div className="text-xs text-slate-500">{h.current_value_date ? `ณ ${thDate(h.current_value_date)}` : ""}</div>
+                      </td>
+                      <td className="px-3 text-right">
+                        <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
+                        {h.currency !== "THB" && <div className="text-xs text-slate-500">{rate.get(h.currency) ? `@ ${money(rate.get(h.currency)!, undefined, 4)}` : "ไม่มีอัตรา"}</div>}
+                      </td>
+                      <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {canDelete && sub.count > 1 && !h.is_default_cash && (
+                            <form action={setDefaultCash}>
+                              <input type="hidden" name="holding_id" value={h.id} /><input type="hidden" name="asset_id" value={id} />
+                              <button className="text-xs text-slate-700 underline">ตั้งเป็นบัญชีหลัก</button>
+                            </form>
+                          )}
+                          {canWrite && <RowActions table="investment_holdings" id={h.id} paths={paths} canDelete={false} fields={[
+                            { name: "name", label: "ชื่อบัญชี", value: h.name },
+                            { name: "purpose", label: "วัตถุประสงค์", value: h.purpose, width: "w-40" },
+                            { name: "interest_rate", label: "ดอกเบี้ย % ต่อปี", type: "number", value: h.interest_rate, width: "w-24" }]} />}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }),
+                ...(sub.count > 1 ? [(
+                  <tr key={`sub-${ccy}`} className="bg-slate-50/60 text-xs text-slate-600">
+                    <td className="px-4 py-1.5">รวม {ccy} ({sub.count} บัญชี)</td>
+                    <td className="px-3 text-right tabular-nums">{money(sub.value, ccy)}</td>
+                    <td className="px-3 text-right tabular-nums">{thb(sub.value, ccy) == null ? "—" : money(thb(sub.value, ccy), undefined, 0)}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                )] : []),
+              ];
+            })}
+          </tbody>
+        </table>
+        {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง)</p>}
+      </section>
+
+      {/* ------------------------------------------------ หลักทรัพย์ */}
+      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <h2 className="px-4 pt-4 font-medium text-slate-900">หลักทรัพย์</h2>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนเฉลี่ย</th>
-              <th className="px-3 text-right">ราคาล่าสุด</th><th className="px-3 text-right">มูลค่าตลาด</th>
+              <th className="px-3 text-right">ราคาล่าสุด</th><th className="px-3 text-right">มูลค่าตลาด</th><th className="px-3 text-right">มูลค่า (บาท)</th>
               <th className="px-3 text-right">กำไร/ขาดทุนยังไม่รับรู้</th><th className="px-3 text-right">สัดส่วน</th><th className="px-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {holdings.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
-            {holdings.map((h) => {
-              const isCash = h.holding_type === "CASH";
-              const cost = !isCash && h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
+            {securities.length === 0 && <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
+            {securities.map((h) => {
+              const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
               const gain = cost != null && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null;
               const v = thb(h.current_value, h.currency);
               const share = h.status === "ACTIVE" && v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
@@ -134,7 +228,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                 <tr key={h.id} className={`align-top ${h.status !== "ACTIVE" ? "opacity-50" : ""}`}>
                   <td className="px-4 py-2.5">
                     <div className="font-medium text-slate-900">
-                      {isCash ? h.name : <Link href={`/investments/${id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>}
+                      <Link href={`/investments/${id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>
                       {h.symbol && <span className="ml-1 text-xs text-slate-500">{h.symbol}</span>}
                     </div>
                     <div className="text-xs text-slate-500">
@@ -144,22 +238,26 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                       {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
                     </div>
                   </td>
-                  <td className="px-3 text-right tabular-nums">{isCash ? "" : qty(h.quantity)}</td>
-                  <td className="px-3 text-right tabular-nums">{isCash ? "" : money(h.average_cost, undefined, 4)}</td>
-                  <td className="px-3 text-right tabular-nums">{isCash ? "" : money(h.current_price, undefined, 4)}</td>
+                  <td className="px-3 text-right tabular-nums">{qty(h.quantity)}</td>
+                  <td className="px-3 text-right tabular-nums">{money(h.average_cost, undefined, 4)}</td>
+                  <td className="px-3 text-right tabular-nums">{money(h.current_price, undefined, 4)}</td>
                   <td className="px-3 text-right">
                     <div className="tabular-nums">{money(h.current_value)}</div>
                     <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>
                       {h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}
                     </div>
                   </td>
+                  <td className="px-3 text-right">
+                    <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
+                    {h.currency !== "THB" && <div className="text-xs text-slate-500">{rate.get(h.currency) ? `@ ${money(rate.get(h.currency)!, undefined, 4)}` : "ไม่มีอัตรา"}</div>}
+                  </td>
                   <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                     {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? `${((gain / cost) * 100).toFixed(2)}%` : ""}</div></>}
                   </td>
                   <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                   <td className="px-3 py-2.5 text-right">
-                    {canWrite && canMature && <MaturityForm assetId={id} holding={h} banks={bankList} today={today} minDate={goLive} />}
-                    {canWrite && !isCash && <RowActions table="investment_holdings" id={h.id} paths={paths} canDelete={false} fields={[
+                    {canWrite && canMature && <MaturityForm assetId={id} holding={h} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
+                    {canWrite && <RowActions table="investment_holdings" id={h.id} paths={paths} canDelete={false} fields={[
                       { name: "name", label: "ชื่อ", value: h.name }, { name: "symbol", label: "สัญลักษณ์", value: h.symbol, width: "w-24" },
                       { name: "maturity_date", label: "ครบกำหนด", type: "date", value: h.maturity_date }]} />}
                   </td>
@@ -168,6 +266,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             })}
           </tbody>
         </table>
+        <p className="px-4 pb-3 pt-2 text-xs text-slate-500">มูลค่า (บาท) แปลงด้วยอัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · ดูทั้งหมดที่ Settings → System)</p>
       </section>
 
       <ReturnsTable rows={(rets as Ret[] | null) ?? []} hrefBase={`/investments/${id}/holding/`} />
@@ -203,12 +302,20 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                     <tr key={t.id} className="align-top">
                       <td className="py-1.5">{thDate(t.transaction_date)}</td>
                       <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
-                      <td className="text-slate-600">{t.holding_id ? byId.get(t.holding_id)?.name : t.transaction_type === "FX_EXCHANGE" ? `เงินสด ${t.currency} → ${t.counter_currency}` : "เงินสดพอร์ต"}</td>
+                      <td className="text-slate-600">
+                        {t.transaction_type === "CASH_TRANSFER" ? `${acctName(t.cash_holding_id)} → ${acctName(t.counter_cash_holding_id)}`
+                          : t.transaction_type === "FX_EXCHANGE" ? `${acctName(t.cash_holding_id) || `เงินสด ${t.currency}`} → ${acctName(t.counter_cash_holding_id) || t.counter_currency}`
+                          : t.holding_id ? byId.get(t.holding_id)?.name : acctName(t.cash_holding_id) || "เงินสดพอร์ต"}
+                        {multiCash && t.holding_id && t.cash_holding_id && t.cash_holding_id !== t.holding_id && (
+                          <div className="text-xs text-slate-500">บัญชี: {acctName(t.cash_holding_id)}</div>
+                        )}
+                      </td>
                       <td className="text-right tabular-nums text-slate-600">
                         {t.quantity != null && t.price != null ? `${qty(t.quantity)} × ${money(t.price, undefined, 4)}` : t.quantity != null ? qty(t.quantity) : ""}
                       </td>
                       <td className="text-right tabular-nums">
                         {money(t.amount)}{t.transaction_type === "FX_EXCHANGE" && <> {t.currency} → {money(t.counter_amount)} {t.counter_currency}</>}
+                        {t.transaction_type === "CASH_TRANSFER" && <> {t.currency}</>}
                         {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && (
                           <div className="text-xs text-slate-500">
                             {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}
