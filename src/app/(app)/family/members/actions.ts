@@ -63,3 +63,31 @@ export async function updateFamilyName(_: ActionState, form: FormData): Promise<
   refresh();
   return { ok: "บันทึกชื่อครอบครัวแล้ว" };
 }
+
+const TEXT_FIELDS = ["title_prefix", "full_name_th", "full_name_en", "nickname", "phone", "email", "address",
+  "emergency_contact_name", "emergency_contact_phone", "passport_no", "house_registration_no", "notes"] as const;
+
+/** ข้อมูลส่วนบุคคล (หน้ารายคน) */
+export async function updatePersonDetails(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("id"));
+  const s = (k: string) => { const v = String(form.get(k) ?? "").trim(); return v === "" ? null : v; };
+  const row: Record<string, string | null> = {};
+  for (const k of TEXT_FIELDS) row[k] = s(k);
+  const nid = String(form.get("national_id") ?? "").replace(/\D/g, "");
+  if (nid && nid.length !== 13) return { error: "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก" };
+  row.national_id = nid || null;
+  row.birth_date = s("birth_date");
+  row.passport_expiry = s("passport_expiry");
+  const photo = String(form.get("photo") ?? "");
+  if (form.get("photo_clear") === "1") row.photo = null;
+  else if (photo) {
+    if (!/^data:image\/(jpeg|png|webp);base64,/.test(photo) || photo.length > 300000) return { error: "รูปโปรไฟล์ใหญ่เกินไป หรือไม่ใช่ไฟล์รูปภาพ" };
+    row.photo = photo;
+  }
+  const { data, error } = await supabase.from("persons").update(row).eq("id", id).select("id");
+  if (error) return { error: friendly(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  refresh();
+  return { ok: "บันทึกข้อมูลแล้ว" };
+}

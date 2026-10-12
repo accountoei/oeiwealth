@@ -31,6 +31,8 @@ export function friendlyError(message: string): string {
   if (/duplicate key/i.test(message)) return "ข้อมูลนี้มีอยู่แล้ว";
   if (/pu_schedule_pair/.test(message)) return "ใส่ยอดประมาณกับความถี่ให้ครบคู่กัน (หรือเว้นว่างทั้งคู่)";
   if (/exp_cost_period_pair/.test(message)) return "ต้องระบุงวดของค่าใช้จ่ายประจำ";
+  if (/persons_national_id_format/.test(message)) return "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก";
+  if (/persons_photo_format/.test(message)) return "รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพ (JPG / PNG / WEBP) และไม่ใหญ่เกินไป";
   const m = message.match(/^[A-Z_]+: ([\s\S]*)$/);
   return m ? m[1] : message;
 }
@@ -252,3 +254,14 @@ export const RELATIONSHIP_LABEL: Record<string, string> = {
   SIBLING: "พี่น้อง", RELATIVE: "ญาติอื่น ๆ", OTHER: "อื่น ๆ",
 };
 export const PERSON_STATUS_LABEL: Record<string, string> = { ACTIVE: "ใช้งาน", INACTIVE: "ไม่ใช้งาน", DECEASED: "เสียชีวิต" };
+
+/** คำนำหน้าชื่อที่ใช้บ่อย (พิมพ์เองได้) */
+export const TITLE_PREFIXES = ["นาย", "นาง", "นางสาว", "เด็กชาย", "เด็กหญิง", "Mr.", "Mrs.", "Ms."];
+
+/** อายุ (ปีเต็ม) จากวันเกิด YYYY-MM-DD · วันเกิดในอนาคต / ว่าง → null */
+export function ageFrom(birth: string | null | undefined, today: string): number | null {
+  if (!birth || birth > today) return null;
+  const [by, bm, bd] = birth.slice(0, 10).split("-").map(Number);
+  const [ty, tm, td] = today.slice(0, 10).split("-").map(Number);
+  return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
+}

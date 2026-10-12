@@ -656,6 +656,16 @@ SELECT t.ok((SELECT count(*) FROM public.persons p WHERE p.deleted_at IS NULL
             'ย้ายขึ้น 1 ตำแหน่ง · ลำดับไม่ซ้ำกัน');
 SELECT t.login('00000000-0000-0000-0000-00000000000c');
 SELECT t.fails($$SELECT public.move_person(t.p('หลานทดสอบ'), 1)$$, 'PERMISSION_DENIED', 'CONTRIBUTOR ย้ายลำดับสมาชิกไม่ได้');
+-- ข้อมูลส่วนบุคคล
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.persons SET title_prefix = 'เด็กชาย', nickname = 'ทดสอบ', national_id = '1234567890123',
+  photo = 'data:image/jpeg;base64,AAAA' WHERE name = 'หลานทดสอบ';
+SELECT t.ok((SELECT national_id = '1234567890123' AND nickname = 'ทดสอบ' FROM public.persons WHERE name = 'หลานทดสอบ'),
+            'บันทึกข้อมูลส่วนบุคคล (คำนำหน้า · ชื่อเล่น · เลขบัตร · รูป) ได้');
+SELECT t.fails($$UPDATE public.persons SET national_id = '123-45' WHERE name = 'หลานทดสอบ'$$, 'persons_national_id_format',
+  'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก');
+SELECT t.fails($$UPDATE public.persons SET photo = 'javascript:alert(1)' WHERE name = 'หลานทดสอบ'$$, 'persons_photo_format',
+  'รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพเท่านั้น');
 RESET ROLE;
 
 \echo '== 14. Views'

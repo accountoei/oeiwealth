@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { PERSON_STATUS_LABEL, RELATIONSHIP_LABEL } from "@/lib/format";
@@ -14,7 +15,7 @@ export default async function MembersPage() {
 
   const [{ data: family }, { data: persons, error }] = await Promise.all([
     supabase.from("families").select("name").maybeSingle(),
-    supabase.from("persons").select("id,name,relationship,status").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,relationship,status,photo,nickname").is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   const list = persons ?? [];
 
@@ -35,7 +36,7 @@ export default async function MembersPage() {
         <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
         <p className="mb-3 text-xs text-slate-500">
           รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
-          {canEdit && " · กด ↑ ↓ เพื่อจัดลำดับ"}
+          {canEdit && " · กด ↑ ↓ เพื่อจัดลำดับ"} · กดรูปหรือ &ldquo;ข้อมูลส่วนตัว&rdquo; เพื่อดู / แก้รายละเอียดของแต่ละคน
         </p>
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         <div className="divide-y divide-slate-100">
@@ -55,9 +56,15 @@ export default async function MembersPage() {
                   </form>
                 </div>
               )}
-              {canEdit ? <PersonRow p={p} /> : (
+              <Link href={`/family/members/${p.id}`} className="flex items-center gap-2" title="ดูข้อมูลส่วนตัว">
+                {p.photo
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={p.photo} alt="" className="h-9 w-9 rounded-full object-cover" />
+                  : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm text-slate-500">{p.name.slice(0, 1)}</span>}
+              </Link>
+              {canEdit ? <><PersonRow p={p} /><Link href={`/family/members/${p.id}`} className="text-xs text-blue-700 hover:underline">ข้อมูลส่วนตัว →</Link></> : (
                 <div className="text-sm">
-                  {p.name}
+                  <Link href={`/family/members/${p.id}`} className="text-blue-700 hover:underline">{p.name}</Link>{p.nickname && ` (${p.nickname})`}
                   <span className="ml-2 text-xs text-slate-500">
                     {RELATIONSHIP_LABEL[p.relationship ?? ""] ?? ""}{p.status !== "ACTIVE" && ` · ${PERSON_STATUS_LABEL[p.status]}`}
                   </span>
