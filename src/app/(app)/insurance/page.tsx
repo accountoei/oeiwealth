@@ -16,7 +16,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     searchParams.then((sp) => loadPersonView(sp.p)),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status")
       .order("status").order("insurer"),
-    supabase.from("persons").select("id,name"),
+    supabase.from("persons").select("id,name").order("sort_order"),
     supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
     supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency").is("deleted_at", null),
     supabase.from("insurance_claims").select("coverage_id,claimed_amount,received_amount,status,claim_date").is("deleted_at", null)

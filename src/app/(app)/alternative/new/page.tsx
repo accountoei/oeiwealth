@@ -8,7 +8,7 @@ export default async function NewAlternativePage() {
   const supabase = await createClient();
   const [{ data: family }, { data: persons }, { data: cats }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("asset_categories").select("id,category_name,family_id").is("deleted_at", null).eq("active", true).order("family_id", { nullsFirst: true }).order("category_name"),
   ]);
   if (me.role === "VIEWER") return <p className="text-sm text-slate-600">สิทธิ์ผู้ดูเพิ่มรายการไม่ได้</p>;

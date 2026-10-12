@@ -15,7 +15,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const { data: persons } = await supabase.from("persons").select("id,name").is("deleted_at", null).neq("status", "DECEASED").order("created_at");
+  const { data: persons } = await supabase.from("persons").select("id,name").is("deleted_at", null).neq("status", "DECEASED").order("sort_order").order("created_at");
   const list = persons ?? [];
   const pid = list.some((p) => p.id === sp.p) ? (sp.p as string) : me.person_id && list.some((p) => p.id === me.person_id) ? me.person_id : list[0]?.id;
   const canWrite = me.role !== "VIEWER";

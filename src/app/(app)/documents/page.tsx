@@ -26,7 +26,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     supabase.from("assets").select("id,name,asset_group,asset_type,status").is("deleted_at", null).order("name"),
     supabase.from("liabilities").select("id,name,status").is("deleted_at", null).order("name"),
     supabase.from("insurance_policies").select("id,insurer,policy_no,status,persons(name)").is("deleted_at", null).order("insurer"),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("v_documents_status").select("id,title,document_type,expiry_date,derived_status,mime_type")
       .eq("version_status", "CURRENT").not("derived_status", "is", null).order("expiry_date"),
@@ -50,7 +50,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   const polName = (p: { insurer: string; policy_no: string | null; persons: unknown }) =>
     [p.insurer, p.policy_no, one(p.persons as { name: string } | null)?.name].filter(Boolean).join(" · ");
   (pols ?? []).forEach((p) => label.set(`INSURANCE_POLICY:${p.id}`, { name: polName(p), href: `/insurance/${p.id}` }));
-  (persons ?? []).forEach((p) => label.set(`PERSON:${p.id}`, { name: p.name, href: "/settings/family-users#members" }));
+  (persons ?? []).forEach((p) => label.set(`PERSON:${p.id}`, { name: p.name, href: "/family/members" }));
   const cardName = (c: { issuer: string; card_name: string | null; card_last4: string | null }) =>
     [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ");
   (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: "/family/cards" }));

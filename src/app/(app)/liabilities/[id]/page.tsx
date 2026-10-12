@@ -24,7 +24,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
     supabase.from("liability_valuations").select("id,valuation_date,balance,source,notes")
       .eq("liability_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!l) notFound();
 

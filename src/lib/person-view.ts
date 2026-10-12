@@ -11,7 +11,7 @@ export type PersonOpt = { id: string; name: string };
  */
 export async function loadPersonView(p: string | undefined, opts: { liabilities?: boolean } = {}) {
   const supabase = await createClient();
-  const { data } = await supabase.from("persons").select("id,name").is("deleted_at", null).order("created_at");
+  const { data } = await supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order").order("created_at");
   const persons = (data ?? []) as PersonOpt[];
   const personId = p && persons.some((x) => x.id === p) ? p : "";
   const personName = persons.find((x) => x.id === personId)?.name ?? "";

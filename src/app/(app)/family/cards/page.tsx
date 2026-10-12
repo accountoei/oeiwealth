@@ -21,7 +21,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   const [pv, { data, error }, { data: persons }, { data: family }, { data: paidAfter }, { data: members }, { data: points }] = await Promise.all([
     searchParams.then((sp) => loadPersonView(sp.p)),
     supabase.from("credit_cards").select("*, persons(name)").is("deleted_at", null).order("status").order("issuer"),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("created_at"),
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_liabilities_all").select("source_id").eq("liability_source", "CREDIT_CARD")
       .eq("derived_status", "PAID_AFTER_BALANCE_DATE"),

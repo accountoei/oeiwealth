@@ -32,7 +32,8 @@ const STATUS_LABEL: Record<string, string> = { READY: "พร้อม", WARN: "
 // ลิงก์ไปหน้าที่ใช้แก้รายการนั้น (หน้าที่ยังไม่ทำจะเป็นหน้า "อยู่ระหว่างพัฒนา")
 function fixLink(r: Row): string {
   switch (r.entity_type) {
-    case "PERSON": case "APP_USER": return "/settings/family-users";
+    case "PERSON": return "/family/members";
+    case "APP_USER": return "/settings/family-users";
     case "FX_RATE": return "/settings/system";
     case "CREDIT_CARD": return "/family/cards";
     case "LIABILITY": return r.entity_id ? `/liabilities/${r.entity_id}` : "/liabilities";
