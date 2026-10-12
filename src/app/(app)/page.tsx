@@ -533,7 +533,13 @@ function TrendChart({ points, selected }: { points: { label: string; date: strin
   const x = (i: number) => L + (i * (W - L - R)) / (points.length - 1);
   const y = (v: number) => T + ((hi - v) * (H - T - B)) / (hi - lo);
   const ticks = [0, 0.5, 1].map((f) => lo + (hi - lo) * f);
-  const fmt = (v: number) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(0)}K` : v.toFixed(0));
+  // ทศนิยมแกนปรับตามช่วงยอด: ยอดขยับน้อย → แสดงละเอียดขึ้น (กันป้ายซ้ำกัน เช่น 209.4M สามบรรทัด)
+  const step = (hi - lo) / 2;
+  const fmt = (v: number) => {
+    const [div, unit] = Math.abs(v) >= 1e6 ? [1e6, "M"] : Math.abs(v) >= 1e3 ? [1e3, "K"] : [1, ""];
+    const d = Math.min(4, Math.max(unit === "M" ? 1 : 0, Math.ceil(-Math.log10(step / div))));
+    return `${(v / div).toFixed(d)}${unit}`;
+  };
   const path = points.map((pt, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(pt.v).toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="กราฟ Net Worth">
