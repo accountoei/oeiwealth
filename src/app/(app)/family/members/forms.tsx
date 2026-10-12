@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { addPerson, updateFamilyName, updatePerson, type ActionState } from "./actions";
-import { PERSON_STATUS_LABEL, RELATIONSHIP_LABEL } from "@/lib/format";
+import { addPerson, updateFamilyName, type ActionState } from "./actions";
+import { RELATIONSHIP_LABEL } from "@/lib/format";
 
 const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
 const btn = "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -41,22 +41,6 @@ export function AddPersonForm() {
       <RelationshipSelect />
       <input name="birth_date" type="date" className={input} aria-label="วันเกิด" />
       <button disabled={pending} className={btn}>เพิ่มสมาชิก</button>
-      <Msg s={state} />
-    </form>
-  );
-}
-
-export function PersonRow({ p }: { p: { id: string; name: string; relationship: string | null; status: string } }) {
-  const [state, action, pending] = useActionState(updatePerson, {});
-  return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
-      <input type="hidden" name="id" value={p.id} />
-      <input name="name" defaultValue={p.name} required className={`${input} min-w-40`} />
-      <RelationshipSelect defaultValue={p.relationship ?? ""} />
-      <select name="status" defaultValue={p.status} className={input}>
-        {Object.entries(PERSON_STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-      </select>
-      <button disabled={pending} className={btn}>บันทึก</button>
       <Msg s={state} />
     </form>
   );
