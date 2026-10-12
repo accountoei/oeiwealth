@@ -89,6 +89,7 @@ export function PersonDetailsForm({ p, others }: { p: PersonDetails; others: { i
             {p.status !== "DECEASED" && <p className="self-end text-xs text-amber-700 md:col-span-3">ตั้งเป็น Archived → ระบบจะสร้างรายการติดตามกรมธรรม์ที่เกี่ยวข้องให้ (เคลม / เวนคืน / เปลี่ยนผู้รับผลประโยชน์) และซ่อนจากรายชื่อหลัก</p>}
           </>
         )}
+        {p.status === "DECEASED" && status !== "DECEASED" && <p className="text-xs text-amber-700 md:col-span-4">เปลี่ยนจาก Archived → รายการติดตามกรมธรรม์ที่ยังไม่เริ่มจะถูกปิดเป็น &ldquo;ไม่ต้องทำ&rdquo; ให้เอง (ถ้าตั้ง Archived อีกครั้ง จะเปิดกลับให้)</p>}
         {status === "INACTIVE" && <p className="text-xs text-slate-500 md:col-span-4">Inactive: ไม่ขึ้นในช่องเลือกคนตอนสร้างรายการใหม่ · รายการเดิมยังอยู่และนับใน Net Worth ตามปกติ</p>}
         <label className={label}>คำนำหน้า
           <input name="title_prefix" list="title-prefixes" defaultValue={p.title_prefix ?? ""} className={input} />

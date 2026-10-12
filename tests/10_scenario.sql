@@ -608,6 +608,16 @@ SELECT t.ok((SELECT count(*) FROM public.insurance_followups WHERE person_id = t
             'เสียชีวิต → รายการติดตาม 3 บทบาท (ผู้เอาประกัน · ผู้จ่ายเบี้ย · ผู้รับประโยชน์)');
 UPDATE public.persons SET notes = 'x' WHERE name = 'ญาติทดสอบ';
 SELECT t.ok((SELECT count(*) FROM public.insurance_followups) = 3, 'แก้ข้อมูลอื่นของสมาชิก → ไม่สร้างรายการซ้ำ');
+-- กลับจาก Archived → ปิดรายการที่ยังไม่เริ่มให้เอง · Archived อีกครั้ง → เปิดกลับ
+UPDATE public.insurance_followups SET status = 'IN_PROGRESS' WHERE person_id = t.p('ญาติทดสอบ') AND role = 'BENEFICIARY';
+UPDATE public.persons SET status = 'ACTIVE' WHERE name = 'ญาติทดสอบ';
+SELECT t.ok((SELECT count(*) FROM public.insurance_followups WHERE person_id = t.p('ญาติทดสอบ') AND status = 'NOT_APPLICABLE' AND auto_closed) = 2
+            AND (SELECT status = 'IN_PROGRESS' AND NOT auto_closed FROM public.insurance_followups WHERE person_id = t.p('ญาติทดสอบ') AND role = 'BENEFICIARY'),
+            'กลับเป็น Active → รายการที่ยังไม่เริ่มปิดให้เอง · ที่กำลังทำไม่แตะ');
+UPDATE public.persons SET status = 'DECEASED' WHERE name = 'ญาติทดสอบ';
+SELECT t.ok((SELECT count(*) FROM public.insurance_followups WHERE person_id = t.p('ญาติทดสอบ') AND status = 'OPEN' AND NOT auto_closed) = 2
+            AND (SELECT count(*) FROM public.insurance_followups WHERE person_id = t.p('ญาติทดสอบ') AND deleted_at IS NULL) = 3,
+            'ตั้ง Archived อีกครั้ง → รายการที่ระบบปิดไว้เปิดกลับ · ไม่สร้างซ้ำ');
 -- เพิ่มมูลค่าเวนคืนให้กรมธรรม์ที่มีอยู่แล้ว
 INSERT INTO tp SELECT 'cv2', public.add_insurance_cash_value((SELECT id FROM tp WHERE k = 'life2'), jsonb_build_object(
   'value', 55000, 'valuation_date', current_date, 'owner_person_id', t.p('คุณแม่'), 'notes', 'เวนคืน 50,000 + ปันผลสะสม 5,000'));
