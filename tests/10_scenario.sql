@@ -618,6 +618,24 @@ SELECT t.ok((SELECT has_cash_value AND cash_value_asset_id = (SELECT id FROM tp 
             'เพิ่มมูลค่าเวนคืนให้กรมธรรม์เดิม → สินทรัพย์ 55,000 ผูกกรมธรรม์ · เจ้าของตามที่เลือก');
 SELECT t.fails($$SELECT public.add_insurance_cash_value((SELECT id FROM tp WHERE k = 'life2'),
   '{"value":1,"valuation_date":"2026-10-01"}')$$, 'มีมูลค่าเวนคืนแล้ว', 'เพิ่มมูลค่าเวนคืนซ้ำไม่ได้');
+-- เจ้าของมูลค่าเวนคืน = ผู้เอาประกัน · แก้ผู้เอาประกัน → ย้ายตาม
+UPDATE public.insurance_policies SET person_id = t.p('คุณพ่อ') WHERE id = (SELECT id FROM tp WHERE k = 'life2');
+SELECT t.ok((SELECT count(*) = 1 AND bool_and(person_id = t.p('คุณพ่อ') AND ownership_percent = 100) FROM public.asset_ownerships
+              WHERE asset_id = (SELECT id FROM tp WHERE k = 'cv2') AND deleted_at IS NULL AND end_date IS NULL),
+            'แก้ผู้เอาประกัน → เจ้าของมูลค่าเวนคืนย้ายตาม (100%)');
+SELECT public.set_asset_ownership((SELECT id FROM tp WHERE k = 'cv2'), jsonb_build_array(
+  jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 50), jsonb_build_object('person_id', t.p('คุณแม่'), 'percent', 50)));
+UPDATE public.insurance_policies SET person_id = t.p('คุณแม่') WHERE id = (SELECT id FROM tp WHERE k = 'life2');
+SELECT t.ok((SELECT count(*) FROM public.asset_ownerships
+              WHERE asset_id = (SELECT id FROM tp WHERE k = 'cv2') AND deleted_at IS NULL AND end_date IS NULL) = 2,
+            'เจ้าของมูลค่าเวนคืนแบบพิเศษ (50/50) → แก้ผู้เอาประกันแล้วไม่แตะ');
+INSERT INTO tp SELECT 'life3', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณพ่อ'), 'insurer', 'ชีวิตทดสอบ 3', 'currency', 'THB',
+  'has_cash_value', true, 'cash_value', 1000, 'cash_value_date', current_date));
+SELECT t.ok((SELECT o.person_id = t.p('คุณพ่อ') AND o.ownership_percent = 100
+               FROM public.insurance_policies i JOIN public.asset_ownerships o ON o.asset_id = i.cash_value_asset_id AND o.deleted_at IS NULL
+              WHERE i.id = (SELECT id FROM tp WHERE k = 'life3')),
+            'สร้างกรมธรรม์ไม่ระบุเจ้าของ → เจ้าของมูลค่าเวนคืน = ผู้เอาประกัน 100%');
 SELECT t.login('00000000-0000-0000-0000-00000000000c');
 SELECT t.fails($$SELECT public.add_insurance_cash_value((SELECT id FROM tp WHERE k = 'health'),
   jsonb_build_object('value', 1, 'valuation_date', current_date))$$, 'PERMISSION_DENIED', 'CONTRIBUTOR เพิ่มมูลค่าเวนคืนไม่ได้');

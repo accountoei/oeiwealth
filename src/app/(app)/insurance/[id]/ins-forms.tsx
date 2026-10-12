@@ -282,8 +282,8 @@ export function CoverageForm({ policyId, currency }: { policyId: string; currenc
   );
 }
 
-export function AddCashValueForm({ policyId, currency, persons, defaultOwner, today, goLive }: {
-  policyId: string; currency: string; persons: Person[]; defaultOwner: string | null; today: string; goLive: string;
+export function AddCashValueForm({ policyId, currency, today, goLive }: {
+  policyId: string; currency: string; today: string; goLive: string;
 }) {
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(today);
@@ -301,11 +301,7 @@ export function AddCashValueForm({ policyId, currency, persons, defaultOwner, to
           className={`mt-1 block w-full ${small}`} />
       </label>
       {opening && <p className="text-xs text-amber-700">ก่อนวันเริ่มใช้ระบบ → บันทึกเป็นยอดตั้งต้น</p>}
-      <label className="block text-xs">เจ้าของมูลค่าเวนคืน
-        <select name="owner_person_id" defaultValue={defaultOwner ?? ""} className={`mt-1 block w-full ${small}`}>
-          {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </label>
+      <p className="text-xs text-slate-500">เจ้าของมูลค่าเวนคืน = ผู้เอาประกัน 100% (กรณีพิเศษแก้ได้ภายหลัง)</p>
       <label className="block text-xs">หมายเหตุ
         <input name="notes" placeholder="เช่น เวนคืน 80,000 + ปันผลสะสม 20,000" className={`mt-1 block w-full ${small}`} />
       </label>
