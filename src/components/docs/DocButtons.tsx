@@ -10,17 +10,16 @@ export function OpenDoc({ id, title, mime }: { id: string; title: string; mime?:
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   async function go(mode: "view" | "download") {
-    setErr(""); setBusy(mode);
-    const w = mode === "view" ? window.open("", "_blank") : null;      // เปิดแท็บก่อน กัน Popup Blocker
+    setErr("");
+    // เปิด: ไปหน้าดูเอกสารของระบบในแท็บใหม่ (หน้านั้นโหลดไฟล์และแสดงเอง)
+    if (mode === "view") { window.open(`/view/${id}`, "_blank"); return; }
+    setBusy(mode);
     try {
       const r = await callDrive({ action: "download", id, mode });
       const url = URL.createObjectURL(await r.blob());
-      if (w) { w.location.href = url; } else {
-        const a = document.createElement("a"); a.href = url; a.download = title + extFromMime(mime); document.body.appendChild(a); a.click(); a.remove();
-      }
+      const a = document.createElement("a"); a.href = url; a.download = title + extFromMime(mime); document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      w?.close();
       setErr(e instanceof Error ? e.message : String(e));
     } finally { setBusy(""); }
   }
