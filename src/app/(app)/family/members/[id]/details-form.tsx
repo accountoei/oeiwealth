@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { updatePersonDetails, type ActionState } from "../actions";
 import { PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
 
@@ -33,7 +34,7 @@ async function resizePhoto(file: File): Promise<string> {
 export function PersonDetailsForm({ p, others, isHead = false, headCandidates = [] }: {
   p: PersonDetails; others: { id: string; name: string }[]; isHead?: boolean; headCandidates?: { id: string; name: string }[];
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [photo, setPhoto] = useState<string | null>(p.photo);
   const [newPhoto, setNewPhoto] = useState("");
   const [clear, setClear] = useState(false);
@@ -41,7 +42,8 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
   const [status, setStatus] = useState(p.status);
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePersonDetails, {});
 
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">แก้ไขข้อมูล</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>แก้ไขข้อมูล</button>;
+  if (!open) return trigger;
 
   async function pick(f: File | undefined) {
     setPhotoErr("");
@@ -50,7 +52,7 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
     catch (e) { setPhotoErr(e instanceof Error ? e.message : String(e)); }
   }
 
-  return (
+  return present(trigger, (
     <form action={action} className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="id" value={p.id} />
       <input type="hidden" name="photo" value={newPhoto} />
@@ -153,5 +155,5 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }

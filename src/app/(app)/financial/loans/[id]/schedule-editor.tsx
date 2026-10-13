@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { saveSchedule, type ActionState } from "../actions";
 import { generateSchedule, parseScheduleRows, parseScheduleText, PAYMENT_LABEL, scheduleToText, SCHED_METHOD_LABEL,
   type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
@@ -24,7 +25,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   assetId: string; currency: string; current: SchedLine[]; hasSchedule: boolean;
   defaults: { amount: number; ratePct: number; firstDue: string; interestFrom?: string };
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState<Mode>(hasSchedule ? "TEXT" : "FORMULA");
   const [text, setText] = useState(() => scheduleToText(current));
   const [generated, setGenerated] = useState<SchedLine[] | null>(null);
@@ -50,7 +51,8 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const totI = lines.reduce((s, l) => s + l.interest, 0);
   const byPayment = basis === "PAYMENT" && method !== "INTEREST_ONLY";
 
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={hasSchedule ? obtn : btn}>{hasSchedule ? "แก้ตารางผ่อนทั้งชุด" : "+ ตั้งตารางผ่อน"}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(hasSchedule ? obtn : btn)}>{hasSchedule ? "แก้ตารางผ่อนทั้งชุด" : "+ ตั้งตารางผ่อน"}</button>;
+  if (!open) return trigger;
 
   // อ่านแผ่นงาน → ข้อความในช่อง (ใช้หัวตาราง "เงินต้น" / "ดอกเบี้ย" · ข้ามแถวยอด 0 · วันที่ พ.ศ. แปลงให้)
   const pickSheet = (list: XSheet[], name: string) => {
@@ -85,7 +87,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
     if (!r.error) setText(scheduleToText(r.lines));   // ส่งต่อให้วิธีที่ 2 แก้ทีละงวดได้
   };
 
-  return (
+  return present(trigger, (
     <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/40 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -211,5 +213,5 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
         <span className="text-xs text-slate-500">เงินต้นตามตารางควรรวมเท่ากับยอดเงินต้นของสัญญา (ใช้คำนวณว่างวดไหนรับแล้ว)</span>
       </form>
     </div>
-  );
+  ));
 }

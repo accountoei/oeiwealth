@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { addUnderlying, recordTx, saveFcn, type ActionState } from "../../../actions";
 import { COUPON_FREQ_LABEL } from "@/lib/format";
 import { CashAccountSelect, type CashAcct } from "../../forms";
@@ -25,12 +26,13 @@ export type Fcn = {
 
 
 export function FcnForm({ assetId, holdingId, fcn, defaultPrincipal }: { assetId: string; holdingId: string; fcn: Fcn | null; defaultPrincipal?: number | null }) {
-  const [open, setOpen] = useState(!fcn);
+  const { open, setOpen, present, activeCls } = useActionSlot(!fcn);
   const [state, action, pending] = useActionState<ActionState, FormData>(saveFcn, {});
   const [knock, setKnock] = useState(!!fcn?.knock_in_occurred);
-  if (!open) return <button onClick={() => setOpen(true)} className="text-sm text-slate-600 underline">แก้รายละเอียด</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-sm text-slate-600 underline")}>แก้รายละเอียด</button>;
+  if (!open) return trigger;
   const v = (x: number | null | undefined) => (x == null ? "" : String(Number(x)));
-  return (
+  return present(trigger, (
     <form action={action} className="space-y-3">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holdingId} />
@@ -59,14 +61,15 @@ export function FcnForm({ assetId, holdingId, fcn, defaultPrincipal }: { assetId
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addUnderlying, {});
-  if (!open) return <button onClick={() => setOpen(true)} className="text-sm text-slate-600 underline">+ เพิ่มหุ้นอ้างอิง</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-sm text-slate-600 underline")}>+ เพิ่มหุ้นอ้างอิง</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="fcn_id" value={fcnId} />
@@ -79,19 +82,20 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <Msg s={state} />
     </form>
-  );
+  ));
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ */
 export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, cashAccounts, today, minDate }: {
   assetId: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
   const list = banks.filter((b) => b.currency === currency);
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>{isFcn ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>{isFcn ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holdingId} />
@@ -127,5 +131,5 @@ export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, cashAcc
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }

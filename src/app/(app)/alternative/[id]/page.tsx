@@ -11,6 +11,7 @@ import AssetValuationForm from "@/components/AssetValuationForm";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { ActionBar } from "@/components/ActionBar";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 
@@ -84,10 +85,10 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
       )}
 
       {canWrite && a.status === "ACTIVE" && (
-        <div className="flex flex-wrap gap-2">
+        <ActionBar>
           <PayAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
           <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
-        </div>
+        </ActionBar>
       )}
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
         paths={paths} canWrite={canWrite} canDelete={canDelete} />

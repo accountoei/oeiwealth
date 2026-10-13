@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import {
   addUtility, addValuation, createLease, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
   updatePropertyInfo, type ActionState,
@@ -64,10 +65,11 @@ export function SuggestVacant({ assetId }: { assetId: string }) {
 export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, label }: {
   assetId: string; banks: Bank[]; goLive: string; currency: string; carryOptions: CarryOption[]; label: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(createLease, {});
-  if (!open) return <button onClick={() => setOpen(true)} className={btn}>{label}</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>{label}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">สัญญาเช่าใหม่</h3>
@@ -79,18 +81,19 @@ export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, l
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 export function RecordRentForm({ assetId, leaseId, period, expected, currency, banks, today }: {
   assetId: string; leaseId: string; period: string; expected: number; currency: string; banks: Bank[]; today: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordRent, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>บันทึกรับ</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกรับ</button>;
+  if (!open) return trigger;
   const sameCcy = banks.filter((b) => b.currency === currency);
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="lease_id" value={leaseId} />
@@ -112,15 +115,16 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }
 
 export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
   { assetId: string; leaseId: string; today: string; startDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(terminateLease, {});
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>เลิกสัญญาก่อนกำหนด</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>เลิกสัญญาก่อนกำหนด</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="lease_id" value={leaseId} />
@@ -132,21 +136,22 @@ export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
       <p className="w-full text-xs text-slate-500">ระบบหยุดคาดค่าเช่าหลังวันนี้ · เงินประกันยังเป็นหนี้จนกว่าจะบันทึกคืน</p>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }
 
 export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, minDate, today }: {
   assetId: string; leaseId: string; deposit: number; currency: string; banks: Bank[]; minDate: string; today: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [refund, setRefund] = useState(String(deposit));
   const [asIncome, setAsIncome] = useState(true);
   const [state, action, pending] = useActionState<ActionState, FormData>(settleDeposit, {});
   const deduct = deposit - (Number(refund.replace(/,/g, "")) || 0);
   if (state.ok) return <p className="text-xs text-emerald-700">{state.ok}</p>;
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>คืน / หักเงินประกัน</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>คืน / หักเงินประกัน</button>;
+  if (!open) return trigger;
   const sameCcy = banks.filter((b) => b.currency === currency);
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="lease_id" value={leaseId} />
@@ -186,7 +191,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
       </div>
       <Msg s={state} />
     </form>
-  );
+  ));
 }
 
 type Info = { asset_id: string; name: string; notes: string | null; acquisition_date: string | null; acquisition_cost: number | null;
@@ -240,16 +245,17 @@ export type PropertyPick = { id: string; assetId: string; name: string; currency
 export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false }: {
   assetId?: string; propertyId?: string; currency?: string; properties?: PropertyPick[]; label?: string; tracked?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [freq, setFreq] = useState(tracked ? "MONTHLY" : "");
   const [type, setType] = useState("COMMON_FEE");
   const [pick, setPick] = useState(properties?.[0]?.id ?? "");
   const [state, action, pending] = useActionState<ActionState, FormData>(addUtility, {});
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>{label}</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>{label}</button>;
+  if (!open) return trigger;
   const meter = type === "ELECTRICITY" || type === "WATER";
   const chosen = properties?.find((x) => x.id === pick);
   const ccy = chosen?.currency ?? currency ?? "THB";
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="asset_id" value={chosen?.assetId ?? assetId ?? ""} />
       <input type="hidden" name="property_id" value={chosen?.id ?? propertyId ?? ""} />
@@ -305,7 +311,7 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 type Card = { id: string; label: string; currency: string };
@@ -316,14 +322,15 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
   assetId: string; utilityId: string; period: string; label: string; expected: number; currency: string; category: string;
   banks: Bank[]; cards: Card[]; persons: Person[]; today: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button onClick={() => setOpen(true)} className={link}>บันทึกจ่าย</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกจ่าย</button>;
+  if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
   const sameCards = cards.filter((c) => c.currency === currency);
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="utility_id" value={utilityId} />
@@ -368,5 +375,5 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }

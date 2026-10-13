@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, type ActionState } from "../actions";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, money, thDate } from "@/lib/format";
@@ -30,7 +31,7 @@ function Msg({ s }: { s: ActionState }) {
 export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultAmount, defaultFirstDue }: {
   policyId: string; kind: "PREMIUM" | "BENEFIT"; currency: string; hasLines: boolean; defaultAmount?: number; defaultFirstDue: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState<"FORMULA" | "TEXT">("FORMULA");
   const [amount, setAmount] = useState(defaultAmount ? defaultAmount.toFixed(2) : "");
   const [every, setEvery] = useState(kind === "PREMIUM" ? "12" : "24");
@@ -50,7 +51,8 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
   const total = lines.reduce((s, l) => s + l.amount, 0);
   const label = kind === "PREMIUM" ? "ตารางเบี้ย" : "ตารางรับผลประโยชน์";
 
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={hasLines ? obtn : btn}>{hasLines ? `แก้${label} (งวดที่ยังไม่ชำระ)` : `+ ตั้ง${label}`}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(hasLines ? obtn : btn)}>{hasLines ? `แก้${label} (งวดที่ยังไม่ชำระ)` : `+ ตั้ง${label}`}</button>;
+  if (!open) return trigger;
 
   const calc = () => {
     const r = generateAmountSchedule({ amount: num(amount), everyMonths: Number(every), firstDue: first,
@@ -74,7 +76,7 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
   // ส่งชนิดผลประโยชน์ไปกับทุกงวด (ทางที่ 2 ใช้ค่าที่เลือก)
   const payload = lines.map((l) => ({ ...l, benefit_type: kind === "BENEFIT" ? btype : undefined }));
 
-  return (
+  return present(trigger, (
     <div className="w-full space-y-3 rounded-xl border border-blue-200 bg-blue-50/40 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -158,7 +160,7 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
         <Msg s={state} />
       </form>
     </div>
-  );
+  ));
 }
 
 /** บันทึกจ่ายเบี้ยของงวด → ค่าใช้จ่ายหมวด "ประกัน" (บัญชี / บัตร / เงินสด) */
@@ -166,14 +168,15 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
   policyId: string; lineId: string; label: string; amount: number; currency: string;
   banks: Bank[]; cards: Card[]; persons: Person[]; defaultPerson?: string | null; today: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(payPremium, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={sbtn}>บันทึกจ่าย</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(sbtn)}>บันทึกจ่าย</button>;
+  if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
   const sameCards = cards.filter((c) => c.currency === currency);
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
       <input type="hidden" name="policy_id" value={policyId} />
       <input type="hidden" name="line_id" value={lineId} />
@@ -197,7 +200,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }
 
 /**
@@ -209,13 +212,14 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
   policyId: string; lineId?: string; amount?: number; currency: string; banks: Bank[]; persons: Person[];
   hasCashValue: boolean; cashValue?: number | null; today: string; button?: string; small?: boolean; canClose?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [outcome, setOutcome] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(receiveBenefit, {});
   if (state.ok && isSmall) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={isSmall ? sbtn : obtn}>{button}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(isSmall ? sbtn : obtn)}>{button}</button>;
+  if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
-  return (
+  return present(trigger, (
     <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-left">
       <input type="hidden" name="policy_id" value={policyId} />
       {lineId && <input type="hidden" name="line_id" value={lineId} />}
@@ -257,14 +261,15 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 export function CoverageForm({ policyId, currency }: { policyId: string; currency: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addCoverage, {});
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={obtn}>+ เพิ่มความคุ้มครอง</button>;
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ เพิ่มความคุ้มครอง</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="policy_id" value={policyId} />
       <input type="hidden" name="currency" value={currency} />
@@ -279,18 +284,19 @@ export function CoverageForm({ policyId, currency }: { policyId: string; currenc
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }
 
 export function AddCashValueForm({ policyId, currency, today, goLive }: {
   policyId: string; currency: string; today: string; goLive: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [date, setDate] = useState(today);
   const [state, action, pending] = useActionState<ActionState, FormData>(addCashValue, {});
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={`mt-2 ${sbtn}`}>+ เพิ่มมูลค่าเวนคืน</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(`mt-2 ${sbtn}`)}>+ เพิ่มมูลค่าเวนคืน</button>;
+  if (!open) return trigger;
   const opening = goLive !== "" && date !== "" && date < goLive;
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-left">
       <input type="hidden" name="policy_id" value={policyId} />
       <label className="block text-xs">มูลค่าเวนคืน + เงินปันผลสะสม ({currency})
@@ -311,5 +317,5 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
       </div>
       <Msg s={state} />
     </form>
-  );
+  ));
 }

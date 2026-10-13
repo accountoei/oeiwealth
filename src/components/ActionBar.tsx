@@ -1,0 +1,48 @@
+"use client";
+
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+// แถวปุ่มคำสั่ง: ปุ่มอยู่แถวบนตลอด · กดปุ่มไหน ฟอร์มนั้นเปิด "ใต้แถว" ทีละฟอร์ม (กดปุ่มอื่น = เปลี่ยนฟอร์ม · กดซ้ำ / ปิด = ปิด)
+// ฟอร์มที่อยู่นอก <ActionBar> ทำงานแบบเดิม (กางแทนที่ปุ่ม)
+type Ctx = { active: string | null; setActive: (k: string | null) => void; panel: HTMLElement | null };
+const BarCtx = createContext<Ctx | null>(null);
+
+export function ActionBar({ children, right, className = "" }: { children: ReactNode; right?: ReactNode; className?: string }) {
+  const [active, setActive] = useState<string | null>(null);
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  return (
+    <BarCtx.Provider value={{ active, setActive, panel }}>
+      <div className={className}>
+        <div className="flex flex-wrap items-start gap-2">
+          {children}
+          {right && <div className="ml-auto">{right}</div>}
+        </div>
+        <div ref={setPanel} className={active ? "mt-3" : ""} />
+      </div>
+    </BarCtx.Provider>
+  );
+}
+
+/**
+ * ใช้แทน useState(false) ของฟอร์มที่เปิดจากปุ่ม
+ *   const { open, setOpen, present, activeCls } = useActionSlot();
+ *   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(cls)}>…</button>;
+ *   if (!open) return trigger;
+ *   return present(trigger, <form>…</form>);
+ */
+export function useActionSlot(initial = false) {
+  const bar = useContext(BarCtx);
+  const id = useId();
+  const [local, setLocal] = useState(initial);
+  const setBarActive = bar?.setActive;
+  // เปิดฟอร์มค้างไว้ตั้งแต่แรก (เช่น มาจากลิงก์ที่สั่งให้เปิดฟอร์มนี้)
+  useEffect(() => { if (initial && setBarActive) setBarActive(id); }, [initial, setBarActive, id]);
+  const inBar = !!bar;
+  const open = bar ? bar.active === id : local;
+  const setOpen = (v: boolean) => (bar ? bar.setActive(v ? id : null) : setLocal(v));
+  const activeCls = (cls: string) => (inBar && open ? `${cls} ring-2 ring-blue-500 ring-offset-1` : cls);
+  const present = (trigger: ReactNode, form: ReactNode) =>
+    bar && bar.panel ? <>{trigger}{createPortal(form, bar.panel)}</> : <>{form}</>;
+  return { open, setOpen, present, activeCls, inBar };
+}

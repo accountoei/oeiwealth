@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { deleteEntity, updateRecord, type RecState } from "@/lib/records";
 import { updatePortfolio, type ActionState } from "../actions";
 import { CURRENCIES, PORTFOLIO_TYPE_LABEL } from "@/lib/format";
@@ -16,14 +17,15 @@ export function PortfolioEditPanel({ assetId, name, institution, portfolioType, 
   persons: { id: string; name: string }[]; owners: { person_id: string; percent: number }[]; paths: string[]; today: string;
   canEditDetails: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [ccy, setCcy] = useState(currency);
   const [confirm, setConfirm] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePortfolio, {});
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-700 underline">แก้ไขพอร์ต</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>แก้ไขพอร์ต</button>;
+  if (!open) return trigger;
   const ccyChanged = ccy !== currency;
   const ccyList = CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES];
-  return (
+  return present(trigger, (
     <div className="mt-2 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
       {canEditDetails && (
         <form action={action} className="space-y-3">
@@ -70,7 +72,7 @@ export function PortfolioEditPanel({ assetId, name, institution, portfolioType, 
       </div>
       <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
     </div>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ สถานะพอร์ต (+ ลบ เฉพาะ ADMIN) */

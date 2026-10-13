@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, type ActionState } from "../actions";
 
@@ -28,7 +29,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
   principal?: number; interest?: number; interestOwed?: number; principalDue?: number; title?: string; button?: string; small?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
   const [p, setP] = useState(amt(principal));
   const [i, setI] = useState(amt(interest));
@@ -59,9 +60,10 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
     );
   }
   if (state.ok && small) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button type="button" onClick={() => setOpen(true)}
-    className={small ? "rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" : btn}>{button}</button>;
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)}
+    className={activeCls(small ? "rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" : btn)}>{button}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">{title ?? "รับชำระเงินกู้"}</h3>
@@ -93,15 +95,16 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 export function DisburseForm({ assetId, currency, banks, today, minDate }: { assetId: string; currency: string; banks: Bank[]; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(disburseMore, {});
   const list = banks.filter((b) => b.currency === currency);
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>ให้กู้เพิ่ม</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>ให้กู้เพิ่ม</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">ให้กู้เพิ่ม</h3>
@@ -119,5 +122,5 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }

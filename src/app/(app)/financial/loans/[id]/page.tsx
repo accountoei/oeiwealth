@@ -12,6 +12,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ScheduleEditor } from "./schedule-editor";
 import { RestructureEditor } from "./restructure-editor";
 import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
+import { ActionBar } from "@/components/ActionBar";
 
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
@@ -130,12 +131,12 @@ export default async function LoanDetailPage({ params, searchParams }: {
       </section>
 
       {canWrite && l.status !== "CLOSED" && l.status !== "WRITTEN_OFF" && (
-        <div className="flex flex-wrap gap-2">
+        <ActionBar>
           <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
             interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
             principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
           <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
-        </div>
+        </ActionBar>
       )}
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">

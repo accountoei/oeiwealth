@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import {
   addCashAccount, addHolding, recordFx, recordMaturity, recordTx, saveValuations, transferCash, transferMoney, type ActionState,
 } from "../actions";
@@ -45,12 +46,13 @@ const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 /* ------------------------------------------------------------------ ยอดตั้งต้น */
 export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
   { assetId: string; currency: string; openingDate: string; isSetup: boolean }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addHolding, {});
   const [ccy, setCcy] = useState(currency);
   const [type, setType] = useState("EQUITY");
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>+ ยอดตั้งต้น</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ ยอดตั้งต้น</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <div>
@@ -92,7 +94,7 @@ export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ + รายการ */
@@ -104,7 +106,7 @@ const TX_TYPES: [string, string][] = [
 export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccounts, today, minDate }: {
   assetId: string; portfolioCurrency: string; holdings: Holding[]; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
   const [type, setType] = useState("BUY");
   const [holdingId, setHoldingId] = useState("");
@@ -134,7 +136,8 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
   const pickCash = (!canBank || mode === "cash") && h?.holding_type !== "CASH"
     && !(type === "ADJUSTMENT" && h && h.holding_type !== "CASH");
 
-  if (!open) return <button onClick={() => setOpen(true)} className={btn}>+ รายการ</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>+ รายการ</button>;
+  if (!open) return trigger;
 
   const summary: string[] = [];
   if (type === "BUY") summary.push(mode === "bank" ? `เงินออกจากบัญชีธนาคาร ${money(net, ccy)} (โอนเข้าพอร์ต)` : `หักเงินสดในพอร์ต ${money(net, ccy)}`);
@@ -145,7 +148,7 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
   }
   if (["FEE", "TAX"].includes(type)) summary.push(`หักเงินสดในพอร์ต ${money(gross, ccy)} (ลดผลตอบแทน ไม่ใช่ค่าใช้จ่ายครอบครัว)`);
 
-  return (
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">บันทึกรายการลงทุน</h3>
@@ -256,18 +259,19 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ โอนเงิน */
 export function TransferForm({ assetId, currency, banks, today, minDate }:
   { assetId: string; currency: string; banks: Bank[]; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(transferMoney, {});
   const [dir, setDir] = useState("IN");
   const list = banks.filter((b) => b.currency === currency);
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>โอนเงิน ธนาคาร ↔ พอร์ต</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>โอนเงิน ธนาคาร ↔ พอร์ต</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">โอนเงิน (Transfer Money)</h3>
@@ -300,21 +304,22 @@ export function TransferForm({ assetId, currency, banks, today, minDate }:
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ แลกเงินในพอร์ต */
 export function FxForm({ assetId, cashCurrencies, cashAccounts, today, minDate }:
   { assetId: string; cashCurrencies: string[]; cashAccounts: CashAcct[]; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordFx, {});
   const [from, setFrom] = useState(cashCurrencies[0] ?? "THB");
   const [to, setTo] = useState(cashCurrencies.find((c) => c !== (cashCurrencies[0] ?? "THB")) ?? (from === "THB" ? "USD" : "THB"));
   const [amt, setAmt] = useState("");
   const [got, setGot] = useState("");
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>แลกเงินในพอร์ต</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>แลกเงินในพอร์ต</button>;
+  if (!open) return trigger;
   const rate = n(amt) > 0 && n(got) > 0 ? (from === "THB" ? n(amt) / n(got) : to === "THB" ? n(got) / n(amt) : n(got) / n(amt)) : null;
-  return (
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">แลกเงินภายในพอร์ต (FX Exchange)</h3>
@@ -347,17 +352,18 @@ export function FxForm({ assetId, cashCurrencies, cashAccounts, today, minDate }
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ อัปเดตราคา (Statement) */
 export function ValuationsForm({ assetId, holdings, today, minDate }:
   { assetId: string; holdings: Holding[]; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(saveValuations, {});
   const list = holdings.filter((h) => h.status === "ACTIVE");
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>อัปเดตราคา / Statement</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>อัปเดตราคา / Statement</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -398,19 +404,20 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ ครบกำหนด */
 export function MaturityForm({ assetId, holding, banks, cashAccounts = [], today, minDate }:
   { assetId: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button onClick={() => setOpen(true)} className="text-xs text-slate-700 underline">ครบกำหนด</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>ครบกำหนด</button>;
+  if (!open) return trigger;
   const list = banks.filter((b) => b.currency === holding.currency);
-  return (
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holding.id} />
@@ -441,21 +448,22 @@ export function MaturityForm({ assetId, holding, banks, cashAccounts = [], today
       </div>
       <Msg s={state} />
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ โอนระหว่างบัญชีเงินสดในพอร์ต */
 export function CashTransferForm({ assetId, cashAccounts, today, minDate }:
   { assetId: string; cashAccounts: CashAcct[]; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(transferCash, {});
   const multi = cashAccounts.filter((a) => cashAccounts.filter((b) => b.currency === a.currency).length > 1);
   const [from, setFrom] = useState(multi[0]?.id ?? "");
   if (multi.length === 0) return null;
   const ccy = multi.find((a) => a.id === from)?.currency ?? "";
   const targets = multi.filter((a) => a.currency === ccy && a.id !== from);
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>โอนระหว่างบัญชีในพอร์ต</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>โอนระหว่างบัญชีในพอร์ต</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">โอนระหว่างบัญชีเงินสดในพอร์ต</h3>
@@ -482,17 +490,18 @@ export function CashTransferForm({ assetId, cashAccounts, today, minDate }:
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 /* ------------------------------------------------------------------ เพิ่มบัญชีเงินสดในพอร์ต */
 export function AddCashAccountForm({ assetId, currency, isSetup, openingDate }:
   { assetId: string; currency: string; isSetup: boolean; openingDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addCashAccount, {});
   const [ccy, setCcy] = useState(currency);
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>+ บัญชีเงินสด</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ บัญชีเงินสด</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <div>
@@ -519,5 +528,5 @@ export function AddCashAccountForm({ assetId, currency, isSetup, openingDate }:
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import {
   addExpense, addIncome, addMovement, addReimbursement, addTemplate, dismissExpected, setMonthStatus, toggleTemplate,
   type ActionState,
@@ -27,9 +28,10 @@ function Msg({ s }: { s: ActionState }) {
 const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 
 function Toggle({ label, children }: { label: string; children: (close: () => void) => React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return <button onClick={() => setOpen(true)} className={btn}>{label}</button>;
-  return <>{children(() => setOpen(false))}</>;
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>{label}</button>;
+  if (!open) return trigger;
+  return present(trigger, <>{children(() => setOpen(false))}</>);
 }
 
 /* ================================================================== รายได้ */
@@ -296,12 +298,13 @@ export function MonthStatusForm({ month, status }: { month: string; status: stri
 export function ReimbursementForm({ itemId, remaining, currency, banks, cards, claims = [], today, minDate }: {
   itemId: string; remaining: number; currency: string; banks: Bank[]; cards: Card[]; claims?: Claim[]; today: string; minDate: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState("bank");
   const [state, action, pending] = useActionState<ActionState, FormData>(addReimbursement, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  if (!open) return <button onClick={() => setOpen(true)} className="text-xs text-slate-800 underline">บันทึกเงินคืน</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-800 underline")}>บันทึกเงินคืน</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
       <input type="hidden" name="expense_item_id" value={itemId} />
       <label className="text-xs">ยอดเงินคืน (ค้าง {money(remaining, currency)})
@@ -335,7 +338,7 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, c
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }
 
 /* ================================================================== โอน / จ่ายบัตร / จ่ายหนี้ */

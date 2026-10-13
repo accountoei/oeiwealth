@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { addCapital, recordDividend, type ActionState } from "../actions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -9,9 +10,10 @@ type Bank = { asset_id: string; name: string; currency: string };
 function Box({ title, label, children, action, pending, state }: {
   title: string; label: string; children: React.ReactNode; action: (f: FormData) => void; pending: boolean; state: ActionState;
 }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">{label}</button>;
-  return (
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>{label}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">
       <h3 className="font-medium text-slate-900">{title}</h3>
       {children}
@@ -22,7 +24,7 @@ function Box({ title, label, children, action, pending, state }: {
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }
 
 export function DividendForm({ assetId, banks, today, minDate }: { assetId: string; banks: Bank[]; today: string; minDate: string }) {
