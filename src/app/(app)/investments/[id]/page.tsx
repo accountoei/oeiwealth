@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, todayBangkok,
+  HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import {
   AddCashAccountForm, CashTransferForm, FxForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm,
@@ -29,10 +29,12 @@ type Tx = { id: string; holding_id: string | null; transaction_date: string; set
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
 export default async function PortfolioDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ order?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ order?: string; tab?: string; m?: string; type?: string; h?: string }>;
 }) {
   const { id } = await params;
-  const orderMode = (await searchParams).order;     // "cash" | "sec" = โหมดจัดลำดับ
+  const sp = await searchParams;
+  const orderMode = sp.order;                       // "cash" | "sec" = โหมดจัดลำดับ
+  const tab = sp.tab === "ret" || sp.tab === "tx" ? sp.tab : "hold";   // แท็บ ถือครอง | ผลตอบแทน | รายการ
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
@@ -48,9 +50,23 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!a || !pf) notFound();
+  // แท็บรายการ: กรองเดือน (เริ่มที่เดือนล่าสุดที่มีรายการ) / ประเภท / หลักทรัพย์-บัญชี
+  const { data: lastTx } = await supabase.from("investment_transactions").select("transaction_date").eq("portfolio_id", pf.id)
+    .is("deleted_at", null).order("transaction_date", { ascending: false }).limit(1).maybeSingle();
+  const txMonth = sp.m === "all" || /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string)
+    : (lastTx?.transaction_date ?? todayBangkok()).slice(0, 7);
+  const txType = sp.type && /^[A-Z_]+$/.test(sp.type) ? sp.type : "";
+  const txHolding = sp.h && (hs ?? []).some((x: { id: string }) => x.id === sp.h) ? sp.h : "";
+  let txq = supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id);
+  if (txMonth !== "all") {
+    const [yy, mm] = txMonth.split("-").map(Number);
+    const end = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+    txq = txq.gte("transaction_date", `${txMonth}-01`).lte("transaction_date", end);
+  }
+  if (txType) txq = txq.eq("transaction_type", txType);
+  if (txHolding) txq = txq.or(`holding_id.eq.${txHolding},cash_holding_id.eq.${txHolding},counter_cash_holding_id.eq.${txHolding}`);
   const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }] = await Promise.all([
-    supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id)
-      .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(100),
+    txq.order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000),
     supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
       .not("source_transaction_id", "is", null).is("deleted_at", null),
     supabase.rpc("investment_returns", { p_portfolio_asset_id: id }),
@@ -95,6 +111,16 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const bankList = banks ?? [];
   const bankName = new Map(bankList.map((b) => [b.asset_id, b.name]));
   const txList = (txs as Tx[] | null) ?? [];
+  // ตัวเลือกเดือน: เดือนปัจจุบัน → เดือนยอดตั้งต้น (ใหม่สุดก่อน) + ทุกเดือน
+  const txMonths: { value: string; label: string }[] = [];
+  for (let m = today.slice(0, 7); txMonths.length < 240; ) {
+    txMonths.push({ value: m, label: thMonth(`${m}-01`) });
+    if (m <= openingDate.slice(0, 7)) break;
+    const [y, mo] = m.split("-").map(Number);
+    m = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, "0")}`;
+  }
+  if (txMonth !== "all" && !txMonths.some((x) => x.value === txMonth)) txMonths.unshift({ value: txMonth, label: thMonth(`${txMonth}-01`) });
+  txMonths.push({ value: "all", label: "ทุกเดือน" });
 
   return (
     <div className="space-y-6">
@@ -223,78 +249,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง) · กดชื่อบัญชีเพื่อแก้ไข</p>}
       </section>
 
-      {/* ------------------------------------------------ หลักทรัพย์ */}
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
-          <div className="flex items-baseline gap-3">
-            <h2 className="font-medium text-slate-900">หลักทรัพย์</h2>
-            {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
-          </div>
-          <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
-        </div>
-        <table className="mt-2 w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนเฉลี่ย</th>
-              <th className="px-3 text-right">ราคาล่าสุด</th><th className="px-3 text-right">มูลค่าตลาด</th><th className="px-3 text-right">มูลค่า (บาท)</th>
-              <th className="px-3 text-right">กำไร/ขาดทุนยังไม่รับรู้</th><th className="px-3 text-right">สัดส่วน</th>
-              {orderMode === "sec" && <th className="px-3"></th>}</tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {securities.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
-            {securities.map((h, k) => {
-              const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
-              const gain = cost != null && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null;
-              const v = thbOf(h);
-              const share = h.status === "ACTIVE" && v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
-              return (
-                <tr key={h.id} className={`align-top ${h.status !== "ACTIVE" ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-2.5">
-                    <div className="font-medium text-slate-900">
-                      <Link href={`/investments/${id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>
-                      {h.symbol && <span className="ml-1 text-xs text-slate-500">{h.symbol}</span>}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency}
-                      {h.status !== "ACTIVE" && ` · ${STATUS_LABEL[h.status] ?? h.status}`}
-                      {h.maturity_date && ` · ครบ ${thDate(h.maturity_date)}`}
-                      {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 text-right tabular-nums">{qty(h.quantity)}</td>
-                  <td className="px-3 text-right tabular-nums">{money(h.average_cost, undefined, 4)}</td>
-                  <td className="px-3 text-right tabular-nums">{money(h.current_price, undefined, 4)}</td>
-                  <td className="whitespace-nowrap px-3 text-right">
-                    <div className="tabular-nums">{money(h.current_value)}</div>
-                    <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>
-                      {h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-3 text-right">
-                    <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
-                    {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
-                  </td>
-                  <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                    {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? `${((gain / cost) * 100).toFixed(2)}%` : ""}</div></>}
-                  </td>
-                  <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
-                  {orderMode === "sec" && (
-                    <td className="px-3 py-2.5 text-right"><MoveButtons id={id} hid={h.id} first={k === 0} last={k === securities.length - 1} /></td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
-          มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตรา ธปท. ล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
-          · เงินสด {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
-          · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / ครบกำหนด
-        </p>
-      </section>
-
-      <ReturnsTable rows={(rets as Ret[] | null) ?? []} local={(retsLocal as RetLocal[] | null) ?? []}
-        portfolioCurrency={a.currency} rates={fxRates} hrefBase={`/investments/${id}/holding/`} />
-
       {(unsettled ?? []).length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
           <h2 className="font-medium text-amber-900">รอชำระ (Trade แล้ว ยังไม่ Settle)</h2>
@@ -309,77 +263,189 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         </section>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">รายการ (ล่าสุด 100 รายการ)</h2>
-        {txList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-slate-500">
-                <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
-                  <th className="text-right">ยอด</th><th className="text-right">เงินสดพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th><th></th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {txList.map((t) => {
-                  const bank = t.settle_from_asset_id ?? t.settle_to_asset_id;
-                  const cashEffect = bank || (t.cash_movement_id && ["DEPOSIT", "WITHDRAWAL"].includes(t.transaction_type)) ? null : Number(t.net_cash);
-                  return (
-                    <tr key={t.id} className="align-top">
-                      <td className="py-1.5">{thDate(t.transaction_date)}</td>
-                      <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
-                      <td className="text-slate-600">
-                        {t.transaction_type === "CASH_TRANSFER" ? `${acctName(t.cash_holding_id)} → ${acctName(t.counter_cash_holding_id)}`
-                          : t.transaction_type === "FX_EXCHANGE" ? `${acctName(t.cash_holding_id) || `เงินสด ${t.currency}`} → ${acctName(t.counter_cash_holding_id) || t.counter_currency}`
-                          : t.holding_id ? byId.get(t.holding_id)?.name : acctName(t.cash_holding_id) || "เงินสดพอร์ต"}
-                        {multiCash && t.holding_id && t.cash_holding_id && t.cash_holding_id !== t.holding_id && (
-                          <div className="text-xs text-slate-500">บัญชี: {acctName(t.cash_holding_id)}</div>
-                        )}
-                      </td>
-                      <td className="text-right tabular-nums text-slate-600">
-                        {t.quantity != null && t.price != null ? `${qty(t.quantity)} × ${money(t.price, undefined, 4)}` : t.quantity != null ? qty(t.quantity) : ""}
-                      </td>
-                      <td className="text-right tabular-nums">
-                        {money(t.amount)}{t.transaction_type === "FX_EXCHANGE" && <> {t.currency} → {money(t.counter_amount)} {t.counter_currency}</>}
-                        {t.transaction_type === "CASH_TRANSFER" && <> {t.currency}</>}
-                        {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && (
-                          <div className="text-xs text-slate-500">
-                            {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}
-                          </div>
-                        )}
-                      </td>
-                      <td className={`text-right tabular-nums ${cashEffect == null || cashEffect === 0 ? "text-slate-400" : cashEffect > 0 ? "text-emerald-700" : "text-red-700"}`}>
-                        {cashEffect == null ? "—" : cashEffect === 0 ? "0" : money(cashEffect)}
-                      </td>
-                      <td className="pl-4 text-xs text-slate-500">
-                        {bank && <div>{t.transaction_type === "BUY" ? "จ่ายจาก" : "เข้า"} {bankName.get(bank) ?? "บัญชีธนาคาร"}{t.settlement_date && ` · ${thDate(t.settlement_date)}`}
-                          {t.settlement_status === "UNSETTLED" && <span className="text-amber-700"> · รอชำระ</span>}</div>}
-                        {t.cash_movement_id && <div>สร้างจากการโอนเงิน (แก้ที่รายการโอน)</div>}
-                        {t.notes && <div>{t.notes}</div>}
-                      </td>
-                      <td className="pl-2 text-right">
-                        {canWrite && !t.cash_movement_id && (
-                          <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
-                            deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-                            fields={[
-                              ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
-                              ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date }] : []),
-                              ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
-                              ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-                              ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
-                              ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
-                              ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
-                              { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {/* ------------------------------------------------ หลักทรัพย์: แท็บ ถือครอง | ผลตอบแทน | รายการ */}
+      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 pt-3">
+          <nav className="flex gap-1 text-sm" aria-label="มุมมอง">
+            {([["hold", "ถือครอง"], ["ret", "ผลตอบแทน"], ["tx", "รายการ"]] as const).map(([k, l]) => (
+              <Link key={k} href={k === "hold" ? `/investments/${id}` : `/investments/${id}?tab=${k}`}
+                className={`-mb-px border-b-2 px-3 py-2 ${tab === k ? "border-blue-600 font-medium text-blue-700" : "border-transparent text-slate-600 hover:text-slate-900"}`}>
+                {l}
+              </Link>
+            ))}
+          </nav>
+          {tab === "hold" && (
+            <div className="flex items-baseline gap-3 pb-2">
+              {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
+              <span className="text-sm text-slate-500">รวมหลักทรัพย์ <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
+            </div>
+          )}
+        </div>
+
+        {tab === "hold" && (
+          <>
+          <table className="mt-2 w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนเฉลี่ย</th>
+                <th className="px-3 text-right">ราคาล่าสุด</th><th className="px-3 text-right">มูลค่าตลาด</th><th className="px-3 text-right">มูลค่า (บาท)</th>
+                <th className="px-3 text-right">กำไร/ขาดทุนยังไม่รับรู้</th><th className="px-3 text-right">สัดส่วน</th>
+                {orderMode === "sec" && <th className="px-3"></th>}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {securities.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
+              {securities.map((h, k) => {
+                const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
+                const gain = cost != null && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null;
+                const v = thbOf(h);
+                const share = h.status === "ACTIVE" && v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
+                return (
+                  <tr key={h.id} className={`align-top ${h.status !== "ACTIVE" ? "opacity-50" : ""}`}>
+                    <td className="px-4 py-2.5">
+                      <div className="font-medium text-slate-900">
+                        <Link href={`/investments/${id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>
+                        {h.symbol && <span className="ml-1 text-xs text-slate-500">{h.symbol}</span>}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency}
+                        {h.status !== "ACTIVE" && ` · ${STATUS_LABEL[h.status] ?? h.status}`}
+                        {h.maturity_date && ` · ครบ ${thDate(h.maturity_date)}`}
+                        {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 text-right tabular-nums">{qty(h.quantity)}</td>
+                    <td className="px-3 text-right tabular-nums">{money(h.average_cost, undefined, 4)}</td>
+                    <td className="px-3 text-right tabular-nums">{money(h.current_price, undefined, 4)}</td>
+                    <td className="whitespace-nowrap px-3 text-right">
+                      <div className="tabular-nums">{money(h.current_value)}</div>
+                      <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>
+                        {h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 text-right">
+                      <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
+                      {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
+                    </td>
+                    <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                      {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? `${((gain / cost) * 100).toFixed(2)}%` : ""}</div></>}
+                    </td>
+                    <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
+                    {orderMode === "sec" && (
+                      <td className="px-3 py-2.5 text-right"><MoveButtons id={id} hid={h.id} first={k === 0} last={k === securities.length - 1} /></td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
+            มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตรา ธปท. ล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
+            · เงินสด {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
+            · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / ครบกำหนด
+          </p>
+          </>
+        )}
+
+        {tab === "ret" && (
+          <ReturnsTable bare rows={(rets as Ret[] | null) ?? []} local={(retsLocal as RetLocal[] | null) ?? []}
+            portfolioCurrency={a.currency} rates={fxRates} hrefBase={`/investments/${id}/holding/`} />
+        )}
+
+        {tab === "tx" && (
+          <div className="p-4">
+            <form method="get" className="mb-3 flex flex-wrap items-end gap-2 text-sm">
+              <input type="hidden" name="tab" value="tx" />
+              <label className="text-xs text-slate-600">เดือน
+                <select name="m" defaultValue={txMonth} className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm">
+                  {txMonths.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-slate-600">ประเภท
+                <select name="type" defaultValue={txType} className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm">
+                  <option value="">ทุกประเภท</option>
+                  {Object.entries(ITX_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-slate-600">หลักทรัพย์ / บัญชี
+                <select name="h" defaultValue={txHolding} className="mt-1 block max-w-xs rounded-md border border-slate-300 px-2 py-1 text-sm">
+                  <option value="">ทั้งหมด</option>
+                  {holdings.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                </select>
+              </label>
+              <button className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-50">กรอง</button>
+              {(txType || txHolding || sp.m) && <Link href={`/investments/${id}?tab=tx`} className="text-xs text-slate-500 underline">ล้างตัวกรอง</Link>}
+            </form>
+            {txList.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ไม่มีรายการตามที่เลือก</p> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-slate-500">
+                    <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
+                      <th className="text-right">ยอด</th><th className="text-right">เงินสดพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th><th></th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {txList.map((t) => {
+                      const bank = t.settle_from_asset_id ?? t.settle_to_asset_id;
+                      const cashEffect = bank || (t.cash_movement_id && ["DEPOSIT", "WITHDRAWAL"].includes(t.transaction_type)) ? null : Number(t.net_cash);
+                      return (
+                        <tr key={t.id} className="align-top">
+                          <td className="py-1.5">{thDate(t.transaction_date)}</td>
+                          <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
+                          <td className="text-slate-600">
+                            {t.transaction_type === "CASH_TRANSFER" ? `${acctName(t.cash_holding_id)} → ${acctName(t.counter_cash_holding_id)}`
+                              : t.transaction_type === "FX_EXCHANGE" ? `${acctName(t.cash_holding_id) || `เงินสด ${t.currency}`} → ${acctName(t.counter_cash_holding_id) || t.counter_currency}`
+                              : t.holding_id ? byId.get(t.holding_id)?.name : acctName(t.cash_holding_id) || "เงินสดพอร์ต"}
+                            {multiCash && t.holding_id && t.cash_holding_id && t.cash_holding_id !== t.holding_id && (
+                              <div className="text-xs text-slate-500">บัญชี: {acctName(t.cash_holding_id)}</div>
+                            )}
+                          </td>
+                          <td className="text-right tabular-nums text-slate-600">
+                            {t.quantity != null && t.price != null ? `${qty(t.quantity)} × ${money(t.price, undefined, 4)}` : t.quantity != null ? qty(t.quantity) : ""}
+                          </td>
+                          <td className="text-right tabular-nums">
+                            {money(t.amount)}{t.transaction_type === "FX_EXCHANGE" && <> {t.currency} → {money(t.counter_amount)} {t.counter_currency}</>}
+                            {t.transaction_type === "CASH_TRANSFER" && <> {t.currency}</>}
+                            {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && (
+                              <div className="text-xs text-slate-500">
+                                {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}
+                              </div>
+                            )}
+                          </td>
+                          <td className={`text-right tabular-nums ${cashEffect == null || cashEffect === 0 ? "text-slate-400" : cashEffect > 0 ? "text-emerald-700" : "text-red-700"}`}>
+                            {cashEffect == null ? "—" : cashEffect === 0 ? "0" : money(cashEffect)}
+                          </td>
+                          <td className="pl-4 text-xs text-slate-500">
+                            {bank && <div>{t.transaction_type === "BUY" ? "จ่ายจาก" : "เข้า"} {bankName.get(bank) ?? "บัญชีธนาคาร"}{t.settlement_date && ` · ${thDate(t.settlement_date)}`}
+                              {t.settlement_status === "UNSETTLED" && <span className="text-amber-700"> · รอชำระ</span>}</div>}
+                            {t.cash_movement_id && <div>สร้างจากการโอนเงิน (แก้ที่รายการโอน)</div>}
+                            {t.notes && <div>{t.notes}</div>}
+                          </td>
+                          <td className="pl-2 text-right">
+                            {canWrite && !t.cash_movement_id && (
+                              <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+                                deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
+                                fields={[
+                                  ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
+                                  ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date }] : []),
+                                  ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
+                                  ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
+                                  ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
+                                  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
+                                  ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
+                                  { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="mt-3 text-xs text-slate-500">
+              {txList.length} รายการ ·
+              &ldquo;—&rdquo; ในช่องเงินสดพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
+            </p>
           </div>
         )}
-        <p className="mt-3 text-xs text-slate-500">
-          &ldquo;—&rdquo; ในช่องเงินสดพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
-        </p>
       </section>
 
       <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} />

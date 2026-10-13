@@ -27,12 +27,14 @@ const cls = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" 
  * ผลตอบแทนต่อหลักทรัพย์ · ปุ่มสลับ "ดูเป็น {สกุลพอร์ต} / ดูเป็นบาท" (เริ่มที่สกุลพอร์ต)
  * มุมสกุลพอร์ต: ตัวเลขในสกุลหลักทรัพย์ → แปลงเป็นสกุลพอร์ตด้วยอัตราล่าสุด (ไม่รวมผลค่าเงินบาท)
  */
-export default function ReturnsTable({ rows, local = [], portfolioCurrency = "THB", rates = {}, hrefBase, title }: {
+export default function ReturnsTable({ rows, local = [], portfolioCurrency = "THB", rates = {}, hrefBase, title, bare = false }: {
   rows: Ret[]; local?: RetLocal[]; portfolioCurrency?: string; rates?: Rates; hrefBase?: string; title?: string;
+  /** อยู่ในกล่องแท็บของหน้าพอร์ต → ไม่มีกรอบ / หัวข้อซ้ำ */
+  bare?: boolean;
 }) {
   const canLocal = portfolioCurrency !== "THB" && local.length > 0;
   const [view, setView] = useState<"PF" | "THB">(canLocal ? "PF" : "THB");
-  if (!rows.length) return null;
+  if (!rows.length) return bare ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีหลักทรัพย์</p> : null;
   const isPf = canLocal && view === "PF";
   const unit = isPf ? portfolioCurrency : "บาท";
 
@@ -60,9 +62,10 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
   const sign = (v: number) => `${v > 0 ? "+" : ""}${m(v)}`;
 
   return (
-    <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+    <section className={bare ? "" : "overflow-x-auto rounded-xl border border-slate-200 bg-white"}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
-        <h2 className="font-medium text-slate-900">{title ?? "ผลตอบแทน"} ({unit})</h2>
+        {bare ? <span className="text-sm text-slate-600">หน่วย: {unit}</span>
+          : <h2 className="font-medium text-slate-900">{title ?? "ผลตอบแทน"} ({unit})</h2>}
         {canLocal && (
           <div className="inline-flex rounded-md border border-slate-300 p-0.5 text-xs" role="group" aria-label="สกุลที่ใช้แสดงผลตอบแทน">
             {(["PF", "THB"] as const).map((v) => (
