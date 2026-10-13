@@ -869,6 +869,18 @@ SELECT t.ok((SELECT round(sum(h.value_thb), 2) FROM public.v_holdings_active h W
             AND (SELECT round(portfolio_value * portfolio_fx_rate, 2) = round(thb_value, 2) FROM public.v_portfolio_values
                   WHERE asset_id = t.a('พอร์ตหลายบัญชี')),
             'หน้าพอร์ต: บาทรายตัวรวมกัน = มูลค่าเป็นบาท · มูลค่าสกุลพอร์ต × อัตรา = มูลค่าเป็นบาท');
+-- ผลตอบแทนในสกุลหลักทรัพย์ (ปุ่ม ดูเป็น USD): จำนวนแถวเท่ากัน · มูลค่า × อัตราวันนี้ = มูลค่าเป็นบาท · รวม = ส่วนประกอบ
+SELECT t.ok((SELECT count(*) FROM public.investment_returns_local(t.a('Brokerage USD')))
+              = (SELECT count(*) FROM public.investment_returns(t.a('Brokerage USD')))
+            AND NOT EXISTS (SELECT 1 FROM public.investment_returns_local(t.a('Brokerage USD')) l
+                              JOIN public.investment_returns(t.a('Brokerage USD')) b USING (holding_id)
+                             WHERE abs(l.value * private.fx_rate('USD', current_date) - b.value_thb) > 0.05
+                                OR l.total <> l.unrealized + l.realized + l.income - l.fees),
+            'ผลตอบแทนสกุลหลักทรัพย์: มูลค่า × อัตราวันนี้ = มูลค่าเป็นบาท · รวม = ยังไม่รับรู้ + รับรู้ + รายได้ − ค่าธรรมเนียม');
+SELECT t.ok((SELECT l.realized = 0 AND l.value = 0 AND l.cost = 0 FROM public.investment_returns_local(t.a('พอร์ตหลายบัญชี')) l
+              WHERE l.name = 'หุ้นกู้ทดสอบ X')
+            AND (SELECT l.income = 20 FROM public.investment_returns_local(t.a('พอร์ตหลายบัญชี')) l WHERE l.name = 'หุ้นกู้ทดสอบ X'),
+            'หุ้นกู้ครบกำหนด: เงินคืน 1,100 = ต้นทุน 1,100 → รับรู้ 0 (สกุลเดิม) · Coupon นับเป็นรายได้');
 -- พอร์ตเดิม (บัญชีเดียว) ไม่ได้รับผลกระทบ
 SELECT t.ok((SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('Cash USD')), 'พอร์ตเดิม: เงินสดบัญชีเดียว = บัญชีหลัก');
 RESET ROLE;

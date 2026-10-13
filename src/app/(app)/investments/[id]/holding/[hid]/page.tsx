@@ -6,7 +6,7 @@ import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, 
 import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
 import { MaturityForm, type CashAcct, type Holding } from "../../forms";
-import ReturnsTable, { type Ret } from "../../ReturnsTable";
+import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
 import { FcnForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
@@ -23,7 +23,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const { id, hid } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }] = await Promise.all([
+  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: pvRow }] = await Promise.all([
     supabase.from("v_holdings_active").select("*").eq("id", hid).eq("portfolio_asset_id", id).maybeSingle(),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
@@ -37,6 +37,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_holdings_active").select("id,name,currency,is_default_cash").eq("portfolio_asset_id", id)
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
+    supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
+    supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow as H | null;
@@ -48,6 +50,11 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const goLive = family?.go_live_date ?? "";
   const paths = [`/investments/${id}/holding/${hid}`, `/investments/${id}`, "/investments", "/income-expenses"];
   const ret = ((rets as Ret[] | null) ?? []).filter((r) => r.holding_id === hid);
+  const retLocal = ((retsLocal as RetLocal[] | null) ?? []).filter((r) => r.holding_id === hid);
+  const fxRates: Record<string, number> = { THB: 1 };
+  const hfx = (hRow as { fx_rate?: number | null } | null)?.fx_rate;
+  if (hfx != null && h) fxRates[h.currency] = Number(hfx);
+  if (pvRow?.portfolio_fx_rate != null && a) fxRates[a.currency] = Number(pvRow.portfolio_fx_rate);
   const isStructured = STRUCTURED.includes(h.holding_type);
   const fcn = fcnRow as (Fcn & { fcn_underlyings: (U & { deleted_at: string | null })[] }) | null;
   const unders = (fcn?.fcn_underlyings ?? []).filter((u) => !u.deleted_at);
@@ -89,7 +96,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      {ret.length > 0 && <ReturnsTable rows={ret} title="ผลตอบแทนของหลักทรัพย์นี้ (บาท)" />}
+      {ret.length > 0 && <ReturnsTable rows={ret} local={retLocal} portfolioCurrency={a.currency} rates={fxRates} title="ผลตอบแทนของหลักทรัพย์นี้" />}
 
       {isStructured && (
         <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
