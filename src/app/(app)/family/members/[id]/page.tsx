@@ -172,7 +172,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
                       <tr key={i}>
                         <td className="py-1.5 pr-3">{href ? <Link href={href} className="text-blue-700 hover:underline">{e.item_name}</Link> : e.item_name}</td>
                         <td className="pr-3 text-xs text-slate-500">{debt ? "หนี้สิน" : "สินทรัพย์"}{e.item_group ? ` · ${e.item_group}` : ""}</td>
-                        <td className="pr-3 text-right tabular-nums">{Number(e.ownership_percent)}%</td>
+                        <td className="pr-3 text-right tabular-nums">{Number(e.ownership_percent).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
                         <td className={`text-right tabular-nums ${debt ? "text-red-700" : ""}`}>{debt ? "-" : ""}{money(e.base_value, "THB", 0)}</td>
                       </tr>
                     );
