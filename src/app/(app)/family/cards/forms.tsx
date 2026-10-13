@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { createCard, updateCardBalance, updateCardStatus, type ActionState } from "@/app/(app)/liabilities/actions";
+import { createCard, setCardAutopay, updateCardBalance, updateCardStatus, type ActionState } from "@/app/(app)/liabilities/actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -101,6 +101,44 @@ export function CardStatusForm({ cardId, status }: { cardId: string; status: str
         <option value="CLOSED">ยกเลิกบัตรแล้ว</option>
       </select>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** ตั้งค่าตัดบัญชีอัตโนมัติ: ถึงวันครบชำระ หน้า Income &amp; Expenses จะแสดงรายการ "รอยืนยัน" */
+export function CardAutopayForm({ cardId, banks, bank, mode }: {
+  cardId: string; banks: { asset_id: string; name: string }[]; bank: string | null; mode: string | null;
+}) {
+  const [edit, setEdit] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(setCardAutopay, {});
+  const [sel, setSel] = useState(bank ?? "");
+  if (!edit) {
+    return (
+      <button type="button" onClick={() => setEdit(true)} className="mt-1 text-left text-xs text-blue-700 hover:underline">
+        {bank ? "แก้ตัดบัญชีอัตโนมัติ" : "+ ตั้งตัดบัญชีอัตโนมัติ"}
+      </button>
+    );
+  }
+  return (
+    <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-2 text-xs">
+      <input type="hidden" name="card_id" value={cardId} />
+      <label className="block">ตัดจากบัญชี
+        <select name="autopay_asset_id" value={sel} onChange={(e) => setSel(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1">
+          <option value="">— ไม่ตัดอัตโนมัติ —</option>
+          {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+        </select>
+      </label>
+      {sel && (
+        <div className="flex gap-3">
+          <label className="flex items-center gap-1"><input type="radio" name="autopay_mode" value="FULL" defaultChecked={mode !== "MINIMUM"} /> เต็มจำนวน</label>
+          <label className="flex items-center gap-1"><input type="radio" name="autopay_mode" value="MINIMUM" defaultChecked={mode === "MINIMUM"} /> ขั้นต่ำ</label>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "…" : "บันทึก"}</button>
+        <button type="button" onClick={() => setEdit(false)} className="text-slate-500">ปิด</button>
+      </div>
+      <Msg s={state} />
     </form>
   );
 }

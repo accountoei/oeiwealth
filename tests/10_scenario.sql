@@ -1037,6 +1037,64 @@ SELECT t.fails($$SELECT public.set_asset_ownership(t.a('KBank ออมทรั
   'เฉพาะธุรกิจ', 'ทรัพย์สินที่ไม่ใช่ธุรกิจระบุเป็นหุ้นไม่ได้');
 RESET ROLE;
 
+\echo '== 13o. รายคนตามบัญชี / บัตร · จ่ายหนี้แยกเงินต้น / ดอกเบี้ย · บัตรตัดบัญชีอัตโนมัติ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+-- ค่าใช้จ่ายจากบัญชี (ไม่ระบุคน) → เจ้าของบัญชี · จ่ายจากบัญชีแต่ระบุคนเอง → คนนั้น 100%
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ทดสอบแบ่งตามบัญชี', 'amount', 1000,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'))) IS NOT NULL AS e1;
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ทดสอบระบุคนเอง', 'amount', 700,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'person_id', t.p('คุณแม่'))) IS NOT NULL AS e2;
+SELECT t.ok((SELECT string_agg(coalesce(p.name, '-') || ':' || v.share_percent::int, ',') FROM public.v_expense_by_person v
+              JOIN public.expense_items i ON i.id = v.expense_item_id LEFT JOIN public.persons p ON p.id = v.person_id
+             WHERE i.description = 'ทดสอบแบ่งตามบัญชี') = 'คุณพ่อ:100',
+            'ค่าใช้จ่ายจากบัญชี (ไม่ระบุคน) → แบ่งตามเจ้าของบัญชี');
+SELECT t.ok((SELECT string_agg(coalesce(p.name, '-') || ':' || v.share_percent::int, ',') FROM public.v_expense_by_person v
+              JOIN public.expense_items i ON i.id = v.expense_item_id LEFT JOIN public.persons p ON p.id = v.person_id
+             WHERE i.description = 'ทดสอบระบุคนเอง') = 'คุณแม่:100',
+            'ระบุ "ของใคร" เอง → ใช้คนนั้นก่อนเจ้าของบัญชี (ไม่นับซ้ำ)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_expense_by_person GROUP BY expense_item_id HAVING abs(sum(share_percent) - 100) > 0.0001),
+            'ทุกรายการค่าใช้จ่ายแบ่งรวมได้ 100% พอดี');
+-- รายได้ที่ไม่ระบุคน / ทรัพย์สิน → เจ้าของบัญชีที่รับเงิน
+INSERT INTO public.income_transactions(family_id, received_to_asset_id, date, income_type, amount, currency, notes)
+  SELECT id, t.a('KBank ออมทรัพย์'), current_date, 'OTHER', 500, 'THB', 'ทดสอบรายได้ตามบัญชี' FROM public.families;
+SELECT t.ok((SELECT v.person_id = t.p('คุณพ่อ') AND v.share_percent = 100 FROM public.v_income_by_person v
+              JOIN public.income_transactions i ON i.id = v.income_id WHERE i.notes = 'ทดสอบรายได้ตามบัญชี'),
+            'รายได้ (ไม่ระบุคน) → แบ่งตามเจ้าของบัญชีที่รับเงิน');
+SELECT t.ok((SELECT (public.person_dashboard(current_date, t.p('คุณแม่'))->>'expenses')::numeric
+              >= 700 AND (public.person_dashboard(current_date, t.p('คุณพ่อ'))->>'income')::numeric >= 500),
+            'Dashboard รายคนใช้กติกาเดียวกัน (ค่าใช้จ่ายที่ระบุคน / รายได้ตามบัญชี)');
+
+-- จ่ายหนี้: เงินต้น 10,000 ลดยอดหนี้ · ดอกเบี้ย 2,000 เป็นค่าใช้จ่าย "ดอกเบี้ยจ่าย"
+SELECT (SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') AS debt_before \gset
+SELECT public.pay_liability(jsonb_build_object('liability_id', (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน'),
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 10000, 'interest', 2000)) IS NOT NULL AS paid;
+SELECT t.ok((SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') = :debt_before - 10000
+            AND (SELECT balance_date FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') = current_date,
+            'จ่ายเงินต้น → ยอดหนี้ลดลงทันที');
+SELECT t.ok((SELECT sum(base_value) FROM public.v_net_worth_items_current WHERE liability_id = (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน'))
+              = :debt_before - 10000, 'Net Worth ใช้ยอดหนี้หลังหักเงินต้น');
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE expense_category = 'ดอกเบี้ยจ่าย' AND amount = 2000 AND deleted_at IS NULL
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน')) = 1
+            AND EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'EXPENSE' AND amount = 2000 AND is_derived AND deleted_at IS NULL),
+            'ดอกเบี้ย → ค่าใช้จ่าย "ดอกเบี้ยจ่าย" + เงินออกจากบัญชี');
+SELECT t.fails($$SELECT public.pay_liability(jsonb_build_object('liability_id', (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน'),
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 99000000))$$, 'มากกว่ายอดหนี้คงค้าง', 'เงินต้นเกินยอดหนี้ไม่ได้');
+UPDATE public.cash_movements SET deleted_at = now() WHERE reduces_liability AND movement_date = current_date;
+SELECT t.ok((SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') = :debt_before,
+            'ลบรายการจ่ายเงินต้น → ยอดหนี้กลับคืน');
+
+-- บัตรตัดบัญชีอัตโนมัติ
+SELECT t.fails($$UPDATE public.credit_cards SET autopay_asset_id = t.a('KBank ออมทรัพย์') WHERE card_last4 = '7788'$$,
+               'cc_autopay', 'ตั้งบัญชีตัดต้องเลือกแบบ เต็มจำนวน / ขั้นต่ำ ด้วย');
+UPDATE public.credit_cards SET autopay_asset_id = t.a('KBank ออมทรัพย์'), autopay_mode = 'FULL' WHERE card_last4 = '7788';
+SELECT (SELECT outstanding_balance FROM public.credit_cards WHERE card_last4 = '7788') AS card_before \gset
+SELECT public.pay_credit_card(jsonb_build_object('card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '7788'),
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'amount', 3000, 'autopay', true)) IS NOT NULL AS card_paid;
+SELECT t.ok((SELECT outstanding_balance = greatest(:card_before - 3000, 0) AND balance_date = current_date FROM public.credit_cards WHERE card_last4 = '7788')
+            AND EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'CARD_PAYMENT' AND amount = 3000 AND (metadata->>'autopay')::boolean),
+            'ยืนยันตัดบัญชีอัตโนมัติ → บันทึกจ่ายบัตร + หักยอดบัตร');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

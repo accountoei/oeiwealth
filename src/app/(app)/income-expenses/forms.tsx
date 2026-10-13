@@ -8,6 +8,7 @@ import {
 } from "./actions";
 import { EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, money } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 
 export type Bank = { asset_id: string; name: string; currency: string };
 export type Card = { id: string; label: string; currency: string; outstanding_balance: number };
@@ -55,7 +56,7 @@ export function IncomeForm({ banks, persons, today, minDate }: { banks: Bank[]; 
             </label>
             <label className={lbl}>ของใคร
               <select name="person_id" defaultValue={persons[0]?.id ?? ""} className={input}>
-                <option value="">— ส่วนกลางครอบครัว —</option>
+                <option value="">— ตามเจ้าของบัญชีที่รับ (ไม่มีบัญชี = ส่วนกลาง) —</option>
                 {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
@@ -246,18 +247,16 @@ export function ExpenseForm({ banks, cards, persons, today, minDate }:
                 </select>
               </label>
             )}
+            <label className={lbl}>ของใคร
+              <select name="person_id" defaultValue="" className={input}>
+                <option value="">{via === "bank" ? "— ตามเจ้าของบัญชี —" : via === "card" ? "— ตามเจ้าของบัตร —" : "— ส่วนกลางครอบครัว —"}</option>
+                {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
             {via === "cash" && (
-              <>
-                <label className={lbl}>ของใคร
-                  <select name="person_id" defaultValue="" className={input}>
-                    <option value="">— ส่วนกลางครอบครัว —</option>
-                    {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </label>
-                <label className={lbl}>สกุลเงิน
-                  <CurrencySelect name="currency" defaultValue="THB" className={input} />
-                </label>
-              </>
+              <label className={lbl}>สกุลเงิน
+                <CurrencySelect name="currency" defaultValue="THB" className={input} />
+              </label>
             )}
             <label className="flex items-start gap-2 text-sm md:col-span-3">
               <input type="checkbox" name="is_reimbursable" checked={reimb} onChange={(e) => setReimb(e.target.checked)} className="mt-1" />
@@ -355,6 +354,7 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
   const [type, setType] = useState("TRANSFER");
   const [from, setFrom] = useState(banks[0]?.asset_id ?? "");
   const [upd, setUpd] = useState(false);
+  const [pr, setPr] = useState(""); const [it, setIt] = useState("");
   const fromCcy = banks.find((b) => b.asset_id === from)?.currency ?? "THB";
   const hasFee = type === "TRANSFER" || type === "FX_EXCHANGE";
   const toList = type === "TRANSFER" ? banks.filter((b) => b.currency === fromCcy && b.asset_id !== from)
@@ -366,7 +366,7 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
           <h3 className="font-medium text-slate-900">บันทึกเงินเคลื่อนไหว</h3>
           <div className="grid gap-4 md:grid-cols-3">
             <label className={`${lbl} md:col-span-2`}>ประเภท
-              <select name="movement_type" value={type} onChange={(e) => { setType(e.target.value); setUpd(false); }} className={input}>
+              <select name="movement_type" value={type} onChange={(e) => { setType(e.target.value); setUpd(false); setPr(""); setIt(""); }} className={input}>
                 {MOVE_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
@@ -400,7 +400,14 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
                 </select>
               </label>
             )}
-            <label className={lbl}>จำนวนเงิน{type === "FX_EXCHANGE" ? " ที่ออก" : ""} *<input name="amount" required inputMode="decimal" className={input} /></label>
+            {type === "LIABILITY_PAYMENT" ? (
+              <>
+                <label className={lbl}>เงินต้น (ลดยอดหนี้)<input name="principal" inputMode="decimal" value={pr} onChange={(e) => setPr(e.target.value)} className={input} /></label>
+                <label className={lbl}>ดอกเบี้ย (เป็นค่าใช้จ่าย)<input name="interest" inputMode="decimal" value={it} onChange={(e) => setIt(e.target.value)} className={input} /></label>
+              </>
+            ) : (
+              <label className={lbl}>จำนวนเงิน{type === "FX_EXCHANGE" ? " ที่ออก" : ""} *<input name="amount" required inputMode="decimal" className={input} /></label>
+            )}
             {type === "FX_EXCHANGE" && <label className={lbl}>ยอดที่ได้รับในบัญชีปลายทาง *<input name="counter_amount" required inputMode="decimal" className={input} /></label>}
             {hasFee && (
               <>
@@ -412,11 +419,13 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
               <div className="md:col-span-3 space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" name="update_balance" checked={upd} onChange={(e) => setUpd(e.target.checked)} />
-                  {type === "CARD_PAYMENT" ? "จ่ายแล้วอัปเดตยอดบัตรเลย" : "บันทึกยอดคงค้างใหม่หลังจ่าย"}
+                  {type === "CARD_PAYMENT" ? "จ่ายแล้วอัปเดตยอดบัตรเลย" : "มียอดคงค้างตาม Statement หลังจ่าย (ใช้แทนยอดที่ระบบหักให้)"}
                 </label>
                 {upd && <input name="new_balance" required inputMode="decimal" placeholder="ยอดคงค้างใหม่" className={small} />}
                 <p className="text-xs text-slate-500">
-                  ไม่ใช่ค่าใช้จ่าย · ระบบไม่ลดยอดหนี้เองจากการจ่าย (ไม่รู้ส่วนเงินต้น/ดอกเบี้ย) — อัปเดตจาก Statement หรือติ๊กช่องนี้
+                  {type === "CARD_PAYMENT"
+                    ? "ไม่ใช่ค่าใช้จ่าย (ค่าใช้จ่ายบันทึกตอนรูดบัตรแล้ว)"
+                    : <>รวมจ่าย {money(n(pr) + n(it), fromCcy)} · เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยบันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo;</>}
                 </p>
               </div>
             )}
@@ -430,5 +439,32 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
         </form>
       )}
     </Toggle>
+  );
+}
+
+/* ================================================================== บัตรตัดบัญชีอัตโนมัติ: ยืนยัน */
+export function AutopayConfirmForm({ cardId, bankId, currency, dueDate, amount, minimum, today, minDate }: {
+  cardId: string; bankId: string; currency: string; dueDate: string; amount: number; minimum: boolean; today: string; minDate: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(confirmCardPayment, {});
+  if (state.ok) return <p className="text-xs text-emerald-700">{state.ok}</p>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className={sbtn}>ยืนยันว่าตัดแล้ว</button>;
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="card_id" value={cardId} />
+      <input type="hidden" name="bank_asset_id" value={bankId} />
+      <input type="hidden" name="autopay" value="true" />
+      <label className="text-xs">วันที่ตัด<input name="date" type="date" required defaultValue={dueDate > today ? today : dueDate}
+        min={minDate} max={today} className={`mt-0.5 block ${small}`} /></label>
+      <label className="text-xs">ยอดที่ตัดจริง ({currency})
+        <input name="amount" required inputMode="decimal" defaultValue={minimum || !amount ? "" : amount.toFixed(2)}
+          placeholder={minimum ? "ยอดขั้นต่ำตามใบแจ้งยอด" : ""} className={`mt-0.5 block w-36 ${small}`} />
+      </label>
+      <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="reduce_balance" defaultChecked /> หักยอดบัตรตามที่ตัด</label>
+      <button disabled={pending} className={sbtn}>{pending ? "…" : "บันทึก"}</button>
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+      <div className="w-full"><Msg s={state} /></div>
+    </form>
   );
 }

@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { LIABILITY_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
-import { AddBalanceForm, EditLiabilityForm } from "./forms";
+import { AddBalanceForm, EditLiabilityForm, PayLiabilityForm } from "./forms";
+import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
@@ -16,7 +17,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: l }, { data: owners }, { data: vals }, { data: family }, { data: persons }] = await Promise.all([
+  const [{ data: l }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banksRaw }, { data: pays }, { data: ints }] = await Promise.all([
     supabase.from("liabilities").select("*, linked:assets!liabilities_linked_asset_id_fkey(name)")
       .eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("liability_ownerships").select("id,person_id,responsibility_percent,persons(name)")
@@ -25,6 +26,11 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       .eq("liability_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes")
+      .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
+    supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes")
+      .eq("liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
   ]);
   if (!l) notFound();
 
@@ -37,6 +43,18 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   }));
   const ownerTotal = ownerRows.reduce((s, o) => s + o.pct, 0);
   const linked = (Array.isArray(l.linked) ? l.linked[0] : l.linked) as { name: string } | null;
+  const banks = ((banksRaw ?? []) as { asset_id: string; name: string; currency: string }[]);
+  const bankName = new Map(banks.map((b) => [b.asset_id, b.name]));
+  // ประวัติการจ่าย: เงินต้น (ลดยอดหนี้) · ดอกเบี้ย (ค่าใช้จ่าย) · จ่ายรวมแบบเดิม (ไม่ลดยอดหนี้)
+  const payRows = [
+    ...(pays ?? []).map((m) => ({ key: `m${m.id}`, table: "cash_movements", id: m.id, date: m.movement_date as string, amount: Number(m.amount),
+      kind: m.reduces_liability ? "เงินต้น" : "จ่ายรวม (ไม่ได้แยก)", bank: m.from_asset_id as string | null, notes: m.notes as string | null,
+      dateField: "movement_date" })),
+    ...(ints ?? []).map((e) => ({ key: `e${e.id}`, table: "expense_items", id: e.id, date: e.date as string, amount: Number(e.amount),
+      kind: "ดอกเบี้ย", bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date" })),
+  ].sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind, "th"));
+  const today = todayBangkok();
+  const minDate = family?.go_live_date ?? "";
   const paid = l.original_amount && l.outstanding_amount != null ? Number(l.original_amount) - Number(l.outstanding_amount) : null;
 
   return (
@@ -54,7 +72,8 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="text-xs text-slate-500">ยอดคงค้างล่าสุด</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(l.outstanding_amount, l.currency)}</div>
-          <div className="mt-1 text-xs text-slate-500">ณ {thDate(l.balance_date)}</div>
+          <div className="mt-1 text-xs text-slate-500">ณ {thDate(l.balance_date)}
+            {(vals ?? [])[0] && (vals ?? [])[0].valuation_date !== l.balance_date && ` (ยอด ${thDate((vals ?? [])[0].valuation_date)} หักเงินต้นที่จ่ายหลังจากนั้น)`}</div>
           {paid != null && paid > 0 && (
             <div className="mt-1 text-xs text-slate-500">จากวงเงิน {money(l.original_amount)} · ชำระแล้ว {money(paid)}</div>
           )}
@@ -80,12 +99,47 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       </section>
 
       {canWrite && l.status === "ACTIVE" && (
+        <ActionBar>
+          <PayLiabilityForm liabilityId={id} currency={l.currency} banks={banks.filter((b) => b.currency === l.currency)}
+            monthlyPayment={l.monthly_payment != null ? Number(l.monthly_payment) : null} today={today} minDate={minDate} />
+        </ActionBar>
+      )}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="mb-1 font-medium text-slate-900">ประวัติการจ่าย</h2>
+        <p className="mb-3 text-xs text-slate-500">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo;</p>
+        {payRows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีการจ่าย</p> : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr><th className="py-1">วันที่</th><th>ประเภท</th><th className="text-right">จำนวน</th><th className="pl-4">จากบัญชี</th><th className="pl-4">หมายเหตุ</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {payRows.map((r) => (
+                <tr key={r.key}>
+                  <td className="py-1.5">{thDate(r.date)}</td>
+                  <td className={r.kind === "ดอกเบี้ย" ? "text-amber-700" : ""}>{r.kind}</td>
+                  <td className="text-right tabular-nums">{money(r.amount)}</td>
+                  <td className="pl-4 text-slate-600">{r.bank ? bankName.get(r.bank) ?? "บัญชี" : "-"}</td>
+                  <td className="pl-4 text-slate-500">{r.notes}</td>
+                  <td className="pl-2 text-right">
+                    {canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
+                      fields={[{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
+                        { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {canWrite && l.status === "ACTIVE" && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-medium text-slate-900">อัปเดตยอดคงค้าง</h2>
           <p className="mb-3 text-xs text-slate-500">
-            กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร (แนะนำทุกสิ้นเดือน) · ระบบไม่หักค่างวดให้เอง
+            กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด
           </p>
-          <AddBalanceForm liabilityId={id} currency={l.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} />
+          <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} />
         </section>
       )}
 

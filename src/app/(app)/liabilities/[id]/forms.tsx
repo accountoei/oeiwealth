@@ -1,7 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
-import { addLiabilityBalance, updateLiabilityInfo, type ActionState } from "../actions";
+import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
+import { money } from "@/lib/format";
+import { addLiabilityBalance, payLiability, updateLiabilityInfo, type ActionState } from "../actions";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -71,4 +73,53 @@ export function EditLiabilityForm({ l }: { l: Info }) {
       </p>
     </form>
   );
+}
+
+const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
+
+/** จ่ายค่างวด: แยกเงินต้น / ดอกเบี้ย (แบบเดียวกับ "รับชำระ" ของเงินให้กู้) */
+export function PayLiabilityForm({ liabilityId, currency, banks, monthlyPayment, today, minDate }: {
+  liabilityId: string; currency: string; banks: { asset_id: string; name: string }[]; monthlyPayment: number | null; today: string; minDate: string;
+}) {
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const [state, action, pending] = useActionState<ActionState, FormData>(payLiability, {});
+  const [pr, setPr] = useState(""); const [it, setIt] = useState(""); const [upd, setUpd] = useState(false);
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>+ จ่ายค่างวด</button>;
+  if (!open) return trigger;
+  return present(trigger, (
+    <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+      <input type="hidden" name="liability_id" value={liabilityId} />
+      <h3 className="font-medium text-slate-900">จ่ายค่างวด / จ่ายหนี้</h3>
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="text-sm">วันที่จ่าย *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block w-full ${input}`} /></label>
+        <label className="text-sm md:col-span-2">จ่ายจากบัญชี ({currency}) *
+          <select name="bank_asset_id" required className={`mt-1 block w-full ${input}`}>
+            <option value="">— เลือก —</option>
+            {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+          {banks.length === 0 && <span className="mt-1 block text-xs text-amber-700">ไม่มีบัญชีสกุล {currency}</span>}
+        </label>
+        <label className="text-sm">เงินต้น (ลดยอดหนี้)<input name="principal" inputMode="decimal" value={pr} onChange={(e) => setPr(e.target.value)} className={`mt-1 block w-full ${input}`} /></label>
+        <label className="text-sm">ดอกเบี้ย (เป็นค่าใช้จ่าย)<input name="interest" inputMode="decimal" value={it} onChange={(e) => setIt(e.target.value)} className={`mt-1 block w-full ${input}`} /></label>
+        <div className="text-sm">รวมจ่าย
+          <div className="mt-1 py-2 font-medium tabular-nums">{money(n(pr) + n(it), currency)}</div>
+          {monthlyPayment ? <div className="text-xs text-slate-500">ค่างวดปกติ {money(monthlyPayment)}</div> : null}
+        </div>
+        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="เช่น งวดที่ 12" className={`mt-1 block w-full ${input}`} /></label>
+      </div>
+      <div className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" name="update_balance" checked={upd} onChange={(e) => setUpd(e.target.checked)} />
+          มียอดคงค้างตาม Statement หลังจ่าย (ใช้แทนยอดที่ระบบหักให้)
+        </label>
+        {upd && <input name="new_balance" required inputMode="decimal" placeholder="ยอดคงค้างใหม่" className={input} />}
+        <p className="text-xs text-slate-500">ระบบสร้างเงินออกจากบัญชีให้ · เงินต้นลดยอดหนี้ทันที · ดอกเบี้ยบันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo;</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการจ่าย"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  ));
 }

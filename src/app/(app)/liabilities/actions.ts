@@ -109,3 +109,53 @@ export async function updateCardStatus(_: ActionState, form: FormData): Promise<
   revalidatePath("/family/cards");
   return { ok: "เปลี่ยนสถานะแล้ว" };
 }
+
+/** จ่ายค่างวด: เงินต้นลดยอดหนี้ · ดอกเบี้ยเป็นค่าใช้จ่าย "ดอกเบี้ยจ่าย" */
+export async function payLiability(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("liability_id"));
+  const { error } = await supabase.rpc("pay_liability", { p: {
+    liability_id: id, bank_asset_id: str(form.get("bank_asset_id")), date: str(form.get("date")),
+    principal: num(form.get("principal")) ?? 0, interest: num(form.get("interest")) ?? 0, notes: str(form.get("notes")),
+    statement_balance: form.get("update_balance") === "on" ? num(form.get("new_balance")) : null,
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath(`/liabilities/${id}`);
+  revalidatePath("/liabilities");
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/");
+  return { ok: "บันทึกการจ่ายแล้ว" };
+}
+
+/** ตั้งค่าบัตรตัดบัญชีอัตโนมัติ (บัญชีที่ตัด + เต็มจำนวน / ขั้นต่ำ) · ไม่เลือกบัญชี = ปิด */
+export async function setCardAutopay(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const bank = str(form.get("autopay_asset_id"));
+  const mode = bank ? (str(form.get("autopay_mode")) ?? "FULL") : null;
+  const { data, error } = await supabase.from("credit_cards")
+    .update({ autopay_asset_id: bank, autopay_mode: mode }).eq("id", String(form.get("card_id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขบัตรนี้" };
+  revalidatePath("/family/cards");
+  revalidatePath("/income-expenses");
+  return { ok: bank ? "ตั้งค่าตัดบัญชีอัตโนมัติแล้ว" : "ปิดตัดบัญชีอัตโนมัติแล้ว" };
+}
+
+/** ยืนยันว่าตัดบัญชีอัตโนมัติแล้ว (หรือจ่ายบัตรเอง) → บันทึกจ่ายบัตร + หักยอดบัตร */
+export async function confirmCardPayment(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const amount = num(form.get("amount"));
+  if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ตัดจริง" };
+  const { error } = await supabase.rpc("pay_credit_card", { p: {
+    card_id: str(form.get("card_id")), bank_asset_id: str(form.get("bank_asset_id")), date: str(form.get("date")),
+    amount, reduce_balance: form.get("reduce_balance") === "on", autopay: form.get("autopay") === "true",
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/income-expenses");
+  revalidatePath("/family/cards");
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/liabilities");
+  revalidatePath("/");
+  return { ok: "บันทึกการตัดบัญชีแล้ว" };
+}

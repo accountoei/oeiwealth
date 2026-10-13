@@ -10,8 +10,8 @@ export type RecState = { error?: string; ok?: string };
 type Kind = "num" | "str" | "date" | "bool";
 // ตาราง + ฟิลด์ที่แก้ได้จากหน้าจอ (ฟิลด์อื่น / รายการที่ระบบสร้าง ถูกกันด้วย Trigger อีกชั้น)
 const EDITABLE: Record<string, Record<string, Kind>> = {
-  income_transactions: { date: "date", amount: "num", tax: "num", notes: "str" },
-  expense_items: { date: "date", description: "str", amount: "num", expense_category: "str", notes: "str", expected_reimbursement_amount: "num" },
+  income_transactions: { date: "date", amount: "num", tax: "num", notes: "str", person_id: "str" },
+  expense_items: { date: "date", description: "str", amount: "num", expense_category: "str", notes: "str", expected_reimbursement_amount: "num", person_id: "str" },
   cash_movements: { movement_date: "date", amount: "num", counter_amount: "num", fee: "num", description: "str" },
   investment_transactions: { transaction_date: "date", settlement_date: "date", quantity: "num", price: "num", amount: "num", fee: "num", tax: "num", notes: "str" },
   asset_valuations: { valuation_date: "date", value: "num", notes: "str" },

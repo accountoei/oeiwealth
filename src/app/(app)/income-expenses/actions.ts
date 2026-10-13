@@ -97,7 +97,7 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
     paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
     paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
-    person_id: via === "cash" ? str(form.get("person_id")) : null,
+    person_id: str(form.get("person_id")),
     is_reimbursable: reimb, expected_reimbursement_amount: reimb ? num(form.get("expected_reimbursement_amount")) : null,
     notes: str(form.get("notes")),
   } });
@@ -134,6 +134,17 @@ export async function addReimbursement(_: ActionState, form: FormData): Promise<
 export async function addMovement(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const type = String(form.get("movement_type"));
+  // จ่ายหนี้: แยกเงินต้น (ลดยอดหนี้) / ดอกเบี้ย (ค่าใช้จ่าย)
+  if (type === "LIABILITY_PAYMENT") {
+    const newBal = num(form.get("new_balance"));
+    const { error } = await supabase.rpc("pay_liability", { p: {
+      liability_id: str(form.get("liability_id")), bank_asset_id: str(form.get("from_asset_id")), date: str(form.get("date")),
+      principal: num(form.get("principal")) ?? 0, interest: num(form.get("interest")) ?? 0, notes: str(form.get("description")),
+      statement_balance: form.get("update_balance") === "on" ? newBal : null,
+    } });
+    if (error) return { error: friendlyError(error.message) };
+    return done("บันทึกการจ่ายหนี้แล้ว", ["/liabilities"]);
+  }
   const amount = num(form.get("amount"));
   if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
   const date = str(form.get("date"));
@@ -150,7 +161,6 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
     from_asset_id: isIn ? null : fromBank,
     to_asset_id: ["TRANSFER", "FX_EXCHANGE", "OTHER_IN"].includes(type) ? toBank : null,
     to_credit_card_id: type === "CARD_PAYMENT" ? str(form.get("card_id")) : null,
-    to_liability_id: type === "LIABILITY_PAYMENT" ? str(form.get("liability_id")) : null,
     fee: fee && fee > 0 ? fee : null, fee_currency: fee && fee > 0 ? currency : null,
     description: str(form.get("description")),
     metadata: { fee_as_expense: form.get("fee_as_expense") === "on", via: "income_expenses" },
@@ -170,13 +180,6 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
     const { error: e2 } = await supabase.from("credit_cards").update({ outstanding_balance: newBal, balance_date: date })
       .eq("id", String(form.get("card_id")));
     if (e2) return { error: `บันทึกการจ่ายแล้ว แต่อัปเดตยอดบัตรไม่สำเร็จ: ${friendlyError(e2.message)}` };
-  }
-  if (type === "LIABILITY_PAYMENT" && form.get("update_balance") === "on" && newBal !== null && !Number.isNaN(newBal)) {
-    const { error: e2 } = await supabase.from("liability_valuations").insert({
-      liability_id: String(form.get("liability_id")), valuation_date: date, balance: newBal, source: "USER",
-      notes: "อัปเดตหลังจ่ายหนี้",
-    });
-    if (e2) return { error: `บันทึกการจ่ายแล้ว แต่อัปเดตยอดหนี้ไม่สำเร็จ: ${friendlyError(e2.message)}` };
   }
   return done("บันทึกรายการแล้ว", ["/liabilities", "/family/cards"]);
 }

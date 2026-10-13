@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, money, thDate, todayBangkok } from "@/lib/format";
-import { CardBalanceForm, CardStatusForm, NewCardForm } from "./forms";
+import { CardAutopayForm, CardBalanceForm, CardStatusForm, NewCardForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import DeleteEntity from "@/components/DeleteEntity";
 import { MembershipForm, PointsForm } from "./member-forms";
@@ -11,14 +11,14 @@ import PersonFilter from "@/components/PersonFilter";
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null; card_last4: string | null;
   credit_limit: number | null; currency: string; statement_day: number | null; due_day: number | null;
   annual_fee: number | null; expiry_date: string | null; outstanding_balance: number; balance_date: string | null;
-  status: string; notes: string | null; persons: { name: string } | { name: string }[] | null };
+  status: string; notes: string | null; autopay_asset_id: string | null; autopay_mode: string | null; persons: { name: string } | { name: string }[] | null };
 
 const STATUS_CLS: Record<string, string> = { ACTIVE: "", SUSPENDED: "opacity-70", CLOSED: "opacity-50" };
 
 export default async function CardsPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [pv, { data, error }, { data: persons }, { data: family }, { data: paidAfter }, { data: members }, { data: points }] = await Promise.all([
+  const [pv, { data, error }, { data: persons }, { data: family }, { data: paidAfter }, { data: members }, { data: points }, { data: banksRaw }] = await Promise.all([
     searchParams.then((sp) => loadPersonView(sp.p)),
     supabase.from("credit_cards").select("*, persons(name)").is("deleted_at", null).order("status").order("issuer"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
@@ -27,7 +27,10 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       .eq("derived_status", "PAID_AFTER_BALANCE_DATE"),
     supabase.from("memberships").select("*").is("deleted_at", null).order("status").order("program_name"),
     supabase.from("points_accounts").select("*").is("deleted_at", null).order("program_name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
   ]);
+  const banks = (banksRaw ?? []) as { asset_id: string; name: string; currency: string }[];
+  const bankName = new Map(banks.map((b) => [b.asset_id, b.name]));
   // มุมมองรายบุคคล: บัตร / สมาชิกภาพ / แต้ม เป็นของคนเดียว → แสดงเฉพาะของคนที่เลือก (ยอดเต็ม)
   const cards = ((data as Card[] | null) ?? []).filter((c) => pv.isPerson(c.person_id));
   const memberRows = (members ?? []).filter((m) => pv.isPerson(m.person_id));
@@ -107,6 +110,16 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
                   {c.statement_day ? <div>ตัดรอบวันที่ {c.statement_day}</div> : null}
                   {c.due_day ? <div>ชำระภายในวันที่ {c.due_day}</div> : null}
                   {c.annual_fee ? <div>ค่าธรรมเนียมปีละ {money(c.annual_fee)}</div> : null}
+                  {c.autopay_asset_id && (
+                    <div className="mt-1 text-emerald-700">
+                      ตัดบัญชีอัตโนมัติ{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {bankName.get(c.autopay_asset_id) ?? "บัญชี"}
+                      {!c.due_day && <div className="text-amber-700">ยังไม่ได้ใส่วันครบชำระ</div>}
+                    </div>
+                  )}
+                  {canWrite && c.status !== "CLOSED" && (
+                    <CardAutopayForm cardId={c.id} banks={banks.filter((b) => b.currency === c.currency)}
+                      bank={c.autopay_asset_id} mode={c.autopay_mode} />
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {canWrite ? <CardStatusForm cardId={c.id} status={c.status} /> : c.status}

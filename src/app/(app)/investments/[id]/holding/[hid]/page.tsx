@@ -89,8 +89,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
 
       {canWrite && h.status === "ACTIVE" && (
         <ActionBar>
-          <IncomeForm assetId={id} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-          {canMature && <MaturityForm assetId={id} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
+          <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+          {canMature && <MaturityForm assetId={id} portfolioName={a.name} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
           <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
         </ActionBar>
       )}
