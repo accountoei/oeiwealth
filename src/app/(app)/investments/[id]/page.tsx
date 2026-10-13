@@ -165,7 +165,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       {canWrite && (
         <section>
           <ActionBar right={canDelete ? <PortfolioStatusMenu assetId={id} name={a.name} status={a.status} paths={paths} isAdmin={me.role === "ADMIN"} /> : undefined}>
-            <TxForm assetId={id} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+            <TxForm assetId={id} portfolioName={a.name} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <TransferForm assetId={id} currency={a.currency} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <MoveCashForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />

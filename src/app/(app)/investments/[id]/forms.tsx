@@ -7,6 +7,7 @@ import {
   addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
 } from "../actions";
 import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
+import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -103,8 +104,8 @@ const TX_TYPES: [string, string][] = [
   ["REDEMPTION", "ไถ่ถอน / ขายคืนกองทุน"], ["FEE", "ค่าธรรมเนียม"], ["TAX", "ภาษี"], ["ADJUSTMENT", "ปรับปรุงจำนวน / เงินฝาก"],
 ];
 
-export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccounts, today, minDate }: {
-  assetId: string; portfolioCurrency: string; holdings: Holding[]; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
+export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holdings, banks, cashAccounts, today, minDate }: {
+  assetId: string; portfolioName?: string; portfolioCurrency: string; holdings: Holding[]; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
@@ -140,11 +141,11 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
   if (!open) return trigger;
 
   const summary: string[] = [];
-  if (type === "BUY") summary.push(mode === "bank" ? `เงินออกจากบัญชีธนาคาร ${money(net, ccy)} (โอนเข้าพอร์ต)` : `หักเงินฝากในพอร์ต ${money(net, ccy)}`);
-  if (["SELL", "REDEMPTION"].includes(type)) summary.push(mode === "bank" ? `เงินเข้าบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
+  if (type === "BUY") summary.push(mode === "bank" ? `โอนจากบัญชีธนาคาร ${money(net, ccy)} เข้าพอร์ตเพื่อซื้อ` : `หักเงินฝากในพอร์ต ${money(net, ccy)}`);
+  if (["SELL", "REDEMPTION"].includes(type)) summary.push(mode === "bank" ? `โอนออกไปบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
   if (["DIVIDEND", "INTEREST", "COUPON"].includes(type)) {
     summary.push(`บันทึกรายได้ ${money(gross, ccy)}${n(tax) ? ` (ภาษี ${money(n(tax))})` : ""}`);
-    summary.push(mode === "bank" ? `เงินเข้าบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
+    summary.push(mode === "bank" ? `โอนออกไปบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
   }
   if (["FEE", "TAX"].includes(type)) summary.push(`หักเงินฝากในพอร์ต ${money(gross, ccy)} (ลดผลตอบแทน ไม่ใช่ค่าใช้จ่ายครอบครัว)`);
 
@@ -218,10 +219,7 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
         {canBank && (
           <div className={`${lbl} md:col-span-3`}>
             {type === "BUY" ? "จ่ายเงินจาก" : "รับเงินเข้า"}
-            <div className="mt-1 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เงินฝากในพอร์ต</label>
-              <label className="flex items-center gap-2"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> บัญชีธนาคารโดยตรง</label>
-            </div>
+            <SettleModeRadios mode={mode} setMode={setMode} portfolioName={portfolioName} out={type === "BUY"} className="mt-1 flex flex-wrap gap-4" />
           </div>
         )}
         {pickCash && (
@@ -473,8 +471,8 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
 }
 
 /* ------------------------------------------------------------------ ครบกำหนด */
-export function MaturityForm({ assetId, holding, banks, cashAccounts = [], today, minDate }:
-  { assetId: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string }) {
+export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate }:
+  { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
@@ -493,8 +491,7 @@ export function MaturityForm({ assetId, holding, banks, cashAccounts = [], today
         <label className="text-xs">ภาษี<input name="tax" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
       </div>
       <div className="flex flex-wrap items-end gap-3 text-xs">
-        <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เก็บในพอร์ต</label>
-        <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> เข้าบัญชีธนาคาร</label>
+        <SettleModeRadios mode={mode} setMode={setMode} portfolioName={portfolioName} className="flex flex-wrap items-center gap-3" />
         {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={holding.currency} label="บัญชี" compact />}
         {mode === "bank" && (
           <>

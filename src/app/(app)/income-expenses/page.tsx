@@ -8,7 +8,7 @@ import {
 } from "@/lib/format";
 import { RecordCostForm, UtilityForm, type PropertyPick } from "../property/[id]/forms";
 import {
-  ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
+  AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { MonthNav, TabNav, TabPanel, TabsProvider } from "./tabs";
@@ -44,7 +44,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const pv = await loadPersonView(sp.p, { liabilities: true });
-  // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (ตามกติกาเดียวกับ Dashboard: person → 100% · ทรัพย์สิน → สัดส่วนเจ้าของ)
+  // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (กติกาเดียวกับ Dashboard)
+  //   ระบุคนเอง → 100% · ไม่ระบุ: ค่าใช้จ่าย = เจ้าของบัตร / เจ้าของบัญชีที่จ่าย · รายได้ = เจ้าของทรัพย์สิน / เจ้าของบัญชีที่รับ
   const [{ data: incShares }, { data: expShares }] = pv.personId ? await Promise.all([
     supabase.from("v_income_by_person").select("income_id,share_percent,amount_share,tax_share,base_amount_share")
       .eq("person_id", pv.personId).gte("date", start).lte("date", end),
@@ -59,7 +60,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }, { data: loanRows }, { data: insRows }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,status").is("deleted_at", null).neq("status", "CLOSED"),
+    supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_mode")
+      .is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
@@ -108,6 +110,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const thb = (v: number | null, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
   const name = new Map<string, string>([...banks.map((b) => [b.asset_id, b.name] as [string, string]),
     ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string])]);
+  const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
   const pname = (p: unknown) => ((Array.isArray(p) ? p[0] : p) as { name: string } | null)?.name;
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
   const claims: Claim[] = (claimsRaw ?? []).map((c) => {
@@ -171,6 +174,20 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   // โอน & จ่ายหนี้: รายการที่แตะบัญชี / บัตร / หนี้ ของคนนั้น (แสดงยอดเต็ม)
   const moveList = (moves ?? []).filter((m) => !pv.personId || [m.from_asset_id, m.to_asset_id].some((id) => id && pv.showAsset(id))
     || [m.to_credit_card_id, m.to_liability_id].some((id) => id && pv.showLiability(id)));
+  // บัตรตัดบัญชีอัตโนมัติ: งวดของเดือนนี้ที่ยังไม่มีรายการจ่ายบัตร → ถึงวันครบชำระแล้ว = "รอยืนยัน" · ยังไม่ถึง = "จะตัด"
+  const lastDay = Number(end.slice(8, 10));
+  const autopay = (cardsRaw ?? [])
+    .filter((c) => c.status === "ACTIVE" && c.autopay_asset_id && c.due_day && pv.isPerson(c.person_id))
+    .map((c) => ({
+      id: c.id as string, bank: c.autopay_asset_id as string, currency: c.currency as string, minimum: c.autopay_mode === "MINIMUM",
+      label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "),
+      balance: Number(c.outstanding_balance), balanceDate: c.balance_date as string | null,
+      due: `${start.slice(0, 8)}${String(Math.min(Number(c.due_day), lastDay)).padStart(2, "0")}`,
+      paid: (moves ?? []).some((m) => m.movement_type === "CARD_PAYMENT" && m.to_credit_card_id === c.id),
+    }))
+    .filter((x) => !x.paid && (!goLive || x.due >= goLive) && (x.minimum || x.balance > 0))
+    .sort((a, b) => a.due.localeCompare(b.due));
+  const autopayPending = autopay.filter((x) => x.due <= today);
   const savings = grossThb - taxThb - (expenseThb - reimbThb);
   const rs = new Map((reimbStatus ?? []).map((r) => [r.expense_item_id, r]));
   const inMonth = start <= today && (!goLive || end >= goLive);
@@ -195,6 +212,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ ภาพรวม */}
       <TabPanel id="overview">
+          {autopayPending.length > 0 && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+              บัตรเครดิตตัดบัญชีอัตโนมัติรอยืนยัน {autopayPending.length} รายการ — ดูที่แท็บ &ldquo;โอน &amp; จ่ายหนี้&rdquo;
+            </p>
+          )}
           <section className="grid gap-4 md:grid-cols-4">
             <Kpi label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"} />
             <Kpi label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
@@ -313,7 +335,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           : i.lease_id ? <Link href={`/property/${i.asset_id}`} className="underline">ค่าเช่า (แบ่งตามเจ้าของทรัพย์สิน)</Link>
                           : i.income_type === "LOAN_INTEREST" && i.asset_id
                             ? <Link href={`/financial/loans/${i.asset_id}`} className="underline">ดอกเบี้ยจาก {pname(i.src_asset) ?? "เงินให้กู้"} (แบ่งตามเจ้าของ)</Link>
-                          : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)` : "ส่วนกลาง")}
+                          : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)`
+                            : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง")}
                         {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
                       </td>
                       <td className="text-right tabular-nums">{money(i.amount, i.currency)}
@@ -326,6 +349,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             { name: "date", label: "วันที่", type: "date", value: i.date },
                             { name: "amount", label: "Gross", type: "number", value: i.full_amount },
                             { name: "tax", label: "ภาษี", type: "number", value: i.full_tax },
+                            { name: "person_id", label: "ของใคร", type: "select", value: i.person_id,
+                              options: [["", i.asset_id ? "ตามเจ้าของทรัพย์สิน" : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง"], ...personOpts] },
                             { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]} />
                         )}
                       </td>
@@ -454,7 +479,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           {i.source_cash_movement_id ? "จากรายการโอน (แก้ที่รายการโอน)"
                             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
                             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
-                            : `เงินสด · ${pname(i.persons) ?? "ส่วนกลาง"}`}
+                            : "เงินสด"}
+                          {!i.source_cash_movement_id && (pname(i.persons)
+                            ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
+                            : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}
                         </td>
                         <td className="text-right tabular-nums">{money(i.amount, i.currency)}
                           {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
@@ -478,6 +506,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                               { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },
                               { name: "amount", label: "จำนวน", type: "number", value: i.full_amount },
                               { name: "expense_category", label: "หมวด", value: i.expense_category },
+                              { name: "person_id", label: "ของใคร", type: "select" as const, value: i.person_id,
+                                options: [["", i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : i.paid_from_asset_id ? "ตามเจ้าของบัญชี" : "ส่วนกลาง"] as [string, string], ...personOpts] },
                               ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]} />
                           )}
                         </td>
@@ -514,6 +544,37 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ โอน & จ่ายหนี้ */}
       <TabPanel id="moves">
+          {autopay.length > 0 && (
+            <section className={`rounded-xl border p-5 ${autopayPending.length ? "border-amber-200 bg-amber-50/40" : "border-slate-200 bg-white"}`}>
+              <h2 className="mb-1 font-medium text-slate-900">บัตรเครดิตตัดบัญชีอัตโนมัติ เดือน {thMonth(start)}</h2>
+              <p className="mb-3 text-xs text-slate-500">ถึงวันครบชำระแล้วขึ้น &ldquo;รอยืนยัน&rdquo; · ตรวจยอดที่ตัดจริงในบัญชีแล้วกดยืนยัน ระบบจึงบันทึกเงินออกจากบัญชีให้</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {autopay.map((x) => (
+                  <div key={x.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{x.label}</div>
+                        <div className="text-xs text-slate-500">ตัดจาก {name.get(x.bank) ?? "บัญชี"} · ครบ {thDate(x.due)}</div>
+                      </div>
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${x.due <= today ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
+                        {x.due <= today ? "รอยืนยัน" : "ยังไม่ถึงวันตัด"}
+                      </span>
+                    </div>
+                    <div className="mt-1 tabular-nums">
+                      {x.minimum ? "ตัดยอดขั้นต่ำ" : `ตัดเต็มจำนวน ${money(x.balance, x.currency)}`}
+                      {!x.minimum && x.balanceDate && <span className="text-xs text-slate-500"> (ยอดบัตร ณ {thDate(x.balanceDate)})</span>}
+                    </div>
+                    {canWrite && x.due <= today && (
+                      <div className="mt-2">
+                        <AutopayConfirmForm cardId={x.id} bankId={x.bank} currency={x.currency} dueDate={x.due} amount={x.balance}
+                          minimum={x.minimum} today={today} minDate={minDate} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           <section className="rounded-xl border border-slate-200 bg-white p-5">

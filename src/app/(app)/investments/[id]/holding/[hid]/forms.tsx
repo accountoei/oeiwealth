@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addUnderlying, recordTx, saveFcn, type ActionState } from "../../../actions";
 import { COUPON_FREQ_LABEL } from "@/lib/format";
+import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -86,8 +87,8 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ */
-export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, cashAccounts, today, minDate }: {
-  assetId: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
+export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, isFcn, banks, cashAccounts, today, minDate }: {
+  assetId: string; portfolioName?: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
@@ -112,8 +113,7 @@ export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, cashAcc
         <label className="text-sm">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={input} /></label>
       </div>
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เข้าเงินฝากในพอร์ต</label>
-        <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> เข้าบัญชีธนาคาร</label>
+        <SettleModeRadios mode={mode} setMode={setMode} portfolioName={portfolioName} className="flex flex-wrap items-center gap-3" />
         {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={currency} label="บัญชี" compact />}
         {mode === "bank" && (
           <>
