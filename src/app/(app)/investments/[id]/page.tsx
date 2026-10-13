@@ -384,7 +384,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500">
                     <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
-                      <th className="text-right">ยอด</th><th className="text-right">เงินฝากพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th><th></th></tr>
+                      <th className="text-right">ยอด</th><th className="text-right">เงินฝากเพิ่ม / ลด</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {txList.map((t) => {
@@ -402,6 +402,40 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                             {multiCash && t.holding_id && t.cash_holding_id && t.cash_holding_id !== t.holding_id && (
                               <div className="text-xs text-slate-500">บัญชี: {acctName(t.cash_holding_id)}</div>
                             )}
+                            {/* ชำระ / การโอน / หมายเหตุ — บรรทัดเล็กใต้ชื่อ (เฉพาะแถวที่มี) */}
+                            <div className="text-xs text-slate-500">
+                              {bank && <div>{t.transaction_type === "BUY" ? "จ่ายจาก" : "เข้า"} {bankName.get(bank) ?? "บัญชีธนาคาร"}{t.settlement_date && ` · ${thDate(t.settlement_date)}`}
+                                {t.settlement_status === "UNSETTLED" && <span className="text-amber-700"> · รอชำระ</span>}</div>}
+                              {t.cash_movement_id && (() => {
+                                const m = transferById.get(t.cash_movement_id);
+                                if (!m) return <div>สร้างจากการโอนเงิน</div>;
+                                return (
+                                  <div>
+                                    {m.movement_type === "INVESTMENT_OUT" ? `จาก ${transferBank(m)}` : `ไป ${transferBank(m)}`}
+                                    {m.counter_currency && m.counter_currency !== m.currency
+                                      ? ` · ${money(m.amount, m.currency)} → ${m.counter_amount != null ? money(m.counter_amount, m.counter_currency) : `รอยอด ${m.counter_currency}`}` : ""}
+                                    {(Number(m.fee ?? 0) > 0 || Number(m.counter_fee ?? 0) > 0) && ` · ค่าธรรมเนียม ${[
+                                      Number(m.fee ?? 0) > 0 ? money(m.fee, m.currency) : null,
+                                      Number(m.counter_fee ?? 0) > 0 ? money(m.counter_fee, m.counter_currency ?? undefined) : null].filter(Boolean).join(" + ")}`}
+                                    {canWrite && <TransferEditForm assetId={id} t={m} bankLabel={transferBank(m)} cashAccounts={cashAccounts} minDate={goLive} today={today} rowMode />}
+                                  </div>
+                                );
+                              })()}
+                              {t.notes && <div>{t.notes}</div>}
+                            </div>
+                            {canWrite && !t.cash_movement_id && (
+                              <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+                                deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
+                                fields={[
+                                  ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
+                                  ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date }] : []),
+                                  ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
+                                  ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
+                                  ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
+                                  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
+                                  ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
+                                  { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
+                            )}
                           </td>
                           <td className="text-right tabular-nums text-slate-600">
                             {t.quantity != null && t.price != null ? `${qty(t.quantity)} × ${money(t.price, undefined, 4)}` : t.quantity != null ? qty(t.quantity) : ""}
@@ -418,41 +452,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                           <td className={`text-right tabular-nums ${cashEffect == null || cashEffect === 0 ? "text-slate-400" : cashEffect > 0 ? "text-emerald-700" : "text-red-700"}`}>
                             {cashEffect == null ? "—" : cashEffect === 0 ? "0" : money(cashEffect)}
                           </td>
-                          <td className="pl-4 text-xs text-slate-500">
-                            {bank && <div>{t.transaction_type === "BUY" ? "จ่ายจาก" : "เข้า"} {bankName.get(bank) ?? "บัญชีธนาคาร"}{t.settlement_date && ` · ${thDate(t.settlement_date)}`}
-                              {t.settlement_status === "UNSETTLED" && <span className="text-amber-700"> · รอชำระ</span>}</div>}
-                            {t.cash_movement_id && (() => {
-                              const m = transferById.get(t.cash_movement_id);
-                              if (!m) return <div>สร้างจากการโอนเงิน</div>;
-                              return (
-                                <div>
-                                  {m.movement_type === "INVESTMENT_OUT" ? `จาก ${transferBank(m)}` : `ไป ${transferBank(m)}`}
-                                  {m.counter_currency && m.counter_currency !== m.currency
-                                    ? ` · ${money(m.amount, m.currency)} → ${m.counter_amount != null ? money(m.counter_amount, m.counter_currency) : `รอยอด ${m.counter_currency}`}` : ""}
-                                  {(Number(m.fee ?? 0) > 0 || Number(m.counter_fee ?? 0) > 0) && ` · ค่าธรรมเนียม ${[
-                                    Number(m.fee ?? 0) > 0 ? money(m.fee, m.currency) : null,
-                                    Number(m.counter_fee ?? 0) > 0 ? money(m.counter_fee, m.counter_currency ?? undefined) : null].filter(Boolean).join(" + ")}`}
-                                  {canWrite && <div className="mt-1"><TransferEditForm assetId={id} t={m} bankLabel={transferBank(m)} cashAccounts={cashAccounts} minDate={goLive} today={today} /></div>}
-                                </div>
-                              );
-                            })()}
-                            {t.notes && <div>{t.notes}</div>}
-                          </td>
-                          <td className="pl-2 text-right">
-                            {canWrite && !t.cash_movement_id && (
-                              <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
-                                deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-                                fields={[
-                                  ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
-                                  ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date }] : []),
-                                  ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
-                                  ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-                                  ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
-                                  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
-                                  ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
-                                  { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
-                            )}
-                          </td>
                         </tr>
                       );
                     })}
@@ -461,7 +460,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               </div>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              &ldquo;—&rdquo; ในช่องเงินฝากพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
+              กดที่รายการเพื่อแก้ไข / ลบ · &ldquo;—&rdquo; ในช่องเงินฝากเพิ่ม / ลด = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
             </p>
           </div>
         </TabPanel>
