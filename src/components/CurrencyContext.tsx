@@ -68,8 +68,13 @@ export function CurrencySelect({ name, value, defaultValue, onChange, className,
           return;
         }
         if (value === undefined) setInner(v);
+        // เลือกสกุลในกลุ่มบน → หดรายการกลับเป็นแบบสั้น
+        const c = valuePrefix ? (v.startsWith(valuePrefix) ? v.slice(valuePrefix.length) : null) : v;
+        if (c == null || !rest.includes(c)) setExpanded(false);
         onChange?.(v);
-      }}>
+      }}
+      // กดออกโดยไม่ได้เลือกสกุลจาก "สกุลอื่น" → หดรายการกลับ
+      onBlur={() => { if (!(curCcy != null && rest.includes(curCcy))) setExpanded(false); }}>
       {before}
       {top.map(opt)}
       {rest.length > 0 && (showAll

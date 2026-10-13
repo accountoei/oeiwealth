@@ -165,7 +165,7 @@ export async function saveValuations(_: ActionState, form: FormData): Promise<Ac
     const mv = num(form.get(`mv_${h}`));
     if (price === null && mv === null) continue;
     if ((price !== null && Number.isNaN(price)) || (mv !== null && Number.isNaN(mv))) return { error: "ราคา / มูลค่าต้องเป็นตัวเลข" };
-    if (form.get(`cash_${h}`)) {               // เงินสดในพอร์ต: ยอดตาม Statement = จำนวน = มูลค่า
+    if (form.get(`cash_${h}`)) {               // เงินฝากในพอร์ต: ยอดตาม Statement = จำนวน = มูลค่า
       if (mv === null) continue;
       rows.push({ holding_id: h, valuation_date: date, price: 1, quantity: mv, market_value: mv, source: "STATEMENT" });
       continue;
@@ -180,8 +180,8 @@ export async function saveValuations(_: ActionState, form: FormData): Promise<Ac
   return { ok: `บันทึกราคา ${rows.length} รายการแล้ว` };
 }
 
-/** แลกเงินภายในพอร์ต (เงินสดสกุลหนึ่ง → อีกสกุล) */
-/** ย้ายเงินระหว่างบัญชีเงินสดในพอร์ต: สกุลเดียวกัน = โอน · คนละสกุล = แลกเงิน ("new:XXX" = สกุลใหม่ สร้างบัญชีให้) */
+/** แลกเงินภายในพอร์ต (เงินฝากสกุลหนึ่ง → อีกสกุล) */
+/** ย้ายเงินระหว่างบัญชีเงินฝากในพอร์ต: สกุลเดียวกัน = โอน · คนละสกุล = แลกเงิน ("new:XXX" = สกุลใหม่ สร้างบัญชีให้) */
 export async function moveCash(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
@@ -215,7 +215,7 @@ export async function moveCash(_: ActionState, form: FormData): Promise<ActionSt
   return { ok: "บันทึกการแลกเงินแล้ว" };
 }
 
-/** เพิ่มบัญชีเงินสดในพอร์ต (ช่วงตั้งค่าใส่ยอดตั้งต้นได้) */
+/** เพิ่มบัญชีเงินฝากในพอร์ต (ช่วงตั้งค่าใส่ยอดตั้งต้นได้) */
 export async function addCashAccount(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
@@ -307,7 +307,7 @@ export async function updatePortfolio(_: ActionState, form: FormData): Promise<A
   return { ok: "บันทึกรายละเอียดพอร์ตแล้ว" };
 }
 
-/** จัดลำดับเงินสด / หลักทรัพย์ (↑ = -1, ↓ = +1) — มีผลทันที */
+/** จัดลำดับเงินฝาก / หลักทรัพย์ (↑ = -1, ↓ = +1) — มีผลทันที */
 export async function moveHolding(form: FormData): Promise<void> {
   const supabase = await createClient();
   const dir = Number(form.get("dir"));

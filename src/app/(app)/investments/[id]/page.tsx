@@ -97,7 +97,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const cashHoldings = active.filter((h) => h.holding_type === "CASH");
   const securities = holdings.filter((h) => h.holding_type !== "CASH");
   const cashAccounts: CashAcct[] = cashHoldings.map((h) => ({ id: h.id, name: h.name, currency: h.currency, is_default_cash: h.is_default_cash }));
-  // เงินสดรวมรายสกุล (หลายบัญชีต่อสกุลได้)
+  // เงินฝากรวมรายสกุล (หลายบัญชีต่อสกุลได้)
   const cashByCcy = new Map<string, { value: number; count: number }>();
   for (const c of cashHoldings) {
     const x = cashByCcy.get(c.currency) ?? { value: 0, count: 0 };
@@ -130,7 +130,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   if (txMonth !== "all" && !txMonths.some((x) => x.value === txMonth)) txMonths.unshift({ value: txMonth, label: thMonth(`${txMonth}-01`) });
   txMonths.push({ value: "all", label: "ทุกเดือน" });
 
-  // ช่องเลือกสกุลเงินในหน้านี้: กลุ่มบน = สกุลที่พอร์ตใช้อยู่ (สกุลพอร์ต + บัญชีเงินสด + หลักทรัพย์)
+  // ช่องเลือกสกุลเงินในหน้านี้: กลุ่มบน = สกุลที่พอร์ตใช้อยู่ (สกุลพอร์ต + บัญชีเงินฝาก + หลักทรัพย์)
   const pfCurrencies = [a.currency, ...holdings.filter((h) => h.status === "ACTIVE" || h.holding_type === "CASH").map((h) => h.currency)];
 
   return (
@@ -156,7 +156,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         )}
         <Kpi label="มูลค่าเป็นบาท (ใช้ใน Net Worth)" value={money(pv?.thb_value ?? null, "THB", 0)}
           sub={Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"} />
-        <Kpi label="เงินสดในพอร์ต" value={cashByCcy.size === 0 ? "-" : (
+        <Kpi label="เงินฝากในพอร์ต" value={cashByCcy.size === 0 ? "-" : (
             <div className="space-y-0.5">{[...cashByCcy.entries()].map(([c, x]) => <div key={c}>{money(x.value, c, 0)}</div>)}</div>)}
           sub="คำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น" />
         <Kpi label="รายได้ลงทุน (ปันผล/ดอกเบี้ย)" value={money(incomeThb, "THB", 0)} sub="ตั้งแต่ Go-live · ก่อนหักภาษี" />
@@ -180,7 +180,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       {Number(pv?.in_transit ?? 0) !== 0 && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
           เงินโอนเข้าพอร์ต {money(pv?.in_transit ?? 0, a.currency)} ยังเป็น &ldquo;เงินระหว่างทาง&rdquo; — นับรวมใน Net Worth แล้ว
-          และจะรวมเข้าเงินสดในพอร์ตเมื่อบันทึกยอดเงินสดตาม Statement (อัปเดตราคา / Statement)
+          และจะรวมเข้าเงินฝากในพอร์ตเมื่อบันทึกยอดเงินฝากตาม Statement (อัปเดตราคา / Statement)
         </p>
       )}
 
@@ -205,11 +205,11 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         </section>
       )}
 
-      {/* ------------------------------------------------ เงินสด / เงินฝากในพอร์ต (รายบัญชี) */}
+      {/* ------------------------------------------------ เงินฝากในพอร์ต (รายบัญชี) */}
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
           <div className="flex items-baseline gap-3">
-            <h2 className="font-medium text-slate-900">เงินสด / เงินฝากในพอร์ต</h2>
+            <h2 className="font-medium text-slate-900">เงินฝากในพอร์ต</h2>
             {canDelete && cashHoldings.length > 1 && <OrderToggle id={id} mode="cash" active={orderMode === "cash"} />}
           </div>
           <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(cashThb, "THB", 0)}</span></span>
@@ -220,7 +220,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               <th className="px-3 text-right">สัดส่วน</th><th className="px-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {cashHoldings.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีบัญชีเงินสด</td></tr>}
+            {cashHoldings.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีบัญชีเงินฝาก</td></tr>}
             {(orderMode === "cash" ? [""] : [...cashByCcy.keys()]).map((ccy) => {
               // โหมดจัดลำดับ: แสดงทุกบัญชีตามลำดับจริง (ไม่จัดกลุ่มตามสกุล)
               const rows = orderMode === "cash" ? cashHoldings : cashHoldings.filter((h) => h.currency === ccy);
@@ -361,7 +361,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           </table>
           <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
             มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตรา ธปท. ล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
-            · เงินสด {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
+            · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
             · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / ครบกำหนด
           </p>
         </TabPanel>
@@ -384,7 +384,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500">
                     <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
-                      <th className="text-right">ยอด</th><th className="text-right">เงินสดพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th><th></th></tr>
+                      <th className="text-right">ยอด</th><th className="text-right">เงินฝากพอร์ต</th><th className="pl-4">ชำระ / หมายเหตุ</th><th></th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {txList.map((t) => {
@@ -397,8 +397,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                           <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
                           <td className="text-slate-600">
                             {t.transaction_type === "CASH_TRANSFER" ? `${acctName(t.cash_holding_id)} → ${acctName(t.counter_cash_holding_id)}`
-                              : t.transaction_type === "FX_EXCHANGE" ? `${acctName(t.cash_holding_id) || `เงินสด ${t.currency}`} → ${acctName(t.counter_cash_holding_id) || t.counter_currency}`
-                              : t.holding_id ? byId.get(t.holding_id)?.name : acctName(t.cash_holding_id) || "เงินสดพอร์ต"}
+                              : t.transaction_type === "FX_EXCHANGE" ? `${acctName(t.cash_holding_id) || `เงินฝาก ${t.currency}`} → ${acctName(t.counter_cash_holding_id) || t.counter_currency}`
+                              : t.holding_id ? byId.get(t.holding_id)?.name : acctName(t.cash_holding_id) || "เงินฝากพอร์ต"}
                             {multiCash && t.holding_id && t.cash_holding_id && t.cash_holding_id !== t.holding_id && (
                               <div className="text-xs text-slate-500">บัญชี: {acctName(t.cash_holding_id)}</div>
                             )}
@@ -461,7 +461,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               </div>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              &ldquo;—&rdquo; ในช่องเงินสดพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
+              &ldquo;—&rdquo; ในช่องเงินฝากพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
             </p>
           </div>
         </TabPanel>

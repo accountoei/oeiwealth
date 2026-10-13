@@ -140,7 +140,7 @@ export function thMonth(value: string | null | undefined): string {
 
 export const HOLDING_TYPE_LABEL: Record<string, string> = {
   EQUITY: "หุ้น", FUND: "กองทุน", BOND: "หุ้นกู้ / พันธบัตร", FCN: "FCN", STRUCTURED_PRODUCT: "Structured Product",
-  CASH: "เงินสดในพอร์ต", OTHER: "อื่น ๆ",
+  CASH: "เงินฝากในพอร์ต", OTHER: "อื่น ๆ",
 };
 export const PORTFOLIO_TYPE_LABEL: Record<string, string> = {
   BROKERAGE: "บัญชีหลักทรัพย์ / กองทุน", PRIVATE_FUND: "กองทุนส่วนบุคคล", OTHER: "อื่น ๆ",

@@ -818,7 +818,7 @@ SELECT public.record_investment_fx(t.a('พอร์ตหลายบัญช�
                      'cash_holding_id',t.h('เงินสด USD บัญชี A'))) IS NOT NULL AS fx_from_a;
 SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี A')) = 1310
             AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี B')) = 4520
-            AND (SELECT current_value FROM public.investment_holdings WHERE name = 'เงินสด THB'
+            AND (SELECT current_value FROM public.investment_holdings WHERE name = 'เงินฝาก THB'
                    AND portfolio_id = (SELECT id FROM public.investment_portfolios WHERE asset_id = t.a('พอร์ตหลายบัญชี'))) = 3500,
             'แลกเงินจากบัญชีที่เลือก · บัญชี THB ใหม่ได้รับเงิน');
 -- ครบกำหนด: เงินต้นเข้าบัญชี A ที่เลือก
@@ -1000,6 +1000,13 @@ SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.transfer_portfolio_money(t.a('พอร์ตหลายบัญชี (แก้)'),
   jsonb_build_object('direction','IN','bank_asset_id',t.a('KBank ออมทรัพย์'),'date',current_date,'amount',10))$$,
   'PERMISSION_DENIED', 'VIEWER บันทึกการโอนไม่ได้');
+RESET ROLE;
+
+\echo '== 13m. คำว่า "เงินฝากในพอร์ต" (ชื่อบัญชีที่ระบบสร้าง)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.investment_holdings WHERE holding_type = 'CASH' AND name ~ '^เงินสด [A-Z]{3}$')
+            AND EXISTS (SELECT 1 FROM public.investment_holdings WHERE holding_type = 'CASH' AND name = 'เงินฝาก THB'),
+            'บัญชีที่ระบบสร้างอัตโนมัติชื่อ "เงินฝาก XXX"');
 RESET ROLE;
 
 \echo '== 14. Views'

@@ -112,7 +112,7 @@ export function IncomeForm({ assetId, holdingId, currency, isFcn, banks, cashAcc
         <label className="text-sm">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={input} /></label>
       </div>
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เข้าเงินสดในพอร์ต</label>
+        <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เข้าเงินฝากในพอร์ต</label>
         <label className="flex items-center gap-1"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> เข้าบัญชีธนาคาร</label>
         {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={currency} label="บัญชี" compact />}
         {mode === "bank" && (

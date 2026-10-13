@@ -93,7 +93,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         <Kpi label="มูลค่าลงทุนรวม" value={money(total, "THB", 0)} />
         <Kpi label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
         <Kpi label="จำนวนพอร์ต" value={String(list.length)} />
-        <Kpi label="เงินสดในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
+        <Kpi label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
