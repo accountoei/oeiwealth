@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import {
-  addCashAccount, addHolding, recordFx, recordMaturity, recordTx, saveValuations, transferCash, transferMoney, type ActionState,
+  addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
 } from "../actions";
 import { CURRENCIES, HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 
@@ -262,42 +262,95 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
   ));
 }
 
-/* ------------------------------------------------------------------ โอนเงิน */
-export function TransferForm({ assetId, currency, banks, today, minDate }:
-  { assetId: string; currency: string; banks: Bank[]; today: string; minDate: string }) {
+/* ------------------------------------------------------------------ โอนเงิน ธนาคาร ↔ พอร์ต (สกุลเดียวกัน / ข้ามสกุล) */
+/** อัตราที่ได้จริง (บาทต่อหน่วย) เมื่อคู่สกุลมี THB */
+function rateText(src: string, srcAmt: number, dst: string, dstAmt: number) {
+  if (!(srcAmt > 0 && dstAmt > 0) || src === dst) return null;
+  if (src === "THB") return `อัตราที่ได้จริง 1 ${dst} = ${(srcAmt / dstAmt).toFixed(4)} บาท`;
+  if (dst === "THB") return `อัตราที่ได้จริง 1 ${src} = ${(dstAmt / srcAmt).toFixed(4)} บาท`;
+  return `อัตราที่ได้จริง 1 ${src} = ${(dstAmt / srcAmt).toFixed(6)} ${dst}`;
+}
+
+export function TransferForm({ assetId, currency, banks, cashAccounts, today, minDate }:
+  { assetId: string; currency: string; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(transferMoney, {});
   const [dir, setDir] = useState("IN");
-  const list = banks.filter((b) => b.currency === currency);
+  const [bank, setBank] = useState("");
+  const defAcct = (ccy?: string) =>
+    (cashAccounts.find((a) => a.currency === ccy && a.is_default_cash) ?? cashAccounts.find((a) => a.currency === ccy)
+      ?? cashAccounts.find((a) => a.currency === currency && a.is_default_cash) ?? cashAccounts[0])?.id ?? "";
+  const [acct, setAcct] = useState(defAcct(currency));
+  const [amt, setAmt] = useState("");
+  const [got, setGot] = useState("");
+  const [wait, setWait] = useState(false);
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>โอนเงิน ธนาคาร ↔ พอร์ต</button>;
   if (!open) return trigger;
+  const b = banks.find((x) => x.asset_id === bank);
+  const c = cashAccounts.find((x) => x.id === acct);
+  const src = (dir === "IN" ? b?.currency : c?.currency) ?? "";
+  const dst = (dir === "IN" ? c?.currency : b?.currency) ?? "";
+  const same = src !== "" && src === dst;
+  const rate = rateText(src, n(amt), dst, n(got));
+  const pickBank = (v: string) => {
+    setBank(v);
+    const ccy = banks.find((x) => x.asset_id === v)?.currency;
+    if (ccy && !cashAccounts.some((a) => a.id === acct && a.currency === ccy)) setAcct(defAcct(ccy));
+  };
   return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
-      <h3 className="font-medium text-slate-900">โอนเงิน (Transfer Money)</h3>
+      <input type="hidden" name="src_ccy" value={src} />
+      <input type="hidden" name="dst_ccy" value={dst} />
+      <div>
+        <h3 className="font-medium text-slate-900">โอนเงิน ธนาคาร ↔ พอร์ต</h3>
+        <p className="text-xs text-slate-500">ข้ามสกุลได้ (เช่น บัญชีบาท → เงินสด USD ในพอร์ต) · ยอดที่เข้ายังไม่ทราบ ใส่ทีหลังได้</p>
+      </div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className={lbl}>ทิศทาง
           <select name="direction" value={dir} onChange={(e) => setDir(e.target.value)} className={input}>
             <option value="IN">ธนาคาร → พอร์ต</option><option value="OUT">พอร์ต → ธนาคาร</option>
           </select>
         </label>
-        <label className={lbl}>บัญชีธนาคาร ({currency}) *
-          <select name="bank_asset_id" required className={input}>
+        <label className={lbl}>บัญชีธนาคาร *
+          <select name="bank_asset_id" required value={bank} onChange={(e) => pickBank(e.target.value)} className={input}>
             <option value="">— เลือก —</option>
-            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            {banks.map((x) => <option key={x.asset_id} value={x.asset_id}>{x.name} ({x.currency})</option>)}
           </select>
-          {list.length === 0 && <span className="mt-1 block text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} (ต้องสกุลเดียวกับพอร์ต)</span>}
         </label>
-        <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className={lbl}>จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
-        <label className={lbl}>ค่าธรรมเนียม (หักฝั่งผู้ส่ง)<input name="fee" inputMode="decimal" className={input} /></label>
+        <label className={lbl}>บัญชีเงินสดในพอร์ต *
+          <select name="cash_holding_id" required value={acct} onChange={(e) => setAcct(e.target.value)} className={input}>
+            {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency}){a.is_default_cash ? " ★" : ""}</option>)}
+          </select>
+          {cashAccounts.length === 0 && <span className="mt-1 block text-xs text-amber-700">ยังไม่มีบัญชีเงินสดในพอร์ต — กด &ldquo;+ บัญชีเงินสด&rdquo; ก่อน</span>}
+        </label>
+        <label className={lbl}>วันที่โอน *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className={lbl}>รายละเอียด<input name="description" className={input} /></label>
+        <span className="hidden md:block" />
       </div>
-      <p className="text-xs text-slate-500">
-        {dir === "IN"
-          ? "ธนาคารลด (จำนวน + ค่าธรรมเนียม) · พอร์ตรับเงินระหว่างทางจนกว่าจะมี Statement เงินสด · ค่าธรรมเนียม = ค่าใช้จ่ายค่าธรรมเนียมธนาคาร"
-          : "พอร์ตลด (จำนวน + ค่าธรรมเนียม) · ธนาคารรับจำนวนเต็ม · ค่าธรรมเนียม = FEE ของพอร์ต (ลดผลตอบแทน)"}
-      </p>
+      <div className="grid gap-4 md:grid-cols-2">
+        <fieldset className="space-y-3 rounded-lg bg-slate-50 p-3">
+          <legend className="px-1 text-xs font-medium text-slate-600">ต้นทาง: {dir === "IN" ? b?.name ?? "บัญชีธนาคาร" : c?.name ?? "พอร์ต"}</legend>
+          <label className={lbl}>เงินที่ออก{src && ` (${src})`} *<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={input} /></label>
+          <label className={lbl}>ค่าธรรมเนียมฝั่งต้นทาง{src && ` (${src})`}<input name="fee" inputMode="decimal" className={input} /></label>
+        </fieldset>
+        <fieldset className="space-y-3 rounded-lg bg-slate-50 p-3">
+          <legend className="px-1 text-xs font-medium text-slate-600">ปลายทาง: {dir === "IN" ? c?.name ?? "พอร์ต" : b?.name ?? "บัญชีธนาคาร"}</legend>
+          <label className={lbl}>ยอดที่เข้าจริง{dst && ` (${dst})`} {!wait && !same && "*"}
+            <input name="counter_amount" inputMode="decimal" value={wait ? "" : got} disabled={wait} required={!wait && !same}
+              placeholder={same ? "เว้นว่าง = เท่ากับเงินที่ออก" : ""} onChange={(e) => setGot(e.target.value)} className={`${input} disabled:bg-slate-100`} />
+          </label>
+          <label className={lbl}>ค่าธรรมเนียมฝั่งปลายทาง{dst && ` (${dst})`}<input name="counter_fee" inputMode="decimal" className={input} /></label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="wait" checked={wait} onChange={(e) => setWait(e.target.checked)} />
+            ยังไม่ทราบยอดที่เข้า (รอ Statement)</label>
+        </fieldset>
+      </div>
+      <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
+        {rate && <li className="text-slate-700">{rate}</li>}
+        <li>ยอดที่เข้าจริง = ยอดหลังหักค่าธรรมเนียมฝั่งปลายทาง (ตาม Statement) · ค่าธรรมเนียมทั้ง 2 ฝั่งลงเป็นค่าใช้จ่าย &ldquo;ค่าธรรมเนียมธนาคาร&rdquo;</li>
+        <li>ส่วนต่างอัตราแลกเปลี่ยน = มูลค่าเปลี่ยน (ไม่ใช่ค่าใช้จ่าย)</li>
+        <li>รอยอด: เงินนับเป็น &ldquo;เงินระหว่างทาง&rdquo; ไม่หายจาก Net Worth · ใส่ยอดได้ที่กล่อง &ldquo;รอยอดปลายทาง&rdquo;</li>
+      </ul>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
@@ -307,48 +360,56 @@ export function TransferForm({ assetId, currency, banks, today, minDate }:
   ));
 }
 
-/* ------------------------------------------------------------------ แลกเงินในพอร์ต */
-export function FxForm({ assetId, cashCurrencies, cashAccounts, today, minDate }:
-  { assetId: string; cashCurrencies: string[]; cashAccounts: CashAcct[]; today: string; minDate: string }) {
+/** รายการโอน ธนาคาร ↔ พอร์ต (จาก cash_movements) */
+export type PfTransfer = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
+  amount: number; currency: string; fee: number | null; counter_amount: number | null; counter_currency: string | null;
+  counter_fee: number | null; cash_holding_id: string | null; description: string | null };
+
+/** แก้รายการโอน / ใส่ยอดที่เข้าทีหลัง */
+export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate, today }:
+  { assetId: string; t: PfTransfer; bankLabel: string; cashAccounts: CashAcct[]; minDate: string; today: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [state, action, pending] = useActionState<ActionState, FormData>(recordFx, {});
-  const [from, setFrom] = useState(cashCurrencies[0] ?? "THB");
-  const [to, setTo] = useState(cashCurrencies.find((c) => c !== (cashCurrencies[0] ?? "THB")) ?? (from === "THB" ? "USD" : "THB"));
-  const [amt, setAmt] = useState("");
-  const [got, setGot] = useState("");
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>แลกเงินในพอร์ต</button>;
+  const [state, action, pending] = useActionState<ActionState, FormData>(updateTransfer, {});
+  const isIn = t.movement_type === "INVESTMENT_OUT";            // ธนาคาร → พอร์ต
+  const waiting = t.counter_currency != null && t.counter_amount == null;
+  const [acct, setAcct] = useState(t.cash_holding_id ?? cashAccounts.find((a) => a.currency === (isIn ? t.counter_currency ?? t.currency : t.currency))?.id ?? "");
+  const [amt, setAmt] = useState(String(Number(t.amount)));
+  const [got, setGot] = useState(t.counter_amount != null ? String(Number(t.counter_amount)) : t.counter_currency == null ? String(Number(t.amount)) : "");
+  const trigger = (
+    <button type="button" onClick={() => setOpen(!open)}
+      className={activeCls(waiting ? "rounded-md bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700" : "text-xs text-slate-700 underline")}>
+      {waiting ? "ใส่ยอดที่เข้า" : "แก้การโอน"}
+    </button>
+  );
   if (!open) return trigger;
-  const rate = n(amt) > 0 && n(got) > 0 ? (from === "THB" ? n(amt) / n(got) : to === "THB" ? n(got) / n(amt) : n(got) / n(amt)) : null;
+  const c = cashAccounts.find((x) => x.id === acct);
+  const src = t.currency;
+  const dst = (isIn ? c?.currency : t.counter_currency ?? t.currency) ?? "";
+  const accts = isIn ? cashAccounts : cashAccounts.filter((a) => a.currency === t.currency);
+  const rate = rateText(src, n(amt), dst, n(got));
   return present(trigger, (
-    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+    <form action={action} className="mt-2 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-sm">
       <input type="hidden" name="asset_id" value={assetId} />
-      <h3 className="font-medium text-slate-900">แลกเงินภายในพอร์ต (FX Exchange)</h3>
-      <div className="grid gap-4 md:grid-cols-3">
-        <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className={lbl}>จากเงินสดสกุล *
-          <select name="currency" value={from} onChange={(e) => setFrom(e.target.value)} className={input}>
-            {cashCurrencies.map((c) => <option key={c}>{c}</option>)}
+      <input type="hidden" name="movement_id" value={t.id} />
+      <input type="hidden" name="bank_asset_id" value={(isIn ? t.from_asset_id : t.to_asset_id) ?? ""} />
+      <p className="text-xs text-slate-600">{isIn ? `${bankLabel} → พอร์ต` : `พอร์ต → ${bankLabel}`} · เว้นยอดที่เข้าว่าง = ยังรอยอด</p>
+      <div className="grid gap-2 md:grid-cols-4">
+        <label className="text-xs">วันที่โอน<input name="date" type="date" required defaultValue={t.movement_date} min={minDate} max={today} className={`mt-1 block w-full ${small}`} /></label>
+        <label className="text-xs">บัญชีเงินสดในพอร์ต
+          <select name="cash_holding_id" value={acct} onChange={(e) => setAcct(e.target.value)} className={`mt-1 block w-full ${small}`}>
+            {accts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
           </select>
         </label>
-        <label className={lbl}>เป็นสกุล *
-          <select name="counter_currency" value={to} onChange={(e) => setTo(e.target.value)} className={input}>
-            {CURRENCIES.filter((c) => c !== from).map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </label>
-        <CashAccountSelect accounts={cashAccounts} currency={from} label={`จากบัญชี (${from})`} />
-        <CashAccountSelect accounts={cashAccounts} currency={to} name="counter_cash_holding_id" label={`เข้าบัญชี (${to})`} />
-        <label className={lbl}>ยอดที่แลกออก ({from}) *<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={input} /></label>
-        <label className={lbl}>ยอดที่ได้รับ ({to}) *<input name="counter_amount" required inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} className={input} /></label>
-        <label className={lbl}>ค่าธรรมเนียม ({from})<input name="fee" inputMode="decimal" className={input} /></label>
-        <label className={`${lbl} md:col-span-3`}>หมายเหตุ<input name="notes" className={input} /></label>
+        <label className="text-xs">เงินที่ออก ({src})<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={`mt-1 block w-full ${small}`} /></label>
+        <label className="text-xs">ค่าธรรมเนียมต้นทาง ({src})<input name="fee" inputMode="decimal" defaultValue={t.fee != null ? String(Number(t.fee)) : ""} className={`mt-1 block w-full ${small}`} /></label>
+        <label className="text-xs">ยอดที่เข้าจริง ({dst})<input name="counter_amount" inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} className={`mt-1 block w-full ${small}`} /></label>
+        <label className="text-xs">ค่าธรรมเนียมปลายทาง ({dst})<input name="counter_fee" inputMode="decimal" defaultValue={t.counter_fee != null ? String(Number(t.counter_fee)) : ""} className={`mt-1 block w-full ${small}`} /></label>
+        <label className="text-xs md:col-span-2">รายละเอียด<input name="description" defaultValue={t.description ?? ""} className={`mt-1 block w-full ${small}`} /></label>
       </div>
-      <p className="text-xs text-slate-500">
-        {rate != null && <>อัตราที่ได้จริง {from === "THB" || to === "THB" ? `1 ${from === "THB" ? to : from} = ${rate.toFixed(4)} THB` : `1 ${from} = ${rate.toFixed(6)} ${to}`} · </>}
-        เงินสด {from} ในพอร์ตลด (ยอด + ค่าธรรมเนียม) · เงินสด {to} เพิ่ม (สร้างให้อัตโนมัติถ้ายังไม่มี) · ไม่ใช่รายได้หรือค่าใช้จ่าย
-      </p>
+      {rate && <p className="text-xs text-slate-700">{rate}</p>}
       <div className="flex items-center gap-3">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการแลกเงิน"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">บันทึก</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -451,41 +512,59 @@ export function MaturityForm({ assetId, holding, banks, cashAccounts = [], today
   ));
 }
 
-/* ------------------------------------------------------------------ โอนระหว่างบัญชีเงินสดในพอร์ต */
-export function CashTransferForm({ assetId, cashAccounts, today, minDate }:
+/* ------------------------------------------------------------------ ย้ายเงินในพอร์ต (โอนสกุลเดียวกัน / แลกเงินข้ามสกุล) */
+export function MoveCashForm({ assetId, cashAccounts, today, minDate }:
   { assetId: string; cashAccounts: CashAcct[]; today: string; minDate: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [state, action, pending] = useActionState<ActionState, FormData>(transferCash, {});
-  const multi = cashAccounts.filter((a) => cashAccounts.filter((b) => b.currency === a.currency).length > 1);
-  const [from, setFrom] = useState(multi[0]?.id ?? "");
-  if (multi.length === 0) return null;
-  const ccy = multi.find((a) => a.id === from)?.currency ?? "";
-  const targets = multi.filter((a) => a.currency === ccy && a.id !== from);
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>โอนระหว่างบัญชีในพอร์ต</button>;
+  const [state, action, pending] = useActionState<ActionState, FormData>(moveCash, {});
+  const [from, setFrom] = useState(cashAccounts[0]?.id ?? "");
+  const [to, setTo] = useState("");
+  const [amt, setAmt] = useState("");
+  const [got, setGot] = useState("");
+  if (cashAccounts.length === 0) return null;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>ย้ายเงินในพอร์ต</button>;
   if (!open) return trigger;
+  const f = cashAccounts.find((a) => a.id === from);
+  const targets = cashAccounts.filter((a) => a.id !== from);
+  const have = new Set(cashAccounts.map((a) => a.currency));
+  const toVal = to && (targets.some((a) => a.id === to) || to.startsWith("new:")) ? to : targets[0]?.id ?? `new:${CURRENCIES.find((c) => c !== f?.currency) ?? "USD"}`;
+  const t = cashAccounts.find((a) => a.id === toVal);
+  const src = f?.currency ?? "";
+  const dst = t?.currency ?? (toVal.startsWith("new:") ? toVal.slice(4) : "");
+  const same = src === dst;
+  const rate = rateText(src, n(amt), dst, n(got));
   return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
-      <h3 className="font-medium text-slate-900">โอนระหว่างบัญชีเงินสดในพอร์ต</h3>
+      <input type="hidden" name="from_currency" value={src} />
+      <input type="hidden" name="to_currency" value={dst} />
+      <div>
+        <h3 className="font-medium text-slate-900">ย้ายเงินในพอร์ต</h3>
+        <p className="text-xs text-slate-500">สกุลเดียวกัน = โอนระหว่างบัญชี · คนละสกุล = แลกเงิน · ไม่ใช่รายได้หรือค่าใช้จ่าย</p>
+      </div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className={lbl}>จากบัญชี *
           <select name="from_holding_id" value={from} onChange={(e) => setFrom(e.target.value)} className={input}>
-            {multi.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
           </select>
         </label>
         <label className={lbl}>เข้าบัญชี *
-          <select key={from} name="to_holding_id" required defaultValue={targets[0]?.id ?? ""} className={input}>
-            {targets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          <select name="to_target" value={toVal} onChange={(e) => setTo(e.target.value)} className={input}>
+            {targets.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+            {CURRENCIES.filter((c) => !have.has(c)).map((c) => <option key={c} value={`new:${c}`}>บัญชีใหม่สกุล {c} (สร้างให้อัตโนมัติ)</option>)}
           </select>
         </label>
         <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className={lbl}>จำนวนเงิน ({ccy}) *<input name="amount" required inputMode="decimal" className={input} /></label>
-        <label className={lbl}>ค่าธรรมเนียม ({ccy})<input name="fee" inputMode="decimal" className={input} /></label>
-        <label className={lbl}>หมายเหตุ<input name="notes" className={input} /></label>
+        <label className={lbl}>{same ? "จำนวนเงิน" : "ยอดที่ออก"} ({src}) *<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={input} /></label>
+        {!same && <label className={lbl}>ยอดที่ได้รับ ({dst}) *<input name="counter_amount" required inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} className={input} /></label>}
+        <label className={lbl}>ค่าธรรมเนียม ({src})<input name="fee" inputMode="decimal" className={input} /></label>
+        <label className={`${lbl} ${same ? "" : "md:col-span-3"}`}>หมายเหตุ<input name="notes" className={input} /></label>
       </div>
-      <p className="text-xs text-slate-500">ย้ายเงินระหว่างบัญชีสกุลเดียวกันในพอร์ต · ยอดรวมพอร์ตไม่เปลี่ยน (ยกเว้นค่าธรรมเนียม) · ไม่ใช่รายได้หรือค่าใช้จ่าย · คนละสกุลใช้ &ldquo;แลกเงินในพอร์ต&rdquo;</p>
+      <p className="text-xs text-slate-500">
+        {rate && <>{rate} · </>}บัญชีต้นทางลด (ยอด + ค่าธรรมเนียม) · บัญชีปลายทางเพิ่ม · ยอดรวมพอร์ตเปลี่ยนเฉพาะค่าธรรมเนียม{!same && " และค่าเงิน"}
+      </p>
       <div className="flex items-center gap-3">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>

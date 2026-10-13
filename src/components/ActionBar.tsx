@@ -14,9 +14,10 @@ export function ActionBar({ children, right, className = "" }: { children: React
   return (
     <BarCtx.Provider value={{ active, setActive, panel }}>
       <div className={className}>
-        <div className="flex flex-wrap items-start gap-2">
-          {children}
-          {right && <div className="ml-auto">{right}</div>}
+        {/* ปุ่มซ้ายขึ้นบรรทัดใหม่ได้ · ส่วนขวา (เช่น สถานะพอร์ต) อยู่บรรทัดแรกชิดขวาเสมอ */}
+        <div className="flex items-start gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-start gap-2">{children}</div>
+          {right && <div className="shrink-0">{right}</div>}
         </div>
         <div ref={setPanel} className={active ? "mt-3" : ""} />
       </div>

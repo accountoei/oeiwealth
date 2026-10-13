@@ -928,6 +928,80 @@ SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.assets WHERE name = 'พ�
             'ADMIN ลบพอร์ตลงทุนได้');
 RESET ROLE;
 
+\echo '== 13l. โอนเงิน ธนาคาร ↔ พอร์ต ข้ามสกุล · ยอดปลายทางใส่ทีหลัง · ค่าธรรมเนียม 2 ฝั่งเป็นค่าใช้จ่าย'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.add_holding(t.a('พอร์ตหลายบัญชี (แก้)'), 'CASH', 'เงินสด USD บัญชี C', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS cash_c;
+SELECT public.add_holding(t.a('พอร์ตหลายบัญชี (แก้)'), 'CASH', 'เงินสด USD บัญชี D', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS cash_d;
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('type','ADJUSTMENT','direction','IN','date',current_date,'holding_id',t.h('เงินสด USD บัญชี D'),'amount',500,'notes','ยอดเริ่มทดสอบ')) IS NOT NULL AS seed_d;
+CREATE TEMP TABLE x13l AS SELECT
+  (SELECT calculated_balance FROM public.v_bank_balance_current WHERE name = 'KBank ออมทรัพย์') AS kb0,
+  (SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)')) AS it0,
+  NULL::uuid AS m_in, NULL::uuid AS m_out;
+-- ขาเข้า บาท → USD (บัญชี C) ยังไม่รู้ยอด USD
+UPDATE x13l SET m_in = public.transfer_portfolio_money(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('direction','IN','bank_asset_id',t.a('KBank ออมทรัพย์'),'cash_holding_id',t.h('เงินสด USD บัญชี C'),
+                     'date',current_date,'amount','34,000','fee',100,'description','ทดสอบข้ามสกุล'));
+SELECT t.ok((SELECT calculated_balance FROM public.v_bank_balance_current WHERE name = 'KBank ออมทรัพย์') = (SELECT kb0 - 34100 FROM x13l),
+            'ขาเข้ารอยอด: บัญชีบาทลด เงินที่ออก + ค่าธรรมเนียม ทันที');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.investment_transactions x WHERE x.cash_movement_id = (SELECT m_in FROM x13l) AND x.deleted_at IS NULL)
+            AND abs((SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)'))
+                    - (SELECT it0 FROM x13l) - 34000 / private.fx_rate('USD', current_date)) < 0.01,
+            'ขาเข้ารอยอด: ยังไม่มีรายการฝาก · เงินระหว่างทาง = ยอดบาทที่ส่ง (แปลงเป็น USD) → ไม่หายจาก Net Worth');
+SELECT t.ok((SELECT amount = 100 AND currency = 'THB' AND expense_category = 'BANK_FEE' FROM public.expense_items
+              WHERE source_cash_movement_id = (SELECT m_in FROM x13l) AND deleted_at IS NULL),
+            'ค่าธรรมเนียมฝั่งบาท = ค่าใช้จ่ายค่าธรรมเนียมธนาคาร');
+-- ได้ Statement: ใส่ยอด USD ที่เข้าจริง 990 + ค่าธรรมเนียมปลายทาง 10
+SELECT public.update_portfolio_transfer((SELECT m_in FROM x13l), '{"counter_amount":"990","counter_fee":"10"}');
+SELECT t.ok((SELECT amount = 990 AND currency = 'USD' AND holding_id = t.h('เงินสด USD บัญชี C') AND transaction_type = 'DEPOSIT'
+               FROM public.investment_transactions WHERE cash_movement_id = (SELECT m_in FROM x13l) AND deleted_at IS NULL)
+            AND abs((SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)')) - (SELECT it0 FROM x13l) - 990) < 0.0001
+            AND (SELECT round(actual_fx_rate, 4) FROM public.cash_movements WHERE id = (SELECT m_in FROM x13l)) = round(34000 / 990.0, 4),
+            'ใส่ยอดปลายทาง: ฝากเข้าบัญชี C 990 USD · เงินระหว่างทาง = 990 · อัตราที่ได้จริง = 34,000 ÷ 990');
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE source_cash_movement_id = (SELECT m_in FROM x13l) AND deleted_at IS NULL) = 2
+            AND (SELECT amount = 10 AND currency = 'USD' FROM public.expense_items
+                  WHERE source_cash_movement_id = (SELECT m_in FROM x13l) AND source_fee_side = 'TO' AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.investment_transactions WHERE cash_movement_id = (SELECT m_in FROM x13l) AND transaction_type = 'FEE'),
+            'ค่าธรรมเนียม 2 ฝั่ง = ค่าใช้จ่าย 2 รายการ (บาท + USD) · ไม่ลดผลตอบแทนพอร์ต');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+  VALUES (t.h('เงินสด USD บัญชี C'), current_date, 1, 990, 990, 'STATEMENT');
+SELECT t.ok((SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)')) = (SELECT it0 FROM x13l),
+            'Statement บัญชี C → เงินระหว่างทางเคลียร์');
+-- ขาออก USD (บัญชี D) → บาท ยังไม่รู้ยอดบาท
+UPDATE x13l SET kb0 = (SELECT calculated_balance FROM public.v_bank_balance_current WHERE name = 'KBank ออมทรัพย์'),
+                it0 = (SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)'));
+UPDATE x13l SET m_out = public.transfer_portfolio_money(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('direction','OUT','bank_asset_id',t.a('KBank ออมทรัพย์'),'cash_holding_id',t.h('เงินสด USD บัญชี D'),
+                     'date',current_date,'amount',100,'fee',5));
+SELECT t.ok((SELECT calculated_balance FROM public.v_bank_balance_current WHERE name = 'KBank ออมทรัพย์') = (SELECT kb0 FROM x13l)
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินสด USD บัญชี D')) = 500
+            AND (SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)')) = (SELECT it0 - 5 FROM x13l),
+            'ขาออกรอยอด: บัญชีบาทยังไม่เพิ่ม · เงินยังนับอยู่ที่พอร์ต (หักเฉพาะค่าธรรมเนียม 5)');
+SELECT t.ok((SELECT amount = 5 AND currency = 'USD' FROM public.expense_items
+              WHERE source_cash_movement_id = (SELECT m_out FROM x13l) AND coalesce(source_fee_side, 'FROM') = 'FROM' AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.investment_transactions WHERE cash_movement_id = (SELECT m_out FROM x13l) AND transaction_type = 'FEE'),
+            'ขาออก: ค่าธรรมเนียมฝั่ง USD = ค่าใช้จ่าย (ไม่ใช่ค่าธรรมเนียมพอร์ต)');
+SELECT public.update_portfolio_transfer((SELECT m_out FROM x13l), '{"counter_amount":"3300"}');
+SELECT t.ok((SELECT calculated_balance FROM public.v_bank_balance_current WHERE name = 'KBank ออมทรัพย์') = (SELECT kb0 + 3300 FROM x13l)
+            AND (SELECT in_transit FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี (แก้)')) = (SELECT it0 - 105 FROM x13l)
+            AND (SELECT round(actual_fx_rate, 4) FROM public.cash_movements WHERE id = (SELECT m_out FROM x13l)) = 33,
+            'ใส่ยอดบาทที่เข้า: บัญชีบาท +3,300 · พอร์ตหัก 105 (รอ Statement) · อัตรา 33');
+SELECT public.update_portfolio_transfer((SELECT m_out FROM x13l), '{"counter_amount":"","fee":""}');
+SELECT t.ok((SELECT calculated_balance FROM public.v_bank_balance_current WHERE name = 'KBank ออมทรัพย์') = (SELECT kb0 FROM x13l)
+            AND NOT EXISTS (SELECT 1 FROM public.expense_items WHERE source_cash_movement_id = (SELECT m_out FROM x13l) AND deleted_at IS NULL),
+            'แก้กลับเป็นรอยอด / ลบค่าธรรมเนียมได้ (ค่าใช้จ่ายหายตาม)');
+SELECT t.fails($$SELECT public.transfer_portfolio_money(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('direction','IN','bank_asset_id',t.a('KBank ออมทรัพย์'),'cash_holding_id',t.h('Cash USD'),'date',current_date,'amount',10))$$,
+  'ไม่ได้อยู่ในพอร์ตนี้', 'โอนเข้าบัญชีเงินสดของพอร์ตอื่นไม่ได้');
+SELECT t.fails($$SELECT public.transfer_portfolio_money(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('direction','IN','bank_asset_id',t.a('KBank ออมทรัพย์'),'date',current_date,'amount',10,'counter_amount',0))$$,
+  'มากกว่า 0', 'ยอดที่เข้า 0 ไม่ได้ (ไม่ทราบ = เว้นว่าง)');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.transfer_portfolio_money(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('direction','IN','bank_asset_id',t.a('KBank ออมทรัพย์'),'date',current_date,'amount',10))$$,
+  'PERMISSION_DENIED', 'VIEWER บันทึกการโอนไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
