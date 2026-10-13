@@ -5,28 +5,25 @@ import { useRouter } from "next/navigation";
 import { callDrive } from "./drive";
 import { extFromMime } from "@/lib/format";
 
-/** เปิดดู / ดาวน์โหลด (ผ่าน Edge Function ที่ตรวจสิทธิ์ · บันทึก Audit) */
-export function OpenDoc({ id, title, mime }: { id: string; title: string; mime?: string | null }) {
-  const [busy, setBusy] = useState("");
+/** ดาวน์โหลดไฟล์ (ผ่าน Edge Function · บันทึก Audit) — ใช้ในกล่องที่เปิดจากการกดแถวเอกสาร */
+export function DownloadDoc({ id, title, mime }: { id: string; title: string; mime?: string | null }) {
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  async function go(mode: "view" | "download") {
-    setErr("");
-    // เปิด: ไปหน้าดูเอกสารของระบบในแท็บใหม่ (หน้านั้นโหลดไฟล์และแสดงเอง)
-    if (mode === "view") { window.open(`/view/${id}`, "_blank"); return; }
-    setBusy(mode);
+  async function go() {
+    setErr(""); setBusy(true);
     try {
-      const r = await callDrive({ action: "download", id, mode });
+      const r = await callDrive({ action: "download", id, mode: "download" });
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a"); a.href = url; a.download = title + extFromMime(mime); document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
-    } finally { setBusy(""); }
+    } finally { setBusy(false); }
   }
   return (
-    <span className="inline-flex flex-wrap items-center gap-2 text-xs">
-      <button type="button" onClick={() => go("view")} disabled={!!busy} className="text-sky-700 underline disabled:opacity-50">{busy === "view" ? "กำลังเปิด…" : "เปิด"}</button>
-      <button type="button" onClick={() => go("download")} disabled={!!busy} className="text-slate-600 underline disabled:opacity-50">{busy === "download" ? "…" : "ดาวน์โหลด"}</button>
+    <span className="inline-flex items-center gap-2 text-xs">
+      <button type="button" onClick={go} disabled={busy}
+        className="rounded-md border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50 disabled:opacity-50">{busy ? "กำลังดาวน์โหลด…" : "ดาวน์โหลด"}</button>
       {err && <span className="text-red-600">{err}</span>}
     </span>
   );

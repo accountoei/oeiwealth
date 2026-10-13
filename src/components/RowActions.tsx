@@ -15,14 +15,16 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
  * แก้ไข / ลบ ต่อแถว (ลบ = Soft Delete พร้อมยืนยัน)
  *   อยู่ในแถวตาราง → กดที่แถวเพื่อเปิดกล่องแก้ไข / ลบ ใต้แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ" แบบเดิม
  */
-export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote }: {
+export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, extra }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
+  /** ปุ่มเพิ่มเติมในกล่องใต้แถว (เช่น ดาวน์โหลด / อัปโหลดฉบับใหม่) */
+  extra?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [es, editAction, saving] = useActionState<RecState, FormData>(updateRecord, {});
   const [ds, delAction, deleting] = useActionState<RecState, FormData>(deleteRecord, {});
   const editable = canEdit && fields.length > 0;
-  const row = useRowPanel(editable || canDelete);
+  const row = useRowPanel(editable || canDelete || !!extra);
   if (ds.ok) return <span className="text-xs text-slate-400">ลบแล้ว</span>;
 
   const hidden = (
@@ -59,8 +61,9 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
           {es.error && <span className="w-full text-xs text-red-600">{es.error}</span>}
           {es.ok && <span className="w-full text-xs text-emerald-700">{es.ok}</span>}
         </form>
-      ) : <span className="text-xs text-slate-500">รายการนี้แก้ไขไม่ได้ (ลบแล้วบันทึกใหม่)</span>}
-      <div className="flex items-center gap-3">
+      ) : extra ? null : <span className="text-xs text-slate-500">รายการนี้แก้ไขไม่ได้ (ลบแล้วบันทึกใหม่)</span>}
+      <div className="flex flex-wrap items-center gap-3">
+        {extra}
         {canDelete && (
           <form action={delAction} onSubmit={confirmDelete}>
             {hidden}
@@ -77,7 +80,8 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
   return (
     <div className="inline-block text-left">
       {!editing && (
-        <span className="inline-flex gap-2 text-xs">
+        <span className="inline-flex flex-wrap items-center gap-2 text-xs">
+          {extra}
           {editable && <button type="button" onClick={() => setEditing(true)} className="text-slate-600 underline">แก้ไข</button>}
           {canDelete && (
             <form action={delAction} className="inline" onSubmit={confirmDelete}>
