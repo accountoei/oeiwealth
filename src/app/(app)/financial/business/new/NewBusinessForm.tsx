@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { createBusiness, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import { thDate } from "@/lib/format";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -44,7 +44,7 @@ export default function NewBusinessForm(props: {
         )}
         <div className="grid gap-4 md:grid-cols-4">
           <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
-          <label className={label}>สกุลเงิน<select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select></label>
+          <label className={label}>สกุลเงิน<CurrencySelect name="currency" defaultValue="THB" className={input} /></label>
           <label className={label}>ณ วันที่ *
             {opening ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
               : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} className={input} />}

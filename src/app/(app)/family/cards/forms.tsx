@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { createCard, updateCardBalance, updateCardStatus, type ActionState } from "@/app/(app)/liabilities/actions";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -35,7 +35,7 @@ export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
         <input name="card_last4" inputMode="numeric" maxLength={4} autoComplete="off" placeholder="1234" className={input} />
       </label>
       <label className="text-sm">สกุลเงิน
-        <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
+        <CurrencySelect name="currency" defaultValue="THB" className={input} />
       </label>
       <label className="text-sm">วงเงิน<input name="credit_limit" inputMode="decimal" className={input} /></label>
       <label className="text-sm">วันตัดรอบ (ทุกวันที่)<input name="statement_day" type="number" min={1} max={31} className={input} /></label>

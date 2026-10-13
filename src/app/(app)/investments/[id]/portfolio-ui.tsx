@@ -6,7 +6,7 @@ import { deleteEntity, updateRecord, type RecState } from "@/lib/records";
 import { updatePortfolio, type ActionState } from "../actions";
 import { PORTFOLIO_TYPE_LABEL } from "@/lib/format";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const lbl = "block text-sm text-slate-700";
@@ -39,9 +39,7 @@ export function PortfolioEditPanel({ assetId, name, institution, portfolioType, 
               </select>
             </label>
             <label className={lbl}>สกุลพอร์ต
-              <select name="currency" value={ccy} onChange={(e) => { setCcy(e.target.value); setConfirm(false); }} className={input}>
-                <CurrencyOptions include={currency} />
-              </select>
+              <CurrencySelect name="currency" value={ccy} onChange={(v) => { setCcy(v); setConfirm(false); }} className={input} include={currency} />
             </label>
             <label className={`${lbl} md:col-span-2`}>หมายเหตุ<input name="notes" defaultValue={notes ?? ""} className={input} /></label>
           </div>

@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { createLiability, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import { LIABILITY_TYPE_LABEL, thDate } from "@/lib/format";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -30,7 +30,7 @@ export default function NewLiabilityForm(props: {
         <label className={label}>ชื่อที่ใช้เรียก *<input name="name" required placeholder="เช่น สินเชื่อบ้าน A" className={input} /></label>
         <label className={label}>ผู้ให้กู้<input name="lender" placeholder="เช่น SCB" className={input} /></label>
         <label className={label}>สกุลเงิน
-          <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
+          <CurrencySelect name="currency" defaultValue="THB" className={input} />
         </label>
         <label className={label}>วงเงินกู้เริ่มต้น<input name="original_amount" inputMode="decimal" className={input} /></label>
         <label className={label}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" className={input} /></label>
