@@ -4,11 +4,11 @@ import { useActionState, useState } from "react";
 import { setOwnership, type RecState } from "@/lib/records";
 
 /** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability) */
-export default function OwnershipEditor({ kind, id, persons, current, paths, today }: {
+export default function OwnershipEditor({ kind, id, persons, current, paths, today, startOpen = false }: {
   kind: "asset" | "liability"; id: string; persons: { id: string; name: string }[];
-  current: { person_id: string; percent: number }[]; paths: string[]; today: string;
+  current: { person_id: string; percent: number }[]; paths: string[]; today: string; startOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [mode, setMode] = useState("CORRECT");
   const [shares, setShares] = useState<Record<string, string>>(
     Object.fromEntries(current.map((c) => [c.person_id, String(c.percent)])));
