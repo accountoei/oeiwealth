@@ -17,6 +17,7 @@ import StatusSelect from "@/components/StatusSelect";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { ActionBar } from "@/components/ActionBar";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -181,10 +182,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       </section>
 
       {canWrite && a.status === "ACTIVE" && (
-        <div className="flex flex-wrap gap-2">
+        <ActionBar>
           <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} />
           <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
-        </div>
+        </ActionBar>
       )}
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
         paths={paths} canWrite={canWrite} canDelete={canDelete} />

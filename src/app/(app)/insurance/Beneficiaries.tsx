@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { saveBeneficiaries, type ActionState } from "./actions";
 
 type Row = { person_id: string; name: string; percent: string };
@@ -39,11 +40,12 @@ export function BeneficiaryRows({ persons, rows, setRows }: {
 export default function BeneficiaryEditor({ policyId, persons, current }: {
   policyId: string; persons: { id: string; name: string }[]; current: { person_id: string | null; name: string | null; percent: number }[];
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [rows, setRows] = useState<Row[]>(current.map((c) => ({ person_id: c.person_id ?? "", name: c.name ?? "", percent: String(c.percent) })));
   const [state, action, pending] = useActionState<ActionState, FormData>(saveBeneficiaries, {});
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-700 underline">แก้ผู้รับผลประโยชน์</button>;
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>แก้ผู้รับผลประโยชน์</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="policy_id" value={policyId} />
       <BeneficiaryRows persons={persons} rows={rows} setRows={setRows} />
@@ -54,5 +56,5 @@ export default function BeneficiaryEditor({ policyId, persons, current }: {
         {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }

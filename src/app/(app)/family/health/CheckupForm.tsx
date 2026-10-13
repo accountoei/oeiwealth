@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { addCheckup, type ActionState } from "./actions";
 import { METRICS } from "./metrics";
 
@@ -13,11 +14,12 @@ const blank = (code = ""): R => {
 };
 
 export default function CheckupForm({ personId, today }: { personId: string; today: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [rows, setRows] = useState<R[]>(["SYSTOLIC_BP", "DIASTOLIC_BP", "FBS", "CHOLESTEROL", "LDL", "HDL"].map(blank));
   const [state, action, pending] = useActionState<ActionState, FormData>(addCheckup, {});
   const set = (i: number, p: Partial<R>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...p } : r)));
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ บันทึกผลตรวจสุขภาพ</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>+ บันทึกผลตรวจสุขภาพ</button>;
+  if (!open) return trigger;
   const payload = rows.filter((r) => r.metric && r.value.trim()).map((r) => {
     const n = Number(r.value.replace(/,/g, ""));
     const numeric = r.value.trim() !== "" && !Number.isNaN(n);
@@ -25,7 +27,7 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
       reference_min: r.min, reference_max: r.max, abnormal_flag: r.flag ||
         (numeric && r.max && n > Number(r.max) ? "H" : numeric && r.min && n < Number(r.min) ? "L" : "") };
   });
-  return (
+  return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="person_id" value={personId} />
       <input type="hidden" name="results" value={JSON.stringify(payload)} />
@@ -72,5 +74,5 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }

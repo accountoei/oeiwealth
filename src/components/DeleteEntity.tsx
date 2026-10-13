@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { deleteEntity, type RecState } from "@/lib/records";
 
 /** ลบรายการหลักทั้งชุด — ต้องพิมพ์เหตุผล · ถ้ายังมีรายการเงินผูกอยู่ ระบบจะปฏิเสธพร้อมบอกวิธีแก้ */
@@ -8,10 +9,11 @@ export default function DeleteEntity({ kind, id, redirectTo, paths = [], label =
   kind: "asset" | "liability" | "card" | "lease" | "policy"; id: string; redirectTo?: string; paths?: string[];
   label?: string; hint?: string; needReason?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<RecState, FormData>(deleteEntity, {});
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs text-red-600 underline">{label}</button>;
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-red-600 underline")}>{label}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
@@ -27,5 +29,5 @@ export default function DeleteEntity({ kind, id, redirectTo, paths = [], label =
       </div>
       {state.error && <p className="text-xs text-red-700">{state.error}</p>}
     </form>
-  );
+  ));
 }

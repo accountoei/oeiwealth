@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { usePathname, useRouter } from "next/navigation";
 import { restructureSchedule, type ActionState } from "../actions";
 import { generateSchedule, PAYMENT_LABEL, SCHED_METHOD_LABEL, type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
@@ -30,7 +31,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   const router = useRouter();
   const pathname = usePathname();
   const box = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(!!preset);
+  const { open, setOpen, present, activeCls } = useActionSlot(!!preset);
   const [method, setMethod] = useState<SchedMethod>(methodGuess);
   const [basis, setBasis] = useState<SchedBasis>(preset === "payment" && methodGuess !== "INTEREST_ONLY" ? "PAYMENT" : "PERIODS");
   const [amount, setAmount] = useState(fmt2(outstanding));
@@ -55,7 +56,8 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
     principal: lines.reduce((s, l) => s + l.principal, 0),
   } : null), [lines]);
 
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className={obtn}>คำนวณงวดที่เหลือใหม่</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(obtn)}>คำนวณงวดที่เหลือใหม่</button>;
+  if (!open) return trigger;
 
   const byPayment = basis === "PAYMENT" && method !== "INTEREST_ONLY";
   const calc = () => {
@@ -72,7 +74,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   };
   const reset = () => setLines(null);
 
-  return (
+  return present(trigger, (
     <div ref={box} className="w-full scroll-mt-4 space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-5">
       {preset && !state.ok && (
         <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">
@@ -189,5 +191,5 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
         </>
       )}
     </div>
-  );
+  ));
 }

@@ -15,6 +15,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { ActionBar } from "@/components/ActionBar";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -201,7 +202,8 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
       </section>
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
+            defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} /> : undefined}>
           <div>
             <h2 className="font-medium text-slate-900">ตารางเบี้ย</h2>
             {premiums.length > 0 ? (
@@ -211,9 +213,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                 {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
             ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
           </div>
-          {canDelete && policyActive && <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
-            defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />}
-        </div>
+        </ActionBar>
         {premiums.length > 0 && <ScheduleTable lines={premiums} canWrite={canWrite} canDelete={canDelete} paths={paths} action={(x) =>
           canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
             label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
@@ -222,7 +222,8 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
 
       {p.insurance_type !== "PROPERTY" && (
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
+              defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} /> : undefined}>
             <div>
               <h2 className="font-medium text-slate-900">ผลประโยชน์ที่จะได้รับ</h2>
               <p className="text-sm text-slate-600">
@@ -230,9 +231,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
               </p>
               {cvAsset && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
             </div>
-            {canDelete && policyActive && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
-              defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
-          </div>
+          </ActionBar>
           {benefits.length > 0 && <ScheduleTable lines={benefits} canWrite={canWrite} canDelete={canDelete} paths={paths} benefit action={(x) =>
             canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
               currency={x.currency} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value}

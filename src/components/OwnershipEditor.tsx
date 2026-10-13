@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { setOwnership, type RecState } from "@/lib/records";
 
 /** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability) */
@@ -8,14 +9,15 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
   kind: "asset" | "liability"; id: string; persons: { id: string; name: string }[];
   current: { person_id: string; percent: number }[]; paths: string[]; today: string; startOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(startOpen);
+  const { open, setOpen, present, activeCls } = useActionSlot(startOpen);
   const [mode, setMode] = useState("CORRECT");
   const [shares, setShares] = useState<Record<string, string>>(
     Object.fromEntries(current.map((c) => [c.person_id, String(c.percent)])));
   const [state, action, pending] = useActionState<RecState, FormData>(setOwnership, {});
   const total = Object.values(shares).reduce((s, v) => s + (Number(v) || 0), 0);
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-xs text-slate-700 underline">แก้สัดส่วน</button>;
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>แก้สัดส่วน</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3 text-sm">
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
@@ -49,5 +51,5 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
         {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }

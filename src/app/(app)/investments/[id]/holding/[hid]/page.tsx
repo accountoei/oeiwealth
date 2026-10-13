@@ -8,6 +8,7 @@ import StatusSelect from "@/components/StatusSelect";
 import { MaturityForm, type CashAcct, type Holding } from "../../forms";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
 import { FcnForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
+import { ActionBar } from "@/components/ActionBar";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
@@ -87,13 +88,11 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       </section>
 
       {canWrite && h.status === "ACTIVE" && (
-        <div className="flex flex-wrap items-start gap-3">
+        <ActionBar>
           <IncomeForm assetId={id} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-          {canMature && <div className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm">
-            <MaturityForm assetId={id} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-          </div>}
+          {canMature && <MaturityForm assetId={id} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
           <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
-        </div>
+        </ActionBar>
       )}
 
       {ret.length > 0 && <ReturnsTable rows={ret} local={retLocal} portfolioCurrency={a.currency} rates={fxRates} title="ผลตอบแทนของหลักทรัพย์นี้" />}

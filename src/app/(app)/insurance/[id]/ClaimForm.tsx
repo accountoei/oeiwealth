@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { addClaim, type ActionState } from "../actions";
 import { CLAIM_STATUS, COVERAGE_LABEL } from "@/lib/format";
 
@@ -9,10 +10,11 @@ const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 te
 export default function ClaimForm({ policyId, currency, today, coverages = [] }: {
   policyId: string; currency: string; today: string; coverages?: { id: string; coverage_type: string; limit_amount: number }[];
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addClaim, {});
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">+ บันทึกเคลม</button>;
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50")}>+ บันทึกเคลม</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-3 rounded-lg bg-slate-50 p-4">
       <input type="hidden" name="policy_id" value={policyId} />
       <input type="hidden" name="currency" value={currency} />
@@ -41,5 +43,5 @@ export default function ClaimForm({ policyId, currency, today, coverages = [] }:
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }

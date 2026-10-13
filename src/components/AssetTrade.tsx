@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { payForAsset, sellAsset, type TradeState } from "@/lib/asset-trade";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -9,12 +10,13 @@ type Bank = { asset_id: string; name: string; currency: string };
 function Box({ title, label, children, action, pending, state, danger }: {
   title: string; label: string; children: React.ReactNode; action: (f: FormData) => void; pending: boolean; state: TradeState; danger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return (
-    <button type="button" onClick={() => setOpen(true)}
-      className={`rounded-md border bg-white px-4 py-2 text-sm hover:bg-slate-50 ${danger ? "border-amber-300 text-amber-800" : "border-slate-300"}`}>{label}</button>
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const trigger = (
+    <button type="button" onClick={() => setOpen(!open)}
+      className={activeCls(`rounded-md border bg-white px-4 py-2 text-sm hover:bg-slate-50 ${danger ? "border-amber-300 text-amber-800" : "border-slate-300"}`)}>{label}</button>
   );
-  return (
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">
       <h3 className="font-medium text-slate-900">{title}</h3>
       {children}
@@ -25,7 +27,7 @@ function Box({ title, label, children, action, pending, state, danger }: {
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }
 
 export function SellAssetForm({ assetId, currency, banks, today, minDate, paths, hasLease }: {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { confirmRecon, finalizeMonth, prepareRecon, reopenMonth, type ActionState } from "./actions";
 import { money } from "@/lib/format";
 
@@ -91,10 +92,11 @@ export function FinalizeForm({ month, warnings }: { month: string; warnings: num
 }
 
 export function ReopenForm({ month }: { month: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(reopenMonth, {});
-  if (!open) return <button onClick={() => setOpen(true)} className="text-sm text-red-700 underline">Reopen เดือนนี้</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-sm text-red-700 underline")}>Reopen เดือนนี้</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
       <input type="hidden" name="month" value={month} />
       <p className="text-xs text-red-800">เปิดเดือนกลับเป็น DRAFT เพื่อแก้ไข แล้วต้องปิดเดือนใหม่ (เลขเวอร์ชันเพิ่ม) · บันทึกใน Audit Log</p>
@@ -105,5 +107,5 @@ export function ReopenForm({ month }: { month: string }) {
       </div>
       <Msg s={state} />
     </form>
-  );
+  ));
 }

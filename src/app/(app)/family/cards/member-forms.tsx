@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { addMembership, addPoints, type ActionState } from "./actions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -9,9 +10,10 @@ type P = { id: string; name: string };
 function Shell({ label, title, action, pending, state, children }: {
   label: string; title: string; action: (f: FormData) => void; pending: boolean; state: ActionState; children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">{label}</button>;
-  return (
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>{label}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
       <h3 className="font-medium text-slate-900">{title}</h3>
       {children}
@@ -22,7 +24,7 @@ function Shell({ label, title, action, pending, state, children }: {
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
-  );
+  ));
 }
 
 export function MembershipForm({ persons }: { persons: P[] }) {

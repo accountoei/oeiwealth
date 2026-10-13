@@ -12,6 +12,7 @@ import AssetValuationForm from "@/components/AssetValuationForm";
 import { SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { ActionBar } from "@/components/ActionBar";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -75,11 +76,11 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
       </section>
 
       {canWrite && a.status === "ACTIVE" && (
-        <div className="flex flex-wrap gap-2">
+        <ActionBar>
           <DividendForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
           <CapitalForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
           <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
-        </div>
+        </ActionBar>
       )}
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} paths={paths} canWrite={canWrite} canDelete={canDelete} showMoves={false}
         cost={d.investment_cost != null ? Number(d.investment_cost) : a.acquisition_cost != null ? Number(a.acquisition_cost) : null} />

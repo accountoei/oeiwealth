@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { useActionSlot } from "@/components/ActionBar";
 import { createCard, updateCardBalance, updateCardStatus, type ActionState } from "@/app/(app)/liabilities/actions";
 import { CURRENCIES } from "@/lib/format";
 
@@ -16,10 +17,11 @@ function Msg({ s }: { s: ActionState }) {
 export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
   persons: { id: string; name: string }[]; defaultDate: string; today: string; minDate: string; isSetup: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(createCard, {});
-  if (!open) return <button onClick={() => setOpen(true)} className={btn}>+ เพิ่มบัตรเครดิต</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>+ เพิ่มบัตรเครดิต</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-3">
       <h2 className="md:col-span-3 font-medium text-slate-900">เพิ่มบัตรเครดิต</h2>
       <label className="text-sm">ผู้ถือบัตร *
@@ -57,15 +59,16 @@ export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
         <Msg s={state} />
       </div>
     </form>
-  );
+  ));
 }
 
 export function CardBalanceForm({ cardId, currency, today, minDate }:
   { cardId: string; currency: string; today: string; minDate: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardBalance, {});
-  if (!open) return <button onClick={() => setOpen(true)} className="text-xs text-slate-700 underline">อัปเดตยอด</button>;
-  return (
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>อัปเดตยอด</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="card_id" value={cardId} />
       <label className="text-xs">ยอดค้าง ({currency})
@@ -82,7 +85,7 @@ export function CardBalanceForm({ cardId, currency, today, minDate }:
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+  ));
 }
 
 export function CardStatusForm({ cardId, status }: { cardId: string; status: string }) {

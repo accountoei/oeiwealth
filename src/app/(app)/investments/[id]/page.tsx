@@ -15,6 +15,7 @@ import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import TxFilter from "./tx-filter";
 import { CashNameEdit, PortfolioEditPanel, PortfolioStatusMenu } from "./portfolio-ui";
+import { ActionBar } from "@/components/ActionBar";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
@@ -147,8 +148,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       </section>
 
       {canWrite && (
-        <section className="space-y-3">
-          <div className="flex flex-wrap gap-2">
+        <section>
+          <ActionBar right={canDelete ? <PortfolioStatusMenu assetId={id} name={a.name} status={a.status} paths={paths} isAdmin={me.role === "ADMIN"} /> : undefined}>
             <TxForm assetId={id} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <TransferForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} />
             <FxForm assetId={id} cashCurrencies={[...cashByCcy.keys()]} cashAccounts={cashAccounts} today={today} minDate={goLive} />
@@ -158,8 +159,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             {(isSetup || me.role === "ADMIN") && (
               <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
             )}
-            {canDelete && <PortfolioStatusMenu assetId={id} name={a.name} status={a.status} paths={paths} isAdmin={me.role === "ADMIN"} />}
-          </div>
+          </ActionBar>
         </section>
       )}
 
