@@ -5,7 +5,8 @@ import { useActionState, useState } from "react";
 import { createProperty, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import LeaseFields, { type Bank } from "../LeaseFields";
-import { CURRENCIES, PROPERTY_TYPE_LABEL, USAGE_LABEL, thDate } from "@/lib/format";
+import { PROPERTY_TYPE_LABEL, USAGE_LABEL, thDate } from "@/lib/format";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -37,7 +38,7 @@ export default function NewPropertyForm(props: {
         </label>
         <label className={label}>สกุลเงิน
           <select name="currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className={input}>
-            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+            <CurrencyOptions />
           </select>
         </label>
         <label className={label}>กลุ่มทำเล<input name="location_group" placeholder="เช่น กรุงเทพ · เชียงใหม่" className={input} /></label>

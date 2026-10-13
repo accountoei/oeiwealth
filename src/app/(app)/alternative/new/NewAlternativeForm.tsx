@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { addCategory, createAlternative, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { CURRENCIES, thDate } from "@/lib/format";
+import { thDate } from "@/lib/format";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -53,7 +54,7 @@ export default function NewAlternativeForm(props: {
           <div className="grid gap-4 md:grid-cols-4">
             <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
             <label className={label}>สกุลเงิน
-              <select name="currency" defaultValue="THB" className={input}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
+              <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
             </label>
             <label className={label}>ณ วันที่ *
               {opening ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
