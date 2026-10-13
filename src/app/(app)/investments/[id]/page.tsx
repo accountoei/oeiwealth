@@ -337,6 +337,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         </TabPanel>
 
         <TabPanel id="tx" className="p-4">
+          <div data-tx-panel="">
             {txList.length > 0 && (
               <TxFilter months={txMonths} types={Object.entries(ITX_LABEL)} holdings={holdings.map((h) => ({ id: h.id, name: h.name }))}
                 initial={{ m: txMonth, type: txType, h: txHolding }}
@@ -413,6 +414,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             <p className="mt-3 text-xs text-slate-500">
               &ldquo;—&rdquo; ในช่องเงินสดพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
             </p>
+          </div>
         </TabPanel>
       </section>
       </TabsProvider>
