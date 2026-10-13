@@ -885,6 +885,49 @@ SELECT t.ok((SELECT l.realized = 0 AND l.value = 0 AND l.cost = 0 FROM public.in
 SELECT t.ok((SELECT is_default_cash FROM public.investment_holdings WHERE id = t.h('Cash USD')), 'พอร์ตเดิม: เงินสดบัญชีเดียว = บัญชีหลัก');
 RESET ROLE;
 
+\echo '== 13k. หน้าพอร์ต: จัดลำดับ · แก้ไขพอร์ต · ลบพอร์ตเฉพาะ ADMIN'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT bool_and(sort_order IS NOT NULL) FROM public.investment_holdings)
+            AND (SELECT max(sort_order) FROM public.investment_holdings WHERE portfolio_id = (SELECT portfolio_id FROM public.investment_holdings WHERE id = t.h('AAPL')))
+                > (SELECT sort_order FROM public.investment_holdings WHERE id = t.h('Cash USD')),
+            'ทุกรายการมีลำดับ · รายการใหม่ต่อท้าย');
+CREATE TEMP TABLE so AS SELECT id, sort_order FROM public.investment_holdings WHERE id IN (t.h('AAPL'), t.h('MSFT'), t.h('Cash USD'));
+SELECT public.move_holding(t.h('MSFT'), -1);
+SELECT t.ok((SELECT sort_order FROM public.investment_holdings WHERE id = t.h('MSFT'))
+              < (SELECT sort_order FROM public.investment_holdings WHERE id = t.h('AAPL')),
+            'เลื่อนหลักทรัพย์ขึ้น: MSFT อยู่ก่อน AAPL');
+SELECT public.move_holding(t.h('MSFT'), -1);
+SELECT t.ok((SELECT sort_order FROM public.investment_holdings WHERE id = t.h('MSFT'))
+              > (SELECT sort_order FROM public.investment_holdings WHERE id = t.h('Cash USD')),
+            'เลื่อนหลักทรัพย์ข้ามไปกลุ่มเงินสดไม่ได้ (บนสุดของกลุ่มแล้ว)');
+SELECT t.ok((SELECT array_agg(name ORDER BY ord) FROM public.investment_returns(t.a('Brokerage USD')) WITH ORDINALITY r(holding_id, name, a,b,c,d,e,f,g,h2,i,j,k,l, ord)
+              WHERE name IN ('AAPL','MSFT')) = ARRAY['MSFT','AAPL'],
+            'ตารางผลตอบแทนเรียงตามลำดับกล่องหลักทรัพย์');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.move_holding(t.h('MSFT'), 1)$$, 'PERMISSION_DENIED', 'CONTRIBUTOR จัดลำดับไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.update_portfolio(t.a('พอร์ตหลายบัญชี'), '{"name":"พอร์ตหลายบัญชี (แก้)","institution":"ธนาคารทดสอบ 2","portfolio_type":"OTHER","currency":"USD","notes":"ทดสอบ"}');
+SELECT t.ok((SELECT a.name = 'พอร์ตหลายบัญชี (แก้)' AND p.institution = 'ธนาคารทดสอบ 2' AND p.portfolio_type = 'OTHER' AND a.notes = 'ทดสอบ'
+               FROM public.assets a JOIN public.investment_portfolios p ON p.asset_id = a.id WHERE a.name = 'พอร์ตหลายบัญชี (แก้)'),
+            'แก้ไขพอร์ต: ชื่อ / สถาบัน / ประเภท / หมายเหตุ');
+SELECT t.fails($$SELECT public.update_portfolio(t.a('พอร์ตหลายบัญชี (แก้)'), '{"name":"x","currency":"XYZ"}')$$, 'ยังไม่มีอัตรา', 'เปลี่ยนเป็นสกุลที่ไม่มีอัตราแลกเปลี่ยนไม่ได้');
+SELECT t.fails($$SELECT public.update_portfolio(t.a('พอร์ตหลายบัญชี (แก้)'), '{"name":""}')$$, 'กรุณาใส่ชื่อ', 'ชื่อพอร์ตห้ามว่าง');
+-- ลบพอร์ต: EDITOR ไม่ได้ · ADMIN ได้ (พอร์ตที่มีแค่ยอดตั้งต้น) · ทรัพย์สินอื่น EDITOR ยังลบได้ตามเดิม
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตลบทดสอบ', 'THB' FROM public.families;
+INSERT INTO public.investment_portfolios(asset_id, institution) VALUES (t.a('พอร์ตลบทดสอบ'), 'ทดสอบ');
+SELECT t.fails($$SELECT public.delete_asset(t.a('พอร์ตลบทดสอบ'), 'ทดสอบลบ')$$, 'เฉพาะผู้ดูแลระบบ', 'EDITOR ลบพอร์ตลงทุนไม่ได้');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'ALTERNATIVE', 'COLLECTIBLE', 'ของสะสมลบทดสอบ', 'THB' FROM public.families;
+SELECT public.delete_asset(t.a('ของสะสมลบทดสอบ'), 'ทดสอบลบ');
+SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.assets WHERE name = 'ของสะสมลบทดสอบ'), 'EDITOR ยังลบทรัพย์สินอื่นได้ตามเดิม');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.delete_asset(t.a('พอร์ตลบทดสอบ'), 'ทดสอบลบ');
+SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.assets WHERE name = 'พอร์ตลบทดสอบ')
+            AND (SELECT p.deleted_at IS NOT NULL FROM public.investment_portfolios p JOIN public.assets a ON a.id = p.asset_id WHERE a.name = 'พอร์ตลบทดสอบ'),
+            'ADMIN ลบพอร์ตลงทุนได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

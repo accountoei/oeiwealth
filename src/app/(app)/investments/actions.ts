@@ -260,3 +260,28 @@ export async function addUnderlying(_: ActionState, form: FormData): Promise<Act
   revalidate(String(form.get("asset_id")));
   return { ok: "เพิ่มหุ้นอ้างอิงแล้ว" };
 }
+
+/** แก้ไขรายละเอียดพอร์ต (ชื่อ / สถาบัน / ประเภท / สกุล / หมายเหตุ) */
+export async function updatePortfolio(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const { data: cur } = await supabase.from("assets").select("currency").eq("id", id).maybeSingle();
+  const ccy = str(form.get("currency"));
+  if (cur && ccy && ccy !== cur.currency && form.get("confirm_currency") !== "on") return { error: "กรุณาติ๊กยืนยันการเปลี่ยนสกุลพอร์ต" };
+  const { error } = await supabase.rpc("update_portfolio", {
+    p_asset_id: id,
+    p: { name: str(form.get("name")), institution: str(form.get("institution")), portfolio_type: str(form.get("portfolio_type")),
+         currency: ccy, notes: str(form.get("notes")) },
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  return { ok: "บันทึกรายละเอียดพอร์ตแล้ว" };
+}
+
+/** จัดลำดับเงินสด / หลักทรัพย์ (↑ = -1, ↓ = +1) — มีผลทันที */
+export async function moveHolding(form: FormData): Promise<void> {
+  const supabase = await createClient();
+  const dir = Number(form.get("dir"));
+  await supabase.rpc("move_holding", { p_holding_id: String(form.get("holding_id")), p_direction: dir === -1 ? -1 : 1 });
+  revalidate(String(form.get("asset_id")));
+}

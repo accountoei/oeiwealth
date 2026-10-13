@@ -49,7 +49,7 @@ export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
   const [state, action, pending] = useActionState<ActionState, FormData>(addHolding, {});
   const [ccy, setCcy] = useState(currency);
   const [type, setType] = useState("EQUITY");
-  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>+ ยอดตั้งต้น (ถือก่อน Go-live)</button>;
+  if (!open) return <button onClick={() => setOpen(true)} className={obtn}>+ ยอดตั้งต้น</button>;
   return (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />

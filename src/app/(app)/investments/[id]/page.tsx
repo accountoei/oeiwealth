@@ -6,15 +6,13 @@ import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, todayBangkok,
 } from "@/lib/format";
 import {
-  AddCashAccountForm, CashTransferForm, FxForm, MaturityForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm,
+  AddCashAccountForm, CashTransferForm, FxForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm,
   type CashAcct, type Holding,
 } from "./forms";
-import { setDefaultCash } from "../actions";
+import { moveHolding, setDefaultCash } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
-import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
-import StatusSelect from "@/components/StatusSelect";
+import { CashNameEdit, PortfolioEditPanel, PortfolioStatusMenu } from "./portfolio-ui";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
@@ -30,8 +28,11 @@ type Tx = { id: string; holding_id: string | null; transaction_date: string; set
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
-export default async function PortfolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PortfolioDetailPage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ order?: string }>;
+}) {
   const { id } = await params;
+  const orderMode = (await searchParams).order;     // "cash" | "sec" = โหมดจัดลำดับ
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
@@ -39,7 +40,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
     supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-    supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("holding_type").order("name"),
+    supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name"),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
@@ -105,8 +106,9 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
           {" · "}เจ้าของ {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}
           {ownerTotal < 100 && <span className="text-amber-700"> (ยังไม่ครบ {100 - ownerTotal}%)</span>}
         </p>
-        {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
-          current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
+        {canDelete && <PortfolioEditPanel assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type}
+          currency={a.currency} notes={a.notes} persons={persons ?? []} paths={paths} today={today} canEditDetails={canDelete}
+          owners={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
       </div>
 
       <section className={`grid gap-4 ${a.currency === "THB" ? "md:grid-cols-3" : "md:grid-cols-4"}`}>
@@ -116,7 +118,8 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         )}
         <Kpi label="มูลค่าเป็นบาท (ใช้ใน Net Worth)" value={money(pv?.thb_value ?? null, "THB", 0)}
           sub={Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"} />
-        <Kpi label="เงินสดในพอร์ต" value={[...cashByCcy.entries()].map(([c, x]) => money(x.value, c, 0)).join(" · ") || "-"}
+        <Kpi label="เงินสดในพอร์ต" value={cashByCcy.size === 0 ? "-" : (
+            <div className="space-y-0.5">{[...cashByCcy.entries()].map(([c, x]) => <div key={c}>{money(x.value, c, 0)}</div>)}</div>)}
           sub="คำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น" />
         <Kpi label="รายได้ลงทุน (ปันผล/ดอกเบี้ย)" value={money(incomeThb, "THB", 0)} sub="ตั้งแต่ Go-live · ก่อนหักภาษี" />
       </section>
@@ -133,6 +136,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             {(isSetup || me.role === "ADMIN") && (
               <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
             )}
+            {canDelete && <PortfolioStatusMenu assetId={id} name={a.name} status={a.status} paths={paths} isAdmin={me.role === "ADMIN"} />}
           </div>
         </section>
       )}
@@ -147,7 +151,10 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
       {/* ------------------------------------------------ เงินสด / เงินฝากในพอร์ต (รายบัญชี) */}
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">เงินสด / เงินฝากในพอร์ต</h2>
+          <div className="flex items-baseline gap-3">
+            <h2 className="font-medium text-slate-900">เงินสด / เงินฝากในพอร์ต</h2>
+            {canDelete && cashHoldings.length > 1 && <OrderToggle id={id} mode="cash" active={orderMode === "cash"} />}
+          </div>
           <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(cashThb, "THB", 0)}</span></span>
         </div>
         <table className="mt-2 w-full text-sm">
@@ -157,54 +164,51 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
           </thead>
           <tbody className="divide-y divide-slate-100">
             {cashHoldings.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีบัญชีเงินสด</td></tr>}
-            {[...cashByCcy.keys()].map((ccy) => {
-              const rows = cashHoldings.filter((h) => h.currency === ccy);
-              const sub = cashByCcy.get(ccy)!;
+            {(orderMode === "cash" ? [""] : [...cashByCcy.keys()]).map((ccy) => {
+              // โหมดจัดลำดับ: แสดงทุกบัญชีตามลำดับจริง (ไม่จัดกลุ่มตามสกุล)
+              const rows = orderMode === "cash" ? cashHoldings : cashHoldings.filter((h) => h.currency === ccy);
+              const sub = cashByCcy.get(ccy) ?? { value: 0, count: 0 };
               const subThb = rows.reduce((t, h) => t + (thbOf(h) ?? 0), 0);
               return [
-                ...rows.map((h) => {
+                ...rows.map((h, k) => {
                   const v = thbOf(h);
                   const share = v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
+                  const many = (cashByCcy.get(h.currency)?.count ?? 0) > 1;
                   return (
                     <tr key={h.id} className="align-top">
                       <td className="px-4 py-2.5">
-                        <div className="font-medium text-slate-900">
-                          {h.name}
-                          {h.is_default_cash && sub.count > 1 && <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-normal text-blue-700" title="บัญชีหลักของสกุลนี้ — รายการที่ไม่ได้เลือกบัญชีจะเข้าบัญชีนี้">★ บัญชีหลัก</span>}
-                        </div>
+                        <CashNameEdit id={h.id} name={h.name} purpose={h.purpose} interestRate={h.interest_rate} paths={paths}
+                          canEdit={canWrite && orderMode !== "cash"}>
+                          {h.is_default_cash && many && <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-normal text-blue-700" title="บัญชีหลักของสกุลนี้ — รายการที่ไม่ได้เลือกบัญชีจะเข้าบัญชีนี้">★ บัญชีหลัก</span>}
+                        </CashNameEdit>
                         <div className="text-xs text-slate-500">
                           {h.currency}
                           {h.interest_rate != null && ` · ดอกเบี้ย ${Number(h.interest_rate)}% ต่อปี`}
                           {h.purpose && ` · ${h.purpose}`}
                         </div>
                       </td>
-                      <td className="px-3 text-right">
+                      <td className="whitespace-nowrap px-3 text-right">
                         <div className="tabular-nums">{money(h.current_value, h.currency)}</div>
                         <div className="text-xs text-slate-500">{h.current_value_date ? `ณ ${thDate(h.current_value_date)}` : ""}</div>
                       </td>
-                      <td className="px-3 text-right">
+                      <td className="whitespace-nowrap px-3 text-right">
                         <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
                         {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
                       </td>
                       <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                       <td className="px-3 py-2.5 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          {canDelete && sub.count > 1 && !h.is_default_cash && (
+                        {orderMode === "cash" ? <MoveButtons id={id} hid={h.id} first={k === 0} last={k === rows.length - 1} /> : (
+                          canDelete && many && !h.is_default_cash && (
                             <form action={setDefaultCash}>
                               <input type="hidden" name="holding_id" value={h.id} /><input type="hidden" name="asset_id" value={id} />
-                              <button className="text-xs text-slate-700 underline">ตั้งเป็นบัญชีหลัก</button>
+                              <button className="whitespace-nowrap text-xs text-slate-700 underline">ตั้งเป็นบัญชีหลัก</button>
                             </form>
-                          )}
-                          {canWrite && <RowActions table="investment_holdings" id={h.id} paths={paths} canDelete={false} fields={[
-                            { name: "name", label: "ชื่อบัญชี", value: h.name },
-                            { name: "purpose", label: "วัตถุประสงค์", value: h.purpose, width: "w-40" },
-                            { name: "interest_rate", label: "ดอกเบี้ย % ต่อปี", type: "number", value: h.interest_rate, width: "w-24" }]} />}
-                        </div>
+                          ))}
                       </td>
                     </tr>
                   );
                 }),
-                ...(sub.count > 1 ? [(
+                ...(orderMode !== "cash" && sub.count > 1 ? [(
                   <tr key={`sub-${ccy}`} className="bg-slate-50/60 text-xs text-slate-600">
                     <td className="px-4 py-1.5">รวม {ccy} ({sub.count} บัญชี)</td>
                     <td className="px-3 text-right tabular-nums">{money(sub.value, ccy)}</td>
@@ -216,26 +220,32 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
             })}
           </tbody>
         </table>
-        {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง)</p>}
+        {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง) · กดชื่อบัญชีเพื่อแก้ไข</p>}
       </section>
 
       {/* ------------------------------------------------ หลักทรัพย์ */}
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <h2 className="px-4 pt-4 font-medium text-slate-900">หลักทรัพย์</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
+          <div className="flex items-baseline gap-3">
+            <h2 className="font-medium text-slate-900">หลักทรัพย์</h2>
+            {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
+          </div>
+          <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
+        </div>
         <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนเฉลี่ย</th>
               <th className="px-3 text-right">ราคาล่าสุด</th><th className="px-3 text-right">มูลค่าตลาด</th><th className="px-3 text-right">มูลค่า (บาท)</th>
-              <th className="px-3 text-right">กำไร/ขาดทุนยังไม่รับรู้</th><th className="px-3 text-right">สัดส่วน</th><th className="px-3"></th></tr>
+              <th className="px-3 text-right">กำไร/ขาดทุนยังไม่รับรู้</th><th className="px-3 text-right">สัดส่วน</th>
+              {orderMode === "sec" && <th className="px-3"></th>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {securities.length === 0 && <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
-            {securities.map((h) => {
+            {securities.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
+            {securities.map((h, k) => {
               const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
               const gain = cost != null && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null;
               const v = thbOf(h);
               const share = h.status === "ACTIVE" && v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
-              const canMature = h.status === "ACTIVE" && ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
               return (
                 <tr key={h.id} className={`align-top ${h.status !== "ACTIVE" ? "opacity-50" : ""}`}>
                   <td className="px-4 py-2.5">
@@ -253,13 +263,13 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                   <td className="px-3 text-right tabular-nums">{qty(h.quantity)}</td>
                   <td className="px-3 text-right tabular-nums">{money(h.average_cost, undefined, 4)}</td>
                   <td className="px-3 text-right tabular-nums">{money(h.current_price, undefined, 4)}</td>
-                  <td className="px-3 text-right">
+                  <td className="whitespace-nowrap px-3 text-right">
                     <div className="tabular-nums">{money(h.current_value)}</div>
                     <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>
                       {h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}
                     </div>
                   </td>
-                  <td className="px-3 text-right">
+                  <td className="whitespace-nowrap px-3 text-right">
                     <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
                     {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
                   </td>
@@ -267,27 +277,18 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
                     {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? `${((gain / cost) * 100).toFixed(2)}%` : ""}</div></>}
                   </td>
                   <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
-                  <td className="px-3 py-2.5 text-right">
-                    {canWrite && canMature && <MaturityForm assetId={id} holding={h} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
-                    {canWrite && <RowActions table="investment_holdings" id={h.id} paths={paths} canDelete={false} fields={[
-                      { name: "name", label: "ชื่อ", value: h.name }, { name: "symbol", label: "สัญลักษณ์", value: h.symbol, width: "w-24" },
-                      { name: "maturity_date", label: "ครบกำหนด", type: "date", value: h.maturity_date }]} />}
-                  </td>
+                  {orderMode === "sec" && (
+                    <td className="px-3 py-2.5 text-right"><MoveButtons id={id} hid={h.id} first={k === 0} last={k === securities.length - 1} /></td>
+                  )}
                 </tr>
               );
             })}
-            {securities.length > 0 && (
-              <tr className="bg-slate-50/60 font-medium">
-                <td className="px-4 py-2" colSpan={5}>รวมหลักทรัพย์</td>
-                <td className="px-3 text-right tabular-nums">{money(secThb, undefined, 0)}</td>
-                <td colSpan={3}></td>
-              </tr>
-            )}
           </tbody>
         </table>
         <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
           มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตรา ธปท. ล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
           · เงินสด {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
+          · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / ครบกำหนด
         </p>
       </section>
 
@@ -381,20 +382,32 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         </p>
       </section>
 
-      {canWrite && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะพอร์ต"
-            options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดพอร์ตแล้ว"]]} />
-          {canDelete && <div><DeleteEntity kind="asset" id={id} redirectTo="/investments" paths={["/investments"]} label="ลบพอร์ตนี้"
-            hint="ลบได้เมื่อมีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" /></div>}
-        </section>
-      )}
       <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} />
     </div>
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+/** ปุ่ม "จัดลำดับ" / "เสร็จ" ต่อชื่อกล่อง */
+function OrderToggle({ id, mode, active }: { id: string; mode: "cash" | "sec"; active: boolean }) {
+  return active
+    ? <Link href={`/investments/${id}`} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</Link>
+    : <Link href={`/investments/${id}?order=${mode}`} className="text-xs text-slate-600 underline">จัดลำดับ</Link>;
+}
+
+/** ↑ ↓ — มีผลทันทีทุกครั้งที่กด */
+function MoveButtons({ id, hid, first, last }: { id: string; hid: string; first: boolean; last: boolean }) {
+  const b = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50 disabled:opacity-30";
+  return (
+    <div className="inline-flex gap-1">
+      <form action={moveHolding}><input type="hidden" name="holding_id" value={hid} /><input type="hidden" name="asset_id" value={id} />
+        <input type="hidden" name="dir" value="-1" /><button className={b} disabled={first} aria-label="เลื่อนขึ้น">↑</button></form>
+      <form action={moveHolding}><input type="hidden" name="holding_id" value={hid} /><input type="hidden" name="asset_id" value={id} />
+        <input type="hidden" name="dir" value="1" /><button className={b} disabled={last} aria-label="เลื่อนลง">↓</button></form>
+    </div>
+  );
+}
+
+function Kpi({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="text-xs text-slate-500">{label}</div>
