@@ -45,7 +45,18 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
     const r = ccy === "THB" ? 1 : rates[ccy];
     return r && pfRate ? (v * r) / pfRate : 0;
   };
+  // มุมบาท: หลักทรัพย์สกุลต่างประเทศ = ผลตอบแทนในสกุลเดิม × อัตราวันนี้ (ต้นทุนและมูลค่าใช้อัตราเดียวกัน)
+  //   → ไม่มีผลค่าเงินปนในแต่ละแถว · ผลค่าเงินรวมเป็นบรรทัดเดียวท้ายตาราง
+  const thbRate = (ccy: string) => (ccy === "THB" ? 1 : rates[ccy] ?? null);
+  const translatable = (r: Ret) => r.currency !== "THB" && byId.has(r.holding_id) && thbRate(r.currency) != null;
   const data: Row[] = rows.map((r) => {
+    if (!isPf && translatable(r)) {
+      const l = byId.get(r.holding_id)!; const k = thbRate(r.currency)!;
+      const t = (x: keyof RetLocal) => Number(l[x] ?? 0) * k;
+      return { holding_id: r.holding_id, name: r.name, holding_type: r.holding_type, currency: r.currency, status: r.status,
+        cost: t("cost"), value: t("value"), unreal: t("unrealized"), unrealFx: 0, real: t("realized"), realFx: 0,
+        income: t("income"), fees: t("fees"), total: t("total") };
+    }
     if (!isPf) return { holding_id: r.holding_id, name: r.name, holding_type: r.holding_type, currency: r.currency, status: r.status,
       cost: Number(r.cost_thb), value: Number(r.value_thb), unreal: Number(r.unrealized_thb), unrealFx: Number(r.unrealized_fx_thb),
       real: Number(r.realized_thb), realFx: Number(r.realized_fx_thb), income: Number(r.income_thb), fees: Number(r.fees_thb), total: Number(r.total_thb) };
@@ -56,7 +67,14 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
       income: c("income"), fees: c("fees"), total: c("total") };
   });
   const sum = (k: keyof Row) => data.reduce((s, r) => s + Number(r[k] ?? 0), 0);
-  const showFx = !isPf && data.some((r) => r.currency !== "THB");
+  // ผลจากค่าเงินบาท (ทั้งพอร์ต) = ผลตอบแทนเป็นบาทตามอัตราตอนทำรายการ − ผลตอบแทนแปลงด้วยอัตราวันนี้
+  const fxTotal = isPf ? 0 : rows.filter(translatable).reduce((s, r) => {
+    const l = byId.get(r.holding_id)!;
+    return s + Number(r.total_thb) - Number(l.total ?? 0) * thbRate(r.currency)!;
+  }, 0);
+  const hasFxLine = !isPf && rows.some(translatable);
+  // แถวที่แปลงไม่ได้ (ไม่มีข้อมูลสกุลเดิม / ไม่มีอัตรา) ยังแสดง "จาก FX" แบบเดิม
+  const showFx = !isPf && rows.some((r) => r.currency !== "THB" && !translatable(r));
   const otherCcy = isPf && data.some((r) => r.currency !== portfolioCurrency);
   const m = (v: number) => money(v, undefined, isPf ? 2 : 0);
   const sign = (v: number) => `${v > 0 ? "+" : ""}${m(v)}`;
@@ -80,6 +98,7 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
       <p className="px-4 pt-1 text-xs text-slate-500">
         ต้นทุนเฉลี่ย · นับตั้งแต่ยอดตั้งต้น / Go-live ·{" "}
         {isPf ? `ไม่รวมผลจากค่าเงินบาท${otherCcy ? ` · สกุลอื่นแปลงเป็น ${portfolioCurrency} ด้วยอัตราล่าสุด` : ""}`
+          : hasFxLine ? "สกุลต่างประเทศ: ผลตอบแทนในสกุลเดิมแปลงเป็นบาทด้วยอัตราล่าสุด (ต้นทุนและมูลค่าใช้อัตราเดียวกัน) · ผลจากค่าเงินแสดงแยกท้ายตาราง"
           : "ตีเป็นบาทด้วยอัตราวันที่ทำรายการ และอัตราล่าสุดสำหรับมูลค่าปัจจุบัน"}
       </p>
       <table className="mt-2 w-full text-sm">
@@ -105,10 +124,10 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
             </tr>
           ))}
         </tbody>
-        {data.length > 1 && (
+        {(data.length > 1 || hasFxLine) && (
           <tfoot className="border-t border-slate-200 font-medium">
             <tr>
-              <td className="px-4 py-2">รวม</td>
+              <td className="px-4 py-2">{hasFxLine ? "รวม (ผลตอบแทนการลงทุน)" : "รวม"}</td>
               <td className="px-3 text-right tabular-nums">{m(sum("cost"))}</td>
               <td className="px-3 text-right tabular-nums">{m(sum("value"))}</td>
               <Cell v={sum("unreal")} fx={sum("unrealFx")} showFx={showFx} sign={sign} />
@@ -117,6 +136,21 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
               <td className="px-3 text-right tabular-nums">{sum("fees") ? `-${m(sum("fees"))}` : "-"}</td>
               <td className={`px-3 text-right tabular-nums ${cls(sum("total"))}`}>{sign(sum("total"))}</td>
             </tr>
+            {hasFxLine && (
+              <>
+                <tr className="text-slate-600">
+                  <td className="px-4 py-2 font-normal" colSpan={7}>
+                    ผลจากค่าเงินบาท (ทั้งพอร์ต)
+                    <div className="text-xs text-slate-500">ส่วนต่างระหว่างอัตราตอนซื้อ / ยอดตั้งต้น กับอัตราวันนี้ · ยังไม่รับรู้จนกว่าจะแลกกลับเป็นบาท · รวมอยู่ใน Net Worth แล้ว</div>
+                  </td>
+                  <td className={`px-3 text-right tabular-nums ${cls(fxTotal)}`}>{sign(fxTotal)}</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-2" colSpan={7}>รวมทั้งหมด (เป็นบาท)</td>
+                  <td className={`px-3 text-right tabular-nums ${cls(sum("total") + fxTotal)}`}>{sign(sum("total") + fxTotal)}</td>
+                </tr>
+              </>
+            )}
           </tfoot>
         )}
       </table>
