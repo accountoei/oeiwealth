@@ -3,7 +3,8 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { createBankAccount, type ActionState } from "../actions";
-import { ACCOUNT_TYPE_LABEL, CURRENCIES, thDate } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, thDate } from "@/lib/format";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -39,7 +40,7 @@ export default function NewAccountForm(props: {
         </label>
         <label className={label}>สกุลเงิน
           <select name="currency" defaultValue="THB" className={input}>
-            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+            <CurrencyOptions />
           </select>
         </label>
         <label className={label}>ชื่อบัญชี (ตามสมุด)

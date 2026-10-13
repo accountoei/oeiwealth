@@ -4,8 +4,9 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { deleteEntity, updateRecord, type RecState } from "@/lib/records";
 import { updatePortfolio, type ActionState } from "../actions";
-import { CURRENCIES, PORTFOLIO_TYPE_LABEL } from "@/lib/format";
+import { PORTFOLIO_TYPE_LABEL } from "@/lib/format";
 import OwnershipEditor from "@/components/OwnershipEditor";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const lbl = "block text-sm text-slate-700";
@@ -24,7 +25,6 @@ export function PortfolioEditPanel({ assetId, name, institution, portfolioType, 
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>แก้ไขพอร์ต</button>;
   if (!open) return trigger;
   const ccyChanged = ccy !== currency;
-  const ccyList = CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES];
   return present(trigger, (
     <div className="mt-2 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
       {canEditDetails && (
@@ -40,7 +40,7 @@ export function PortfolioEditPanel({ assetId, name, institution, portfolioType, 
             </label>
             <label className={lbl}>สกุลพอร์ต
               <select name="currency" value={ccy} onChange={(e) => { setCcy(e.target.value); setConfirm(false); }} className={input}>
-                {ccyList.map((c) => <option key={c}>{c}</option>)}
+                <CurrencyOptions include={currency} />
               </select>
             </label>
             <label className={`${lbl} md:col-span-2`}>หมายเหตุ<input name="notes" defaultValue={notes ?? ""} className={input} /></label>

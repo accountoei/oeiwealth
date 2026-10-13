@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPortfolio, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { CURRENCIES, PORTFOLIO_TYPE_LABEL, thDate } from "@/lib/format";
+import { PORTFOLIO_TYPE_LABEL, thDate } from "@/lib/format";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -30,7 +31,7 @@ export default function NewPortfolioForm(props: {
         </label>
         <label className={label}>สกุลเงินของพอร์ต
           <select name="currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className={input}>
-            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+            <CurrencyOptions />
           </select>
           <span className="mt-1 block text-xs text-slate-500">ต้องตรงกับบัญชีธนาคารที่ใช้โอนเงินเข้า–ออก</span>
         </label>

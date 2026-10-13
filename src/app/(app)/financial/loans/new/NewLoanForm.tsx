@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createLoan, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { CURRENCIES, thDate } from "@/lib/format";
+import { thDate } from "@/lib/format";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -46,7 +47,7 @@ export default function NewLoanForm(props: {
           <div className="grid gap-4 md:grid-cols-2">
             <label className={label}>เงินต้นคงเหลือ ณ วันตั้งต้น<input name="opening_outstanding" inputMode="decimal" placeholder="ไม่ใส่ = เท่าเงินต้น" className={input} /></label>
             <label className={label}>สกุลเงิน
-              <select name="currency" defaultValue="THB" className={input}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
+              <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
             </label>
           </div>
         ) : (

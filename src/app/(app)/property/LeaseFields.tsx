@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CURRENCIES, FREQ_LABEL, money, thDate } from "@/lib/format";
+import { FREQ_LABEL, money, thDate } from "@/lib/format";
+import { CurrencyOptions } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -33,7 +34,7 @@ export default function LeaseFields({ banks, goLive, currency = "THB", carryOpti
       <label className={label}>วันสิ้นสุดสัญญา *<input name="lease_end_date" type="date" required min={start || undefined} className={input} /></label>
       <label className={label}>ค่าเช่าต่องวด *<input name="lease_rent_amount" required inputMode="decimal" className={input} /></label>
       <label className={label}>สกุลเงินค่าเช่า
-        <select name="lease_rent_currency" defaultValue={currency} className={input}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
+        <select name="lease_rent_currency" defaultValue={currency} className={input}><CurrencyOptions /></select>
       </label>
       <label className={label}>งวดการจ่าย
         <select name="lease_payment_frequency" defaultValue="MONTHLY" className={input}>

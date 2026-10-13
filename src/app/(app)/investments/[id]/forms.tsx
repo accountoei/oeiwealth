@@ -5,7 +5,8 @@ import { useActionSlot } from "@/components/ActionBar";
 import {
   addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
 } from "../actions";
-import { CURRENCIES, HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
+import { CurrencyOptions, useCurrencies } from "@/components/CurrencyContext";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -69,7 +70,7 @@ export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
         <label className={lbl}>สัญลักษณ์<input name="symbol" placeholder="เช่น PTT" className={input} /></label>
         <label className={lbl}>สกุลเงิน
           <select name="currency" value={ccy} onChange={(e) => setCcy(e.target.value)} className={input}>
-            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+            <CurrencyOptions />
           </select>
         </label>
         <label className={lbl}>จำนวนหน่วย *<input name="quantity" required inputMode="decimal" className={input} /></label>
@@ -178,7 +179,7 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
             <label className={lbl}>สัญลักษณ์<input name="new_symbol" className={input} /></label>
             <label className={lbl}>สกุลเงิน
               <select name="new_currency" value={newCcy} onChange={(e) => setNewCcy(e.target.value)} className={input}>
-                {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+                <CurrencyOptions />
               </select>
             </label>
             <label className={lbl}>วันครบกำหนด (ถ้ามี)<input name="new_maturity_date" type="date" className={input} /></label>
@@ -521,13 +522,14 @@ export function MoveCashForm({ assetId, cashAccounts, today, minDate }:
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
   const [got, setGot] = useState("");
+  const { all: allCcy } = useCurrencies();
   if (cashAccounts.length === 0) return null;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>ย้ายเงินในพอร์ต</button>;
   if (!open) return trigger;
   const f = cashAccounts.find((a) => a.id === from);
   const targets = cashAccounts.filter((a) => a.id !== from);
   const have = new Set(cashAccounts.map((a) => a.currency));
-  const toVal = to && (targets.some((a) => a.id === to) || to.startsWith("new:")) ? to : targets[0]?.id ?? `new:${CURRENCIES.find((c) => c !== f?.currency) ?? "USD"}`;
+  const toVal = to && (targets.some((a) => a.id === to) || to.startsWith("new:")) ? to : targets[0]?.id ?? `new:${allCcy.find((c) => !have.has(c)) ?? "USD"}`;
   const t = cashAccounts.find((a) => a.id === toVal);
   const src = f?.currency ?? "";
   const dst = t?.currency ?? (toVal.startsWith("new:") ? toVal.slice(4) : "");
@@ -551,7 +553,7 @@ export function MoveCashForm({ assetId, cashAccounts, today, minDate }:
         <label className={lbl}>เข้าบัญชี *
           <select name="to_target" value={toVal} onChange={(e) => setTo(e.target.value)} className={input}>
             {targets.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-            {CURRENCIES.filter((c) => !have.has(c)).map((c) => <option key={c} value={`new:${c}`}>บัญชีใหม่สกุล {c} (สร้างให้อัตโนมัติ)</option>)}
+            <CurrencyOptions exclude={[...have]} valuePrefix="new:" label={(c) => `บัญชีใหม่สกุล ${c} (สร้างให้อัตโนมัติ)`} />
           </select>
         </label>
         <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
@@ -591,7 +593,7 @@ export function AddCashAccountForm({ assetId, currency, isSetup, openingDate }:
         <label className={lbl}>ชื่อบัญชี *<input name="name" required placeholder="เช่น เงินสด USD · Brokerage Cash" className={input} /></label>
         <label className={lbl}>สกุลเงิน
           <select name="currency" value={ccy} onChange={(e) => setCcy(e.target.value)} className={input}>
-            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+            <CurrencyOptions />
           </select>
         </label>
         <label className={lbl}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" data-money="off" className={input} /></label>
