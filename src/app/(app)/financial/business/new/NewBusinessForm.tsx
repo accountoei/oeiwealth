@@ -16,6 +16,9 @@ export default function NewBusinessForm(props: {
   const { persons, goLive, openingDate, today, isSetup, isAdmin } = props;
   const [state, action, pending] = useActionState<ActionState, FormData>(createBusiness, {});
   const [opening, setOpening] = useState(isSetup);
+  const [unit, setUnit] = useState<"shares" | "percent">("shares");      // เจ้าของ: จำนวนหุ้น (บริษัทจำกัด) / % (ห้างหุ้นส่วน ฯลฯ)
+  const [totalShares, setTotalShares] = useState("");
+  const total = Number(totalShares.replace(/,/g, "")) || null;
   return (
     <form action={action} className="space-y-6">
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
@@ -24,14 +27,26 @@ export default function NewBusinessForm(props: {
         <label className={label}>ชื่อที่ใช้เรียก<input name="name" placeholder="ไม่ใส่ = ชื่อบริษัท" className={input} /></label>
         <label className={label}>เลขทะเบียนนิติบุคคล<input name="registration_no" className={input} /></label>
         <label className={label}>ประเภทธุรกิจ<input name="business_type" className={input} /></label>
-        <label className={label}>จำนวนหุ้นทั้งหมดของบริษัท<input name="total_shares" inputMode="decimal" className={input} /></label>
-        <label className={label}>จำนวนหุ้นที่ครอบครัวถือ<input name="shares_owned" inputMode="decimal" className={input} /></label>
-        <label className={label}>% ที่ครอบครัวถือในบริษัท<input name="company_ownership_percent" inputMode="decimal" className={input} /></label>
+        <label className={label}>เจ้าของระบุเป็น
+          <select value={unit} onChange={(e) => setUnit(e.target.value as "shares" | "percent")} className={input}>
+            <option value="shares">จำนวนหุ้น (ตาม บอจ.5)</option><option value="percent">% (ไม่มีหุ้น เช่น ห้างหุ้นส่วน)</option>
+          </select>
+        </label>
+        <label className={label}>จำนวนหุ้นทั้งหมดของบริษัท{unit === "shares" && " *"}
+          <input name="total_shares" inputMode="decimal" data-money="off" required={unit === "shares"} value={totalShares}
+            onChange={(e) => setTotalShares(e.target.value)} className={input} /></label>
+        {unit === "percent" && <>
+          <label className={label}>จำนวนหุ้นที่ครอบครัวถือ<input name="shares_owned" inputMode="decimal" data-money="off" className={input} /></label>
+          <label className={label}>% ที่ครอบครัวถือในบริษัท<input name="company_ownership_percent" inputMode="decimal" className={input} /></label>
+        </>}
         <label className={label}>เงินลงทุน (ต้นทุน)<input name="investment_cost" inputMode="decimal" className={input} /></label>
         <label className={label}>วันที่ได้มา {!opening && "*"}<input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} className={input} /></label>
       </section>
 
-      <OwnerShares persons={persons} title="สมาชิกที่เป็นเจ้าของหุ้นส่วนนี้" hint="สัดส่วนภายในครอบครัว (คนละเรื่องกับ % ที่ถือในบริษัท)" />
+      {unit === "shares"
+        ? <OwnerShares key="shares" unit="shares" totalShares={total} persons={persons} title="จำนวนหุ้นที่สมาชิกแต่ละคนถือ"
+            hint="ตาม บอจ.5 · หุ้นที่ครอบครัวถือรวม และ % ของบริษัท คำนวณให้อัตโนมัติ · ผู้ถือหุ้นนอกครอบครัวไม่ต้องใส่" />
+        : <OwnerShares key="percent" persons={persons} title="สมาชิกที่เป็นเจ้าของหุ้นส่วนนี้" hint="สัดส่วนภายในครอบครัว (คนละเรื่องกับ % ที่ถือในบริษัท)" />}
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">มูลค่าส่วนของครอบครัว (บังคับ)</h2>
@@ -43,7 +58,7 @@ export default function NewBusinessForm(props: {
           </label>
         )}
         <div className="grid gap-4 md:grid-cols-4">
-          <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
+          <label className={label}>มูลค่าส่วนของครอบครัว *<input name="value" required inputMode="decimal" className={input} /></label>
           <label className={label}>สกุลเงิน<CurrencySelect name="currency" defaultValue="THB" className={input} /></label>
           <label className={label}>ณ วันที่ *
             {opening ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
