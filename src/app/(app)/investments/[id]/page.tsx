@@ -12,6 +12,8 @@ import {
 import { moveHolding, setDefaultCash } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import TxFilter from "./tx-filter";
 import { CashNameEdit, PortfolioEditPanel, PortfolioStatusMenu } from "./portfolio-ui";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 
@@ -57,16 +59,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     : (lastTx?.transaction_date ?? todayBangkok()).slice(0, 7);
   const txType = sp.type && /^[A-Z_]+$/.test(sp.type) ? sp.type : "";
   const txHolding = sp.h && (hs ?? []).some((x: { id: string }) => x.id === sp.h) ? sp.h : "";
-  let txq = supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id);
-  if (txMonth !== "all") {
-    const [yy, mm] = txMonth.split("-").map(Number);
-    const end = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
-    txq = txq.gte("transaction_date", `${txMonth}-01`).lte("transaction_date", end);
-  }
-  if (txType) txq = txq.eq("transaction_type", txType);
-  if (txHolding) txq = txq.or(`holding_id.eq.${txHolding},cash_holding_id.eq.${txHolding},counter_cash_holding_id.eq.${txHolding}`);
+  // โหลดรายการทั้งหมดของพอร์ตครั้งเดียว → กรองในเบราว์เซอร์ (ไม่โหลดหน้าใหม่)
+  const txq = supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id);
   const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }] = await Promise.all([
-    txq.order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(2000),
+    txq.order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(5000),
     supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
       .not("source_transaction_id", "is", null).is("deleted_at", null),
     supabase.rpc("investment_returns", { p_portfolio_asset_id: id }),
@@ -264,26 +260,17 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       )}
 
       {/* ------------------------------------------------ หลักทรัพย์: แท็บ ถือครอง | ผลตอบแทน | รายการ */}
+      <TabsProvider initial={tab} defaultKey="hold">
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 pt-3">
-          <nav className="flex gap-1 text-sm" aria-label="มุมมอง">
-            {([["hold", "ถือครอง"], ["ret", "ผลตอบแทน"], ["tx", "รายการ"]] as const).map(([k, l]) => (
-              <Link key={k} href={k === "hold" ? `/investments/${id}` : `/investments/${id}?tab=${k}`}
-                className={`-mb-px border-b-2 px-3 py-2 ${tab === k ? "border-blue-600 font-medium text-blue-700" : "border-transparent text-slate-600 hover:text-slate-900"}`}>
-                {l}
-              </Link>
-            ))}
-          </nav>
-          {tab === "hold" && (
-            <div className="flex items-baseline gap-3 pb-2">
-              {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
-              <span className="text-sm text-slate-500">รวมหลักทรัพย์ <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
-            </div>
-          )}
+          <TabNav tabs={[["hold", "ถือครอง"], ["ret", "ผลตอบแทน"], ["tx", "รายการ"]]} />
+          <TabPanel id="hold" className="flex items-baseline gap-3 pb-2">
+            {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
+            <span className="text-sm text-slate-500">รวมหลักทรัพย์ <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
+          </TabPanel>
         </div>
 
-        {tab === "hold" && (
-          <>
+        <TabPanel id="hold">
           <table className="mt-2 w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนเฉลี่ย</th>
@@ -342,39 +329,21 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             · เงินสด {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
             · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / ครบกำหนด
           </p>
-          </>
-        )}
+        </TabPanel>
 
-        {tab === "ret" && (
+        <TabPanel id="ret">
           <ReturnsTable bare rows={(rets as Ret[] | null) ?? []} local={(retsLocal as RetLocal[] | null) ?? []}
             portfolioCurrency={a.currency} rates={fxRates} hrefBase={`/investments/${id}/holding/`} />
-        )}
+        </TabPanel>
 
-        {tab === "tx" && (
-          <div className="p-4">
-            <form method="get" className="mb-3 flex flex-wrap items-end gap-2 text-sm">
-              <input type="hidden" name="tab" value="tx" />
-              <label className="text-xs text-slate-600">เดือน
-                <select name="m" defaultValue={txMonth} className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm">
-                  {txMonths.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </label>
-              <label className="text-xs text-slate-600">ประเภท
-                <select name="type" defaultValue={txType} className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm">
-                  <option value="">ทุกประเภท</option>
-                  {Object.entries(ITX_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </label>
-              <label className="text-xs text-slate-600">หลักทรัพย์ / บัญชี
-                <select name="h" defaultValue={txHolding} className="mt-1 block max-w-xs rounded-md border border-slate-300 px-2 py-1 text-sm">
-                  <option value="">ทั้งหมด</option>
-                  {holdings.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-                </select>
-              </label>
-              <button className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-50">กรอง</button>
-              {(txType || txHolding || sp.m) && <Link href={`/investments/${id}?tab=tx`} className="text-xs text-slate-500 underline">ล้างตัวกรอง</Link>}
-            </form>
-            {txList.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ไม่มีรายการตามที่เลือก</p> : (
+        <TabPanel id="tx" className="p-4">
+            {txList.length > 0 && (
+              <TxFilter months={txMonths} types={Object.entries(ITX_LABEL)} holdings={holdings.map((h) => ({ id: h.id, name: h.name }))}
+                initial={{ m: txMonth, type: txType, h: txHolding }}
+                meta={txList.map((t) => ({ m: t.transaction_date.slice(0, 7), type: t.transaction_type,
+                  h: [t.holding_id, t.cash_holding_id, t.counter_cash_holding_id].filter((x): x is string => !!x) }))} />
+            )}
+            {txList.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีรายการ</p> : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500">
@@ -386,7 +355,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                       const bank = t.settle_from_asset_id ?? t.settle_to_asset_id;
                       const cashEffect = bank || (t.cash_movement_id && ["DEPOSIT", "WITHDRAWAL"].includes(t.transaction_type)) ? null : Number(t.net_cash);
                       return (
-                        <tr key={t.id} className="align-top">
+                        <tr key={t.id} className="align-top" data-tx="" data-m={t.transaction_date.slice(0, 7)} data-type={t.transaction_type}
+                          data-h={[t.holding_id, t.cash_holding_id, t.counter_cash_holding_id].filter(Boolean).join(" ")}>
                           <td className="py-1.5">{thDate(t.transaction_date)}</td>
                           <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
                           <td className="text-slate-600">
@@ -441,12 +411,11 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               </div>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              {txList.length} รายการ ·
               &ldquo;—&rdquo; ในช่องเงินสดพอร์ต = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
             </p>
-          </div>
-        )}
+        </TabPanel>
       </section>
+      </TabsProvider>
 
       <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} />
     </div>
@@ -456,8 +425,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
 /** ปุ่ม "จัดลำดับ" / "เสร็จ" ต่อชื่อกล่อง */
 function OrderToggle({ id, mode, active }: { id: string; mode: "cash" | "sec"; active: boolean }) {
   return active
-    ? <Link href={`/investments/${id}`} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</Link>
-    : <Link href={`/investments/${id}?order=${mode}`} className="text-xs text-slate-600 underline">จัดลำดับ</Link>;
+    ? <Link href={`/investments/${id}`} scroll={false} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</Link>
+    : <Link href={`/investments/${id}?order=${mode}`} scroll={false} className="text-xs text-slate-600 underline">จัดลำดับ</Link>;
 }
 
 /** ↑ ↓ — มีผลทันทีทุกครั้งที่กด */
