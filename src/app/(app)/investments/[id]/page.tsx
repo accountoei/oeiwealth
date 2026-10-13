@@ -10,7 +10,7 @@ import {
   type CashAcct, type Holding,
 } from "./forms";
 import { setDefaultCash } from "../actions";
-import ReturnsTable, { type Ret } from "./ReturnsTable";
+import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
@@ -47,12 +47,13 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!a || !pf) notFound();
-  const [{ data: txs }, { data: income }, { data: rets }] = await Promise.all([
+  const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }] = await Promise.all([
     supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id)
       .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(100),
     supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
       .not("source_transaction_id", "is", null).is("deleted_at", null),
     supabase.rpc("investment_returns", { p_portfolio_asset_id: id }),
+    supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
   ]);
 
   const canWrite = me.role !== "VIEWER";
@@ -66,6 +67,10 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   const byId = new Map(holdings.map((h) => [h.id, h]));
   // มูลค่าเป็นบาทรายตัว = ชุดเดียวกับ Net Worth (มูลค่าสกุลเดิม × อัตรา ณ วันนี้ จากฐานข้อมูล)
   const thbOf = (h: H) => (h.value_thb == null ? null : Number(h.value_thb));
+  // อัตราล่าสุด (บาทต่อหน่วย) จากฐานข้อมูล — ชุดเดียวกับ Net Worth · ใช้แปลงผลตอบแทนเป็นสกุลพอร์ต
+  const fxRates: Record<string, number> = { THB: 1 };
+  for (const h of holdings) if (h.fx_rate != null) fxRates[h.currency] = Number(h.fx_rate);
+  if (pv?.portfolio_fx_rate != null) fxRates[a.currency] = Number(pv.portfolio_fx_rate);
   const active = holdings.filter((h) => h.status === "ACTIVE");
   const totalThb = active.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const cashHoldings = active.filter((h) => h.holding_type === "CASH");
@@ -286,7 +291,8 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         </p>
       </section>
 
-      <ReturnsTable rows={(rets as Ret[] | null) ?? []} hrefBase={`/investments/${id}/holding/`} />
+      <ReturnsTable rows={(rets as Ret[] | null) ?? []} local={(retsLocal as RetLocal[] | null) ?? []}
+        portfolioCurrency={a.currency} rates={fxRates} hrefBase={`/investments/${id}/holding/`} />
 
       {(unsettled ?? []).length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
