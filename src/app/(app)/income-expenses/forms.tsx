@@ -7,7 +7,7 @@ import {
   type ActionState,
 } from "./actions";
 import { EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, money } from "@/lib/format";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 export type Bank = { asset_id: string; name: string; currency: string };
 export type Card = { id: string; label: string; currency: string; outstanding_balance: number };
@@ -70,7 +70,7 @@ export function IncomeForm({ banks, persons, today, minDate }: { banks: Bank[]; 
             </label>
             {!bank && (
               <label className={lbl}>สกุลเงิน
-                <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
+                <CurrencySelect name="currency" defaultValue="THB" className={input} />
               </label>
             )}
             <label className={`${lbl} md:col-span-2`}>หมายเหตุ<input name="notes" className={input} /></label>
@@ -255,7 +255,7 @@ export function ExpenseForm({ banks, cards, persons, today, minDate }:
                   </select>
                 </label>
                 <label className={lbl}>สกุลเงิน
-                  <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
+                  <CurrencySelect name="currency" defaultValue="THB" className={input} />
                 </label>
               </>
             )}

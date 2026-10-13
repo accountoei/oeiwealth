@@ -13,6 +13,7 @@ import { moveHolding, setDefaultCash } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import { CurrencyScope } from "@/components/CurrencyContext";
 import TxFilter from "./tx-filter";
 import { CashNameEdit, PortfolioEditPanel, PortfolioStatusMenu } from "./portfolio-ui";
 import { ActionBar } from "@/components/ActionBar";
@@ -129,7 +130,11 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   if (txMonth !== "all" && !txMonths.some((x) => x.value === txMonth)) txMonths.unshift({ value: txMonth, label: thMonth(`${txMonth}-01`) });
   txMonths.push({ value: "all", label: "ทุกเดือน" });
 
+  // ช่องเลือกสกุลเงินในหน้านี้: กลุ่มบน = สกุลที่พอร์ตใช้อยู่ (สกุลพอร์ต + บัญชีเงินสด + หลักทรัพย์)
+  const pfCurrencies = [a.currency, ...holdings.filter((h) => h.status === "ACTIVE" || h.holding_type === "CASH").map((h) => h.currency)];
+
   return (
+    <CurrencyScope used={pfCurrencies}>
     <div className="space-y-6">
       <div>
         <Link href="/investments" className="text-sm text-slate-500 hover:underline">← Investments</Link>
@@ -465,6 +470,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
 
       <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} />
     </div>
+    </CurrencyScope>
   );
 }
 

@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
 import { INS_TYPE, thDate } from "@/lib/format";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -56,7 +56,7 @@ export default function NewPolicyForm(props: {
         <label className={label}>ทุนประกัน<input name="insured_amount" inputMode="decimal" className={input} /></label>
         <label className={label}>เบี้ยประกัน (ต่อปี)<input name="premium" inputMode="decimal" className={input} /></label>
         <label className={label}>สกุลเงิน
-          <select name="currency" defaultValue="THB" className={input}><CurrencyOptions /></select>
+          <CurrencySelect name="currency" defaultValue="THB" className={input} />
         </label>
         <label className={label}>หมายเหตุ {hasCv && opening && !isSetup && "(เหตุผล · จำเป็น)"}<input name="notes" required={hasCv && opening && !isSetup} className={input} /></label>
       </section>

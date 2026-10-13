@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { overrideFx, type FxState } from "./actions";
-import { CurrencyOptions } from "@/components/CurrencyContext";
+import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 block rounded-md border border-slate-300 px-3 py-2 text-sm";
 
@@ -12,7 +12,7 @@ export default function OverrideForm({ today }: { today: string }) {
     <form action={action} className="flex flex-wrap items-end gap-3">
       <label className="text-sm">วันที่ของ Rate<input name="rate_date" type="date" required max={today} className={input} /></label>
       <label className="text-sm">สกุลเงิน
-        <select name="currency" className={input}><CurrencyOptions exclude={["THB"]} /></select>
+        <CurrencySelect name="currency" className={input} exclude={["THB"]} />
       </label>
       <label className="text-sm">1 หน่วย = ? บาท<input name="rate_to_thb" required inputMode="decimal" className={`${input} w-32`} /></label>
       <label className="text-sm min-w-60 flex-1">เหตุผล *<input name="reason" required placeholder="เช่น ธปท. ไม่มีข้อมูลวันนี้" className={`${input} w-full`} /></label>
