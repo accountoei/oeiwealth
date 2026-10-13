@@ -1009,6 +1009,34 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.investment_holdings WHERE holding_t
             'บัญชีที่ระบบสร้างอัตโนมัติชื่อ "เงินฝาก XXX"');
 RESET ROLE;
 
+\echo '== 13n. ธุรกิจ: เจ้าของเป็นจำนวนหุ้น (มูลค่ารายคนไม่ปัดเศษ · หน้าแรกแสดงหุ้น / % ของบริษัท)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_private_business(jsonb_build_object(
+  'name','บริษัทหุ้นทดสอบ','company_name','บริษัท ทดสอบหุ้น จำกัด','total_shares',10000,'investment_cost',900000,
+  'value',900000,'value_date',current_date,'is_opening',false,'acquisition_date',current_date,'valuation_method','BOOK_VALUE',
+  'owners', jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',4000), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',5000)))) IS NOT NULL AS biz;
+SELECT t.ok((SELECT shares_owned = 9000 AND company_ownership_percent = 90 FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด')
+            AND (SELECT ownership_percent FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL) = 44.4444,
+            'สร้างธุรกิจด้วยจำนวนหุ้น: หุ้นครอบครัว 9,000 · 90% ของบริษัท · % ภายในครอบครัวคำนวณให้ (44.4444)');
+SELECT t.ok((SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id = t.p('คุณพ่อ')) = 400000
+            AND (SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id = t.p('คุณแม่')) = 500000
+            AND NOT EXISTS (SELECT 1 FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id IS NULL),
+            'มูลค่ารายคนจากหุ้นไม่ปัดเศษ: 400,000.00 / 500,000.00 · ไม่มีส่วน "ไม่ระบุเจ้าของ"');
+SELECT t.ok((SELECT share_note FROM public.month_person_items(current_date, t.p('คุณพ่อ')) WHERE item_name = 'บริษัทหุ้นทดสอบ') = '4,000 หุ้น · 40% ของบริษัท',
+            'หน้าแรก: แสดง "4,000 หุ้น · 40% ของบริษัท"');
+SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
+  jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',4500), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',4500)), 'CORRECT', NULL);
+SELECT t.ok((SELECT shares_owned = 9000 FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด')
+            AND (SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id = t.p('คุณพ่อ')) = 450000,
+            'แก้จำนวนหุ้นรายคน → มูลค่ารายคนเปลี่ยนตาม');
+SELECT t.fails($$SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
+  jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',8000), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',4000)), 'CORRECT', NULL)$$,
+  'เกินจำนวนหุ้นทั้งหมด', 'หุ้นรวมเกินหุ้นทั้งหมดของบริษัทไม่ได้');
+SELECT t.fails($$SELECT public.set_asset_ownership(t.a('KBank ออมทรัพย์'),
+  jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',10)), 'CORRECT', NULL)$$,
+  'เฉพาะธุรกิจ', 'ทรัพย์สินที่ไม่ใช่ธุรกิจระบุเป็นหุ้นไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

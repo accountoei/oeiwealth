@@ -22,7 +22,8 @@ type Hist = {
   opening: { date: string; total_assets: number; total_liabilities: number; net_worth: number };
   snapshots: { month: string; date: string; status: string; total_assets: number; total_liabilities: number; net_worth: number }[];
 };
-type Item = { item_type: string; item_name: string; item_group: string; base_value: number | null; ownership_percent: number | null };
+type Item = { item_type: string; item_name: string; item_group: string; base_value: number | null; ownership_percent: number | null;
+  /** ธุรกิจ: "4,000 หุ้น · 40% ของบริษัท" */ share_note?: string | null };
 type PersonDash = {
   opening: { date: string; net_worth: number };
   snapshots: { month: string; date: string; status: string; net_worth: number }[];
@@ -389,8 +390,10 @@ function ItemList({ items, showShare, negative }: { items: Item[]; showShare: bo
     <ul className="mt-2 space-y-1 rounded-lg bg-slate-50 px-3 py-2 sm:ml-[1.125rem] sm:mr-7">
       {items.map((i, k) => (
         <li key={k} className="flex justify-between gap-3">
-          <span>{i.item_name}{showShare && i.ownership_percent && Number(i.ownership_percent) < 100
-            ? <span className="text-xs text-slate-400"> · ถือ {Number(i.ownership_percent)}%</span> : null}</span>
+          <span>{i.item_name}{showShare && i.share_note
+            ? <span className="text-xs text-slate-400"> · {i.share_note}</span>
+            : showShare && i.ownership_percent && Number(i.ownership_percent) < 100
+              ? <span className="text-xs text-slate-400"> · ถือ {Number(Number(i.ownership_percent).toFixed(2))}%</span> : null}</span>
           <span className={`shrink-0 tabular-nums ${negative ? "text-red-700" : ""}`}>{negative ? "−" : ""}{money(i.base_value, undefined, 0)}</span>
         </li>
       ))}

@@ -50,11 +50,13 @@ export const LIABILITY_TYPE_LABEL: Record<string, string> = {
 };
 
 /** อ่าน owner_<id> จาก FormData → [{person_id, percent}] */
-export function ownersFromForm(form: FormData): { person_id: string; percent: number }[] {
-  const out: { person_id: string; percent: number }[] = [];
+/** เจ้าของจากฟอร์ม: owner_<id> = % · shares_<id> = จำนวนหุ้น (ธุรกิจ) */
+export function ownersFromForm(form: FormData): { person_id: string; percent?: number; shares?: number }[] {
+  const out: { person_id: string; percent?: number; shares?: number }[] = [];
   for (const [k, v] of form.entries()) {
     const n = Number(String(v).replace(/,/g, ""));
     if (k.startsWith("owner_") && n > 0) out.push({ person_id: k.slice(6), percent: n });
+    if (k.startsWith("shares_") && n > 0) out.push({ person_id: k.slice(7), shares: n });
   }
   return out;
 }

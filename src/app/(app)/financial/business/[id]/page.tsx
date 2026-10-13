@@ -21,7 +21,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle(),
     supabase.from("private_business_details").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
+    supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes").eq("asset_id", id).is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("cash_movements").select("id,movement_date,movement_type,amount,currency,description,is_derived").or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`)
@@ -36,8 +36,17 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const today = todayBangkok();
   const goLive = family?.go_live_date ?? "";
   const paths = [`/financial/business/${id}`, "/financial/business", "/income-expenses", "/financial/cash"];
-  const activeOwners = (owners ?? []).filter((o) => !o.end_date);
+  type Own = { person_id: string; ownership_percent: number; shares: number | null; end_date: string | null; persons: { name: string } | { name: string }[] | null };
+  const activeOwners = ((owners ?? []) as Own[]).filter((o) => !o.end_date)
+    .map((o) => ({ ...o, person_name: (Array.isArray(o.persons) ? o.persons[0]?.name : o.persons?.name) ?? "" }));
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
+  // เจ้าของเก็บเป็นจำนวนหุ้น (ตาม บอจ.5) หรือ % (แบบเดิม)
+  const byShares = activeOwners.length > 0 ? activeOwners.every((o) => o.shares != null) : d.total_shares != null;
+  const totalShares = d.total_shares != null ? Number(d.total_shares) : null;
+  const pctOfCompany = (sh: number) => (totalShares ? (sh * 100) / totalShares : null);
+  const fmtPct = (v: number | null) => (v == null ? "-" : `${v.toLocaleString("th-TH", { maximumFractionDigits: 2 })}%`);
+  const companyPct = byShares && d.shares_owned != null && totalShares ? pctOfCompany(Number(d.shares_owned))
+    : d.company_ownership_percent != null ? Number(d.company_ownership_percent) : null;
   const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
   return (
     <div className="space-y-6">
@@ -55,23 +64,27 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
           <div className="text-xs text-slate-500">การถือหุ้น</div>
           <ul className="mt-1 space-y-0.5">
-            <li>ถือ {d.company_ownership_percent != null ? `${Number(d.company_ownership_percent)}%` : "-"} ของบริษัท</li>
+            <li>ถือ {fmtPct(companyPct)} ของบริษัท</li>
             <li>หุ้น {qty(d.shares_owned)} / {qty(d.total_shares)}</li>
             <li>เงินลงทุน {money(d.investment_cost, undefined, 0)}</li>
           </ul>
           {canWrite && <div className="mt-2"><RowActions table="private_business_details" id={d.id} paths={paths} canDelete={false} fields={[
             { name: "company_name", label: "ชื่อบริษัท", value: d.company_name, width: "w-44" }, { name: "registration_no", label: "เลขทะเบียน", value: d.registration_no },
             { name: "business_type", label: "ประเภท", value: d.business_type }, { name: "total_shares", label: "หุ้นทั้งหมด", type: "number", value: d.total_shares },
-            { name: "shares_owned", label: "หุ้นที่ถือ", type: "number", value: d.shares_owned },
-            { name: "company_ownership_percent", label: "% ที่ถือ", type: "number", value: d.company_ownership_percent, width: "w-20" },
+            ...(byShares ? [] : [{ name: "shares_owned", label: "หุ้นที่ถือ", type: "number" as const, value: d.shares_owned },
+              { name: "company_ownership_percent", label: "% ที่ถือ", type: "number" as const, value: d.company_ownership_percent, width: "w-20" }]),
             { name: "investment_cost", label: "เงินลงทุน", type: "number", value: d.investment_cost }]} /></div>}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="text-xs text-slate-500">สมาชิกที่เป็นเจ้าของ</div>
-          <ul className="mt-1 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
-          {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
+          <ul className="mt-1 space-y-0.5 text-sm">{activeOwners.map((o) => (
+            <li key={o.person_id}>{o.person_name} · {o.shares != null
+              ? <>{qty(o.shares)} หุ้น <span className="text-slate-500">({fmtPct(pctOfCompany(Number(o.shares)))} ของบริษัท)</span></>
+              : `${Number(o.ownership_percent)}%`}</li>))}</ul>
+          {!byShares && ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
           {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
-            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
+            unit={byShares ? "shares" : "percent"} totalShares={totalShares}
+            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent), shares: o.shares }))} />}
         </div>
       </section>
 
