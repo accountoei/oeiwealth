@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
+import { useRowPanel } from "@/components/RowPanel";
 import {
   addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
 } from "../actions";
@@ -363,9 +364,14 @@ export type PfTransfer = { id: string; movement_date: string; movement_type: str
   counter_fee: number | null; cash_holding_id: string | null; description: string | null };
 
 /** แก้รายการโอน / ใส่ยอดที่เข้าทีหลัง */
-export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate, today }:
-  { assetId: string; t: PfTransfer; bankLabel: string; cashAccounts: CashAcct[]; minDate: string; today: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate, today, rowMode = false }:
+  { assetId: string; t: PfTransfer; bankLabel: string; cashAccounts: CashAcct[]; minDate: string; today: string; rowMode?: boolean }) {
+  const slot = useActionSlot();
+  const row = useRowPanel(rowMode);                              // ในตาราง: กดที่แถวเพื่อเปิด
+  const useRow = rowMode && !row.showButtons;
+  const open = useRow ? true : slot.open;
+  const setOpen = useRow ? row.setOpen : slot.setOpen;
+  const { present, activeCls } = slot;
   const [state, action, pending] = useActionState<ActionState, FormData>(updateTransfer, {});
   const isIn = t.movement_type === "INVESTMENT_OUT";            // ธนาคาร → พอร์ต
   const waiting = t.counter_currency != null && t.counter_amount == null;
@@ -381,10 +387,11 @@ export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate,
   if (!open) return trigger;
   const c = cashAccounts.find((x) => x.id === acct);
   const src = t.currency;
+  const show = (form: React.ReactNode) => (useRow ? row.render(form) : present(trigger, form));
   const dst = (isIn ? c?.currency : t.counter_currency ?? t.currency) ?? "";
   const accts = isIn ? cashAccounts : cashAccounts.filter((a) => a.currency === t.currency);
   const rate = rateText(src, n(amt), dst, n(got));
-  return present(trigger, (
+  return show((
     <form action={action} className="mt-2 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-sm">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="movement_id" value={t.id} />
