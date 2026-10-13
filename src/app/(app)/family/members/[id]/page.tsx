@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ageFrom, money, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, thDate, todayBangkok } from "@/lib/format";
 import EntityDocuments from "@/components/docs/EntityDocuments";
-import { OpenDoc } from "@/components/docs/DocButtons";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
 import { setFamilyHead } from "../actions";
 
@@ -67,7 +66,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
   const DocLink = ({ types }: { types: string[] }) => {
     const d = docOf(...types);
     if (!d) return <span className="text-xs text-slate-400">ยังไม่ได้แนบสำเนา</span>;
-    return connected ? <span className="text-xs text-slate-600">สำเนา: <OpenDoc id={d.id} title={d.title} mime={d.mime_type} /></span>
+    return connected ? <span className="text-xs text-slate-600">สำเนา: <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="text-sky-700 hover:underline">{d.title}</a></span>
       : <span className="text-xs text-slate-500">มีสำเนา (ต้องเชื่อม Google Drive เพื่อเปิด)</span>;
   };
   const passportExpired = p.passport_expiry && p.passport_expiry < today;

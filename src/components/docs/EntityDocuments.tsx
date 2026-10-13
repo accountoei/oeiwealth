@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fileSize, thDate, todayBangkok, addDays } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import DocumentUpload from "./DocumentUpload";
-import { OpenDoc } from "./DocButtons";
+import { DownloadDoc } from "./DocButtons";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string };
@@ -36,16 +36,16 @@ export default async function EntityDocuments({ entityType, entityId, module, ro
         <Link href="/documents" className="text-xs text-slate-500 hover:underline">เอกสารทั้งหมด →</Link>
       </div>
       {current.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีเอกสาร</p> : (
-        <ul className="divide-y divide-slate-100 text-sm">
+        <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
           {current.map((d) => <Row key={d.id} d={d} today={today} canWrite={canWrite} canDelete={canDelete} paths={paths} connected={connected} />)}
-        </ul>
+        </tbody></table>
       )}
       {old.length > 0 && (
         <details className="mt-2 text-sm">
           <summary className="cursor-pointer text-xs text-slate-500">ฉบับเก่า {old.length} รายการ</summary>
-          <ul className="mt-1 divide-y divide-slate-100 opacity-70">
+          <table className="mt-1 w-full opacity-70"><tbody className="divide-y divide-slate-100">
             {old.map((d) => <Row key={d.id} d={d} today={today} canWrite={canWrite} canDelete={canDelete} paths={paths} connected={connected} />)}
-          </ul>
+          </tbody></table>
         </details>
       )}
       {canWrite && (
@@ -64,9 +64,10 @@ function Row({ d, today, canWrite, canDelete, paths, connected }: {
   const expired = d.expiry_date && d.expiry_date < today;
   const soon = !expired && d.expiry_date && d.expiry_date <= addDays(today, 60);
   return (
-    <li className="flex flex-wrap items-start justify-between gap-2 py-2">
-      <div>
-        <div className="font-medium text-slate-900">{d.title}
+    <tr className="align-top">
+      <td className="py-2">
+        <div className="font-medium text-slate-900">
+          {connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="hover:underline">{d.title}</a> : d.title}
           {d.version_status !== "CURRENT" && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs font-normal text-slate-500">ฉบับเก่า</span>}
         </div>
         <div className="text-xs text-slate-500">
@@ -75,17 +76,18 @@ function Row({ d, today, canWrite, canDelete, paths, connected }: {
           {d.file_size ? ` · ${fileSize(d.file_size)}` : ""}
           {d.notes && ` · ${d.notes}`}
         </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        {connected && <OpenDoc id={d.id} title={d.title} mime={d.mime_type} />}
-        {canWrite && connected && d.version_status === "CURRENT" &&
-          <DocumentUpload supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
-        {canWrite && <RowActions table="documents" id={d.id} paths={paths} canDelete={canDelete}
-          deleteNote="ลบออกจากระบบ (ไฟล์ใน Google Drive ยังเก็บไว้ · ADMIN กู้คืนได้)" fields={[
+        <RowActions table="documents" id={d.id} paths={paths} canEdit={canWrite} canDelete={canWrite && canDelete}
+          deleteNote="ลบออกจากระบบ (ไฟล์ใน Google Drive ยังเก็บไว้ · ADMIN กู้คืนได้)"
+          extra={connected ? <>
+            <DownloadDoc id={d.id} title={d.title} mime={d.mime_type} />
+            {canWrite && d.version_status === "CURRENT" &&
+              <DocumentUpload supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
+          </> : undefined}
+          fields={[
             { name: "title", label: "ชื่อ", value: d.title, width: "w-48" }, { name: "document_type", label: "ประเภท", value: d.document_type },
             { name: "issue_date", label: "วันที่ออก", type: "date", value: d.issue_date }, { name: "expiry_date", label: "หมดอายุ", type: "date", value: d.expiry_date },
-            { name: "notes", label: "หมายเหตุ", value: d.notes, width: "w-40" }]} />}
-      </div>
-    </li>
+            { name: "notes", label: "หมายเหตุ", value: d.notes, width: "w-40" }]} />
+      </td>
+    </tr>
   );
 }

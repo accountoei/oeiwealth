@@ -4,7 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { DOC_MODULE_LABEL, addDays, fileSize, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpload";
-import { ConnectDrive, OpenDoc } from "@/components/docs/DocButtons";
+import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string; derived_status: string | null };
@@ -116,10 +116,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
           <ul className="space-y-1 text-sm">
             {(expiring ?? []).map((d) => (
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>{d.title} <span className="text-xs text-slate-500">· {d.document_type}</span></span>
+                <span>{st.connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="hover:underline">{d.title}</a> : d.title} <span className="text-xs text-slate-500">· {d.document_type}</span></span>
                 <span className="flex items-center gap-3">
                   <span className={d.derived_status === "EXPIRED" ? "text-red-600" : "text-amber-700"}>{d.derived_status === "EXPIRED" ? "หมดแล้ว" : "หมด"} {thDate(d.expiry_date)}</span>
-                  {st.connected && <OpenDoc id={d.id} title={d.title} mime={d.mime_type} />}
                 </span>
               </li>
             ))}
@@ -150,18 +149,30 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">เอกสาร</th><th className="px-3">เป็นของ</th><th className="px-3">วันที่ออก / หมดอายุ</th><th className="px-3">อัปโหลด</th><th className="px-3"></th></tr>
+              <tr><th className="px-4 py-2">เอกสาร</th><th className="px-3">เป็นของ</th><th className="px-3">วันที่ออก / หมดอายุ</th><th className="px-3">อัปโหลด</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {docs.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">ยังไม่มีเอกสาร</td></tr>}
+              {docs.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">ยังไม่มีเอกสาร</td></tr>}
               {docs.map((d) => {
                 const ls = byDoc.get(d.id) ?? [];
                 return (
                   <tr key={d.id} className={`align-top ${d.version_status !== "CURRENT" ? "opacity-60" : ""}`}>
                     <td className="px-4 py-2.5">
-                      <div className="font-medium text-slate-900">{d.title}
+                      <div className="font-medium text-slate-900">
+                        {st.connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="hover:underline">{d.title}</a> : d.title}
                         {d.version_status !== "CURRENT" && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs font-normal text-slate-500">ฉบับเก่า</span>}</div>
                       <div className="text-xs text-slate-500">{DOC_MODULE_LABEL[d.module] ?? d.module} · {d.document_type}{d.file_size ? ` · ${fileSize(d.file_size)}` : ""}{d.notes && ` · ${d.notes}`}</div>
+                      <RowActions table="documents" id={d.id} paths={["/documents"]} canEdit={canWrite} canDelete={canWrite && canDelete}
+                        deleteNote="ลบออกจากระบบ (ไฟล์ใน Google Drive ยังเก็บไว้ · ADMIN กู้คืนได้)"
+                        extra={st.connected ? <>
+                          <DownloadDoc id={d.id} title={d.title} mime={d.mime_type} />
+                          {canWrite && d.version_status === "CURRENT" &&
+                            <DocumentUpload supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
+                        </> : undefined}
+                        fields={[
+                          { name: "title", label: "ชื่อ", value: d.title, width: "w-48" }, { name: "document_type", label: "ประเภท", value: d.document_type },
+                          { name: "issue_date", label: "วันที่ออก", type: "date", value: d.issue_date }, { name: "expiry_date", label: "หมดอายุ", type: "date", value: d.expiry_date },
+                          { name: "notes", label: "หมายเหตุ", value: d.notes, width: "w-40" }]} />
                     </td>
                     <td className="px-3 py-2.5 text-xs">
                       {ls.length === 0 ? <span className="text-slate-400">—</span> : ls.map((l) => {
@@ -174,18 +185,6 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                       {d.expiry_date && <div className={d.expiry_date < today ? "text-red-600" : d.expiry_date <= addDays(today, 60) ? "text-amber-700" : ""}>ถึง {thDate(d.expiry_date)}</div>}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-500">{thDate(d.created_at.slice(0, 10))}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      <div className="flex flex-col items-end gap-1">
-                        {st.connected && <OpenDoc id={d.id} title={d.title} mime={d.mime_type} />}
-                        {canWrite && st.connected && d.version_status === "CURRENT" &&
-                          <DocumentUpload supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
-                        {canWrite && <RowActions table="documents" id={d.id} paths={["/documents"]} canDelete={canDelete}
-                          deleteNote="ลบออกจากระบบ (ไฟล์ใน Google Drive ยังเก็บไว้ · ADMIN กู้คืนได้)" fields={[
-                            { name: "title", label: "ชื่อ", value: d.title, width: "w-48" }, { name: "document_type", label: "ประเภท", value: d.document_type },
-                            { name: "issue_date", label: "วันที่ออก", type: "date", value: d.issue_date }, { name: "expiry_date", label: "หมดอายุ", type: "date", value: d.expiry_date },
-                            { name: "notes", label: "หมายเหตุ", value: d.notes, width: "w-40" }]} />}
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
