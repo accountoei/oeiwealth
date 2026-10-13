@@ -6,7 +6,7 @@ type Meta = { m: string; type: string; h: string[] };
 
 /**
  * ตัวกรองรายการในเบราว์เซอร์ (ไม่โหลดหน้าใหม่) — ซ่อนแถว <tr data-tx> ที่ไม่ตรงด้วย CSS
- * แถวต้องมี data-m (YYYY-MM) · data-type · data-h (id หลักทรัพย์ / บัญชีเงินสด คั่นด้วยช่องว่าง)
+ * แถวต้องมี data-m (YYYY-MM) · data-type · data-h (id หลักทรัพย์ / บัญชีเงินฝาก คั่นด้วยช่องว่าง)
  */
 export default function TxFilter({ months, types, holdings, meta, initial }: {
   months: { value: string; label: string }[]; types: [string, string][]; holdings: { id: string; name: string }[];

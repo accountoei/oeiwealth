@@ -48,7 +48,7 @@ export function PortfolioEditPanel({ assetId, name, institution, portfolioType, 
               <p className="font-medium">เปลี่ยนสกุลพอร์ต {currency} → {ccy}</p>
               <ul className="mt-1 list-disc pl-5 text-xs">
                 <li>การโอนเงิน ธนาคาร ↔ พอร์ต ต้องใช้บัญชีธนาคารสกุล {ccy} หลังเปลี่ยน</li>
-                <li>มูลค่าพอร์ตจะแสดงเป็น {ccy} · ยอดเงินสด / หลักทรัพย์แต่ละตัวยังเป็นสกุลเดิม</li>
+                <li>มูลค่าพอร์ตจะแสดงเป็น {ccy} · ยอดเงินฝาก / หลักทรัพย์แต่ละตัวยังเป็นสกุลเดิม</li>
                 <li>Net Worth (บาท) ไม่เปลี่ยน</li>
               </ul>
               <label className="mt-2 flex items-center gap-2 text-sm">
@@ -134,7 +134,7 @@ export function PortfolioStatusMenu({ assetId, name, status, paths, isAdmin }: {
   );
 }
 
-/* ------------------------------------------------------------------ กดชื่อบัญชีเงินสด → แก้ไข */
+/* ------------------------------------------------------------------ กดชื่อบัญชีเงินฝาก → แก้ไข */
 export function CashNameEdit({ id, name, purpose, interestRate, paths, canEdit, children }: {
   id: string; name: string; purpose: string | null; interestRate: number | null; paths: string[]; canEdit: boolean; children?: React.ReactNode;
 }) {

@@ -17,10 +17,10 @@ const lbl = "block text-sm text-slate-700";
 export type Holding = { id: string; name: string; symbol: string | null; holding_type: string; currency: string;
   quantity: number; current_price: number | null; status: string };
 export type Bank = { asset_id: string; name: string; currency: string };
-/** บัญชีเงินสดในพอร์ต (CASH holding) */
+/** บัญชีเงินฝากในพอร์ต (CASH holding) */
 export type CashAcct = { id: string; name: string; currency: string; is_default_cash: boolean };
 
-/** เลือกบัญชีเงินสดในพอร์ต — แสดงเฉพาะเมื่อสกุลนั้นมีมากกว่า 1 บัญชี (บัญชีเดียว = ใช้บัญชีนั้นอัตโนมัติ) */
+/** เลือกบัญชีเงินฝากในพอร์ต — แสดงเฉพาะเมื่อสกุลนั้นมีมากกว่า 1 บัญชี (บัญชีเดียว = ใช้บัญชีนั้นอัตโนมัติ) */
 export function CashAccountSelect({ accounts, currency, name = "cash_holding_id", label, compact }: {
   accounts: CashAcct[]; currency: string; name?: string; label: string; compact?: boolean;
 }) {
@@ -99,7 +99,7 @@ export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
 /* ------------------------------------------------------------------ + รายการ */
 const TX_TYPES: [string, string][] = [
   ["BUY", "ซื้อ"], ["SELL", "ขาย"], ["DIVIDEND", "ปันผล"], ["INTEREST", "ดอกเบี้ย"], ["COUPON", "Coupon"],
-  ["REDEMPTION", "ไถ่ถอน / ขายคืนกองทุน"], ["FEE", "ค่าธรรมเนียม"], ["TAX", "ภาษี"], ["ADJUSTMENT", "ปรับปรุงจำนวน / เงินสด"],
+  ["REDEMPTION", "ไถ่ถอน / ขายคืนกองทุน"], ["FEE", "ค่าธรรมเนียม"], ["TAX", "ภาษี"], ["ADJUSTMENT", "ปรับปรุงจำนวน / เงินฝาก"],
 ];
 
 export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccounts, today, minDate }: {
@@ -131,7 +131,7 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
   const bankList = banks.filter((b) => b.currency === ccy);
   const holdingOptions = type === "BUY" ? securities : optionalHolding ? active : securities;
   const isCashAdj = type === "ADJUSTMENT" && (!h || h.holding_type === "CASH");
-  // เลือกบัญชีเงินสด: รายการของหลักทรัพย์ที่เงินเข้า/ออกเงินสดในพอร์ต (ถ้าเลือกบัญชีเงินสดเป็น "หลักทรัพย์" อยู่แล้ว ไม่ต้องเลือกซ้ำ)
+  // เลือกบัญชีเงินฝาก: รายการของหลักทรัพย์ที่เงินเข้า/ออกเงินฝากในพอร์ต (ถ้าเลือกบัญชีเงินฝากเป็น "หลักทรัพย์" อยู่แล้ว ไม่ต้องเลือกซ้ำ)
   const pickCash = (!canBank || mode === "cash") && h?.holding_type !== "CASH"
     && !(type === "ADJUSTMENT" && h && h.holding_type !== "CASH");
 
@@ -139,13 +139,13 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
   if (!open) return trigger;
 
   const summary: string[] = [];
-  if (type === "BUY") summary.push(mode === "bank" ? `เงินออกจากบัญชีธนาคาร ${money(net, ccy)} (โอนเข้าพอร์ต)` : `หักเงินสดในพอร์ต ${money(net, ccy)}`);
-  if (["SELL", "REDEMPTION"].includes(type)) summary.push(mode === "bank" ? `เงินเข้าบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินสดในพอร์ต ${money(net, ccy)}`);
+  if (type === "BUY") summary.push(mode === "bank" ? `เงินออกจากบัญชีธนาคาร ${money(net, ccy)} (โอนเข้าพอร์ต)` : `หักเงินฝากในพอร์ต ${money(net, ccy)}`);
+  if (["SELL", "REDEMPTION"].includes(type)) summary.push(mode === "bank" ? `เงินเข้าบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
   if (["DIVIDEND", "INTEREST", "COUPON"].includes(type)) {
     summary.push(`บันทึกรายได้ ${money(gross, ccy)}${n(tax) ? ` (ภาษี ${money(n(tax))})` : ""}`);
-    summary.push(mode === "bank" ? `เงินเข้าบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินสดในพอร์ต ${money(net, ccy)}`);
+    summary.push(mode === "bank" ? `เงินเข้าบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
   }
-  if (["FEE", "TAX"].includes(type)) summary.push(`หักเงินสดในพอร์ต ${money(gross, ccy)} (ลดผลตอบแทน ไม่ใช่ค่าใช้จ่ายครอบครัว)`);
+  if (["FEE", "TAX"].includes(type)) summary.push(`หักเงินฝากในพอร์ต ${money(gross, ccy)} (ลดผลตอบแทน ไม่ใช่ค่าใช้จ่ายครอบครัว)`);
 
   return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
@@ -159,7 +159,7 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
         </label>
         <label className={`${lbl} md:col-span-2`}>หลักทรัพย์ {needsHolding && "*"}
           <select name="holding_id" value={holdingId} onChange={(e) => setHoldingId(e.target.value)} required={needsHolding} className={input}>
-            <option value="">{optionalHolding ? `— เงินสดในพอร์ต / ทั้งพอร์ต (${portfolioCurrency}) —` : "— เลือก —"}</option>
+            <option value="">{optionalHolding ? `— เงินฝากในพอร์ต / ทั้งพอร์ต (${portfolioCurrency}) —` : "— เลือก —"}</option>
             {holdingOptions.map((x) => (
               <option key={x.id} value={x.id}>{x.name}{x.symbol ? ` (${x.symbol})` : ""} · ถือ {qty(x.quantity)} · {x.currency}</option>
             ))}
@@ -218,14 +218,14 @@ export function TxForm({ assetId, portfolioCurrency, holdings, banks, cashAccoun
           <div className={`${lbl} md:col-span-3`}>
             {type === "BUY" ? "จ่ายเงินจาก" : "รับเงินเข้า"}
             <div className="mt-1 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เงินสดในพอร์ต</label>
+              <label className="flex items-center gap-2"><input type="radio" name="settle_mode" value="cash" checked={mode === "cash"} onChange={() => setMode("cash")} /> เงินฝากในพอร์ต</label>
               <label className="flex items-center gap-2"><input type="radio" name="settle_mode" value="bank" checked={mode === "bank"} onChange={() => setMode("bank")} /> บัญชีธนาคารโดยตรง</label>
             </div>
           </div>
         )}
         {pickCash && (
           <CashAccountSelect accounts={cashAccounts} currency={ccy}
-            label={type === "BUY" || ["FEE", "TAX"].includes(type) ? "จ่ายจากบัญชีเงินสด" : "เข้าบัญชีเงินสด"} />
+            label={type === "BUY" || ["FEE", "TAX"].includes(type) ? "จ่ายจากบัญชีเงินฝาก" : "เข้าบัญชีเงินฝาก"} />
         )}
         {canBank && mode === "bank" && (
           <>
@@ -301,7 +301,7 @@ export function TransferForm({ assetId, currency, banks, cashAccounts, today, mi
       <input type="hidden" name="dst_ccy" value={dst} />
       <div>
         <h3 className="font-medium text-slate-900">โอนเงิน ธนาคาร ↔ พอร์ต</h3>
-        <p className="text-xs text-slate-500">ข้ามสกุลได้ (เช่น บัญชีบาท → เงินสด USD ในพอร์ต) · ยอดที่เข้ายังไม่ทราบ ใส่ทีหลังได้</p>
+        <p className="text-xs text-slate-500">ข้ามสกุลได้ (เช่น บัญชีบาท → เงินฝาก USD ในพอร์ต) · ยอดที่เข้ายังไม่ทราบ ใส่ทีหลังได้</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className={lbl}>ทิศทาง
@@ -315,11 +315,11 @@ export function TransferForm({ assetId, currency, banks, cashAccounts, today, mi
             {banks.map((x) => <option key={x.asset_id} value={x.asset_id}>{x.name} ({x.currency})</option>)}
           </select>
         </label>
-        <label className={lbl}>บัญชีเงินสดในพอร์ต *
+        <label className={lbl}>บัญชีเงินฝากในพอร์ต *
           <select name="cash_holding_id" required value={acct} onChange={(e) => setAcct(e.target.value)} className={input}>
             {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency}){a.is_default_cash ? " ★" : ""}</option>)}
           </select>
-          {cashAccounts.length === 0 && <span className="mt-1 block text-xs text-amber-700">ยังไม่มีบัญชีเงินสดในพอร์ต — กด &ldquo;+ บัญชีเงินสด&rdquo; ก่อน</span>}
+          {cashAccounts.length === 0 && <span className="mt-1 block text-xs text-amber-700">ยังไม่มีบัญชีเงินฝากในพอร์ต — กด &ldquo;+ บัญชีเงินฝาก&rdquo; ก่อน</span>}
         </label>
         <label className={lbl}>วันที่โอน *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className={lbl}>รายละเอียด<input name="description" className={input} /></label>
@@ -392,7 +392,7 @@ export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate,
       <p className="text-xs text-slate-600">{isIn ? `${bankLabel} → พอร์ต` : `พอร์ต → ${bankLabel}`} · เว้นยอดที่เข้าว่าง = ยังรอยอด</p>
       <div className="grid gap-2 md:grid-cols-4">
         <label className="text-xs">วันที่โอน<input name="date" type="date" required defaultValue={t.movement_date} min={minDate} max={today} className={`mt-1 block w-full ${small}`} /></label>
-        <label className="text-xs">บัญชีเงินสดในพอร์ต
+        <label className="text-xs">บัญชีเงินฝากในพอร์ต
           <select name="cash_holding_id" value={acct} onChange={(e) => setAcct(e.target.value)} className={`mt-1 block w-full ${small}`}>
             {accts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
           </select>
@@ -450,7 +450,7 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
                   <input name={`price_${h.id}`} inputMode="decimal" placeholder={h.current_price ? String(Number(h.current_price)) : ""} className={`w-28 ${small}`} />}
               </td>
               <td className="pl-3">
-                <input name={`mv_${h.id}`} inputMode="decimal" placeholder={h.holding_type === "CASH" ? "ยอดเงินสดตาม Statement" : ""} className={`w-40 ${small}`} />
+                <input name={`mv_${h.id}`} inputMode="decimal" placeholder={h.holding_type === "CASH" ? "ยอดเงินฝากตาม Statement" : ""} className={`w-40 ${small}`} />
               </td>
             </tr>
           ))}
@@ -569,23 +569,23 @@ export function MoveCashForm({ assetId, cashAccounts, today, minDate }:
   ));
 }
 
-/* ------------------------------------------------------------------ เพิ่มบัญชีเงินสดในพอร์ต */
+/* ------------------------------------------------------------------ เพิ่มบัญชีเงินฝากในพอร์ต */
 export function AddCashAccountForm({ assetId, currency, isSetup, openingDate }:
   { assetId: string; currency: string; isSetup: boolean; openingDate: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addCashAccount, {});
   const [ccy, setCcy] = useState(currency);
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ บัญชีเงินสด</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ บัญชีเงินฝาก</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <div>
-        <h3 className="font-medium text-slate-900">เพิ่มบัญชีเงินสด / เงินฝากในพอร์ต</h3>
+        <h3 className="font-medium text-slate-900">เพิ่มบัญชีเงินฝากในพอร์ต</h3>
         <p className="text-xs text-slate-500">สกุลเดียวกันมีได้หลายบัญชี (เช่น แยกตามอัตราดอกเบี้ย / วัตถุประสงค์) · บัญชีแรกของสกุลเป็นบัญชีหลักอัตโนมัติ</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <label className={lbl}>ชื่อบัญชี *<input name="name" required placeholder="เช่น เงินสด USD · Brokerage Cash" className={input} /></label>
+        <label className={lbl}>ชื่อบัญชี *<input name="name" required placeholder="เช่น เงินฝาก USD · Brokerage Cash" className={input} /></label>
         <label className={lbl}>สกุลเงิน
           <CurrencySelect name="currency" value={ccy} onChange={setCcy} className={input} />
         </label>

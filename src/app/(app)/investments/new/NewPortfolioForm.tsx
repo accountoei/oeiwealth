@@ -42,29 +42,29 @@ export default function NewPortfolioForm(props: {
       <OwnerShares persons={persons} title="เจ้าของพอร์ต" hint="สัดส่วนกรรมสิทธิ์ · ใช้แบ่งมูลค่าพอร์ตและผลตอบแทนตามสัดส่วน" />
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">เงินสดในพอร์ต</h2>
+        <h2 className="font-medium text-slate-900">เงินฝากในพอร์ต</h2>
         {(isSetup || isAdmin) && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="is_opening" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="mt-1" />
             <span>
-              พอร์ตมีอยู่ก่อน Go-live ({thDate(goLive)}) — ใส่เงินสดคงเหลือ ณ สิ้นวัน {thDate(openingDate)} เป็นยอดตั้งต้น
+              พอร์ตมีอยู่ก่อน Go-live ({thDate(goLive)}) — ใส่เงินฝากคงเหลือ ณ สิ้นวัน {thDate(openingDate)} เป็นยอดตั้งต้น
               {!isSetup && <span className="block text-xs text-amber-700">ระบบ LIVE แล้ว: ต้องระบุเหตุผลในหมายเหตุ</span>}
             </span>
           </label>
         )}
         {opening ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <label className={label}>เงินสดคงเหลือในพอร์ต ({currency})
+            <label className={label}>เงินฝากคงเหลือในพอร์ต ({currency})
               <input name="opening_cash" inputMode="decimal" defaultValue="0" className={input} />
             </label>
             {currency !== "THB" && (
-              <label className={label}>FX ต้นทุนของเงินสด (บาทต่อ 1 {currency}) · ไม่ใส่ = ใช้อัตรา ธปท. ณ วันตั้งต้น
+              <label className={label}>FX ต้นทุนของเงินฝาก (บาทต่อ 1 {currency}) · ไม่ใส่ = ใช้อัตรา ธปท. ณ วันตั้งต้น
                 <input name="opening_fx" inputMode="decimal" className={input} />
               </label>
             )}
           </div>
         ) : (
-          <p className="text-sm text-slate-500">พอร์ตใหม่เริ่มที่เงินสด 0 · โอนเงินเข้าด้วยปุ่ม &ldquo;โอนเงิน&rdquo; ในหน้าพอร์ต</p>
+          <p className="text-sm text-slate-500">พอร์ตใหม่เริ่มที่เงินฝาก 0 · โอนเงินเข้าด้วยปุ่ม &ldquo;โอนเงิน&rdquo; ในหน้าพอร์ต</p>
         )}
         <p className="text-xs text-slate-500">หุ้น / กองทุนที่ถืออยู่ เพิ่มในหน้าพอร์ตหลังบันทึก</p>
       </section>
