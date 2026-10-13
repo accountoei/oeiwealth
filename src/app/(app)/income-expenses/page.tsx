@@ -570,7 +570,8 @@ function MovesTable({ moves, name, actions = false, canDelete = false }: { moves
             </td>
             <td className="text-right tabular-nums">
               {money(m.amount, m.currency)}
-              {m.counter_amount != null && <div className="text-xs text-slate-500">→ {money(m.counter_amount, m.counter_currency ?? undefined)}</div>}
+              {m.counter_amount != null && (m.counter_currency !== m.currency || Number(m.counter_amount) !== Number(m.amount)) && <div className="text-xs text-slate-500">→ {money(m.counter_amount, m.counter_currency ?? undefined)}</div>}
+              {m.counter_amount == null && m.counter_currency && <div className="text-xs text-amber-700">→ รอยอด {m.counter_currency}</div>}
               {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
             </td>
             <td className="pl-4 text-xs text-slate-500">{m.parts ? m.parts.map((x) => `${partLabel(x)} ${money(x.amount)}`).join(" + ") : m.description}{!m.parts && m.is_derived && <span className="ml-1 text-slate-400">(ระบบสร้าง · แก้ที่รายการต้นทาง)</span>}</td>

@@ -107,19 +107,47 @@ export async function transferMoney(_: ActionState, form: FormData): Promise<Act
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
   const bank = str(form.get("bank_asset_id"));
-  const amount = num(form.get("amount"));
   if (!bank) return { error: "กรุณาเลือกบัญชีธนาคาร" };
-  if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const toPortfolio = form.get("direction") === "IN";
-  const { error } = await supabase.rpc("transfer_money", {
-    p_from_asset_id: toPortfolio ? bank : id, p_to_asset_id: toPortfolio ? id : bank,
-    p_amount: amount, p_date: str(form.get("date")), p_fee: num(form.get("fee")) ?? 0,
-    p_description: str(form.get("description")), p_fee_as_expense: true,
+  // ยอดที่เข้า: ติ๊ก "รอ Statement" = ว่าง · สกุลเดียวกันเว้นว่าง = เท่ากับเงินที่ออก
+  const wait = form.get("wait") === "on";
+  const same = str(form.get("src_ccy")) === str(form.get("dst_ccy"));
+  const counter = wait ? null : clean(form.get("counter_amount")) ?? (same ? clean(form.get("amount")) : null);
+  if (!wait && !counter) return { error: "ใส่ยอดที่เข้าจริง หรือติ๊ก \"ยังไม่ทราบยอดที่เข้า\"" };
+  const { error } = await supabase.rpc("transfer_portfolio_money", {
+    p_portfolio_asset_id: id,
+    p: {
+      direction: form.get("direction") === "OUT" ? "OUT" : "IN", bank_asset_id: bank,
+      cash_holding_id: str(form.get("cash_holding_id")), date: str(form.get("date")),
+      amount: clean(form.get("amount")), fee: clean(form.get("fee")),
+      counter_amount: counter, counter_fee: clean(form.get("counter_fee")),
+      description: str(form.get("description")),
+    },
   });
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
   revalidatePath(`/financial/cash/${bank}`);
-  return { ok: "บันทึกการโอนแล้ว" };
+  revalidatePath("/income-expenses");
+  return { ok: counter ? "บันทึกการโอนแล้ว" : "บันทึกแล้ว — รอยอดปลายทาง (กด \"ใส่ยอดที่เข้า\" เมื่อได้ Statement)" };
+}
+
+/** แก้รายการโอน ธนาคาร ↔ พอร์ต / ใส่ยอดปลายทางทีหลัง */
+export async function updateTransfer(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const { error } = await supabase.rpc("update_portfolio_transfer", {
+    p_movement_id: String(form.get("movement_id")),
+    p: {
+      date: str(form.get("date")) ?? "", amount: clean(form.get("amount")) ?? "", fee: clean(form.get("fee")) ?? "",
+      counter_amount: clean(form.get("counter_amount")) ?? "", counter_fee: clean(form.get("counter_fee")) ?? "",
+      cash_holding_id: str(form.get("cash_holding_id")) ?? "", description: str(form.get("description")) ?? "",
+    },
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  const bank = str(form.get("bank_asset_id"));
+  if (bank) revalidatePath(`/financial/cash/${bank}`);
+  revalidatePath("/income-expenses");
+  return { ok: "บันทึกแล้ว" };
 }
 
 /** บันทึกราคา / มูลค่าจาก Statement หลายตัวพร้อมกัน (ช่อง price_<holding> / mv_<holding> / qty_<holding>) */
@@ -153,37 +181,38 @@ export async function saveValuations(_: ActionState, form: FormData): Promise<Ac
 }
 
 /** แลกเงินภายในพอร์ต (เงินสดสกุลหนึ่ง → อีกสกุล) */
-export async function recordFx(_: ActionState, form: FormData): Promise<ActionState> {
+/** ย้ายเงินระหว่างบัญชีเงินสดในพอร์ต: สกุลเดียวกัน = โอน · คนละสกุล = แลกเงิน ("new:XXX" = สกุลใหม่ สร้างบัญชีให้) */
+export async function moveCash(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
+  const from = str(form.get("from_holding_id"));
+  const to = str(form.get("to_target"));
+  if (!from || !to) return { error: "กรุณาเลือกบัญชีต้นทางและปลายทาง" };
+  const fromCcy = str(form.get("from_currency"));
+  const toCcy = str(form.get("to_currency"));
+  const isNew = to.startsWith("new:");
+  if (!isNew && fromCcy === toCcy) {
+    const { error } = await supabase.rpc("transfer_portfolio_cash", {
+      p_portfolio_asset_id: id,
+      p_tx: { from_holding_id: from, to_holding_id: to, amount: clean(form.get("amount")), date: str(form.get("date")),
+              fee: clean(form.get("fee")), notes: str(form.get("notes")) },
+    });
+    if (error) return { error: friendlyError(error.message) };
+    revalidate(id);
+    return { ok: "บันทึกการโอนแล้ว" };
+  }
   const { error } = await supabase.rpc("record_investment_fx", {
     p_portfolio_asset_id: id,
     p_tx: {
-      date: str(form.get("date")), amount: clean(form.get("amount")), currency: str(form.get("currency")),
-      counter_amount: clean(form.get("counter_amount")), counter_currency: str(form.get("counter_currency")),
+      date: str(form.get("date")), amount: clean(form.get("amount")), currency: fromCcy,
+      counter_amount: clean(form.get("counter_amount")), counter_currency: isNew ? to.slice(4) : toCcy,
       fee: clean(form.get("fee")), notes: str(form.get("notes")),
-      cash_holding_id: str(form.get("cash_holding_id")), counter_cash_holding_id: str(form.get("counter_cash_holding_id")),
+      cash_holding_id: from, counter_cash_holding_id: isNew ? null : to,
     },
   });
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
   return { ok: "บันทึกการแลกเงินแล้ว" };
-}
-
-/** โอนระหว่างบัญชีเงินสดในพอร์ต (สกุลเดียวกัน) */
-export async function transferCash(_: ActionState, form: FormData): Promise<ActionState> {
-  const supabase = await createClient();
-  const id = String(form.get("asset_id"));
-  const { error } = await supabase.rpc("transfer_portfolio_cash", {
-    p_portfolio_asset_id: id,
-    p_tx: {
-      from_holding_id: str(form.get("from_holding_id")), to_holding_id: str(form.get("to_holding_id")),
-      amount: clean(form.get("amount")), date: str(form.get("date")), fee: clean(form.get("fee")), notes: str(form.get("notes")),
-    },
-  });
-  if (error) return { error: friendlyError(error.message) };
-  revalidate(id);
-  return { ok: "บันทึกการโอนแล้ว" };
 }
 
 /** เพิ่มบัญชีเงินสดในพอร์ต (ช่วงตั้งค่าใส่ยอดตั้งต้นได้) */

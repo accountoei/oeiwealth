@@ -6,7 +6,7 @@ import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import {
-  AddCashAccountForm, CashTransferForm, FxForm, OpeningHoldingForm, TransferForm, TxForm, ValuationsForm,
+  AddCashAccountForm, MoveCashForm, OpeningHoldingForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
   type CashAcct, type Holding,
 } from "./forms";
 import { moveHolding, setDefaultCash } from "../actions";
@@ -62,12 +62,18 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txHolding = sp.h && (hs ?? []).some((x: { id: string }) => x.id === sp.h) ? sp.h : "";
   // โหลดรายการทั้งหมดของพอร์ตครั้งเดียว → กรองในเบราว์เซอร์ (ไม่โหลดหน้าใหม่)
   const txq = supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id);
-  const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }] = await Promise.all([
+  const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }, { data: mvs }] = await Promise.all([
     txq.order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(5000),
     supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
       .not("source_transaction_id", "is", null).is("deleted_at", null),
     supabase.rpc("investment_returns", { p_portfolio_asset_id: id }),
     supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
+    // รายการโอน ธนาคาร ↔ พอร์ต (แก้ไข / ใส่ยอดที่เข้าทีหลัง)
+    supabase.from("cash_movements")
+      .select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,fee,counter_amount,counter_currency,counter_fee,cash_holding_id,description")
+      .eq("is_derived", false).is("deleted_at", null)
+      .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
+      .order("movement_date", { ascending: false }).limit(2000),
   ]);
 
   const canWrite = me.role !== "VIEWER";
@@ -108,6 +114,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const bankList = banks ?? [];
   const bankName = new Map(bankList.map((b) => [b.asset_id, b.name]));
   const txList = (txs as Tx[] | null) ?? [];
+  const transfers = (mvs as PfTransfer[] | null) ?? [];
+  const transferById = new Map(transfers.map((m) => [m.id, m]));
+  const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
+  const transferBank = (m: PfTransfer) => bankName.get((m.movement_type === "INVESTMENT_OUT" ? m.from_asset_id : m.to_asset_id) ?? "") ?? "บัญชีธนาคาร";
   // ตัวเลือกเดือน: เดือนปัจจุบัน → เดือนยอดตั้งต้น (ใหม่สุดก่อน) + ทุกเดือน
   const txMonths: { value: string; label: string }[] = [];
   for (let m = today.slice(0, 7); txMonths.length < 240; ) {
@@ -151,9 +161,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         <section>
           <ActionBar right={canDelete ? <PortfolioStatusMenu assetId={id} name={a.name} status={a.status} paths={paths} isAdmin={me.role === "ADMIN"} /> : undefined}>
             <TxForm assetId={id} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-            <TransferForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} />
-            <FxForm assetId={id} cashCurrencies={[...cashByCcy.keys()]} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-            <CashTransferForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+            <TransferForm assetId={id} currency={a.currency} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+            <MoveCashForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
             <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
             <AddCashAccountForm assetId={id} currency={a.currency} isSetup={isSetup} openingDate={openingDate} />
             {(isSetup || me.role === "ADMIN") && (
@@ -168,6 +177,27 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           เงินโอนเข้าพอร์ต {money(pv?.in_transit ?? 0, a.currency)} ยังเป็น &ldquo;เงินระหว่างทาง&rdquo; — นับรวมใน Net Worth แล้ว
           และจะรวมเข้าเงินสดในพอร์ตเมื่อบันทึกยอดเงินสดตาม Statement (อัปเดตราคา / Statement)
         </p>
+      )}
+
+      {waitingTransfers.length > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <h2 className="font-medium text-amber-900">รอยอดปลายทาง ({waitingTransfers.length})</h2>
+          <p className="text-xs text-amber-800">โอนแล้วแต่ยังไม่ได้ใส่ยอดที่เข้าจริง — นับเป็นเงินระหว่างทางใน Net Worth แล้ว · ได้ Statement แล้วกด &ldquo;ใส่ยอดที่เข้า&rdquo;</p>
+          <ul className="mt-2 divide-y divide-amber-200">
+            {waitingTransfers.map((m) => (
+              <li key={m.id} className="py-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    {thDate(m.movement_date)} · {m.movement_type === "INVESTMENT_OUT" ? `${transferBank(m)} → ${acctName(m.cash_holding_id) || "พอร์ต"}` : `${acctName(m.cash_holding_id) || "พอร์ต"} → ${transferBank(m)}`}
+                    {" · "}ออก <span className="tabular-nums">{money(m.amount, m.currency)}</span> → รอยอด {m.counter_currency}
+                    {m.description && <span className="text-slate-500"> · {m.description}</span>}
+                  </span>
+                  {canWrite && <TransferEditForm assetId={id} t={m} bankLabel={transferBank(m)} cashAccounts={cashAccounts} minDate={goLive} today={today} />}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* ------------------------------------------------ เงินสด / เงินฝากในพอร์ต (รายบัญชี) */}
@@ -386,7 +416,21 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                           <td className="pl-4 text-xs text-slate-500">
                             {bank && <div>{t.transaction_type === "BUY" ? "จ่ายจาก" : "เข้า"} {bankName.get(bank) ?? "บัญชีธนาคาร"}{t.settlement_date && ` · ${thDate(t.settlement_date)}`}
                               {t.settlement_status === "UNSETTLED" && <span className="text-amber-700"> · รอชำระ</span>}</div>}
-                            {t.cash_movement_id && <div>สร้างจากการโอนเงิน (แก้ที่รายการโอน)</div>}
+                            {t.cash_movement_id && (() => {
+                              const m = transferById.get(t.cash_movement_id);
+                              if (!m) return <div>สร้างจากการโอนเงิน</div>;
+                              return (
+                                <div>
+                                  {m.movement_type === "INVESTMENT_OUT" ? `จาก ${transferBank(m)}` : `ไป ${transferBank(m)}`}
+                                  {m.counter_currency && m.counter_currency !== m.currency
+                                    ? ` · ${money(m.amount, m.currency)} → ${m.counter_amount != null ? money(m.counter_amount, m.counter_currency) : `รอยอด ${m.counter_currency}`}` : ""}
+                                  {(Number(m.fee ?? 0) > 0 || Number(m.counter_fee ?? 0) > 0) && ` · ค่าธรรมเนียม ${[
+                                    Number(m.fee ?? 0) > 0 ? money(m.fee, m.currency) : null,
+                                    Number(m.counter_fee ?? 0) > 0 ? money(m.counter_fee, m.counter_currency ?? undefined) : null].filter(Boolean).join(" + ")}`}
+                                  {canWrite && <div className="mt-1"><TransferEditForm assetId={id} t={m} bankLabel={transferBank(m)} cashAccounts={cashAccounts} minDate={goLive} today={today} /></div>}
+                                </div>
+                              );
+                            })()}
                             {t.notes && <div>{t.notes}</div>}
                           </td>
                           <td className="pl-2 text-right">
