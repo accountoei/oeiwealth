@@ -34,6 +34,21 @@ export async function confirmRecon(_: ActionState, form: FormData): Promise<Acti
   return done("ยืนยันยอดแล้ว");
 }
 
+/** ลงส่วนต่างเป็นค่าใช้จ่าย / รายได้ก้อนเดียว "รอแยกรายละเอียด" แล้วยืนยันยอด (ผลต่าง = 0) */
+export async function settleRecon(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const actual = num(form.get("actual_closing"));
+  const { data, error } = await supabase.rpc("settle_bank_difference", {
+    p_reconciliation_id: String(form.get("id")), p_actual_closing: actual === null || Number.isNaN(actual) ? null : actual,
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/income-expenses");
+  const r = data as { kind: string | null; amount: number } | null;
+  const amt = Number(r?.amount ?? 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return done(r?.kind === "EXPENSE" ? `ลงค่าใช้จ่ายก้อนรอแยก ${amt} และยืนยันยอดแล้ว`
+    : r?.kind === "INCOME" ? `ลงรายได้ก้อนรอแยก ${amt} และยืนยันยอดแล้ว` : "ยืนยันยอดแล้ว (ไม่มีส่วนต่าง)");
+}
+
 export async function finalizeMonth(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   if (form.get("confirm") !== "on") return { error: "กรุณาติ๊กยืนยันว่าตรวจตัวเลขแล้ว" };

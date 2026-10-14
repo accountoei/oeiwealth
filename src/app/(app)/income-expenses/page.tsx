@@ -12,6 +12,7 @@ import {
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { MonthNav, TabNav, TabPanel, TabsProvider } from "./tabs";
+import SplitForm from "./SplitForm";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
@@ -65,13 +66,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,person_id,lease_id,source_transaction_id,asset_id,notes,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
+    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,person_id,lease_id,source_transaction_id,asset_id,notes,pending_split,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
     supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,persons(name)")
       .is("deleted_at", null).order("name"),
     supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,notes,persons(name)")
+    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,notes,persons(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
@@ -99,6 +100,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .neq("status", "CLOSED").order("due_date"),
   ]);
 
+  // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
+  const [{ data: pendExp }, { data: pendInc }] = await Promise.all([
+    supabase.from("expense_items").select("id,date").eq("pending_split", true).is("deleted_at", null),
+    supabase.from("income_transactions").select("id,date").eq("pending_split", true).is("deleted_at", null),
+  ]);
+  const pendingMonths = [...new Set([...(pendExp ?? []), ...(pendInc ?? [])].map((x) => String(x.date).slice(0, 7)))].sort();
+  const pendingCount = (pendExp ?? []).length + (pendInc ?? []).length;
   const goLive = family?.go_live_date ?? "";
   const minDate = goLive > start ? goLive : start;
   const maxDate = end < today ? end : today;
@@ -207,6 +215,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       </div>
 
       <TabNav tabs={TABS} />
+      {pendingCount > 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          มีรายการ &ldquo;รอแยกรายละเอียด&rdquo; {pendingCount} รายการ (เดือน {pendingMonths.map((m) => thMonth(`${m}-01`)).join(", ")})
+          · กด &ldquo;แยกรายการ&rdquo; ที่รายการนั้นในแท็บรายได้ / ค่าใช้จ่าย
+        </p>
+      )}
 
       {canWrite && !inMonth && <p className="text-sm text-slate-500">เดือนนี้อยู่นอกช่วงที่บันทึกได้ (ก่อน Go-live หรือเป็นเดือนในอนาคต)</p>}
 
@@ -338,13 +352,19 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)`
                             : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง")}
                         {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
+                        {i.pending_split && (
+                          <div className="mt-1 space-y-1">
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
+                            {canWrite && canDelete && <SplitForm kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
+                          </div>
+                        )}
                       </td>
                       <td className="text-right tabular-nums">{money(i.amount, i.currency)}
                         {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
-                        {canWrite && !i.source_transaction_id && (
+                        {canWrite && !i.source_transaction_id && !i.pending_split && (
                           <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                             { name: "date", label: "วันที่", type: "date", value: i.date },
                             { name: "amount", label: "Gross", type: "number", value: i.full_amount },
@@ -473,12 +493,19 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     return (
                       <tr key={i.id} className="align-top">
                         <td className="py-1.5">{thDate(i.date)}</td>
-                        <td>{i.description}{i.notes && <div className="text-xs text-slate-400">{i.notes}</div>}</td>
+                        <td>{i.description}{i.notes && <div className="text-xs text-slate-400">{i.notes}</div>}
+                          {i.pending_split && (
+                            <div className="mt-1 space-y-1">
+                              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
+                              {canWrite && canDelete && <SplitForm kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
+                            </div>
+                          )}</td>
                         <td className="text-slate-600">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</td>
                         <td className="text-xs text-slate-600">
                           {i.source_cash_movement_id ? "จากรายการโอน (แก้ที่รายการโอน)"
                             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
                             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
+                            : i.liability_id ? `ทบเข้าหนี้ ${name.get(i.liability_id) ?? ""}`
                             : "เงินสด"}
                           {!i.source_cash_movement_id && (pname(i.persons)
                             ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
@@ -500,7 +527,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           )}
                         </td>
                         <td className="pl-2 text-right">
-                          {canWrite && !i.source_cash_movement_id && (
+                          {canWrite && !i.source_cash_movement_id && !i.pending_split && (
                             <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                               { name: "date", label: "วันที่", type: "date", value: i.date },
                               { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },

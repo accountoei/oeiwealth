@@ -39,14 +39,15 @@ export async function addLiabilityBalance(_: ActionState, form: FormData): Promi
   const id = String(form.get("liability_id"));
   const balance = num(form.get("balance"));
   if (balance === null || Number.isNaN(balance) || balance < 0) return { error: "กรุณาใส่ยอดคงค้างเป็นตัวเลข" };
-  const { error } = await supabase.from("liability_valuations").insert({
-    liability_id: id, valuation_date: str(form.get("valuation_date")), balance,
-    source: str(form.get("source")) ?? "STATEMENT", notes: str(form.get("notes")),
+  const { data, error } = await supabase.rpc("update_liability_statement", {
+    p_liability_id: id, p_date: str(form.get("valuation_date")), p_balance: balance,
+    p_source: str(form.get("source")) ?? "STATEMENT", p_notes: str(form.get("notes")), p_settle: form.get("settle") === "on",
   });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath(`/liabilities/${id}`);
   revalidatePath("/liabilities");
-  return { ok: "บันทึกยอดคงค้างแล้ว" };
+  revalidatePath("/income-expenses");
+  return { ok: lumpMessage("บันทึกยอดคงค้างแล้ว", data as { difference: number | null; lump: number } | null, "ยอดหนี้") };
 }
 
 export async function updateLiabilityInfo(_: ActionState, form: FormData): Promise<ActionState> {
@@ -89,15 +90,28 @@ export async function updateCardBalance(_: ActionState, form: FormData): Promise
   const supabase = await createClient();
   const balance = num(form.get("outstanding_balance"));
   if (balance === null || Number.isNaN(balance) || balance < 0) return { error: "กรุณาใส่ยอดค้างเป็นตัวเลข" };
-  const patch: Record<string, unknown> = { outstanding_balance: balance, balance_date: str(form.get("balance_date")) };
-  const notes = str(form.get("notes"));
-  if (notes) patch.notes = notes;
-  const { data, error } = await supabase.from("credit_cards").update(patch).eq("id", String(form.get("card_id"))).select("id");
+  const cardId = String(form.get("card_id"));
+  // อัปเดตยอด + (ถ้าเลือก) ส่วนที่สูงกว่ารายการที่บันทึก → ค่าใช้จ่ายก้อน "รอแยกรายละเอียด"
+  const { data, error } = await supabase.rpc("update_card_statement", {
+    p_card_id: cardId, p_date: str(form.get("balance_date")), p_balance: balance, p_settle: form.get("settle") === "on",
+  });
   if (error) return { error: friendlyError(error.message) };
-  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขบัตรนี้" };
+  const notes = str(form.get("notes"));
+  if (notes) await supabase.from("credit_cards").update({ notes }).eq("id", cardId);
   revalidatePath("/family/cards");
   revalidatePath("/liabilities");
-  return { ok: "อัปเดตยอดบัตรแล้ว" };
+  revalidatePath("/income-expenses");
+  return { ok: lumpMessage("อัปเดตยอดบัตรแล้ว", data as { difference: number | null; lump: number } | null, "ยอดบัตร") };
+}
+
+/** ข้อความหลังอัปเดตยอดจาก Statement: บอกส่วนต่าง / ก้อนรอแยก */
+function lumpMessage(base: string, r: { difference: number | null; lump: number } | null, what: string) {
+  const d = Number(r?.difference ?? 0), lump = Number(r?.lump ?? 0);
+  const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (lump > 0) return `${base} · ลงค่าใช้จ่ายก้อนรอแยกรายละเอียด ${f(lump)} (แยกได้ที่ Income & Expenses)`;
+  if (r?.difference == null || Math.abs(d) < 0.005) return base;
+  return d > 0 ? `${base} · ${what}สูงกว่ารายการที่บันทึก ${f(d)} (ติ๊ก "ลงส่วนต่างเป็นค่าใช้จ่ายก้อน" ถ้าต้องการ)`
+    : `${base} · ${what}ต่ำกว่าที่คำนวณ ${f(-d)} (อาจมีการจ่าย / เงินคืนที่ยังไม่ได้บันทึก)`;
 }
 
 export async function updateCardStatus(_: ActionState, form: FormData): Promise<ActionState> {

@@ -183,3 +183,22 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
   }
   return done("บันทึกรายการแล้ว", ["/liabilities", "/family/cards"]);
 }
+
+/** แยกรายการ "รอแยกรายละเอียด" เป็นหลายบรรทัด (ยอดรวมไม่เกินก้อน · ส่วนที่เหลือยังรอแยก) — ทำได้แม้ปิดงวดแล้ว */
+export async function splitPending(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  let lines: { description: string; amount: string; expense_category?: string; income_type?: string; person_id?: string }[] = [];
+  try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const clean = lines.filter((l) => l.description?.trim() || l.amount?.trim())
+    .map((l) => ({ ...l, amount: num(l.amount) }));
+  if (!clean.length) return { error: "กรุณาใส่อย่างน้อย 1 บรรทัด" };
+  if (clean.some((l) => !l.description?.trim() || l.amount === null || Number.isNaN(l.amount) || l.amount <= 0)) {
+    return { error: "ทุกบรรทัดต้องมีรายละเอียดและจำนวนเงินมากกว่า 0" };
+  }
+  const { data, error } = await supabase.rpc("split_pending_item", {
+    p_kind: String(form.get("kind")), p_id: String(form.get("id")), p_lines: clean,
+  });
+  if (error) return { error: friendlyError(error.message) };
+  const left = Number(data ?? 0);
+  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${left.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "แยกครบแล้ว", ["/liabilities", "/family/cards"]);
+}

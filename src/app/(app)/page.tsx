@@ -419,7 +419,7 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
             <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
           </tbody>
         </table>
-        <p className="mt-2 text-xs text-slate-500">ค่าใช้จ่ายที่ไม่ได้ระบุชื่อคน รวมอยู่ใน &ldquo;อื่น ๆ&rdquo;</p>
+        <p className="mt-2 text-xs text-slate-500">ค่าใช้จ่ายส่วนกลาง (ไม่ได้จ่ายจากบัญชี / บัตรของใคร และไม่ได้ระบุคน) รวมอยู่ใน &ldquo;อื่น ๆ&rdquo;</p>
       </>
     );
   }
