@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { HOLDING_TYPE_LABEL, ITX_LABEL, money, thDate, todayBangkok, addDays, blueAt } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null;
@@ -41,14 +42,15 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     display_value: p.portfolio_value == null ? null : (Number(p.portfolio_value) + Number(p.in_transit ?? 0)) * sh(p.asset_id),
     thb_value: p.thb_value == null ? null : Number(p.thb_value) * sh(p.asset_id),
     in_transit_thb: p.in_transit_thb == null ? null : Number(p.in_transit_thb) * sh(p.asset_id) }));
-  type R = { unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
+  type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
   const retRows = await Promise.all(list.map(async (p) => {
     const { data } = await supabase.rpc("investment_returns", { p_portfolio_asset_id: p.asset_id });
     const rs = (data as R[] | null) ?? [];
     const sum = (k: keyof R) => rs.reduce((t, r) => t + Number(r[k] ?? 0), 0);
     const k = sh(p.asset_id);
     return { asset_id: p.asset_id, name: p.name, unreal: sum("unrealized_thb") * k, unrealFx: sum("unrealized_fx_thb") * k, real: sum("realized_thb") * k,
-      realFx: sum("realized_fx_thb") * k, income: (sum("income_thb") - sum("fees_thb")) * k, total: sum("total_thb") * k };
+      realFx: sum("realized_fx_thb") * k, income: (sum("income_thb") - sum("fees_thb")) * k, total: sum("total_thb") * k,
+      cost: rs.filter((x) => x.status === "ACTIVE").reduce((t, x) => t + Number(x.cost_thb ?? 0), 0) * k };
   }));
   const recent = (txs ?? []).filter((t) => {
     const pa = (Array.isArray(t.investment_portfolios) ? t.investment_portfolios[0] : t.investment_portfolios) as { asset_id: string } | null;
@@ -72,6 +74,22 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const soon = holdings.filter((h) => h.maturity_date && h.maturity_date >= todayBangkok() && h.maturity_date <= addDays(todayBangkok(), 60))
     .sort((x, y) => (x.maturity_date! < y.maturity_date! ? -1 : 1));
   const pfName = new Map(list.map((p) => [p.asset_id, p.name]));
+  // ตารางพอร์ต (แทนกล่อง + ตารางผลตอบแทนเดิม) · เรียงตามมูลค่าเป็นบาท
+  const ret = new Map(retRows.map((r) => [r.asset_id, r]));
+  const rows: PortfolioRow[] = list.map((p) => {
+    const r = ret.get(p.asset_id);
+    const n = holdings.filter((h) => h.portfolio_asset_id === p.asset_id && h.holding_type !== "CASH").length;
+    const institution = inst.get(p.asset_id);
+    return {
+      asset_id: p.asset_id, name: p.name, currency: p.portfolio_currency,
+      sub: [institution && institution !== p.name ? institution : null, p.portfolio_currency, `${n} หลักทรัพย์`].filter(Boolean).join(" · "),
+      value: p.display_value, valueThb: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), valueDate: p.display_value_date,
+      sharePct: pv.assetPct(p.asset_id), fullValue: p.full_display_value, inTransit: Number(p.in_transit_thb ?? 0) !== 0,
+      atCost: holdings.some((h) => h.portfolio_asset_id === p.asset_id && h.valued_at_cost),
+      unreal: r?.unreal ?? 0, real: r?.real ?? 0, fx: (r?.unrealFx ?? 0) + (r?.realFx ?? 0), income: r?.income ?? 0,
+      total: r?.total ?? 0, cost: r?.cost ?? 0,
+    };
+  }).sort((a, b) => b.valueThb - a.valueThb);
 
   return (
     <div className="space-y-6">
@@ -96,55 +114,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         <Kpi label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {list.length === 0 && <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>}
-        {list.map((p) => {
-          const n = holdings.filter((h) => h.portfolio_asset_id === p.asset_id && h.holding_type !== "CASH").length;
-          const atCost = holdings.some((h) => h.portfolio_asset_id === p.asset_id && h.valued_at_cost);
-          return (
-            <Link key={p.asset_id} href={`/investments/${p.asset_id}`}
-              className="block rounded-xl border border-slate-200 bg-white p-5 hover:border-slate-400">
-              <div className="font-medium text-slate-900">{p.name}</div>
-              <div className="text-xs text-slate-500">{inst.get(p.asset_id)} · {p.portfolio_currency} · {n} หลักทรัพย์</div>
-              <div className="mt-3 text-xl font-semibold tabular-nums">{money(p.display_value, p.portfolio_currency, 0)}</div>
-              {pv.assetPct(p.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(p.asset_id)}% ของ {money(p.full_display_value, p.portfolio_currency, 0)}</div>}
-              <div className="text-xs text-slate-500">
-                {p.portfolio_currency !== "THB" && `≈ ${money(Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), "THB", 0)} · `}
-                ณ {thDate(p.display_value_date)}
-                {Number(p.in_transit_thb ?? 0) !== 0 && " · มีเงินระหว่างทาง"}
-              </div>
-              {atCost && <div className="mt-1 text-xs text-amber-700">มีบางตัวยังใช้ราคาทุน (รอ Statement)</div>}
-            </Link>
-          );
-        })}
-      </section>
-
-      {retRows.some((r) => r.total || r.unreal || r.real) && (
-        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900">ผลตอบแทนแยกพอร์ต (บาท)</h2>
-          <table className="mt-2 w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">พอร์ต</th><th className="px-3 text-right">ยังไม่รับรู้</th><th className="px-3 text-right">รับรู้แล้ว</th>
-                <th className="px-3 text-right">ส่วนจาก FX</th><th className="px-3 text-right">ปันผล / ดอกเบี้ย สุทธิค่าธรรมเนียม</th><th className="px-3 text-right">รวม</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {[...retRows, ...(retRows.length > 1 ? [{ asset_id: "", name: "รวมทุกพอร์ต",
-                unreal: retRows.reduce((t, r) => t + r.unreal, 0), unrealFx: retRows.reduce((t, r) => t + r.unrealFx, 0),
-                real: retRows.reduce((t, r) => t + r.real, 0), realFx: retRows.reduce((t, r) => t + r.realFx, 0),
-                income: retRows.reduce((t, r) => t + r.income, 0), total: retRows.reduce((t, r) => t + r.total, 0) }] : [])].map((r) => (
-                <tr key={r.asset_id || "total"} className={r.asset_id ? "" : "font-medium"}>
-                  <td className="px-4 py-2">{r.asset_id ? <Link href={`/investments/${r.asset_id}`} className="hover:underline">{r.name}</Link> : r.name}</td>
-                  {[r.unreal, r.real, r.unrealFx + r.realFx, r.income, r.total].map((v, i) => (
-                    <td key={i} className={`px-3 text-right tabular-nums ${v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500"}`}>
-                      {v ? `${v > 0 ? "+" : ""}${money(v, undefined, 0)}` : "-"}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="px-4 py-3 text-xs text-slate-500">ต้นทุนเฉลี่ย · นับตั้งแต่ยอดตั้งต้น · &ldquo;ส่วนจาก FX&rdquo; รวมอยู่ในยังไม่รับรู้ / รับรู้แล้ว (แสดงแยกให้เห็นว่ามาจากค่าเงินเท่าไร)</p>
-        </section>
-      )}
+      {list.length === 0
+        ? <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>
+        : <PortfolioTable rows={rows} />}
 
       {allocTotal > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
