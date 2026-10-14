@@ -6,7 +6,7 @@ import {
   addExpense, addIncome, addMovement, addReimbursement, addTemplate, changeAccount, dismissExpected, setMonthStatus, toggleTemplate,
   type ActionState,
 } from "./actions";
-import { EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, money } from "@/lib/format";
+import { EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 
@@ -134,15 +134,30 @@ export function ExpectedActions(props: {
   expected: number; currency: string; receiveTo: string | null; banks: Bank[]; today: string; minDate: string;
 }) {
   const { sourceType, sourceId, period, incomeType, personId, expected, currency, receiveTo, banks, today, minDate } = props;
-  const rec = useActionSlot();
-  const dis = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [rs, recordAction, recording] = useActionState<ActionState, FormData>(addIncome, {});
   const [ds, dismissAction, dismissing] = useActionState<ActionState, FormData>(dismissExpected, {});
   if (rs.ok || ds.ok) return <span className="text-xs text-emerald-700">{rs.ok ?? ds.ok}</span>;
   const list = banks.filter((b) => b.currency === currency);
-  const recTrigger = <button type="button" onClick={() => rec.setOpen(!rec.open)} className={rec.activeCls(sbtn)}>บันทึกรับ</button>;
-  const disTrigger = <button type="button" onClick={() => dis.setOpen(!dis.open)} className={dis.activeCls("text-xs text-slate-500 underline")}>เดือนนี้ไม่ได้รับ</button>;
-  const recordForm = (
+  const trigger = <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกรับ</button>;
+  if (!open) return trigger;
+  const close = () => setOpen(false);
+  // ฟอร์มเดียว: บันทึกรับ (ยอดจริง) หรือ "เดือนนี้ไม่ได้รับ" (สลับในฟอร์ม)
+  const form = mode === "dismiss" ? (
+    <form action={dismissAction} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="source_type" value={sourceType} />
+      <input type="hidden" name="source_id" value={sourceId} />
+      <input type="hidden" name="income_period" value={period} />
+      <label className="text-xs">เดือนนี้ไม่ได้รับ · เหตุผล
+        <input name="reason" required placeholder="เช่น ผู้เช่าขอเลื่อน" className={`mt-1 block w-60 ${small}`} />
+      </label>
+      <button disabled={dismissing} className={sbtn}>ยืนยัน &ldquo;เดือนนี้ไม่ได้รับ&rdquo;</button>
+      <button type="button" onClick={() => setMode("record")} className="text-xs text-slate-600 underline">← กลับไปบันทึกรับ</button>
+      <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
+      <div className="w-full"><Msg s={ds} /></div>
+    </form>
+  ) : (
     <form action={recordAction} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name={sourceType === "LEASE" ? "lease_id" : "recurring_template_id"} value={sourceId} />
       <input type="hidden" name="income_period" value={period} />
@@ -159,26 +174,12 @@ export function ExpectedActions(props: {
         </select>
       </label>
       <button disabled={recording} className={sbtn}>บันทึก</button>
-      <button type="button" onClick={() => rec.setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้รับ…</button>
       <div className="w-full"><Msg s={rs} /></div>
     </form>
   );
-  const dismissForm = (
-    <form action={dismissAction} className="flex flex-wrap items-end gap-2">
-      <input type="hidden" name="source_type" value={sourceType} />
-      <input type="hidden" name="source_id" value={sourceId} />
-      <input type="hidden" name="income_period" value={period} />
-      <input name="reason" required placeholder="เหตุผล เช่น ผู้เช่าขอเลื่อน" className={`w-52 ${small}`} />
-      <button disabled={dismissing} className={sbtn}>ยืนยัน &ldquo;เดือนนี้ไม่ได้รับ&rdquo;</button>
-      <button type="button" onClick={() => dis.setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
-      <div className="w-full"><Msg s={ds} /></div>
-    </form>
-  );
-  // ในตาราง (ActionRow): ปุ่มอยู่ในช่องท้าย ฟอร์มกางใต้แถว · นอกตาราง: ฟอร์มแทนที่ปุ่ม
-  if (rec.inBar) return <>{rec.open ? rec.present(recTrigger, recordForm) : recTrigger}{dis.open ? dis.present(disTrigger, dismissForm) : disTrigger}</>;
-  if (rec.open) return recordForm;
-  if (dis.open) return dismissForm;
-  return <div className="flex items-center gap-3">{recTrigger}{disTrigger}</div>;
+  return present(trigger, form);
 }
 
 export function TemplateForm({ banks, persons, today }: { banks: Bank[]; persons: Person[]; today: string }) {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, type ActionState } from "../actions";
+import { ROW_BTN } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -61,7 +62,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   }
   if (state.ok && small) return <span className="text-xs text-emerald-700">{state.ok}</span>;
   const trigger = <button type="button" onClick={() => setOpen(!open)}
-    className={activeCls(small ? "rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" : btn)}>{button}</button>;
+    className={activeCls(small ? ROW_BTN : btn)}>{button}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">

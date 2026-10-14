@@ -4,7 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, type ActionState } from "../actions";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
-import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, money, thDate } from "@/lib/format";
+import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -172,7 +172,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(payPremium, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(sbtn)}>บันทึกจ่าย</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
   if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
   const sameCards = cards.filter((c) => c.currency === currency);
@@ -216,7 +216,7 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
   const [outcome, setOutcome] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(receiveBenefit, {});
   if (state.ok && isSmall) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(isSmall ? sbtn : obtn)}>{button}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(isSmall ? ROW_BTN : obtn)}>{button}</button>;
   if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
   return present(trigger, (
