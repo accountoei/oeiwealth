@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import MonthPicker from "./MonthPicker";
 
-/** Dropdown เลือกสมาชิก + เดือน ของ Dashboard (เปลี่ยนแล้วโหลดหน้าใหม่ตาม ?p= &m=) */
+/** Dropdown เลือกสมาชิก + เดือน (‹ ›) ของ Dashboard (เปลี่ยนแล้วโหลดหน้าใหม่ตาม ?p= &m=) */
 export default function DashboardFilters({ persons, months, person, month }: {
   persons: { id: string; name: string }[]; months: { value: string; label: string }[]; person: string; month: string;
 }) {
@@ -21,10 +22,7 @@ export default function DashboardFilters({ persons, months, person, month }: {
         <option value="">ทั้งครอบครัว</option>
         {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
-      <label className="sr-only" htmlFor="dash-month">เดือน</label>
-      <select id="dash-month" value={month} onChange={(e) => go(person, e.target.value)} className={sel}>
-        {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-      </select>
+      <MonthPicker months={months} value={month} />
     </div>
   );
 }

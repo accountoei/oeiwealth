@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import RowActions from "@/components/RowActions";
 import {
-  COST_STATUS, INCOME_TYPE_LABEL, MOVE_LABEL, PERIODS_PER_YEAR, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthRange, scheduleText,
+  COST_STATUS, INCOME_TYPE_LABEL, MOVE_LABEL, PERIODS_PER_YEAR, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthOptions, monthRange, scheduleText,
   thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import { RecordCostForm, UtilityForm, type PropertyPick } from "../property/[id]/forms";
@@ -11,7 +11,9 @@ import {
   AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { MonthNav, TabNav, TabPanel, TabsProvider } from "./tabs";
+import { TabNav, TabPanel, TabsProvider } from "./tabs";
+import CategoryBars, { type CatRow } from "./CategoryBars";
+import MonthPicker from "@/components/MonthPicker";
 import SplitForm from "./SplitForm";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -41,7 +43,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
-  const { start, end, prev, next } = monthRange(ym);
+  const { start, end } = monthRange(ym);
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const pv = await loadPersonView(sp.p, { liabilities: true });
@@ -201,6 +203,24 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const savings = grossThb - taxThb - (expenseThb - reimbThb);
   const rs = new Map((reimbStatus ?? []).map((r) => [r.expense_item_id, r]));
   const inMonth = start <= today && (!goLive || end >= goLive);
+  const months = monthOptions(goLive, today, 3, ym);
+  // ภาพรวมตามประเภท / หมวด (บาท · ตามสัดส่วนเมื่อดูรายบุคคล)
+  const group = (rows: { label: string; pending: boolean; name: string; date: string; value: number }[]) => {
+    const m = new Map<string, CatRow>();
+    for (const r of rows) {
+      const g = m.get(r.label) ?? { label: r.label, value: 0, items: [], pending: r.pending };
+      g.value += r.value; g.items.push({ name: r.name, date: r.date, value: r.value }); m.set(r.label, g);
+    }
+    return [...m.values()];
+  };
+  const incomeCats = group(incomeList.map((i) => {
+    const type = INCOME_TYPE_LABEL[i.income_type] ?? i.income_type;
+    return { label: i.pending_split ? "รอแยกรายละเอียด" : type, pending: !!i.pending_split, date: i.date,
+      name: i.notes || pname(i.src_asset) || pname(i.persons) || type, value: Number(i.base_amount ?? 0) };
+  }));
+  const expenseCats = group(itemList.map((i) => ({
+    label: i.pending_split ? "รอแยกรายละเอียด" : i.expense_category || "ไม่ระบุหมวด", pending: !!i.pending_split, date: i.date,
+    name: i.description, value: Number(i.base_amount ?? 0) * i.share })));
 
   return (
     <TabsProvider initial={tab}>
@@ -212,7 +232,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         </div>
         <div className="flex flex-wrap items-start gap-3">
           <PersonFilter persons={pv.persons} value={pv.personId} />
-          <MonthNav prev={prev} next={next} label={thMonth(start)} person={pv.personId} />
+          <MonthPicker months={months} value={ym} />
         </div>
       </div>
 
@@ -240,6 +260,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               sub={`${TRACK[track].text}${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""}`} cls={TRACK[track].cls} />
             <Kpi label="เงินออม (ไม่รวมการลงทุน)" value={track === "COMPLETE" ? money(savings, "THB", 0) : "—"}
               sub={track === "COMPLETE" ? "รายได้สุทธิ − ค่าใช้จ่ายสุทธิ" : "แสดงเมื่อยืนยันว่าบันทึกค่าใช้จ่ายครบ"} />
+          </section>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <CategoryBars kind="income" title={`รายได้ตามประเภท ${thMonth(start)}`} rows={incomeCats}
+              note="ยอดก่อนหักภาษี (บาท) · กดที่ประเภทเพื่อดูรายการ" empty="ยังไม่มีรายได้ที่บันทึกในเดือนนี้" />
+            <CategoryBars kind="expense" title={`ค่าใช้จ่ายตามหมวด ${thMonth(start)}`} rows={expenseCats}
+              note={`ยอดก่อนหักเงินคืน (บาท)${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""} · กดที่หมวดเพื่อดูรายการ`}
+              empty={track === "NOT_TRACKED" ? "เดือนนี้ไม่ได้บันทึกค่าใช้จ่าย" : "ยังไม่มีค่าใช้จ่ายที่บันทึกในเดือนนี้"} />
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-2 font-medium text-slate-900">ความเคลื่อนไหวของเงินในเดือนนี้</h2>

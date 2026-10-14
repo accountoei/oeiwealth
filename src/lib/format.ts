@@ -182,6 +182,24 @@ export function monthRange(ym: string) {
   return { start, end, prev, next };
 }
 
+/** รายการเดือนให้เลือก (ใหม่สุดก่อน): ตั้งแต่เดือน Go-live ถึงเดือนนี้ (+ เดือนข้างหน้า ahead เดือน) · คงเดือนที่เลือกอยู่ไว้เสมอ */
+export function monthOptions(goLiveDate: string | null | undefined, today: string, ahead = 0, keep?: string) {
+  const cur = today.slice(0, 7);
+  let top = cur;
+  for (let k = 0; k < ahead; k++) top = monthRange(top).next;
+  const goYm = (goLiveDate || today).slice(0, 7);
+  const out: { value: string; label: string }[] = [];
+  for (let m = top; out.length < 120; m = monthRange(m).prev) {
+    out.push({ value: m, label: thMonth(`${m}-01`) + (m === cur ? " (เดือนนี้)" : "") });
+    if (m <= goYm) break;
+  }
+  if (keep && /^\d{4}-\d{2}$/.test(keep) && !out.some((x) => x.value === keep)) {
+    out.push({ value: keep, label: thMonth(`${keep}-01`) });
+    out.sort((a, b) => b.value.localeCompare(a.value));
+  }
+  return out;
+}
+
 export const INS_TYPE: [string, string][] = [["LIFE", "ประกันชีวิต / สะสมทรัพย์"], ["HEALTH", "ประกันสุขภาพ"], ["ACCIDENT", "ประกันอุบัติเหตุ"], ["PROPERTY", "ประกันทรัพย์สิน"]];
 export const INS_STATUS: [string, string][] = [["ACTIVE", "มีผล"], ["LAPSED", "ขาดอายุ"], ["SURRENDERED", "เวนคืนแล้ว"], ["MATURED", "ครบสัญญา"], ["CLAIMED", "เคลมจบแล้ว"], ["CANCELLED", "ยกเลิก"]];
 export const CLAIM_STATUS: [string, string][] = [["DRAFT", "ร่าง"], ["SUBMITTED", "ยื่นแล้ว"], ["APPROVED", "อนุมัติ"], ["PARTIALLY_PAID", "จ่ายบางส่วน"], ["PAID", "จ่ายครบ"], ["REJECTED", "ปฏิเสธ"], ["CANCELLED", "ยกเลิก"]];

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 // สลับแท็บในเบราว์เซอร์ทันที ไม่ต้องโหลดหน้าใหม่ (ข้อมูลทุกแท็บโหลดมาพร้อมกันตั้งแต่เปิดหน้าอยู่แล้ว)
@@ -29,19 +28,6 @@ export function TabNav({ tabs }: { tabs: [string, string][] }) {
           className={`-mb-px border-b-2 px-4 py-2 text-sm ${active === k ? "border-slate-900 font-medium text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{l}</button>
       ))}
     </nav>
-  );
-}
-
-/** ปุ่มเลื่อนเดือน (โหลดข้อมูลเดือนใหม่จาก Server) · คงแท็บและสมาชิกที่เลือกไว้ */
-export function MonthNav({ prev, next, label, person }: { prev: string; next: string; label: string; person?: string }) {
-  const { active } = useContext(Ctx);
-  const href = (m: string) => `/income-expenses?tab=${active}&m=${m}${person ? `&p=${person}` : ""}`;
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <Link href={href(prev)} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">←</Link>
-      <span className="min-w-28 text-center font-medium">{label}</span>
-      <Link href={href(next)} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">→</Link>
-    </div>
   );
 }
 
