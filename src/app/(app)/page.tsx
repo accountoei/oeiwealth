@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense, cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { money, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
+import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 
 type Preview = {
@@ -77,13 +77,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ]);
   const family = familyRaw as Family | null;
   const isSetup = family?.system_status === "SETUP";
-  const goYm = (family?.go_live_date ?? today).slice(0, 7);
   // เดือนที่เลือกได้: เดือน Go-live → เดือนปัจจุบัน (ใหม่สุดก่อน)
-  const months: { value: string; label: string }[] = [];
-  for (let m = curYm; months.length < 120; m = monthRange(m).prev) {
-    months.push({ value: m, label: thMonth(`${m}-01`) + (m === curYm ? " (เดือนนี้)" : "") });
-    if (m <= goYm) break;
-  }
+  const months = monthOptions(family?.go_live_date, today);
   const ym = months.some((x) => x.value === sp.m) ? (sp.m as string) : curYm;
   const isCurrent = ym === curYm;
   const { start } = monthRange(ym);
