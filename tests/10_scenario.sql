@@ -1119,6 +1119,70 @@ SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.swap_sort_order('assets', t.a('KBank ออมทรัพย์'), t.a('BBL USD'))$$, 'PERMISSION', 'VIEWER จัดลำดับไม่ได้');
 RESET ROLE;
 
+\echo '== 13q. ส่วนต่าง → ก้อนรอแยกรายละเอียด (ธนาคาร / บัตร / เงินกู้) · ปรับอัตโนมัติ · แยกรายการ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีทดสอบก้อน', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS lump_bank;
+SELECT public.add_expense(jsonb_build_object('date','2026-09-10','description','ค่าใช้จ่ายทดสอบก้อน','amount',1000,
+  'paid_from_asset_id', t.a('บัญชีทดสอบก้อน'))) IS NOT NULL AS e1;
+SELECT public.prepare_bank_reconciliation(t.a('บัญชีทดสอบก้อน'), '2026-09-01') IS NOT NULL AS rec;
+SELECT public.settle_bank_difference((SELECT id FROM public.bank_reconciliations WHERE bank_asset_id = t.a('บัญชีทดสอบก้อน')), 8500)->>'kind' AS lump_kind;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีทดสอบก้อน') AND deleted_at IS NULL) = 500
+            AND (SELECT status FROM public.bank_reconciliations WHERE bank_asset_id = t.a('บัญชีทดสอบก้อน')) = 'RECONCILED',
+            'กระทบยอด: เงินหาย 500 → ค่าใช้จ่ายก้อนรอแยก 500 · กระทบยอดผ่าน');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-15','description','เจอใบเสร็จ','amount',200,
+  'paid_from_asset_id', t.a('บัญชีทดสอบก้อน'))) IS NOT NULL AS e2;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีทดสอบก้อน') AND deleted_at IS NULL) = 300,
+            'บันทึกค่าใช้จ่ายจริงเพิ่มในเดือนเดียวกัน → ก้อนลดเองเหลือ 300');
+SELECT t.ok(public.split_pending_item('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีทดสอบก้อน') AND deleted_at IS NULL),
+  jsonb_build_array(jsonb_build_object('description','ค่ากาแฟ','amount',100,'expense_category','อาหาร'))) = 200,
+  'แยกรายการ 100 → ก้อนเหลือ 200 · ยอดรวมเท่าเดิม');
+SELECT t.fails($$UPDATE public.expense_items SET amount = 1 WHERE pending_split AND paid_from_asset_id = t.a('บัญชีทดสอบก้อน')$$,
+  'แยกรายการ', 'แก้ยอดก้อนรอแยกตรง ๆ ไม่ได้');
+SELECT t.fails($$SELECT public.split_pending_item('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีทดสอบก้อน') AND deleted_at IS NULL),
+  jsonb_build_array(jsonb_build_object('description','เกิน','amount',999)))$$, 'มากกว่ายอดรอแยก', 'แยกเกินยอดก้อนไม่ได้');
+-- เงินเกิน → รายได้ก้อน
+SELECT public.create_bank_account('บัญชีทดสอบก้อน 2', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS lump_bank2;
+SELECT public.prepare_bank_reconciliation(t.a('บัญชีทดสอบก้อน 2'), '2026-09-01') IS NOT NULL AS rec2;
+SELECT public.settle_bank_difference((SELECT id FROM public.bank_reconciliations WHERE bank_asset_id = t.a('บัญชีทดสอบก้อน 2')), 10300)->>'kind' AS lump_kind2;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND received_to_asset_id = t.a('บัญชีทดสอบก้อน 2') AND deleted_at IS NULL) = 300,
+            'กระทบยอด: เงินเกิน 300 → รายได้ก้อนรอแยก 300');
+SELECT t.ok(public.split_pending_item('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND received_to_asset_id = t.a('บัญชีทดสอบก้อน 2') AND deleted_at IS NULL),
+  jsonb_build_array(jsonb_build_object('description','ดอกเบี้ยเงินฝาก','amount',300,'income_type','INTEREST'))) = 0, 'แยกรายได้ครบ → เหลือ 0');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND received_to_asset_id = t.a('บัญชีทดสอบก้อน 2') AND deleted_at IS NULL)
+            AND EXISTS (SELECT 1 FROM public.income_transactions WHERE income_type = 'INTEREST' AND received_to_asset_id = t.a('บัญชีทดสอบก้อน 2') AND deleted_at IS NULL),
+            'ก้อนหายไป · มีรายได้ดอกเบี้ยแทน');
+-- บัตรเครดิต
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'ก้อน', '4455', 1000, '2026-09-01');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-20','description','รูดบัตรทดสอบ','amount',300,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'))) IS NOT NULL AS c1;
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '4455'), '2026-09-30', 2000, true))->>'lump' AS card_lump;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND lump_kind = 'CARD' AND deleted_at IS NULL) = 700
+            AND (SELECT outstanding_balance FROM public.credit_cards WHERE card_last4 = '4455') = 2000,
+            'ยอดบัตรจาก Statement สูงกว่าที่บันทึก 700 → ค่าใช้จ่ายก้อน (จ่ายด้วยบัตร) · อัปเดตยอดบัตร');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-25','description','รูดบัตรที่ลืม','amount',200,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'))) IS NOT NULL AS c2;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND lump_kind = 'CARD' AND deleted_at IS NULL) = 500,
+            'บันทึกรายการบัตรที่ลืม → ก้อนบัตรลดเองเหลือ 500');
+-- เงินกู้
+INSERT INTO public.liabilities(family_id, liability_type, name, currency) SELECT id, 'PERSONAL_LOAN', 'หนี้ทดสอบก้อน', 'THB' FROM public.families;
+INSERT INTO public.liability_valuations(liability_id, valuation_date, balance, source)
+  SELECT id, '2026-08-31', 100000, 'STATEMENT' FROM public.liabilities WHERE name = 'หนี้ทดสอบก้อน';
+SELECT (public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้ทดสอบก้อน'), '2026-09-30', 100500, 'STATEMENT', NULL, true))->>'lump' AS liab_lump;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND lump_kind = 'LIABILITY' AND deleted_at IS NULL) = 500
+            AND (SELECT outstanding_amount FROM public.liabilities WHERE name = 'หนี้ทดสอบก้อน') = 100500,
+            'ยอดหนี้จาก Statement สูงกว่าที่คำนวณ 500 → ค่าใช้จ่ายก้อน (ดอกเบี้ย / ค่าธรรมเนียม)');
+-- งวดที่ปิดแล้ว: ปกติแก้ไม่ได้ · ระหว่างแยกรายการ (flag) ทำได้
+SELECT t.fails($$SELECT public.add_expense(jsonb_build_object('date','2026-07-15','description','ย้อนงวด','amount',1))$$, 'PERIOD_LOCKED', 'งวดที่ปิดแล้วเพิ่มค่าใช้จ่ายไม่ได้');
+BEGIN;
+SELECT set_config('fwv.split', 'on', true);
+SELECT t.ok(public.add_expense(jsonb_build_object('date','2026-07-15','description','แยกในงวดปิด','amount',1)) IS NOT NULL,
+            'งวดที่ปิดแล้ว: ยอมเฉพาะระหว่างแยกรายการ');
+ROLLBACK;
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

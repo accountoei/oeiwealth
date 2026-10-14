@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
-import { ConfirmReconForm, FinalizeForm, PrepareButton, ReopenForm } from "./forms";
+import { ConfirmReconForm, FinalizeForm, PrepareButton, ReopenForm, SettleLaterButton } from "./forms";
 
 type Issue = { severity: string; code: string; message: string; entity_type: string | null; entity_id: string | null };
 type Check = { category: string; status: string; issue_count: number; issues: Issue[] };
@@ -157,7 +157,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
       <section id="recon" className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">กระทบยอดธนาคาร {thMonth(start)}</h2>
         <p className="mb-3 text-xs text-slate-500">
-          ยอดต้นเดือน + เงินเข้า − เงินออก (ที่บันทึกไว้) = ยอดที่ควรเป็น · กรอกยอดจริงสิ้นเดือนจากแอปธนาคาร · ผลต่างไม่ถูกแปลงเป็นค่าใช้จ่ายเอง
+          ยอดต้นเดือน + เงินเข้า − เงินออก (ที่บันทึกไว้) = ยอดที่ควรเป็น · กรอกยอดจริงสิ้นเดือนจากแอปธนาคาร · ผลต่างลงเป็นค่าใช้จ่าย / รายได้ก้อน &ldquo;รอแยกรายละเอียด&rdquo; ได้ (แยกทีหลังได้แม้ปิดงวดแล้ว)
         </p>
         {bankRows.length === 0 ? <p className="text-sm text-slate-500">ไม่มีบัญชีที่ต้องกระทบยอด</p> : (
           <div className="space-y-3">
@@ -180,6 +180,9 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                         {r.actual_closing != null && <span>จริง <b>{money(r.actual_closing)}</b>{Number(r.difference) !== 0 && ` · ต่าง ${money(r.difference)}`}</span>}
                       </div>
                       {r.difference_reason && <div className="mt-1 text-xs text-amber-700">เหตุผล: {r.difference_reason}</div>}
+                      {r.status === "CONFIRMED_WITH_DIFFERENCE" && !isFinal && canClose && Number(r.difference) !== 0 && (
+                        <SettleLaterButton id={r.id} diff={Number(r.difference)} currency={b.currency} />
+                      )}
                       {r.status === "OPEN" && !isFinal && (
                         <>
                           {canWrite && <div className="mt-1"><PrepareButton assetId={b.asset_id} month={start} label="คำนวณใหม่ (หลังเพิ่มรายการ)" /></div>}

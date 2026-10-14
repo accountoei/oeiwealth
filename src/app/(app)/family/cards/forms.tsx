@@ -81,6 +81,9 @@ export function CardBalanceForm({ cardId, currency, today, minDate }:
       <label className="text-xs">หมายเหตุ (ไม่บังคับ)
         <input name="notes" className="mt-1 block w-40 rounded-md border border-slate-300 px-2 py-1 text-sm" />
       </label>
+      <label className="flex w-full items-center gap-1 text-xs text-slate-600">
+        <input type="checkbox" name="settle" /> ยอดที่สูงกว่ารายการที่บันทึก ลงเป็นค่าใช้จ่ายก้อน &ldquo;รอแยกรายละเอียด&rdquo;
+      </label>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>

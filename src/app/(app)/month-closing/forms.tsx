@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { confirmRecon, finalizeMonth, prepareRecon, reopenMonth, type ActionState } from "./actions";
+import { confirmRecon, finalizeMonth, prepareRecon, reopenMonth, settleRecon, type ActionState } from "./actions";
 import { money } from "@/lib/format";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -30,6 +30,7 @@ export function PrepareButton({ assetId, month, label }: { assetId: string; mont
 export function ConfirmReconForm({ id, calculated, currency, canConfirm }:
   { id: string; calculated: number; currency: string; canConfirm: boolean }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(confirmRecon, {});
+  const [ls, lumpAction, lumping] = useActionState<ActionState, FormData>(settleRecon, {});
   const [actual, setActual] = useState("");
   const [rounding, setRounding] = useState(0);
   const a = Number(actual.replace(/,/g, ""));
@@ -60,9 +61,16 @@ export function ConfirmReconForm({ id, calculated, currency, canConfirm }:
       {diff !== null && diff !== 0 && (
         <div className="space-y-1 text-xs">
           <p className="text-amber-800">
-            {diff < 0 ? "เงินหายไป" : "เงินเกินมา"} {money(Math.abs(diff), currency)} — แนะนำเพิ่มรายการที่ขาด
-            (ค่าใช้จ่าย / รายได้ / โอน ฯลฯ) ที่หน้า Income &amp; Expenses แล้วกลับมากระทบยอดใหม่ · ระบบไม่สร้างค่าใช้จ่ายจากผลต่างให้เอง
+            {diff < 0 ? "เงินหายไป" : "เงินเกินมา"} {money(Math.abs(diff), currency)} — เลือกได้ 3 ทาง: เพิ่มรายการที่ขาดที่หน้า Income &amp; Expenses
+            แล้วกลับมากระทบยอดใหม่ · ลงเป็นก้อนรอแยกรายละเอียด · หรือยืนยันพร้อมผลต่าง
           </p>
+          {canConfirm && (
+            <button formAction={lumpAction} formNoValidate disabled={lumping || pending}
+              className="rounded-md border border-blue-600 bg-white px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+              {lumping ? "กำลังบันทึก…" : diff < 0 ? `ลงเป็นค่าใช้จ่ายก้อนเดียว ${money(-diff, currency)} (รอแยกรายละเอียด) และยืนยันยอด`
+                : `ลงเป็นรายได้ก้อนเดียว ${money(diff, currency)} (รอแยกรายละเอียด) และยืนยันยอด`}
+            </button>
+          )}
           <label className="block">หรือยืนยันพร้อมผลต่าง — เหตุผล (จำเป็น)
             <input name="reason" required className={`mt-1 block w-full ${small}`} />
           </label>
@@ -71,7 +79,7 @@ export function ConfirmReconForm({ id, calculated, currency, canConfirm }:
       {canConfirm ? (
         <button disabled={pending || !has} className={sbtn}>{pending ? "กำลังยืนยัน…" : "ยืนยันยอด"}</button>
       ) : <p className="text-xs text-slate-500">ยืนยันได้หลังสิ้นเดือน · เฉพาะผู้ดูแลระบบ / ผู้แก้ไข</p>}
-      <Msg s={state} />
+      <Msg s={state} /><Msg s={ls} />
     </form>
   );
 }
@@ -108,4 +116,18 @@ export function ReopenForm({ month }: { month: string }) {
       <Msg s={state} />
     </form>
   ));
+}
+
+/** ยืนยันพร้อมผลต่างไปแล้ว → เปลี่ยนเป็นก้อนรอแยกรายละเอียด */
+export function SettleLaterButton({ id, diff, currency }: { id: string; diff: number; currency: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(settleRecon, {});
+  return (
+    <form action={action} className="mt-1 flex flex-wrap items-center gap-2">
+      <input type="hidden" name="id" value={id} />
+      <button disabled={pending} className="text-xs text-blue-700 underline disabled:opacity-50">
+        {pending ? "กำลังบันทึก…" : `ลงผลต่าง ${money(Math.abs(diff), currency)} เป็น${diff < 0 ? "ค่าใช้จ่าย" : "รายได้"}ก้อน (รอแยกรายละเอียด)`}
+      </button>
+      <Msg s={state} />
+    </form>
+  );
 }

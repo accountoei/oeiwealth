@@ -35,6 +35,9 @@ export function AddBalanceForm({ liabilityId, currency, today, minDate }:
       <label className="text-sm flex-1 min-w-48">หมายเหตุ
         <input name="notes" className={`mt-1 block w-full ${input}`} />
       </label>
+      <label className="flex w-full items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="settle" /> ยอดที่สูงกว่าที่ระบบคำนวณ (ดอกเบี้ย / ค่าธรรมเนียมที่ทบเข้าหนี้) ลงเป็นค่าใช้จ่ายก้อน &ldquo;รอแยกรายละเอียด&rdquo;
+      </label>
       <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอด"}</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
