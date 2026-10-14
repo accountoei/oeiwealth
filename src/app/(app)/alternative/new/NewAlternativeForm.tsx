@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useRef, useState } from "react";
 import { addCategory, createAlternative, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import { thDate } from "@/lib/format";
@@ -19,16 +19,43 @@ export default function NewAlternativeForm(props: {
   const [cs, catAction, adding] = useActionState<ActionState, FormData>(addCategory, {});
   const [opening, setOpening] = useState(isSetup);
   const [newCat, setNewCat] = useState(false);
+  const catName = useRef<HTMLInputElement>(null);
+  // เพิ่มหมวดโดยไม่ส่งฟอร์มหลัก (ข้อมูลที่กรอกไว้ไม่หาย)
+  const addCat = () => {
+    const fd = new FormData();
+    fd.set("category_name", catName.current?.value ?? "");
+    startTransition(() => catAction(fd));
+  };
+  const cats = cs.id && !categories.some((c) => c.id === cs.id) ? [...categories, { id: cs.id, name: cs.name ?? "" }] : categories;
   return (
     <div className="space-y-6">
       <form action={action} className="space-y-6">
         <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
           <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลสินทรัพย์</h2>
           <label className={label}>ชื่อ *<input name="name" required placeholder="เช่น ทองแท่ง 10 บาท" className={input} /></label>
-          <label className={label}>หมวด *
-            <select name="category_id" required className={input}>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <button type="button" onClick={() => setNewCat(!newCat)} className="mt-1 text-xs text-slate-600 underline">+ เพิ่มหมวดเอง</button>
-          </label>
+          <div className={label}>
+            <label htmlFor="category_id">หมวด *</label>
+            {/* หมวดที่เพิ่งเพิ่ม → อยู่ในรายการและถูกเลือกทันที */}
+            <select id="category_id" name="category_id" required key={cs.id ?? "base"} defaultValue={cs.id ?? categories[0]?.id} className={input}>
+              {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {!newCat ? (
+              <button type="button" onClick={() => setNewCat(true)} className="mt-1 text-xs text-slate-600 underline">+ เพิ่มหมวดเอง</button>
+            ) : (
+              <div className="mt-2 rounded-lg bg-slate-50 p-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input ref={catName} placeholder="ชื่อหมวดใหม่ เช่น พระเครื่อง / งานศิลปะ" aria-label="ชื่อหมวดใหม่"
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCat(); } }}
+                    className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+                  <button type="button" onClick={addCat} disabled={adding}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{adding ? "…" : "เพิ่มหมวด"}</button>
+                  <button type="button" onClick={() => setNewCat(false)} className="text-xs text-slate-500">ปิด</button>
+                </div>
+                {cs.error && <p className="mt-1 text-xs text-red-600">{cs.error}</p>}
+                {cs.ok && <p className="mt-1 text-xs text-emerald-700">{cs.ok}</p>}
+              </div>
+            )}
+          </div>
           <label className={label}>ยี่ห้อ<input name="brand" className={input} /></label>
           <label className={label}>รุ่น<input name="model" className={input} /></label>
           <label className={label}>Serial / เลขใบรับรอง<input name="serial_no" className={input} /></label>
@@ -76,14 +103,6 @@ export default function NewAlternativeForm(props: {
           <Link href="/alternative" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
         </div>
       </form>
-      {newCat && (
-        <form action={catAction} className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-4">
-          <label className="text-sm">ชื่อหมวดใหม่<input name="category_name" required placeholder="เช่น พระเครื่อง / งานศิลปะ" className="mt-1 block rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-          <button disabled={adding} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">เพิ่มหมวด</button>
-          {cs.error && <span className="text-sm text-red-600">{cs.error}</span>}
-          {cs.ok && <span className="text-sm text-emerald-700">{cs.ok} (เลือกได้ในช่องหมวดด้านบน)</span>}
-        </form>
-      )}
     </div>
   );
 }

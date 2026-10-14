@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = { error?: string; ok?: string; id?: string; name?: string };
 
 export async function createAlternative(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
@@ -30,8 +30,10 @@ export async function addCategory(_: ActionState, form: FormData): Promise<Actio
   if (!name) return { error: "กรุณาใส่ชื่อหมวด" };
   const { data: fam } = await supabase.from("families").select("id").maybeSingle();
   const code = "CUSTOM_" + Math.random().toString(36).slice(2, 8).toUpperCase();
-  const { error } = await supabase.from("asset_categories").insert({ family_id: fam?.id, category_code: code, category_name: name });
+  const { data, error } = await supabase.from("asset_categories")
+    .insert({ family_id: fam?.id, category_code: code, category_name: name }).select("id").single();
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/alternative/new");
-  return { ok: `เพิ่มหมวด "${name}" แล้ว` };
+  revalidatePath("/alternative");
+  return { ok: `เพิ่มหมวด "${name}" แล้ว และเลือกให้แล้ว`, id: data.id, name };
 }
