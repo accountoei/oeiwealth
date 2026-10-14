@@ -419,12 +419,12 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
               <div className="md:col-span-3 space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" name="update_balance" checked={upd} onChange={(e) => setUpd(e.target.checked)} />
-                  {type === "CARD_PAYMENT" ? "จ่ายแล้วอัปเดตยอดบัตรเลย" : "มียอดคงค้างตาม Statement หลังจ่าย (ใช้แทนยอดที่ระบบหักให้)"}
+                  {type === "CARD_PAYMENT" ? "มียอดตาม Statement ใหม่ (ไม่บังคับ · ยอดบัตรลดเองตามที่จ่ายอยู่แล้ว)" : "มียอดคงค้างตาม Statement หลังจ่าย (ใช้แทนยอดที่ระบบหักให้)"}
                 </label>
                 {upd && <input name="new_balance" required inputMode="decimal" placeholder="ยอดคงค้างใหม่" className={small} />}
                 <p className="text-xs text-slate-500">
                   {type === "CARD_PAYMENT"
-                    ? "ไม่ใช่ค่าใช้จ่าย (ค่าใช้จ่ายบันทึกตอนรูดบัตรแล้ว)"
+                    ? "ไม่ใช่ค่าใช้จ่าย (ค่าใช้จ่ายบันทึกตอนรูดบัตรแล้ว) · ยอดค้างบัตรลดลงตามที่จ่ายทันที"
                     : <>รวมจ่าย {money(n(pr) + n(it), fromCcy)} · เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยบันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo;</>}
                 </p>
               </div>
@@ -461,7 +461,6 @@ export function AutopayConfirmForm({ cardId, bankId, currency, dueDate, amount, 
         <input name="amount" required inputMode="decimal" defaultValue={minimum || !amount ? "" : amount.toFixed(2)}
           placeholder={minimum ? "ยอดขั้นต่ำตามใบแจ้งยอด" : ""} className={`mt-0.5 block w-36 ${small}`} />
       </label>
-      <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="reduce_balance" defaultChecked /> หักยอดบัตรตามที่ตัด</label>
       <button disabled={pending} className={sbtn}>{pending ? "…" : "บันทึก"}</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <div className="w-full"><Msg s={state} /></div>

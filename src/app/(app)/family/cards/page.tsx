@@ -25,13 +25,12 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   const ordering = canOrder ? sp.order ?? "" : "";      // "cards" | "members" | "points"
   const oh = (key: string) => orderHrefs("/family/cards", { p: sp.p }, key);
   const cpaths = ["/family/cards", "/liabilities"];
-  const [pv, { data, error }, { data: persons }, { data: family }, { data: paidAfter }, { data: members }, { data: points }, { data: banksRaw }] = await Promise.all([
+  const [pv, { data, error }, { data: persons }, { data: family }, { data: cardBal }, { data: members }, { data: points }, { data: banksRaw }] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("credit_cards").select("*, persons(name)").is("deleted_at", null).order("sort_order").order("issuer"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_liabilities_all").select("source_id").eq("liability_source", "CREDIT_CARD")
-      .eq("derived_status", "PAID_AFTER_BALANCE_DATE"),
+    supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("memberships").select("*").is("deleted_at", null).order("sort_order").order("program_name"),
     supabase.from("points_accounts").select("*").is("deleted_at", null).order("sort_order").order("program_name"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
@@ -42,7 +41,9 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   const cards = ((data as Card[] | null) ?? []).filter((c) => pv.isPerson(c.person_id));
   const memberRows = (members ?? []).filter((m) => pv.isPerson(m.person_id));
   const pointRows = (points ?? []).filter((pt) => pv.isPerson(pt.person_id));
-  const paidSet = new Set((paidAfter ?? []).map((r) => r.source_id));
+  // ยอดค้างปัจจุบัน = ยอดตาม Statement + รูด − จ่าย หลังวันที่ของยอด (คำนวณในฐานข้อมูล)
+  const cur = new Map((cardBal ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
+  const curOf = (c: Card) => cur.get(c.id) ?? Number(c.outstanding_balance);
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
@@ -52,7 +53,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   const minDate = isSetup ? "" : goLive;
   const totals = new Map<string, number>();
   cards.filter((c) => c.status !== "CLOSED")
-    .forEach((c) => totals.set(c.currency, (totals.get(c.currency) ?? 0) + Number(c.outstanding_balance)));
+    .forEach((c) => totals.set(c.currency, (totals.get(c.currency) ?? 0) + curOf(c)));
   const pmap = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const holder = (c: Card) => (Array.isArray(c.persons) ? c.persons[0]?.name : c.persons?.name) ?? "-";
 
@@ -110,9 +111,13 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
                 </td>
                 <td className="px-4 py-3">{holder(c)}</td>
                 <td className="px-4 py-3 text-right">
-                  <div className="tabular-nums">{money(c.outstanding_balance, c.currency)}</div>
-                  <div className="text-xs text-slate-500">ณ {thDate(c.balance_date)}</div>
-                  {paidSet.has(c.id) && <div className="text-xs text-amber-700">จ่ายบัตรแล้ว ยังไม่อัปเดตยอด</div>}
+                  <div className="tabular-nums">{money(curOf(c), c.currency)}</div>
+                  <div className="text-xs text-slate-500">
+                    {Math.abs(curOf(c) - Number(c.outstanding_balance)) > 0.005
+                      ? <>ตาม Statement {money(c.outstanding_balance)} ณ {thDate(c.balance_date)}<br />+ รูด − จ่าย หลังจากนั้น</>
+                      : <>ตาม Statement ณ {thDate(c.balance_date)}</>}
+                  </div>
+
                   {canWrite && c.status !== "CLOSED" && (
                     <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate} />
                   )}
@@ -156,7 +161,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
         </table>
       </div>
       <p className="text-xs text-slate-500">
-        อัปเดตยอดค้างจาก Statement ทุกเดือน · การจ่ายบัตรบันทึกเป็นรายการเงินออกจากบัญชี (หน้า Income &amp; Expenses)
+        ยอดค้าง = ยอดตาม Statement ล่าสุด + รูดบัตรที่บันทึก − จ่ายบัตร หลังวันที่ของยอด (คำนวณให้) · อัปเดตยอดตาม Statement ทุกเดือนเพื่อเริ่มนับใหม่
       </p>
 
       <section className="space-y-3">
