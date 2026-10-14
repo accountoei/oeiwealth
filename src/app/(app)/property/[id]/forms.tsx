@@ -7,7 +7,7 @@ import {
   updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
-import { PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
+import { PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -326,7 +326,7 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกจ่าย</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
   if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
   const sameCards = cards.filter((c) => c.currency === currency);
