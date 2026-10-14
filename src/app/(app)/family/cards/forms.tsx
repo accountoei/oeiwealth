@@ -66,12 +66,12 @@ export function CardBalanceForm({ cardId, currency, today, minDate }:
   { cardId: string; currency: string; today: string; minDate: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardBalance, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>อัปเดตยอด</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>อัปเดตยอดตาม Statement</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="card_id" value={cardId} />
-      <label className="text-xs">ยอดค้าง ({currency})
+      <label className="text-xs">ยอดตาม Statement ({currency})
         <input name="outstanding_balance" required inputMode="decimal" className="mt-1 block w-32 rounded-md border border-slate-300 px-2 py-1 text-sm" />
       </label>
       <label className="text-xs">ณ วันที่

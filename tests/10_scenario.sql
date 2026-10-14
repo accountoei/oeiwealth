@@ -258,7 +258,7 @@ SELECT t.ok((SELECT count(DISTINCT movement_group_id) = 1 AND count(*) = 2 FROM 
 -- Card payment + update card balance
 INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, to_credit_card_id, amount, currency)
   SELECT f.id, '2026-07-26', 'CARD_PAYMENT', t.a('KBank ออมทรัพย์'), c.id, 20000, 'THB' FROM public.families f, public.credit_cards c;
-UPDATE public.credit_cards SET outstanding_balance = 8000, balance_date = '2026-07-25';
+UPDATE public.credit_cards SET outstanding_balance = 8000, balance_date = '2026-07-27';
 -- Mortgage + valuations ปลายเดือน
 INSERT INTO public.liability_valuations(liability_id, valuation_date, balance, source)
   SELECT id, '2026-07-31', 2990000, 'STATEMENT' FROM public.liabilities;
@@ -315,8 +315,8 @@ UPDATE public.monthly_expenses SET tracking_status = 'COMPLETE' WHERE year_month
 \echo '== 9. Month Closing July'
 SELECT category, status, issue_count FROM public.month_closing_checks('2026-07-01');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-07-01') WHERE status = 'BLOCKED'), 'July ไม่มี BLOCKED');
-SELECT t.ok((SELECT status FROM public.month_closing_checks('2026-07-01') WHERE category = 'LIABILITIES') = 'REVIEW',
-            'จ่ายบัตรหลังวันที่ของยอด → REVIEW');
+SELECT t.ok((SELECT status FROM public.month_closing_checks('2026-07-01') WHERE category = 'LIABILITIES') IS DISTINCT FROM 'REVIEW',
+            'จ่ายบัตรหลังวันที่ของยอด → ยอดบัตรลดเอง ไม่ต้องเตือนให้อัปเดตยอด');
 SELECT t.ok((SELECT status FROM public.month_closing_checks('2026-07-01') WHERE category = 'INVESTMENTS') = 'REVIEW',
             'MSFT ราคาทุน + Unsettled → REVIEW');
 SELECT t.login('00000000-0000-0000-0000-00000000000c');
@@ -396,7 +396,7 @@ SELECT public.reopen_month('2026-07-01', 'ทดสอบ Reopen') IS NOT NULL A
 UPDATE public.expense_items SET description = 'ค่าใช้จ่ายทั่วไป ก.ค. (แก้)' WHERE description = 'ค่าใช้จ่ายทั่วไป ก.ค.';
 SELECT public.finalize_month('2026-07-01') IS NOT NULL AS refinalized;
 SELECT t.ok((SELECT version FROM public.net_worth_snapshots) = 2, 'Finalize ใหม่ → version 2');
-SELECT t.ok((SELECT value = 8000 AND value_date = '2026-07-25' FROM public.net_worth_snapshot_items WHERE item_subtype = 'CREDIT_CARD'),
+SELECT t.ok((SELECT value = 8000 AND value_date = '2026-07-27' FROM public.net_worth_snapshot_items WHERE item_subtype = 'CREDIT_CARD'),
             'ปิด ก.ค. ใหม่หลังอัปเดตบัตร 25 ส.ค. → ยังใช้ยอดบัตร ณ 31 ก.ค. (8,000) จาก Audit');
 
 \echo '== 13. Audit'
@@ -1090,9 +1090,12 @@ UPDATE public.credit_cards SET autopay_asset_id = t.a('KBank ออมทรั�
 SELECT (SELECT outstanding_balance FROM public.credit_cards WHERE card_last4 = '7788') AS card_before \gset
 SELECT public.pay_credit_card(jsonb_build_object('card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '7788'),
   'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'amount', 3000, 'autopay', true)) IS NOT NULL AS card_paid;
-SELECT t.ok((SELECT outstanding_balance = greatest(:card_before - 3000, 0) AND balance_date = current_date FROM public.credit_cards WHERE card_last4 = '7788')
+SELECT t.ok((SELECT outstanding_balance = :card_before FROM public.credit_cards WHERE card_last4 = '7788')
+            AND (SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7788'))
+                = greatest(:card_before + private.card_activity((SELECT id FROM public.credit_cards WHERE card_last4 = '7788'),
+                    (SELECT balance_date FROM public.credit_cards WHERE card_last4 = '7788'), current_date), 0)
             AND EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'CARD_PAYMENT' AND amount = 3000 AND (metadata->>'autopay')::boolean),
-            'ยืนยันตัดบัญชีอัตโนมัติ → บันทึกจ่ายบัตร + หักยอดบัตร');
+            'ยืนยันตัดบัญชีอัตโนมัติ → บันทึกจ่ายบัตร · ยอด Statement คงเดิม · ยอดปัจจุบันลดตามการจ่าย');
 RESET ROLE;
 
 \echo '== 13p. จัดลำดับรายการ (swap_sort_order · move_health_metric)'
@@ -1181,6 +1184,19 @@ SELECT set_config('fwv.split', 'on', true);
 SELECT t.ok(public.add_expense(jsonb_build_object('date','2026-07-15','description','แยกในงวดปิด','amount',1)) IS NOT NULL,
             'งวดที่ปิดแล้ว: ยอมเฉพาะระหว่างแยกรายการ');
 ROLLBACK;
+RESET ROLE;
+
+\echo '== 13r. ยอดบัตรคำนวณอัตโนมัติ (ยอด Statement + รูด − จ่าย หลังวันที่ของยอด)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'รูดบัตรหลัง Statement', 'amount', 150,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'))) IS NOT NULL AS c3;
+SELECT t.ok((SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455')) = 2150
+            AND (SELECT statement_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455')) = 2000,
+            'บันทึกรูดบัตรหลังวันที่ของยอด → ยอดค้างปัจจุบันเพิ่มทันที (Statement คงเดิม)');
+SELECT t.ok((SELECT sum(value) FROM public.v_net_worth_items_current WHERE credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455')) = 2150,
+            'Net Worth ใช้ยอดบัตรปัจจุบัน');
+SELECT t.ok((SELECT amount FROM public.v_liabilities_all WHERE source_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455')) = 2150,
+            'หน้า Liabilities ใช้ยอดบัตรปัจจุบัน');
 RESET ROLE;
 
 \echo '== 14. Views'

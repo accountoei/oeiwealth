@@ -101,9 +101,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   ]);
 
   // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
-  const [{ data: pendExp }, { data: pendInc }] = await Promise.all([
+  const [{ data: pendExp }, { data: pendInc }, { data: cardBalRaw }] = await Promise.all([
     supabase.from("expense_items").select("id,date").eq("pending_split", true).is("deleted_at", null),
     supabase.from("income_transactions").select("id,date").eq("pending_split", true).is("deleted_at", null),
+    supabase.from("v_card_balances").select("card_id,current_balance"),
   ]);
   const pendingMonths = [...new Set([...(pendExp ?? []), ...(pendInc ?? [])].map((x) => String(x.date).slice(0, 7)))].sort();
   const pendingCount = (pendExp ?? []).length + (pendInc ?? []).length;
@@ -111,7 +112,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const minDate = goLive > start ? goLive : start;
   const maxDate = end < today ? end : today;
   const banks = (banksRaw as Bank[] | null) ?? [];
-  const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: Number(c.outstanding_balance),
+  const cardCur = new Map((cardBalRaw ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
+  const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: cardCur.get(c.id) ?? Number(c.outstanding_balance),
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const liabs = (liabRaw as Liab[] | null) ?? [];
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);

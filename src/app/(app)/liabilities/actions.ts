@@ -156,14 +156,14 @@ export async function setCardAutopay(_: ActionState, form: FormData): Promise<Ac
   return { ok: bank ? "ตั้งค่าตัดบัญชีอัตโนมัติแล้ว" : "ปิดตัดบัญชีอัตโนมัติแล้ว" };
 }
 
-/** ยืนยันว่าตัดบัญชีอัตโนมัติแล้ว (หรือจ่ายบัตรเอง) → บันทึกจ่ายบัตร + หักยอดบัตร */
+/** ยืนยันว่าตัดบัญชีอัตโนมัติแล้ว (หรือจ่ายบัตรเอง) → บันทึกจ่ายบัตร (ยอดค้างบัตรลดเองจากการคำนวณ) */
 export async function confirmCardPayment(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const amount = num(form.get("amount"));
   if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ตัดจริง" };
   const { error } = await supabase.rpc("pay_credit_card", { p: {
     card_id: str(form.get("card_id")), bank_asset_id: str(form.get("bank_asset_id")), date: str(form.get("date")),
-    amount, reduce_balance: form.get("reduce_balance") === "on", autopay: form.get("autopay") === "true",
+    amount, reduce_balance: false, autopay: form.get("autopay") === "true",
   } });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/income-expenses");
