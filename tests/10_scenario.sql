@@ -1261,6 +1261,45 @@ SELECT t.fails($$INSERT INTO public.credit_card_statements(credit_card_id, state
   SELECT id, '2026-09-10', 1 FROM public.credit_cards WHERE card_last4 = '8899'$$, 'permission denied', 'แก้ประวัติยอดบัตรตรง ๆ ไม่ได้');
 RESET ROLE;
 
+\echo '== 13u. แก้บัญชีที่รับ / จ่าย และประเภทรายได้ (รายการที่บันทึกเอง)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-12','description','ทดสอบย้ายบัญชี','amount',50,
+  'paid_from_asset_id', t.a('บัญชีทดสอบก้อน 2'))) IS NOT NULL AS mv1;
+SELECT public.change_entry_account('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบย้ายบัญชี'), '') ? 'recon_warning' AS mv2;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE is_derived AND deleted_at IS NULL
+              AND source_entity_id = (SELECT id FROM public.expense_items WHERE description = 'ทดสอบย้ายบัญชี')),
+            'ค่าใช้จ่ายย้ายเป็น "ไม่ผ่านบัญชี" → รายการเงินออกจากบัญชีหายไป');
+SELECT public.change_entry_account('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบย้ายบัญชี'),
+  'c:' || (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) IS NOT NULL AS mv3;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 150,
+            'ย้ายไปจ่ายด้วยบัตร (ในช่วง Statement) → ก้อนรอแยกของบัตรปรับเอง 200 → 150');
+SELECT public.change_entry_account('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบย้ายบัญชี'),
+  'a:' || t.a('บัญชีทดสอบก้อน 2')) IS NOT NULL AS mv4;
+SELECT t.ok((SELECT from_asset_id FROM public.cash_movements WHERE is_derived AND deleted_at IS NULL
+              AND source_entity_id = (SELECT id FROM public.expense_items WHERE description = 'ทดสอบย้ายบัญชี')) = t.a('บัญชีทดสอบก้อน 2')
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 200,
+            'ย้ายกลับเข้าบัญชี → มีรายการเงินออกอีกครั้ง · ก้อนบัตรกลับเป็น 200');
+INSERT INTO public.income_transactions(family_id, person_id, date, income_type, amount, currency, notes)
+  SELECT id, t.p('คุณพ่อ'), '2026-09-14', 'OTHER', 700, 'THB', 'ทดสอบย้ายรายได้' FROM public.families;
+SELECT public.change_entry_account('INCOME', (SELECT id FROM public.income_transactions WHERE notes = 'ทดสอบย้ายรายได้'),
+  'a:' || t.a('บัญชีทดสอบก้อน 2'), 'INTEREST') IS NOT NULL AS mv5;
+SELECT t.ok((SELECT income_type FROM public.income_transactions WHERE notes = 'ทดสอบย้ายรายได้') = 'INTEREST'
+            AND (SELECT to_asset_id FROM public.cash_movements WHERE is_derived AND deleted_at IS NULL
+              AND source_entity_id = (SELECT id FROM public.income_transactions WHERE notes = 'ทดสอบย้ายรายได้')) = t.a('บัญชีทดสอบก้อน 2'),
+            'รายได้: เปลี่ยนประเภท + ย้ายเข้าบัญชี → มีรายการเงินเข้าบัญชี');
+SELECT t.fails($$SELECT public.change_entry_account('INCOME', (SELECT id FROM public.income_transactions WHERE notes = 'ทดสอบย้ายรายได้'), '', 'DIVIDEND')$$,
+  'ปันผล', 'เปลี่ยนเป็นปันผล / ค่าเช่า จากหน้านี้ไม่ได้');
+SELECT t.fails($$SELECT public.change_entry_account('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL LIMIT 1), '')$$,
+  'LINKED', 'ก้อนรอแยกย้ายบัญชีไม่ได้');
+SELECT t.fails($$SELECT public.change_entry_account('INCOME', (SELECT id FROM public.income_transactions WHERE lease_id IS NOT NULL AND deleted_at IS NULL LIMIT 1), '')$$,
+  'LINKED', 'รายได้ค่าเช่า (ผูกสัญญาเช่า) ย้ายบัญชีจากหน้านี้ไม่ได้');
+SELECT t.fails($$SELECT public.change_entry_account('EXPENSE', (SELECT id FROM public.expense_items WHERE date < '2026-08-01' AND deleted_at IS NULL
+  AND source_cash_movement_id IS NULL AND liability_id IS NULL AND property_utility_id IS NULL AND insurance_schedule_line_id IS NULL
+  AND source_fee_side IS NULL AND NOT pending_split LIMIT 1), '')$$, 'PERIOD_LOCKED', 'งวดที่ปิดแล้วย้ายบัญชีไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

@@ -47,3 +47,27 @@ export function useActionSlot(initial = false) {
     bar && bar.panel ? <>{trigger}{createPortal(form, bar.panel)}</> : <>{form}</>;
   return { open, setOpen, present, activeCls, inBar };
 }
+
+/**
+ * แถวตารางที่มีปุ่มคำสั่งในช่องท้าย · กดปุ่ม → ฟอร์มกางเป็นแถวใหม่ "ใต้แถวนี้" (เต็มความกว้างตาราง)
+ *   ใช้กับฟอร์มที่เปิดด้วย useActionSlot (เช่น บันทึกรับ / บันทึกจ่าย)
+ */
+export function ActionRow({ cells, actions, colSpan, className = "" }: {
+  cells: ReactNode; actions?: ReactNode; colSpan: number; className?: string;
+}) {
+  const [active, setActive] = useState<string | null>(null);
+  const [panel, setPanel] = useState<HTMLTableCellElement | null>(null);
+  return (
+    <BarCtx.Provider value={{ active, setActive, panel }}>
+      <tr className={`align-top ${active ? "bg-blue-50/60" : ""} ${className}`}>
+        {cells}
+        <td className="py-2 pl-2 text-right">
+          {actions && <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 whitespace-nowrap">{actions}</div>}
+        </td>
+      </tr>
+      <tr hidden={!active}>
+        <td ref={setPanel} colSpan={colSpan} className="bg-slate-50 px-3 py-3" />
+      </tr>
+    </BarCtx.Provider>
+  );
+}

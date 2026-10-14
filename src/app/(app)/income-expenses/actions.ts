@@ -202,3 +202,16 @@ export async function splitPending(_: ActionState, form: FormData): Promise<Acti
   const left = Number(data ?? 0);
   return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${left.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "แยกครบแล้ว", ["/liabilities"]);
 }
+
+/** แก้บัญชีที่รับ / จ่าย (+ ประเภทรายได้) ของรายการที่บันทึกเอง · ยอดบัญชี / บัตร / ก้อนรอแยก ปรับตามในฐานข้อมูล */
+export async function changeAccount(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("change_entry_account", {
+    p_kind: String(form.get("kind")), p_id: String(form.get("id")), p_account: String(form.get("account") ?? ""),
+    p_income_type: str(form.get("income_type")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
+  return done(warn ? "บันทึกแล้ว · บัญชีนี้กระทบยอดเดือนนี้ไปแล้ว ให้ตรวจที่หน้ากระทบยอด (Month Closing) อีกครั้ง" : "บันทึกแล้ว",
+    ["/liabilities", "/month-closing", "/"]);
+}
