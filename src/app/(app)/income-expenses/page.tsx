@@ -8,10 +8,11 @@ import {
 } from "@/lib/format";
 import { RecordCostForm, UtilityForm, type PropertyPick } from "../property/[id]/forms";
 import {
-  AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
+  AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { TabNav, TabPanel, TabsProvider } from "./tabs";
+import { ActionRow } from "@/components/ActionBar";
 import CategoryBars, { type CatRow } from "./CategoryBars";
 import MonthPicker from "@/components/MonthPicker";
 import SplitForm from "./SplitForm";
@@ -68,13 +69,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,person_id,lease_id,source_transaction_id,asset_id,notes,pending_split,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
+    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
-    supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,persons(name)")
+    supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
       .is("deleted_at", null).order("name"),
     supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,notes,persons(name)")
+    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,notes,persons(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
@@ -281,83 +282,72 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
             {expectedList.length === 0 && loanDue.length === 0 && benefitDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {expectedList.map((e) => {
+              <DueTable head="รับ" rows={[
+                ...expectedList.map((e) => {
                   const tpl = (templates ?? []).find((t) => t.id === e.source_id);
-                  return (
-                    <div key={`${e.source_type}-${e.source_id}`} className="rounded-lg border border-slate-200 p-3 text-sm">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="font-medium">{e.name}</div>
-                          <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type} · ครบ {thDate(e.due_date)}</div>
-                        </div>
-                        <span className={`rounded px-1.5 py-0.5 text-xs ${EXP_STATUS[e.status]?.cls ?? ""}`}>{EXP_STATUS[e.status]?.text ?? e.status}</span>
-                      </div>
-                      <div className="mt-1 tabular-nums">
-                        คาดไว้ {money(e.expected_amount, e.currency)}
-                        {e.received_amount != null && <span className="text-emerald-700"> · ได้รับ {money(e.received_amount)}</span>}
-                        {e.pct != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {e.pct}%</div>}
-                      </div>
-                      {canWrite && (e.status === "PENDING" || e.status === "OVERDUE") && (
-                        <div className="mt-2">
-                          <ExpectedActions sourceType={e.source_type} sourceId={e.source_id} period={start} incomeType={e.income_type}
-                            personId={tpl?.person_id ?? null} expected={Number(e.expected_amount)} currency={e.currency}
-                            receiveTo={e.receive_to_asset_id} banks={banks} today={maxDate} minDate={minDate} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {loanDue.map((x) => (
-                  <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <Link href={`/financial/loans/${x.loan_asset_id}`} className="font-medium hover:underline">{x.loan_name}</Link>
-                        <div className="text-xs text-slate-500">
-                          เงินให้กู้ · {x.borrower_name} · งวดที่ {x.installment_no} · ครบ {thDate(x.due_date)}{x.due_date < start && ` (${thMonth(x.due_date)})`}
-                        </div>
-                      </div>
-                      <span className={`rounded px-1.5 py-0.5 text-xs ${LOAN_SCHED_STATUS[x.status]?.cls ?? ""}`}>{LOAN_SCHED_STATUS[x.status]?.text ?? x.status}</span>
-                    </div>
-                    <div className="mt-1 tabular-nums">
-                      <span className="text-slate-500">ตามตาราง:</span> เงินต้น {money(x.principal_due, x.currency)} · ดอกเบี้ย {money(x.interest_due)}
-                      {x.status !== "PAID" && Number(x.total_remaining) < Number(x.total_due) && <span className="text-amber-700"> · ค้าง {money(x.total_remaining)}</span>}
-                      {pv.assetPct(x.loan_asset_id) != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {pv.assetPct(x.loan_asset_id)}%</div>}
-                    </div>
-                    <div className="text-xs text-slate-400">เงินต้นที่ได้คืนไม่นับเป็นรายได้ · ดอกเบี้ยนับเป็นรายได้</div>
-                    {canWrite && x.status !== "PAID" && (
-                      <div className="mt-2">
-                        <LoanPaymentForm assetId={x.loan_asset_id} currency={x.currency} banks={banks} today={today} minDate={goLive} small button="บันทึกรับ"
-                          title={`รับชำระ ${x.loan_name} งวดที่ ${x.installment_no}`}
-                          principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
-                          interestOwed={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
-                            .reduce((s, y) => s + Number(y.interest_remaining), 0)}
-                          principalDue={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
-                            .reduce((s, y) => s + Number(y.principal_remaining), 0)} />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {benefitDue.map((x) => (
-                  <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <Link href={`/insurance/${x.policy_id}`} className="font-medium hover:underline">{insName(x)}</Link>
-                        <div className="text-xs text-slate-500">ผลประโยชน์ประกัน · {BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]} · ครบ {thDate(x.due_date)}</div>
-                      </div>
-                      <span className={`rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span>
-                    </div>
-                    <div className="mt-1 tabular-nums">คาดไว้ {money(x.amount, x.currency)}{Number(x.remaining) < Number(x.amount) && x.status !== "PAID" && <span className="text-amber-700"> · ค้าง {money(x.remaining)}</span>}</div>
-                    {x.cash_value_asset_id && <div className="text-xs text-slate-400">ถอนจากมูลค่าเวนคืนก่อน · ส่วนที่เกินนับเป็นรายได้</div>}
-                    {canWrite && x.status !== "PAID" && (
-                      <div className="mt-2">
-                        <BenefitForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks}
-                          persons={persons ?? []} hasCashValue={!!x.cash_value_asset_id} today={today} small canClose={canDelete} />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  return { due: e.due_date as string, el: (
+                    <ActionRow key={`${e.source_type}-${e.source_id}`} colSpan={6} cells={<>
+                      <td className="py-2 pr-2">
+                        <div className="font-medium">{e.name}</div>
+                        <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
+                          {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2">{thDate(e.due_date)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{money(e.expected_amount, e.currency)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{e.received_amount != null ? money(e.received_amount) : ""}</td>
+                      <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${EXP_STATUS[e.status]?.cls ?? ""}`}>{EXP_STATUS[e.status]?.text ?? e.status}</span></td>
+                    </>} actions={canWrite && (e.status === "PENDING" || e.status === "OVERDUE") ? (
+                      <ExpectedActions sourceType={e.source_type} sourceId={e.source_id} period={start} incomeType={e.income_type}
+                        personId={tpl?.person_id ?? null} expected={Number(e.expected_amount)} currency={e.currency}
+                        receiveTo={e.receive_to_asset_id} banks={banks} today={maxDate} minDate={minDate} />
+                    ) : null} />
+                  ) };
+                }),
+                ...loanDue.map((x) => ({ due: x.due_date, el: (
+                  <ActionRow key={x.id} colSpan={6} cells={<>
+                    <td className="py-2 pr-2">
+                      <Link href={`/financial/loans/${x.loan_asset_id}`} className="font-medium hover:underline">{x.loan_name}</Link>
+                      <div className="text-xs text-slate-500">เงินให้กู้ · {x.borrower_name} · งวดที่ {x.installment_no}
+                        {pv.assetPct(x.loan_asset_id) != null && ` · ส่วนของ ${pv.personName} ${pv.assetPct(x.loan_asset_id)}%`}</div>
+                      <div className="text-xs text-slate-400">เงินต้น {money(x.principal_due)} + ดอกเบี้ย {money(x.interest_due)} · เงินต้นไม่นับเป็นรายได้</div>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}{x.due_date < start && <div className="text-xs text-red-600">งวด {thMonth(x.due_date)}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(x.total_due, x.currency)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {Number(x.total_remaining) < Number(x.total_due) && <span className="text-emerald-700">{money(Number(x.total_due) - Number(x.total_remaining))}</span>}
+                      {x.status !== "PAID" && Number(x.total_remaining) < Number(x.total_due) && <div className="text-xs text-amber-700">ค้าง {money(x.total_remaining)}</div>}
+                    </td>
+                    <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${LOAN_SCHED_STATUS[x.status]?.cls ?? ""}`}>{LOAN_SCHED_STATUS[x.status]?.text ?? x.status}</span></td>
+                  </>} actions={canWrite && x.status !== "PAID" ? (
+                    <LoanPaymentForm assetId={x.loan_asset_id} currency={x.currency} banks={banks} today={today} minDate={goLive} small button="บันทึกรับ"
+                      title={`รับชำระ ${x.loan_name} งวดที่ ${x.installment_no}`}
+                      principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
+                      interestOwed={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
+                        .reduce((s, y) => s + Number(y.interest_remaining), 0)}
+                      principalDue={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
+                        .reduce((s, y) => s + Number(y.principal_remaining), 0)} />
+                  ) : null} />
+                ) })),
+                ...benefitDue.map((x) => ({ due: x.due_date, el: (
+                  <ActionRow key={x.id} colSpan={6} cells={<>
+                    <td className="py-2 pr-2">
+                      <Link href={`/insurance/${x.policy_id}`} className="font-medium hover:underline">{insName(x)}</Link>
+                      <div className="text-xs text-slate-500">ผลประโยชน์ประกัน · {BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]}</div>
+                      {x.cash_value_asset_id && <div className="text-xs text-slate-400">ถอนจากมูลค่าเวนคืนก่อน · ส่วนที่เกินนับเป็นรายได้</div>}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(x.amount, x.currency)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {Number(x.remaining) < Number(x.amount) && <span className="text-emerald-700">{money(Number(x.amount) - Number(x.remaining))}</span>}
+                      {x.status !== "PAID" && Number(x.remaining) < Number(x.amount) && <div className="text-xs text-amber-700">ค้าง {money(x.remaining)}</div>}
+                    </td>
+                    <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span></td>
+                  </>} actions={canWrite && x.status !== "PAID" ? (
+                    <BenefitForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks}
+                      persons={persons ?? []} hasCashValue={!!x.cash_value_asset_id} today={today} small canClose={canDelete} />
+                  ) : null} />
+                ) })),
+              ]} />
             )}
           </section>
 
@@ -400,7 +390,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             { name: "tax", label: "ภาษี", type: "number", value: i.full_tax },
                             { name: "person_id", label: "ของใคร", type: "select", value: i.person_id,
                               options: [["", i.asset_id ? "ตามเจ้าของทรัพย์สิน" : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง"], ...personOpts] },
-                            { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]} />
+                            { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]}
+                            extra={!i.lease_id && !i.asset_id && !i.insurance_schedule_line_id && !i.received_to_credit_card_id
+                              ? <AccountEditor kind="INCOME" id={i.id} current={i.received_to_asset_id ? `a:${i.received_to_asset_id}` : ""}
+                                  incomeType={i.income_type} currency={i.currency} banks={banks} /> : undefined} />
                         )}
                       </td>
                     </tr>
@@ -413,23 +406,40 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
             {templateList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
-              <ul className="space-y-1 text-sm">
-                {templateList.map((t) => (
-                  <li key={t.id} className={t.active ? "" : "opacity-50"}>
-                    {t.name} · {pname(t.persons) ?? "ส่วนกลาง"} · {money(t.expected_amount, t.currency)}
-                    {" "}{t.frequency === "MONTHLY" ? "ทุกเดือน" : t.frequency === "QUARTERLY" ? "ทุก 3 เดือน" : "ทุกปี"}
-                    {t.due_day && ` วันที่ ${t.due_day}`}
-                    {canWrite && <span className="ml-2"><TemplateToggle id={t.id} active={t.active} /></span>}
-                    {canWrite && <span className="ml-2"><RowActions table="recurring_income_templates" id={t.id} paths={PATHS} canDelete={canDelete}
-                      deleteNote="รายได้ที่บันทึกรับไปแล้วยังอยู่" fields={[
-                        { name: "name", label: "ชื่อ", value: t.name, width: "w-44" },
-                        { name: "expected_amount", label: "ยอดปกติ", type: "number", value: t.expected_amount },
-                        { name: "due_day", label: "วันที่", type: "number", value: t.due_day, width: "w-16" },
-                        { name: "end_date", label: "สิ้นสุด", type: "date", value: null }]} /></span>}
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[40rem] text-sm">
+                  <thead className="text-left text-xs text-slate-500">
+                    <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">ชื่อ</th><th className="px-2">ของใคร</th><th className="px-2">ประเภท</th>
+                      <th className="px-2 text-right">ยอดปกติ</th><th className="px-2">รับเมื่อ</th><th className="px-2">เข้าบัญชี</th><th className="px-2">สถานะ</th><th></th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {templateList.map((t) => (
+                      <tr key={t.id} className={`align-top ${t.active ? "" : "text-slate-400"}`}>
+                        <td className="py-2 pr-2 font-medium">{t.name}
+                          {t.end_date && <div className="text-xs font-normal text-slate-500">ถึง {thDate(t.end_date)}</div>}</td>
+                        <td className="px-2 py-2">{pname(t.persons) ?? "ส่วนกลาง"}</td>
+                        <td className="px-2 py-2">{INCOME_TYPE_LABEL[t.income_type] ?? t.income_type}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(t.expected_amount, t.currency)}</td>
+                        <td className="whitespace-nowrap px-2 py-2">{t.frequency === "MONTHLY" ? "ทุกเดือน" : t.frequency === "QUARTERLY" ? "ทุก 3 เดือน" : "ทุกปี"}
+                          {t.due_day && ` วันที่ ${t.due_day}`}</td>
+                        <td className="px-2 py-2 text-xs text-slate-600">{t.receive_to_asset_id ? name.get(t.receive_to_asset_id) ?? "บัญชี" : "-"}</td>
+                        <td className="px-2 py-2 text-xs">{t.active ? <span className="text-emerald-700">ใช้งาน</span> : "หยุดใช้"}
+                          {canWrite && <div><TemplateToggle id={t.id} active={t.active} /></div>}</td>
+                        <td className="pl-2 py-2 text-right">
+                          {canWrite && <RowActions table="recurring_income_templates" id={t.id} paths={PATHS} canDelete={canDelete}
+                            deleteNote="รายได้ที่บันทึกรับไปแล้วยังอยู่" fields={[
+                              { name: "name", label: "ชื่อ", value: t.name, width: "w-44" },
+                              { name: "expected_amount", label: "ยอดปกติ", type: "number", value: t.expected_amount },
+                              { name: "due_day", label: "วันที่", type: "number", value: t.due_day, width: "w-16" },
+                              { name: "end_date", label: "สิ้นสุด", type: "date", value: t.end_date }]} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
+            {canWrite && templateList.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ</p>}
             {canWrite && <TemplateForm banks={banks} persons={persons ?? []} today={today} />}
           </section>
       </TabPanel>
@@ -443,59 +453,55 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) และตารางเบี้ยประกัน · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
             {costs.length === 0 && premiumDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {costs.map((c) => (
-                  <div key={`${c.utility_id}-${c.cost_period}`} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="font-medium">{utilName(c.utility_type, c.provider)}</div>
-                        <div className="text-xs text-slate-500">
-                          <Link href={`/property/${c.property_asset_id}`} className="hover:underline">{c.property_name}</Link>
-                          {" · "}ครบ {thDate(c.due_date)}{c.cost_period < start && ` · งวด ${thMonth(c.cost_period)}`}
-                        </div>
+              <DueTable head="จ่าย" rows={[
+                ...costs.map((c) => ({ due: c.due_date, el: (
+                  <ActionRow key={`${c.utility_id}-${c.cost_period}`} colSpan={6} cells={<>
+                    <td className="py-2 pr-2">
+                      <div className="font-medium">{utilName(c.utility_type, c.provider)}</div>
+                      <div className="text-xs text-slate-500">
+                        <Link href={`/property/${c.property_asset_id}`} className="hover:underline">{c.property_name}</Link>
+                        {c.cost_period < start && ` · งวด ${thMonth(c.cost_period)}`}
+                        {pv.assetPct(c.property_asset_id) != null && ` · ส่วนของ ${pv.personName} ${pv.assetPct(c.property_asset_id)}%`}
                       </div>
-                      <span className={`rounded px-1.5 py-0.5 text-xs ${c.status === "PAID" ? "bg-emerald-50" : c.status === "OVERDUE" ? "bg-red-50" : "bg-slate-100"} ${COST_STATUS[c.status]?.cls ?? ""}`}>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">{thDate(c.due_date)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(c.expected_amount, c.currency)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{Number(c.paid_amount) > 0 ? money(c.paid_amount) : ""}</td>
+                    <td className="px-2 py-2">
+                      <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${c.status === "PAID" ? "bg-emerald-50" : c.status === "OVERDUE" ? "bg-red-50" : "bg-slate-100"} ${COST_STATUS[c.status]?.cls ?? ""}`}>
                         {COST_STATUS[c.status]?.text ?? c.status}
                       </span>
-                    </div>
-                    <div className="mt-1 tabular-nums">
-                      คาดไว้ {money(c.expected_amount, c.currency)}
-                      {Number(c.paid_amount) > 0 && <span className="text-emerald-700"> · จ่ายจริง {money(c.paid_amount)}</span>}
-                      {pv.assetPct(c.property_asset_id) != null && <div className="text-xs text-slate-500">ส่วนของ {pv.personName} {pv.assetPct(c.property_asset_id)}%</div>}
-                    </div>
-                    {canWrite && c.status !== "PAID" && (
-                      <div className="mt-2">
-                        <RecordCostForm assetId={c.property_asset_id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
-                          label={`${utilName(c.utility_type, c.provider)} · ${c.property_name} (${thMonth(c.cost_period)})`}
-                          category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
-                          banks={banks} cards={cards} persons={persons ?? []} today={today} />
+                    </td>
+                  </>} actions={canWrite && c.status !== "PAID" ? (
+                    <RecordCostForm assetId={c.property_asset_id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
+                      label={`${utilName(c.utility_type, c.provider)} · ${c.property_name} (${thMonth(c.cost_period)})`}
+                      category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
+                      banks={banks} cards={cards} persons={persons ?? []} today={today} />
+                  ) : null} />
+                ) })),
+                ...premiumDue.map((x) => ({ due: x.due_date, el: (
+                  <ActionRow key={x.id} colSpan={6} cells={<>
+                    <td className="py-2 pr-2">
+                      <div className="font-medium">เบี้ยประกัน งวดที่ {x.installment_no}</div>
+                      <div className="text-xs text-slate-500">
+                        <Link href={`/insurance/${x.policy_id}`} className="hover:underline">{insName(x)}</Link>
+                        {x.payer_person_id && ` · ผู้จ่าย ${persons?.find((p) => p.id === x.payer_person_id)?.name ?? ""}`}
                       </div>
-                    )}
-                  </div>
-                ))}
-                {premiumDue.map((x) => (
-                  <div key={x.id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="font-medium">เบี้ยประกัน งวดที่ {x.installment_no}</div>
-                        <div className="text-xs text-slate-500">
-                          <Link href={`/insurance/${x.policy_id}`} className="hover:underline">{insName(x)}</Link>
-                          {" · "}ครบ {thDate(x.due_date)}{x.payer_person_id && ` · ผู้จ่าย ${persons?.find((p) => p.id === x.payer_person_id)?.name ?? ""}`}
-                        </div>
-                      </div>
-                      <span className={`rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span>
-                    </div>
-                    <div className="mt-1 tabular-nums">คาดไว้ {money(x.amount, x.currency)}{Number(x.remaining) < Number(x.amount) && x.status !== "PAID" && <span className="text-amber-700"> · ค้าง {money(x.remaining)}</span>}</div>
-                    {canWrite && x.status !== "PAID" && (
-                      <div className="mt-2">
-                        <PayPremiumForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency}
-                          label={`เบี้ยประกัน ${insName(x)} งวดที่ ${x.installment_no}`} banks={banks} cards={cards} persons={persons ?? []}
-                          defaultPerson={x.payer_person_id} today={today} />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(x.amount, x.currency)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {Number(x.remaining) < Number(x.amount) && <span className="text-emerald-700">{money(Number(x.amount) - Number(x.remaining))}</span>}
+                      {x.status !== "PAID" && Number(x.remaining) < Number(x.amount) && <div className="text-xs text-amber-700">ค้าง {money(x.remaining)}</div>}
+                    </td>
+                    <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span></td>
+                  </>} actions={canWrite && x.status !== "PAID" ? (
+                    <PayPremiumForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency}
+                      label={`เบี้ยประกัน ${insName(x)} งวดที่ ${x.installment_no}`} banks={banks} cards={cards} persons={persons ?? []}
+                      defaultPerson={x.payer_person_id} today={today} />
+                  ) : null} />
+                ) })),
+              ]} />
             )}
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -564,7 +570,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                               { name: "expense_category", label: "หมวด", value: i.expense_category },
                               { name: "person_id", label: "ของใคร", type: "select" as const, value: i.person_id,
                                 options: [["", i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : i.paid_from_asset_id ? "ตามเจ้าของบัญชี" : "ส่วนกลาง"] as [string, string], ...personOpts] },
-                              ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]} />
+                              ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]}
+                              extra={!i.liability_id && !i.insurance_schedule_line_id && !i.property_utility_id && !i.source_fee_side
+                                ? <AccountEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards}
+                                    current={i.paid_from_asset_id ? `a:${i.paid_from_asset_id}` : i.paid_from_credit_card_id ? `c:${i.paid_from_credit_card_id}` : ""} />
+                                : undefined} />
                           )}
                         </td>
                       </tr>
@@ -584,16 +594,34 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               ))}
             </div>
             {utils.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
-              <ul className="space-y-1 text-sm">
-                {utils.map((u) => (
-                  <li key={u.id}>
-                    <Link href={`/property/${u.property_details.asset_id}`} className="hover:underline">{u.property_details.assets.name}</Link>
-                    {" · "}{utilName(u.utility_type, u.provider)} · {money(u.expected_amount, u.currency)} · {scheduleText(u.frequency, u.due_day, u.due_month)}
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[36rem] text-sm">
+                  <thead className="text-left text-xs text-slate-500">
+                    <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">ทรัพย์สิน</th><th className="px-2">รายการ</th>
+                      <th className="px-2 text-right">ยอดปกติ</th><th className="px-2">จ่ายเมื่อ</th><th className="px-2 text-right">ต่อปี (ประมาณ)</th><th></th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {utils.map((u) => (
+                      <tr key={u.id} className="align-top">
+                        <td className="py-2 pr-2"><Link href={`/property/${u.property_details.asset_id}`} className="hover:underline">{u.property_details.assets.name}</Link></td>
+                        <td className="px-2 py-2">{utilName(u.utility_type, u.provider)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(u.expected_amount, u.currency)}</td>
+                        <td className="px-2 py-2">{scheduleText(u.frequency, u.due_day, u.due_month)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-slate-500">{money(Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0), undefined, 0)}</td>
+                        <td className="pl-2 py-2 text-right">
+                          {canWrite && <RowActions table="property_utilities" id={u.id} paths={[...PATHS, `/property/${u.property_details.asset_id}`]} canDelete={canDelete}
+                            deleteNote="ค่าใช้จ่ายที่บันทึกจ่ายไปแล้วยังอยู่" fields={[
+                              { name: "provider", label: "ผู้ให้บริการ / รายละเอียด", value: u.provider, width: "w-40" },
+                              { name: "expected_amount", label: "ยอดปกติ", type: "number", value: u.expected_amount },
+                              { name: "due_day", label: "วันที่", type: "number", value: u.due_day, width: "w-16" }]} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-            <p className="text-xs text-slate-500">แก้ไข / ลบ ได้ที่หน้าทรัพย์สินแต่ละรายการ (กดชื่อทรัพย์สิน)</p>
+            <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ตั้งค่าเพิ่มเติม (ความถี่ เลขผู้ใช้ไฟ / มิเตอร์) ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน)</p>
             {canWrite && properties.length > 0 && <UtilityForm properties={properties} label="+ ค่าใช้จ่ายประจำ" tracked />}
           </section>
       </TabPanel>
@@ -710,6 +738,23 @@ function MovesTable({ moves, name, actions = false, canDelete = false }: { moves
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** ตารางรายการที่ต้องรับ / จ่ายในเดือน · เรียงตามวันครบกำหนด · กดปุ่มในแถว → ฟอร์มกางใต้แถว */
+function DueTable({ head, rows }: { head: string; rows: { due: string; el: React.ReactNode }[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[40rem] text-sm">
+        <thead className="text-left text-xs text-slate-500">
+          <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">รายการ</th><th className="px-2">ครบกำหนด</th><th className="px-2 text-right">คาดไว้</th>
+            <th className="px-2 text-right">{head === "รับ" ? "ได้รับแล้ว" : "จ่ายแล้ว"}</th><th className="px-2">สถานะ</th><th></th></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {[...rows].sort((a, b) => a.due.localeCompare(b.due)).map((r) => r.el)}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
