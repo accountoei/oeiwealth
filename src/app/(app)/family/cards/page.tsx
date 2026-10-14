@@ -7,6 +7,8 @@ import DeleteEntity from "@/components/DeleteEntity";
 import { MembershipForm, PointsForm } from "./member-forms";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
+import { orderHrefs } from "@/lib/sort";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null; card_last4: string | null;
   credit_limit: number | null; currency: string; statement_day: number | null; due_day: number | null;
@@ -15,18 +17,23 @@ type Card = { id: string; person_id: string; issuer: string; card_name: string |
 
 const STATUS_CLS: Record<string, string> = { ACTIVE: "", SUSPENDED: "opacity-70", CLOSED: "opacity-50" };
 
-export default async function CardsPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function CardsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder ? sp.order ?? "" : "";      // "cards" | "members" | "points"
+  const oh = (key: string) => orderHrefs("/family/cards", { p: sp.p }, key);
+  const cpaths = ["/family/cards", "/liabilities"];
   const [pv, { data, error }, { data: persons }, { data: family }, { data: paidAfter }, { data: members }, { data: points }, { data: banksRaw }] = await Promise.all([
-    searchParams.then((sp) => loadPersonView(sp.p)),
-    supabase.from("credit_cards").select("*, persons(name)").is("deleted_at", null).order("status").order("issuer"),
+    loadPersonView(sp.p),
+    supabase.from("credit_cards").select("*, persons(name)").is("deleted_at", null).order("sort_order").order("issuer"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_liabilities_all").select("source_id").eq("liability_source", "CREDIT_CARD")
       .eq("derived_status", "PAID_AFTER_BALANCE_DATE"),
-    supabase.from("memberships").select("*").is("deleted_at", null).order("status").order("program_name"),
-    supabase.from("points_accounts").select("*").is("deleted_at", null).order("program_name"),
+    supabase.from("memberships").select("*").is("deleted_at", null).order("sort_order").order("program_name"),
+    supabase.from("points_accounts").select("*").is("deleted_at", null).order("sort_order").order("program_name"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
   ]);
   const banks = (banksRaw ?? []) as { asset_id: string; name: string; currency: string }[];
@@ -79,16 +86,21 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">บัตรเครดิต</h2>
+          {canOrder && cards.length > 1 && <SortToggle active={ordering === "cards"} {...oh("cards")} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">บัตร</th><th className="px-4">ผู้ถือ</th><th className="px-4 text-right">ยอดค้าง</th>
               <th className="px-4">วงเงิน / รอบบิล</th><th className="px-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {cards.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีบัตรเครดิตของ ${pv.personName}` : "ยังไม่มีบัตรเครดิต"}</td></tr>}
-            {cards.map((c) => (
+            {cards.map((c, i) => (
               <tr key={c.id} className={`align-top ${STATUS_CLS[c.status] ?? ""}`}>
                 <td className="px-4 py-3">
+                  {ordering === "cards" && <div className="mb-1"><MoveButtons table="credit_cards" id={c.id} paths={cpaths} {...neighbors(cards, i, (x) => x.id)} /></div>}
                   <div className="font-medium text-slate-900">{c.issuer} {c.card_name}</div>
                   <div className="text-xs text-slate-500">
                     {c.card_last4 ? `•••• ${c.card_last4}` : "ไม่ระบุเลขท้าย"} · {c.currency}
@@ -148,15 +160,18 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       </p>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ</h2>
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ</h2>
+          {canOrder && memberRows.length > 1 && <SortToggle active={ordering === "members"} {...oh("members")} />}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4">ระดับ / สิทธิ</th><th className="px-4">หมดอายุ</th><th></th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {memberRows.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
-              {memberRows.map((m) => (
+              {memberRows.map((m, i) => (
                 <tr key={m.id} className={`align-top ${m.status !== "ACTIVE" ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-2.5"><div className="font-medium">{m.program_name}</div>{m.member_id && <div className="text-xs text-slate-500">เลขสมาชิก {m.member_id}</div>}</td>
+                  <td className="px-4 py-2.5">{ordering === "members" && <div className="mb-1"><MoveButtons table="memberships" id={m.id} paths={["/family/cards"]} {...neighbors(memberRows, i, (x) => x.id)} /></div>}<div className="font-medium">{m.program_name}</div>{m.member_id && <div className="text-xs text-slate-500">เลขสมาชิก {m.member_id}</div>}</td>
                   <td className="px-4">{pmap.get(m.person_id) ?? "-"}</td>
                   <td className="px-4 text-xs">{m.tier}{m.benefits && <div className="text-slate-500">{m.benefits}</div>}</td>
                   <td className={`px-4 ${m.expiry_date && m.expiry_date < today ? "text-red-600" : ""}`}>{thDate(m.expiry_date)}</td>
@@ -174,15 +189,18 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">แต้มสะสม / ไมล์</h2>
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-lg font-semibold text-slate-900">แต้มสะสม / ไมล์</h2>
+          {canOrder && pointRows.length > 1 && <SortToggle active={ordering === "points"} {...oh("points")} />}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4 text-right">คงเหลือ</th><th className="px-4">แต้มหมดอายุ</th><th></th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {pointRows.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
-              {pointRows.map((pt) => (
+              {pointRows.map((pt, i) => (
                 <tr key={pt.id} className="align-top">
-                  <td className="px-4 py-2.5 font-medium">{pt.program_name}</td>
+                  <td className="px-4 py-2.5 font-medium">{ordering === "points" && <div className="mb-1"><MoveButtons table="points_accounts" id={pt.id} paths={["/family/cards"]} {...neighbors(pointRows, i, (x) => x.id)} /></div>}{pt.program_name}</td>
                   <td className="px-4">{pmap.get(pt.person_id) ?? "-"}</td>
                   <td className="px-4 text-right"><div className="tabular-nums">{Number(pt.balance).toLocaleString("th-TH")}</div><div className="text-xs text-slate-500">ณ {thDate(pt.balance_date)}</div></td>
                   <td className={`px-4 ${pt.expiry_date && pt.expiry_date <= today ? "text-red-600" : ""}`}>{thDate(pt.expiry_date)}</td>

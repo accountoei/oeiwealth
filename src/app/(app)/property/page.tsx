@@ -4,6 +4,8 @@ import { requireAppUser } from "@/lib/auth";
 import { LEASE_STATUS, PROPERTY_TYPE_LABEL, USAGE_LABEL, addDays, landText, money, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; location_group: string | null;
   land_area_sq_wa: number | null;
@@ -12,10 +14,15 @@ type Lease = { id: string; property_asset_id: string; tenant_name: string; unit_
   rent_currency: string; end_date: string; lease_status: string; deposit_status: string };
 
 
-export default async function PropertyPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function PropertyPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView((await searchParams).p);
+  const pv = await loadPersonView(sp.p);
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const paths = ["/property"];
+  const sortMap = await loadSortMap("assets");
   const [{ data, error }, { data: leases }] = await Promise.all([
     supabase.from("property_details")
       .select("id,asset_id,property_type,usage_type,location_group,land_area_sq_wa,assets!inner(name,currency,current_value,current_value_date,status,deleted_at)")
@@ -23,7 +30,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Pro
     supabase.from("v_lease_status").select("id,property_asset_id,tenant_name,unit_label,rent_amount,rent_currency,end_date,lease_status,deposit_status")
       .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]),
   ]);
-  const props = ((data as unknown as Prop[] | null) ?? []).filter((p) => pv.showAsset(p.asset_id));
+  const props = bySort(((data as unknown as Prop[] | null) ?? []).filter((p) => pv.showAsset(p.asset_id)), (p) => p.asset_id, sortMap);
   const byProp = new Map<string, Lease[]>();
   ((leases as Lease[] | null) ?? []).forEach((l) => byProp.set(l.property_asset_id, [...(byProp.get(l.property_asset_id) ?? []), l]));
   const old = addDays(todayBangkok(), -90);
@@ -57,19 +64,24 @@ export default async function PropertyPage({ searchParams }: { searchParams: Pro
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">ทรัพย์สินทั้งหมด</h2>
+          {canOrder && props.length > 1 && <SortToggle active={ordering} {...orderHrefs("/property", { p: sp.p })} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">ทรัพย์สิน</th><th className="px-4">การใช้งาน</th><th className="px-4 text-right">มูลค่าล่าสุด</th>
               <th className="px-4">สัญญาเช่า</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {props.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีทรัพย์สินของ ${pv.personName}` : "ยังไม่มีทรัพย์สิน"}</td></tr>}
-            {props.map((p) => {
+            {props.map((p, i) => {
               const ls = byProp.get(p.asset_id) ?? [];
               const stale = !p.assets.current_value_date || p.assets.current_value_date < old;
               return (
                 <tr key={p.id} className={`align-top hover:bg-slate-50 ${p.assets.status !== "ACTIVE" ? "opacity-50" : ""}`}>
                   <td className="px-4 py-3">
+                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={p.asset_id} paths={paths} {...neighbors(props, i, (p) => p.asset_id)} /></span>}
                     <Link href={`/property/${p.asset_id}`} className="font-medium text-slate-900 hover:underline">{p.assets.name}</Link>
                     <div className="text-xs text-slate-500">
                       {PROPERTY_TYPE_LABEL[p.property_type] ?? p.property_type}

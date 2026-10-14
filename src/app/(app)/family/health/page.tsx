@@ -5,13 +5,18 @@ import RowActions from "@/components/RowActions";
 import CheckupForm from "./CheckupForm";
 import PersonPicker from "./PersonPicker";
 import { METRIC_LABEL } from "./metrics";
+import { SortToggle } from "@/components/SortControls";
+import { moveHealthMetric } from "@/lib/sort-actions";
+import { orderHrefs } from "@/lib/sort";
 
-type Res = { id: string; checkup_id: string; metric: string; value_numeric: number | null; value_text: string | null; unit: string | null;
+const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
+
+type Res = { id: string; checkup_id: string; metric: string; sort_order: number | null; value_numeric: number | null; value_text: string | null; unit: string | null;
   reference_min: number | null; reference_max: number | null; reference_text: string | null; abnormal_flag: string | null; notes: string | null };
 const FLAG: Record<string, { text: string; cls: string }> = { H: { text: "สูง", cls: "text-red-700" }, L: { text: "ต่ำ", cls: "text-sky-700" }, ABNORMAL: { text: "ผิดปกติ", cls: "text-red-700" } };
 const fmt = (r: Res) => (r.value_numeric != null ? Number(r.value_numeric).toLocaleString("th-TH", { maximumFractionDigits: 2 }) : r.value_text ?? "-");
 
-export default async function HealthPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function HealthPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -20,6 +25,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const pid = list.some((p) => p.id === sp.p) ? (sp.p as string) : me.person_id && list.some((p) => p.id === me.person_id) ? me.person_id : list[0]?.id;
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canDelete && sp.order === "1";
   if (!pid) return <p className="text-sm text-slate-500">ยังไม่มีสมาชิกครอบครัว</p>;
 
   const { data: checkups } = await supabase.from("health_checkups").select("*").eq("person_id", pid).is("deleted_at", null).order("checkup_date", { ascending: false });
@@ -27,7 +33,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const { data: resultsRaw } = ids.length
     ? await supabase.from("health_results").select("*").in("checkup_id", ids).is("deleted_at", null)
     : { data: [] as Res[] };
-  const results = (resultsRaw as Res[] | null) ?? [];
+  // ลำดับรายการผลตรวจ (ตั้งได้ต่อสมาชิก) — ใช้ทั้งตารางผลย้อนหลังและผลแต่ละครั้ง
+  const results = ((resultsRaw as Res[] | null) ?? []).sort((a, b) => (a.sort_order ?? 1e9) - (b.sort_order ?? 1e9));
   const recent = (checkups ?? []).slice(0, 6);
   const metrics = [...new Set(results.map((r) => r.metric))];
   const cellOf = (m: string, c: string) => results.find((r) => r.metric === m && r.checkup_id === c);
@@ -47,15 +54,30 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
 
       {metrics.length > 0 && (
         <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">ผลย้อนหลัง</h2>
+          <div className="mb-3 flex items-baseline gap-3">
+            <h2 className="font-medium text-slate-900">ผลย้อนหลัง</h2>
+            {canDelete && metrics.length > 1 && <SortToggle active={ordering} {...orderHrefs("/family/health", { p: pid })} />}
+          </div>
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr><th className="py-1">รายการ</th>{recent.map((c) => <th key={c.id} className="px-2 text-right">{thDate(c.checkup_date)}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {metrics.map((m) => (
+              {metrics.map((m, i) => (
                 <tr key={m}>
-                  <td className="py-1.5">{METRIC_LABEL[m] ?? m}</td>
+                  <td className="py-1.5">
+                    {ordering && (
+                      <span className="mr-2 inline-flex gap-1 align-middle">
+                        {[[metrics[i - 1], "↑", "เลื่อนขึ้น"], [metrics[i + 1], "↓", "เลื่อนลง"]].map(([other, label, aria]) => (
+                          <form key={label} action={moveHealthMetric}>
+                            <input type="hidden" name="person_id" value={pid} /><input type="hidden" name="metric" value={m} />
+                            <input type="hidden" name="other" value={other ?? ""} /><input type="hidden" name="paths" value="/family/health" />
+                            <button className={arrow} disabled={!other} aria-label={aria}>{label}</button>
+                          </form>
+                        ))}
+                      </span>
+                    )}
+                    {METRIC_LABEL[m] ?? m}</td>
                   {recent.map((c) => {
                     const r = cellOf(m, c.id);
                     return <td key={c.id} className={`px-2 text-right tabular-nums ${r?.abnormal_flag ? FLAG[r.abnormal_flag]?.cls : ""}`}>{r ? fmt(r) : ""}{r?.abnormal_flag && " ●"}</td>;

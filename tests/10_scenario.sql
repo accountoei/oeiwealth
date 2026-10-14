@@ -1095,6 +1095,30 @@ SELECT t.ok((SELECT outstanding_balance = greatest(:card_before - 3000, 0) AND b
             'ยืนยันตัดบัญชีอัตโนมัติ → บันทึกจ่ายบัตร + หักยอดบัตร');
 RESET ROLE;
 
+\echo '== 13p. จัดลำดับรายการ (swap_sort_order · move_health_metric)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT (SELECT sort_order FROM public.assets WHERE id = t.a('KBank ออมทรัพย์')) AS so_k, (SELECT sort_order FROM public.assets WHERE id = t.a('BBL USD')) AS so_b \gset
+SELECT t.ok(:so_k IS NOT NULL AND :so_b IS NOT NULL AND :so_k <> :so_b, 'บัญชีทุกบัญชีมีลำดับ (ไม่ซ้ำ)');
+SELECT public.swap_sort_order('assets', t.a('KBank ออมทรัพย์'), t.a('BBL USD'));
+SELECT t.ok((SELECT sort_order FROM public.assets WHERE id = t.a('KBank ออมทรัพย์')) = :so_b
+            AND (SELECT sort_order FROM public.assets WHERE id = t.a('BBL USD')) = :so_k, 'สลับลำดับบัญชีสองบัญชีได้');
+SELECT t.fails($$SELECT public.swap_sort_order('assets', t.a('KBank ออมทรัพย์'), t.a('บริษัทหุ้นทดสอบ'))$$, 'คนละกลุ่ม', 'สลับข้ามหน้า (บัญชี ↔ ธุรกิจ) ไม่ได้');
+SELECT t.fails($$SELECT public.swap_sort_order('persons', t.a('KBank ออมทรัพย์'), t.a('BBL USD'))$$, 'ประเภทนี้ไม่ได้', 'ตารางที่ไม่อยู่ในรายการจัดลำดับไม่ได้');
+INSERT INTO public.memberships(person_id, program_name) VALUES (t.p('คุณพ่อ'), 'สมาชิก A'), (t.p('คุณพ่อ'), 'สมาชิก B');
+SELECT t.ok((SELECT sort_order FROM public.memberships WHERE program_name = 'สมาชิก B') > (SELECT sort_order FROM public.memberships WHERE program_name = 'สมาชิก A'),
+            'รายการใหม่ต่อท้าย');
+SELECT public.swap_sort_order('memberships', (SELECT id FROM public.memberships WHERE program_name = 'สมาชิก A'), (SELECT id FROM public.memberships WHERE program_name = 'สมาชิก B'));
+SELECT t.ok((SELECT sort_order FROM public.memberships WHERE program_name = 'สมาชิก B') < (SELECT sort_order FROM public.memberships WHERE program_name = 'สมาชิก A'),
+            'สลับลำดับสมาชิกภาพได้');
+SELECT public.add_health_checkup(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'checkup_date', current_date,
+  'results', jsonb_build_array(jsonb_build_object('metric','FBS','value_numeric',90), jsonb_build_object('metric','LDL','value_numeric',120)))) IS NOT NULL AS hc;
+SELECT public.move_health_metric(t.p('คุณพ่อ'), 'LDL', 'FBS');
+SELECT t.ok((SELECT sort_order FROM public.health_results WHERE metric = 'LDL' AND deleted_at IS NULL LIMIT 1)
+            < (SELECT sort_order FROM public.health_results WHERE metric = 'FBS' AND deleted_at IS NULL LIMIT 1), 'จัดลำดับรายการผลตรวจได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.swap_sort_order('assets', t.a('KBank ออมทรัพย์'), t.a('BBL USD'))$$, 'PERMISSION', 'VIEWER จัดลำดับไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

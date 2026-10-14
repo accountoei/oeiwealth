@@ -4,6 +4,8 @@ import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 type Row = {
   asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
@@ -12,20 +14,25 @@ type Row = {
 type Bal = { asset_id: string; confirmed_balance: number | null; confirmed_date: string | null;
   calculated_balance: number | null; balance_label: string };
 
-export default async function CashPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function CashPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView((await searchParams).p);
-  const [{ data: accounts, error }, { data: balances }, { data: owners }] = await Promise.all([
+  const pv = await loadPersonView(sp.p);
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const paths = ["/financial/cash"];
+  const [{ data: accounts, error }, { data: balances }, { data: owners }, sortMap] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status").order("name"),
     supabase.from("v_bank_balance_current").select("asset_id,confirmed_balance,confirmed_date,calculated_balance,balance_label"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_name,ownership_percent,end_date"),
+    loadSortMap("assets"),
   ]);
   const bal = new Map((balances as Bal[] | null ?? []).map((b) => [b.asset_id, b]));
   const ownersOf = (id: string) => (owners ?? []).filter((o) => o.asset_id === id && !o.end_date)
     .map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ");
 
-  const list = (accounts as Row[] | null ?? []).filter((a) => pv.showAsset(a.asset_id));
+  const list = bySort((accounts as Row[] | null ?? []).filter((a) => pv.showAsset(a.asset_id)), (a) => a.asset_id, sortMap);
   const totals = new Map<string, number>();
   list.filter((a) => a.status === "ACTIVE").forEach((a) => {
     const v = Number(bal.get(a.asset_id)?.calculated_balance ?? 0) * pv.assetShare(a.asset_id);
@@ -63,7 +70,11 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">บัญชีทั้งหมด</h2>
+          {canOrder && list.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/cash", { p: sp.p })} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="px-4 py-2">บัญชี</th><th className="px-4">เจ้าของ</th>
@@ -74,11 +85,12 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
             {list.length === 0 && (
               <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"}</td></tr>
             )}
-            {list.map((a) => {
+            {list.map((a, i) => {
               const b = bal.get(a.asset_id);
               return (
                 <tr key={a.asset_id} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
+                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={a.asset_id} paths={paths} {...neighbors(list, i, (x) => x.asset_id)} /></span>}
                     <Link href={`/financial/cash/${a.asset_id}`} className="font-medium text-slate-900 hover:underline">{a.name}</Link>
                     <div className="text-xs text-slate-500">
                       {a.bank_name} · {ACCOUNT_TYPE_LABEL[a.account_type] ?? a.account_type}

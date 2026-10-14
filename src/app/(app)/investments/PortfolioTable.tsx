@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
+import { MoveButtons, neighbors } from "@/components/SortControls";
 import { money, thDate } from "@/lib/format";
 
 export type PortfolioRow = {
@@ -15,13 +16,19 @@ const amt = (v: number) => (v ? `${v > 0 ? "+" : ""}${money(v, undefined, 0)}` :
 const pct = (total: number, cost: number) => (cost > 0 && total ? `${total > 0 ? "+" : ""}${((total / cost) * 100).toFixed(2)}%` : "");
 
 /** ตารางพอร์ต: มูลค่า (บาท) + ผลตอบแทนรวม (บาท / % เทียบต้นทุน) · กดแถวเพื่อดูผลตอบแทนแยกส่วน */
-export default function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
+export default function PortfolioTable({ rows, ordering = false, paths = [], toggle }: {
+  rows: PortfolioRow[]; ordering?: boolean; paths?: string[]; toggle?: ReactNode;
+}) {
   const [open, setOpen] = useState<string | null>(null);
   const sum = (k: keyof PortfolioRow) => rows.reduce((t, r) => t + Number(r[k] ?? 0), 0);
   const tot = { valueThb: sum("valueThb"), total: sum("total"), cost: sum("cost") };
   return (
     <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="w-full min-w-[34rem] text-sm">
+      <div className="flex items-baseline gap-3 px-4 pt-4">
+        <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด</h2>
+        {toggle}
+      </div>
+      <table className="mt-2 w-full min-w-[34rem] text-sm">
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
           <tr>
             <th className="px-4 py-2">พอร์ต</th>
@@ -31,13 +38,14 @@ export default function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => {
+          {rows.map((r, i) => {
             const isOpen = open === r.asset_id;
             return (
               <Fragment key={r.asset_id}>
-                <tr onClick={(e) => { if (!(e.target as HTMLElement).closest("a")) setOpen(isOpen ? null : r.asset_id); }}
+                <tr onClick={(e) => { if (!ordering && !(e.target as HTMLElement).closest("a,button,form")) setOpen(isOpen ? null : r.asset_id); }}
                   className={`cursor-pointer align-top hover:bg-slate-50 ${isOpen ? "bg-blue-50/60" : ""}`} title="กดเพื่อดูผลตอบแทนแยกส่วน">
                   <td className="min-w-40 px-4 py-2.5">
+                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (x) => x.asset_id)} /></span>}
                     <Link href={`/investments/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                     <div className="text-xs text-slate-500">{r.sub}</div>
                     {r.atCost && <div className="text-xs text-amber-700">มีบางตัวยังใช้ราคาทุน (รอ Statement)</div>}
@@ -86,7 +94,7 @@ export default function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
         </tbody>
       </table>
       <p className="px-4 py-3 text-xs text-slate-500">
-        เรียงตามมูลค่า · ผลตอบแทนนับตั้งแต่ยอดตั้งต้น (ต้นทุนเฉลี่ย) · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
+        ผลตอบแทนนับตั้งแต่ยอดตั้งต้น (ต้นทุนเฉลี่ย) · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
       </p>
     </section>
   );

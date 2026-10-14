@@ -4,6 +4,8 @@ import { requireAppUser } from "@/lib/auth";
 import { LIABILITY_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
   amount: number | null; balance_date: string | null; due_date: string | null; monthly_payment: number | null;
@@ -23,15 +25,26 @@ function linkOf(r: Row) {
   return "/property";
 }
 
-export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [pv, { data, error }] = await Promise.all([
-    searchParams.then((sp) => loadPersonView(sp.p, { liabilities: true })),
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const paths = ["/liabilities", "/family/cards"];
+  const [pv, { data, error }, loanOrder, cardOrder] = await Promise.all([
+    loadPersonView(sp.p, { liabilities: true }),
     supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
+    loadSortMap("liabilities"), loadSortMap("credit_cards"),
   ]);
+  // เรียง: เงินกู้ → บัตรเครดิต → เงินประกัน · ภายในกลุ่มตามลำดับที่ตั้งไว้ (เงินกู้ / บัตร)
+  const GROUP: Record<string, number> = { LOAN: 0, CREDIT_CARD: 1, SECURITY_DEPOSIT: 2 };
+  const TABLE: Record<string, string> = { LOAN: "liabilities", CREDIT_CARD: "credit_cards" };
+  const orderOf = (r: Row) => (r.liability_source === "LOAN" ? loanOrder : r.liability_source === "CREDIT_CARD" ? cardOrder : null)?.get(r.source_id) ?? Number.MAX_SAFE_INTEGER;
   // มุมมองรายบุคคล: เฉพาะหนี้ที่คนนั้นมีส่วน · ยอด × สัดส่วน (เงินกู้ตามผู้รับผิดชอบ · บัตรตามเจ้าของบัตร · เงินประกันตามเจ้าของทรัพย์)
   const rows = ((data as Row[] | null) ?? []).filter((r) => pv.showLiability(r.source_id))
+    .map((r, i) => ({ r, i })).sort((a, b) => (GROUP[a.r.liability_source] ?? 9) - (GROUP[b.r.liability_source] ?? 9)
+      || orderOf(a.r) - orderOf(b.r) || a.i - b.i).map((x) => x.r)
     .map((r) => ({ ...r, full_amount: r.amount, pct: pv.liabilityPct(r.source_id),
       amount: r.amount == null ? null : Number(r.amount) * pv.liabilityShare(r.source_id) }));
   const totals = new Map<string, number>();
@@ -66,16 +79,25 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">หนี้สินทั้งหมด</h2>
+          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/liabilities", { p: sp.p })} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">รายการ</th><th className="px-4 text-right">ยอดคงค้าง</th><th className="px-4">ยอด ณ</th>
               <th className="px-4">ค่างวด / ครบกำหนด</th><th className="px-4">หมายเหตุ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีหนี้สินของ ${pv.personName}` : "ยังไม่มีหนี้สิน"}</td></tr>}
-            {rows.map((r) => (
+            {rows.map((r, i) => {
+              // จัดลำดับภายในกลุ่มเดียวกัน (เงินกู้ / บัตร) · เงินประกันเรียงตามชื่อ
+              const same = (x?: typeof r) => x && x.liability_source === r.liability_source ? x.source_id : null;
+              return (
               <tr key={`${r.liability_source}-${r.source_id}`} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
+                  {ordering && TABLE[r.liability_source] && <span className="mr-2 align-middle">
+                    <MoveButtons table={TABLE[r.liability_source]} id={r.source_id} paths={paths} prev={same(rows[i - 1])} next={same(rows[i + 1])} /></span>}
                   <Link href={linkOf(r)} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                   <div className="text-xs text-slate-500">
                     {SOURCE_LABEL[r.liability_source]}{r.liability_source === "LOAN" && ` · ${LIABILITY_TYPE_LABEL[r.subtype] ?? r.subtype}`}
@@ -91,12 +113,13 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
                 </td>
                 <td className={`px-4 text-xs ${DERIVED[r.derived_status ?? ""]?.cls ?? ""}`}>{DERIVED[r.derived_status ?? ""]?.text ?? ""}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
       <p className="text-xs text-slate-500">
-        ระบบไม่คำนวณยอดจากค่างวดเอง (ไม่รู้สัดส่วนเงินต้น/ดอกเบี้ย) — อัปเดตยอดคงค้างจาก Statement ทุกเดือน
+        เงินกู้: เงินต้นที่บันทึกจ่าย (แยกเงินต้น / ดอกเบี้ย) ลดยอดให้ทันที · อัปเดตยอดตาม Statement เป็นระยะเพื่อความถูกต้อง
       </p>
     </div>
   );

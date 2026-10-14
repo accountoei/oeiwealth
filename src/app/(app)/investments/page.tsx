@@ -5,6 +5,8 @@ import { HOLDING_TYPE_LABEL, ITX_LABEL, money, thDate, todayBangkok, addDays, bl
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
+import { SortToggle, bySort } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null;
@@ -13,10 +15,14 @@ type H = { id: string; portfolio_asset_id: string; holding_type: string; currenc
   status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
   value_thb: number | null };
 
-export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView((await searchParams).p);
+  const pv = await loadPersonView(sp.p);
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const sortMap = await loadSortMap("assets");
   const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }] = await Promise.all([
     supabase.from("v_portfolio_values").select("*").order("name"),
     supabase.from("investment_portfolios").select("asset_id,institution,status").is("deleted_at", null),
@@ -76,7 +82,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const pfName = new Map(list.map((p) => [p.asset_id, p.name]));
   // ตารางพอร์ต (แทนกล่อง + ตารางผลตอบแทนเดิม) · เรียงตามมูลค่าเป็นบาท
   const ret = new Map(retRows.map((r) => [r.asset_id, r]));
-  const rows: PortfolioRow[] = list.map((p) => {
+  const rows: PortfolioRow[] = bySort(list, (p) => p.asset_id, sortMap).map((p) => {
     const r = ret.get(p.asset_id);
     const n = holdings.filter((h) => h.portfolio_asset_id === p.asset_id && h.holding_type !== "CASH").length;
     const institution = inst.get(p.asset_id);
@@ -89,7 +95,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       unreal: r?.unreal ?? 0, real: r?.real ?? 0, fx: (r?.unrealFx ?? 0) + (r?.realFx ?? 0), income: r?.income ?? 0,
       total: r?.total ?? 0, cost: r?.cost ?? 0,
     };
-  }).sort((a, b) => b.valueThb - a.valueThb);
+  });
 
   return (
     <div className="space-y-6">
@@ -116,7 +122,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
 
       {list.length === 0
         ? <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>
-        : <PortfolioTable rows={rows} />}
+        : <PortfolioTable rows={rows} ordering={ordering} paths={["/investments"]}
+            toggle={canOrder && rows.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/investments", { p: sp.p })} /> : null} />}
 
       {allocTotal > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
