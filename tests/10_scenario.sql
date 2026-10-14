@@ -1199,6 +1199,42 @@ SELECT t.ok((SELECT amount FROM public.v_liabilities_all WHERE source_id = (SELE
             'หน้า Liabilities ใช้ยอดบัตรปัจจุบัน');
 RESET ROLE;
 
+\echo '== 13s. ยอดบัตรจาก Statement ต่ำกว่าที่บันทึก → รายได้ก้อนเข้าบัตร (รอแยก) · ปรับอัตโนมัติ · แยกรายการ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'เครดิต', '6677', 1000, '2026-09-01');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-20','description','รูดบัตรทดสอบเครดิต','amount',300,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '6677'))) IS NOT NULL AS s1;
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '6677'), '2026-09-30', 1100, true))->>'lump' AS card_credit_lump;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 200
+            AND NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')),
+            'ยอด Statement ต่ำกว่าที่บันทึก 200 → รายได้ก้อนรอแยก 200 เข้าบัตร');
+SELECT t.ok((SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 1100,
+            'ยอดบัตรปัจจุบัน = ยอด Statement');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-25','description','รูดบัตรที่ลืม (เครดิต)','amount',100,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '6677'))) IS NOT NULL AS s2;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 300,
+            'บันทึกรูดบัตรเพิ่ม → รายได้ก้อนปรับเองเป็น 300 (ยอดบัตรยังตรง Statement)');
+SELECT t.ok(public.split_pending_item('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')),
+  jsonb_build_array(jsonb_build_object('description','เงินคืนจากร้านค้า','amount',100,'income_type','OTHER'))) = 200,
+  'แยกรายได้ก้อนบัตร 100 → เหลือ 200');
+SELECT t.ok(EXISTS (SELECT 1 FROM public.income_transactions WHERE NOT pending_split AND deleted_at IS NULL AND notes = 'เงินคืนจากร้านค้า'
+              AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677'))
+            AND (SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 1100,
+            'รายการที่แยกออกเข้าบัตรเดิม · ยอดบัตรเท่าเดิม');
+UPDATE public.expense_items SET deleted_at = now()
+ WHERE paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677') AND NOT pending_split;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) = 200
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')),
+            'ลบรายการรูดบัตร → ส่วนต่างกลับด้าน เปลี่ยนเป็นค่าใช้จ่ายก้อน 200 แทน');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

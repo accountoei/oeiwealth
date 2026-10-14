@@ -43,7 +43,7 @@ export default function SplitForm({ kind, id, amount, currency, persons }: {
             </>
           )}
           <select value={l.person_id} onChange={(e) => set(i, { person_id: e.target.value })} className={small}>
-            <option value="">{income ? "ตามเจ้าของบัญชี" : "ตามเจ้าของบัญชี / บัตร"}</option>
+            <option value="">ตามเจ้าของบัญชี / บัตร</option>
             {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <input value={l.amount} onChange={(e) => set(i, { amount: e.target.value })} inputMode="decimal" placeholder="จำนวน" className={`w-32 ${small}`} />
