@@ -1235,6 +1235,32 @@ SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND del
             'ลบรายการรูดบัตร → ส่วนต่างกลับด้าน เปลี่ยนเป็นค่าใช้จ่ายก้อน 200 แทน');
 RESET ROLE;
 
+\echo '== 13t. ประวัติยอดบัตร: ลืมติ๊ก → อัปเดตยอดวันเดิมซ้ำแล้วติ๊กได้ · ยอดย้อนหลังเก็บเป็นประวัติ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'ประวัติ', '8899', 1000, '2026-09-01');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-20','description','รูดบัตรทดสอบประวัติ','amount',300,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '8899'))) IS NOT NULL AS h1;
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8899'), '2026-09-30', 1100, false, 'รอบ ก.ย.'))->>'difference' AS forgot_diff;
+SELECT t.ok((SELECT count(*) FROM public.credit_card_statements WHERE credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 2
+            AND (SELECT notes FROM public.credit_card_statements WHERE statement_date = '2026-09-30'
+                  AND credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 'รอบ ก.ย.'
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+                  AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')),
+            'เพิ่มบัตร + อัปเดตยอด → ประวัติ 2 แถว (มีหมายเหตุ) · ไม่ติ๊ก = ไม่ลงก้อน');
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8899'), '2026-09-30', 1100, true))->>'lump' AS retick_lump;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 200,
+            'ลืมติ๊ก → อัปเดตยอดวันเดิมซ้ำแล้วติ๊ก → ได้ก้อน 200 (คิดจากยอดครั้งก่อนในประวัติ)');
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8899'), '2026-09-15', 1200, false))->>'history_only' AS backdated;
+SELECT t.ok((SELECT outstanding_balance FROM public.credit_cards WHERE card_last4 = '8899') = 1100
+            AND (SELECT balance_date FROM public.credit_cards WHERE card_last4 = '8899') = '2026-09-30'
+            AND (SELECT count(*) FROM public.credit_card_statements WHERE credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 3,
+            'ยอดย้อนหลัง → เก็บเป็นประวัติ · ยอดล่าสุดไม่เปลี่ยน');
+SELECT t.fails($$INSERT INTO public.credit_card_statements(credit_card_id, statement_date, balance)
+  SELECT id, '2026-09-10', 1 FROM public.credit_cards WHERE card_last4 = '8899'$$, 'permission denied', 'แก้ประวัติยอดบัตรตรง ๆ ไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

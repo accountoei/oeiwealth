@@ -17,7 +17,7 @@ export const NAV: NavGroup[] = [
     label: "Family",
     items: [
       { label: "Members", href: "/family/members", ready: true },
-      { label: "Cards & Membership", href: "/family/cards", ready: true },
+      { label: "Membership & Points", href: "/family/memberships", ready: true },
       { label: "Health", href: "/family/health", ready: true },
     ],
   },

@@ -181,7 +181,7 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
       .eq("id", String(form.get("card_id")));
     if (e2) return { error: `บันทึกการจ่ายแล้ว แต่อัปเดตยอดบัตรไม่สำเร็จ: ${friendlyError(e2.message)}` };
   }
-  return done("บันทึกรายการแล้ว", ["/liabilities", "/family/cards"]);
+  return done("บันทึกรายการแล้ว", ["/liabilities"]);
 }
 
 /** แยกรายการ "รอแยกรายละเอียด" เป็นหลายบรรทัด (ยอดรวมไม่เกินก้อน · ส่วนที่เหลือยังรอแยก) — ทำได้แม้ปิดงวดแล้ว */
@@ -200,5 +200,5 @@ export async function splitPending(_: ActionState, form: FormData): Promise<Acti
   });
   if (error) return { error: friendlyError(error.message) };
   const left = Number(data ?? 0);
-  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${left.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "แยกครบแล้ว", ["/liabilities", "/family/cards"]);
+  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${left.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "แยกครบแล้ว", ["/liabilities"]);
 }

@@ -101,7 +101,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
 
       <nav className="flex flex-wrap gap-2 text-sm">
         {[[`/?p=${id}`, "Dashboard ของคนนี้"], [`/insurance?p=${id}`, `กรมธรรม์ (${policies ?? 0})`], [`/family/health?p=${id}`, "สุขภาพ"],
-          [`/family/cards?p=${id}`, "บัตร & สมาชิก"], [`/documents?p=${id}`, "เอกสาร"]].map(([href, l]) => (
+          [`/family/memberships?p=${id}`, "สมาชิกภาพ & แต้ม"], [`/documents?p=${id}`, "เอกสาร"]].map(([href, l]) => (
           <Link key={href} href={href} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">{l}</Link>
         ))}
       </nav>
@@ -166,7 +166,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
                 <tbody className="divide-y divide-slate-100">
                   {(estate ?? []).map((e, i) => {
                     const href = e.asset_id ? `/a/${e.asset_id}` : e.liability_id ? `/liabilities/${e.liability_id}`
-                      : e.credit_card_id ? "/family/cards" : e.lease_id ? "/property" : null;
+                      : e.credit_card_id ? `/liabilities/cards/${e.credit_card_id}` : e.lease_id ? "/property" : null;
                     const debt = e.item_type !== "ASSET";
                     return (
                       <tr key={i}>

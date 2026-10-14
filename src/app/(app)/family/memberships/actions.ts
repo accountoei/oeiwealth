@@ -13,7 +13,7 @@ export async function addMembership(_: ActionState, form: FormData): Promise<Act
     tier: str(form.get("tier")), benefits: str(form.get("benefits")), expiry_date: str(form.get("expiry_date")), notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
-  revalidatePath("/family/cards");
+  revalidatePath("/family/memberships");
   return { ok: "เพิ่มสมาชิกภาพแล้ว" };
 }
 
@@ -26,6 +26,6 @@ export async function addPoints(_: ActionState, form: FormData): Promise<ActionS
     balance: num(form.get("balance")) ?? 0, balance_date: str(form.get("balance_date")), expiry_date: str(form.get("expiry_date")),
   });
   if (error) return { error: friendlyError(error.message) };
-  revalidatePath("/family/cards");
+  revalidatePath("/family/memberships");
   return { ok: "เพิ่มบัญชีแต้มแล้ว" };
 }

@@ -33,7 +33,7 @@ function fixLink(i: Issue, ym: string): string | null {
     case "HOLDING": case "INVESTMENT_TX": return "/investments";
     case "PROPERTY_LEASE": return "/property";
     case "LIABILITY": return i.entity_id ? `/liabilities/${i.entity_id}` : "/liabilities";
-    case "CREDIT_CARD": return "/family/cards";
+    case "CREDIT_CARD": return i.entity_id ? `/liabilities/cards/${i.entity_id}` : "/liabilities#cards";
     case "RECURRING": case "LEASE": return `/income-expenses?tab=income&m=${ym}`;
     case "MONTHLY_EXPENSE": return `/income-expenses?tab=expense&m=${ym}`;
     case "FX_RATE": return "/settings/system";
