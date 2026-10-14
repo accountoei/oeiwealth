@@ -4,19 +4,26 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, money, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 type Row = { id: string; asset_id: string; quantity: number | null; brand: string | null; storage_location: string | null;
   asset_categories: { category_name: string } | { category_name: string }[] | null;
   assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string } };
 
-export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView((await searchParams).p);
+  const pv = await loadPersonView(sp.p);
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const paths = ["/alternative"];
+  const sortMap = await loadSortMap("assets");
   const { data, error } = await supabase.from("alternative_asset_details")
     .select("id,asset_id,quantity,brand,storage_location,asset_categories(category_name),assets!inner(name,currency,current_value,current_value_date,status,deleted_at)")
     .is("deleted_at", null).is("assets.deleted_at", null).order("created_at");
-  const rows = ((data as unknown as Row[] | null) ?? []).filter((r) => pv.showAsset(r.asset_id));
+  const rows = bySort(((data as unknown as Row[] | null) ?? []).filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   const cat = (r: Row) => (Array.isArray(r.asset_categories) ? r.asset_categories[0] : r.asset_categories)?.category_name ?? "-";
   const old = addDays(todayBangkok(), -90);
   const totals = new Map<string, number>();
@@ -45,15 +52,20 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">รายการทั้งหมด</h2>
+          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/alternative", { p: sp.p })} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">รายการ</th><th className="px-4">หมวด</th><th className="px-4 text-right">มูลค่าล่าสุด</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีรายการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
-            {rows.map((r) => {
+            {rows.map((r, i) => {
               const stale = !r.assets.current_value_date || r.assets.current_value_date < old;
               return (
                 <tr key={r.id} className={r.assets.status !== "ACTIVE" ? "opacity-50" : ""}>
                   <td className="px-4 py-3">
+                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (r) => r.asset_id)} /></span>}
                     <Link href={`/alternative/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
                     <div className="text-xs text-slate-500">{[r.brand, r.quantity != null ? `จำนวน ${Number(r.quantity)}` : null, r.storage_location].filter(Boolean).join(" · ")}</div>
                   </td>

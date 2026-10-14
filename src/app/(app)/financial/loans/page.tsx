@@ -4,22 +4,29 @@ import { requireAppUser } from "@/lib/auth";
 import { money, thDate } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "มีความเสี่ยง", CLOSED: "ปิดแล้ว", WRITTEN_OFF: "ตัดหนี้สูญ" };
 const DERIVED: Record<string, { text: string; cls: string }> = {
   OVERDUE: { text: "เลยกำหนดคืน", cls: "text-red-600" }, DUE_SOON: { text: "ใกล้ครบกำหนด", cls: "text-amber-700" },
 };
 
-export default async function LoansPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function LoansPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView((await searchParams).p);
-  const [{ data, error }, { data: sched }] = await Promise.all([
+  const pv = await loadPersonView(sp.p);
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const paths = ["/financial/loans"];
+  const [{ data, error }, { data: sched }, sortMap] = await Promise.all([
     supabase.from("v_loans_status")
       .select("asset_id,name,currency,borrower_name,principal,outstanding_principal,interest_rate,due_date,status,derived_status")
       .order("status").order("name"),
     supabase.from("v_loan_schedule_status").select("loan_asset_id,due_date,total_remaining,status")
       .in("status", ["OVERDUE", "PARTIAL", "PENDING"]).order("due_date"),
+    loadSortMap("assets"),
   ]);
   // ตารางผ่อน: งวดถัดไป + งวดที่เลยกำหนด ของแต่ละสัญญา
   const nextDue = new Map<string, { due_date: string; amount: number }>();
@@ -30,7 +37,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
       overdue.set(x.loan_asset_id, { n: o.n + 1, amount: o.amount + Number(x.total_remaining) });
     } else if (!nextDue.has(x.loan_asset_id)) nextDue.set(x.loan_asset_id, { due_date: x.due_date, amount: Number(x.total_remaining) });
   });
-  const rows = (data ?? []).filter((r) => pv.showAsset(r.asset_id));
+  const rows = bySort((data ?? []).filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   const totals = new Map<string, number>();
   rows.filter((r) => r.status !== "CLOSED" && r.status !== "WRITTEN_OFF")
     .forEach((r) => totals.set(r.currency, (totals.get(r.currency) ?? 0) + Number(r.outstanding_principal ?? 0) * pv.assetShare(r.asset_id)));
@@ -58,15 +65,20 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">เงินให้กู้ทั้งหมด</h2>
+          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/loans", { p: sp.p })} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">รายการ</th><th className="px-4 text-right">เงินต้นคงเหลือ</th><th className="px-4">งวดถัดไป</th><th className="px-4">ครบกำหนดสัญญา</th><th className="px-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีเงินให้กู้ของ ${pv.personName}` : "ยังไม่มีเงินให้กู้"}</td></tr>}
-            {rows.map((r) => (
+            {rows.map((r, i) => (
               <tr key={r.asset_id} className={r.status === "CLOSED" || r.status === "WRITTEN_OFF" ? "opacity-50" : ""}>
                 <td className="px-4 py-3">
+                  {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (x) => x.asset_id)} /></span>}
                   <Link href={`/financial/loans/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                   <div className="text-xs text-slate-500">ผู้กู้ {r.borrower_name} · เงินต้น {money(r.principal, r.currency)}{r.interest_rate != null && ` · ดอกเบี้ย ${Number(r.interest_rate)}%`}</div>
                 </td>

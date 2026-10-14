@@ -4,19 +4,26 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
+import { loadSortMap, orderHrefs } from "@/lib/sort";
 
 type Row = { id: string; asset_id: string; company_name: string; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null;
   status: string; assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null } };
 
-export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView((await searchParams).p);
+  const pv = await loadPersonView(sp.p);
+  const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
+  const ordering = canOrder && sp.order === "1";
+  const paths = ["/financial/business"];
+  const sortMap = await loadSortMap("assets");
   const { data, error } = await supabase.from("private_business_details")
     .select("id,asset_id,company_name,business_type,company_ownership_percent,total_shares,shares_owned,status,assets!inner(name,currency,current_value,current_value_date,deleted_at)")
     .is("deleted_at", null).is("assets.deleted_at", null).order("created_at");
-  const rows = ((data as unknown as Row[] | null) ?? []).filter((r) => pv.showAsset(r.asset_id));
+  const rows = bySort(((data as unknown as Row[] | null) ?? []).filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   const old = addDays(todayBangkok(), -90);
   // % ของบริษัท: ทั้งครอบครัว = ที่บันทึก · รายคน = หุ้นของคน ÷ หุ้นทั้งหมด (หรือ สัดส่วนในครอบครัว × % ของครอบครัว)
   const companyPct = (r: Row): number | null => {
@@ -42,15 +49,20 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="flex items-baseline gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">กิจการทั้งหมด</h2>
+          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/business", { p: sp.p })} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">กิจการ</th><th className="px-4 text-right">{pv.personId ? `% ที่ ${pv.personName} ถือ` : "% ที่ครอบครัวถือ"}</th><th className="px-4 text-right">{pv.personId ? `มูลค่าส่วนของ ${pv.personName}` : "มูลค่าส่วนของครอบครัว"}</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกิจการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
-            {rows.map((r) => {
+            {rows.map((r, i) => {
               const stale = !r.assets.current_value_date || r.assets.current_value_date < old;
               return (
                 <tr key={r.id} className={r.status !== "ACTIVE" ? "opacity-50" : ""}>
                   <td className="px-4 py-3">
+                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (r) => r.asset_id)} /></span>}
                     <Link href={`/financial/business/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
                     <div className="text-xs text-slate-500">{r.company_name}{r.business_type && ` · ${r.business_type}`}</div>
                   </td>

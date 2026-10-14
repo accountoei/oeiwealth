@@ -5,6 +5,7 @@ import { ageFrom, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, todayBangkok } from "
 import { movePerson } from "./actions";
 import { AddPersonForm, FamilyNameForm } from "./forms";
 import { FamilyTree } from "./tree";
+import { SortToggle } from "@/components/SortControls";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
@@ -51,9 +52,14 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
-          <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm">
-            <Link href={url({ archived: sp.archived === "1" })} className={`px-3 py-1 ${!tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
-            <Link href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-3 py-1 ${tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm">
+              <Link href={url({ archived: sp.archived === "1" })} className={`px-3 py-1 ${!tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
+              <Link href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-3 py-1 ${tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
+            </div>
+            {canEdit && !tree && list.length > 1 && (
+              <SortToggle active={ordering} href={url({ archived: sp.archived === "1", order: true })} doneHref={url({ archived: sp.archived === "1" })} />
+            )}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -63,13 +69,10 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
               {sp.archived === "1" ? "ซ่อน Archived" : `แสดง Archived (${archivedCount})`}
             </Link>
           )}
-          {canEdit && !tree && (ordering
-            ? <Link href={url({ archived: sp.archived === "1" })} className="rounded-md bg-blue-600 px-2.5 py-1 text-white hover:bg-blue-700">เสร็จสิ้น</Link>
-            : <Link href={url({ archived: sp.archived === "1", order: true })} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50">จัดลำดับ</Link>)}
         </div>
         <p className="mb-3 mt-2 text-xs text-slate-500">
           รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
-          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{ordering && " · โหมดจัดลำดับ: กด ↑ ↓ (มีผลทันที) แล้วกด เสร็จสิ้น"}
+          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{ordering && " · โหมดจัดลำดับ: กด ↑ ↓ (มีผลทันที) แล้วกด เสร็จ"}
         </p>
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         {tree ? <div className="mt-4"><FamilyTree people={list} headId={family?.head_person_id ?? null} /></div> : (
