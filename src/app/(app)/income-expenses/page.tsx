@@ -66,7 +66,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,person_id,lease_id,source_transaction_id,asset_id,notes,pending_split,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
+    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,person_id,lease_id,source_transaction_id,asset_id,notes,pending_split,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
     supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,persons(name)")
@@ -364,7 +364,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="text-right tabular-nums">{money(i.amount, i.currency)}
                         {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
-                      <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
+                      <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
                         {canWrite && !i.source_transaction_id && !i.pending_split && (
                           <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[

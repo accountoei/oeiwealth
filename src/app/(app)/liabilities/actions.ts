@@ -109,8 +109,11 @@ function lumpMessage(base: string, r: { difference: number | null; lump: number 
   const d = Number(r?.difference ?? 0), lump = Number(r?.lump ?? 0);
   const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (lump > 0) return `${base} · ลงค่าใช้จ่ายก้อนรอแยกรายละเอียด ${f(lump)} (แยกได้ที่ Income & Expenses)`;
+  if (lump < 0) return `${base} · ลงรายได้ก้อนรอแยกรายละเอียด ${f(-lump)} เข้าบัตร (เงินคืน / เครดิต · แยกได้ที่ Income & Expenses)`;
   if (r?.difference == null || Math.abs(d) < 0.005) return base;
-  return d > 0 ? `${base} · ${what}สูงกว่ารายการที่บันทึก ${f(d)} (ติ๊ก "ลงส่วนต่างเป็นค่าใช้จ่ายก้อน" ถ้าต้องการ)`
+  const card = what === "ยอดบัตร";
+  return d > 0 ? `${base} · ${what}สูงกว่ารายการที่บันทึก ${f(d)} (ติ๊กช่อง "รอแยกรายละเอียด" ถ้าต้องการลงเป็นก้อน)`
+    : card ? `${base} · ${what}ต่ำกว่าที่บันทึก ${f(-d)} (อาจมีเงินคืน / เครดิตที่ยังไม่ได้บันทึก · ติ๊กช่อง "รอแยกรายละเอียด" เพื่อลงรายได้ก้อนเข้าบัตร)`
     : `${base} · ${what}ต่ำกว่าที่คำนวณ ${f(-d)} (อาจมีการจ่าย / เงินคืนที่ยังไม่ได้บันทึก)`;
 }
 
