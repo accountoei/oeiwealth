@@ -53,7 +53,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   (persons ?? []).forEach((p) => label.set(`PERSON:${p.id}`, { name: p.name, href: "/family/members" }));
   const cardName = (c: { issuer: string; card_name: string | null; card_last4: string | null }) =>
     [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ");
-  (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: "/family/cards" }));
+  (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: `/liabilities/cards/${c.id}` }));
   const byDoc = new Map<string, { id: string; key: string }[]>();
   (links ?? []).forEach((l) => byDoc.set(l.document_id, [...(byDoc.get(l.document_id) ?? []), { id: l.id, key: `${l.entity_type}:${l.entity_id}` }]));
 

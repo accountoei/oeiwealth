@@ -67,6 +67,12 @@ export async function updateLiabilityInfo(_: ActionState, form: FormData): Promi
 }
 
 // ---------------------------------------------------------------- Credit cards
+function revalidateCards(cardId?: string | null) {
+  revalidatePath("/liabilities");
+  if (cardId) revalidatePath(`/liabilities/cards/${cardId}`);
+  revalidatePath("/family/memberships");
+}
+
 export async function createCard(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const last4 = str(form.get("card_last4"));
@@ -81,8 +87,7 @@ export async function createCard(_: ActionState, form: FormData): Promise<Action
     outstanding_balance: outstanding, balance_date: str(form.get("balance_date")), notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
-  revalidatePath("/family/cards");
-  revalidatePath("/liabilities");
+  revalidateCards();
   return { ok: "เพิ่มบัตรแล้ว" };
 }
 
@@ -94,14 +99,14 @@ export async function updateCardBalance(_: ActionState, form: FormData): Promise
   // อัปเดตยอด + (ถ้าเลือก) ส่วนที่สูงกว่ารายการที่บันทึก → ค่าใช้จ่ายก้อน "รอแยกรายละเอียด"
   const { data, error } = await supabase.rpc("update_card_statement", {
     p_card_id: cardId, p_date: str(form.get("balance_date")), p_balance: balance, p_settle: form.get("settle") === "on",
+    p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
-  const notes = str(form.get("notes"));
-  if (notes) await supabase.from("credit_cards").update({ notes }).eq("id", cardId);
-  revalidatePath("/family/cards");
-  revalidatePath("/liabilities");
+  revalidateCards(cardId);
   revalidatePath("/income-expenses");
-  return { ok: lumpMessage("อัปเดตยอดบัตรแล้ว", data as { difference: number | null; lump: number } | null, "ยอดบัตร") };
+  const r = data as { difference: number | null; lump: number; history_only?: boolean } | null;
+  if (r?.history_only) return { ok: "บันทึกเป็นประวัติยอดแล้ว (วันที่ก่อนยอดล่าสุด · ยอดปัจจุบันไม่เปลี่ยน)" };
+  return { ok: lumpMessage("อัปเดตยอดบัตรแล้ว", r, "ยอดบัตร") };
 }
 
 /** ข้อความหลังอัปเดตยอดจาก Statement: บอกส่วนต่าง / ก้อนรอแยก */
@@ -123,7 +128,7 @@ export async function updateCardStatus(_: ActionState, form: FormData): Promise<
     .update({ status: String(form.get("status")) }).eq("id", String(form.get("card_id"))).select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขบัตรนี้" };
-  revalidatePath("/family/cards");
+  revalidateCards(String(form.get("card_id")));
   return { ok: "เปลี่ยนสถานะแล้ว" };
 }
 
@@ -154,7 +159,7 @@ export async function setCardAutopay(_: ActionState, form: FormData): Promise<Ac
     .update({ autopay_asset_id: bank, autopay_mode: mode }).eq("id", String(form.get("card_id"))).select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขบัตรนี้" };
-  revalidatePath("/family/cards");
+  revalidateCards(String(form.get("card_id")));
   revalidatePath("/income-expenses");
   return { ok: bank ? "ตั้งค่าตัดบัญชีอัตโนมัติแล้ว" : "ปิดตัดบัญชีอัตโนมัติแล้ว" };
 }
@@ -170,7 +175,7 @@ export async function confirmCardPayment(_: ActionState, form: FormData): Promis
   } });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/income-expenses");
-  revalidatePath("/family/cards");
+  revalidateCards(str(form.get("card_id")));
   revalidatePath("/financial/cash", "layout");
   revalidatePath("/liabilities");
   revalidatePath("/");

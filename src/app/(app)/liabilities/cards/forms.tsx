@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { createCard, setCardAutopay, updateCardBalance, updateCardStatus, type ActionState } from "@/app/(app)/liabilities/actions";
+import { createCard, setCardAutopay, updateCardBalance, updateCardStatus, type ActionState } from "../actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -62,11 +62,11 @@ export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
   ));
 }
 
-export function CardBalanceForm({ cardId, currency, today, minDate }:
-  { cardId: string; currency: string; today: string; minDate: string }) {
+export function CardBalanceForm({ cardId, currency, today, minDate, canSettle, label = "อัปเดตยอดตาม Statement" }:
+  { cardId: string; currency: string; today: string; minDate: string; canSettle: boolean; label?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardBalance, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>อัปเดตยอดตาม Statement</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
@@ -81,9 +81,13 @@ export function CardBalanceForm({ cardId, currency, today, minDate }:
       <label className="text-xs">หมายเหตุ (ไม่บังคับ)
         <input name="notes" className="mt-1 block w-40 rounded-md border border-slate-300 px-2 py-1 text-sm" />
       </label>
-      <label className="flex w-full items-center gap-1 text-xs text-slate-600">
-        <input type="checkbox" name="settle" /> ลงส่วนต่างเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; (สูงกว่าที่บันทึก → ค่าใช้จ่ายก้อน · ต่ำกว่า → รายได้ก้อนเข้าบัตร เช่น เงินคืน / เครดิต)
-      </label>
+      {canSettle ? (
+        <label className="flex w-full items-center gap-1 text-xs text-slate-600">
+          <input type="checkbox" name="settle" defaultChecked /> ลงส่วนต่างเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; (สูงกว่าที่บันทึก → ค่าใช้จ่ายก้อน · ต่ำกว่า → รายได้ก้อนเข้าบัตร เช่น เงินคืน / เครดิต)
+        </label>
+      ) : (
+        <p className="w-full text-xs text-slate-500">ส่วนต่างจาก Statement ให้ ADMIN / EDITOR ลงเป็นก้อนรอแยกภายหลัง (อัปเดตยอดวันเดิมซ้ำ)</p>
+      )}
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
