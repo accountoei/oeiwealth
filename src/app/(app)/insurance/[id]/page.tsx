@@ -10,6 +10,7 @@ import { AddCashValueForm, BenefitForm, CoverageForm, InsScheduleEditor, PayPrem
 import BeneficiaryEditor from "../Beneficiaries";
 import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
+import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
@@ -73,6 +74,11 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
         .in("insurance_schedule_line_id", premiums.map((x) => x.id)).is("deleted_at", null).order("date", { ascending: false })
     : { data: [] };
   const lineNo = new Map(premiums.map((x) => [x.id, x.installment_no]));
+  const benNo = new Map(benefits.map((x) => [x.id, x.installment_no]));
+  const { data: receipts } = await supabase.from("insurance_benefit_receipts")
+    .select("id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes,created_at")
+    .eq("policy_id", id).is("undone_at", null).is("deleted_at", null).order("receipt_date", { ascending: false }).order("created_at", { ascending: false });
+  const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
   const cardName = new Map(cards.map((c) => [c.id as string, c.label]));
   const premPaid = premiums.reduce((s2, x) => s2 + Number(x.paid_amount), 0);
@@ -273,6 +279,38 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
               currency={x.currency} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value}
               today={today} small canClose={canDelete} /> : null} />}
+          {(receipts ?? []).length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติรับผลประโยชน์</h3>
+              <p className="mb-2 text-xs text-slate-500">
+                &ldquo;ยกเลิกทั้งก้อน&rdquo; ย้อนทุกส่วนพร้อมกัน: เงินที่ถอนจากมูลค่าเวนคืน · รายได้ส่วนเกิน · สถานะกรมธรรม์ / มูลค่าเวนคืน · ยกเลิกได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน
+              </p>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-slate-500">
+                  <tr><th className="py-1">วันที่รับ</th><th>รายการ</th><th className="text-right">ยอดรวม</th><th className="text-right">จากมูลค่าเวนคืน</th>
+                    <th className="text-right">รายได้</th><th></th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(receipts ?? []).map((r, i) => (
+                    <tr key={r.id} className="align-top">
+                      <td className="py-1.5">{thDate(r.receipt_date)}</td>
+                      <td className="text-xs text-slate-600">
+                        {r.line_id ? `งวดที่ ${benNo.get(r.line_id) ?? "-"}` : "รับเงินก้อน"}{r.outcome && ` · ${OUTCOME[r.outcome] ?? r.outcome}`}
+                        {r.notes && <div className="text-slate-400">{r.notes}</div>}
+                      </td>
+                      <td className="text-right tabular-nums">{money(r.amount, r.currency)}</td>
+                      <td className="text-right tabular-nums">{Number(r.cash_value_part) > 0 ? money(r.cash_value_part) : "-"}</td>
+                      <td className="text-right tabular-nums">{Number(r.income_part) > 0 ? money(r.income_part) : "-"}</td>
+                      <td className="pl-2 text-right">
+                        {canDelete && (i === 0 || !r.outcome) && <UndoButton kind="BENEFIT" id={r.id} paths={paths}
+                          confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {canWrite && policyActive && <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
             cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม / อื่น ๆ)" canClose={canDelete} />}
         </section>

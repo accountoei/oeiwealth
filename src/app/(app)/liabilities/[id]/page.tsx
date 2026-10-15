@@ -6,6 +6,7 @@ import { LIABILITY_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format"
 import { AddBalanceForm, EditLiabilityForm, PayLiabilityForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
+import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -27,7 +28,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes")
+    supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes,movement_group_id")
       .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes")
       .eq("liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
@@ -46,12 +47,19 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   const banks = ((banksRaw ?? []) as { asset_id: string; name: string; currency: string }[]);
   const bankName = new Map(banks.map((b) => [b.asset_id, b.name]));
   // ประวัติการจ่าย: เงินต้น (ลดยอดหนี้) · ดอกเบี้ย (ค่าใช้จ่าย) · จ่ายรวมแบบเดิม (ไม่ลดยอดหนี้)
+  // จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ยกเลิกทั้งก้อนได้
+  const groups = [...new Set((pays ?? []).map((m) => m.movement_group_id as string | null).filter((g): g is string => !!g))];
+  const { data: grpInt } = groups.length
+    ? await supabase.from("cash_movements").select("movement_group_id,amount").in("movement_group_id", groups)
+        .eq("source_entity_type", "EXPENSE").is("deleted_at", null)
+    : { data: [] as { movement_group_id: string; amount: number }[] };
+  const groupInt = new Map((grpInt ?? []).map((g) => [g.movement_group_id as string, Number(g.amount)]));
   const payRows = [
     ...(pays ?? []).map((m) => ({ key: `m${m.id}`, table: "cash_movements", id: m.id, date: m.movement_date as string, amount: Number(m.amount),
-      kind: m.reduces_liability ? "เงินต้น" : "จ่ายรวม (ไม่ได้แยก)", bank: m.from_asset_id as string | null, notes: m.notes as string | null,
+      kind: m.reduces_liability ? "เงินต้น" : "จ่ายรวม (ไม่ได้แยก)", group: m.movement_group_id as string | null, bank: m.from_asset_id as string | null, notes: m.notes as string | null,
       dateField: "movement_date" })),
     ...(ints ?? []).map((e) => ({ key: `e${e.id}`, table: "expense_items", id: e.id, date: e.date as string, amount: Number(e.amount),
-      kind: "ดอกเบี้ย", bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date" })),
+      kind: "ดอกเบี้ย", group: null as string | null, bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date" })),
   ].sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind, "th"));
   const today = todayBangkok();
   const minDate = family?.go_live_date ?? "";
@@ -125,6 +133,8 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                     {canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
                       fields={[{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
                         { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
+                    {canDelete && r.group && groupInt.has(r.group) && <div className="mt-1"><UndoButton kind="PAYMENT" id={r.group} paths={paths}
+                      confirmText={`ยกเลิกการจ่ายวันที่ ${thDate(r.date)} ทั้งก้อน?\nเงินต้น ${money(r.amount)} + ดอกเบี้ย ${money(groupInt.get(r.group))} จะถูกลบพร้อมกัน`} /></div>}
                   </td>
                 </tr>
               ))}

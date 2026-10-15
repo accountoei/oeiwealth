@@ -5,6 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
 import { DisburseForm, PaymentForm } from "./forms";
 import RowActions from "@/components/RowActions";
+import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
@@ -228,6 +229,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
               {history.map((e) => {
                 const total = e.disburse ? Number(e.disburse.amount) : Number(e.principal?.amount ?? 0) + Number(e.interest?.amount ?? 0);
                 const both = !!(e.principal && e.interest);
+                const group = e.principal?.movement_group_id ?? (e.interest ? incGroup.get(e.interest.id) : null);
                 return (
                   <tr key={e.key} className="align-top">
                     <td className="py-2">{thDate(e.date)}</td>
@@ -259,7 +261,10 @@ export default async function LoanDetailPage({ params, searchParams }: {
                       )}
                     </td>
                     <td className="py-2 text-xs text-slate-500">{e.bank ? bankName.get(e.bank) ?? "บัญชี" : ""}</td>
-                    <td className={`py-2 text-right tabular-nums ${e.disburse ? "" : "text-emerald-700"}`}>{money(total)}</td>
+                    <td className={`py-2 text-right tabular-nums ${e.disburse ? "" : "text-emerald-700"}`}>{money(total)}
+                      {canDelete && both && group && <div className="mt-1"><UndoButton kind="PAYMENT" id={group} paths={paths}
+                        confirmText={`ยกเลิกการรับชำระวันที่ ${thDate(e.date)} ทั้งก้อน?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน`} /></div>}
+                    </td>
                   </tr>
                 );
               })}
