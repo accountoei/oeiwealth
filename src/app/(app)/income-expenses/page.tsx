@@ -6,9 +6,9 @@ import {
   COST_STATUS, INCOME_TYPE_LABEL, MOVE_LABEL, PERIODS_PER_YEAR, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthOptions, monthRange, scheduleText,
   thDate, thMonth, todayBangkok,
 } from "@/lib/format";
-import { RecordCostForm, UtilityForm, type PropertyPick } from "../property/[id]/forms";
+import { RecordCostForm } from "../property/[id]/forms";
 import {
-  AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
+  AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { SubPanel, SubTabLink, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
@@ -32,10 +32,6 @@ const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income",
 const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   RECEIVED: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" }, DISMISSED: { text: "เดือนนี้ไม่ได้รับ", cls: "bg-slate-100 text-slate-500" },
-};
-const TRACK: Record<string, { text: string; cls: string }> = {
-  NOT_TRACKED: { text: "ไม่ได้บันทึก", cls: "text-slate-500" }, PARTIAL: { text: "บันทึกบางส่วน (ข้อมูลไม่ครบ)", cls: "text-amber-700" },
-  COMPLETE: { text: "บันทึกครบแล้ว", cls: "text-emerald-700" },
 };
 const REIMB: Record<string, string> = { PENDING: "รอรับเงินคืน", PARTIAL: "ได้คืนบางส่วน", FULL: "ได้คืนครบ" };
 
@@ -65,7 +61,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
   const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
     { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: propRows }, { data: loanRows }, { data: insRows }] = await Promise.all([
+    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: loanRows }, { data: insRows }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_mode")
@@ -94,7 +90,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("property_utilities")
       .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,assets!inner(name,status,deleted_at))")
       .is("deleted_at", null).eq("active", true).not("frequency", "is", null),
-    supabase.from("property_details").select("id,asset_id,assets!inner(name,currency,status,deleted_at)").is("deleted_at", null),
     // งวดเงินให้กู้: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
     supabase.from("v_loan_schedule_status")
       .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
@@ -167,11 +162,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const utils = ((utilRows as unknown as Util[] | null) ?? [])
     .filter((u) => !u.property_details.assets.deleted_at && u.property_details.assets.status === "ACTIVE" && pv.showAsset(u.property_details.asset_id))
     .sort((a, b) => a.property_details.assets.name.localeCompare(b.property_details.assets.name, "th"));
-  const properties: PropertyPick[] = ((propRows ?? []) as unknown as { id: string; asset_id: string;
-    assets: { name: string; currency: string; status: string; deleted_at: string | null } }[])
-    .filter((p) => !p.assets.deleted_at && p.assets.status === "ACTIVE")
-    .map((p) => ({ id: p.id, assetId: p.asset_id, name: p.assets.name, currency: p.assets.currency }))
-    .sort((a, b) => a.name.localeCompare(b.name, "th"));
   const costYear = utils.reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0) * pv.assetShare(u.property_details.asset_id)), new Map<string, number>());
   const utilName = (t: string, p: string | null) => [UTIL_LABEL[t] ?? t, p].filter(Boolean).join(" · ");
 
@@ -377,17 +367,18 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section className="grid gap-4 md:grid-cols-4">
             <Kpi label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"} />
             <Kpi label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
-            <Kpi label="ค่าใช้จ่าย" value={track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}
-              sub={`${TRACK[track].text}${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""}`} cls={TRACK[track].cls} />
-            <Kpi label="เงินคงเหลือสุทธิ" value={track === "COMPLETE" ? money(savings, "THB", 0) : "—"}
-              sub={track === "COMPLETE" ? "รายได้สุทธิ − ค่าใช้จ่าย" : "แสดงเมื่อยืนยันว่าบันทึกค่าใช้จ่ายครบ"} />
+            <Kpi label="ค่าใช้จ่าย" value={money(expenseThb, "THB", 0)}
+              sub={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย" : `${itemList.length} รายการ${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""}`}
+              cls={track === "NOT_TRACKED" ? "text-slate-500" : undefined} />
+            <Kpi label="เงินคงเหลือสุทธิ" value={money(savings, "THB", 0)} cls={savings < 0 ? "text-red-700" : undefined}
+              sub={track === "NOT_TRACKED" ? "รายได้สุทธิ − ค่าใช้จ่าย · ยังไม่ได้บันทึกค่าใช้จ่าย" : "รายได้สุทธิ − ค่าใช้จ่าย · คิดจากรายการที่บันทึกไว้"} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
             <CategoryBars kind="income" title={`รายได้ตามประเภท ${thMonth(start)}`} rows={incomeCats}
               note="ยอดก่อนหักภาษี (บาท) · กดที่ประเภทเพื่อดูรายการ" empty="ยังไม่มีรายได้ที่บันทึกในเดือนนี้" />
             <CategoryBars kind="expense" title={`ค่าใช้จ่ายตามหมวด ${thMonth(start)}`} rows={expenseCats}
               note={`ยอดก่อนหักเงินคืน (บาท)${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""} · กดที่หมวดเพื่อดูรายการ`}
-              empty={track === "NOT_TRACKED" ? "เดือนนี้ไม่ได้บันทึกค่าใช้จ่าย" : "ยังไม่มีค่าใช้จ่ายที่บันทึกในเดือนนี้"} />
+              empty="ยังไม่ได้บันทึกค่าใช้จ่าย" />
           </section>
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5">
             <div>
@@ -520,7 +511,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         {i.pending_split && (
                           <div className="mt-1 space-y-1">
                             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
-                            {canWrite && canDelete && <SplitForm kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
+                            {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
                           </div>
                         )}
                       </td>
@@ -664,11 +655,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               <div>
                 <h2 className="font-medium text-slate-900">ค่าใช้จ่ายที่บันทึกแล้ว</h2>
                 <div className="mt-0.5 text-sm">
-                  <span className="font-semibold tabular-nums">{track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}</span>
-                  <span className={`ml-2 text-xs ${TRACK[track].cls}`}>{TRACK[track].text}</span>
+                  <span className="font-semibold tabular-nums">{money(expenseThb, "THB", 0)}</span>
+                  {track === "NOT_TRACKED" && <span className="ml-2 text-xs text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span>}
                 </div>
               </div>
-              {canWrite && track !== "NOT_TRACKED" && inMonth && <MonthStatusForm month={start} status={track} />}
             </div>
             {itemList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
@@ -694,7 +684,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           {i.pending_split && (
                             <div className="mt-1 space-y-1">
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
-                              {canWrite && canDelete && <SplitForm kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
+                              {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
                             </div>
                           )}</td>
                         <td className="text-slate-600">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</td>
@@ -783,8 +773,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 </table>
               </div>
             )}
-            <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ตั้งค่าเพิ่มเติม (ความถี่ เลขผู้ใช้ไฟ / มิเตอร์) ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน)</p>
-            {canWrite && properties.length > 0 && <UtilityForm properties={properties} label="+ ค่าใช้จ่ายประจำ" tracked />}
+            <p className="text-xs text-slate-500">ค่าใช้จ่ายประจำของทรัพย์สิน (ค่าส่วนกลาง · ภาษีที่ดิน · ไฟ · น้ำ) เพิ่ม / ตั้งค่าที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน) · กดที่แถวเพื่อแก้ยอด / ลบ</p>
           </section>
           </SubPanel>
           </SubTabs>
