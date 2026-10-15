@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { splitPending, type ActionState } from "./actions";
-import { EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, money } from "@/lib/format";
+import { INCOME_TYPE_LABEL, money } from "@/lib/format";
 
 type Line = { description: string; amount: string; cat: string; person_id: string };
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -10,8 +10,8 @@ const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 const blank = (): Line => ({ description: "", amount: "", cat: "", person_id: "" });   // หมวด / ประเภท ต้องเลือกเอง
 
 /** แยกรายการรอแยกรายละเอียด → หลายบรรทัด · ยอดรวมต้องไม่เกินก้อน (ส่วนที่เหลือยังรอแยก) */
-export default function SplitForm({ kind, id, amount, currency, persons }: {
-  kind: "EXPENSE" | "INCOME"; id: string; amount: number; currency: string; persons: { id: string; name: string }[];
+export default function SplitForm({ kind, id, amount, currency, persons, categories = [] }: {
+  kind: "EXPENSE" | "INCOME"; id: string; amount: number; currency: string; persons: { id: string; name: string }[]; categories?: string[];
 }) {
   const income = kind === "INCOME";
   const [open, setOpen] = useState(false);
@@ -40,9 +40,10 @@ export default function SplitForm({ kind, id, amount, currency, persons }: {
                 .map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>
           ) : (
-            <>
-              <input value={l.cat} onChange={(e) => set(i, { cat: e.target.value })} list="split-cats" placeholder="เลือกหมวด" className={`w-36 ${small} ${l.cat.trim() ? "" : "border-amber-400"}`} />
-            </>
+            <select value={l.cat} onChange={(e) => set(i, { cat: e.target.value })} className={`${small} ${l.cat ? "" : "border-amber-400 text-slate-500"}`}>
+              <option value="">— เลือกหมวด —</option>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           )}
           <select value={l.person_id} onChange={(e) => set(i, { person_id: e.target.value })} className={small}>
             <option value="">ตามเจ้าของบัญชี / บัตร</option>
@@ -52,7 +53,6 @@ export default function SplitForm({ kind, id, amount, currency, persons }: {
           {lines.length > 1 && <button type="button" onClick={() => setLines(lines.filter((_, k) => k !== i))} className="text-xs text-slate-500">ลบ</button>}
         </div>
       ))}
-      <datalist id="split-cats">{EXPENSE_CATEGORIES.filter((c) => c !== "BANK_FEE").map((c) => <option key={c} value={c} />)}</datalist>
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <button type="button" onClick={() => setLines([...lines, blank()])} className="text-slate-700 underline">+ เพิ่มบรรทัด</button>
         {missingCat && <span className="text-amber-700">เลือก{income ? "ประเภท" : "หมวด"}ให้ทุกบรรทัดก่อนบันทึก</span>}

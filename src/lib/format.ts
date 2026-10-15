@@ -87,7 +87,7 @@ export const UTIL_LABEL: Record<string, string> = {
 };
 /** หมวดที่ใช้ตอนบันทึกเป็นค่าใช้จ่าย */
 export const UTIL_EXPENSE_CATEGORY: Record<string, string> = {
-  ELECTRICITY: "บ้าน / สาธารณูปโภค", WATER: "บ้าน / สาธารณูปโภค", COMMON_FEE: "บ้าน / สาธารณูปโภค", LAND_TAX: "ภาษี", OTHER: "บ้าน / สาธารณูปโภค",
+  ELECTRICITY: "บ้าน / สาธารณูปโภค", WATER: "บ้าน / สาธารณูปโภค", COMMON_FEE: "บ้าน / สาธารณูปโภค", LAND_TAX: "บ้าน / สาธารณูปโภค", OTHER: "บ้าน / สาธารณูปโภค",
 };
 export const COST_STATUS: Record<string, { text: string; cls: string }> = {
   PAID: { text: "จ่ายแล้ว", cls: "text-emerald-700" }, PENDING: { text: "รอจ่าย", cls: "text-slate-600" },
@@ -170,8 +170,6 @@ export const MOVE_LABEL: Record<string, string> = {
   LIABILITY_PAYMENT: "จ่ายหนี้", SECURITY_DEPOSIT_IN: "รับเงินประกัน", SECURITY_DEPOSIT_OUT: "คืนเงินประกัน",
   REIMBURSEMENT_IN: "เงินคืน (ไม่ใช่รายได้)", OTHER_IN: "เงินเข้าอื่น ๆ", OTHER_OUT: "เงินออกอื่น ๆ",
 };
-export const EXPENSE_CATEGORIES = ["ทั่วไป", "อาหาร", "บ้าน / สาธารณูปโภค", "เดินทาง / รถ", "การศึกษา", "สุขภาพ",
-  "ประกัน", "ภาษี", "ดอกเบี้ยจ่าย", "ท่องเที่ยว", "ช้อปปิ้ง", "ครอบครัว / ของขวัญ", "บริจาค", "BANK_FEE", "อื่น ๆ"];
 /** "2026-10" → ช่วงวันที่ของเดือน */
 export function monthRange(ym: string) {
   const [y, m] = ym.split("-").map(Number);
