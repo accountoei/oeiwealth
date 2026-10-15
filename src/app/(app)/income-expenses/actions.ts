@@ -29,8 +29,9 @@ export async function addIncome(_: ActionState, form: FormData): Promise<ActionS
   }
   const leaseId = str(form.get("lease_id"));
   const templateId = str(form.get("recurring_template_id"));
+  const itype = leaseId ? "RENT" : (str(form.get("income_type")) ?? "OTHER");
   const { error } = await supabase.from("income_transactions").insert({
-    income_type: leaseId ? "RENT" : (str(form.get("income_type")) ?? "OTHER"),
+    income_type: itype, income_subtype: itype === "OTHER" ? str(form.get("income_subtype")) : null,
     amount, tax, currency, date: str(form.get("date")), received_to_asset_id: toAsset,
     person_id: leaseId ? null : str(form.get("person_id")),
     lease_id: leaseId, recurring_template_id: templateId,
@@ -214,4 +215,51 @@ export async function changeAccount(_: ActionState, form: FormData): Promise<Act
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
   return done(warn ? "บันทึกแล้ว · บัญชีนี้กระทบยอดเดือนนี้ไปแล้ว ให้ตรวจที่หน้ากระทบยอด (Month Closing) อีกครั้ง" : "บันทึกแล้ว",
     ["/liabilities", "/month-closing", "/"]);
+}
+
+// ------------------------------------------------------------------ ตั้งค่า: หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น
+const SYS_CATS = ["BANK_FEE", "รอแยกรายละเอียด"];
+function catDone(msg: string): ActionState {
+  revalidatePath("/income-expenses");
+  revalidatePath("/property", "layout");
+  revalidatePath("/");
+  return { ok: msg };
+}
+
+export async function addCategory(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const kind = String(form.get("kind"));
+  const name = str(form.get("name"));
+  if (!["EXPENSE", "INCOME_OTHER"].includes(kind)) return { error: "ข้อมูลไม่ถูกต้อง" };
+  if (!name) return { error: "กรุณาใส่ชื่อ" };
+  if (SYS_CATS.includes(name)) return { error: "ชื่อนี้ระบบใช้อยู่" };
+  const { data: last } = await supabase.from("ie_categories").select("sort_order").eq("kind", kind).is("deleted_at", null)
+    .order("sort_order", { ascending: false }).limit(1).maybeSingle();
+  const { error } = await supabase.from("ie_categories").insert({ kind, name, sort_order: (last?.sort_order ?? 0) + 1 });
+  if (error) return { error: error.message.includes("ie_categories_name_uq") || error.code === "23505" ? "มีชื่อนี้อยู่แล้ว" : friendlyError(error.message) };
+  return catDone("เพิ่มแล้ว");
+}
+
+export async function renameCategory(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("rename_ie_category", { p_id: String(form.get("id")), p_name: String(form.get("name") ?? "") });
+  if (error) return { error: error.code === "23505" ? "มีชื่อนี้อยู่แล้ว" : friendlyError(error.message) };
+  const n = Number(data ?? 0);
+  return catDone(n > 0 ? `เปลี่ยนชื่อแล้ว · ปรับรายการเดิม ${n} รายการ` : "เปลี่ยนชื่อแล้ว");
+}
+
+export async function toggleCategory(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("ie_categories")
+    .update({ active: form.get("active") === "true" }).eq("id", String(form.get("id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  return catDone("บันทึกแล้ว");
+}
+
+export async function moveCategory(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("move_ie_category", { p_id: String(form.get("id")), p_dir: Number(form.get("dir")) });
+  if (error) return { error: friendlyError(error.message) };
+  return catDone("เลื่อนลำดับแล้ว");
 }

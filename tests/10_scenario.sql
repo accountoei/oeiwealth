@@ -1343,6 +1343,40 @@ SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.undo_payment_group(gen_random_uuid())$$, 'PERMISSION_DENIED', 'VIEWER ยกเลิกทั้งก้อนไม่ได้');
 RESET ROLE;
 
+\echo '== 13w. หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเอง)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.ie_categories(kind, name, sort_order) VALUES ('EXPENSE', 'หมวดทดสอบงวดปิด', 999);
+-- รายการในงวดที่ปิดแล้ว (ใส่ผ่านช่องทางแยกรายการ เพื่อจำลองข้อมูลเก่า)
+BEGIN;
+SELECT set_config('fwv.split', 'on', true);
+SELECT public.add_expense(jsonb_build_object('date','2026-07-20','description','ค่าใช้จ่ายงวดปิด','amount',10,'expense_category','หมวดทดสอบงวดปิด')) IS NOT NULL AS old_exp;
+COMMIT;
+SELECT t.ok(public.rename_ie_category((SELECT id FROM public.ie_categories WHERE name = 'หมวดทดสอบงวดปิด'), 'หมวดเปลี่ยนชื่อ') = 1,
+            'เปลี่ยนชื่อหมวด → รายการที่ใช้หมวดนี้เปลี่ยนตาม (แม้งวดปิดแล้ว)');
+SELECT t.ok(EXISTS (SELECT 1 FROM public.expense_items WHERE description = 'ค่าใช้จ่ายงวดปิด' AND expense_category = 'หมวดเปลี่ยนชื่อ')
+            AND (SELECT amount FROM public.expense_items WHERE description = 'ค่าใช้จ่ายงวดปิด') = 10,
+            'ชื่อหมวดในรายการเดิมเปลี่ยน · ยอดเท่าเดิม');
+SELECT t.fails($$SELECT public.add_expense(jsonb_build_object('date','2026-07-21','description','ห้ามเพิ่ม','amount',1))$$,
+  'PERIOD_LOCKED', 'หลังเปลี่ยนชื่อ งวดที่ปิดแล้วยังล็อกเหมือนเดิม');
+SELECT public.move_ie_category((SELECT id FROM public.ie_categories WHERE name = 'หมวดเปลี่ยนชื่อ'), -1) IS NULL AS moved;
+SELECT t.ok((SELECT sort_order FROM public.ie_categories WHERE name = 'หมวดเปลี่ยนชื่อ')
+            < (SELECT max(sort_order) FROM public.ie_categories WHERE kind = 'EXPENSE' AND deleted_at IS NULL),
+            'เลื่อนลำดับหมวดขึ้นได้');
+SELECT t.fails($$INSERT INTO public.ie_categories(kind, name) VALUES ('EXPENSE', 'อาหาร')$$, 'duplicate', 'ชื่อหมวดซ้ำไม่ได้');
+SELECT t.fails($$UPDATE public.income_transactions SET income_subtype = 'ทดสอบ' WHERE notes = 'ทดสอบย้ายรายได้'$$,
+  'inc_subtype_other', 'ประเภทย่อยใช้ได้เฉพาะรายได้อื่น');
+SELECT t.fails($$SELECT public.rename_ie_category((SELECT id FROM public.ie_categories WHERE kind = 'EXPENSE' AND name = 'ดอกเบี้ยจ่าย'), 'ดอกเบี้ย')$$,
+  'อัตโนมัติ', 'หมวดที่ระบบใช้อัตโนมัติ เปลี่ยนชื่อไม่ได้');
+INSERT INTO public.income_transactions(family_id, person_id, date, income_type, income_subtype, amount, currency, notes)
+  SELECT id, t.p('คุณพ่อ'), '2026-09-15', 'OTHER', 'ขายของมือสอง', 300, 'THB', 'ทดสอบประเภทย่อย' FROM public.families;
+SELECT public.change_entry_account('INCOME', (SELECT id FROM public.income_transactions WHERE notes = 'ทดสอบประเภทย่อย'), '', 'BONUS') IS NOT NULL AS mv6;
+SELECT t.ok((SELECT income_type = 'BONUS' AND income_subtype IS NULL FROM public.income_transactions WHERE notes = 'ทดสอบประเภทย่อย'),
+            'เปลี่ยนประเภทออกจากรายได้อื่น → ล้างประเภทย่อยให้เอง');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.ie_categories(kind, name) VALUES ('EXPENSE', 'หมวดจาก VIEWER')$$, 'row-level security', 'VIEWER เพิ่มหมวดไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

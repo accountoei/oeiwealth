@@ -6,7 +6,7 @@ import {
   addExpense, addIncome, addMovement, addReimbursement, addTemplate, changeAccount, dismissExpected, setMonthStatus, toggleTemplate,
   type ActionState,
 } from "./actions";
-import { EXPENSE_CATEGORIES, INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
+import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 
@@ -72,10 +72,11 @@ export function AccountEditor({ kind, id, current, incomeType, currency, banks, 
 }
 
 /* ================================================================== รายได้ */
-export function IncomeForm({ banks, persons, today, minDate }: { banks: Bank[]; persons: Person[]; today: string; minDate: string }) {
+export function IncomeForm({ banks, persons, today, minDate, subtypes = [] }: { banks: Bank[]; persons: Person[]; today: string; minDate: string; subtypes?: string[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addIncome, {});
   const [amt, setAmt] = useState(""); const [tax, setTax] = useState("");
   const [bank, setBank] = useState(banks[0]?.asset_id ?? "");
+  const [itype, setItype] = useState("SALARY");
   const ccy = banks.find((b) => b.asset_id === bank)?.currency;
   return (
     <Toggle label="+ บันทึกรายได้">
@@ -84,11 +85,19 @@ export function IncomeForm({ banks, persons, today, minDate }: { banks: Bank[]; 
           <h3 className="font-medium text-slate-900">บันทึกรายได้</h3>
           <div className="grid gap-4 md:grid-cols-3">
             <label className={lbl}>ประเภท
-              <select name="income_type" defaultValue="SALARY" className={input}>
+              <select name="income_type" value={itype} onChange={(e) => setItype(e.target.value)} className={input}>
                 {Object.entries(INCOME_TYPE_LABEL).filter(([v]) => !["DIVIDEND", "COUPON", "RENT"].includes(v))
                   .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
+            {itype === "OTHER" && subtypes.length > 0 && (
+              <label className={lbl}>ประเภทย่อย
+                <select name="income_subtype" defaultValue="" className={input}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {subtypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+            )}
             <label className={lbl}>ของใคร
               <select name="person_id" defaultValue={persons[0]?.id ?? ""} className={input}>
                 <option value="">— ตามเจ้าของบัญชีที่รับ (ไม่มีบัญชี = ส่วนกลาง) —</option>
@@ -246,8 +255,8 @@ export function TemplateToggle({ id, active }: { id: string; active: boolean }) 
 }
 
 /* ================================================================== ค่าใช้จ่าย */
-export function ExpenseForm({ banks, cards, persons, today, minDate }:
-  { banks: Bank[]; cards: Card[]; persons: Person[]; today: string; minDate: string }) {
+export function ExpenseForm({ banks, cards, persons, today, minDate, categories }:
+  { banks: Bank[]; cards: Card[]; persons: Person[]; today: string; minDate: string; categories: string[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addExpense, {});
   const [via, setVia] = useState(banks.length ? "bank" : "cash");
   const [reimb, setReimb] = useState(false);
@@ -260,9 +269,11 @@ export function ExpenseForm({ banks, cards, persons, today, minDate }:
             <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
             <label className={`${lbl} md:col-span-2`}>รายละเอียด *<input name="description" required placeholder="เช่น ค่าใช้จ่ายทั่วไปประจำเดือน" className={input} /></label>
             <label className={lbl}>จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
-            <label className={lbl}>หมวด
-              <input name="expense_category" list="exp-cats" placeholder="เลือกหรือพิมพ์เอง" className={input} />
-              <datalist id="exp-cats">{EXPENSE_CATEGORIES.filter((c) => c !== "BANK_FEE").map((c) => <option key={c} value={c} />)}</datalist>
+            <label className={lbl}>หมวด *
+              <select name="expense_category" required defaultValue="" className={input}>
+                <option value="" disabled>— เลือกหมวด —</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </label>
             <div className={lbl}>จ่ายด้วย
               <div className="mt-2 flex flex-wrap gap-3">
