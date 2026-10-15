@@ -444,8 +444,7 @@ async function IncomeBody({ start }: { start: string }) {
       <div className="flex justify-between"><dt>รายได้ (หลังภาษี)</dt><dd className="tabular-nums">{money(Number(p?.income ?? 0) + Number(p?.investment_income ?? 0), undefined, 0)}</dd></div>
       <div className="flex justify-between text-xs text-slate-500"><dt>รวมรายได้ลงทุน</dt><dd className="tabular-nums">{money(p?.investment_income ?? 0, undefined, 0)}</dd></div>
       <div className="flex justify-between"><dt>ค่าใช้จ่ายสุทธิ</dt>
-        <dd className="tabular-nums">{track === "NOT_TRACKED" ? <span className="text-slate-500">ไม่ได้บันทึก</span> : money(Number(p?.expenses ?? 0) - Number(p?.reimbursements ?? 0), undefined, 0)}</dd></div>
-      {track === "PARTIAL" && <p className="text-xs text-amber-700">ค่าใช้จ่ายบันทึกไม่ครบ</p>}
+        <dd className="tabular-nums">{track === "NOT_TRACKED" ? <span className="text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span> : money(Number(p?.expenses ?? 0) - Number(p?.reimbursements ?? 0), undefined, 0)}</dd></div>
     </dl>
   );
 }

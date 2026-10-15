@@ -69,7 +69,12 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,confirmed_date").eq("status", "ACTIVE").order("name"),
     supabase.from("bank_reconciliations").select("*").eq("year_month", start).is("deleted_at", null),
   ]);
-  const checks = (checksRaw as Check[] | null) ?? [];
+  // "ค่าใช้จ่ายบันทึกครบ / ไม่ครบ" ไม่ใช้แล้ว (เงินคงเหลือสุทธิคิดจากรายการที่บันทึกเสมอ) → ไม่แสดงเป็นข้อให้ตรวจ
+  const notTracking = (i: Issue) => !i.code.startsWith("EXPENSE_");
+  const checks = ((checksRaw as Check[] | null) ?? []).map((c) => {
+    const issues = c.issues.filter(notTracking);
+    return { ...c, issues, issue_count: issues.length, status: c.status === "REVIEW" && !issues.some((i) => i.severity === "REVIEW") ? "READY" : c.status };
+  });
   const p = previewRaw as Preview | null;
   const snap = p?.snapshot ?? null;
   const isFinal = snap?.status === "FINAL";
@@ -253,7 +258,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
               <details className="text-xs text-slate-600">
                 <summary className="cursor-pointer">คำเตือนที่ปิดผ่าน {snap.closing_warnings.length} หมวด</summary>
                 <ul className="mt-1 space-y-0.5">
-                  {snap.closing_warnings.flatMap((w) => w.issues.map((i, k) => <li key={`${w.category}-${k}`}>• {i.message}</li>))}
+                  {snap.closing_warnings.flatMap((w) => w.issues.filter(notTracking).map((i, k) => <li key={`${w.category}-${k}`}>• {i.message}</li>))}
                 </ul>
               </details>
             )}
