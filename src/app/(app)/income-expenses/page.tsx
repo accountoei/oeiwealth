@@ -26,7 +26,7 @@ import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "โอน & จ่ายหนี้"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "เงินเข้า–ออก & โอน"]];
 const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   RECEIVED: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" }, DISMISSED: { text: "เดือนนี้ไม่ได้รับ", cls: "bg-slate-100 text-slate-500" },
@@ -245,6 +245,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     let detail: React.ReactNode = m.description;
     let link: { href: string; label: string } | null = null;
     let type = MOVE_LABEL[m.movement_type] ?? m.movement_type;
+    let pending = false;
     if (m.parts) {
       type = "รับชำระเงินให้กู้";
       detail = m.parts.map((x) => `${x.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "เงินต้น" : x.movement_type === "INCOME" ? "ดอกเบี้ย" : MOVE_LABEL[x.movement_type] ?? x.movement_type} ${money(x.amount)}`).join(" + ");
@@ -254,12 +255,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       const inc = m.source_entity_id ? incById.get(m.source_entity_id) : undefined;
       if (inc) {
         type = INCOME_TYPE_LABEL[inc.income_type] ?? type;
+        pending = !!inc.pending_split;
         detail = [inc.lease_id || inc.asset_id ? pname(inc.src_asset) : null, inc.notes].filter(Boolean).join(" · ") || type;
         link = incSource(inc) ?? tabLink("income", "แท็บรายได้");
       } else link = tabLink("income", "แท็บรายได้");
     } else if (m.is_derived && m.source_entity_type === "EXPENSE") {
       const it = m.source_entity_id ? expById.get(m.source_entity_id) : undefined;
-      if (it) { detail = it.description; link = expSource(it); if (link?.label === "รายการโอน") link = null; else link = link ?? tabLink("expense", "แท็บค่าใช้จ่าย"); }
+      if (it) { detail = it.description; pending = !!it.pending_split; link = expSource(it); if (link?.label === "รายการโอน") link = null; else link = link ?? tabLink("expense", "แท็บค่าใช้จ่าย"); }
       else link = tabLink("expense", "แท็บค่าใช้จ่าย");
     } else if (m.is_derived && m.source_entity_type === "REIMBURSEMENT") {
       link = tabLink("expense", "แท็บค่าใช้จ่าย");
@@ -282,7 +284,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         {m.counter_amount == null && m.counter_currency && <div className="text-xs text-amber-700">→ รอยอด {m.counter_currency}</div>}
         {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
       </>,
-      detail: <>{detail}{srcLink(link)}</>,
+      detail: <>{pending && <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">รอแยกรายละเอียด</span>}{detail}{srcLink(link)}</>,
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? (
         <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
           deleteNote={m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN" ? "รายการฝาก/ถอนในพอร์ตจะถูกลบตาม" : undefined}
@@ -296,6 +298,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     };
   });
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
+  // สรุปเงินเข้า–ออก (ทุกบัญชี · ไม่นับโอนระหว่างบัญชีตัวเอง) สำหรับแท็บภาพรวม
+  const moveSum = moveRows(false).reduce((acc, r) => {
+    const t = (c: string) => acc.byCcy.get(c) ?? acc.byCcy.set(c, { inn: 0, out: 0 }).get(c)!;
+    if (r.toBank && !r.fromBank) t(r.toCcy).inn += r.toAmount;
+    else if (r.fromBank && !r.toBank) t(r.fromCcy).out += r.fromAmount;
+    acc.count += 1;
+    return acc;
+  }, { count: 0, byCcy: new Map<string, { inn: number; out: number }>() });
   const savings = grossThb - taxThb - (expenseThb - reimbThb);
   const rs = new Map((reimbStatus ?? []).map((r) => [r.expense_item_id, r]));
   const inMonth = start <= today && (!goLive || end >= goLive);
@@ -346,7 +356,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       <TabPanel id="overview">
           {autopayPending.length > 0 && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-              บัตรเครดิตตัดบัญชีอัตโนมัติรอยืนยัน {autopayPending.length} รายการ — ดูที่แท็บ &ldquo;โอน &amp; จ่ายหนี้&rdquo;
+              บัตรเครดิตตัดบัญชีอัตโนมัติรอยืนยัน {autopayPending.length} รายการ — ดูที่แท็บ &ldquo;เงินเข้า–ออก &amp; โอน&rdquo;
             </p>
           )}
           <section className="grid gap-4 md:grid-cols-4">
@@ -364,9 +374,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               note={`ยอดก่อนหักเงินคืน (บาท)${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""} · กดที่หมวดเพื่อดูรายการ`}
               empty={track === "NOT_TRACKED" ? "เดือนนี้ไม่ได้บันทึกค่าใช้จ่าย" : "ยังไม่มีค่าใช้จ่ายที่บันทึกในเดือนนี้"} />
           </section>
-          <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-2 font-medium text-slate-900">ความเคลื่อนไหวของเงินในเดือนนี้</h2>
-            <MovesView rows={moveRows(false)} banks={bankOpts} />
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5">
+            <div>
+              <h2 className="font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
+              <p className="text-xs text-slate-500">ทุกบัญชีธนาคารในระบบ · ไม่นับโอนระหว่างบัญชีตัวเอง · {moveSum.count} รายการ</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm tabular-nums">
+              {[...moveSum.byCcy.entries()].map(([ccy, t]) => (
+                <span key={ccy} className="flex flex-wrap gap-x-4">
+                  <span className="text-emerald-700">เข้า +{money(t.inn, ccy)}</span>
+                  <span className="text-red-700">ออก −{money(t.out, ccy)}</span>
+                  <span className={`font-semibold ${t.inn - t.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>สุทธิ {t.inn - t.out >= 0 ? "+" : "−"}{money(Math.abs(t.inn - t.out), ccy)}</span>
+                </span>
+              ))}
+              <Link href={`/income-expenses?tab=moves&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`} className="text-xs text-blue-700 hover:underline">ดูรายการทั้งหมด →</Link>
+            </div>
           </section>
       </TabPanel>
 
@@ -729,7 +751,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           </section>
       </TabPanel>
 
-      {/* ============================================================ โอน & จ่ายหนี้ */}
+      {/* ============================================================ เงินเข้า–ออก & โอน */}
       <TabPanel id="moves">
           {autopay.length > 0 && (
             <section className={`rounded-xl border p-5 ${autopayPending.length ? "border-amber-200 bg-amber-50/40" : "border-slate-200 bg-white"}`}>
@@ -765,6 +787,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-1 font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
+            <p className="mb-3 text-xs text-slate-500">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;</p>
             <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} />
           </section>
       </TabPanel>
