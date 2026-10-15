@@ -11,6 +11,7 @@ import {
   UtilityForm, ValuationForm,
 } from "./forms";
 import RowActions from "@/components/RowActions";
+import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
@@ -264,6 +265,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
                     banks={bankList} minDate={l.deposit_due_date} today={today} />
                 )}
+                {canSettle && l.deposit_settlement_type === "REFUNDED" && (
+                  <UndoButton kind="DEPOSIT" id={l.id} paths={paths} label="ยกเลิกการคืนเงินประกัน"
+                    confirmText={`ยกเลิกการคืนเงินประกันของ ${l.tenant_name}?\nเงินคืนผู้เช่า และรายได้ส่วนที่หักไว้ จะถูกลบ · สัญญากลับมาถือเงินประกัน (หนี้สิน) เหมือนเดิม`} />
+                )}
               </div>
               {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
                 <p className="mt-1 text-xs text-slate-400">คืนเงินประกันได้ตั้งแต่ {thDate(l.deposit_due_date)}</p>
@@ -326,6 +331,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="text-right tabular-nums">{money(r.amount, r.currency)}{Number(r.tax ?? 0) > 0 && <div className="text-xs text-slate-500">ภาษี {money(r.tax)}</div>}</td>
                   <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                   <td className="pl-2 text-right">
+                    {r.income_type !== "RENT" && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
                     {canWrite && r.income_type === "RENT" && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete} fields={[
                       { name: "date", label: "วันที่รับ", type: "date", value: r.date },
                       { name: "amount", label: "ยอด", type: "number", value: r.amount },

@@ -1300,6 +1300,49 @@ SELECT t.fails($$SELECT public.change_entry_account('EXPENSE', (SELECT id FROM p
   AND source_fee_side IS NULL AND NOT pending_split LIMIT 1), '')$$, 'PERIOD_LOCKED', 'งวดที่ปิดแล้วย้ายบัญชีไม่ได้');
 RESET ROLE;
 
+\echo '== 13v. ยกเลิกทั้งก้อน (ผลประโยชน์ประกัน · คืนเงินประกันการเช่า · เงินต้น + ดอกเบี้ย)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT count(*) FROM public.insurance_benefit_receipts WHERE undone_at IS NULL) = 2, 'รับผลประโยชน์ 2 ครั้ง → มีใบรับ 2 ใบ');
+SELECT public.undo_insurance_benefit((SELECT id FROM public.insurance_benefit_receipts WHERE outcome = 'MATURED')) IS NULL AS undo1;
+SELECT t.ok((SELECT status FROM public.insurance_policies WHERE id = (SELECT policy_id FROM public.insurance_benefit_receipts WHERE outcome = 'MATURED')) = 'ACTIVE'
+            AND (SELECT status = 'ACTIVE' AND current_value = 70000 FROM public.assets WHERE id = (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id = (SELECT policy_id FROM public.insurance_benefit_receipts LIMIT 1)))
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE income_type = 'INSURANCE_BENEFIT' AND deleted_at IS NULL),
+            'ยกเลิกครบสัญญา → กรมธรรม์กลับเป็น "มีผล" · มูลค่าเวนคืนกลับ 70,000 · รายได้ส่วนเกินหายไป');
+SELECT t.fails($$SELECT public.undo_insurance_benefit((SELECT id FROM public.insurance_benefit_receipts WHERE outcome = 'MATURED'))$$,
+  'ยกเลิกไปแล้ว', 'ยกเลิกซ้ำไม่ได้');
+SELECT public.undo_insurance_benefit((SELECT id FROM public.insurance_benefit_receipts WHERE outcome IS NULL)) IS NULL AS undo2;
+SELECT t.ok((SELECT current_value = 100000 FROM public.assets WHERE id = (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id = (SELECT policy_id FROM public.insurance_benefit_receipts LIMIT 1)))
+            AND (SELECT status <> 'PAID' FROM public.v_insurance_schedule_status WHERE kind = 'BENEFIT')
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND deleted_at IS NULL
+                              AND metadata ? 'policy_id'),
+            'ยกเลิกเงินคืนรายงวด → มูลค่าเวนคืนกลับ 100,000 · งวดกลับเป็นยังไม่รับ');
+-- คืนเงินประกันการเช่า
+SELECT public.undo_security_deposit((SELECT id FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข')) IS NULL AS undo_dep;
+SELECT t.ok((SELECT deposit_settlement_type IS NULL AND deposit_settled_date IS NULL FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข')
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE income_type = 'OTHER' AND lease_id IS NOT NULL AND deleted_at IS NULL
+                              AND notes LIKE 'หักจากเงินประกัน:%'),
+            'ยกเลิกคืนเงินประกัน → เงินคืน + รายได้ส่วนที่หักหายไป · สัญญากลับมาถือเงินประกัน');
+-- เงินให้กู้: เงินต้น + ดอกเบี้ย
+SELECT public.receive_loan_payment(t.a('เงินกู้ญาติ'), t.a('KBank ออมทรัพย์'), current_date, 1000, 100, NULL, 'ทดสอบยกเลิก') AS loan_grp \gset
+SELECT t.ok(public.undo_payment_group(:'loan_grp') = 2, 'ยกเลิกรับชำระเงินให้กู้: 2 รายการ');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_group_id = :'loan_grp' AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE notes = 'ทดสอบยกเลิก' AND deleted_at IS NULL),
+            'ยกเลิกรับชำระเงินให้กู้ → เงินต้น + ดอกเบี้ยหายพร้อมกัน');
+-- จ่ายหนี้: เงินต้น + ดอกเบี้ย
+SELECT (SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') AS debt_b4 \gset
+SELECT public.pay_liability(jsonb_build_object('liability_id', (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน'),
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 300, 'interest', 40)) ->> 'group_id' AS liab_grp \gset
+SELECT t.ok((SELECT count(*) FROM public.cash_movements WHERE movement_group_id = :'liab_grp' AND deleted_at IS NULL) = 2,
+            'จ่ายหนี้: ดอกเบี้ยผูกกลุ่มเดียวกับเงินต้น');
+SELECT t.ok(public.undo_payment_group(:'liab_grp') = 2, 'ยกเลิกจ่ายหนี้: 2 รายการ');
+SELECT t.ok((SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') = :debt_b4,
+            'ยกเลิกจ่ายหนี้ → เงินต้น + ดอกเบี้ยหาย · ยอดหนี้กลับเท่าเดิม');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.undo_payment_group(gen_random_uuid())$$, 'PERMISSION_DENIED', 'VIEWER ยกเลิกทั้งก้อนไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
