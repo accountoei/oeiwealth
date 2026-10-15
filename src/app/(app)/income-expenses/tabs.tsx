@@ -16,7 +16,7 @@ export function TabsProvider({ initial, children }: { initial: string; children:
     try {
       const u = new URL(window.location.href);
       u.searchParams.set("tab", k);
-      window.history.replaceState(window.history.state, "", u);
+      window.history.replaceState(null, "", u);   // null = ให้ Next.js รับรู้ URL ใหม่ด้วย (ไม่หลุดหลังบันทึก)
     } catch { /* ไม่เป็นไร แค่ URL ไม่เปลี่ยน */ }
   };
   return <Ctx.Provider value={{ active, setActive }}>{children}</Ctx.Provider>;
@@ -59,7 +59,7 @@ export function SubTabs({ param, initial, tabs, children }: { param: string; ini
     try {
       const u = new URL(window.location.href);
       u.searchParams.set(param, k);
-      window.history.replaceState(window.history.state, "", u);
+      window.history.replaceState(null, "", u);   // null = ให้ Next.js รับรู้ URL ใหม่ด้วย (ไม่หลุดหลังบันทึก)
     } catch { /* ไม่เป็นไร */ }
   };
   return (

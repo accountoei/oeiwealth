@@ -15,7 +15,7 @@ export function TabsProvider({ initial, param = "tab", defaultKey, children }: {
     try {
       const u = new URL(window.location.href);
       if (k === defaultKey) u.searchParams.delete(param); else u.searchParams.set(param, k);
-      window.history.replaceState(window.history.state, "", u);
+      window.history.replaceState(null, "", u);   // null = ให้ Next.js รับรู้ URL ใหม่ด้วย (ไม่หลุดหลังบันทึก)
     } catch { /* แค่ URL ไม่เปลี่ยน */ }
   };
   return <Ctx.Provider value={{ active, setActive }}>{children}</Ctx.Provider>;

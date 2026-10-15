@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { splitPending, type ActionState } from "./actions";
 import { INCOME_TYPE_LABEL, money } from "@/lib/format";
 
@@ -17,6 +18,9 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([blank()]);
   const [state, action, pending] = useActionState<ActionState, FormData>(splitPending, {});
+  const router = useRouter();
+  // บันทึกแล้ว → โหลดข้อมูลหน้าใหม่ทันที (ยอดที่ยังรอแยกอัปเดต · กดแยกต่อได้เลย)
+  useEffect(() => { if (state.ok) router.refresh(); }, [state, router]);
   if (state.ok) return <p className="text-xs text-emerald-700">{state.ok}</p>;
   if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50">แยกรายการ</button>;
   const sum = lines.reduce((t, l) => t + n(l.amount), 0);
