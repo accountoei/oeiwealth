@@ -305,7 +305,7 @@ export function ExpenseForm({ banks, cards, persons, today, minDate }:
           </div>
           <p className="text-xs text-slate-500">
             {via === "bank" ? "ระบบสร้างรายการเงินออกจากบัญชีให้" : via === "card" ? "ยังไม่มีเงินออกจากบัญชี จนกว่าจะบันทึก \"จ่ายบัตรเครดิต\"" : "ไม่มีเงินออกจากบัญชีในระบบ"}
-            {" · "}ซื้อทรัพย์สิน / ลงทุน / โอน / จ่ายหนี้ ไม่ใช่ค่าใช้จ่าย ให้บันทึกที่แท็บ &ldquo;โอน &amp; จ่ายหนี้&rdquo;
+            {" · "}ซื้อทรัพย์สิน / ลงทุน / โอน / จ่ายหนี้ ไม่ใช่ค่าใช้จ่าย ให้บันทึกที่แท็บ &ldquo;เงินเข้า–ออก &amp; โอน&rdquo;
           </p>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
