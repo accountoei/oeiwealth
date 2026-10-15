@@ -11,7 +11,7 @@ import {
   AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { TabNav, TabPanel, TabsProvider } from "./tabs";
+import { TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
 import { ActionRow } from "@/components/ActionBar";
 import CategoryBars, { type CatRow } from "./CategoryBars";
 import DueTable from "./DueTable";
@@ -238,12 +238,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const incById = new Map((incomes ?? []).map((i) => [i.id as string, i]));
   const expById = new Map((items ?? []).map((i) => [i.id as string, i]));
   const placeOf = (id: string | null) => (id ? name.get(id) ?? otherName.get(id) ?? "ทรัพย์สิน" : "ภายนอก");
-  const srcLink = (l: { href: string; label: string } | null) => l
-    ? <Link href={l.href} className="ml-1 whitespace-nowrap text-blue-700 hover:underline">แก้ที่{l.label.startsWith("แท็บ") ? "" : "หน้า"}{l.label} →</Link> : null;
-  const tabLink = (tab: string, label: string) => ({ href: `/income-expenses?tab=${tab}&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`, label });
+  const srcLink = (l: { href: string; label: string; tab?: string } | null) => !l ? null : l.tab
+    ? <TabLink tab={l.tab} href={l.href} className="ml-1 whitespace-nowrap text-blue-700 hover:underline">แก้ที่{l.label} →</TabLink>
+    : <Link href={l.href} className="ml-1 whitespace-nowrap text-blue-700 hover:underline">แก้ที่หน้า{l.label} →</Link>;
+  const tabLink = (tab: string, label: string) => ({ href: `/income-expenses?tab=${tab}&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`, label, tab });
   const moveRows = (withActions: boolean): MoveRow[] => mergeGroups(moveList as Move[]).map((m) => {
     let detail: React.ReactNode = m.description;
-    let link: { href: string; label: string } | null = null;
+    let link: { href: string; label: string; tab?: string } | null = null;
     let type = MOVE_LABEL[m.movement_type] ?? m.movement_type;
     let pending = false;
     if (m.parts) {
@@ -364,8 +365,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <Kpi label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
             <Kpi label="ค่าใช้จ่าย" value={track === "NOT_TRACKED" ? "ไม่ได้บันทึก" : money(expenseThb, "THB", 0)}
               sub={`${TRACK[track].text}${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""}`} cls={TRACK[track].cls} />
-            <Kpi label="เงินออม (ไม่รวมการลงทุน)" value={track === "COMPLETE" ? money(savings, "THB", 0) : "—"}
-              sub={track === "COMPLETE" ? "รายได้สุทธิ − ค่าใช้จ่ายสุทธิ" : "แสดงเมื่อยืนยันว่าบันทึกค่าใช้จ่ายครบ"} />
+            <Kpi label="เงินคงเหลือสุทธิ" value={track === "COMPLETE" ? money(savings, "THB", 0) : "—"}
+              sub={track === "COMPLETE" ? "รายได้สุทธิ − ค่าใช้จ่าย" : "แสดงเมื่อยืนยันว่าบันทึกค่าใช้จ่ายครบ"} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
             <CategoryBars kind="income" title={`รายได้ตามประเภท ${thMonth(start)}`} rows={incomeCats}
@@ -387,7 +388,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                   <span className={`font-semibold ${t.inn - t.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>สุทธิ {t.inn - t.out >= 0 ? "+" : "−"}{money(Math.abs(t.inn - t.out), ccy)}</span>
                 </span>
               ))}
-              <Link href={`/income-expenses?tab=moves&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`} className="text-xs text-blue-700 hover:underline">ดูรายการทั้งหมด →</Link>
+              <TabLink tab="moves" href={`/income-expenses?tab=moves&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`} className="text-xs text-blue-700 hover:underline">ดูรายการทั้งหมด →</TabLink>
             </div>
           </section>
       </TabPanel>
