@@ -265,7 +265,7 @@ export const BENEFIT_TYPE_LABEL: Record<string, string> = {
   CASH_BACK: "เงินคืนระหว่างสัญญา", ANNUITY: "บำนาญ / รายงวด", MATURITY: "ครบสัญญา", OTHER: "อื่น ๆ",
 };
 export const INS_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
-  PAID: { text: "ชำระแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PARTIAL: { text: "บางส่วน", cls: "bg-amber-50 text-amber-700" },
+  PAID: { text: "จ่ายแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PARTIAL: { text: "บางส่วน", cls: "bg-amber-50 text-amber-700" },
   PENDING: { text: "รอ", cls: "bg-slate-100 text-slate-700" }, OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" },
   CLOSED: { text: "ไม่ต้องชำระ (ปิดกรมธรรม์)", cls: "bg-slate-100 text-slate-500" },
 };

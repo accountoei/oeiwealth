@@ -239,7 +239,7 @@ export function TemplateToggle({ id, active }: { id: string; active: boolean }) 
     <form action={action} className="inline">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="active" value={String(!active)} />
-      <button disabled={pending} className="text-xs text-slate-600 underline">{active ? "หยุดใช้" : "เปิดใช้"}</button>
+      <button disabled={pending} className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">{active ? "หยุดใช้รายได้ประจำนี้" : "เปิดใช้อีกครั้ง"}</button>
       {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
     </form>
   );
