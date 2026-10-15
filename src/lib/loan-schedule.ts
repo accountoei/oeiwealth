@@ -11,7 +11,7 @@ export const SCHED_METHOD_LABEL: Record<SchedMethod, string> = {
 };
 
 export const LOAN_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
-  PAID: { text: "รับแล้ว", cls: "bg-emerald-50 text-emerald-700" },
+  PAID: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" },
   PARTIAL: { text: "รับบางส่วน", cls: "bg-amber-50 text-amber-700" },
   PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" },

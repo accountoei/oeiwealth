@@ -11,7 +11,7 @@ import {
   AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
+import { SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
 import { ActionRow } from "@/components/ActionBar";
 import CategoryBars, { type CatRow } from "./CategoryBars";
 import DueTable from "./DueTable";
@@ -37,7 +37,7 @@ const TRACK: Record<string, { text: string; cls: string }> = {
 };
 const REIMB: Record<string, string> = { PENDING: "รอรับเงินคืน", PARTIAL: "ได้คืนบางส่วน", FULL: "ได้คืนครบ" };
 
-type Sp = Promise<{ tab?: string; m?: string; p?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -238,10 +238,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const incById = new Map((incomes ?? []).map((i) => [i.id as string, i]));
   const expById = new Map((items ?? []).map((i) => [i.id as string, i]));
   const placeOf = (id: string | null) => (id ? name.get(id) ?? otherName.get(id) ?? "ทรัพย์สิน" : "ภายนอก");
-  const srcLink = (l: { href: string; label: string; tab?: string } | null) => !l ? null : l.tab
-    ? <TabLink tab={l.tab} href={l.href} className="ml-1 whitespace-nowrap text-blue-700 hover:underline">แก้ที่{l.label} →</TabLink>
-    : <Link href={l.href} className="ml-1 whitespace-nowrap text-blue-700 hover:underline">แก้ที่หน้า{l.label} →</Link>;
-  const tabLink = (tab: string, label: string) => ({ href: `/income-expenses?tab=${tab}&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`, label, tab });
+  // กดที่รายละเอียดเพื่อไปแก้ที่ต้นทาง (ขีดเส้นใต้ · เมาส์เป็นรูปมือ)
+  const srcLink = (l: { href: string; label: string; tab?: string } | null, text: React.ReactNode) => {
+    const cls = "cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400";
+    if (!l || !text) return text;
+    return l.tab ? <TabLink tab={l.tab} href={l.href} className={cls}>{text}</TabLink>
+      : <Link href={l.href} title={`แก้ที่หน้า${l.label}`} className={cls}>{text}</Link>;
+  };
+  const tabLink = (tab: string, label: string) => ({
+    href: `/income-expenses?tab=${tab}&m=${ym}${tab === "income" ? "&it=recorded" : tab === "expense" ? "&et=recorded" : ""}${pv.personId ? `&p=${pv.personId}` : ""}`, label, tab });
   const moveRows = (withActions: boolean): MoveRow[] => mergeGroups(moveList as Move[]).map((m) => {
     let detail: React.ReactNode = m.description;
     let link: { href: string; label: string; tab?: string } | null = null;
@@ -285,7 +290,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         {m.counter_amount == null && m.counter_currency && <div className="text-xs text-amber-700">→ รอยอด {m.counter_currency}</div>}
         {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
       </>,
-      detail: <>{pending && <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">รอแยกรายละเอียด</span>}{detail}{srcLink(link)}</>,
+      detail: <>{pending && <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">รอแยกรายละเอียด</span>}{srcLink(link, detail || type)}</>,
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? (
         <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
           deleteNote={m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN" ? "รายการฝาก/ถอนในพอร์ตจะถูกลบตาม" : undefined}
@@ -311,6 +316,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const rs = new Map((reimbStatus ?? []).map((r) => [r.expense_item_id, r]));
   const inMonth = start <= today && (!goLive || end >= goLive);
   const months = monthOptions(goLive, today, 3, ym);
+  // แท็บย่อย: มีรายการค้าง → เปิด "ที่ต้องได้รับ / จ่าย" ก่อน · ไม่มี → "บันทึกแล้ว"
+  const incOpen = expectedList.filter((e) => e.status === "PENDING" || e.status === "OVERDUE").length
+    + loanDue.filter((x) => x.status !== "PAID").length + benefitDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").length;
+  const expOpen = costs.filter((c) => c.status !== "PAID").length + premiumDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").length;
+  const SUBS = ["due", "recorded", "settings"];
+  const incTab = SUBS.includes(sp.it ?? "") ? (sp.it as string) : incOpen > 0 ? "due" : "recorded";
+  const expTab = SUBS.includes(sp.et ?? "") ? (sp.et as string) : expOpen > 0 ? "due" : "recorded";
   // ภาพรวมตามประเภท / หมวด (บาท · ตามสัดส่วนเมื่อดูรายบุคคล)
   const group = (rows: { label: string; pending: boolean; name: string; date: string; value: number }[]) => {
     const m = new Map<string, CatRow>();
@@ -396,6 +408,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       {/* ============================================================ รายได้ */}
       <TabPanel id="income">
           {canWrite && inMonth && <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} />}
+          <SubTabs param="it" initial={incTab} tabs={[["due", `ที่ต้องได้รับ (${incOpen})`], ["recorded", `บันทึกแล้ว (${incomeList.length})`], ["settings", "รายได้ประจำ"]]}>
+          <SubPanel id="due">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
@@ -463,7 +477,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       {Number(x.remaining) < Number(x.amount) && <span className="text-emerald-700">{money(Number(x.amount) - Number(x.remaining))}</span>}
                       {x.status !== "PAID" && Number(x.remaining) < Number(x.amount) && <div className="text-xs text-amber-700">ค้าง {money(x.remaining)}</div>}
                     </td>
-                    <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{INS_SCHED_STATUS[x.status]?.text ?? x.status}</span></td>
+                    <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${INS_SCHED_STATUS[x.status]?.cls ?? ""}`}>{x.status === "PAID" ? "ได้รับแล้ว" : INS_SCHED_STATUS[x.status]?.text ?? x.status}</span></td>
                   </>} actions={canWrite && x.status !== "PAID" ? (
                     <BenefitForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks}
                       persons={persons ?? []} hasCashValue={!!x.cash_value_asset_id} today={today} small canClose={canDelete} />
@@ -472,7 +486,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               ]} />
             )}
           </section>
+          </SubPanel>
 
+          <SubPanel id="recorded">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-3 font-medium text-slate-900">รายได้ที่บันทึกแล้ว</h2>
             {incomeList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายได้ในเดือนนี้</p> : (
@@ -486,12 +502,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="py-1.5">{thDate(i.date)}</td>
                       <td>{INCOME_TYPE_LABEL[i.income_type] ?? i.income_type}</td>
                       <td className="text-slate-600">
-                        {i.source_transaction_id ? <Link href={`/investments/${i.asset_id}`} className="underline">จากพอร์ตลงทุน</Link>
-                          : i.lease_id ? <Link href={`/property/${i.asset_id}`} className="underline">ค่าเช่า (แบ่งตามเจ้าของทรัพย์สิน)</Link>
-                          : i.income_type === "LOAN_INTEREST" && i.asset_id
-                            ? <Link href={`/financial/loans/${i.asset_id}`} className="underline">ดอกเบี้ยจาก {pname(i.src_asset) ?? "เงินให้กู้"} (แบ่งตามเจ้าของ)</Link>
-                          : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)`
-                            : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง")}
+                        {(() => {
+                          // รายการจากหน้าอื่น: กดที่ชื่อเพื่อไปแก้ที่ต้นทาง
+                          const src = i.pending_split ? null : incSource(i);
+                          const text = i.source_transaction_id ? `จาก${pname(i.src_asset) ? ` ${pname(i.src_asset)}` : "พอร์ตลงทุน"}`
+                            : i.lease_id ? `ค่าเช่า ${pname(i.src_asset) ?? ""} (แบ่งตามเจ้าของทรัพย์สิน)`
+                            : i.income_type === "LOAN_INTEREST" && i.asset_id ? `ดอกเบี้ยจาก ${pname(i.src_asset) ?? "เงินให้กู้"} (แบ่งตามเจ้าของ)`
+                            : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)`
+                              : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง");
+                          return src ? <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className="cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400">{text}</Link> : text;
+                        })()}
                         {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
                         {i.pending_split && (
                           <div className="mt-1 space-y-1">
@@ -505,9 +525,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
-                        {incSource(i) && !i.pending_split ? (
-                          <Link href={incSource(i)!.href} className="whitespace-nowrap text-xs text-blue-700 hover:underline">แก้ที่หน้า{incSource(i)!.label} →</Link>
-                        ) : canWrite && !i.pending_split && (
+                        {!incSource(i) && canWrite && !i.pending_split && (
                           <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                             { name: "date", label: "วันที่", type: "date", value: i.date },
                             { name: "amount", label: "Gross", type: "number", value: i.full_amount },
@@ -526,7 +544,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               </table>
             )}
           </section>
+          </SubPanel>
 
+          <SubPanel id="settings">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
             {templateList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
@@ -547,11 +567,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         <td className="whitespace-nowrap px-2 py-2">{t.frequency === "MONTHLY" ? "ทุกเดือน" : t.frequency === "QUARTERLY" ? "ทุก 3 เดือน" : "ทุกปี"}
                           {t.due_day && ` วันที่ ${t.due_day}`}</td>
                         <td className="px-2 py-2 text-xs text-slate-600">{t.receive_to_asset_id ? name.get(t.receive_to_asset_id) ?? "บัญชี" : "-"}</td>
-                        <td className="px-2 py-2 text-xs">{t.active ? <span className="text-emerald-700">ใช้งาน</span> : "หยุดใช้"}
-                          {canWrite && <div><TemplateToggle id={t.id} active={t.active} /></div>}</td>
+                        <td className="px-2 py-2 text-xs">{t.active ? <span className="text-emerald-700">ใช้งาน</span> : "หยุดใช้"}</td>
                         <td className="pl-2 py-2 text-right">
                           {canWrite && <RowActions table="recurring_income_templates" id={t.id} paths={PATHS} canDelete={canDelete}
-                            deleteNote="รายได้ที่บันทึกรับไปแล้วยังอยู่" fields={[
+                            deleteNote="รายได้ที่บันทึกรับไปแล้วยังอยู่" extra={<TemplateToggle id={t.id} active={t.active} />} fields={[
                               { name: "name", label: "ชื่อ", value: t.name, width: "w-44" },
                               { name: "expected_amount", label: "ยอดปกติ", type: "number", value: t.expected_amount },
                               { name: "due_day", label: "วันที่", type: "number", value: t.due_day, width: "w-16" },
@@ -566,6 +585,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {canWrite && templateList.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ</p>}
             {canWrite && <TemplateForm banks={banks} persons={persons ?? []} today={today} />}
           </section>
+          </SubPanel>
+          </SubTabs>
       </TabPanel>
 
       {/* ============================================================ ค่าใช้จ่าย */}
@@ -573,6 +594,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {canWrite && inMonth && <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />}
           <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้</p>
 
+          <SubTabs param="et" initial={expTab} tabs={[["due", `ที่ต้องจ่าย (${expOpen})`], ["recorded", `บันทึกแล้ว (${itemList.length})`], ["settings", "ค่าใช้จ่ายประจำ"]]}>
+          <SubPanel id="due">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) และตารางเบี้ยประกัน · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
@@ -630,6 +653,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               ]} />
             )}
           </section>
+          </SubPanel>
+          <SubPanel id="recorded">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -654,7 +679,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     return (
                       <tr key={i.id} className="align-top">
                         <td className="py-1.5">{thDate(i.date)}</td>
-                        <td>{i.description}{i.notes && <div className="text-xs text-slate-400">{i.notes}</div>}
+                        <td>{(() => {
+                          const src = i.pending_split ? null : expSource(i);
+                          const cls = "cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400";
+                          if (!src) return i.description;
+                          return src.label === "รายการโอน"
+                            ? <TabLink tab="moves" href={src.href} className={cls}>{i.description}</TabLink>
+                            : <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className={cls}>{i.description}</Link>;
+                        })()}{i.notes && <div className="text-xs text-slate-400">{i.notes}</div>}
                           {i.pending_split && (
                             <div className="mt-1 space-y-1">
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
@@ -688,9 +720,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           )}
                         </td>
                         <td className="pl-2 text-right">
-                          {expSource(i) && !i.pending_split ? (
-                            <Link href={expSource(i)!.href} className="whitespace-nowrap text-xs text-blue-700 hover:underline">แก้ที่หน้า{expSource(i)!.label} →</Link>
-                          ) : canWrite && !i.pending_split && (
+                          {!expSource(i) && canWrite && !i.pending_split && (
                             <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                               { name: "date", label: "วันที่", type: "date", value: i.date },
                               { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },
@@ -711,7 +741,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             )}
           </section>
           <p className="text-xs text-slate-500">เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม · รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ</p>
+          </SubPanel>
 
+          <SubPanel id="settings">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-medium text-slate-900">ตั้งค่าค่าใช้จ่ายประจำ</h2>
@@ -750,6 +782,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ตั้งค่าเพิ่มเติม (ความถี่ เลขผู้ใช้ไฟ / มิเตอร์) ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน)</p>
             {canWrite && properties.length > 0 && <UtilityForm properties={properties} label="+ ค่าใช้จ่ายประจำ" tracked />}
           </section>
+          </SubPanel>
+          </SubTabs>
       </TabPanel>
 
       {/* ============================================================ เงินเข้า–ออก & โอน */}

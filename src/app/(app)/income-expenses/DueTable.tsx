@@ -12,7 +12,7 @@ export type DueRow = {
 /** ตารางรายการที่ต้องรับ / จ่ายในเดือน · ตัวกรองตามประเภท + เฉพาะที่ยังค้าง · แถวรวมตามตัวกรอง · กดปุ่มในแถว → ฟอร์มกางใต้แถว */
 export default function DueTable({ kind, rows }: { kind: "income" | "expense"; rows: DueRow[] }) {
   const [type, setType] = useState("");
-  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [onlyOpen, setOnlyOpen] = useState(true);
   const types = [...new Set(rows.map((r) => r.type))];
   const count = (t: string) => rows.filter((r) => (!t || r.type === t) && (!onlyOpen || r.open)).length;
   const shown = rows.filter((r) => (!type || r.type === type) && (!onlyOpen || r.open))
@@ -49,7 +49,7 @@ export default function DueTable({ kind, rows }: { kind: "income" | "expense"; r
               <th className="px-2 text-right">{doneLabel}</th><th className="px-2">สถานะ</th><th></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-slate-500">ไม่มีรายการตามตัวกรอง</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-slate-500">{onlyOpen ? `ไม่มีรายการที่ยัง${kind === "income" ? "ไม่ได้รับ" : "ไม่ได้จ่าย"} · เอาติ๊กออกเพื่อดูทั้งเดือน` : "ไม่มีรายการตามตัวกรอง"}</td></tr>}
             {shown.map((r) => <Frag key={r.key}>{r.el}</Frag>)}
           </tbody>
           {shown.length > 0 && (
