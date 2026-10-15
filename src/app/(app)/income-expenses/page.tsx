@@ -8,7 +8,8 @@ import {
 } from "@/lib/format";
 import { RecordCostForm } from "../property/[id]/forms";
 import {
-  AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
+  AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, ExpenseTemplateForm, ExpenseTemplateToggle, IncomeForm,
+  RecurringPayActions, UndoDismissButton, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { SubPanel, SubTabLink, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
@@ -86,7 +87,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
     // ค่าใช้จ่ายประจำ (อสังหาฯ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
     supabase.from("v_property_cost_tracking")
-      .select("utility_id,property_asset_id,property_name,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status")
+      .select("utility_id,property_asset_id,property_name,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
       .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
     supabase.from("property_utilities")
       .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,assets!inner(name,status,deleted_at))")
@@ -104,13 +105,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   ]);
 
   // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
-  const [{ data: pendExp }, { data: pendInc }, { data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc }] = await Promise.all([
+  const [{ data: pendExp }, { data: pendInc }, { data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc },
+    { data: rexpRows }, { data: rexpTplRaw }] = await Promise.all([
     supabase.from("expense_items").select("id,date").eq("pending_split", true).is("deleted_at", null),
     supabase.from("income_transactions").select("id,date").eq("pending_split", true).is("deleted_at", null),
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("ie_categories").select("id,kind,name,sort_order,active").is("deleted_at", null).order("sort_order").order("name"),
     supabase.from("expense_items").select("expense_category").is("deleted_at", null).not("expense_category", "is", null),
     supabase.from("income_transactions").select("income_subtype").is("deleted_at", null).not("income_subtype", "is", null),
+    // ค่าใช้จ่ายประจำทั่วไป: งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+    supabase.from("v_recurring_expense_tracking")
+      .select("template_id,name,expense_category,person_id,pay_via,pay_from_asset_id,pay_from_credit_card_id,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
+      .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
+    supabase.from("recurring_expense_templates")
+      .select("id,name,expense_category,person_id,expected_amount,currency,frequency,due_day,pay_via,pay_from_asset_id,pay_from_credit_card_id,start_date,end_date,active,notes,persons(name)")
+      .is("deleted_at", null).order("name"),
   ]);
   // หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเองในแท็บ "ตั้งค่า")
   const useCount = new Map<string, number>();
@@ -170,7 +179,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   });
 
   type Cost = { utility_id: string; property_asset_id: string; property_name: string; utility_type: string; provider: string | null;
-    cost_period: string; due_date: string; expected_amount: number; paid_amount: number; currency: string; status: string };
+    cost_period: string; due_date: string; expected_amount: number; paid_amount: number; currency: string; status: string;
+    dismissal_id: string | null; dismissal_reason: string | null };
   type Util = { id: string; utility_type: string; provider: string | null; expected_amount: number; currency: string; frequency: string;
     due_day: number | null; due_month: number | null; property_details: { asset_id: string; assets: { name: string; status: string; deleted_at: string | null } } };
   const costs = ((costRows as Cost[] | null) ?? []).filter((c) => pv.showAsset(c.property_asset_id));
@@ -179,6 +189,17 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     .sort((a, b) => a.property_details.assets.name.localeCompare(b.property_details.assets.name, "th"));
   const costYear = utils.reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0) * pv.assetShare(u.property_details.asset_id)), new Map<string, number>());
   const utilName = (t: string, p: string | null) => [UTIL_LABEL[t] ?? t, p].filter(Boolean).join(" · ");
+  // ค่าใช้จ่ายประจำทั่วไป: รายบุคคล = ระบุคนไว้ / ตามเจ้าของบัญชี / บัตรที่จ่าย
+  const rexpMine = (x: { person_id: string | null; pay_from_asset_id: string | null; pay_from_credit_card_id: string | null }) =>
+    x.person_id ? pv.isPerson(x.person_id) : x.pay_from_asset_id ? pv.showAsset(x.pay_from_asset_id)
+      : x.pay_from_credit_card_id ? pv.showLiability(x.pay_from_credit_card_id) : !pv.personId;
+  type RexpDue = { template_id: string; name: string; expense_category: string; person_id: string | null; pay_via: string;
+    pay_from_asset_id: string | null; pay_from_credit_card_id: string | null; cost_period: string; due_date: string;
+    expected_amount: number; paid_amount: number; currency: string; status: string; dismissal_id: string | null; dismissal_reason: string | null };
+  const rexpDue = ((rexpRows as RexpDue[] | null) ?? []).filter(rexpMine);
+  const rexpTpl = (rexpTplRaw ?? []).filter(rexpMine);
+  const rexpYear = rexpTpl.filter((t) => t.active).reduce((m, t) => m.set(t.currency, (m.get(t.currency) ?? 0) + Number(t.expected_amount) * (PERIODS_PER_YEAR[t.frequency] ?? 0)), new Map<string, number>());
+  const freqText = (f: string, d: number | null) => `${f === "MONTHLY" ? "ทุกเดือน" : f === "QUARTERLY" ? "ทุก 3 เดือน" : "ทุกปี"}${d ? ` วันที่ ${d}` : ""}`;
 
   // รายได้ / ค่าใช้จ่าย: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = เฉพาะรายการที่มีส่วน · ยอด × สัดส่วน (เก็บยอดเต็มไว้แสดงประกอบ)
   const incomeList = (incomes ?? []).filter((i) => !pv.personId || incShare.has(i.id)).map((i) => {
@@ -326,7 +347,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   // แท็บย่อย: มีรายการค้าง → เปิด "ที่ต้องได้รับ / จ่าย" ก่อน · ไม่มี → "บันทึกแล้ว"
   const incOpen = expectedList.filter((e) => e.status === "PENDING" || e.status === "OVERDUE").length
     + loanDue.filter((x) => x.status !== "PAID").length + benefitDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").length;
-  const expOpen = costs.filter((c) => c.status !== "PAID").length + premiumDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").length;
+  const costOpen = (st: string) => st === "PENDING" || st === "OVERDUE";
+  const expOpen = costs.filter((c) => costOpen(c.status)).length + rexpDue.filter((x) => costOpen(x.status)).length + premiumDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").length;
   const SUBS = ["due", "recorded", "settings"];
   const incTab = SUBS.includes(sp.it ?? "") ? (sp.it as string) : incOpen > 0 ? "due" : "recorded";
   const expTab = SUBS.includes(sp.et ?? "") ? (sp.et as string) : expOpen > 0 ? "due" : "recorded";
@@ -611,11 +633,38 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <SubPanel id="due">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
-            <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) และตารางเบี้ยประกัน · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
-            {costs.length === 0 && premiumDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
+            <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ทั่วไป และของทรัพย์สิน) และตารางเบี้ยประกัน · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
+            {costs.length === 0 && rexpDue.length === 0 && premiumDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
               <DueTable kind="expense" rows={[
+                ...rexpDue.map((x) => ({ key: `r-${x.template_id}-${x.cost_period}`, due: x.due_date, type: x.expense_category, currency: x.currency,
+                  expected: Number(x.expected_amount), done: Number(x.paid_amount), open: costOpen(x.status), el: (
+                  <ActionRow key={`${x.template_id}-${x.cost_period}`} colSpan={6} cells={<>
+                    <td className="py-2 pr-2">
+                      <SubTabLink to="settings" className={`font-medium ${NAME_LINK}`}>{x.name}</SubTabLink>
+                      <div className="text-xs text-slate-500">
+                        {x.expense_category}
+                        {x.person_id && ` · ${persons?.find((p) => p.id === x.person_id)?.name ?? ""}`}
+                        {x.cost_period < start && ` · งวด ${thMonth(x.cost_period)}`}
+                      </div>
+                      {x.status === "DISMISSED" && x.dismissal_reason && <div className="text-xs text-slate-400">{x.dismissal_reason}</div>}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(x.expected_amount, x.currency)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{Number(x.paid_amount) > 0 ? money(x.paid_amount) : ""}</td>
+                    <td className="px-2 py-2">
+                      <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${x.status === "PAID" ? "bg-emerald-50" : x.status === "OVERDUE" ? "bg-red-50" : "bg-slate-100"} ${COST_STATUS[x.status]?.cls ?? ""}`}>
+                        {COST_STATUS[x.status]?.text ?? x.status}
+                      </span>
+                    </td>
+                  </>} actions={canWrite && costOpen(x.status) ? (
+                    <RecurringPayActions templateId={x.template_id} period={x.cost_period} label={`${x.name} (${thMonth(x.cost_period)})`}
+                      category={x.expense_category} expected={Number(x.expected_amount)} currency={x.currency} payVia={x.pay_via}
+                      bankId={x.pay_from_asset_id} cardId={x.pay_from_credit_card_id} personId={x.person_id}
+                      banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />
+                  ) : canDelete && x.status === "DISMISSED" && x.dismissal_id ? <UndoDismissButton id={x.dismissal_id} /> : null} />
+                ) })),
                 ...costs.map((c) => ({ key: `c-${c.utility_id}-${c.cost_period}`, due: c.due_date, type: UTIL_LABEL[c.utility_type] ?? "อื่น ๆ", currency: c.currency,
-                  expected: Number(c.expected_amount), done: Number(c.paid_amount), open: c.status !== "PAID", el: (
+                  expected: Number(c.expected_amount), done: Number(c.paid_amount), open: costOpen(c.status), el: (
                   <ActionRow key={`${c.utility_id}-${c.cost_period}`} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
                       <Link href={`/property/${c.property_asset_id}`} title="ไปหน้าทรัพย์สิน" className={`font-medium ${NAME_LINK}`}>{utilName(c.utility_type, c.provider)}</Link>
@@ -624,6 +673,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         {c.cost_period < start && ` · งวด ${thMonth(c.cost_period)}`}
                         {pv.assetPct(c.property_asset_id) != null && ` · ส่วนของ ${pv.personName} ${pv.assetPct(c.property_asset_id)}%`}
                       </div>
+                      {c.status === "DISMISSED" && c.dismissal_reason && <div className="text-xs text-slate-400">{c.dismissal_reason}</div>}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2">{thDate(c.due_date)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(c.expected_amount, c.currency)}</td>
@@ -633,12 +683,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         {COST_STATUS[c.status]?.text ?? c.status}
                       </span>
                     </td>
-                  </>} actions={canWrite && c.status !== "PAID" ? (
+                  </>} actions={canWrite && costOpen(c.status) ? (
                     <RecordCostForm assetId={c.property_asset_id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
                       label={`${utilName(c.utility_type, c.provider)} · ${c.property_name} (${thMonth(c.cost_period)})`}
                       category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
                       banks={banks} cards={cards} persons={persons ?? []} today={today} />
-                  ) : null} />
+                  ) : canDelete && c.status === "DISMISSED" && c.dismissal_id ? <UndoDismissButton id={c.dismissal_id} /> : null} />
                 ) })),
                 ...premiumDue.map((x) => ({ key: `p-${x.id}`, due: x.due_date, type: "เบี้ยประกัน", currency: x.currency, expected: Number(x.amount),
                   done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
@@ -759,7 +809,55 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <SubPanel id="settings">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-slate-900">ตั้งค่าค่าใช้จ่ายประจำ</h2>
+              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำทั่วไป</h2>
+              {[...rexpYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
+                <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
+              ))}
+            </div>
+            {rexpTpl.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[44rem] text-sm">
+                  <thead className="text-left text-xs text-slate-500">
+                    <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">ชื่อ</th><th className="px-2">หมวด</th><th className="px-2">ของใคร</th>
+                      <th className="px-2 text-right">ยอดปกติ</th><th className="px-2">จ่ายเมื่อ</th><th className="px-2">จ่ายจาก</th><th className="px-2">สถานะ</th><th></th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rexpTpl.map((t) => (
+                      <tr key={t.id} className={`align-top ${t.active ? "" : "text-slate-400"}`}>
+                        <td className="py-2 pr-2 font-medium">{t.name}
+                          <div className="text-xs font-normal text-slate-500">เริ่ม {thDate(t.start_date)}{t.end_date && ` · ถึง ${thDate(t.end_date)}`}</div>
+                          {t.notes && <div className="text-xs font-normal text-slate-400">{t.notes}</div>}</td>
+                        <td className="px-2 py-2">{t.expense_category}</td>
+                        <td className="px-2 py-2">{pname(t.persons) ?? <span className="text-xs text-slate-500">ตามเจ้าของบัญชี / บัตร</span>}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(t.expected_amount, t.currency)}</td>
+                        <td className="whitespace-nowrap px-2 py-2">{freqText(t.frequency, t.due_day)}</td>
+                        <td className="px-2 py-2 text-xs text-slate-600">{t.pay_via === "CARD" ? `บัตร ${name.get(t.pay_from_credit_card_id ?? "") ?? ""}`
+                          : t.pay_via === "CASH" ? "เงินสด" : t.pay_from_asset_id ? name.get(t.pay_from_asset_id) ?? "บัญชี" : "บัญชี (ไม่ระบุ)"}</td>
+                        <td className="px-2 py-2 text-xs">{t.active ? <span className="text-emerald-700">ใช้งาน</span> : "หยุดใช้"}</td>
+                        <td className="pl-2 py-2 text-right">
+                          {canWrite && <RowActions table="recurring_expense_templates" id={t.id} paths={PATHS} canDelete={canDelete}
+                            deleteNote="ค่าใช้จ่ายที่บันทึกจ่ายไปแล้วยังอยู่" extra={<ExpenseTemplateToggle id={t.id} active={t.active} />} fields={[
+                              { name: "name", label: "ชื่อ", value: t.name, width: "w-44" },
+                              { name: "expense_category", label: "หมวด", type: "select" as const, value: t.expense_category, options: withCurrent(expCats, t.expense_category) },
+                              { name: "person_id", label: "ของใคร", type: "select" as const, value: t.person_id,
+                                options: [["", "ตามเจ้าของบัญชี / บัตร"] as [string, string], ...personOpts] },
+                              { name: "expected_amount", label: "ยอดปกติ", type: "number", value: t.expected_amount },
+                              { name: "due_day", label: "วันที่", type: "number", value: t.due_day, width: "w-16" },
+                              { name: "end_date", label: "สิ้นสุด", type: "date", value: t.end_date },
+                              { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {canWrite && rexpTpl.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / หยุดใช้ / ลบ · เปลี่ยนบัญชีที่จ่ายประจำ: หยุดใช้รายการเดิมแล้วเพิ่มใหม่ (ตอนบันทึกจ่ายเลือกบัญชีอื่นได้ทุกครั้ง)</p>}
+            {canWrite && <ExpenseTemplateForm banks={banks} cards={cards} persons={persons ?? []} categories={expCats} today={today} />}
+          </section>
+          <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำของทรัพย์สิน</h2>
               {[...costYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
                 <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
               ))}

@@ -19,6 +19,7 @@ import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
+import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -45,7 +46,8 @@ type Util = { id: string; utility_type: string; provider: string | null; account
   notes: string | null; deleted_at: string | null; expected_amount: number | null; currency: string; frequency: string | null;
   due_day: number | null; due_month: number | null; active: boolean };
 type Cost = { utility_id: string; utility_type: string; provider: string | null; cost_period: string; due_date: string;
-  expected_amount: number; paid_amount: number; gap: number; currency: string; status: string; last_paid_date: string | null };
+  expected_amount: number; paid_amount: number; gap: number; currency: string; status: string; last_paid_date: string | null;
+  dismissal_id: string | null; dismissal_reason: string | null };
 type Rent = { lease_id: string; name: string; income_period: string; due_date: string; expected_amount: number;
   received_amount: number; currency: string; status: string };
 
@@ -70,7 +72,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_property_cost_tracking").select("utility_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,gap,currency,status,last_paid_date")
+    supabase.from("v_property_cost_tracking").select("utility_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,gap,currency,status,last_paid_date,dismissal_id,dismissal_reason")
       .eq("property_asset_id", id).order("cost_period", { ascending: false }).order("utility_type").limit(48),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
   ]);
@@ -405,9 +407,11 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     <td className={`text-right tabular-nums ${c.status === "PAID" && Number(c.gap) < 0 ? "text-red-700" : c.status === "PAID" && Number(c.gap) > 0 ? "text-emerald-700" : "text-slate-400"}`}>
                       {c.status === "PAID" ? money(-Number(c.gap)) : "-"}
                     </td>
-                    <td className={`pl-4 ${COST_STATUS[c.status]?.cls ?? ""}`}>{COST_STATUS[c.status]?.text ?? c.status}</td>
+                    <td className={`pl-4 ${COST_STATUS[c.status]?.cls ?? ""}`}>{COST_STATUS[c.status]?.text ?? c.status}
+                      {c.status === "DISMISSED" && <div className="text-xs text-slate-400">{c.dismissal_reason}</div>}</td>
                     <td className="text-right">
-                      {canWrite && c.status !== "PAID" && (
+                      {canDelete && c.status === "DISMISSED" && c.dismissal_id && <UndoDismissButton id={c.dismissal_id} />}
+                      {canWrite && c.status !== "PAID" && c.status !== "DISMISSED" && (
                         <RecordCostForm assetId={id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
                           label={`${utilName(c.utility_type, c.provider)} · ${a.name} (${thMonth(c.cost_period)})`}
                           category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}

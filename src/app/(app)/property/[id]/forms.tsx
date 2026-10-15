@@ -8,6 +8,7 @@ import {
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
 import { PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
+import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -324,10 +325,13 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
+  const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
+  const trigger = <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
   if (!open) return trigger;
+  if (mode === "dismiss") return present(trigger,
+    <DismissCostForm sourceType="PROPERTY" sourceId={utilityId} period={period} onBack={() => setMode("record")} onClose={() => setOpen(false)} />);
   const sameBanks = banks.filter((b) => b.currency === currency);
   const sameCards = cards.filter((c) => c.currency === currency);
   return present(trigger, (
@@ -373,6 +377,7 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));

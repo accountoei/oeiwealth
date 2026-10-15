@@ -91,7 +91,7 @@ export const UTIL_EXPENSE_CATEGORY: Record<string, string> = {
 };
 export const COST_STATUS: Record<string, { text: string; cls: string }> = {
   PAID: { text: "จ่ายแล้ว", cls: "text-emerald-700" }, PENDING: { text: "รอจ่าย", cls: "text-slate-600" },
-  OVERDUE: { text: "เลยกำหนด", cls: "text-red-600" },
+  OVERDUE: { text: "เลยกำหนด", cls: "text-red-600" }, DISMISSED: { text: "เดือนนี้ไม่ได้จ่าย", cls: "text-slate-500" },
 };
 export const PERIODS_PER_YEAR: Record<string, number> = { MONTHLY: 12, QUARTERLY: 4, YEARLY: 1 };
 export const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
