@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useActionSlot } from "@/components/ActionBar";
 import {
   addExpense, addExpenseTemplate, addIncome, addMovement, addReimbursement, addTemplate, changeAccount, dismissExpected, dismissExpense,
@@ -337,11 +338,18 @@ export function ExpenseTemplateToggle({ id, active }: { id: string; active: bool
   );
 }
 
+/** บันทึกสำเร็จแล้วโหลดข้อมูลหน้าใหม่ทันที (ไม่ต้องกด Refresh เอง) */
+function useRefreshOnOk(s: ActionState) {
+  const router = useRouter();
+  useEffect(() => { if (s.ok) router.refresh(); }, [s, router]);
+}
+
 /** ฟอร์ม "เดือนนี้ไม่ได้จ่าย" (ใช้ในปุ่มบันทึกจ่ายของค่าใช้จ่ายประจำทั่วไป และของทรัพย์สิน) */
 export function DismissCostForm({ sourceType, sourceId, period, onBack, onClose }: {
   sourceType: "RECURRING" | "PROPERTY"; sourceId: string; period: string; onBack: () => void; onClose: () => void;
 }) {
   const [ds, action, pending] = useActionState<ActionState, FormData>(dismissExpense, {});
+  useRefreshOnOk(ds);
   if (ds.ok) return <span className="text-xs text-emerald-700">{ds.ok}</span>;
   return (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
@@ -362,6 +370,7 @@ export function DismissCostForm({ sourceType, sourceId, period, onBack, onClose 
 /** ยกเลิก "เดือนนี้ไม่ได้จ่าย" → กลับเป็นรอจ่าย */
 export function UndoDismissButton({ id }: { id: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(undoDismissExpense, {});
+  useRefreshOnOk(state);
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
   return (
     <form action={action} className="inline">
