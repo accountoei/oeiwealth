@@ -217,6 +217,90 @@ export async function changeAccount(_: ActionState, form: FormData): Promise<Act
     ["/liabilities", "/month-closing", "/"]);
 }
 
+// ------------------------------------------------------------------ ค่าใช้จ่ายประจำทั่วไป
+export async function addExpenseTemplate(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const amount = num(form.get("expected_amount"));
+  if (amount === null || Number.isNaN(amount) || amount < 0) return { error: "กรุณาใส่ยอดที่จ่ายตามปกติ" };
+  const category = str(form.get("expense_category"));
+  if (!category) return { error: "กรุณาเลือกหมวด" };
+  const { data: fam } = await supabase.from("families").select("id").maybeSingle();
+  if (!fam) return { error: "ไม่พบข้อมูลครอบครัว" };
+  const via = String(form.get("pay_via") ?? "BANK");
+  const bank = via === "BANK" ? str(form.get("pay_from_asset_id")) : null;
+  const card = via === "CARD" ? str(form.get("pay_from_credit_card_id")) : null;
+  if (via === "CARD" && !card) return { error: "กรุณาเลือกบัตร" };
+  let currency = str(form.get("currency")) ?? "THB";
+  if (bank) {
+    const { data: acc } = await supabase.from("assets").select("currency").eq("id", bank).maybeSingle();
+    if (acc?.currency) currency = acc.currency;
+  }
+  if (card) {
+    const { data: c } = await supabase.from("credit_cards").select("currency").eq("id", card).maybeSingle();
+    if (c?.currency) currency = c.currency;
+  }
+  const { error } = await supabase.from("recurring_expense_templates").insert({
+    family_id: fam.id, name: str(form.get("name")), expense_category: category, person_id: str(form.get("person_id")),
+    expected_amount: amount, currency, frequency: str(form.get("frequency")) ?? "MONTHLY", due_day: num(form.get("due_day")),
+    pay_via: via, pay_from_asset_id: bank, pay_from_credit_card_id: card,
+    start_date: str(form.get("start_date")), end_date: str(form.get("end_date")), notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  return done("เพิ่มค่าใช้จ่ายประจำแล้ว");
+}
+
+export async function toggleExpenseTemplate(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("recurring_expense_templates")
+    .update({ active: form.get("active") === "true" }).eq("id", String(form.get("id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  return done("บันทึกแล้ว");
+}
+
+/** บันทึกจ่ายค่าใช้จ่ายประจำทั่วไป 1 งวด (ยอดจริง) */
+export async function payRecurringExpense(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const amount = num(form.get("amount"));
+  if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
+  const via = String(form.get("pay_via") ?? "bank");
+  const { error } = await supabase.rpc("add_expense", { p: {
+    date: str(form.get("date")), description: str(form.get("description")), amount,
+    currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
+    paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
+    paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
+    person_id: str(form.get("person_id")),
+    recurring_expense_id: str(form.get("template_id")), cost_period: str(form.get("cost_period")),
+    notes: str(form.get("notes")),
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  return done("บันทึกจ่ายแล้ว", ["/liabilities"]);
+}
+
+/** "เดือนนี้ไม่ได้จ่าย" — ค่าใช้จ่ายประจำทั่วไป (RECURRING) / ของทรัพย์สิน (PROPERTY) */
+export async function dismissExpense(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const reason = str(form.get("reason"));
+  if (!reason) return { error: "กรุณาระบุเหตุผล" };
+  const { error } = await supabase.from("expected_expense_dismissals").insert({
+    source_type: String(form.get("source_type")), source_id: String(form.get("source_id")),
+    cost_period: String(form.get("cost_period")), reason,
+  });
+  if (error) return { error: error.code === "23505" ? "งวดนี้บันทึกไว้แล้ว" : friendlyError(error.message) };
+  revalidatePath("/property", "layout");
+  return done("บันทึกว่าเดือนนี้ไม่ได้จ่ายแล้ว");
+}
+
+export async function undoDismissExpense(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("expected_expense_dismissals")
+    .update({ deleted_at: new Date().toISOString() }).eq("id", String(form.get("id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidatePath("/property", "layout");
+  return done("ยกเลิกแล้ว · กลับเป็นรอจ่าย");
+}
+
 // ------------------------------------------------------------------ ตั้งค่า: หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น
 const SYS_CATS = ["BANK_FEE", "รอแยกรายละเอียด"];
 function catDone(msg: string): ActionState {

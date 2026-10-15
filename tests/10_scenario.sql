@@ -1377,6 +1377,37 @@ SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$INSERT INTO public.ie_categories(kind, name) VALUES ('EXPENSE', 'หมวดจาก VIEWER')$$, 'row-level security', 'VIEWER เพิ่มหมวดไม่ได้');
 RESET ROLE;
 
+\echo '== 13x. ค่าใช้จ่ายประจำทั่วไป · บันทึกจ่าย · เดือนนี้ไม่ได้จ่าย'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.recurring_expense_templates(family_id, name, expense_category, expected_amount, frequency, due_day, pay_via, pay_from_asset_id, start_date)
+  SELECT id, 'ค่าอินเทอร์เน็ตทดสอบ', 'บ้าน / สาธารณูปโภค', 600, 'MONTHLY', 5, 'BANK', t.a('บัญชีทดสอบก้อน 2'), '2026-09-01' FROM public.families;
+SELECT t.ok((SELECT status FROM public.v_recurring_expense_tracking WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ' AND cost_period = '2026-09-01') = 'OVERDUE',
+            'ค่าใช้จ่ายประจำ: งวดที่เลยกำหนดแล้วยังไม่จ่าย = OVERDUE');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-06','description','ค่าอินเทอร์เน็ต ก.ย.','amount',620,
+  'paid_from_asset_id', t.a('บัญชีทดสอบก้อน 2'), 'cost_period', '2026-09-01',
+  'recurring_expense_id', (SELECT id FROM public.recurring_expense_templates WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ'))) IS NOT NULL AS rexp_paid;
+SELECT t.ok((SELECT status = 'PAID' AND paid_amount = 620 FROM public.v_recurring_expense_tracking
+              WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ' AND cost_period = '2026-09-01')
+            AND (SELECT expense_category FROM public.expense_items WHERE description = 'ค่าอินเทอร์เน็ต ก.ย.') = 'บ้าน / สาธารณูปโภค',
+            'บันทึกจ่ายงวด → PAID ด้วยยอดจริง · หมวดตามรายการประจำ');
+INSERT INTO public.expected_expense_dismissals(source_type, source_id, cost_period, reason)
+  SELECT 'RECURRING', id, '2026-10-01', 'ทดสอบไม่ได้จ่าย' FROM public.recurring_expense_templates WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ';
+SELECT t.ok(coalesce((SELECT status FROM public.v_recurring_expense_tracking WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ' AND cost_period = '2026-10-01'),
+                     'DISMISSED') = 'DISMISSED', 'เดือนนี้ไม่ได้จ่าย → DISMISSED');
+SELECT t.fails($$INSERT INTO public.expected_expense_dismissals(source_type, source_id, cost_period, reason)
+  SELECT 'RECURRING', id, '2026-10-01', 'ซ้ำ' FROM public.recurring_expense_templates WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ'$$,
+  'duplicate', 'บันทึก "ไม่ได้จ่าย" งวดเดียวกันซ้ำไม่ได้');
+SELECT t.fails($$INSERT INTO public.recurring_expense_templates(family_id, name, expense_category, expected_amount, pay_via, start_date)
+  SELECT id, 'บัตรไม่ระบุ', 'ทั่วไป', 100, 'CARD', '2026-09-01' FROM public.families$$, 'rexp_pay_from', 'จ่ายด้วยบัตรต้องระบุบัตร');
+SELECT t.fails($$SELECT public.add_expense(jsonb_build_object('date','2026-09-07','description','ผูกสองอย่าง','amount',1,
+  'recurring_expense_id', (SELECT id FROM public.recurring_expense_templates WHERE name = 'ค่าอินเทอร์เน็ตทดสอบ'),
+  'insurance_schedule_line_id', gen_random_uuid()))$$, 'ทีละอย่าง', 'ผูกค่าใช้จ่ายประจำกับเบี้ยประกันพร้อมกันไม่ได้');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.recurring_expense_templates(family_id, name, expense_category, expected_amount, start_date)
+  SELECT id, 'จาก VIEWER', 'ทั่วไป', 1, '2026-09-01' FROM public.families$$, 'row-level security', 'VIEWER เพิ่มค่าใช้จ่ายประจำไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

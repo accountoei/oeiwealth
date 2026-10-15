@@ -3,7 +3,8 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import {
-  addExpense, addIncome, addMovement, addReimbursement, addTemplate, changeAccount, dismissExpected, setMonthStatus, toggleTemplate,
+  addExpense, addExpenseTemplate, addIncome, addMovement, addReimbursement, addTemplate, changeAccount, dismissExpected, dismissExpense,
+  payRecurringExpense, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
   type ActionState,
 } from "./actions";
 import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
@@ -252,6 +253,189 @@ export function TemplateToggle({ id, active }: { id: string; active: boolean }) 
       {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
     </form>
   );
+}
+
+/* ================================================================== ค่าใช้จ่ายประจำทั่วไป */
+export function ExpenseTemplateForm({ banks, cards, persons, categories, today }:
+  { banks: Bank[]; cards: Card[]; persons: Person[]; categories: string[]; today: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(addExpenseTemplate, {});
+  const [via, setVia] = useState(banks.length ? "BANK" : "CASH");
+  return (
+    <Toggle label="+ ค่าใช้จ่ายประจำ">
+      {(close) => (
+        <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+          <div>
+            <h3 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ (เช่น ค่าโทรศัพท์ ค่าอินเทอร์เน็ต ค่าเรียนพิเศษ)</h3>
+            <p className="text-xs text-slate-500">ระบบแสดงใน &ldquo;ที่ต้องจ่าย&rdquo; ทุกงวด ให้กดบันทึกจ่ายด้วยยอดจริงเอง (ไม่สร้างค่าใช้จ่ายอัตโนมัติ) · ค่าใช้จ่ายของบ้าน / ที่ดิน ให้ตั้งที่หน้าทรัพย์สิน</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className={lbl}>ชื่อ *<input name="name" required placeholder="เช่น ค่าอินเทอร์เน็ตบ้าน" className={input} /></label>
+            <label className={lbl}>หมวด *
+              <select name="expense_category" required defaultValue="" className={input}>
+                <option value="" disabled>— เลือกหมวด —</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className={lbl}>ของใคร
+              <select name="person_id" defaultValue="" className={input}>
+                <option value="">— ตามเจ้าของบัญชี / บัตร —</option>
+                {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label className={lbl}>ยอดปกติ *<input name="expected_amount" required inputMode="decimal" className={input} /></label>
+            <label className={lbl}>ความถี่
+              <select name="frequency" defaultValue="MONTHLY" className={input}>
+                <option value="MONTHLY">รายเดือน</option><option value="QUARTERLY">ราย 3 เดือน</option><option value="YEARLY">รายปี</option>
+              </select>
+            </label>
+            <label className={lbl}>จ่ายทุกวันที่<input name="due_day" type="number" min={1} max={31} className={input} /></label>
+            <label className={lbl}>จ่ายจาก
+              <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={input}>
+                <option value="BANK">บัญชีธนาคาร</option><option value="CARD">บัตรเครดิต</option><option value="CASH">เงินสด</option>
+              </select>
+            </label>
+            {via === "BANK" && (
+              <label className={lbl}>บัญชี
+                <select name="pay_from_asset_id" defaultValue={banks[0]?.asset_id ?? ""} className={input}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                </select>
+              </label>
+            )}
+            {via === "CARD" && (
+              <label className={lbl}>บัตร *
+                <select name="pay_from_credit_card_id" required defaultValue={cards[0]?.id ?? ""} className={input}>
+                  {cards.map((c) => <option key={c.id} value={c.id}>{c.label} ({c.currency})</option>)}
+                </select>
+              </label>
+            )}
+            {via === "CASH" && <label className={lbl}>สกุลเงิน<CurrencySelect name="currency" defaultValue="THB" className={input} /></label>}
+            <label className={lbl}>เริ่มตั้งแต่ *<input name="start_date" type="date" required defaultValue={today} className={input} /></label>
+            <label className={lbl}>สิ้นสุด (ถ้ามี)<input name="end_date" type="date" className={input} /></label>
+            <label className={lbl}>หมายเหตุ<input name="notes" className={input} /></label>
+          </div>
+          <div className="flex items-center gap-3">
+            <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+            <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+            <Msg s={state} />
+          </div>
+        </form>
+      )}
+    </Toggle>
+  );
+}
+
+export function ExpenseTemplateToggle({ id, active }: { id: string; active: boolean }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(toggleExpenseTemplate, {});
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="active" value={String(!active)} />
+      <button disabled={pending} className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">{active ? "หยุดใช้ค่าใช้จ่ายประจำนี้" : "เปิดใช้อีกครั้ง"}</button>
+      {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** ฟอร์ม "เดือนนี้ไม่ได้จ่าย" (ใช้ในปุ่มบันทึกจ่ายของค่าใช้จ่ายประจำทั่วไป และของทรัพย์สิน) */
+export function DismissCostForm({ sourceType, sourceId, period, onBack, onClose }: {
+  sourceType: "RECURRING" | "PROPERTY"; sourceId: string; period: string; onBack: () => void; onClose: () => void;
+}) {
+  const [ds, action, pending] = useActionState<ActionState, FormData>(dismissExpense, {});
+  if (ds.ok) return <span className="text-xs text-emerald-700">{ds.ok}</span>;
+  return (
+    <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
+      <input type="hidden" name="source_type" value={sourceType} />
+      <input type="hidden" name="source_id" value={sourceId} />
+      <input type="hidden" name="cost_period" value={period} />
+      <label className="text-xs">เดือนนี้ไม่ได้จ่าย · เหตุผล
+        <input name="reason" required placeholder="เช่น ยกเลิกบริการชั่วคราว" className={`mt-1 block w-60 ${small}`} />
+      </label>
+      <button disabled={pending} className={sbtn}>ยืนยัน &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo;</button>
+      <button type="button" onClick={onBack} className="text-xs text-slate-600 underline">← กลับไปบันทึกจ่าย</button>
+      <button type="button" onClick={onClose} className="text-xs text-slate-500">ยกเลิก</button>
+      <div className="w-full"><Msg s={ds} /></div>
+    </form>
+  );
+}
+
+/** ยกเลิก "เดือนนี้ไม่ได้จ่าย" → กลับเป็นรอจ่าย */
+export function UndoDismissButton({ id }: { id: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(undoDismissExpense, {});
+  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="id" value={id} />
+      <button disabled={pending} className="text-xs text-slate-600 underline disabled:opacity-50">ยกเลิก</button>
+      {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** บันทึกจ่ายค่าใช้จ่ายประจำทั่วไป 1 งวด · ค่าตั้งต้นจากรายการประจำ · สลับเป็น "เดือนนี้ไม่ได้จ่าย" ได้ในฟอร์ม */
+export function RecurringPayActions(props: {
+  templateId: string; period: string; label: string; category: string; expected: number; currency: string;
+  payVia: string; bankId: string | null; cardId: string | null; personId: string | null;
+  banks: Bank[]; cards: Card[]; persons: Person[]; today: string; minDate: string;
+}) {
+  const { templateId, period, label, category, expected, currency, payVia, bankId, cardId, personId, banks, cards, persons, today, minDate } = props;
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const [mode, setMode] = useState<"record" | "dismiss">("record");
+  const sameBanks = banks.filter((b) => b.currency === currency);
+  const sameCards = cards.filter((c) => c.currency === currency);
+  const [via, setVia] = useState(payVia === "CARD" && sameCards.length ? "card" : payVia === "BANK" && sameBanks.length ? "bank" : "cash");
+  const [rs, action, pending] = useActionState<ActionState, FormData>(payRecurringExpense, {});
+  if (rs.ok) return <span className="text-xs text-emerald-700">{rs.ok}</span>;
+  const trigger = <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
+  if (!open) return trigger;
+  const close = () => setOpen(false);
+  if (mode === "dismiss") return present(trigger,
+    <DismissCostForm sourceType="RECURRING" sourceId={templateId} period={period} onBack={() => setMode("record")} onClose={close} />);
+  return present(trigger, (
+    <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
+      <input type="hidden" name="template_id" value={templateId} />
+      <input type="hidden" name="cost_period" value={period} />
+      <input type="hidden" name="currency" value={currency} />
+      <input type="hidden" name="expense_category" value={category} />
+      <input type="hidden" name="description" value={label} />
+      <label className="text-xs">ยอดที่จ่าย
+        <input name="amount" required inputMode="decimal" defaultValue={expected > 0 ? String(expected) : ""} className={`mt-1 block w-28 ${small}`} />
+      </label>
+      <label className="text-xs">วันที่จ่าย
+        <input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${small}`} />
+      </label>
+      <label className="text-xs">จ่ายจาก
+        <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={`mt-1 block ${small}`}>
+          <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
+        </select>
+      </label>
+      {via === "bank" && (
+        <label className="text-xs">บัญชี
+          <select name="bank_asset_id" required defaultValue={bankId && sameBanks.some((b) => b.asset_id === bankId) ? bankId : sameBanks[0]?.asset_id} className={`mt-1 block ${small}`}>
+            {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+        </label>
+      )}
+      {via === "card" && (
+        <label className="text-xs">บัตร
+          <select name="card_id" required defaultValue={cardId && sameCards.some((c) => c.id === cardId) ? cardId : sameCards[0]?.id} className={`mt-1 block ${small}`}>
+            {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="text-xs">ของใคร
+        <select name="person_id" defaultValue={personId ?? ""} required={via === "cash"} className={`mt-1 block ${small}`}>
+          <option value="">{via === "cash" ? "— เลือก —" : "ตามเจ้าของบัญชี / บัตร"}</option>
+          {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
+      <button disabled={pending} className={sbtn}>บันทึก</button>
+      <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
+      <div className="w-full"><Msg s={rs} /></div>
+    </form>
+  ));
 }
 
 /* ================================================================== ค่าใช้จ่าย */

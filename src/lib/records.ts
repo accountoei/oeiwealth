@@ -19,6 +19,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   investment_valuations: { valuation_date: "date", price: "num", market_value: "num" },
   expense_reimbursements: { received_date: "date", amount: "num", notes: "str" },
   recurring_income_templates: { name: "str", expected_amount: "num", due_day: "num", end_date: "date", notes: "str" },
+  recurring_expense_templates: { name: "str", expense_category: "str", person_id: "str", expected_amount: "num", due_day: "num", end_date: "date", notes: "str" },
   property_leases: { tenant_name: "str", unit_label: "str", contract_no: "str", end_date: "date", rent_amount: "num", payment_due_day: "num", notes: "str" },
   property_utilities: { provider: "str", account_no: "str", meter_no: "str", notes: "str",
     expected_amount: "num", frequency: "str", due_day: "num", due_month: "num" },
@@ -44,7 +45,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   documents: { title: "str", document_type: "str", issue_date: "date", expiry_date: "date", notes: "str" },
 };
 const DELETABLE = new Set(["income_transactions", "expense_items", "cash_movements", "investment_transactions", "asset_valuations",
-  "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "property_utilities",
+  "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "recurring_expense_templates", "property_utilities",
   "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings", "documents", "document_links",
   "loan_schedule_lines", "insurance_schedule_lines", "insurance_coverages"]);
 
