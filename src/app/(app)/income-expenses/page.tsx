@@ -11,7 +11,7 @@ import {
   AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, IncomeForm, MonthStatusForm, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
+import { SubPanel, SubTabLink, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
 import { ActionRow } from "@/components/ActionBar";
 import CategoryBars, { type CatRow } from "./CategoryBars";
 import DueTable from "./DueTable";
@@ -26,6 +26,8 @@ import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
+// ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
+const NAME_LINK = "cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400";
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้"], ["expense", "ค่าใช้จ่าย"], ["moves", "เงินเข้า–ออก & โอน"]];
 const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   RECEIVED: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
@@ -422,7 +424,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     open: e.status === "PENDING" || e.status === "OVERDUE", el: (
                     <ActionRow key={`${e.source_type}-${e.source_id}`} colSpan={6} cells={<>
                       <td className="py-2 pr-2">
-                        <div className="font-medium">{e.name}</div>
+                        <div className="font-medium">{e.source_type === "LEASE" && e.asset_id
+                          ? <Link href={`/property/${e.asset_id}`} title="ไปหน้าทรัพย์สิน" className={NAME_LINK}>{e.name}</Link>
+                          : <SubTabLink to="settings" className={NAME_LINK}>{e.name}</SubTabLink>}</div>
                         <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
                           {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
                       </td>
@@ -441,7 +445,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                   done: Number(x.total_due) - Number(x.total_remaining), open: x.status !== "PAID", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
-                      <Link href={`/financial/loans/${x.loan_asset_id}`} className="font-medium hover:underline">{x.loan_name}</Link>
+                      <Link href={`/financial/loans/${x.loan_asset_id}`} title="ไปหน้าเงินให้กู้" className={`font-medium ${NAME_LINK}`}>{x.loan_name}</Link>
                       <div className="text-xs text-slate-500">เงินให้กู้ · {x.borrower_name} · งวดที่ {x.installment_no}
                         {pv.assetPct(x.loan_asset_id) != null && ` · ส่วนของ ${pv.personName} ${pv.assetPct(x.loan_asset_id)}%`}</div>
                       <div className="text-xs text-slate-400">เงินต้น {money(x.principal_due)} + ดอกเบี้ย {money(x.interest_due)} · เงินต้นไม่นับเป็นรายได้</div>
@@ -467,7 +471,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                   done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
-                      <Link href={`/insurance/${x.policy_id}`} className="font-medium hover:underline">{insName(x)}</Link>
+                      <Link href={`/insurance/${x.policy_id}`} title="ไปหน้ากรมธรรม์" className={`font-medium ${NAME_LINK}`}>{insName(x)}</Link>
                       <div className="text-xs text-slate-500">ผลประโยชน์ประกัน · {BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]}</div>
                       {x.cash_value_asset_id && <div className="text-xs text-slate-400">ถอนจากมูลค่าเวนคืนก่อน · ส่วนที่เกินนับเป็นรายได้</div>}
                     </td>
@@ -605,9 +609,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                   expected: Number(c.expected_amount), done: Number(c.paid_amount), open: c.status !== "PAID", el: (
                   <ActionRow key={`${c.utility_id}-${c.cost_period}`} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
-                      <div className="font-medium">{utilName(c.utility_type, c.provider)}</div>
+                      <Link href={`/property/${c.property_asset_id}`} title="ไปหน้าทรัพย์สิน" className={`font-medium ${NAME_LINK}`}>{utilName(c.utility_type, c.provider)}</Link>
                       <div className="text-xs text-slate-500">
-                        <Link href={`/property/${c.property_asset_id}`} className="hover:underline">{c.property_name}</Link>
+                        {c.property_name}
                         {c.cost_period < start && ` · งวด ${thMonth(c.cost_period)}`}
                         {pv.assetPct(c.property_asset_id) != null && ` · ส่วนของ ${pv.personName} ${pv.assetPct(c.property_asset_id)}%`}
                       </div>
@@ -631,9 +635,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                   done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
-                      <div className="font-medium">เบี้ยประกัน งวดที่ {x.installment_no}</div>
+                      <Link href={`/insurance/${x.policy_id}`} title="ไปหน้ากรมธรรม์" className={`font-medium ${NAME_LINK}`}>เบี้ยประกัน งวดที่ {x.installment_no}</Link>
                       <div className="text-xs text-slate-500">
-                        <Link href={`/insurance/${x.policy_id}`} className="hover:underline">{insName(x)}</Link>
+                        {insName(x)}
                         {x.payer_person_id && ` · ผู้จ่าย ${persons?.find((p) => p.id === x.payer_person_id)?.name ?? ""}`}
                       </div>
                     </td>
