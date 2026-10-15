@@ -30,7 +30,7 @@ export default function TxFilter({ months, types, holdings, meta, initial }: {
     try {
       const u = new URL(window.location.href);
       if (v) u.searchParams.set(k, v); else u.searchParams.delete(k);
-      window.history.replaceState(window.history.state, "", u);
+      window.history.replaceState(null, "", u);   // null = ให้ Next.js รับรู้ URL ใหม่ด้วย (ไม่หลุดหลังบันทึก)
     } catch { /* แค่ URL ไม่เปลี่ยน */ }
   };
   const count = meta.filter((x) => (m === "all" || x.m === m) && (!type || x.type === type) && (!h || x.h.includes(h))).length;
