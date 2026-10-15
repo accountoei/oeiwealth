@@ -67,6 +67,14 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
   const ccy = p.insured_amount_currency ?? p.premium_currency ?? cvAsset?.currency ?? "THB";
   const payerId: string | null = p.payer_person_id ?? p.person_id ?? null;
   const policyActive = p.status === "ACTIVE";
+  // ประวัติจ่ายเบี้ย (แก้ / ลบ ที่หน้านี้)
+  const { data: premPays } = premiums.length
+    ? await supabase.from("expense_items").select("id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes")
+        .in("insurance_schedule_line_id", premiums.map((x) => x.id)).is("deleted_at", null).order("date", { ascending: false })
+    : { data: [] };
+  const lineNo = new Map(premiums.map((x) => [x.id, x.installment_no]));
+  const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
+  const cardName = new Map(cards.map((c) => [c.id as string, c.label]));
   const premPaid = premiums.reduce((s2, x) => s2 + Number(x.paid_amount), 0);
   const premOpen = premiums.filter((x) => ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status));
   const premNext = premOpen.find((x) => x.status !== "OVERDUE");
@@ -218,6 +226,35 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
           canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
             label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
             defaultPerson={payerId} today={today} /> : null} />}
+        {(premPays ?? []).length > 0 && (
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่ายเบี้ย</h3>
+            <p className="mb-2 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1">วันที่จ่าย</th><th>งวด</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(premPays ?? []).map((e) => (
+                  <tr key={e.id} className="align-top">
+                    <td className="py-1.5">{thDate(e.date)}</td>
+                    <td>{lineNo.get(e.insurance_schedule_line_id as string) ?? "-"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
+                    <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
+                    <td className="pl-4 text-xs text-slate-600">
+                      {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
+                    </td>
+                    <td className="pl-2 text-right">
+                      {canWrite && <RowActions table="expense_items" id={e.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete} fields={[
+                        { name: "date", label: "วันที่จ่าย", type: "date", value: e.date },
+                        { name: "amount", label: "ยอด", type: "number", value: e.amount },
+                        { name: "notes", label: "หมายเหตุ", value: e.notes, width: "w-40" }]} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {p.insurance_type !== "PROPERTY" && (
