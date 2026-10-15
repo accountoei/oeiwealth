@@ -14,6 +14,7 @@ import {
 import { TabNav, TabPanel, TabsProvider } from "./tabs";
 import { ActionRow } from "@/components/ActionBar";
 import CategoryBars, { type CatRow } from "./CategoryBars";
+import DueTable from "./DueTable";
 import MonthPicker from "@/components/MonthPicker";
 import SplitForm from "./SplitForm";
 import { loadPersonView } from "@/lib/person-view";
@@ -69,13 +70,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,persons(name),src_asset:assets!income_transactions_asset_id_fkey(name)")
+    supabase.from("income_transactions").select("id,date,income_type,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
     supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
       .is("deleted_at", null).order("name"),
     supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,notes,persons(name)")
+    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
@@ -126,6 +127,29 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
   const pname = (p: unknown) => ((Array.isArray(p) ? p[0] : p) as { name: string } | null)?.name;
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  // รายการที่สร้างจากหน้าอื่น → แก้ / ลบที่หน้าต้นทาง (null = บันทึกที่หน้านี้ แก้ที่นี่ได้)
+  const policyOf = (x: unknown) => one(x as { policy_id: string } | { policy_id: string }[] | null)?.policy_id;
+  const incSource = (i: { source_transaction_id: string | null; lease_id: string | null; asset_id: string | null; income_type: string;
+    insurance_schedule_line_id: string | null; ins_line?: unknown }): { href: string; label: string } | null => {
+    if (i.source_transaction_id) return { href: `/investments/${i.asset_id}`, label: "พอร์ตลงทุน" };
+    if (i.lease_id) return { href: `/property/${i.asset_id}`, label: "ทรัพย์สิน (สัญญาเช่า)" };
+    if (i.insurance_schedule_line_id || i.income_type === "INSURANCE_BENEFIT") {
+      const pol = policyOf(i.ins_line);
+      return { href: pol ? `/insurance/${pol}` : "/insurance", label: "กรมธรรม์" };
+    }
+    if (i.income_type === "LOAN_INTEREST" && i.asset_id) return { href: `/financial/loans/${i.asset_id}`, label: "เงินให้กู้" };
+    if (i.income_type === "BUSINESS_DIVIDEND" && i.asset_id) return { href: `/financial/business/${i.asset_id}`, label: "กิจการ" };
+    if (i.asset_id) return { href: `/a/${i.asset_id}`, label: "ทรัพย์สิน" };
+    return null;
+  };
+  const expSource = (i: { source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null;
+    property_utility_id: string | null; related_asset_id: string | null; ins_line?: unknown }): { href: string; label: string } | null => {
+    if (i.source_cash_movement_id) return { href: `/income-expenses?tab=moves&m=${ym}`, label: "รายการโอน" };
+    if (i.liability_id) return { href: `/liabilities/${i.liability_id}`, label: "หนี้สิน" };
+    if (i.insurance_schedule_line_id) { const pol = policyOf(i.ins_line); return { href: pol ? `/insurance/${pol}` : "/insurance", label: "กรมธรรม์" }; }
+    if (i.property_utility_id) return { href: i.related_asset_id ? `/property/${i.related_asset_id}` : "/property", label: "ทรัพย์สิน (ค่าใช้จ่ายประจำ)" };
+    return null;
+  };
   const claims: Claim[] = (claimsRaw ?? []).map((c) => {
     const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
     return { id: c.id, currency: c.currency, label: [pol?.insurer, pol?.policy_no, pname(pol?.persons),
@@ -282,10 +306,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <h2 className="mb-1 font-medium text-slate-900">รายได้ที่ต้องได้รับ เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กด &ldquo;บันทึกรับ&rdquo; ด้วยยอดจริง</p>
             {expectedList.length === 0 && loanDue.length === 0 && benefitDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
-              <DueTable head="รับ" rows={[
+              <DueTable kind="income" rows={[
                 ...expectedList.map((e) => {
                   const tpl = (templates ?? []).find((t) => t.id === e.source_id);
-                  return { due: e.due_date as string, el: (
+                  return { key: `t-${e.source_type}-${e.source_id}`, due: e.due_date as string, type: e.source_type === "LEASE" ? "ค่าเช่า" : "รายได้ประจำ",
+                    currency: e.currency as string, expected: Number(e.expected_amount), done: Number(e.received_amount ?? 0),
+                    open: e.status === "PENDING" || e.status === "OVERDUE", el: (
                     <ActionRow key={`${e.source_type}-${e.source_id}`} colSpan={6} cells={<>
                       <td className="py-2 pr-2">
                         <div className="font-medium">{e.name}</div>
@@ -303,7 +329,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     ) : null} />
                   ) };
                 }),
-                ...loanDue.map((x) => ({ due: x.due_date, el: (
+                ...loanDue.map((x) => ({ key: `l-${x.id}`, due: x.due_date, type: "เงินให้กู้", currency: x.currency, expected: Number(x.total_due),
+                  done: Number(x.total_due) - Number(x.total_remaining), open: x.status !== "PAID", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
                       <Link href={`/financial/loans/${x.loan_asset_id}`} className="font-medium hover:underline">{x.loan_name}</Link>
@@ -328,7 +355,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         .reduce((s, y) => s + Number(y.principal_remaining), 0)} />
                   ) : null} />
                 ) })),
-                ...benefitDue.map((x) => ({ due: x.due_date, el: (
+                ...benefitDue.map((x) => ({ key: `b-${x.id}`, due: x.due_date, type: "ผลประโยชน์ประกัน", currency: x.currency, expected: Number(x.amount),
+                  done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
                       <Link href={`/insurance/${x.policy_id}`} className="font-medium hover:underline">{insName(x)}</Link>
@@ -364,7 +392,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="py-1.5">{thDate(i.date)}</td>
                       <td>{INCOME_TYPE_LABEL[i.income_type] ?? i.income_type}</td>
                       <td className="text-slate-600">
-                        {i.source_transaction_id ? <Link href={`/investments/${i.asset_id}`} className="underline">จากพอร์ตลงทุน (แก้ที่รายการลงทุน)</Link>
+                        {i.source_transaction_id ? <Link href={`/investments/${i.asset_id}`} className="underline">จากพอร์ตลงทุน</Link>
                           : i.lease_id ? <Link href={`/property/${i.asset_id}`} className="underline">ค่าเช่า (แบ่งตามเจ้าของทรัพย์สิน)</Link>
                           : i.income_type === "LOAN_INTEREST" && i.asset_id
                             ? <Link href={`/financial/loans/${i.asset_id}`} className="underline">ดอกเบี้ยจาก {pname(i.src_asset) ?? "เงินให้กู้"} (แบ่งตามเจ้าของ)</Link>
@@ -383,7 +411,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
-                        {canWrite && !i.source_transaction_id && !i.pending_split && (
+                        {incSource(i) && !i.pending_split ? (
+                          <Link href={incSource(i)!.href} className="whitespace-nowrap text-xs text-blue-700 hover:underline">แก้ที่หน้า{incSource(i)!.label} →</Link>
+                        ) : canWrite && !i.pending_split && (
                           <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                             { name: "date", label: "วันที่", type: "date", value: i.date },
                             { name: "amount", label: "Gross", type: "number", value: i.full_amount },
@@ -391,7 +421,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             { name: "person_id", label: "ของใคร", type: "select", value: i.person_id,
                               options: [["", i.asset_id ? "ตามเจ้าของทรัพย์สิน" : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง"], ...personOpts] },
                             { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]}
-                            extra={!i.lease_id && !i.asset_id && !i.insurance_schedule_line_id && !i.received_to_credit_card_id
+                            extra={!i.received_to_credit_card_id
                               ? <AccountEditor kind="INCOME" id={i.id} current={i.received_to_asset_id ? `a:${i.received_to_asset_id}` : ""}
                                   incomeType={i.income_type} currency={i.currency} banks={banks} /> : undefined} />
                         )}
@@ -453,8 +483,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <h2 className="mb-1 font-medium text-slate-900">ค่าใช้จ่ายที่ต้องจ่าย เดือน {thMonth(start)}</h2>
             <p className="mb-3 text-xs text-slate-500">จากค่าใช้จ่ายประจำ (ค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ) และตารางเบี้ยประกัน · ระบบไม่สร้างค่าใช้จ่ายเอง กด &ldquo;บันทึกจ่าย&rdquo; ด้วยยอดจริง</p>
             {costs.length === 0 && premiumDue.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการที่คาดไว้ในเดือนนี้</p> : (
-              <DueTable head="จ่าย" rows={[
-                ...costs.map((c) => ({ due: c.due_date, el: (
+              <DueTable kind="expense" rows={[
+                ...costs.map((c) => ({ key: `c-${c.utility_id}-${c.cost_period}`, due: c.due_date, type: UTIL_LABEL[c.utility_type] ?? "อื่น ๆ", currency: c.currency,
+                  expected: Number(c.expected_amount), done: Number(c.paid_amount), open: c.status !== "PAID", el: (
                   <ActionRow key={`${c.utility_id}-${c.cost_period}`} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
                       <div className="font-medium">{utilName(c.utility_type, c.provider)}</div>
@@ -479,7 +510,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       banks={banks} cards={cards} persons={persons ?? []} today={today} />
                   ) : null} />
                 ) })),
-                ...premiumDue.map((x) => ({ due: x.due_date, el: (
+                ...premiumDue.map((x) => ({ key: `p-${x.id}`, due: x.due_date, type: "เบี้ยประกัน", currency: x.currency, expected: Number(x.amount),
+                  done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
                     <td className="py-2 pr-2">
                       <div className="font-medium">เบี้ยประกัน งวดที่ {x.installment_no}</div>
@@ -537,7 +569,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           )}</td>
                         <td className="text-slate-600">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</td>
                         <td className="text-xs text-slate-600">
-                          {i.source_cash_movement_id ? "จากรายการโอน (แก้ที่รายการโอน)"
+                          {i.source_cash_movement_id ? "จากรายการโอน"
                             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
                             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
                             : i.liability_id ? `ทบเข้าหนี้ ${name.get(i.liability_id) ?? ""}`
@@ -562,7 +594,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           )}
                         </td>
                         <td className="pl-2 text-right">
-                          {canWrite && !i.source_cash_movement_id && !i.pending_split && (
+                          {expSource(i) && !i.pending_split ? (
+                            <Link href={expSource(i)!.href} className="whitespace-nowrap text-xs text-blue-700 hover:underline">แก้ที่หน้า{expSource(i)!.label} →</Link>
+                          ) : canWrite && !i.pending_split && (
                             <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
                               { name: "date", label: "วันที่", type: "date", value: i.date },
                               { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },
@@ -571,10 +605,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                               { name: "person_id", label: "ของใคร", type: "select" as const, value: i.person_id,
                                 options: [["", i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : i.paid_from_asset_id ? "ตามเจ้าของบัญชี" : "ส่วนกลาง"] as [string, string], ...personOpts] },
                               ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]}
-                              extra={!i.liability_id && !i.insurance_schedule_line_id && !i.property_utility_id && !i.source_fee_side
-                                ? <AccountEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards}
-                                    current={i.paid_from_asset_id ? `a:${i.paid_from_asset_id}` : i.paid_from_credit_card_id ? `c:${i.paid_from_credit_card_id}` : ""} />
-                                : undefined} />
+                              extra={<AccountEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards}
+                                    current={i.paid_from_asset_id ? `a:${i.paid_from_asset_id}` : i.paid_from_credit_card_id ? `c:${i.paid_from_credit_card_id}` : ""} />} />
                           )}
                         </td>
                       </tr>
@@ -738,23 +770,6 @@ function MovesTable({ moves, name, actions = false, canDelete = false }: { moves
         ))}
       </tbody>
     </table>
-  );
-}
-
-/** ตารางรายการที่ต้องรับ / จ่ายในเดือน · เรียงตามวันครบกำหนด · กดปุ่มในแถว → ฟอร์มกางใต้แถว */
-function DueTable({ head, rows }: { head: string; rows: { due: string; el: React.ReactNode }[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[40rem] text-sm">
-        <thead className="text-left text-xs text-slate-500">
-          <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">รายการ</th><th className="px-2">ครบกำหนด</th><th className="px-2 text-right">คาดไว้</th>
-            <th className="px-2 text-right">{head === "รับ" ? "ได้รับแล้ว" : "จ่ายแล้ว"}</th><th className="px-2">สถานะ</th><th></th></tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {[...rows].sort((a, b) => a.due.localeCompare(b.due)).map((r) => r.el)}
-        </tbody>
-      </table>
-    </div>
   );
 }
 

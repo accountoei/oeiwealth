@@ -100,6 +100,18 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     .reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount ?? 0) * (PERIODS_PER_YEAR[u.frequency!] ?? 0)), new Map<string, number>());
   const utilName = (t: string, provider: string | null) => [UTIL_LABEL[t] ?? t, provider].filter(Boolean).join(" · ");
   const isRental = pd.usage_type === "RENTAL" || liveLeases.length > 0;
+  // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
+  const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
+  const [{ data: rentPaid }, { data: costPaid }] = await Promise.all([
+    supabase.from("income_transactions").select("id,date,income_period,income_type,amount,tax,currency,received_to_asset_id,notes,lease_id")
+      .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
+    utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
+      .in("property_utility_id", utilIds).is("deleted_at", null).order("date", { ascending: false }).limit(60) : Promise.resolve({ data: [] as never[] }),
+  ]);
+  const bankName = new Map(bankList.map((b) => [b.asset_id as string, b.name as string]));
+  const cardName = new Map(cards.map((c) => [c.id, c.label]));
+  const utilById = new Map(utilities.map((u) => [u.id, u]));
+  const leaseName = new Map(leases.map((l) => [l.id, [l.unit_label, l.tenant_name].filter(Boolean).join(" · ")]));
 
   return (
     <div className="space-y-6">
@@ -297,6 +309,36 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </section>
       )}
 
+      {(rentPaid ?? []).length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-1 font-medium text-slate-900">ประวัติรับค่าเช่า</h2>
+          <p className="mb-3 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอรับ&rdquo; · บันทึกผิดบัญชี ให้ลบแล้วบันทึกรับใหม่ · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr><th className="py-1">วันที่รับ</th><th>งวด</th><th>สัญญา</th><th className="text-right">ยอด</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(rentPaid ?? []).map((r) => (
+                <tr key={r.id} className="align-top">
+                  <td className="py-1.5">{thDate(r.date)}</td>
+                  <td>{r.income_type === "RENT" ? thMonth(r.income_period) : <span className="text-xs text-slate-500">หักจากเงินประกัน</span>}</td>
+                  <td className="text-xs text-slate-600">{leaseName.get(r.lease_id as string) ?? "-"}{r.notes && <div className="text-slate-400">{r.notes}</div>}</td>
+                  <td className="text-right tabular-nums">{money(r.amount, r.currency)}{Number(r.tax ?? 0) > 0 && <div className="text-xs text-slate-500">ภาษี {money(r.tax)}</div>}</td>
+                  <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
+                  <td className="pl-2 text-right">
+                    {canWrite && r.income_type === "RENT" && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete} fields={[
+                      { name: "date", label: "วันที่รับ", type: "date", value: r.date },
+                      { name: "amount", label: "ยอด", type: "number", value: r.amount },
+                      { name: "tax", label: "ภาษี", type: "number", value: r.tax },
+                      { name: "notes", label: "หมายเหตุ", value: r.notes, width: "w-40" }]} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {/* ---------------- ค่าใช้จ่ายประจำ / สาธารณูปโภค ---------------- */}
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -368,6 +410,40 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {(costPaid ?? []).length > 0 && (
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่าย</h3>
+            <p className="mb-2 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1">วันที่จ่าย</th><th>งวด</th><th>รายการ</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(costPaid ?? []).map((e) => {
+                  const u = utilById.get(e.property_utility_id as string);
+                  return (
+                    <tr key={e.id} className="align-top">
+                      <td className="py-1.5">{thDate(e.date)}</td>
+                      <td>{e.cost_period ? thMonth(e.cost_period) : "-"}</td>
+                      <td className="text-xs text-slate-600">{u ? utilName(u.utility_type, u.provider) : e.description}{e.notes && <div className="text-slate-400">{e.notes}</div>}</td>
+                      <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
+                      <td className="pl-4 text-xs text-slate-600">
+                        {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
+                      </td>
+                      <td className="pl-2 text-right">
+                        {canWrite && <RowActions table="expense_items" id={e.id} paths={paths} canDelete={canDelete} fields={[
+                          { name: "date", label: "วันที่จ่าย", type: "date", value: e.date },
+                          { name: "amount", label: "ยอด", type: "number", value: e.amount },
+                          { name: "notes", label: "หมายเหตุ", value: e.notes, width: "w-40" }]} />}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
