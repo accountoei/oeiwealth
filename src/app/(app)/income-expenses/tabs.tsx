@@ -49,7 +49,7 @@ export function TabLink({ tab, href, className, children }: { tab: string; href:
 }
 
 // แท็บย่อยในแท็บ (เช่น ที่ต้องได้รับ / บันทึกแล้ว / รายได้ประจำ) · จำไว้ใน URL (?it= / ?et=)
-const SubCtx = createContext<string>("");
+const SubCtx = createContext<{ active: string; pick: (k: string) => void }>({ active: "", pick: () => {} });
 
 export function SubTabs({ param, initial, tabs, children }: { param: string; initial: string; tabs: [string, string][]; children: ReactNode }) {
   const [active, setState] = useState(initial);
@@ -63,7 +63,7 @@ export function SubTabs({ param, initial, tabs, children }: { param: string; ini
     } catch { /* ไม่เป็นไร */ }
   };
   return (
-    <SubCtx.Provider value={active}>
+    <SubCtx.Provider value={{ active, pick }}>
       <div className="space-y-4">
         <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map(([k, l]) => (
@@ -78,6 +78,12 @@ export function SubTabs({ param, initial, tabs, children }: { param: string; ini
 }
 
 export function SubPanel({ id, children }: { id: string; children: ReactNode }) {
-  const active = useContext(SubCtx);
+  const { active } = useContext(SubCtx);
   return <div hidden={active !== id} className="space-y-4">{children}</div>;
+}
+
+/** ปุ่มข้อความไปแท็บย่อยอื่น (เช่น ชื่อรายได้ประจำ → แท็บ "รายได้ประจำ") */
+export function SubTabLink({ to, className, children }: { to: string; className?: string; children: ReactNode }) {
+  const { pick } = useContext(SubCtx);
+  return <button type="button" onClick={() => { pick(to); window.scrollTo({ top: 0, behavior: "smooth" }); }} className={`text-left ${className ?? ""}`}>{children}</button>;
 }
