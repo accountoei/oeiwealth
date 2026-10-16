@@ -24,7 +24,7 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
   const tot = { valueThb: sum("valueThb"), total: sum("total"), cost: sum("cost") };
   return (
     <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-baseline gap-3 px-4 pt-4">
+      <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
         <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด</h2>
         {toggle}
       </div>

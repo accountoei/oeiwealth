@@ -49,7 +49,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline gap-3 px-4 pt-4">
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">กิจการทั้งหมด</h2>
           {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/business", { p: sp.p })} />}
         </div>

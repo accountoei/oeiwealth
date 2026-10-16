@@ -52,7 +52,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
       </p>
 
       <section className="space-y-3">
-        <div className="flex items-baseline gap-3">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ</h2>
           {canOrder && memberRows.length > 1 && <SortToggle active={ordering === "members"} {...oh("members")} />}
         </div>
@@ -81,7 +81,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-baseline gap-3">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900">แต้มสะสม / ไมล์</h2>
           {canOrder && pointRows.length > 1 && <SortToggle active={ordering === "points"} {...oh("points")} />}
         </div>

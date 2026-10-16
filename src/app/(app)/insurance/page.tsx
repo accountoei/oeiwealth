@@ -123,7 +123,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline gap-3 px-4 pt-4">
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">กรมธรรม์ทั้งหมด</h2>
           {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p })} />}
         </div>
