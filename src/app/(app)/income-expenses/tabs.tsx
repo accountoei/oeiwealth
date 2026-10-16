@@ -6,6 +6,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 // สลับแท็บในเบราว์เซอร์ทันที ไม่ต้องโหลดหน้าใหม่ (ข้อมูลทุกแท็บโหลดมาพร้อมกันตั้งแต่เปิดหน้าอยู่แล้ว)
 // URL ยังเปลี่ยนตาม (?tab=) → กด Refresh / ส่งลิงก์ต่อ แล้วเปิดแท็บเดิมได้
 const Ctx = createContext<{ active: string; setActive: (k: string) => void }>({ active: "overview", setActive: () => {} });
+// สลับแท็บหลักด้วยปุ่มแท็บ → แท็บย่อยกลับไปหน้าแรก (ที่ต้องได้รับ / ที่ต้องจ่าย) เสมอ
+const MAIN_TAB_EVENT = "fwv:main-tab";
 
 export function TabsProvider({ initial, children }: { initial: string; children: ReactNode }) {
   const [active, setState] = useState(initial);
@@ -23,7 +25,16 @@ export function TabsProvider({ initial, children }: { initial: string; children:
 }
 
 export function TabNav({ tabs }: { tabs: [string, string][] }) {
-  const { active, setActive } = useContext(Ctx);
+  const { active, setActive: set } = useContext(Ctx);
+  const setActive = (k: string) => {
+    set(k);
+    try {
+      const u = new URL(window.location.href);
+      ["it", "et"].forEach((p) => u.searchParams.delete(p));
+      window.history.replaceState(null, "", u);
+    } catch { /* ไม่เป็นไร */ }
+    window.dispatchEvent(new CustomEvent(MAIN_TAB_EVENT, { detail: k }));
+  };
   return (
     <nav className="flex gap-1 border-b border-slate-200">
       {tabs.map(([k, l]) => (
@@ -51,9 +62,19 @@ export function TabLink({ tab, href, className, children }: { tab: string; href:
 // แท็บย่อยในแท็บ (เช่น ที่ต้องได้รับ / บันทึกแล้ว / รายได้ประจำ) · จำไว้ใน URL (?it= / ?et=)
 const SubCtx = createContext<{ active: string; pick: (k: string) => void }>({ active: "", pick: () => {} });
 
-export function SubTabs({ param, initial, tabs, children }: { param: string; initial: string; tabs: [string, string][]; children: ReactNode }) {
+export function SubTabs({ param, initial, home, tabs, children }: {
+  param: string; initial: string; tabs: [string, string][]; children: ReactNode;
+  /** แท็บย่อยที่เปิดเมื่อกดเปลี่ยนแท็บหลัก (ค่าเริ่มต้น = แท็บแรก) */
+  home?: string;
+}) {
   const [active, setState] = useState(initial);
   useEffect(() => { setState(initial); }, [initial]);
+  const first = home ?? tabs[0]?.[0] ?? "";
+  useEffect(() => {
+    const onMain = () => setState(first);
+    window.addEventListener(MAIN_TAB_EVENT, onMain);
+    return () => window.removeEventListener(MAIN_TAB_EVENT, onMain);
+  }, [first]);
   const pick = (k: string) => {
     setState(k);
     try {
