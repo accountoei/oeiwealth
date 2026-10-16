@@ -72,13 +72,30 @@ export async function updateBalance(_: ActionState, form: FormData): Promise<Act
   const assetId = String(form.get("asset_id"));
   const value = num(form.get("value"));
   if (value === null || Number.isNaN(value)) return { error: "กรุณาใส่ยอดคงเหลือเป็นตัวเลข" };
-  const { error } = await supabase.rpc("update_bank_balance", {
-    p_asset_id: assetId, p_valuation_date: str(form.get("valuation_date")), p_value: value, p_notes: str(form.get("notes")),
+  // บันทึกยอด + (ถ้าเลือก) ส่วนต่างลงเป็นก้อน "รอแยกรายละเอียด" ของเดือนนั้น (เดือนละ 1 ก้อน)
+  const { data, error } = await supabase.rpc("update_bank_statement", {
+    p_asset_id: assetId, p_date: str(form.get("valuation_date")), p_value: value, p_notes: str(form.get("notes")),
+    p_settle: form.get("settle") === "on",
   });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath(`/financial/cash/${assetId}`);
   revalidatePath("/financial/cash");
-  return { ok: "บันทึกยอดคงเหลือแล้ว" };
+  revalidatePath("/income-expenses");
+  revalidatePath("/month-closing");
+  const r = data as { difference: number | null; lump: number | null; history_only?: boolean; merged?: boolean } | null;
+  const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const base = "บันทึกยอดคงเหลือแล้ว";
+  if (r?.history_only) return { ok: `${base} · เดือนนี้มีก้อนรอแยกที่ผูกกับยอดวันหลังกว่าอยู่แล้ว ก้อนจึงไม่เปลี่ยน` };
+  const lump = r?.lump == null ? null : Number(r.lump);
+  const merged = r?.merged ? " (ปรับก้อนเดิมของเดือนนี้)" : "";
+  if (lump != null && lump < -0.005) return { ok: `${base} · ค่าใช้จ่ายก้อนรอแยกรายละเอียด ${f(-lump)}${merged} — แยกได้ที่ Income & Expenses` };
+  if (lump != null && lump > 0.005) return { ok: `${base} · รายได้ก้อนรอแยกรายละเอียด ${f(lump)}${merged} — แยกได้ที่ Income & Expenses` };
+  if (lump != null) return { ok: `${base} · ยอดตรงกับรายการที่บันทึกแล้ว ไม่มีก้อนรอแยก` };
+  const d = Number(r?.difference ?? 0);
+  if (r?.difference == null || Math.abs(d) < 0.005) return { ok: base };
+  return { ok: d < 0
+    ? `${base} · เงินในบัญชีน้อยกว่ารายการที่บันทึก ${f(-d)} (ติ๊ก "ลงส่วนต่างเป็นก้อนรอแยก" ถ้าต้องการลงเป็นค่าใช้จ่ายก้อน)`
+    : `${base} · เงินในบัญชีมากกว่ารายการที่บันทึก ${f(d)} (ติ๊ก "ลงส่วนต่างเป็นก้อนรอแยก" ถ้าต้องการลงเป็นรายได้ก้อน)` };
 }
 
 export async function setAccountNo(_: ActionState, form: FormData): Promise<ActionState> {

@@ -26,6 +26,7 @@ import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
+import PayFilter from "./PayFilter";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -37,7 +38,7 @@ const EXP_STATUS: Record<string, { text: string; cls: string }> = {
 };
 const REIMB: Record<string, string> = { PENDING: "รอรับเงินคืน", PARTIAL: "ได้คืนบางส่วน", FULL: "ได้คืนครบ" };
 
-type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; pay?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -219,6 +220,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       amount: sh ? Number(sh.amount_share) : i.amount };
   });
   const itemShare = new Map(itemList.map((i) => [i.id, i.share]));
+  // ตัวกรอง "จ่ายด้วย" (แท็บค่าใช้จ่าย → บันทึกแล้ว)
+  const pay = /^(bank|card|cash|card:[0-9a-f-]{36})$/.test(sp.pay ?? "") ? (sp.pay as string) : "";
+  const payOf = (i: { paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }) =>
+    i.paid_from_credit_card_id ? `card:${i.paid_from_credit_card_id}` : i.paid_from_asset_id ? "bank" : "cash";
+  const shownItems = !pay ? itemList : itemList.filter((i) => (pay === "card" ? payOf(i).startsWith("card:") : payOf(i) === pay));
+  const shownThb = shownItems.reduce((s, i) => s + Number(i.base_amount ?? 0) * i.share, 0);
   const expenseThb = pv.personId ? (expShares ?? []).reduce((s, r) => s + Number(r.base_amount_share ?? 0), 0) : Number(month?.total_amount ?? 0);
   const reimbThb = (reimbs ?? []).filter((r) => !pv.personId || itemShare.has(r.expense_item_id))
     .reduce((s, r) => s + thb(r.amount, r.currency) * (itemShare.get(r.expense_item_id) ?? 1), 0);
@@ -549,7 +556,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         {i.pending_split && (
                           <div className="mt-1 space-y-1">
                             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
-                            {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} />}
+                            {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []}
+                              transferBanks={i.received_to_asset_id ? banks.filter((b) => b.currency === i.currency && b.asset_id !== i.received_to_asset_id) : []} />}
                           </div>
                         )}
                       </td>
@@ -719,16 +727,18 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 <div className="mt-0.5 text-sm">
                   <span className="font-semibold tabular-nums">{money(expenseThb, "THB", 0)}</span>
                   {track === "NOT_TRACKED" && <span className="ml-2 text-xs text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span>}
+                  {pay && <span className="ml-2 text-xs text-slate-600">· ที่กรอง {shownItems.length} รายการ {money(shownThb, "THB", 0)}</span>}
                 </div>
               </div>
+              {itemList.length > 0 && <PayFilter value={pay} cards={cards.map((c) => ({ id: c.id, label: c.label }))} />}
             </div>
-            {itemList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
+            {shownItems.length === 0 ? <p className="text-sm text-slate-500">{pay ? "ไม่มีรายการตามตัวกรอง" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
                   <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th className="pl-4">เงินคืน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {itemList.map((i) => {
+                  {shownItems.map((i) => {
                     const r = rs.get(i.id);
                     const cap = Number(i.expected_reimbursement_amount ?? i.full_amount);   // เงินคืนคิดจากยอดเต็มของรายการ
                     const remaining = cap - Number(r?.reimbursed_amount ?? 0);
@@ -746,7 +756,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           {i.pending_split && (
                             <div className="mt-1 space-y-1">
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
-                              {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats} />}
+                              {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
+                                transferBanks={i.paid_from_asset_id ? banks.filter((b) => b.currency === i.currency && b.asset_id !== i.paid_from_asset_id) : []} />}
                             </div>
                           )}</td>
                         <td className="text-slate-600">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</td>

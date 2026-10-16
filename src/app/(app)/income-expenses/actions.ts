@@ -14,6 +14,53 @@ function done(msg: string, extra: string[] = []): ActionState {
 }
 const bad = (v: number | null) => v === null || Number.isNaN(v) || v <= 0;
 
+// ------------------------------------------------------------------ ก้อนรอแยก: ข้อความหลังบันทึก
+type Sb = Awaited<ReturnType<typeof createClient>>;
+type LumpAcc = { kind: "BANK" | "CARD"; id: string | null | undefined };
+type LumpSnap = { key: string; kind: "BANK" | "CARD"; id: string; amount: number; date: string } | null;
+const f2 = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** ยอดก้อนรอแยกของบัญชี / บัตร ในเดือนของรายการ (ก่อน / หลังบันทึก) */
+async function lumpSnap(supabase: Sb, accs: LumpAcc[], date: string | null): Promise<LumpSnap[]> {
+  if (!date) return [];
+  const uniq = accs.filter((a): a is { kind: "BANK" | "CARD"; id: string } => !!a.id)
+    .filter((a, i, arr) => arr.findIndex((b) => b.kind === a.kind && b.id === a.id) === i);
+  return Promise.all(uniq.map(async (a) => {
+    const { data } = await supabase.rpc("lump_status", { p_kind: a.kind, p_id: a.id, p_date: date });
+    const r = data as { amount: number; date: string } | null;
+    return r ? { key: `${a.kind}:${a.id}`, kind: a.kind, id: a.id, amount: Number(r.amount), date: r.date } : null;
+  }));
+}
+
+/** เทียบก่อน / หลัง → "หักจากก้อนแล้ว เหลือ …" · เตือนก้อนกลับด้าน · เตือนวันที่หลังวันที่ของก้อน */
+function lumpNote(before: LumpSnap[], after: LumpSnap[], accs: LumpAcc[], date: string | null): string {
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  for (const a of accs) {
+    if (!a.id) continue;
+    const key = `${a.kind}:${a.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const b = before.find((x) => x?.key === key) ?? null;
+    const n = after.find((x) => x?.key === key) ?? null;
+    const who = a.kind === "CARD" ? "บัตรนี้" : "บัญชีนี้";
+    if (!b && !n) continue;
+    if (b && !n) { notes.push(`ก้อนรอแยกของ${who}หมดแล้ว (หักจากก้อนครบ)`); continue; }
+    if (!b && n) continue;                                  // ก้อนเกิดจากที่อื่น ไม่เกี่ยวกับรายการนี้
+    const was = b!.amount, now = n!.amount;
+    if (Math.abs(was - now) < 0.005) {
+      if (date && date > b!.date) notes.push(`⚠ รายการนี้ลงวันที่หลังวันที่ของก้อนรอแยก (${b!.date}) จึงไม่หักจากก้อน — ถ้าเป็นส่วนหนึ่งของก้อน ให้แก้วันที่ให้อยู่ในช่วงก้อน`);
+      continue;
+    }
+    if (Math.sign(was) !== Math.sign(now) && Math.abs(now) >= 0.005) {
+      notes.push(`⚠ ก้อนรอแยกของ${who}กลับด้าน: จาก${was > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยก ${f2(Math.abs(was))} เป็น${now > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยก ${f2(Math.abs(now))} — ตรวจว่าไม่ได้บันทึกซ้ำกับที่แยกไปแล้ว`);
+      continue;
+    }
+    notes.push(`หักจากก้อนรอแยกของ${who}แล้ว เหลือ${now > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยก ${f2(Math.abs(now))}`);
+  }
+  return notes.length ? ` · ${notes.join(" · ")}` : "";
+}
+
 // ------------------------------------------------------------------ รายได้
 export async function addIncome(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
@@ -30,6 +77,8 @@ export async function addIncome(_: ActionState, form: FormData): Promise<ActionS
   const leaseId = str(form.get("lease_id"));
   const templateId = str(form.get("recurring_template_id"));
   const itype = leaseId ? "RENT" : (str(form.get("income_type")) ?? "OTHER");
+  const incAccs: LumpAcc[] = [{ kind: "BANK", id: toAsset }];
+  const incBefore = await lumpSnap(supabase, incAccs, str(form.get("date")));
   const { error } = await supabase.from("income_transactions").insert({
     income_type: itype, income_subtype: itype === "OTHER" ? str(form.get("income_subtype")) : null,
     amount, tax, currency, date: str(form.get("date")), received_to_asset_id: toAsset,
@@ -39,7 +88,8 @@ export async function addIncome(_: ActionState, form: FormData): Promise<ActionS
     notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
-  return done("บันทึกรายได้แล้ว", ["/property"]);
+  const incNote = lumpNote(incBefore, await lumpSnap(supabase, incAccs, str(form.get("date"))), incAccs, str(form.get("date")));
+  return done(`บันทึกรายได้แล้ว${incNote}`, ["/property"]);
 }
 
 export async function dismissExpected(_: ActionState, form: FormData): Promise<ActionState> {
@@ -93,6 +143,9 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
   if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
   const via = String(form.get("pay_via") ?? "bank");
   const reimb = form.get("is_reimbursable") === "on";
+  const expAccs: LumpAcc[] = [{ kind: "BANK", id: via === "bank" ? str(form.get("bank_asset_id")) : null },
+    { kind: "CARD", id: via === "card" ? str(form.get("card_id")) : null }];
+  const expBefore = await lumpSnap(supabase, expAccs, str(form.get("date")));
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
@@ -103,7 +156,8 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
     notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
-  return done("บันทึกค่าใช้จ่ายแล้ว");
+  const expNote = lumpNote(expBefore, await lumpSnap(supabase, expAccs, str(form.get("date"))), expAccs, str(form.get("date")));
+  return done(`บันทึกค่าใช้จ่ายแล้ว${expNote}`, ["/liabilities"]);
 }
 
 export async function setMonthStatus(_: ActionState, form: FormData): Promise<ActionState> {
@@ -172,8 +226,12 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
     const { data: to } = await supabase.from("assets").select("currency").eq("id", toBank ?? "").maybeSingle();
     row.counter_amount = counter; row.counter_currency = to?.currency;
   }
+  const mvAccs: LumpAcc[] = [{ kind: "BANK", id: row.from_asset_id as string | null }, { kind: "BANK", id: row.to_asset_id as string | null },
+    { kind: "CARD", id: row.to_credit_card_id as string | null }];
+  const mvBefore = await lumpSnap(supabase, mvAccs, date);
   const { error } = await supabase.from("cash_movements").insert(row);
   if (error) return { error: friendlyError(error.message) };
+  const mvNote = lumpNote(mvBefore, await lumpSnap(supabase, mvAccs, date), mvAccs, date);
 
   // จ่ายแล้วอัปเดตยอดทันที (ไม่บังคับ)
   const newBal = num(form.get("new_balance"));
@@ -182,26 +240,59 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
       .eq("id", String(form.get("card_id")));
     if (e2) return { error: `บันทึกการจ่ายแล้ว แต่อัปเดตยอดบัตรไม่สำเร็จ: ${friendlyError(e2.message)}` };
   }
-  return done("บันทึกรายการแล้ว", ["/liabilities"]);
+  return done(`บันทึกรายการแล้ว${mvNote}`, ["/liabilities"]);
 }
 
 /** แยกรายการ "รอแยกรายละเอียด" เป็นหลายบรรทัด (ยอดรวมไม่เกินก้อน · ส่วนที่เหลือยังรอแยก) — ทำได้แม้ปิดงวดแล้ว */
 export async function splitPending(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
-  let lines: { description: string; amount: string; expense_category?: string; income_type?: string; person_id?: string }[] = [];
+  const kind = String(form.get("kind")) === "INCOME" ? "INCOME" : "EXPENSE";
+  const id = String(form.get("id"));
+  let lines: { description: string; amount: string; expense_category?: string; income_type?: string; person_id?: string; transfer_with?: string }[] = [];
   try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
   const clean = lines.filter((l) => l.description?.trim() || l.amount?.trim())
     .map((l) => ({ ...l, amount: num(l.amount) }));
   if (!clean.length) return { error: "กรุณาใส่อย่างน้อย 1 บรรทัด" };
-  if (clean.some((l) => !l.description?.trim() || l.amount === null || Number.isNaN(l.amount) || l.amount <= 0)) {
-    return { error: "ทุกบรรทัดต้องมีรายละเอียดและจำนวนเงินมากกว่า 0" };
+  const transfers = clean.filter((l) => l.transfer_with);
+  const items = clean.filter((l) => !l.transfer_with);
+  if (clean.some((l) => l.amount === null || Number.isNaN(l.amount) || l.amount <= 0)) return { error: "ทุกบรรทัดต้องมีจำนวนเงินมากกว่า 0" };
+  if (items.some((l) => !l.description?.trim())) return { error: "รายการที่ไม่ใช่เงินโอน ต้องมีรายละเอียด" };
+
+  // ก้อนนี้ (บัญชี / วันที่ / ยอด) — เงินโอนแยกได้เฉพาะก้อนของบัญชีธนาคาร
+  const { data: lump } = kind === "EXPENSE"
+    ? await supabase.from("expense_items").select("date,amount,currency,paid_from_asset_id").eq("id", id).eq("pending_split", true).maybeSingle()
+    : await supabase.from("income_transactions").select("date,amount,currency,received_to_asset_id").eq("id", id).eq("pending_split", true).maybeSingle();
+  if (!lump) return { error: "ไม่พบรายการรอแยก" };
+  const l = lump as { date: string; amount: number; currency: string; paid_from_asset_id?: string | null; received_to_asset_id?: string | null };
+  const bank = l.paid_from_asset_id ?? l.received_to_asset_id ?? null;
+  if (transfers.length && !bank) return { error: "แยกเป็นเงินโอนได้เฉพาะก้อนของบัญชีธนาคาร" };
+  const total = clean.reduce((t, x) => t + Number(x.amount), 0);
+  if (total > Number(l.amount) + 0.005) return { error: "ยอดที่แยกมากกว่ายอดรอแยก" };
+
+  let left = Number(l.amount);
+  if (items.length) {
+    const { data, error } = await supabase.rpc("split_pending_item", { p_kind: kind, p_id: id, p_lines: items });
+    if (error) return { error: friendlyError(error.message) };
+    left = Number(data ?? 0);
   }
-  const { data, error } = await supabase.rpc("split_pending_item", {
-    p_kind: String(form.get("kind")), p_id: String(form.get("id")), p_lines: clean,
-  });
-  if (error) return { error: friendlyError(error.message) };
-  const left = Number(data ?? 0);
-  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${left.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "แยกครบแล้ว", ["/liabilities"]);
+  // เงินโอน: ค่าใช้จ่ายก้อน = เงินออกจากบัญชีนี้ · รายได้ก้อน = เงินเข้าบัญชีนี้ → ก้อนลดเองอัตโนมัติ
+  for (const t of transfers) {
+    const { error } = await supabase.from("cash_movements").insert({
+      movement_date: l.date, movement_type: "TRANSFER", amount: t.amount, currency: l.currency,
+      from_asset_id: kind === "EXPENSE" ? bank : t.transfer_with, to_asset_id: kind === "EXPENSE" ? t.transfer_with : bank,
+      description: t.description?.trim() || "เงินโอน (แยกจากก้อนรอแยก)",
+      metadata: { via: "split_pending", lump_id: id },
+    });
+    if (error) {
+      return { error: `${items.length ? "แยกรายการแล้ว แต่" : ""}บันทึกเงินโอนไม่สำเร็จ: ${friendlyError(error.message)}` };
+    }
+    left -= Number(t.amount);
+  }
+  if (transfers.length) {
+    const { data: after } = await supabase.rpc("lump_status", { p_kind: "BANK", p_id: bank, p_date: l.date });
+    left = Math.abs(Number((after as { amount?: number } | null)?.amount ?? 0));
+  }
+  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${f2(left)}` : "แยกครบแล้ว", ["/liabilities"]);
 }
 
 /** แก้รายได้ / ค่าใช้จ่ายที่บันทึกเอง ด้วยปุ่ม "บันทึก" ปุ่มเดียว (ช่องทั่วไป + บัญชี + ประเภท ในคำสั่งเดียว) */
@@ -243,13 +334,24 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
     } else account = "";
   }
   const supabase = await createClient();
+  const id = String(form.get("id"));
+  const { data: cur } = kind === "INCOME"
+    ? await supabase.from("income_transactions").select("date,received_to_asset_id").eq("id", id).maybeSingle()
+    : await supabase.from("expense_items").select("date,paid_from_asset_id,paid_from_credit_card_id").eq("id", id).maybeSingle();
+  const old = (cur ?? {}) as { date?: string; received_to_asset_id?: string | null; paid_from_asset_id?: string | null; paid_from_credit_card_id?: string | null };
+  const newDate = (fields.date as string | null) ?? old.date ?? null;
+  const accs: LumpAcc[] = [
+    { kind: "BANK", id: old.received_to_asset_id ?? old.paid_from_asset_id }, { kind: "CARD", id: old.paid_from_credit_card_id },
+    { kind: "BANK", id: account?.startsWith("a:") ? account.slice(2) : null }, { kind: "CARD", id: account?.startsWith("c:") ? account.slice(2) : null }];
+  const before = await lumpSnap(supabase, accs, newDate);
   const { data, error } = await supabase.rpc("update_entry", {
-    p_kind: kind, p_id: String(form.get("id")), p_fields: fields, p_account: account,
+    p_kind: kind, p_id: id, p_fields: fields, p_account: account,
     p_income_type: kind === "INCOME" ? str(form.get("income_type")) : null,
   });
   if (error) return { error: friendlyError(error.message) };
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
-  return done(warn ? "บันทึกแล้ว · บัญชีนี้กระทบยอดเดือนนี้ไปแล้ว ให้ตรวจที่หน้ากระทบยอด (Month Closing) อีกครั้ง" : "บันทึกแล้ว",
+  const note = lumpNote(before, await lumpSnap(supabase, accs, newDate), accs, null);
+  return done((warn ? "บันทึกแล้ว · บัญชีนี้กระทบยอดเดือนนี้ไปแล้ว ให้ตรวจที่หน้ากระทบยอด (Month Closing) อีกครั้ง" : "บันทึกแล้ว") + note,
     ["/liabilities", "/month-closing", "/"]);
 }
 
@@ -300,6 +402,9 @@ export async function payRecurringExpense(_: ActionState, form: FormData): Promi
   const amount = num(form.get("amount"));
   if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
   const via = String(form.get("pay_via") ?? "bank");
+  const accs: LumpAcc[] = [{ kind: "BANK", id: via === "bank" ? str(form.get("bank_asset_id")) : null },
+    { kind: "CARD", id: via === "card" ? str(form.get("card_id")) : null }];
+  const before = await lumpSnap(supabase, accs, str(form.get("date")));
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
@@ -310,7 +415,8 @@ export async function payRecurringExpense(_: ActionState, form: FormData): Promi
     notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
-  return done("บันทึกจ่ายแล้ว", ["/liabilities"]);
+  const note = lumpNote(before, await lumpSnap(supabase, accs, str(form.get("date"))), accs, str(form.get("date")));
+  return done(`บันทึกจ่ายแล้ว${note}`, ["/liabilities"]);
 }
 
 /** "เดือนนี้ไม่ได้จ่าย" — ค่าใช้จ่ายประจำทั่วไป (RECURRING) / ของทรัพย์สิน (PROPERTY) */

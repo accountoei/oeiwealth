@@ -1446,6 +1446,82 @@ SELECT t.fails($$SELECT public.update_entry('EXPENSE', (SELECT id FROM public.ex
   jsonb_build_object('amount','1'), NULL)$$, 'PERMISSION|สิทธิ์|role', 'VIEWER แก้รายการไม่ได้');
 RESET ROLE;
 
+\echo '== 13z. ก้อนรอแยก: บัญชีละ 1 ก้อนต่อเดือน (ธนาคารจากหน้า Cash + กระทบยอด · บัตรหลายยอดในเดือนเดียว)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีก้อนรายเดือน', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS mb1;
+SELECT public.create_bank_account('บัญชีก้อนรายเดือน B', 'ทดสอบ', 'THB', 5000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS mb2;
+SELECT public.add_expense(jsonb_build_object('date','2026-09-05','description','จ่ายจริงก่อนยอด','amount',300,
+  'paid_from_asset_id', t.a('บัญชีก้อนรายเดือน'))) IS NOT NULL AS mb3;
+SELECT (public.update_bank_statement(t.a('บัญชีก้อนรายเดือน'), '2026-09-10', 9500, NULL, true))->>'lump' AS mb_lump1;
+SELECT t.ok((SELECT amount = 200 AND date = '2026-09-10' FROM public.expense_items
+              WHERE pending_split AND lump_kind = 'BANK' AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL),
+            'หน้า Cash: บันทึกยอด + ติ๊กลงส่วนต่าง → ก้อนรอแยก 200 ทันที (ไม่ต้องรอ Month Closing)');
+SELECT (public.update_bank_statement(t.a('บัญชีก้อนรายเดือน'), '2026-09-20', 9000))->>'merged' AS mb_merged;
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL) = 1
+            AND (SELECT amount = 700 AND date = '2026-09-20' FROM public.expense_items
+                  WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL),
+            'บันทึกยอดซ้ำในเดือนเดียวกัน → ปรับก้อนเดิมเป็น 700 + ย้ายวันที่ (ยังมีก้อนเดียว)');
+SELECT t.ok(((public.update_bank_statement(t.a('บัญชีก้อนรายเดือน'), '2026-09-15', 9200))->>'history_only')::boolean
+            AND (SELECT amount = 700 AND date = '2026-09-20' FROM public.expense_items
+                  WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL),
+            'ยอดวันก่อนวันที่ของก้อน → เก็บเป็นยอดอย่างเดียว ก้อนไม่เปลี่ยน');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-12','description','เจอใบเสร็จในช่วงก้อน','amount',100,
+  'paid_from_asset_id', t.a('บัญชีก้อนรายเดือน'))) IS NOT NULL AS mb4;
+SELECT public.add_expense(jsonb_build_object('date','2026-09-25','description','จ่ายหลังวันที่ของก้อน','amount',50,
+  'paid_from_asset_id', t.a('บัญชีก้อนรายเดือน'))) IS NOT NULL AS mb5;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL) = 600,
+            'รายการจริงในช่วงก้อน → ก้อนลด 700 → 600 · รายการหลังวันที่ของก้อนไม่กระทบ');
+INSERT INTO public.cash_movements(movement_date, movement_type, amount, currency, from_asset_id, to_asset_id, description)
+  VALUES ('2026-09-14', 'TRANSFER', 100, 'THB', t.a('บัญชีก้อนรายเดือน'), t.a('บัญชีก้อนรายเดือน B'), 'โอนที่ลืมบันทึก');
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL) = 500,
+            'บันทึกโอนระหว่างบัญชีในช่วงก้อน → ก้อนลดเองเหลือ 500');
+SELECT public.prepare_bank_reconciliation(t.a('บัญชีก้อนรายเดือน'), '2026-09-01') IS NOT NULL AS mb7;
+SELECT public.settle_bank_difference((SELECT id FROM public.bank_reconciliations WHERE bank_asset_id = t.a('บัญชีก้อนรายเดือน')), 8700)->>'amount' AS mb_settle;
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL) = 1
+            AND (SELECT amount = 750 AND date = '2026-09-30' FROM public.expense_items
+                  WHERE pending_split AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน') AND deleted_at IS NULL)
+            AND (SELECT status FROM public.bank_reconciliations WHERE bank_asset_id = t.a('บัญชีก้อนรายเดือน')) = 'RECONCILED',
+            'กระทบยอดสิ้นเดือน → ใช้ก้อนเดิม (750 ย้ายไปสิ้นเดือน) · กระทบยอดผ่าน');
+SELECT t.ok((public.lump_status('BANK', t.a('บัญชีก้อนรายเดือน'), '2026-09-01')->>'amount')::numeric = 750,
+            'lump_status: ยอดก้อนของเดือน');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีก้อนรายเดือน'), '2026-09-30') = 8700
+            AND private.bank_calculated_balance(t.a('บัญชีก้อนรายเดือน'), '2026-09-20') = 9000,
+            'ยอดบัญชีตรง Statement ทุกจุด (กลางเดือน / สิ้นเดือน)');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.update_bank_statement(t.a('บัญชีก้อนรายเดือน B'), '2026-09-20', 5050, NULL, true)$$,
+  'PERMISSION|สิทธิ์|role', 'CONTRIBUTOR ลงส่วนต่างเป็นก้อนไม่ได้');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+-- บัตร: หลายยอดในเดือนเดียว → ก้อนเดียว · เดือนถัดไป → ก้อนใหม่
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'รายเดือน', '8811', 1000, '2026-09-01');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-05','description','รูดบัตรรายเดือน','amount',200,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '8811'))) IS NOT NULL AS mc1;
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8811'), '2026-09-10', 1500, true))->>'lump' AS mc_lump1;
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8811'), '2026-09-28', 1900, false))->>'merged' AS mc_merged;
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8811')) = 1
+            AND (SELECT amount = 700 AND date = '2026-09-28' AND lump_from = '2026-09-01' FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+                  AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8811')),
+            'บัตร: ยอดที่ 2 ในเดือนเดียวกัน → ก้อนเดิมปรับเป็น 700 + ย้ายไปวันยอดล่าสุด (จุดตั้งต้นเดิม)');
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8811'), '2026-10-05', 2000, true))->>'lump' AS mc_lump2;
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8811')) = 2
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-10-05'
+                  AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8811')) = 100,
+            'บัตร: เดือนถัดไป → ก้อนใหม่ 100 (นับต่อจากยอดล่าสุดของเดือนก่อน)');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-20','description','รูดบัตรที่ลืม ก.ย.','amount',300,
+  'paid_from_credit_card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '8811'))) IS NOT NULL AS mc2;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-28'
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8811')) = 400
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-10-05'
+                  AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8811')) = 100,
+            'บัตร: รายการที่ลืมในเดือนก่อน → ก้อนเดือนนั้นลด 700 → 400 · ก้อนเดือนถัดไปไม่เปลี่ยน');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
