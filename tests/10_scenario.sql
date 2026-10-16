@@ -1522,6 +1522,44 @@ SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND del
             'บัตร: รายการที่ลืมในเดือนก่อน → ก้อนเดือนนั้นลด 700 → 400 · ก้อนเดือนถัดไปไม่เปลี่ยน');
 RESET ROLE;
 
+\echo '== 13za. แยกก้อนครบแล้วลบ / ลดยอดรายการที่แยก → ก้อนกลับมา (บัตร + ธนาคาร)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'ก้อนกลับ', '7711', 5000, '2026-09-30');
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '7711'), '2026-10-05', 7000, true))->>'lump' AS rv1;
+SELECT public.split_pending_item('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+  AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7711')),
+  jsonb_build_array(jsonb_build_object('description','ของใช้ทดสอบก้อนกลับ','amount',2000,'expense_category','ทั่วไป'))) AS rv2;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7711')),
+            'บัตร: แยกครบ 2,000 → ก้อนปิด');
+UPDATE public.expense_items SET amount = 1500 WHERE description = 'ของใช้ทดสอบก้อนกลับ' AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7711')) = 500,
+            'บัตร: ลดยอดรายการที่แยกเหลือ 1,500 → ก้อนเดิมกลับมา 500');
+UPDATE public.expense_items SET deleted_at = now() WHERE description = 'ของใช้ทดสอบก้อนกลับ' AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7711')) = 2000
+            AND (SELECT count(*) FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7711')) = 1,
+            'บัตร: ลบรายการที่แยก → ก้อนกลับเป็น 2,000 (ก้อนเดียว)');
+UPDATE public.expense_items SET notes = 'แก้แค่หมายเหตุ' WHERE pending_split AND deleted_at IS NULL
+  AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7711');
+-- ธนาคาร
+SELECT public.create_bank_account('บัญชีก้อนกลับ', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS rv3;
+SELECT (public.update_bank_statement(t.a('บัญชีก้อนกลับ'), '2026-09-15', 9000, NULL, true))->>'lump' AS rv4;
+SELECT public.split_pending_item('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+  AND paid_from_asset_id = t.a('บัญชีก้อนกลับ')),
+  jsonb_build_array(jsonb_build_object('description','ค่าซ่อมทดสอบก้อนกลับ','amount',1000,'expense_category','ทั่วไป'))) AS rv5;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนกลับ')),
+            'ธนาคาร: แยกครบ 1,000 → ก้อนปิด');
+UPDATE public.expense_items SET deleted_at = now() WHERE description = 'ค่าซ่อมทดสอบก้อนกลับ' AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนกลับ')) = 1000,
+            'ธนาคาร: ลบรายการที่แยก → ก้อนกลับเป็น 1,000');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีก้อนกลับ'), '2026-09-15') = 9000, 'ธนาคาร: ยอดบัญชียังตรง Statement');
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
