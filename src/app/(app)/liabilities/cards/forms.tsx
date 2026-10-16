@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { createCard, setCardAutopay, updateCardBalance, updateCardStatus, type ActionState } from "../actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import DropPrompt from "../DropPrompt";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -62,14 +63,14 @@ export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
   ));
 }
 
-export function CardBalanceForm({ cardId, currency, today, minDate, label = "อัปเดตยอดตาม Statement" }:
-  { cardId: string; currency: string; today: string; minDate: string; canSettle?: boolean; label?: string }) {
+export function CardBalanceForm({ cardId, currency, today, minDate, banks = [], label = "อัปเดตยอดตาม Statement" }:
+  { cardId: string; currency: string; today: string; minDate: string; banks?: { asset_id: string; name: string }[]; label?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardBalance, {});
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>{label}</button>;
   if (!open) return trigger;
-  return present(trigger, (
-    <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
+  return present(trigger, (<div className="mt-2 space-y-2">
+    <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="card_id" value={cardId} />
       <label className="text-xs">ยอดตาม Statement ({currency})
         <input name="outstanding_balance" required inputMode="decimal" className="mt-1 block w-32 rounded-md border border-slate-300 px-2 py-1 text-sm" />
@@ -81,12 +82,13 @@ export function CardBalanceForm({ cardId, currency, today, minDate, label = "อ
       <label className="text-xs">หมายเหตุ (ไม่บังคับ)
         <input name="notes" className="mt-1 block w-40 rounded-md border border-slate-300 px-2 py-1 text-sm" />
       </label>
-      <p className="w-full text-xs text-slate-500">ส่วนต่างลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ของเดือนนี้ให้อัตโนมัติ (สูงกว่าที่บันทึก → ค่าใช้จ่ายก้อน · ต่ำกว่า → รายได้ก้อนเข้าบัตร เช่น เงินคืน / เครดิต)</p>
+      <p className="w-full text-xs text-slate-500">ส่วนต่างลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ของเดือนนี้ให้อัตโนมัติ (สูงกว่าที่บันทึก → ค่าใช้จ่ายก้อน · ต่ำกว่า → รายได้ก้อนเข้าบัตร เช่น เงินคืน / เครดิต แล้วถามต่อว่าเป็นการจ่ายบัตรจากบัญชีหรือไม่)</p>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  ));
+    {state.drop && <DropPrompt key={state.drop.n} drop={state.drop} currency={currency} banks={banks} />}
+  </div>));
 }
 
 export function CardStatusForm({ cardId, status }: { cardId: string; status: string }) {

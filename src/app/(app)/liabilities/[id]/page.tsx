@@ -34,6 +34,9 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
     supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes")
       .eq("liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
   ]);
+  // ยอดหนี้ลดเกินที่คำนวณ → รายได้ก้อนรอแยก / รายการที่แยกแล้ว (แก้ / แยกที่ Income & Expenses)
+  const { data: drops } = await supabase.from("income_transactions").select("id,date,amount,tax,notes,pending_split")
+    .eq("received_to_liability_id", id).is("deleted_at", null).order("date", { ascending: false });
   if (!l) notFound();
 
   const canWrite = me.role !== "VIEWER";
@@ -61,6 +64,9 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       dateField: "movement_date" })),
     ...(ints ?? []).map((e) => ({ key: `e${e.id}`, table: "expense_items", id: e.id, date: e.date as string, amount: Number(e.amount),
       kind: "ดอกเบี้ย", group: null as string | null, bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date" })),
+    ...(drops ?? []).map((i) => ({ key: `i${i.id}`, table: "", id: i.id, date: i.date as string, amount: Number(i.amount) - Number(i.tax ?? 0),
+      kind: i.pending_split ? "หนี้ลด (รอแยกรายละเอียด)" : "หนี้ลด (รายได้)", group: null as string | null, bank: null as string | null,
+      notes: i.notes as string | null, dateField: "date" })),
   ].sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind, "th"));
   const today = todayBangkok();
   const minDate = family?.go_live_date ?? "";
@@ -116,7 +122,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-slate-900">ประวัติการจ่าย</h2>
-        <p className="mb-3 text-xs text-slate-500">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo;</p>
+        <p className="mb-3 text-xs text-slate-500">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo; · หนี้ลด = ยอดตาม Statement ลดเกินที่คำนวณ (อยู่ในรายได้)</p>
         {payRows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีการจ่าย</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -126,12 +132,13 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
               {payRows.map((r) => (
                 <tr key={r.key}>
                   <td className="py-1.5">{thDate(r.date)}</td>
-                  <td className={r.kind === "ดอกเบี้ย" ? "text-amber-700" : ""}>{r.kind}</td>
+                  <td className={r.kind === "ดอกเบี้ย" || r.kind.startsWith("หนี้ลด (รอ") ? "text-amber-700" : r.kind.startsWith("หนี้ลด") ? "text-emerald-700" : ""}>{r.kind}</td>
                   <td className="text-right tabular-nums">{money(r.amount)}</td>
                   <td className="pl-4 text-slate-600">{r.bank ? bankName.get(r.bank) ?? "บัญชี" : "-"}</td>
                   <td className="pl-4 text-slate-500">{r.notes}</td>
                   <td className="pl-2 text-right">
-                    {canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
+                    {r.table === "" ? <Link href={`/income-expenses?tab=income&it=recorded&m=${r.date.slice(0, 7)}`} className="text-xs text-blue-700 hover:underline">แยก / แก้ที่ Income &amp; Expenses</Link>
+                    : canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
                       fields={r.table === "expense_items" ? debtInterestFields(r)
                         : [{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
                            { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
@@ -151,7 +158,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
           <p className="mb-3 text-xs text-slate-500">
             กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด
           </p>
-          <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} />
+          <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} banks={banks.filter((b) => b.currency === l.currency)} />
         </section>
       )}
 

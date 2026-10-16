@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
 
-export type ActionState = { error?: string; ok?: string };
+/** ยอดตาม Statement ต่ำกว่าที่คำนวณ → ถามต่อว่าเป็นการจ่ายหรือไม่ (n = เลขครั้ง ให้กล่องถามแสดงใหม่ทุกครั้งที่บันทึก) */
+export type Drop = { kind: "CARD" | "LIABILITY"; id: string; date: string; amount: number; n: number };
+export type ActionState = { error?: string; ok?: string; drop?: Drop };
 
 export async function createLiability(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
@@ -47,7 +49,8 @@ export async function addLiabilityBalance(_: ActionState, form: FormData): Promi
   revalidatePath(`/liabilities/${id}`);
   revalidatePath("/liabilities");
   revalidatePath("/income-expenses");
-  return { ok: lumpMessage("บันทึกยอดคงค้างแล้ว", data as { difference: number | null; lump: number } | null, "ยอดหนี้") };
+  const r = data as { difference: number | null; lump: number } | null;
+  return { ok: lumpMessage("บันทึกยอดคงค้างแล้ว", r, "ยอดหนี้"), drop: dropOf("LIABILITY", id, str(form.get("valuation_date")), r) };
 }
 
 export async function updateLiabilityInfo(_: ActionState, form: FormData): Promise<ActionState> {
@@ -106,7 +109,33 @@ export async function updateCardBalance(_: ActionState, form: FormData): Promise
   revalidatePath("/income-expenses");
   const r = data as { difference: number | null; lump: number; history_only?: boolean; merged?: boolean } | null;
   if (r?.history_only) return { ok: "บันทึกเป็นประวัติยอดแล้ว (วันที่ก่อนยอดล่าสุด · ยอดปัจจุบันไม่เปลี่ยน)" };
-  return { ok: lumpMessage(r?.merged ? "อัปเดตยอดบัตรแล้ว (ปรับก้อนรอแยกเดิมของเดือนนี้)" : "อัปเดตยอดบัตรแล้ว", r, "ยอดบัตร") };
+  return { ok: lumpMessage(r?.merged ? "อัปเดตยอดบัตรแล้ว (ปรับก้อนรอแยกเดิมของเดือนนี้)" : "อัปเดตยอดบัตรแล้ว", r, "ยอดบัตร"),
+    drop: dropOf("CARD", cardId, str(form.get("balance_date")), r) };
+}
+
+function dropOf(kind: Drop["kind"], id: string, date: string | null, r: { lump: number } | null): Drop | undefined {
+  const lump = Number(r?.lump ?? 0);
+  return lump < -0.005 && date ? { kind, id, date, amount: Math.round(-lump * 100) / 100, n: Date.now() } : undefined;
+}
+
+/** "ลงเป็นการจ่าย": รายได้ก้อนของยอดที่ลดลง → เงินออกจากบัญชี (จ่ายบัตร / จ่ายเงินต้น) วันเดียวกับยอด */
+export async function payFromDrop(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const kind = String(form.get("kind")), id = String(form.get("id"));
+  const amount = num(form.get("amount"));
+  if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่จ่าย" };
+  if (!str(form.get("bank_asset_id"))) return { error: "กรุณาเลือกบัญชีที่จ่าย" };
+  const { data, error } = await supabase.rpc("pay_from_statement_drop", { p: {
+    kind, id, bank_asset_id: str(form.get("bank_asset_id")), date: str(form.get("date")), amount } });
+  if (error) return { error: friendlyError(error.message) };
+  if (kind === "CARD") revalidateCards(id); else { revalidatePath(`/liabilities/${id}`); revalidatePath("/liabilities"); }
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  const left = Number((data as { lump_left?: number } | null)?.lump_left ?? 0);
+  const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return { ok: left > 0.005
+    ? `บันทึกการจ่ายแล้ว · เหลือรายได้ก้อนรอแยก ${f(left)}`
+    : "บันทึกการจ่ายแล้ว · รายได้ก้อนรอแยกของยอดนี้หมดแล้ว" };
 }
 
 /** ข้อความหลังอัปเดตยอดจาก Statement: บอกส่วนต่าง / ก้อนรอแยก */
@@ -114,7 +143,9 @@ function lumpMessage(base: string, r: { difference: number | null; lump: number 
   const d = Number(r?.difference ?? 0), lump = Number(r?.lump ?? 0);
   const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (lump > 0) return `${base} · ลงค่าใช้จ่ายก้อนรอแยกรายละเอียด ${f(lump)} (แยกได้ที่ Income & Expenses)`;
-  if (lump < 0) return `${base} · ลงรายได้ก้อนรอแยกรายละเอียด ${f(-lump)} เข้าบัตร (เงินคืน / เครดิต · แยกได้ที่ Income & Expenses)`;
+  if (lump < 0) return what === "ยอดบัตร"
+    ? `${base} · ลงรายได้ก้อนรอแยกรายละเอียด ${f(-lump)} เข้าบัตร (เงินคืน / เครดิต · แยกได้ที่ Income & Expenses)`
+    : `${base} · ยอดหนี้ลดเกินที่คำนวณ → ลงรายได้ก้อนรอแยกรายละเอียด ${f(-lump)} (ส่วนลด / ลดหนี้ · แยกได้ที่ Income & Expenses)`;
   if (r?.difference == null || Math.abs(d) < 0.005) return base;
   const card = what === "ยอดบัตร";
   return d > 0 ? `${base} · ${what}สูงกว่ารายการที่บันทึก ${f(d)}`

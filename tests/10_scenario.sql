@@ -1594,6 +1594,84 @@ SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.settle_bank_latest(t.a('บัญชีสถานะยอด'))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER ใช้ปุ่มสำรองไม่ได้');
 RESET ROLE;
 
+\echo '== 13zc. ยอดหนี้ / บัตรต่ำกว่าที่คำนวณ → รายได้ก้อนรอแยก · "ลงเป็นการจ่าย" จากบัญชี'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีจ่ายหนี้ลด', 'ทดสอบ', 'THB', 50000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS dd0;
+INSERT INTO public.liabilities(family_id, liability_type, name, currency) SELECT id, 'PERSONAL_LOAN', 'หนี้ลดทดสอบ', 'THB' FROM public.families;
+INSERT INTO public.liability_valuations(liability_id, valuation_date, balance, source)
+  SELECT id, '2026-08-31', 10000, 'STATEMENT' FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ';
+SELECT t.ok(((public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'), '2026-09-20', 7000))->>'lump')::numeric = -3000,
+            'ยอดหนี้ต่ำกว่าที่คำนวณ 3,000 → คืนค่าก้อน −3,000');
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+               AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ')) = 3000
+            AND (SELECT outstanding_amount FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ') = 7000,
+            'หนี้: รายได้ก้อนรอแยก 3,000 (ไม่หายเงียบ) · ยอดหนี้ = 7,000 ตาม Statement');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT (public.pay_from_statement_drop(jsonb_build_object('kind','LIABILITY','id',(SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'),
+  'bank_asset_id', t.a('บัญชีจ่ายหนี้ลด'), 'date','2026-09-20', 'amount', 2000)))->>'lump_left' AS dd1;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+               AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ')) = 1000
+            AND (SELECT outstanding_amount FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ') = 7000,
+            'CONTRIBUTOR ลงเป็นการจ่าย 2,000 → ก้อนเหลือ 1,000 · ยอดหนี้ยัง 7,000 (ไม่หักซ้ำ)');
+SELECT t.fails($$SELECT public.pay_from_statement_drop(jsonb_build_object('kind','LIABILITY','id',(SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'),
+  'bank_asset_id', t.a('บัญชีจ่ายหนี้ลด'), 'date','2026-09-20', 'amount', 5000))$$, 'มากกว่าส่วนที่ลดลง', 'จ่ายเกินส่วนที่ลดลงไม่ได้');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีจ่ายหนี้ลด'), '2026-09-20') = 48000, 'เงินออกจากบัญชี 2,000 จริง');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.pay_from_statement_drop(jsonb_build_object('kind','LIABILITY','id',(SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'),
+  'bank_asset_id', t.a('บัญชีจ่ายหนี้ลด'), 'date','2026-09-20', 'amount', 100))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER ลงเป็นการจ่ายไม่ได้');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.split_pending_item('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+  AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ')),
+  jsonb_build_array(jsonb_build_object('description','ส่วนลดดอกเบี้ยทดสอบ','amount',1000,'income_type','OTHER','date','2026-09-15'))) AS dd2;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+               AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'))
+            AND (SELECT received_to_liability_id FROM public.income_transactions WHERE notes = 'ส่วนลดดอกเบี้ยทดสอบ' AND deleted_at IS NULL)
+                = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ')
+            AND (SELECT outstanding_amount FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ') = 7000,
+            'แยกก้อนรายได้ลดหนี้ครบ → ก้อนปิด · รายการที่แยกผูกกับหนี้ · ยอดหนี้ไม่เปลี่ยน');
+SELECT t.fails($$UPDATE public.income_transactions SET date = '2026-09-25' WHERE notes = 'ส่วนลดดอกเบี้ยทดสอบ' AND deleted_at IS NULL$$,
+               'นอกช่วง', 'รายได้ลดหนี้ย้ายวันที่ออกนอกช่วงของยอดไม่ได้');
+SELECT t.fails($$INSERT INTO public.income_transactions(received_to_liability_id, date, income_type, amount, currency)
+  SELECT id, '2026-09-10', 'OTHER', 10, 'THB' FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'$$, 'ต้องแยกมาจาก', 'รายได้ลดหนี้สร้างเองตรง ๆ ไม่ได้');
+UPDATE public.income_transactions SET deleted_at = now() WHERE notes = 'ส่วนลดดอกเบี้ยทดสอบ' AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+               AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ')) = 1000,
+            'ลบรายการที่แยก → ก้อนรายได้ลดหนี้กลับมา 1,000');
+SELECT t.ok(((public.pay_from_statement_drop(jsonb_build_object('kind','LIABILITY','id',(SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'),
+  'bank_asset_id', t.a('บัญชีจ่ายหนี้ลด'), 'date','2026-09-20', 'amount', 1000)))->>'lump_left')::numeric = 0,
+            'ลงเป็นการจ่ายส่วนที่เหลือ → ก้อนหมด');
+SELECT t.ok(((public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ'), '2026-09-20', 7500))->>'lump')::numeric = 500,
+            'บันทึกยอดวันเดิมใหม่ให้สูงกว่า → คืนค่าก้อน +500');
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND lump_kind = 'LIABILITY' AND deleted_at IS NULL
+                   AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ลดทดสอบ')) = 500,
+            'บันทึกยอดวันเดิมใหม่ให้สูงกว่า (จ่ายแล้ว 3,000) → กลับเป็นค่าใช้จ่ายก้อน 500');
+-- บัญชีธนาคาร: ยอดสูงกว่า → รายได้ก้อน · บันทึกรายได้จริงทีหลังมากกว่าส่วนต่าง → กลับเป็นค่าใช้จ่ายก้อน
+SELECT public.create_bank_account('บัญชีกลับด้าน', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS dd3;
+SELECT t.ok(((public.update_bank_statement(t.a('บัญชีกลับด้าน'), '2026-09-20', 15000))->>'lump')::numeric = 5000,
+            'ธนาคาร: ยอดสูงกว่า 5,000 → รายได้ก้อน 5,000');
+INSERT INTO public.income_transactions(family_id, person_id, received_to_asset_id, date, income_type, amount, currency, notes)
+  SELECT id, t.p('คุณพ่อ'), t.a('บัญชีกลับด้าน'), '2026-09-10', 'OTHER', 20000, 'THB', 'รายได้ที่บันทึกทีหลัง' FROM public.families;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีกลับด้าน'))
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีกลับด้าน')) = 15000,
+            'ธนาคาร: บันทึกรายได้ 20,000 ทีหลัง → รายได้ก้อนหาย · กลายเป็นค่าใช้จ่ายก้อน 15,000');
+-- บัตร
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'ยอดลด', '6633', 5000, '2026-08-31');
+SELECT t.ok(((public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '6633'), '2026-09-20', 4000))->>'lump')::numeric = -1000,
+            'ยอดบัตรต่ำกว่าที่บันทึก 1,000 → รายได้ก้อนเข้าบัตร');
+SELECT t.ok(((public.pay_from_statement_drop(jsonb_build_object('kind','CARD','id',(SELECT id FROM public.credit_cards WHERE card_last4 = '6633'),
+  'bank_asset_id', t.a('บัญชีจ่ายหนี้ลด'), 'date','2026-09-20', 'amount', 1000)))->>'lump_left')::numeric = 0,
+            'บัตร: ลงเป็นการจ่าย 1,000 → ก้อนหมด');
+SELECT t.ok((SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6633')) = 4000,
+            'บัตร: ยอดบัตรยัง 4,000 หลังจ่าย (ไม่หักซ้ำ)');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีจ่ายหนี้ลด'), '2026-09-20') = 46000, 'บัญชี: เงินออกรวม 4,000 (หนี้ 3,000 + บัตร 1,000)');
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

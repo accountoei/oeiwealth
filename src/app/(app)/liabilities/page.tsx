@@ -42,7 +42,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,status"),
   ]);
   // มุมมองรายบุคคล: เฉพาะหนี้ที่คนนั้นมีส่วน · ยอด × สัดส่วน (เงินกู้ตามผู้รับผิดชอบ · บัตรตามเจ้าของบัตร · เงินประกันตามเจ้าของทรัพย์)
   const all = ((data as Row[] | null) ?? []).filter((r) => pv.showLiability(r.source_id))
@@ -171,7 +171,8 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
                       : <>ตาม Statement ณ {thDate(c.balance_date)}</>}
                   </div>
                   {canWrite && c.status !== "CLOSED" && (
-                    <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate} />
+                    <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate}
+                      banks={(banksRaw ?? []).filter((b) => b.currency === c.currency && b.status === "ACTIVE") as { asset_id: string; name: string }[]} />
                   )}
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-600">
