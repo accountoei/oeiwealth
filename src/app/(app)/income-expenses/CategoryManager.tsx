@@ -14,8 +14,17 @@ const SYSTEM_EXP = ["ประกัน", "ดอกเบี้ยจ่าย"
 export default function CategoryManager({ kind, cats, canEdit, unit }: {
   kind: "EXPENSE" | "INCOME_OTHER"; cats: Cat[]; canEdit: boolean; unit: string;
 }) {
+  // ปุ่ม "จัดลำดับ" แบบเดียวกับหน้าอื่น: กดแล้วปุ่ม ↑ ↓ ขึ้นต่อแถว → "เสร็จ"
+  const [ordering, setOrdering] = useState(false);
   return (
     <div className="space-y-3">
+      {canEdit && cats.length > 1 && (
+        <div className="flex justify-end">
+          {ordering
+            ? <button type="button" onClick={() => setOrdering(false)} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</button>
+            : <button type="button" onClick={() => setOrdering(true)} className="text-xs text-slate-600 underline hover:text-slate-900">จัดลำดับ</button>}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[30rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
@@ -25,7 +34,7 @@ export default function CategoryManager({ kind, cats, canEdit, unit }: {
           <tbody className="divide-y divide-slate-100">
             {cats.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-slate-500">ยังไม่มี{unit}</td></tr>}
             {cats.map((c, i) => (
-              <Row key={`${c.id}-${c.name}-${c.active}`} c={c} first={i === 0} last={i === cats.length - 1} canEdit={canEdit}
+              <Row key={`${c.id}-${c.name}-${c.active}`} c={c} first={i === 0} last={i === cats.length - 1} canEdit={canEdit} ordering={ordering}
                 locked={kind === "EXPENSE" && SYSTEM_EXP.includes(c.name)} />
             ))}
           </tbody>
@@ -36,7 +45,7 @@ export default function CategoryManager({ kind, cats, canEdit, unit }: {
   );
 }
 
-function Row({ c, first, last, canEdit, locked }: { c: Cat; first: boolean; last: boolean; canEdit: boolean; locked: boolean }) {
+function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boolean; last: boolean; canEdit: boolean; locked: boolean; ordering: boolean }) {
   const [editing, setEditing] = useState(false);
   const [rs, renameAction, renaming] = useActionState<ActionState, FormData>(renameCategory, {});
   const [ts, toggleAction, toggling] = useActionState<ActionState, FormData>(toggleCategory, {});
@@ -67,17 +76,20 @@ function Row({ c, first, last, canEdit, locked }: { c: Cat; first: boolean; last
       {canEdit && (
         <td className="whitespace-nowrap pl-2 text-right">
           <div className="inline-flex items-center gap-1">
-            <form action={moveAction} className="inline-flex gap-1">
-              <input type="hidden" name="id" value={c.id} />
-              <button name="dir" value="-1" disabled={first || moving} title="เลื่อนขึ้น" className={btn}>↑</button>
-              <button name="dir" value="1" disabled={last || moving} title="เลื่อนลง" className={btn}>↓</button>
-            </form>
+            {ordering ? (
+              <form action={moveAction} className="inline-flex gap-1">
+                <input type="hidden" name="id" value={c.id} />
+                <button name="dir" value="-1" disabled={first || moving} title="เลื่อนขึ้น" className={btn}>↑</button>
+                <button name="dir" value="1" disabled={last || moving} title="เลื่อนลง" className={btn}>↓</button>
+              </form>
+            ) : <>
             {!editing && !locked && <button type="button" onClick={() => setEditing(true)} className={btn}>เปลี่ยนชื่อ</button>}
             <form action={toggleAction} className="inline">
               <input type="hidden" name="id" value={c.id} />
               <input type="hidden" name="active" value={String(!c.active)} />
               <button disabled={toggling} className={btn}>{c.active ? "ซ่อน" : "ใช้งาน"}</button>
             </form>
+            </>}
           </div>
         </td>
       )}

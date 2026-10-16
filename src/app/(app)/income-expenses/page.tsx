@@ -26,7 +26,7 @@ import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
-import PayFilter from "./PayFilter";
+import PayFilter, { PayScope, PayTotal } from "./PayFilter";
 import UndoButton from "@/components/UndoButton";
 import { businessDividendFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 
@@ -38,9 +38,8 @@ const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   RECEIVED: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" }, DISMISSED: { text: "เดือนนี้ไม่ได้รับ", cls: "bg-slate-100 text-slate-500" },
 };
-const REIMB: Record<string, string> = { PENDING: "รอรับเงินคืน", PARTIAL: "ได้คืนบางส่วน", FULL: "ได้คืนครบ" };
 
-type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; pay?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -108,10 +107,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   ]);
 
   // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
-  const [{ data: pendExp }, { data: pendInc }, { data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc },
+  const [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc },
     { data: rexpRows }, { data: rexpTplRaw }] = await Promise.all([
-    supabase.from("expense_items").select("id,date").eq("pending_split", true).is("deleted_at", null),
-    supabase.from("income_transactions").select("id,date").eq("pending_split", true).is("deleted_at", null),
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("ie_categories").select("id,kind,name,sort_order,active").is("deleted_at", null).order("sort_order").order("name"),
     supabase.from("expense_items").select("expense_category").is("deleted_at", null).not("expense_category", "is", null),
@@ -135,8 +132,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const incSubs = incSubAll.filter((c) => c.active).map((c) => c.name);
   const withCurrent = (list: string[], cur: string | null): [string, string][] =>
     [...(cur && !list.includes(cur) ? [cur] : []), ...list].map((c) => [c, c]);
-  const pendingMonths = [...new Set([...(pendExp ?? []), ...(pendInc ?? [])].map((x) => String(x.date).slice(0, 7)))].sort();
-  const pendingCount = (pendExp ?? []).length + (pendInc ?? []).length;
   const goLive = family?.go_live_date ?? "";
   const minDate = goLive > start ? goLive : start;
   const maxDate = end < today ? end : today;
@@ -252,18 +247,22 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   });
   const itemShare = new Map(itemList.map((i) => [i.id, i.share]));
   // ตัวกรอง "จ่ายด้วย" (แท็บค่าใช้จ่าย → บันทึกแล้ว)
-  // ขั้นที่ 1: bank / card / cash · ขั้นที่ 2: bank:<บัญชี> / card:<บัตร> · รายชื่อ = เฉพาะที่มีรายการในเดือนนี้
-  const pay = /^(bank|card|cash|(bank|card):[0-9a-f-]{36})$/.test(sp.pay ?? "") ? (sp.pay as string) : "";
+  // ตัวกรอง "จ่ายด้วย" อยู่ฝั่งหน้าจอ (PayScope) · ที่นี่เตรียมรายชื่อบัญชี / บัตรที่มีในเดือน + ข้อมูลต่อแถว
   const payOf = (i: { paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }) =>
     i.paid_from_credit_card_id ? `card:${i.paid_from_credit_card_id}` : i.paid_from_asset_id ? `bank:${i.paid_from_asset_id}` : "cash";
-  const shownItems = !pay ? itemList : itemList.filter((i) => (pay === "card" || pay === "bank" ? payOf(i).startsWith(`${pay}:`) : payOf(i) === pay));
   const usedIds = (k: "bank" | "card") => [...new Set(itemList.map(payOf).filter((x) => x.startsWith(`${k}:`)).map((x) => x.slice(k.length + 1)))];
+  const payRows = itemList.map((i) => ({ pay: payOf(i), currency: i.currency as string, amount: Number(i.amount ?? 0), thb: Number(i.base_amount ?? 0) * i.share }));
   const payBanks = usedIds("bank").map((id) => ({ id, label: name.get(id) ?? "บัญชี" })).sort((x, y) => x.label.localeCompare(y.label, "th"));
   const payCards = usedIds("card").map((id) => ({ id, label: name.get(id) ?? "บัตร" })).sort((x, y) => x.label.localeCompare(y.label, "th"));
-  const shownThb = shownItems.reduce((s, i) => s + Number(i.base_amount ?? 0) * i.share, 0);
-  // แถวรวม: ยอดตามสกุลของรายการ (ยอดที่แสดงในตาราง) + เทียบเป็นบาท
-  const shownByCcy = [...shownItems.reduce((m, i) => m.set(i.currency, (m.get(i.currency) ?? 0) + Number(i.amount ?? 0)), new Map<string, number>())];
   const expenseThb = pv.personId ? (expShares ?? []).reduce((s, r) => s + Number(r.base_amount_share ?? 0), 0) : Number(month?.total_amount ?? 0);
+  // รอเงินคืน (ยอดที่คาดว่าได้คืน − ได้แล้ว) · รายการรอแยกรายละเอียดของเดือนนี้
+  const reimbPendingThb = itemList.filter((i) => i.is_reimbursable).reduce((s2, i) => {
+    const got = Number(rs.get(i.id)?.reimbursed_amount ?? 0);
+    const left = Math.max(Number(i.expected_reimbursement_amount ?? i.full_amount) - got, 0);
+    return s2 + thb(left, i.currency) * i.share;
+  }, 0);
+  const incPendingSplit = incomeList.some((i) => i.pending_split);
+  const expPendingSplit = itemList.some((i) => i.pending_split);
   const reimbThb = (reimbs ?? []).filter((r) => !pv.personId || itemShare.has(r.expense_item_id))
     .reduce((s, r) => s + thb(r.amount, r.currency) * (itemShare.get(r.expense_item_id) ?? 1), 0);
   // รายได้ที่คาดไว้: รายได้ประจำตามเจ้าของ · ค่าเช่าตามเจ้าของทรัพย์สิน
@@ -430,12 +429,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       </div>
 
       <TabNav tabs={TABS} />
-      {pendingCount > 0 && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          มีรายการ &ldquo;รอแยกรายละเอียด&rdquo; {pendingCount} รายการ (เดือน {pendingMonths.map((m) => thMonth(`${m}-01`)).join(", ")})
-          · กด &ldquo;แยกรายการ&rdquo; ที่รายการนั้นในแท็บรายได้ / ค่าใช้จ่าย
-        </p>
-      )}
 
       {canWrite && !inMonth && <p className="text-sm text-slate-500">เดือนนี้อยู่นอกช่วงที่บันทึกได้ (ก่อน Go-live หรือเป็นเดือนในอนาคต)</p>}
 
@@ -447,13 +440,17 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             </p>
           )}
           <section className="grid gap-4 md:grid-cols-4">
-            <Kpi label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"} />
+            <Kpi label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"}
+              flag={incPendingSplit ? <TabLink tab="income" href={`/income-expenses?tab=income&it=recorded&m=${ym}`} className="hover:underline">มีรายการรอแยกรายละเอียด</TabLink> : undefined} />
             <Kpi label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
             <Kpi label="ค่าใช้จ่าย" value={money(expenseThb, "THB", 0)}
-              sub={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย" : `${itemList.length} รายการ${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""}`}
-              cls={track === "NOT_TRACKED" ? "text-slate-500" : undefined} />
+              sub={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย" : <>{itemList.length} รายการ
+                {(reimbThb > 0 || reimbPendingThb > 0) && <div>{[reimbThb > 0 && `ได้เงินคืน ${money(reimbThb, undefined, 0)}`,
+                  reimbPendingThb > 0 && `รอเงินคืน ${money(reimbPendingThb, undefined, 0)}`].filter(Boolean).join(" · ")}</div>}</>}
+              cls={track === "NOT_TRACKED" ? "text-slate-500" : undefined}
+              flag={expPendingSplit ? <TabLink tab="expense" href={`/income-expenses?tab=expense&et=recorded&m=${ym}`} className="hover:underline">มีรายการรอแยกรายละเอียด</TabLink> : undefined} />
             <Kpi label="เงินคงเหลือสุทธิ" value={money(savings, "THB", 0)} cls={savings < 0 ? "text-red-700" : undefined}
-              sub={track === "NOT_TRACKED" ? "รายได้สุทธิ − ค่าใช้จ่าย · ยังไม่ได้บันทึกค่าใช้จ่าย" : "รายได้สุทธิ − ค่าใช้จ่าย · คิดจากรายการที่บันทึกไว้"} />
+              sub={<>รายได้สุทธิ − ค่าใช้จ่าย<div>{track === "NOT_TRACKED" ? "(ยังไม่ได้บันทึกค่าใช้จ่าย)" : "(คิดจากรายการที่บันทึกไว้)"}</div></>} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
             <CategoryBars kind="income" title={`รายได้ตามประเภท ${thMonth(start)}`} rows={incomeCats}
@@ -773,6 +770,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           </SubPanel>
           <SubPanel id="recorded">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <PayScope rows={payRows}>
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-medium text-slate-900">ค่าใช้จ่ายที่บันทึกแล้ว</h2>
@@ -782,20 +780,20 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
                 </div>
               </div>
-              {itemList.length > 0 && <PayFilter value={pay} banks={payBanks} cards={payCards} />}
+              {itemList.length > 0 && <PayFilter banks={payBanks} cards={payCards} />}
             </div>
-            {shownItems.length === 0 ? <p className="text-sm text-slate-500">{pay ? "ไม่มีรายการตามตัวกรอง" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}</p> : (
+            {itemList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th className="pl-4">เงินคืน</th><th></th></tr>
+                  <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {shownItems.map((i) => {
+                  {itemList.map((i) => {
                     const r = rs.get(i.id);
                     const cap = Number(i.expected_reimbursement_amount ?? i.full_amount);   // เงินคืนคิดจากยอดเต็มของรายการ
                     const remaining = cap - Number(r?.reimbursed_amount ?? 0);
                     return (
-                      <tr key={i.id} className="align-top">
+                      <tr key={i.id} className="align-top" data-pay={payOf(i)}>
                         <td className="py-1.5">{thDate(i.date)}</td>
                         <td>{(() => {
                           const src = i.pending_split ? null : expSource(i);
@@ -811,6 +809,19 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                               {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
                                 transferBanks={i.paid_from_asset_id ? banks.filter((b) => b.currency === i.currency && b.asset_id !== i.paid_from_asset_id) : []} />}
                             </div>
+                          )}
+                          {i.is_reimbursable && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" data-no-row-click>
+                              <span className={`rounded px-1.5 py-0.5 ${r?.reimbursement_status === "FULL" ? "bg-emerald-50 text-emerald-700" : "bg-sky-50 text-sky-800"}`}>
+                                {r?.reimbursement_status === "FULL" ? `ได้เงินคืนครบ ${money(r?.reimbursed_amount, i.currency)}`
+                                  : Number(r?.reimbursed_amount ?? 0) > 0 ? `ได้คืนแล้ว ${money(r?.reimbursed_amount, i.currency)} · รออีก ${money(remaining, i.currency)}`
+                                  : `รอเงินคืน ${money(remaining, i.currency)}`}
+                              </span>
+                              {canWrite && remaining > 0 && (
+                                <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims}
+                                  today={today} minDate={goLive} />
+                              )}
+                            </div>
                           )}</td>
                         <td className="text-slate-600">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</td>
                         <td className="text-xs text-slate-600">
@@ -825,19 +836,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         </td>
                         <td className="text-right tabular-nums">{money(i.amount, i.currency)}
                           {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
-                        <td className="pl-4 text-xs">
-                          {i.is_reimbursable && (
-                            <>
-                              <div className={r?.reimbursement_status === "FULL" ? "text-emerald-700" : "text-amber-700"}>
-                                {REIMB[r?.reimbursement_status ?? "PENDING"]} {Number(r?.reimbursed_amount ?? 0) > 0 && `(${money(r?.reimbursed_amount)})`}
-                              </div>
-                              {canWrite && remaining > 0 && (
-                                <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims}
-                                  today={today} minDate={goLive} />
-                              )}
-                            </>
-                          )}
-                        </td>
                         <td className="pl-2 text-right">
                           {(() => {
                             const src = expSource(i);
@@ -866,23 +864,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     );
                   })}
                 </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-200 align-top font-medium">
-                    <td colSpan={4} className="py-2 text-slate-700">
-                      รวม{pay ? "ตามตัวกรอง" : "ทั้งเดือน"} {shownItems.length} รายการ
-                      {pay && <span className="ml-1 text-xs font-normal text-slate-500">(จากทั้งหมด {itemList.length})</span>}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {shownByCcy.map(([c, v]) => <div key={c}>{money(v, c)}</div>)}
-                      {(shownByCcy.length > 1 || shownByCcy.some(([c]) => c !== "THB")) && (
-                        <div className="text-xs font-normal text-slate-500">≈ {money(shownThb, "THB")}</div>
-                      )}
-                    </td>
-                    <td colSpan={2}></td>
-                  </tr>
-                </tfoot>
+                <tfoot><PayTotal before={4} after={1} /></tfoot>
               </table>
             )}
+            </PayScope>
           </section>
           <p className="text-xs text-slate-500">เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม · รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ</p>
           </SubPanel>
@@ -1078,12 +1063,13 @@ const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PA
   "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "SECURITY_DEPOSIT_IN"];
 
 
-function Kpi({ label, value, sub, cls }: { label: string; value: string; sub?: string; cls?: string }) {
+function Kpi({ label, value, sub, cls, flag }: { label: string; value: string; sub?: React.ReactNode; cls?: string; flag?: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className={`mt-1 text-xs ${cls ?? "text-slate-500"}`}>{sub}</div>}
+      {flag && <div className="mt-1 text-xs font-medium text-amber-700">{flag}</div>}
     </div>
   );
 }
