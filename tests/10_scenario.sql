@@ -1575,8 +1575,9 @@ SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะย
 RESET ROLE;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
 UPDATE public.asset_valuations SET value = 9500 WHERE asset_id = t.a('บัญชีสถานะยอด') AND valuation_date = '2026-09-12' AND deleted_at IS NULL;
-SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = -100,
-            'แก้ยอดในประวัติตรง ๆ (ก้อนไม่คำนวณใหม่) → สถานะบอกยอดไม่ตรง −100');
+SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = 0
+            AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'lump')::numeric = 500,
+            'แก้ยอดในประวัติตรง ๆ → ก้อนคำนวณใหม่เองเป็น 500 · ส่วนต่างเหลือ 0');
 RESET ROLE;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
 SELECT (public.settle_bank_latest(t.a('บัญชีสถานะยอด')))->>'lump' AS ss2;
@@ -1753,6 +1754,60 @@ SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนโอน')),
   jsonb_build_array(jsonb_build_object('description','x','amount',1,'expense_category','ทั่วไป')))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER แยกก้อนไม่ได้');
 RESET ROLE;
+
+\echo '== 13ze. แก้ / ลบยอดตาม Statement ในตารางประวัติ → ก้อนคำนวณตาม · ล็อกงวดยอดบัตร · Checklist ก้อนรอแยก'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.liabilities(family_id, liability_type, name, currency) SELECT id, 'PERSONAL_LOAN', 'หนี้แก้ประวัติ', 'THB' FROM public.families;
+INSERT INTO public.liability_valuations(liability_id, valuation_date, balance, source)
+  SELECT id, '2026-08-31', 10000, 'STATEMENT' FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ';
+SELECT (public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ'), '2026-09-10', 10200))->>'lump' AS rs0;
+SELECT (public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ'), '2026-09-20', 10500))->>'lump' AS rs1;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-20'
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ')) = 300, 'หนี้: ก้อน 10 ก.ย. 200 · 20 ก.ย. 300');
+UPDATE public.liability_valuations SET balance = 10800 WHERE valuation_date = '2026-09-20' AND deleted_at IS NULL
+   AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ');
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-20'
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ')) = 600,
+            'หนี้: แก้ยอด 20 ก.ย. ในประวัติเป็น 10,800 → ก้อนปรับเป็น 600 เอง');
+UPDATE public.liability_valuations SET balance = 10100 WHERE valuation_date = '2026-09-10' AND deleted_at IS NULL
+   AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ');
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-10'
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ')) = 100
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-20'
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ')) = 700,
+            'หนี้: แก้ยอด 10 ก.ย. เป็น 10,100 → ก้อนของยอดนั้น 100 · ก้อนถัดไปใช้จุดตั้งต้นใหม่ = 700');
+UPDATE public.liability_valuations SET deleted_at = now() WHERE valuation_date = '2026-09-10' AND deleted_at IS NULL
+   AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-10'
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ'))
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND date = '2026-09-20'
+              AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้แก้ประวัติ')) = 800,
+            'หนี้: ลบยอด 10 ก.ย. → ก้อนของยอดนั้นหาย · ก้อน 20 ก.ย. ใช้ยอด 31 ส.ค. เป็นจุดตั้งต้น = 800');
+-- บัญชีธนาคาร
+SELECT public.create_bank_account('บัญชีแก้ประวัติ', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS rs2;
+SELECT (public.update_bank_statement(t.a('บัญชีแก้ประวัติ'), '2026-09-10', 9500))->>'lump' AS rs3;
+SELECT (public.update_bank_statement(t.a('บัญชีแก้ประวัติ'), '2026-09-20', 9000))->>'lump' AS rs4;
+UPDATE public.asset_valuations SET deleted_at = now() WHERE asset_id = t.a('บัญชีแก้ประวัติ') AND valuation_date = '2026-09-20' AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีแก้ประวัติ')) = 500
+            AND (SELECT date FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีแก้ประวัติ')) = '2026-09-10',
+            'บัญชี: ลบยอดล่าสุดของเดือน → ก้อนย้ายกลับไปยอด 10 ก.ย. = 500');
+UPDATE public.asset_valuations SET value = 9700 WHERE asset_id = t.a('บัญชีแก้ประวัติ') AND valuation_date = '2026-09-10' AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีแก้ประวัติ')) = 300,
+            'บัญชี: แก้ยอดในประวัติเป็น 9,700 → ก้อนปรับเป็น 300 เอง');
+UPDATE public.asset_valuations SET deleted_at = now() WHERE asset_id = t.a('บัญชีแก้ประวัติ') AND valuation_date = '2026-09-10' AND deleted_at IS NULL;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีแก้ประวัติ'))
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีแก้ประวัติ')),
+            'บัญชี: ลบยอดทั้งหมดของเดือน → ก้อนหาย');
+-- ยอดบัตรในงวดที่ปิดแล้ว
+SELECT t.fails($$SELECT public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '6633'), '2026-07-20', 123)$$,
+  'PERIOD_LOCKED', 'ยอดบัตรตาม Statement ในงวดที่ปิดแล้วบันทึกไม่ได้');
+RESET ROLE;
+SELECT t.ok(EXISTS (SELECT 1 FROM private.month_closing_issues(private.default_family_id(), '2026-09-01') i
+                    WHERE i.category = 'INCOME_EXPENSES' AND i.code = 'PENDING_SPLIT' AND i.entity_type = 'PENDING_EXPENSE')
+            AND EXISTS (SELECT 1 FROM private.month_closing_issues(private.default_family_id(), '2026-09-01') i
+                    WHERE i.category = 'INCOME_EXPENSES' AND i.code = 'PENDING_SPLIT' AND i.severity = 'REVIEW'),
+            'Month Closing: Checklist Income & Expenses แสดงก้อนรอแยกของเดือน (เตือนเท่านั้น)');
 
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');

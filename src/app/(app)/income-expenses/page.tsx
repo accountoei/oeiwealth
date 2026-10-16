@@ -31,6 +31,7 @@ import PayFilter, { PayScope, PayTotal } from "./PayFilter";
 import UndoButton from "@/components/UndoButton";
 import { businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
+import { buildHints } from "@/lib/category-hints";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -148,6 +149,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string])]);
   const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
   const splitLists = { banks, cards, liabs };
+  // เดาหมวด / บัญชีจากรายการค่าใช้จ่ายที่เคยบันทึกเอง (ไม่รวมรายการจากหน้าอื่น / ก้อนรอแยก)
+  const { data: hintRows } = await supabase.from("expense_items")
+    .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
+    .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
+    .is("insurance_schedule_line_id", null).is("property_utility_id", null)
+    .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500);
+  const expHints = buildHints(hintRows ?? [], expCats);
   const pname = (p: unknown) => ((Array.isArray(p) ? p[0] : p) as { name: string } | null)?.name;
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
   // รายการที่สร้างจากหน้าอื่น → แก้ / ลบที่หน้าต้นทาง (null = บันทึกที่หน้านี้ แก้ที่นี่ได้)
@@ -689,7 +697,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ ค่าใช้จ่าย */}
       <TabPanel id="expense">
-          {canWrite && inMonth && <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} />}
+          {canWrite && inMonth && <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} />}
           <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้</p>
 
           <SubTabs param="et" initial={expTab} tabs={[["due", `ที่ต้องจ่าย (${expOpen})`], ["recorded", `บันทึกแล้ว (${itemList.length})`], ["settings", "ค่าใช้จ่ายประจำ"]]}>
@@ -819,7 +827,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             <div className="mt-1 space-y-1">
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
                               {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
-                                personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
+                                personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"} hints={expHints}
                                 moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />}
                             </div>
                           )}

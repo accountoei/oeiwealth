@@ -5,20 +5,23 @@ import { useRouter } from "next/navigation";
 import { splitPending, type ActionState } from "./actions";
 import { INCOME_TYPE_LABEL, money } from "@/lib/format";
 import type { SplitMove } from "@/lib/split-moves";
+import { findHint, type ExpHint } from "@/lib/category-hints";
 
-type Line = { description: string; amount: string; cat: string; person_id: string; move: string; to: string };
+type Line = { description: string; amount: string; cat: string; person_id: string; move: string; to: string; auto?: boolean };
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 const blank = (): Line => ({ description: "", amount: "", cat: "", person_id: "", move: "", to: "" });   // หมวด / ประเภท ต้องเลือกเอง
 
 /** แยกรายการรอแยกรายละเอียด → หลายบรรทัด · ยอดรวมต้องไม่เกินก้อน (ส่วนที่เหลือยังรอแยก) */
-export default function SplitForm({ kind, id, amount, currency, persons, categories = [], moves = [], personDefault = "ตามเจ้าของบัญชี / บัตร", label = "แยกรายการ" }: {
+export default function SplitForm({ kind, id, amount, currency, persons, categories = [], moves = [], personDefault = "ตามเจ้าของบัญชี / บัตร", label = "แยกรายการ", hints = [] }: {
   kind: "EXPENSE" | "INCOME"; id: string; amount: number; currency: string; persons: { id: string; name: string }[]; categories?: string[];
   /** บรรทัดแบบเคลื่อนเงินที่ก้อนนี้แยกได้ (ไม่มี = แยกเป็นรายได้ / ค่าใช้จ่ายอย่างเดียว) */
   moves?: SplitMove[];
   /** ข้อความของ "ไม่ระบุคน" */
   personDefault?: string;
   label?: string;
+  /** ค่าใช้จ่าย: เดาหมวดจากรายการเดิมที่รายละเอียดเหมือนกัน */
+  hints?: ExpHint[];
 }) {
   const income = kind === "INCOME";
   const [open, setOpen] = useState(false);
@@ -48,6 +51,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   const set = (i: number, patch: Partial<Line>) => setLines(lines.map((l, k) => (k === i ? { ...l, ...patch } : l)));
   return (
     <form ref={box} action={action} className="mt-2 space-y-2 rounded-lg border-l-4 border-blue-500 bg-blue-50/40 p-3 text-left" data-no-row-click>
+      {!income && hints.length > 0 && <datalist id={`split-hints-${id}`}>{hints.slice(0, 300).map((h) => <option key={h.d} value={h.d} />)}</datalist>}
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="lines" value={JSON.stringify(lines.map((l) => (l.move
@@ -62,20 +66,25 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
               {moves.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           )}
-          <input value={l.description} onChange={(e) => set(i, { description: e.target.value })} placeholder={l.move ? "รายละเอียด (ไม่บังคับ)" : "รายละเอียด"} className={`min-w-40 flex-1 ${small}`} />
+          <input value={l.description} list={!income && hints.length ? `split-hints-${id}` : undefined} autoComplete="off"
+            onChange={(e) => {
+              // หมวดที่ระบบเดาไว้ (ยังไม่ได้เลือกเอง) เปลี่ยนตามรายละเอียดได้เรื่อย ๆ
+              const h = !income && !l.move && (!l.cat || l.auto) ? findHint(hints.filter((x) => categories.includes(x.c)), e.target.value) : null;
+              set(i, { description: e.target.value, ...(h ? { cat: h.c, auto: true } : {}) });
+            }} placeholder={l.move ? "รายละเอียด (ไม่บังคับ)" : "รายละเอียด"} className={`min-w-40 flex-1 ${small}`} />
           {l.move ? (
             <select value={l.to} onChange={(e) => set(i, { to: e.target.value })} className={`${small} ${l.to ? "" : "border-amber-400 text-slate-500"}`}>
               <option value="">{moveOf(l)?.pick ?? "— เลือก —"}</option>
               {(moveOf(l)?.targets ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           ) : income ? (
-            <select value={l.cat} onChange={(e) => set(i, { cat: e.target.value })} className={`${small} ${l.cat ? "" : "border-amber-400 text-slate-500"}`}>
+            <select value={l.cat} onChange={(e) => set(i, { cat: e.target.value, auto: false })} className={`${small} ${l.cat ? "" : "border-amber-400 text-slate-500"}`}>
               <option value="">— เลือกประเภท —</option>
               {Object.entries(INCOME_TYPE_LABEL).filter(([v]) => !["DIVIDEND", "COUPON", "RENT", "INSURANCE_BENEFIT"].includes(v))
                 .map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>
           ) : (
-            <select value={l.cat} onChange={(e) => set(i, { cat: e.target.value })} className={`${small} ${l.cat ? "" : "border-amber-400 text-slate-500"}`}>
+            <select value={l.cat} onChange={(e) => set(i, { cat: e.target.value, auto: false })} className={`${small} ${l.cat ? "" : "border-amber-400 text-slate-500"}`}>
               <option value="">— เลือกหมวด —</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
