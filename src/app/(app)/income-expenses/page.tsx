@@ -252,10 +252,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   });
   const itemShare = new Map(itemList.map((i) => [i.id, i.share]));
   // ตัวกรอง "จ่ายด้วย" (แท็บค่าใช้จ่าย → บันทึกแล้ว)
-  const pay = /^(bank|card|cash|card:[0-9a-f-]{36})$/.test(sp.pay ?? "") ? (sp.pay as string) : "";
+  // ขั้นที่ 1: bank / card / cash · ขั้นที่ 2: bank:<บัญชี> / card:<บัตร> · รายชื่อ = เฉพาะที่มีรายการในเดือนนี้
+  const pay = /^(bank|card|cash|(bank|card):[0-9a-f-]{36})$/.test(sp.pay ?? "") ? (sp.pay as string) : "";
   const payOf = (i: { paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }) =>
-    i.paid_from_credit_card_id ? `card:${i.paid_from_credit_card_id}` : i.paid_from_asset_id ? "bank" : "cash";
-  const shownItems = !pay ? itemList : itemList.filter((i) => (pay === "card" ? payOf(i).startsWith("card:") : payOf(i) === pay));
+    i.paid_from_credit_card_id ? `card:${i.paid_from_credit_card_id}` : i.paid_from_asset_id ? `bank:${i.paid_from_asset_id}` : "cash";
+  const shownItems = !pay ? itemList : itemList.filter((i) => (pay === "card" || pay === "bank" ? payOf(i).startsWith(`${pay}:`) : payOf(i) === pay));
+  const usedIds = (k: "bank" | "card") => [...new Set(itemList.map(payOf).filter((x) => x.startsWith(`${k}:`)).map((x) => x.slice(k.length + 1)))];
+  const payBanks = usedIds("bank").map((id) => ({ id, label: name.get(id) ?? "บัญชี" })).sort((x, y) => x.label.localeCompare(y.label, "th"));
+  const payCards = usedIds("card").map((id) => ({ id, label: name.get(id) ?? "บัตร" })).sort((x, y) => x.label.localeCompare(y.label, "th"));
   const shownThb = shownItems.reduce((s, i) => s + Number(i.base_amount ?? 0) * i.share, 0);
   // แถวรวม: ยอดตามสกุลของรายการ (ยอดที่แสดงในตาราง) + เทียบเป็นบาท
   const shownByCcy = [...shownItems.reduce((m, i) => m.set(i.currency, (m.get(i.currency) ?? 0) + Number(i.amount ?? 0)), new Map<string, number>())];
@@ -778,7 +782,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
                 </div>
               </div>
-              {itemList.length > 0 && <PayFilter value={pay} cards={cards.map((c) => ({ id: c.id, label: c.label }))} />}
+              {itemList.length > 0 && <PayFilter value={pay} banks={payBanks} cards={payCards} />}
             </div>
             {shownItems.length === 0 ? <p className="text-sm text-slate-500">{pay ? "ไม่มีรายการตามตัวกรอง" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}</p> : (
               <table className="w-full text-sm">
