@@ -3,7 +3,7 @@
 > **อัปเดตไฟล์นี้ทุกครั้งที่มีการปรับปรุงระบบ** (ทุก Pull Request) — ใครหรือ AI ตัวไหนมาทำต่อ ให้อ่านไฟล์นี้ก่อน
 > ⚠️ repo นี้เป็น **Public** · ห้ามใส่ข้อมูลจริงของครอบครัวในไฟล์นี้ (ชื่อ ที่อยู่ เลขโฉนด เลขบัญชี จำนวนเงิน)
 
-อัปเดตล่าสุด: 16 ต.ค. 2026 (หลัง PR #82)
+อัปเดตล่าสุด: 16 ต.ค. 2026 (หลัง PR #83)
 
 ---
 
@@ -29,7 +29,7 @@
   - ยกเว้น PR ที่แก้**เฉพาะเอกสาร** (`docs/`, `*.md` — ไม่แตะโค้ด / migration / Edge Function / workflow) AI Merge เองได้ แล้วแจ้งเจ้าของ
 - migration ใหม่ = ไฟล์ใหม่เสมอ (ห้ามแก้ไฟล์ที่รันแล้ว) · **AI รันเองผ่าน Supabase connector** ตามลำดับใน `AGENTS.md` §2: ผ่านชุดทดสอบ → เปิด PR → รันไฟล์นั้นแบบตรงตัว → ตรวจผล (ตาราง / RLS / advisors) → รายงานเจ้าของ → เจ้าของกด Merge
   - ต้องถามเจ้าของก่อนถ้า migration ลบ / เปลี่ยนชื่อตารางหรือคอลัมน์ หรือแก้ข้อมูลที่มีอยู่ · ถ้าไม่มี Supabase connector ให้เจ้าของรันเองใน SQL Editor แบบเดิม
-- ก่อน push: `DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **337 checks**, เฉพาะ Postgres ในเครื่อง) + `tsc` + `eslint` + `next build`
+- ก่อน push: `DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **343 checks**, เฉพาะ Postgres ในเครื่อง) + `tsc` + `eslint` + `next build`
 - ทุก PR อัปเดตไฟล์นี้ (แถวการตัดสินใจ + แถวประวัติ PR) และจำนวน checks ใน `AGENTS.md`
 - ปิดงานด้วยภาษาไทย 3 ส่วน: เปลี่ยนอะไร · ต้องทำอะไร (migration / Merge) · เช็กลิสต์ทดสอบด้วยข้อมูลสมมติ
 - เจ้าของพิมพ์ "ถามก่อนจะทำต่อ" / "ยังไม่ต้องแก้ไข ตอบก่อน" = ตอบอย่างเดียว ห้ามแก้โค้ด
@@ -53,13 +53,13 @@
 - **เว็บ** Next.js 15 (App Router) บน Vercel (region sin1) · หน้าอยู่ `src/app/(app)/…` : Dashboard (`page.tsx`) · `income-expenses` · `financial` (Cash / Loans / Business) · `investments` · `property` · `alternative` · `insurance` · `liabilities` (เงินกู้ + บัตร `/liabilities/cards/[id]`) · `family` (Members / Memberships / Health) · `documents` · `month-closing` · `settings`
 - **Income & Expenses** (`src/app/(app)/income-expenses/`): 5 แท็บ ภาพรวม · รายได้ · ค่าใช้จ่าย · เงินเข้า–ออก & โอน · ตั้งค่า · แท็บรายได้ / ค่าใช้จ่ายมีแท็บย่อย ที่ต้อง… / บันทึกแล้ว / …ประจำ (`?tab= ?it= ?et=`) · ไฟล์หลัก `page.tsx` `forms.tsx` `actions.ts` `tabs.tsx` `DueTable.tsx` `MovesView.tsx` `SplitForm.tsx` `CategoryBars.tsx` `CategoryManager.tsx`
 - ส่วนกลาง: `src/lib/format.ts` (ป้าย / money / thDate) · `src/lib/records.ts` (แก้ / ลบทั่วไป — whitelist) · `src/components/ActionBar.tsx` (ActionBar / ActionRow ฟอร์มกางใต้แถว) · `src/lib/person-view.ts` (ตัวกรองรายคน)
-- **ฐานข้อมูล** Supabase (Postgres + RLS ทุกตาราง) · migration 66 ไฟล์ใน `supabase/migrations/` (ล่าสุด `20261016000200_monthly_lumps.sql`) · ~60 ตาราง · ~28 View
+- **ฐานข้อมูล** Supabase (Postgres + RLS ทุกตาราง) · migration 67 ไฟล์ใน `supabase/migrations/` (ล่าสุด `20261016000300_revive_split_lump.sql`) · ~60 ตาราง · ~28 View
   - แกนเงิน: `cash_movements` (รายการที่เกิดจากรายได้ / ค่าใช้จ่าย / ลงทุน = derived แก้ตรงไม่ได้) · `income_transactions` · `expense_items` (+ `monthly_expenses`) · Net Worth จาก `private.net_worth_items(...)` · เดือน FINAL อ่านจาก Snapshot
   - ประจำ: `recurring_income_templates` + `expected_income_dismissals` → `v_expected_income` · `property_utilities` → `v_property_cost_tracking` · `recurring_expense_templates` → `v_recurring_expense_tracking` · `expected_expense_dismissals` (RECURRING / PROPERTY)
   - หมวด: `ie_categories` (EXPENSE / INCOME_OTHER) · `income_transactions.income_subtype`
   - Trigger บังคับกติกา: period lock · go-live lock · derived lock · cache guard · META / soft delete · audit
 - **Edge Functions** `invite-user` · `drive` (Verify JWT off) · **GitHub Actions** `db-backup.yml` (สำรองเข้ารหัสรายสัปดาห์ → Drive) · `fx-rates.yml` · `supabase-keepalive.yml`
-- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (337 checks) · `tests/00_supabase_stub.sql`
+- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (343 checks) · `tests/00_supabase_stub.sql`
 
 ### เสร็จแล้ว (รอบล่าสุด 14–15 ต.ค. · PR #59–#75 Merge แล้ว · migration รันแล้วถึง `20261015000300`)
 ก้อนรอแยกเข้าบัตร · บัตรย้ายไป Liabilities + ประวัติยอดบัตร · แถบสรุปตามหมวด + ตัวเลือกเดือน ‹ › · แก้บัญชีที่รับ / จ่าย · ตารางที่ต้องรับ / จ่าย + ตัวกรอง · แก้ที่ต้นทาง · ยกเลิกทั้งก้อน · ตารางเงินเข้า–ออก · แท็บย่อย · PR A (เลิกปุ่มยืนยันครบ) · PR B (หมวดตั้งเองได้) · PR C (ค่าใช้จ่ายประจำทั่วไป + เดือนนี้ไม่ได้จ่าย) · แก้หน้าไม่อัปเดตหลังบันทึก (#74, #75)
@@ -313,3 +313,4 @@
 | #80 | 16 ต.ค. | Income & Expenses → ค่าใช้จ่ายที่บันทึกแล้ว: กดแถวค่าใช้จ่ายประจำทรัพย์สิน / เบี้ยประกัน / ดอกเบี้ยจ่ายหนี้ → แก้ / ลบได้ที่นี่ ด้วยฟอร์มชุดเดียวกับหน้าต้นทาง (`src/lib/source-edit.ts` ใช้ร่วมกับหน้าทรัพย์สิน / กรมธรรม์ / หนี้สิน) · ดอกเบี้ย: ยกเลิกทั้งก้อน (เงินต้น + ดอกเบี้ย) ได้ · ลิงก์ "เปิดหน้า…" · ตัวกรอง "จ่ายด้วย" 2 ขั้น (บัตรเครดิต → ทุกใบ / ใบไหน) + แถวรวมท้ายตาราง (ตามสกุล + ≈ บาท) · ไม่มี migration |
 | #81 | 16 ต.ค. | Income & Expenses → รายได้ที่บันทึกแล้ว: กดแถวค่าเช่า / ดอกเบี้ยรับเงินให้กู้ / ปันผลกิจการ → แก้ / ลบได้ที่นี่ ด้วยฟอร์มชุดเดียวกับหน้าทรัพย์สิน / เงินให้กู้ / กิจการ (`src/lib/source-edit.ts`) · ดอกเบี้ยรับ: ยกเลิกทั้งก้อน (เงินต้น + ดอกเบี้ย) ได้ · ไม่มี migration |
 | #82 | 16 ต.ค. | Income & Expenses: เอาลิงก์ "เปิดหน้า…" ออกจากกล่องแก้ไข · ดอกเบี้ยที่จ่าย / รับพร้อมเงินต้น เหลือปุ่ม "ลบรายการนี้" ปุ่มเดียว (ลบทั้งครั้ง) แทน "ยกเลิกทั้งก้อน" + "ลบ" · ไม่มี migration |
+| #83 | 16 ต.ค. | แก้บั๊ก: แยกก้อนรอแยกครบ (ก้อนปิด) แล้วลบ / ลดยอด / ย้ายรายการที่แยก → ก้อนไม่กลับมา (ยอดหาย) · ตอนนี้ก้อนเดิมเปิดกลับและคำนวณใหม่อัตโนมัติ (ธนาคาร / บัตร / หนี้ · ค่าใช้จ่าย / รายได้) · trigger `a61_lump_revive` · migration `20261016000300_revive_split_lump.sql` (ไม่แก้ข้อมูลเดิม) · ทดสอบ 343 checks |
