@@ -4,8 +4,8 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useActionSlot } from "@/components/ActionBar";
 import {
-  addExpense, addExpenseTemplate, addIncome, addMovement, addReimbursement, addTemplate, changeAccount, dismissExpected, dismissExpense,
-  payRecurringExpense, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
+  addExpense, addExpenseTemplate, addIncome, addMovement, addReimbursement, addTemplate, dismissExpected, dismissExpense,
+  payRecurringExpense, saveEntry, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
   type ActionState,
 } from "./actions";
 import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
@@ -38,34 +38,88 @@ function Toggle({ label, children }: { label: string; children: (close: () => vo
   return present(trigger, <>{children(() => setOpen(false))}</>);
 }
 
-/** เปลี่ยนบัญชีที่รับ / จ่าย (+ ประเภทรายได้) · อยู่ในกล่องแก้ไขใต้แถว */
-export function AccountEditor({ kind, id, current, incomeType, currency, banks, cards = [] }: {
-  kind: "INCOME" | "EXPENSE"; id: string; current: string; incomeType?: string; currency: string; banks: Bank[]; cards?: Card[];
+/** แก้รายการที่บันทึกเอง · ปุ่ม "บันทึก" ปุ่มเดียว (ช่องทั่วไป + บัญชี / บัตร / เงินสด + ประเภทรายได้) · อยู่ในกล่องแก้ไขใต้แถว */
+export type EntryValues = {
+  date: string; amount: number | string; tax?: number | string | null; description?: string | null; category?: string | null;
+  person_id?: string | null; notes?: string | null; income_type?: string; income_subtype?: string | null;
+  expected_reimbursement_amount?: number | string | null; bank?: string | null; card?: string | null;
+};
+export function EntryEditor({ kind, id, currency, values, banks, cards = [], persons, categories = [], subtypes = [],
+  accountEditable = true, reimbursable = false, personFallback }: {
+  kind: "INCOME" | "EXPENSE"; id: string; currency: string; values: EntryValues; banks: Bank[]; cards?: Card[]; persons: Person[];
+  categories?: string[]; subtypes?: string[]; accountEditable?: boolean; reimbursable?: boolean;
+  /** ข้อความ "ของใคร" เมื่อไม่ได้เลือกคน (ถ้าไม่ส่ง ระบบเลือกตามบัญชี / บัตรที่เลือก) */
+  personFallback?: string;
 }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(changeAccount, {});
-  const sameBanks = banks.filter((b) => b.currency === currency);
-  const sameCards = cards.filter((c) => c.currency === currency);
+  const income = kind === "INCOME";
+  const [state, action, pending] = useActionState<ActionState, FormData>(saveEntry, {});
+  const router = useRouter();
+  useEffect(() => { if (state.ok) router.refresh(); }, [state, router]);
+  const sameBanks = banks.filter((b) => b.currency === currency || b.asset_id === values.bank);
+  const sameCards = cards.filter((c) => c.currency === currency || c.id === values.card);
+  const [via, setVia] = useState(values.card ? "card" : values.bank ? "bank" : "cash");
+  const [itype, setItype] = useState(values.income_type ?? "OTHER");
+  const keep = (list: string[], cur?: string | null) => (cur && !list.includes(cur) ? [cur, ...list] : list);
+  const who = personFallback ?? (via === "card" ? "ตามเจ้าของบัตร" : via === "bank" ? "ตามเจ้าของบัญชี" : "ส่วนกลาง");
+  const f = (label: string, el: React.ReactNode) => <label className="text-xs text-slate-600">{label}{el}</label>;
+  const cls = `mt-0.5 block ${small}`;
   return (
-    <form action={action} className="flex flex-wrap items-end gap-2 border-l border-slate-200 pl-3">
+    <form action={action} className="flex w-full flex-wrap items-end gap-2">
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
-      {kind === "INCOME" && (
-        <label className="text-xs text-slate-600">ประเภท
-          <select name="income_type" defaultValue={incomeType} className={`mt-0.5 block ${small}`}>
-            {Object.entries(INCOME_TYPE_LABEL).filter(([v]) => v === incomeType || !["DIVIDEND", "COUPON", "RENT"].includes(v))
-              .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </label>
-      )}
-      <label className="text-xs text-slate-600">{kind === "INCOME" ? "เข้าบัญชี" : "จ่ายจาก"}
-        <select name="account" defaultValue={current} className={`mt-0.5 block max-w-56 ${small}`}>
-          <option value="">— ไม่ผ่านบัญชี (เงินสด ฯลฯ) —</option>
-          {sameBanks.map((b) => <option key={b.asset_id} value={`a:${b.asset_id}`}>{b.name}</option>)}
-          {kind === "EXPENSE" && sameCards.map((c) => <option key={c.id} value={`c:${c.id}`}>บัตร {c.label}</option>)}
+      {f("วันที่", <input name="f_date" type="date" required defaultValue={values.date} className={cls} />)}
+      {!income && f("รายละเอียด", <input name="f_description" defaultValue={values.description ?? ""} className={`${cls} w-44`} />)}
+      {f(income ? "Gross" : "จำนวน", <input name="f_amount" inputMode="decimal" required defaultValue={String(values.amount ?? "")} className={`${cls} w-32`} />)}
+      {income && f("ภาษี", <input name="f_tax" inputMode="decimal" defaultValue={values.tax == null ? "" : String(values.tax)} className={`${cls} w-28`} />)}
+      {!income && f("หมวด", (
+        <select name="f_expense_category" required defaultValue={values.category ?? ""} className={cls}>
+          {!values.category && <option value="" disabled>— เลือกหมวด —</option>}
+          {keep(categories, values.category).map((c) => <option key={c} value={c}>{c === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : c}</option>)}
         </select>
-      </label>
-      <button disabled={pending} className="rounded-md border border-blue-300 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-        {pending ? "…" : kind === "INCOME" ? "เปลี่ยนบัญชี / ประเภท" : "เปลี่ยนบัญชี"}
+      ))}
+      {income && accountEditable && f("ประเภท", (
+        <select name="income_type" value={itype} onChange={(e) => setItype(e.target.value)} className={cls}>
+          {Object.entries(INCOME_TYPE_LABEL).filter(([v]) => v === values.income_type || !["DIVIDEND", "COUPON", "RENT"].includes(v))
+            .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      ))}
+      {income && itype === "OTHER" && (subtypes.length > 0 || values.income_subtype) && f("ประเภทย่อย", (
+        <select name="f_income_subtype" defaultValue={values.income_subtype ?? ""} className={cls}>
+          <option value="">— ไม่ระบุ —</option>
+          {keep(subtypes, values.income_subtype).map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      ))}
+      {accountEditable && f(income ? "รับเข้า" : "จ่ายด้วย", (
+        <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={cls}>
+          <option value="bank">บัญชี</option>
+          {!income && sameCards.length > 0 && <option value="card">บัตรเครดิต</option>}
+          <option value="cash">{income ? "ไม่ผ่านบัญชี (เงินสด ฯลฯ)" : "เงินสด / อื่น ๆ"}</option>
+        </select>
+      ))}
+      {accountEditable && via === "bank" && f("บัญชี", (
+        <select name="bank_asset_id" required defaultValue={values.bank ?? sameBanks[0]?.asset_id ?? ""} className={`${cls} max-w-56`}>
+          {sameBanks.length === 0 && <option value="">— ไม่มีบัญชีสกุล {currency} —</option>}
+          {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+        </select>
+      ))}
+      {accountEditable && via === "card" && f("บัตร", (
+        <select name="card_id" required defaultValue={values.card ?? sameCards[0]?.id ?? ""} className={`${cls} max-w-56`}>
+          {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      ))}
+      {f("ของใคร", (
+        <select name="f_person_id" defaultValue={values.person_id ?? ""} className={cls}>
+          <option value="">{who}</option>
+          {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      ))}
+      {reimbursable && f("คาดได้คืน", (
+        <input name="f_expected_reimbursement_amount" inputMode="decimal"
+          defaultValue={values.expected_reimbursement_amount == null ? "" : String(values.expected_reimbursement_amount)} className={`${cls} w-28`} />
+      ))}
+      {f("หมายเหตุ", <input name="f_notes" defaultValue={values.notes ?? ""} className={`${cls} w-40`} />)}
+      <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
+        {pending ? "…" : "บันทึก"}
       </button>
       {state.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
       {state.ok && <span className="w-full text-xs text-emerald-700">{state.ok}</span>}
@@ -73,7 +127,6 @@ export function AccountEditor({ kind, id, current, incomeType, currency, banks, 
   );
 }
 
-/* ================================================================== รายได้ */
 export function IncomeForm({ banks, persons, today, minDate, subtypes = [] }: { banks: Bank[]; persons: Person[]; today: string; minDate: string; subtypes?: string[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addIncome, {});
   const [amt, setAmt] = useState(""); const [tax, setTax] = useState("");

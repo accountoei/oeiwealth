@@ -15,15 +15,17 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
  * แก้ไข / ลบ ต่อแถว (ลบ = Soft Delete พร้อมยืนยัน)
  *   อยู่ในแถวตาราง → กดที่แถวเพื่อเปิดกล่องแก้ไข / ลบ ใต้แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ" แบบเดิม
  */
-export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, extra }: {
+export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, extra, editor }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
   /** ปุ่มเพิ่มเติมในกล่องใต้แถว (เช่น ดาวน์โหลด / อัปโหลดฉบับใหม่) */
   extra?: React.ReactNode;
+  /** ฟอร์มแก้ไขของหน้านั้นเอง (มีปุ่มบันทึกของตัวเอง) — ใช้แทนช่อง fields */
+  editor?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [es, editAction, saving] = useActionState<RecState, FormData>(updateRecord, {});
   const [ds, delAction, deleting] = useActionState<RecState, FormData>(deleteRecord, {});
-  const editable = canEdit && fields.length > 0;
+  const editable = canEdit && (fields.length > 0 || !!editor);
   const row = useRowPanel(editable || canDelete || !!extra);
   if (ds.ok) return <span className="text-xs text-slate-400">ลบแล้ว</span>;
 
@@ -53,7 +55,7 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
   // กล่องใต้แถว (กดที่แถวเพื่อเปิด)
   const panel = (
     <div className="flex flex-wrap items-end justify-between gap-3 text-left">
-      {editable ? (
+      {editable && editor ? <div className="min-w-0 flex-1">{editor}</div> : editable ? (
         <form action={editAction} className="flex flex-wrap items-end gap-2">
           {hidden}
           {fieldInputs}
@@ -92,7 +94,13 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
         </span>
       )}
       {ds.error && <div className="text-xs text-red-600">{ds.error}</div>}
-      {editing && (
+      {editing && editor && (
+        <div className="mt-1 rounded-lg bg-slate-50 p-2">
+          {editor}
+          <button type="button" onClick={() => setEditing(false)} className="mt-1 text-xs text-slate-500">ปิด</button>
+        </div>
+      )}
+      {editing && !editor && (
         <form action={editAction} className="mt-1 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-2">
           {hidden}
           {fieldInputs}

@@ -8,7 +8,7 @@ import {
 } from "@/lib/format";
 import { RecordCostForm } from "../property/[id]/forms";
 import {
-  AccountEditor, AutopayConfirmForm, ExpectedActions, ExpenseForm, ExpenseTemplateForm, ExpenseTemplateToggle, IncomeForm,
+  AutopayConfirmForm, EntryEditor, ExpectedActions, ExpenseForm, ExpenseTemplateForm, ExpenseTemplateToggle, IncomeForm,
   RecurringPayActions, UndoDismissButton, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
@@ -559,18 +559,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
                         {!incSource(i) && canWrite && !i.pending_split && (
-                          <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
-                            { name: "date", label: "วันที่", type: "date", value: i.date },
-                            { name: "amount", label: "Gross", type: "number", value: i.full_amount },
-                            { name: "tax", label: "ภาษี", type: "number", value: i.full_tax },
-                            { name: "person_id", label: "ของใคร", type: "select", value: i.person_id,
-                              options: [["", i.asset_id ? "ตามเจ้าของทรัพย์สิน" : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง"], ...personOpts] },
-                            ...(i.income_type === "OTHER" && (incSubs.length || i.income_subtype) ? [{ name: "income_subtype", label: "ประเภทย่อย", type: "select" as const,
-                              value: i.income_subtype, options: [["", "— ไม่ระบุ —"] as [string, string], ...withCurrent(incSubs, i.income_subtype)] }] : []),
-                            { name: "notes", label: "หมายเหตุ", value: i.notes, width: "w-40" }]}
-                            extra={!i.received_to_credit_card_id
-                              ? <AccountEditor kind="INCOME" id={i.id} current={i.received_to_asset_id ? `a:${i.received_to_asset_id}` : ""}
-                                  incomeType={i.income_type} currency={i.currency} banks={banks} /> : undefined} />
+                          <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete}
+                            editor={<EntryEditor kind="INCOME" id={i.id} currency={i.currency} banks={banks} persons={persons ?? []} subtypes={incSubs}
+                              accountEditable={!i.received_to_credit_card_id}
+                              personFallback={i.asset_id ? "ตามเจ้าของทรัพย์สิน" : undefined}
+                              values={{ date: i.date, amount: i.full_amount, tax: i.full_tax, person_id: i.person_id, notes: i.notes,
+                                income_type: i.income_type, income_subtype: i.income_subtype, bank: i.received_to_asset_id }} />} />
                         )}
                       </td>
                     </tr>
@@ -783,17 +777,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         </td>
                         <td className="pl-2 text-right">
                           {!expSource(i) && canWrite && !i.pending_split && (
-                            <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} fields={[
-                              { name: "date", label: "วันที่", type: "date", value: i.date },
-                              { name: "description", label: "รายละเอียด", value: i.description, width: "w-44" },
-                              { name: "amount", label: "จำนวน", type: "number", value: i.full_amount },
-                              { name: "expense_category", label: "หมวด", type: "select" as const, value: i.expense_category,
-                                options: withCurrent(expCats, i.expense_category) },
-                              { name: "person_id", label: "ของใคร", type: "select" as const, value: i.person_id,
-                                options: [["", i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : i.paid_from_asset_id ? "ตามเจ้าของบัญชี" : "ส่วนกลาง"] as [string, string], ...personOpts] },
-                              ...(i.is_reimbursable ? [{ name: "expected_reimbursement_amount", label: "คาดได้คืน", type: "number" as const, value: i.expected_reimbursement_amount }] : [])]}
-                              extra={<AccountEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards}
-                                    current={i.paid_from_asset_id ? `a:${i.paid_from_asset_id}` : i.paid_from_credit_card_id ? `c:${i.paid_from_credit_card_id}` : ""} />} />
+                            <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete}
+                              editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} persons={persons ?? []}
+                                categories={expCats} reimbursable={!!i.is_reimbursable}
+                                values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category,
+                                  person_id: i.person_id, notes: i.notes, expected_reimbursement_amount: i.expected_reimbursement_amount,
+                                  bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id }} />} />
                           )}
                         </td>
                       </tr>
