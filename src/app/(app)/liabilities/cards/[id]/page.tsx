@@ -8,8 +8,10 @@ import RowActions from "@/components/RowActions";
 import DeleteEntity from "@/components/DeleteEntity";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { CardAutopayForm, CardBalanceForm, CardStatusForm } from "../forms";
+import SplitForm from "../../../income-expenses/SplitForm";
+import { splitMoves } from "@/lib/split-moves";
 
-type Line = { key: string; date: string; kind: string; text: string; amount: number; pending: boolean };
+type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean };
 
 export default async function CardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -38,14 +40,20 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
     supabase.from("income_transactions").select("id,date,amount,tax,notes,pending_split").eq("received_to_credit_card_id", id)
       .is("deleted_at", null).gt("date", from),
   ]);
+  // ก้อนรอแยก: แยกได้ที่หน้านี้ (คน / หมวด ชุดเดียวกับ Income & Expenses)
+  const [{ data: persons }, { data: cats }] = await Promise.all([
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+    supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
+  ]);
+  const expCats = (cats ?? []).map((x) => x.name as string);
   const lines: Line[] = [
-    ...(exps ?? []).map((e) => ({ key: `e${e.id}`, date: e.date as string, kind: "รูดบัตร", text: e.description as string,
+    ...(exps ?? []).map((e) => ({ key: `e${e.id}`, id: e.id as string, table: "expense_items" as const, date: e.date as string, kind: "รูดบัตร", text: e.description as string,
       amount: Number(e.amount), pending: !!e.pending_split })),
-    ...(pays ?? []).map((m) => ({ key: `m${m.id}`, date: m.movement_date as string, kind: "จ่ายบัตร", text: (m.description as string | null) ?? "",
+    ...(pays ?? []).map((m) => ({ key: `m${m.id}`, id: m.id as string, table: "" as const, date: m.movement_date as string, kind: "จ่ายบัตร", text: (m.description as string | null) ?? "",
       amount: -Number(m.amount), pending: false })),
-    ...(reimbs ?? []).map((r) => ({ key: `r${r.id}`, date: r.received_date as string, kind: "เงินคืน", text: (r.notes as string | null) ?? "",
+    ...(reimbs ?? []).map((r) => ({ key: `r${r.id}`, id: r.id as string, table: "" as const, date: r.received_date as string, kind: "เงินคืน", text: (r.notes as string | null) ?? "",
       amount: -Number(r.amount), pending: false })),
-    ...(incs ?? []).map((i) => ({ key: `i${i.id}`, date: i.date as string, kind: "เครดิตเข้าบัตร", text: (i.notes as string | null) ?? "",
+    ...(incs ?? []).map((i) => ({ key: `i${i.id}`, id: i.id as string, table: "income_transactions" as const, date: i.date as string, kind: "เครดิตเข้าบัตร", text: (i.notes as string | null) ?? "",
       amount: -(Number(i.amount) - Number(i.tax ?? 0)), pending: !!i.pending_split })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 
@@ -120,7 +128,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
         {lines.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
-              <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>รายละเอียด</th><th className="text-right">ยอดบัตร</th></tr>
+              <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>รายละเอียด</th><th className="text-right">ยอดบัตร</th><th></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {lines.map((r) => (
@@ -129,6 +137,17 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                   <td>{r.kind}</td>
                   <td>{r.text}{r.pending && <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs text-amber-800">รอแยกรายละเอียด</span>}</td>
                   <td className={`text-right tabular-nums ${r.amount < 0 ? "text-emerald-700" : ""}`}>{r.amount > 0 ? "+" : ""}{money(r.amount)}</td>
+                  <td className="pl-2 text-right">
+                    {/* ก้อนรอแยก: กดที่แถวเพื่อแยกรายการ / ลงเป็นการจ่ายบัตรจากบัญชี */}
+                    {canDelete && r.pending && r.table && (
+                      <RowActions table={r.table} id={r.id} paths={paths} canDelete={false}
+                        editor={<SplitForm kind={r.table === "income_transactions" ? "INCOME" : "EXPENSE"} id={r.id} amount={Math.abs(r.amount)}
+                          currency={c.currency} persons={persons ?? []} categories={expCats} personDefault="ตามเจ้าของบัตร"
+                          label={r.table === "income_transactions" ? "แยกรายการ / ลงเป็นการจ่าย" : "แยกรายการ"}
+                          moves={splitMoves({ kind: r.table === "income_transactions" ? "INCOME" : "EXPENSE", currency: c.currency, card: id },
+                            { banks: banks.filter((b) => b.currency === c.currency) })} />} />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

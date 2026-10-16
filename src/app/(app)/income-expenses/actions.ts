@@ -248,51 +248,34 @@ export async function splitPending(_: ActionState, form: FormData): Promise<Acti
   const supabase = await createClient();
   const kind = String(form.get("kind")) === "INCOME" ? "INCOME" : "EXPENSE";
   const id = String(form.get("id"));
-  let lines: { description: string; amount: string; expense_category?: string; income_type?: string; person_id?: string; transfer_with?: string }[] = [];
+  let lines: { description?: string; amount?: string; expense_category?: string; income_type?: string; person_id?: string; move?: string; target?: string }[] = [];
   try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
   const clean = lines.filter((l) => l.description?.trim() || l.amount?.trim())
-    .map((l) => ({ ...l, amount: num(l.amount) }));
+    .map((l) => ({ ...l, amount: num(l.amount ?? null) }));
   if (!clean.length) return { error: "กรุณาใส่อย่างน้อย 1 บรรทัด" };
-  const transfers = clean.filter((l) => l.transfer_with);
-  const items = clean.filter((l) => !l.transfer_with);
   if (clean.some((l) => l.amount === null || Number.isNaN(l.amount) || l.amount <= 0)) return { error: "ทุกบรรทัดต้องมีจำนวนเงินมากกว่า 0" };
-  if (items.some((l) => !l.description?.trim())) return { error: "รายการที่ไม่ใช่เงินโอน ต้องมีรายละเอียด" };
+  if (clean.some((l) => !l.move && !l.description?.trim())) return { error: "รายการรายได้ / ค่าใช้จ่าย ต้องมีรายละเอียด" };
+  if (clean.some((l) => l.move && !l.target)) return { error: "เลือกบัญชี / บัตร / หนี้ ของบรรทัดเคลื่อนเงินก่อนบันทึก" };
+  // แยกทั้งหมดในคำสั่งเดียว (รายได้ / ค่าใช้จ่าย + โอน / จ่ายบัตร / จ่ายหนี้ / จ่ายจากบัญชี) — ไม่สำเร็จ = ไม่มีอะไรเปลี่ยน
+  const { data, error } = await supabase.rpc("split_lump", { p_kind: kind, p_id: id, p_lines: clean });
+  if (error) return { error: friendlyError(error.message) };
+  const left = Number(data ?? 0);
+  revalidatePath("/liabilities", "layout");
+  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${f2(left)}` : "แยกครบแล้ว");
+}
 
-  // ก้อนนี้ (บัญชี / วันที่ / ยอด) — เงินโอนแยกได้เฉพาะก้อนของบัญชีธนาคาร
-  const { data: lump } = kind === "EXPENSE"
-    ? await supabase.from("expense_items").select("date,amount,currency,paid_from_asset_id").eq("id", id).eq("pending_split", true).maybeSingle()
-    : await supabase.from("income_transactions").select("date,amount,currency,received_to_asset_id").eq("id", id).eq("pending_split", true).maybeSingle();
-  if (!lump) return { error: "ไม่พบรายการรอแยก" };
-  const l = lump as { date: string; amount: number; currency: string; paid_from_asset_id?: string | null; received_to_asset_id?: string | null };
-  const bank = l.paid_from_asset_id ?? l.received_to_asset_id ?? null;
-  if (transfers.length && !bank) return { error: "แยกเป็นเงินโอนได้เฉพาะก้อนของบัญชีธนาคาร" };
-  const total = clean.reduce((t, x) => t + Number(x.amount), 0);
-  if (total > Number(l.amount) + 0.005) return { error: "ยอดที่แยกมากกว่ายอดรอแยก" };
-
-  let left = Number(l.amount);
-  if (items.length) {
-    const { data, error } = await supabase.rpc("split_pending_item", { p_kind: kind, p_id: id, p_lines: items });
-    if (error) return { error: friendlyError(error.message) };
-    left = Number(data ?? 0);
-  }
-  // เงินโอน: ค่าใช้จ่ายก้อน = เงินออกจากบัญชีนี้ · รายได้ก้อน = เงินเข้าบัญชีนี้ → ก้อนลดเองอัตโนมัติ
-  for (const t of transfers) {
-    const { error } = await supabase.from("cash_movements").insert({
-      movement_date: l.date, movement_type: "TRANSFER", amount: t.amount, currency: l.currency,
-      from_asset_id: kind === "EXPENSE" ? bank : t.transfer_with, to_asset_id: kind === "EXPENSE" ? t.transfer_with : bank,
-      description: t.description?.trim() || "เงินโอน (แยกจากก้อนรอแยก)",
-      metadata: { via: "split_pending", lump_id: id },
-    });
-    if (error) {
-      return { error: `${items.length ? "แยกรายการแล้ว แต่" : ""}บันทึกเงินโอนไม่สำเร็จ: ${friendlyError(error.message)}` };
-    }
-    left -= Number(t.amount);
-  }
-  if (transfers.length) {
-    const { data: after } = await supabase.rpc("lump_status", { p_kind: "BANK", p_id: bank, p_date: l.date });
-    left = Math.abs(Number((after as { amount?: number } | null)?.amount ?? 0));
-  }
-  return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${f2(left)}` : "แยกครบแล้ว", ["/liabilities"]);
+/** แก้เงินโอนระหว่างบัญชี (บัญชีต้นทาง / ปลายทาง · วันที่ · ยอด · ค่าธรรมเนียม · รายละเอียด) */
+export async function updateTransfer(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const amount = num(form.get("amount"));
+  if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดเป็นตัวเลข" };
+  const { error } = await supabase.rpc("update_transfer", {
+    p_id: String(form.get("id")), p_from: str(form.get("from_asset_id")), p_to: str(form.get("to_asset_id")),
+    p_date: str(form.get("movement_date")), p_amount: amount, p_fee: num(form.get("fee")), p_description: str(form.get("description")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/liabilities", "layout");
+  return done("บันทึกแล้ว");
 }
 
 /** แก้รายได้ / ค่าใช้จ่ายที่บันทึกเอง ด้วยปุ่ม "บันทึก" ปุ่มเดียว (ช่องทั่วไป + บัญชี + ประเภท ในคำสั่งเดียว) */
