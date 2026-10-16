@@ -75,7 +75,7 @@ export async function updateBalance(_: ActionState, form: FormData): Promise<Act
   // บันทึกยอด + (ถ้าเลือก) ส่วนต่างลงเป็นก้อน "รอแยกรายละเอียด" ของเดือนนั้น (เดือนละ 1 ก้อน)
   const { data, error } = await supabase.rpc("update_bank_statement", {
     p_asset_id: assetId, p_date: str(form.get("valuation_date")), p_value: value, p_notes: str(form.get("notes")),
-    p_settle: form.get("settle") === "on",
+    p_settle: true,                                     // ลงก้อนเสมอ (ไม่มีช่องติ๊กแล้ว)
   });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath(`/financial/cash/${assetId}`);
@@ -93,9 +93,7 @@ export async function updateBalance(_: ActionState, form: FormData): Promise<Act
   if (lump != null) return { ok: `${base} · ยอดตรงกับรายการที่บันทึกแล้ว ไม่มีก้อนรอแยก` };
   const d = Number(r?.difference ?? 0);
   if (r?.difference == null || Math.abs(d) < 0.005) return { ok: base };
-  return { ok: d < 0
-    ? `${base} · เงินในบัญชีน้อยกว่ารายการที่บันทึก ${f(-d)} (ติ๊ก "ลงส่วนต่างเป็นก้อนรอแยก" ถ้าต้องการลงเป็นค่าใช้จ่ายก้อน)`
-    : `${base} · เงินในบัญชีมากกว่ารายการที่บันทึก ${f(d)} (ติ๊ก "ลงส่วนต่างเป็นก้อนรอแยก" ถ้าต้องการลงเป็นรายได้ก้อน)` };
+  return { ok: d < 0 ? `${base} · เงินในบัญชีน้อยกว่ารายการที่บันทึก ${f(-d)}` : `${base} · เงินในบัญชีมากกว่ารายการที่บันทึก ${f(d)}` };
 }
 
 /** ลงส่วนต่างของยอดล่าสุดเป็นก้อน "รอแยกรายละเอียด" (ไม่บันทึกยอดใหม่) */

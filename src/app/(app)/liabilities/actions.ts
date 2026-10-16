@@ -41,7 +41,7 @@ export async function addLiabilityBalance(_: ActionState, form: FormData): Promi
   if (balance === null || Number.isNaN(balance) || balance < 0) return { error: "กรุณาใส่ยอดคงค้างเป็นตัวเลข" };
   const { data, error } = await supabase.rpc("update_liability_statement", {
     p_liability_id: id, p_date: str(form.get("valuation_date")), p_balance: balance,
-    p_source: str(form.get("source")) ?? "STATEMENT", p_notes: str(form.get("notes")), p_settle: form.get("settle") === "on",
+    p_source: str(form.get("source")) ?? "STATEMENT", p_notes: str(form.get("notes")), p_settle: true,
   });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath(`/liabilities/${id}`);
@@ -98,7 +98,7 @@ export async function updateCardBalance(_: ActionState, form: FormData): Promise
   const cardId = String(form.get("card_id"));
   // อัปเดตยอด + (ถ้าเลือก) ส่วนที่สูงกว่ารายการที่บันทึก → ค่าใช้จ่ายก้อน "รอแยกรายละเอียด"
   const { data, error } = await supabase.rpc("update_card_statement", {
-    p_card_id: cardId, p_date: str(form.get("balance_date")), p_balance: balance, p_settle: form.get("settle") === "on",
+    p_card_id: cardId, p_date: str(form.get("balance_date")), p_balance: balance, p_settle: true,
     p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
@@ -117,8 +117,8 @@ function lumpMessage(base: string, r: { difference: number | null; lump: number 
   if (lump < 0) return `${base} · ลงรายได้ก้อนรอแยกรายละเอียด ${f(-lump)} เข้าบัตร (เงินคืน / เครดิต · แยกได้ที่ Income & Expenses)`;
   if (r?.difference == null || Math.abs(d) < 0.005) return base;
   const card = what === "ยอดบัตร";
-  return d > 0 ? `${base} · ${what}สูงกว่ารายการที่บันทึก ${f(d)} (ติ๊กช่อง "รอแยกรายละเอียด" ถ้าต้องการลงเป็นก้อน)`
-    : card ? `${base} · ${what}ต่ำกว่าที่บันทึก ${f(-d)} (อาจมีเงินคืน / เครดิตที่ยังไม่ได้บันทึก · ติ๊กช่อง "รอแยกรายละเอียด" เพื่อลงรายได้ก้อนเข้าบัตร)`
+  return d > 0 ? `${base} · ${what}สูงกว่ารายการที่บันทึก ${f(d)}`
+    : card ? `${base} · ${what}ต่ำกว่าที่บันทึก ${f(-d)} (อาจมีเงินคืน / เครดิตที่ยังไม่ได้บันทึก)`
     : `${base} · ${what}ต่ำกว่าที่คำนวณ ${f(-d)} (อาจมีการจ่าย / เงินคืนที่ยังไม่ได้บันทึก)`;
 }
 

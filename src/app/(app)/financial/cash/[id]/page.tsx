@@ -103,7 +103,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           {st && Math.abs(Number(st.difference)) >= 0.005 && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700">
               <span>ยอดล่าสุดไม่ตรงกับรายการที่บันทึก {money(st.difference, acc.currency)}</span>
-              {canEdit ? <SettleLatestButton assetId={id} /> : <span className="text-slate-500">(แจ้ง ADMIN / EDITOR ให้ลงเป็นก้อนรอแยก)</span>}
+              {canWrite && <SettleLatestButton assetId={id} />}
             </div>
           )}
         </div>
@@ -124,7 +124,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           <p className="mb-3 text-xs text-slate-500">
             กรอกยอดจริงจากแอปธนาคาร / Statement · ระบบไม่สร้างรายการค่าใช้จ่ายจากผลต่างให้เอง
           </p>
-          <UpdateBalanceForm assetId={id} currency={acc.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} canSettle={canEdit} />
+          <UpdateBalanceForm assetId={id} currency={acc.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} />
         </section>
       )}
 

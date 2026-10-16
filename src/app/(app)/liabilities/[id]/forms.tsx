@@ -14,8 +14,8 @@ function Msg({ s }: { s: ActionState }) {
   return null;
 }
 
-export function AddBalanceForm({ liabilityId, currency, today, minDate, canSettle }:
-  { liabilityId: string; currency: string; today: string; minDate: string; canSettle: boolean }) {
+export function AddBalanceForm({ liabilityId, currency, today, minDate }:
+  { liabilityId: string; currency: string; today: string; minDate: string; canSettle?: boolean }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addLiabilityBalance, {});
   return (
     <form action={action} className="flex flex-wrap items-end gap-3">
@@ -35,11 +35,7 @@ export function AddBalanceForm({ liabilityId, currency, today, minDate, canSettl
       <label className="text-sm flex-1 min-w-48">หมายเหตุ
         <input name="notes" className={`mt-1 block w-full ${input}`} />
       </label>
-      {canSettle && (
-        <label className="flex w-full items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" name="settle" defaultChecked /> ยอดที่สูงกว่าที่ระบบคำนวณ (ดอกเบี้ย / ค่าธรรมเนียมที่ทบเข้าหนี้) ลงเป็นค่าใช้จ่ายก้อน &ldquo;รอแยกรายละเอียด&rdquo;
-        </label>
-      )}
+      <p className="w-full text-xs text-slate-500">ยอดที่สูงกว่าที่ระบบคำนวณ (ดอกเบี้ย / ค่าธรรมเนียมที่ทบเข้าหนี้) ลงเป็นค่าใช้จ่ายก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ</p>
       <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอด"}</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

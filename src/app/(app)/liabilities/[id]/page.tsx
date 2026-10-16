@@ -151,7 +151,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
           <p className="mb-3 text-xs text-slate-500">
             กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด
           </p>
-          <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} canSettle={canDelete} />
+          <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} />
         </section>
       )}
 
