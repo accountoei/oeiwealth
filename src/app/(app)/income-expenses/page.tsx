@@ -390,8 +390,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const costOpen = (st: string) => st === "PENDING" || st === "OVERDUE";
   const expOpen = costs.filter((c) => costOpen(c.status)).length + rexpDue.filter((x) => costOpen(x.status)).length + premiumDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").length;
   const SUBS = ["due", "recorded", "settings"];
-  const incTab = SUBS.includes(sp.it ?? "") ? (sp.it as string) : incOpen > 0 ? "due" : "recorded";
-  const expTab = SUBS.includes(sp.et ?? "") ? (sp.et as string) : expOpen > 0 ? "due" : "recorded";
+  // เปิดหน้า / เปลี่ยนแท็บหลัก → "ที่ต้องได้รับ / ที่ต้องจ่าย" เสมอ (เว้นแต่ลิงก์ระบุแท็บย่อยมา ?it= / ?et=)
+  const incTab = SUBS.includes(sp.it ?? "") ? (sp.it as string) : "due";
+  const expTab = SUBS.includes(sp.et ?? "") ? (sp.et as string) : "due";
   // ภาพรวมตามประเภท / หมวด (บาท · ตามสัดส่วนเมื่อดูรายบุคคล)
   const group = (rows: { label: string; pending: boolean; name: string; date: string; value: number }[]) => {
     const m = new Map<string, CatRow>();

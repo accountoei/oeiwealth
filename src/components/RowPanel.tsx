@@ -34,6 +34,7 @@ export function useRowPanel(enabled: boolean) {
     if (!tr) return;
     setRow(tr);
     tr.classList.add("cursor-pointer", "hover:bg-slate-50");
+    tr.setAttribute("data-row-panel-row", "");
     if (!tr.title) tr.title = "กดเพื่อแก้ไข / ลบ";
     const onClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
@@ -46,6 +47,7 @@ export function useRowPanel(enabled: boolean) {
     return () => {
       tr.removeEventListener("click", onClick);
       tr.classList.remove("cursor-pointer", "hover:bg-slate-50", "bg-blue-50/60");
+      tr.removeAttribute("data-row-panel-row");
       setRow(null);
     };
   }, [enabled, setOpen]);
@@ -81,6 +83,8 @@ export function useRowPanel(enabled: boolean) {
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node | null;
       if (!t || row.contains(t) || panelRow.contains(t)) return;
+      // กดแถวอื่นที่เปิดกล่องได้ → ให้แถวนั้นเปิด (แล้วปิดกล่องนี้เอง) · ถ้าปิดตอนกดลง แถวจะเลื่อนหนีก่อนปล่อยนิ้ว → กดไม่ติด
+      if ((t as HTMLElement).closest?.("tr[data-row-panel-row]")) return;
       if ((t as HTMLElement).closest?.("[role=dialog],[data-keep-row-panel]")) return;
       close();
     };
