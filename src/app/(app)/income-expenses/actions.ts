@@ -334,7 +334,7 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   if (error) return { error: friendlyError(error.message) };
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
   const note = lumpNote(before, await lumpSnap(supabase, accs, newDate), accs, null);
-  return done((warn ? "บันทึกแล้ว · บัญชีนี้กระทบยอดเดือนนี้ไปแล้ว ให้ตรวจที่หน้ากระทบยอด (Month Closing) อีกครั้ง" : "บันทึกแล้ว") + note,
+  return done((warn ? "บันทึกแล้ว · บัญชีนี้อัปเดตยอดคงเหลือเดือนนี้ไปแล้ว ก้อนรอแยกปรับตามให้เอง ตรวจได้ที่หน้า Cash & Bank Accounts" : "บันทึกแล้ว") + note,
     ["/liabilities", "/month-closing", "/"]);
 }
 

@@ -411,9 +411,11 @@ SELECT t.fails($$DELETE FROM public.audit_logs$$, 'IMMUTABLE', 'audit_logs ล�
 
 \echo '== 13b. August closing checks + FX override'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
-SELECT t.ok((SELECT status FROM public.month_closing_checks('2026-08-01') WHERE category = 'CASH') = 'BLOCKED',
-            'ส.ค. ยังไม่กระทบยอดบัญชี → CASH = BLOCKED');
-SELECT t.fails($$SELECT public.finalize_month('2026-08-01')$$, 'CLOSING_BLOCKED', 'Finalize ไม่ได้เมื่อมี BLOCKED');
+SELECT t.ok((SELECT status FROM public.month_closing_checks('2026-08-01') WHERE category = 'CASH') = 'REVIEW',
+            'ส.ค. ยังไม่อัปเดตยอดสิ้นเดือน → CASH = REVIEW (เตือน · ใช้ยอดตามระบบ ปิดงวดได้)');
+BEGIN;
+SELECT t.ok(public.finalize_month('2026-08-01') IS NOT NULL, 'ไม่ได้อัปเดตยอดสิ้นเดือน → ยังปิดงวดได้ (ทดลองแล้วยกเลิก)');
+ROLLBACK;
 SELECT t.fails($$SELECT public.finalize_month('2026-09-01')$$, 'CLOSING_BLOCKED', 'ข้ามเดือนไม่ได้ (Aug ยังไม่ FINAL)');
 SELECT t.fails($$INSERT INTO public.fx_rates(rate_date, currency, rate_to_thb, source, is_override, override_reason)
                  VALUES ('2026-10-04','EUR',40,'ADMIN_OVERRIDE',true,'API ล่ม')$$, 'row-level security|PERMISSION_DENIED', 'EDITOR Override FX ไม่ได้');
@@ -1808,6 +1810,42 @@ SELECT t.ok(EXISTS (SELECT 1 FROM private.month_closing_issues(private.default_f
             AND EXISTS (SELECT 1 FROM private.month_closing_issues(private.default_family_id(), '2026-09-01') i
                     WHERE i.category = 'INCOME_EXPENSES' AND i.code = 'PENDING_SPLIT' AND i.severity = 'REVIEW'),
             'Month Closing: Checklist Income & Expenses แสดงก้อนรอแยกของเดือน (เตือนเท่านั้น)');
+
+\echo '== 13zf. อัปเดตยอดคงเหลือหลายบัญชีพร้อมกัน · สรุปรายเดือน · ปิดงวดใช้ยอดตามระบบ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีชุด A', 'ธนาคารชุด', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS bt0;
+SELECT public.create_bank_account('บัญชีชุด B', 'ธนาคารชุด', 'THB', 5000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณแม่'), 'percent', 100)), NULL, NULL) IS NOT NULL AS bt1;
+SELECT t.fails($$SELECT public.batch_update_bank_statements('2026-07-20', jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บัญชีชุด A'), 'value', 10000)))$$, 'บัญชีชุด A', 'วันที่ในงวดที่ปิดแล้ว → ไม่บันทึก และบอกชื่อบัญชีที่ผิด');
+SELECT t.fails($$SELECT public.batch_update_bank_statements('2026-09-25', jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บัญชีชุด A'), 'value', 10000), jsonb_build_object('asset_id', t.a('บัญชีชุด A'), 'value', 1)))$$,
+  'ซ้ำ', 'บัญชีซ้ำในชุดเดียวกันไม่ได้');
+SELECT t.ok(jsonb_array_length(public.batch_update_bank_statements('2026-09-25', jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บัญชีชุด A'), 'value', '10,000'),
+  jsonb_build_object('asset_id', t.a('บัญชีชุด B'), 'value', 4700)))) = 2, 'บันทึก 2 บัญชีในคำสั่งเดียว');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีชุด A'))
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีชุด B')) = 300,
+            'บัญชีที่ตรง → ไม่มีก้อน · บัญชีที่ต่ำกว่า 300 → ค่าใช้จ่ายก้อน 300');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+  VALUES ('2026-09-26', 'TRANSFER', t.a('บัญชีชุด A'), t.a('บัญชีชุด B'), 1000, 'THB', 'โอนระหว่างบัญชีชุด');
+SELECT t.ok((SELECT calculated FROM public.bank_balances_at('2026-09-27') WHERE asset_id = t.a('บัญชีชุด A')) = 9000
+            AND (SELECT last_date FROM public.bank_balances_at('2026-09-27') WHERE asset_id = t.a('บัญชีชุด A')) = '2026-09-25',
+            'ยอดตามระบบ ณ วันที่ = ยอดล่าสุด + เงินเข้า − เงินออก');
+SELECT t.ok((SELECT internal_out FROM public.bank_month_summary('2026-09-01') WHERE asset_id = t.a('บัญชีชุด A')) = 1000
+            AND (SELECT internal_in FROM public.bank_month_summary('2026-09-01') WHERE asset_id = t.a('บัญชีชุด B')) = 1000
+            AND (SELECT n_out FROM public.bank_month_summary('2026-09-01') WHERE asset_id = t.a('บัญชีชุด A')) = 0
+            AND (SELECT balance FROM public.bank_month_summary('2026-09-01') WHERE asset_id = t.a('บัญชีชุด A')) = 9000
+            AND (SELECT prev_balance FROM public.bank_month_summary('2026-09-01') WHERE asset_id = t.a('บัญชีชุด A')) = 10000,
+            'สรุปรายเดือน: แยกเงินโอนระหว่างบัญชีของครอบครัว · ยอดสิ้นเดือน / เดือนก่อน');
+RESET ROLE;
+SELECT t.ok((SELECT value FROM private.net_worth_items(private.default_family_id(), '2026-09-30', true) WHERE asset_id = t.a('บัญชีชุด A')) = 9000,
+            'ปิดงวดโดยไม่ได้อัปเดตยอดสิ้นเดือน → Snapshot ใช้ยอดตามระบบ (ไม่ใช่ยอด Statement เก่า)');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.batch_update_bank_statements('2026-09-28', jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บัญชีชุด A'), 'value', 9000)))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER อัปเดตยอดไม่ได้');
+RESET ROLE;
 
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
