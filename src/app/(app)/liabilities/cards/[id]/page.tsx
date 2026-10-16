@@ -107,7 +107,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       {canWrite && c.status !== "CLOSED" && (
         <ActionBar>
           <CardBalanceForm cardId={id} currency={c.currency} today={today} minDate={minDate}
-            label="อัปเดตยอดตาม Statement" />
+            banks={banks.filter((b) => b.currency === c.currency)} label="อัปเดตยอดตาม Statement" />
         </ActionBar>
       )}
 
@@ -139,7 +139,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-slate-900">ประวัติยอดตาม Statement</h2>
         <p className="mb-3 text-xs text-slate-500">
-          ลืมติ๊ก &ldquo;รอแยกรายละเอียด&rdquo;? อัปเดตยอดวันที่เดิมซ้ำแล้วติ๊ก · ระบบคิดส่วนต่างจากยอดครั้งก่อนในตารางนี้
+          ส่วนต่างจากยอดครั้งก่อนในตารางนี้ลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ · บันทึกยอดวันที่เดิมซ้ำ → ระบบคำนวณก้อนใหม่ให้
         </p>
         {statements.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มียอด</p> : (
           <table className="w-full text-sm">

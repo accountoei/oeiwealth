@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { money } from "@/lib/format";
 import { addLiabilityBalance, payLiability, updateLiabilityInfo, type ActionState } from "../actions";
+import DropPrompt from "../DropPrompt";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -14,10 +15,10 @@ function Msg({ s }: { s: ActionState }) {
   return null;
 }
 
-export function AddBalanceForm({ liabilityId, currency, today, minDate }:
-  { liabilityId: string; currency: string; today: string; minDate: string; canSettle?: boolean }) {
+export function AddBalanceForm({ liabilityId, currency, today, minDate, banks = [] }:
+  { liabilityId: string; currency: string; today: string; minDate: string; banks?: { asset_id: string; name: string }[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addLiabilityBalance, {});
-  return (
+  return (<div className="space-y-3">
     <form action={action} className="flex flex-wrap items-end gap-3">
       <input type="hidden" name="liability_id" value={liabilityId} />
       <label className="text-sm">ยอดคงค้าง ({currency})
@@ -35,11 +36,15 @@ export function AddBalanceForm({ liabilityId, currency, today, minDate }:
       <label className="text-sm flex-1 min-w-48">หมายเหตุ
         <input name="notes" className={`mt-1 block w-full ${input}`} />
       </label>
-      <p className="w-full text-xs text-slate-500">ยอดที่สูงกว่าที่ระบบคำนวณ (ดอกเบี้ย / ค่าธรรมเนียมที่ทบเข้าหนี้) ลงเป็นค่าใช้จ่ายก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ</p>
+      <p className="w-full text-xs text-slate-500">
+        ส่วนต่างลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ: สูงกว่าที่ระบบคำนวณ (ดอกเบี้ย / ค่าธรรมเนียมที่ทบเข้าหนี้) → ค่าใช้จ่ายก้อน
+        · ต่ำกว่า → รายได้ก้อน แล้วถามต่อว่าเป็นการจ่ายจากบัญชีหรือไม่
+      </p>
       <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอด"}</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
-  );
+    {state.drop && <DropPrompt key={state.drop.n} drop={state.drop} currency={currency} banks={banks} />}
+  </div>);
 }
 
 type Info = { id: string; name: string; lender: string | null; interest_rate: number | null; monthly_payment: number | null;
