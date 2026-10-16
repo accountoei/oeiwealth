@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
-import { AccountNoPanel, EditInfoForm, UpdateBalanceForm } from "./forms";
+import { ACCOUNT_TYPE_LABEL, money, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
@@ -30,7 +30,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
     supabase.from("v_bank_accounts_safe").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_bank_balance_current").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
-    supabase.from("asset_valuations").select("id,valuation_date,value,source,unexplained_difference,notes")
+    supabase.from("asset_valuations").select("id,valuation_date,value,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency,description,is_derived,source_entity_type,movement_group_id")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null)
@@ -39,6 +39,9 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!acc) notFound();
+  // สถานะยอดล่าสุด (คำนวณสดทุกครั้ง): ก้อนรอแยกของเดือน · ส่วนต่างที่ยังไม่ลงก้อน
+  const { data: stRaw } = await supabase.rpc("bank_statement_status", { p_asset_id: id });
+  const st = stRaw as { latest_date: string; lump: number | null; lump_date: string | null; difference: number } | null;
 
   const canEdit = me.role === "ADMIN" || me.role === "EDITOR";
   const canWrite = me.role !== "VIEWER";
@@ -89,9 +92,18 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           <div className="text-xs text-slate-500">ยอดที่ยืนยันล่าสุด</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(bal?.confirmed_balance, acc.currency)}</div>
           <div className="mt-1 text-xs text-slate-500">ณ {thDate(bal?.confirmed_date)}</div>
-          {bal?.last_unexplained_difference != null && Number(bal.last_unexplained_difference) !== 0 && (
-            <div className="mt-1 text-xs text-amber-700">
-              ผลต่างที่ยังไม่อธิบาย {money(bal.last_unexplained_difference, acc.currency)} (บันทึกยอดซ้ำแล้วติ๊กลงเป็นก้อนรอแยก หรือตรวจตอนกระทบยอดสิ้นเดือน)
+          {st?.lump != null && Math.abs(Number(st.lump)) >= 0.005 && (
+            <div className="mt-1 text-xs font-medium text-amber-700">
+              <Link href={`/income-expenses?tab=${Number(st.lump) > 0 ? "expense&et" : "income&it"}=recorded&m=${(st.lump_date ?? st.latest_date).slice(0, 7)}`}
+                className="hover:underline">
+                มี{Number(st.lump) > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยกรายละเอียด {thMonth(`${(st.lump_date ?? st.latest_date).slice(0, 7)}-01`)} {money(Math.abs(Number(st.lump)), acc.currency)} → ไปแยก
+              </Link>
+            </div>
+          )}
+          {st && Math.abs(Number(st.difference)) >= 0.005 && (
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700">
+              <span>ยอดล่าสุดไม่ตรงกับรายการที่บันทึก {money(st.difference, acc.currency)}</span>
+              {canEdit ? <SettleLatestButton assetId={id} /> : <span className="text-slate-500">(แจ้ง ADMIN / EDITOR ให้ลงเป็นก้อนรอแยก)</span>}
             </div>
           )}
         </div>
@@ -127,7 +139,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-slate-500">
             <tr><th className="py-1">วันที่</th><th className="text-right">ยอด</th><th className="pl-4">ที่มา</th>
-              <th className="text-right">ผลต่าง</th><th className="pl-4">หมายเหตุ</th><th></th></tr>
+              <th className="pl-4">หมายเหตุ</th><th></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {(vals ?? []).map((v) => (
@@ -135,9 +147,6 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
                 <td className="py-1.5">{thDate(v.valuation_date)}</td>
                 <td className="text-right tabular-nums">{money(v.value)}</td>
                 <td className="pl-4">{SOURCE_LABEL[v.source] ?? v.source}</td>
-                <td className="text-right tabular-nums text-amber-700">
-                  {v.unexplained_difference != null && Number(v.unexplained_difference) !== 0 ? money(v.unexplained_difference) : ""}
-                </td>
                 <td className="pl-4 text-slate-500">{v.notes}</td>
                 <td className="pl-2 text-right">
                   {canWrite && v.source !== "RECONCILIATION" && (

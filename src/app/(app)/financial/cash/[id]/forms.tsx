@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { revealAccountNo, setAccountNo, updateAccountInfo, updateBalance, type ActionState } from "../actions";
+import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -117,6 +117,20 @@ export function EditInfoForm({ acc }: { acc: Acc }) {
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูลบัญชี"}</button>
         <Msg s={state} />
       </div>
+    </form>
+  );
+}
+
+/** ปุ่ม "ลงเป็นก้อนรอแยก" (ยอดล่าสุดไม่ตรง และยังไม่มีก้อน) */
+export function SettleLatestButton({ assetId }: { assetId: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(settleLatest, {});
+  if (state.ok) return <span className="text-emerald-700">{state.ok}</span>;
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <button disabled={pending} className="rounded-md border border-amber-400 px-2 py-0.5 text-amber-800 hover:bg-amber-50 disabled:opacity-50">
+        {pending ? "…" : "ลงเป็นก้อนรอแยก"}</button>
+      {state.error && <span className="ml-2 text-red-600">{state.error}</span>}
     </form>
   );
 }

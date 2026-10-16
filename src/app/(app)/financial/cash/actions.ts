@@ -98,6 +98,21 @@ export async function updateBalance(_: ActionState, form: FormData): Promise<Act
     : `${base} · เงินในบัญชีมากกว่ารายการที่บันทึก ${f(d)} (ติ๊ก "ลงส่วนต่างเป็นก้อนรอแยก" ถ้าต้องการลงเป็นรายได้ก้อน)` };
 }
 
+/** ลงส่วนต่างของยอดล่าสุดเป็นก้อน "รอแยกรายละเอียด" (ไม่บันทึกยอดใหม่) */
+export async function settleLatest(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const { data, error } = await supabase.rpc("settle_bank_latest", { p_asset_id: assetId });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath(`/financial/cash/${assetId}`);
+  revalidatePath("/financial/cash");
+  revalidatePath("/income-expenses");
+  revalidatePath("/month-closing");
+  const v = Number((data as { lump?: number } | null)?.lump ?? 0);
+  const f = Math.abs(v).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return { ok: v < -0.005 ? `ลงค่าใช้จ่ายก้อนรอแยกรายละเอียด ${f} แล้ว` : v > 0.005 ? `ลงรายได้ก้อนรอแยกรายละเอียด ${f} แล้ว` : "ยอดตรงแล้ว ไม่มีก้อน" };
+}
+
 export async function setAccountNo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("set_bank_account_no", {

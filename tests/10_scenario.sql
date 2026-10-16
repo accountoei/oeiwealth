@@ -1560,6 +1560,31 @@ SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND del
 RESET ROLE;
 SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีก้อนกลับ'), '2026-09-15') = 9000, 'ธนาคาร: ยอดบัญชียังตรง Statement');
 
+\echo '== 13zb. หน้าบัญชี: สถานะยอดล่าสุดแบบคำนวณสด · ลงส่วนต่างของยอดล่าสุดเป็นก้อน'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT public.create_bank_account('บัญชีสถานะยอด', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS ss0;
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT (public.update_bank_statement(t.a('บัญชีสถานะยอด'), '2026-09-12', 9600))->>'difference' AS ss1;   -- CONTRIBUTOR: ลงก้อนไม่ได้
+SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = -400
+            AND public.bank_statement_status(t.a('บัญชีสถานะยอด'))->'lump' = 'null'::jsonb,
+            'ไม่ได้ลงก้อน → สถานะบอกยอดไม่ตรง −400 (ยังไม่มีก้อน)');
+SELECT t.fails($$SELECT public.settle_bank_latest(t.a('บัญชีสถานะยอด'))$$, 'PERMISSION|สิทธิ์|role', 'CONTRIBUTOR ลงก้อนจากหน้าบัญชีไม่ได้');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT (public.settle_bank_latest(t.a('บัญชีสถานะยอด')))->>'lump' AS ss2;
+SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = 0
+            AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'lump')::numeric = 400
+            AND (SELECT count(*) FROM public.asset_valuations WHERE asset_id = t.a('บัญชีสถานะยอด') AND deleted_at IS NULL) = 2,
+            'EDITOR ลงก้อนจากหน้าบัญชี → ก้อน 400 · ส่วนต่างเหลือ 0 · ไม่สร้างยอดซ้ำ');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-11','description','เจอค่าใช้จ่ายสถานะยอด','amount',400,
+  'paid_from_asset_id', t.a('บัญชีสถานะยอด'))) IS NOT NULL AS ss3;
+SELECT t.ok(public.bank_statement_status(t.a('บัญชีสถานะยอด'))->'lump' = 'null'::jsonb
+            AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = 0,
+            'บันทึกรายการจริงครบ → ก้อนหมด · ส่วนต่าง 0 (ไม่ค้างตัวเลขเก่า)');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
