@@ -10,6 +10,7 @@ import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { debtInterestFields } from "@/lib/source-edit";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
@@ -131,8 +132,9 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                   <td className="pl-4 text-slate-500">{r.notes}</td>
                   <td className="pl-2 text-right">
                     {canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
-                      fields={[{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
-                        { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
+                      fields={r.table === "expense_items" ? debtInterestFields(r)
+                        : [{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
+                           { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
                     {canDelete && r.group && groupInt.has(r.group) && <div className="mt-1"><UndoButton kind="PAYMENT" id={r.group} paths={paths}
                       confirmText={`ยกเลิกการจ่ายวันที่ ${thDate(r.date)} ทั้งก้อน?\nเงินต้น ${money(r.amount)} + ดอกเบี้ย ${money(groupInt.get(r.group))} จะถูกลบพร้อมกัน`} /></div>}
                   </td>

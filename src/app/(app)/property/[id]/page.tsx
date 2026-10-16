@@ -20,6 +20,7 @@ import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
+import { propertyCostFields } from "@/lib/source-edit";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -446,10 +447,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                         {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
                       </td>
                       <td className="pl-2 text-right">
-                        {canWrite && <RowActions table="expense_items" id={e.id} paths={paths} canDelete={canDelete} fields={[
-                          { name: "date", label: "วันที่จ่าย", type: "date", value: e.date },
-                          { name: "amount", label: "ยอด", type: "number", value: e.amount },
-                          { name: "notes", label: "หมายเหตุ", value: e.notes, width: "w-40" }]} />}
+                        {canWrite && <RowActions table="expense_items" id={e.id} paths={paths} canDelete={canDelete}
+                          fields={propertyCostFields(e)} />}
                       </td>
                     </tr>
                   );

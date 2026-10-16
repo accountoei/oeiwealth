@@ -27,6 +27,8 @@ import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 import PayFilter from "./PayFilter";
+import UndoButton from "@/components/UndoButton";
+import { debtInterestFields, premiumPaymentFields, propertyCostFields } from "@/lib/source-edit";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -173,6 +175,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     if (i.property_utility_id) return { href: i.related_asset_id ? `/property/${i.related_asset_id}` : "/property", label: "ทรัพย์สิน (ค่าใช้จ่ายประจำ)" };
     return null;
   };
+  // แก้ที่หน้านี้ได้ด้วยฟอร์มชุดเดียวกับหน้าต้นทาง (src/lib/source-edit.ts) · ประเภทอื่นกดชื่อไปแก้ที่ต้นทาง
+  const sourceEdit = (i: { date: string; full_amount: number; notes: string | null; property_utility_id: string | null;
+    insurance_schedule_line_id: string | null; liability_id: string | null; source_cash_movement_id: string | null }) => {
+    const row = { date: i.date, amount: i.full_amount, notes: i.notes };
+    if (i.source_cash_movement_id) return null;
+    if (i.property_utility_id) return propertyCostFields(row);
+    if (i.insurance_schedule_line_id) return premiumPaymentFields(row);
+    if (i.liability_id) return debtInterestFields(row);
+    return null;
+  };
+  // จ่ายหนี้ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ยกเลิกทั้งก้อนได้เหมือนหน้าหนี้สิน
+  const expGroup = new Map((moves ?? []).filter((m) => m.source_entity_type === "EXPENSE" && m.source_entity_id && m.movement_group_id)
+    .map((m) => [m.source_entity_id as string, m.movement_group_id as string]));
+  const groupPrincipal = new Map((moves ?? []).filter((m) => m.movement_type === "LIABILITY_PAYMENT" && m.movement_group_id)
+    .map((m) => [m.movement_group_id as string, Number(m.amount)]));
   const claims: Claim[] = (claimsRaw ?? []).map((c) => {
     const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
     return { id: c.id, currency: c.currency, label: [pol?.insurer, pol?.policy_no, pname(pol?.persons),
@@ -226,6 +243,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     i.paid_from_credit_card_id ? `card:${i.paid_from_credit_card_id}` : i.paid_from_asset_id ? "bank" : "cash";
   const shownItems = !pay ? itemList : itemList.filter((i) => (pay === "card" ? payOf(i).startsWith("card:") : payOf(i) === pay));
   const shownThb = shownItems.reduce((s, i) => s + Number(i.base_amount ?? 0) * i.share, 0);
+  // แถวรวม: ยอดตามสกุลของรายการ (ยอดที่แสดงในตาราง) + เทียบเป็นบาท
+  const shownByCcy = [...shownItems.reduce((m, i) => m.set(i.currency, (m.get(i.currency) ?? 0) + Number(i.amount ?? 0)), new Map<string, number>())];
   const expenseThb = pv.personId ? (expShares ?? []).reduce((s, r) => s + Number(r.base_amount_share ?? 0), 0) : Number(month?.total_amount ?? 0);
   const reimbThb = (reimbs ?? []).filter((r) => !pv.personId || itemShare.has(r.expense_item_id))
     .reduce((s, r) => s + thb(r.amount, r.currency) * (itemShare.get(r.expense_item_id) ?? 1), 0);
@@ -727,7 +746,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 <div className="mt-0.5 text-sm">
                   <span className="font-semibold tabular-nums">{money(expenseThb, "THB", 0)}</span>
                   {track === "NOT_TRACKED" && <span className="ml-2 text-xs text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span>}
-                  {pay && <span className="ml-2 text-xs text-slate-600">· ที่กรอง {shownItems.length} รายการ {money(shownThb, "THB", 0)}</span>}
+
                 </div>
               </div>
               {itemList.length > 0 && <PayFilter value={pay} cards={cards.map((c) => ({ id: c.id, label: c.label }))} />}
@@ -787,6 +806,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           )}
                         </td>
                         <td className="pl-2 text-right">
+                          {(() => {
+                            const src = expSource(i);
+                            const fields = src && !i.pending_split ? sourceEdit(i) : null;
+                            if (!src || !fields || !canWrite) return null;
+                            const grp = i.liability_id ? expGroup.get(i.id) : undefined;
+                            return (
+                              <RowActions table="expense_items" id={i.id} paths={[...PATHS, src.href.split("?")[0], "/liabilities", "/property", "/insurance"]}
+                                canDelete={canDelete} fields={fields}
+                                extra={<span className="flex flex-wrap items-center gap-3">
+                                  {canDelete && grp && groupPrincipal.has(grp) && <UndoButton kind="PAYMENT" id={grp} paths={[...PATHS, src.href, "/liabilities"]}
+                                    confirmText={`ยกเลิกการจ่ายวันที่ ${thDate(i.date)} ทั้งก้อน?\nเงินต้น ${money(groupPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน`} />}
+                                  <Link href={src.href} className="text-xs text-slate-600 underline">เปิดหน้า{src.label}</Link>
+                                </span>} />
+                            );
+                          })()}
                           {!expSource(i) && canWrite && !i.pending_split && (
                             <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete}
                               editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} persons={persons ?? []}
@@ -800,6 +834,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 align-top font-medium">
+                    <td colSpan={4} className="py-2 text-slate-700">
+                      รวม{pay ? "ตามตัวกรอง" : "ทั้งเดือน"} {shownItems.length} รายการ
+                      {pay && <span className="ml-1 text-xs font-normal text-slate-500">(จากทั้งหมด {itemList.length})</span>}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {shownByCcy.map(([c, v]) => <div key={c}>{money(v, c)}</div>)}
+                      {(shownByCcy.length > 1 || shownByCcy.some(([c]) => c !== "THB")) && (
+                        <div className="text-xs font-normal text-slate-500">≈ {money(shownThb, "THB")}</div>
+                      )}
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
               </table>
             )}
           </section>

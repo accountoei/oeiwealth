@@ -17,6 +17,7 @@ import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
+import { premiumPaymentFields } from "@/lib/source-edit";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -250,10 +251,8 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                       {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
                     </td>
                     <td className="pl-2 text-right">
-                      {canWrite && <RowActions table="expense_items" id={e.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete} fields={[
-                        { name: "date", label: "วันที่จ่าย", type: "date", value: e.date },
-                        { name: "amount", label: "ยอด", type: "number", value: e.amount },
-                        { name: "notes", label: "หมายเหตุ", value: e.notes, width: "w-40" }]} />}
+                      {canWrite && <RowActions table="expense_items" id={e.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
+                        fields={premiumPaymentFields(e)} />}
                     </td>
                   </tr>
                 ))}
