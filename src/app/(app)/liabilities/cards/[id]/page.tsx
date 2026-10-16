@@ -10,6 +10,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { CardAutopayForm, CardBalanceForm, CardStatusForm } from "../forms";
 import SplitForm from "../../../income-expenses/SplitForm";
 import { splitMoves } from "@/lib/split-moves";
+import { buildHints } from "@/lib/category-hints";
 
 type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean };
 
@@ -46,6 +47,11 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
     supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
   ]);
   const expCats = (cats ?? []).map((x) => x.name as string);
+  const { data: hintRows } = await supabase.from("expense_items")
+    .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
+    .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
+    .order("date", { ascending: false }).limit(1500);
+  const expHints = buildHints(hintRows ?? [], expCats);
   const lines: Line[] = [
     ...(exps ?? []).map((e) => ({ key: `e${e.id}`, id: e.id as string, table: "expense_items" as const, date: e.date as string, kind: "รูดบัตร", text: e.description as string,
       amount: Number(e.amount), pending: !!e.pending_split })),
@@ -142,7 +148,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                     {canDelete && r.pending && r.table && (
                       <RowActions table={r.table} id={r.id} paths={paths} canDelete={false}
                         editor={<SplitForm kind={r.table === "income_transactions" ? "INCOME" : "EXPENSE"} id={r.id} amount={Math.abs(r.amount)}
-                          currency={c.currency} persons={persons ?? []} categories={expCats} personDefault="ตามเจ้าของบัตร"
+                          currency={c.currency} persons={persons ?? []} categories={expCats} personDefault="ตามเจ้าของบัตร" hints={expHints}
                           label={r.table === "income_transactions" ? "แยกรายการ / ลงเป็นการจ่าย" : "แยกรายการ"}
                           moves={splitMoves({ kind: r.table === "income_transactions" ? "INCOME" : "EXPENSE", currency: c.currency, card: id },
                             { banks: banks.filter((b) => b.currency === c.currency) })} />} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useActionSlot } from "@/components/ActionBar";
 import {
@@ -9,6 +9,7 @@ import {
   type ActionState,
 } from "./actions";
 import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
+import { findHint, type ExpHint } from "@/lib/category-hints";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 
@@ -501,43 +502,67 @@ export function RecurringPayActions(props: {
 }
 
 /* ================================================================== ค่าใช้จ่าย */
-export function ExpenseForm({ banks, cards, persons, today, minDate, categories }:
-  { banks: Bank[]; cards: Card[]; persons: Person[]; today: string; minDate: string; categories: string[] }) {
+export function ExpenseForm({ banks, cards, persons, today, minDate, categories, hints = [] }:
+  { banks: Bank[]; cards: Card[]; persons: Person[]; today: string; minDate: string; categories: string[]; hints?: ExpHint[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addExpense, {});
   const [via, setVia] = useState(banks.length ? "bank" : "cash");
   const [reimb, setReimb] = useState(false);
+  // เดาหมวด / บัญชี จากรายการเดิมที่รายละเอียดเหมือนกัน (เฉพาะช่องที่ยังไม่ได้เลือกเอง)
+  const [cat, setCat] = useState("");
+  const [bank, setBank] = useState(banks[0]?.asset_id ?? "");
+  const [card, setCard] = useState(cards[0]?.id ?? "");
+  const [guess, setGuess] = useState<ExpHint | null>(null);
+  const touched = useRef({ cat: false, acc: false });
+  // บันทึกแล้ว (ฟอร์มล้างค่า) → เริ่มเดาใหม่สำหรับรายการถัดไป
+  useEffect(() => { if (state.ok) { setCat(""); setGuess(null); touched.current = { cat: false, acc: false }; } }, [state]);
+  const onDesc = (text: string) => {
+    const h = findHint(hints, text);
+    setGuess(h);
+    if (!h) return;
+    if (!touched.current.cat) setCat(h.c);
+    if (!touched.current.acc) {
+      if (h.via === "bank" && h.acc && banks.some((b) => b.asset_id === h.acc)) { setVia("bank"); setBank(h.acc); }
+      else if (h.via === "card" && h.acc && cards.some((c) => c.id === h.acc)) { setVia("card"); setCard(h.acc); }
+      else if (h.via === "cash") setVia("cash");
+    }
+  };
+  const accName = guess?.acc ? (banks.find((b) => b.asset_id === guess.acc)?.name ?? cards.find((c) => c.id === guess.acc)?.label) : null;
   return (
     <Toggle label="+ บันทึกค่าใช้จ่าย">
       {(close) => (
         <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="font-medium text-slate-900">บันทึกค่าใช้จ่าย</h3>
+          <datalist id="exp-desc-hints">{hints.slice(0, 300).map((h) => <option key={h.d} value={h.d} />)}</datalist>
           <div className="grid gap-4 md:grid-cols-3">
             <label className={lbl}>วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-            <label className={`${lbl} md:col-span-2`}>รายละเอียด *<input name="description" required placeholder="เช่น ค่าใช้จ่ายทั่วไปประจำเดือน" className={input} /></label>
+            <label className={`${lbl} md:col-span-2`}>รายละเอียด *<input name="description" required list="exp-desc-hints" autoComplete="off"
+              onChange={(e) => onDesc(e.target.value)} placeholder="เช่น ค่าใช้จ่ายทั่วไปประจำเดือน" className={input} />
+              {guess && <span className="mt-1 block text-xs text-blue-700">เดาจากรายการเดิม: หมวด {guess.c}{accName ? ` · ${guess.via === "card" ? "บัตร" : "บัญชี"} ${accName}` : guess.via === "cash" ? " · เงินสด" : ""} (เปลี่ยนเองได้)</span>}
+            </label>
             <label className={lbl}>จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
             <label className={lbl}>หมวด *
-              <select name="expense_category" required defaultValue="" className={input}>
+              <select name="expense_category" required value={cat} onChange={(e) => { touched.current.cat = true; setCat(e.target.value); }} className={input}>
                 <option value="" disabled>— เลือกหมวด —</option>
                 {categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
             <div className={lbl}>จ่ายด้วย
               <div className="mt-2 flex flex-wrap gap-3">
-                <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="bank" checked={via === "bank"} onChange={() => setVia("bank")} /> บัญชี</label>
-                <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="card" checked={via === "card"} onChange={() => setVia("card")} /> บัตรเครดิต</label>
-                <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="cash" checked={via === "cash"} onChange={() => setVia("cash")} /> เงินสด / อื่น ๆ</label>
+                <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="bank" checked={via === "bank"} onChange={() => { touched.current.acc = true; setVia("bank"); }} /> บัญชี</label>
+                <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="card" checked={via === "card"} onChange={() => { touched.current.acc = true; setVia("card"); }} /> บัตรเครดิต</label>
+                <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="cash" checked={via === "cash"} onChange={() => { touched.current.acc = true; setVia("cash"); }} /> เงินสด / อื่น ๆ</label>
               </div>
             </div>
             {via === "bank" && (
               <label className={lbl}>บัญชีที่จ่าย *
-                <select name="bank_asset_id" required className={input}>
+                <select name="bank_asset_id" required value={bank} onChange={(e) => { touched.current.acc = true; setBank(e.target.value); }} className={input}>
                   {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
                 </select>
               </label>
             )}
             {via === "card" && (
               <label className={lbl}>บัตร *
-                <select name="card_id" required className={input}>
+                <select name="card_id" required value={card} onChange={(e) => { touched.current.acc = true; setCard(e.target.value); }} className={input}>
                   {cards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                 </select>
               </label>

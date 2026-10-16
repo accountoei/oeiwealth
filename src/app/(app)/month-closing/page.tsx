@@ -38,6 +38,8 @@ function fixLink(i: Issue, ym: string): string | null {
     case "MONTHLY_EXPENSE": return `/income-expenses?tab=expense&m=${ym}`;
     case "FX_RATE": return "/settings/system";
     case "CASH_MOVEMENT": case "EXPENSE": case "INCOME": return `/income-expenses?tab=overview&m=${ym}`;
+    case "PENDING_EXPENSE": return `/income-expenses?tab=expense&et=recorded&m=${ym}`;
+    case "PENDING_INCOME": return `/income-expenses?tab=income&it=recorded&m=${ym}`;
   }
   if (i.code === "NOT_LIVE") return "/settings/opening";
   if (i.code?.startsWith("RECON")) return "#recon";
