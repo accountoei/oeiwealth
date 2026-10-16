@@ -1,13 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 // สลับแท็บในเบราว์เซอร์ทันที ไม่ต้องโหลดหน้าใหม่ (ข้อมูลทุกแท็บโหลดมาพร้อมกันตั้งแต่เปิดหน้าอยู่แล้ว)
 // URL ยังเปลี่ยนตาม (?tab=) → กด Refresh / ส่งลิงก์ต่อ แล้วเปิดแท็บเดิมได้
 const Ctx = createContext<{ active: string; setActive: (k: string) => void }>({ active: "overview", setActive: () => {} });
 // สลับแท็บหลักด้วยปุ่มแท็บ → แท็บย่อยกลับไปหน้าแรก (ที่ต้องได้รับ / ที่ต้องจ่าย) เสมอ
 const MAIN_TAB_EVENT = "fwv:main-tab";
+
+/** เรียก cb เมื่อผู้ใช้กดเปลี่ยนแท็บหลัก (ใช้รีเซ็ตตัวกรอง / ช่องติ๊กกลับค่าเริ่มต้น) */
+export function useOnMainTab(cb: () => void) {
+  const ref = useRef(cb);
+  useEffect(() => { ref.current = cb; });
+  useEffect(() => {
+    const h = () => ref.current();
+    window.addEventListener(MAIN_TAB_EVENT, h);
+    return () => window.removeEventListener(MAIN_TAB_EVENT, h);
+  }, []);
+}
 
 export function TabsProvider({ initial, children }: { initial: string; children: ReactNode }) {
   const [active, setState] = useState(initial);
@@ -30,7 +41,7 @@ export function TabNav({ tabs }: { tabs: [string, string][] }) {
     set(k);
     try {
       const u = new URL(window.location.href);
-      ["it", "et"].forEach((p) => u.searchParams.delete(p));
+      ["it", "et", "pay"].forEach((p) => u.searchParams.delete(p));
       window.history.replaceState(null, "", u);
     } catch { /* ไม่เป็นไร */ }
     window.dispatchEvent(new CustomEvent(MAIN_TAB_EVENT, { detail: k }));

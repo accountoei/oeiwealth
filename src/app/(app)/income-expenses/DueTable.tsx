@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { money } from "@/lib/format";
+import { useOnMainTab } from "./tabs";
 
 export type DueRow = {
   key: string; due: string; type: string; currency: string;
@@ -13,6 +14,7 @@ export type DueRow = {
 export default function DueTable({ kind, rows }: { kind: "income" | "expense"; rows: DueRow[] }) {
   const [type, setType] = useState("");
   const [onlyOpen, setOnlyOpen] = useState(true);
+  useOnMainTab(() => setOnlyOpen(true));            // สลับแท็บแล้วกลับมา → ติ๊ก "เฉพาะที่ยังไม่…" ไว้เสมอ
   const types = [...new Set(rows.map((r) => r.type))];
   const count = (t: string) => rows.filter((r) => (!t || r.type === t) && (!onlyOpen || r.open)).length;
   const shown = rows.filter((r) => (!type || r.type === type) && (!onlyOpen || r.open))
