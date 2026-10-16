@@ -65,7 +65,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline gap-3 px-4 pt-4">
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">เงินให้กู้ทั้งหมด</h2>
           {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/loans", { p: sp.p })} />}
         </div>

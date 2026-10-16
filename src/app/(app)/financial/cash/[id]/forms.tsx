@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
+import BankSelect from "@/components/BankSelect";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -95,7 +96,7 @@ export function EditInfoForm({ acc }: { acc: Acc }) {
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="asset_id" value={acc.asset_id} />
       <label className="text-sm">ชื่อที่ใช้เรียกบัญชี<input name="name" required defaultValue={acc.name} className={field} /></label>
-      <label className="text-sm">ธนาคาร<input name="bank_name" required defaultValue={acc.bank_name} className={field} /></label>
+      <label className="text-sm">ธนาคาร<BankSelect defaultValue={acc.bank_name} className={field} /></label>
       <label className="text-sm">ประเภทบัญชี
         <select name="account_type" defaultValue={acc.account_type} className={field}>
           {Object.entries(ACCOUNT_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}

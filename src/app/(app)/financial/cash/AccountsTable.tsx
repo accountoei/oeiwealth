@@ -2,22 +2,25 @@
 
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
+import { useOnMainTab } from "../../income-expenses/tabs";
 import { money, thDate } from "@/lib/format";
 
 export type AccountRow = {
   id: string; name: string; bank: string; type: string; masked: string | null; owners: string; currency: string;
   status: string; balance: number | null; thb: number; pct: number | null; full: number | null;
-  lastDate: string | null; calculated: boolean; pendingLump: boolean; move?: ReactNode;
+  lastDate: string | null; calculated: boolean; move?: ReactNode;
 };
 
 const STATUS: Record<string, string> = { ACTIVE: "ใช้งานอยู่", INACTIVE: "ไม่ได้ใช้งาน", CLOSED: "ปิดบัญชีแล้ว", SOLD: "ปิดแล้ว" };
 const small = "ml-2 rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 /** บัญชีทั้งหมด + ตัวกรอง สกุลเงิน / ธนาคาร / สถานะ (ตั้งต้น = ใช้งานอยู่) · แถวรวมตามตัวกรอง */
-export default function AccountsTable({ rows, empty }: { rows: AccountRow[]; empty: string }) {
+export default function AccountsTable({ rows, empty, toggle }: { rows: AccountRow[]; empty: string; toggle?: ReactNode }) {
   const [ccy, setCcy] = useState("");
   const [bank, setBank] = useState("");
   const [status, setStatus] = useState("ACTIVE");
+  // สลับแท็บแล้วกลับมา → ตัวกรองกลับค่าเริ่มต้น (ทั้งหมด · ใช้งานอยู่)
+  useOnMainTab(() => { setCcy(""); setBank(""); setStatus("ACTIVE"); });
   const ccys = useMemo(() => [...new Set(rows.map((r) => r.currency))].sort(), [rows]);
   const banks = useMemo(() => [...new Set(rows.map((r) => r.bank))].sort((a, b) => a.localeCompare(b, "th")), [rows]);
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))], [rows]);
@@ -44,6 +47,14 @@ export default function AccountsTable({ rows, empty }: { rows: AccountRow[]; emp
             {[...new Set(["ACTIVE", ...statuses])].map((s) => <option key={s} value={s}>{STATUS[s] ?? s}</option>)}
           </select>
         </label>
+        {shown.length > 0 && (
+          <span className="ml-auto text-right text-sm text-slate-700">
+            รวม{filtered ? "ตามตัวกรอง" : ""} {shown.length} บัญชี ·{" "}
+            <b className="tabular-nums">{byCcy.map(([c, v]) => money(v, c)).join(" · ")}</b>
+            {(byCcy.length > 1 || byCcy.some(([c]) => c !== "THB")) && <span className="ml-1 text-xs text-slate-500">(≈ {money(thb, "THB")})</span>}
+          </span>
+        )}
+        {toggle && <span className={shown.length > 0 ? "" : "ml-auto"}>{toggle}</span>}
       </div>
       <table className="mt-3 w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
@@ -59,7 +70,6 @@ export default function AccountsTable({ rows, empty }: { rows: AccountRow[]; emp
               <td className="px-4 py-3">
                 {a.move && <span className="mr-2 align-middle">{a.move}</span>}
                 <Link href={`/financial/cash/${a.id}`} className="font-medium text-slate-900 hover:underline">{a.name}</Link>
-                {a.pendingLump && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">มีก้อนรอแยก</span>}
                 <div className="text-xs text-slate-500">
                   {a.bank} · {a.type}{a.masked && ` · ${a.masked}`}{a.status !== "ACTIVE" && ` · ${STATUS[a.status] ?? a.status}`}
                 </div>
@@ -77,18 +87,6 @@ export default function AccountsTable({ rows, empty }: { rows: AccountRow[]; emp
               </td>
             </tr>
           ))}
-          {shown.length > 0 && (
-            <tr className="border-t-2 border-slate-200 align-top font-medium">
-              <td colSpan={2} className="px-4 py-2 text-slate-700">
-                รวม{filtered ? "ตามตัวกรอง" : "บัญชีที่ใช้งานอยู่"} {shown.length} บัญชี
-              </td>
-              <td className="px-4 py-2 text-right tabular-nums">
-                {byCcy.map(([c, v]) => <div key={c}>{money(v, c)}</div>)}
-                {(byCcy.length > 1 || byCcy.some(([c]) => c !== "THB")) && <div className="text-xs font-normal text-slate-500">≈ {money(thb, "THB")}</div>}
-              </td>
-              <td></td>
-            </tr>
-          )}
         </tbody>
       </table>
     </div>

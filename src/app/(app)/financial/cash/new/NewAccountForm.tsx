@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createBankAccount, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import BankSelect from "@/components/BankSelect";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -31,7 +32,7 @@ export default function NewAccountForm(props: {
           <input name="name" required placeholder="เช่น KBank ออมทรัพย์ (พ่อ)" className={input} />
         </label>
         <label className={label}>ธนาคาร *
-          <input name="bank_name" required placeholder="เช่น KBank" className={input} />
+          <BankSelect className={input} />
         </label>
         <label className={label}>ประเภทบัญชี
           <select name="account_type" defaultValue="SAVING" className={input}>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, money, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, bankLabel, money, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -75,7 +75,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
         <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Cash &amp; Bank Accounts</Link>
         <h1 className="mt-1 text-2xl font-semibold text-slate-900">{acc.name}</h1>
         <p className="text-sm text-slate-500">
-          {acc.bank_name} · {ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type} · {acc.currency}
+          {bankLabel(acc.bank_name)} · {ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type} · {acc.currency}
           {acc.account_no_masked && ` · ${acc.account_no_masked}`}
         </p>
       </div>

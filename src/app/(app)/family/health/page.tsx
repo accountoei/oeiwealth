@@ -54,7 +54,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
 
       {metrics.length > 0 && (
         <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">
-          <div className="mb-3 flex items-baseline gap-3">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
             <h2 className="font-medium text-slate-900">ผลย้อนหลัง</h2>
             {canDelete && metrics.length > 1 && <SortToggle active={ordering} {...orderHrefs("/family/health", { p: pid })} />}
           </div>

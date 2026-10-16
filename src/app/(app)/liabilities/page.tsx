@@ -98,7 +98,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline gap-3 px-4 pt-4">
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">เงินกู้ &amp; เงินประกันการเช่า</h2>
           {canOrder && loans.length > 1 && <SortToggle active={ordering === "1"} {...orderHrefs("/liabilities", { p: sp.p })} />}
         </div>
@@ -141,7 +141,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       </div>
 
       <div id="cards" className="scroll-mt-20 overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline gap-3 px-4 pt-4">
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">บัตรเครดิต</h2>
           {canOrder && cards.length > 1 && <SortToggle active={ordering === "cards"} {...orderHrefs("/liabilities", { p: sp.p }, "cards")} />}
         </div>

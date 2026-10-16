@@ -18,18 +18,15 @@ export default function CategoryManager({ kind, cats, canEdit, unit }: {
   const [ordering, setOrdering] = useState(false);
   return (
     <div className="space-y-3">
-      {canEdit && cats.length > 1 && (
-        <div className="flex justify-end">
-          {ordering
-            ? <button type="button" onClick={() => setOrdering(false)} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</button>
-            : <button type="button" onClick={() => setOrdering(true)} className="text-xs text-slate-600 underline hover:text-slate-900">จัดลำดับ</button>}
-        </div>
-      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[30rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">ชื่อ{unit}</th><th className="px-2 text-right">ใช้อยู่ (รายการ)</th>
-              <th className="px-2">สถานะ</th>{canEdit && <th></th>}</tr>
+              <th className="px-2">สถานะ</th>{canEdit && <th className="text-right font-normal">
+                {cats.length > 1 && (ordering
+                  ? <button type="button" onClick={() => setOrdering(false)} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</button>
+                  : <button type="button" onClick={() => setOrdering(true)} className="text-xs text-slate-600 underline hover:text-slate-900">จัดลำดับ</button>)}
+              </th>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {cats.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-slate-500">ยังไม่มี{unit}</td></tr>}

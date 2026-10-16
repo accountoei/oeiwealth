@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, money, monthOptions, monthRange, todayBangkok } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -66,7 +66,9 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const ownRows = (owners ?? []).filter((o) => !o.end_date);
   const ownersOf = (id: string) => ownRows.filter((o) => o.asset_id === id).map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ");
 
-  const all = bySort(((accounts as Acc[] | null) ?? []).filter((a) => pv.showAsset(a.asset_id)), (a) => a.asset_id, sortMap);
+  // ชื่อธนาคารที่พิมพ์ต่างกัน (BBL / กรุงเทพ) → ชื่อมาตรฐานเดียว
+  const all = bySort(((accounts as Acc[] | null) ?? []).filter((a) => pv.showAsset(a.asset_id)), (a) => a.asset_id, sortMap)
+    .map((a) => ({ ...a, bank_name: bankLabel(a.bank_name) }));
   const share = (id: string) => pv.assetShare(id);
   const active = all.filter((a) => a.status === "ACTIVE" || Math.abs(Number(sum.get(a.asset_id)?.balance ?? 0)) > 0.005);
 
@@ -105,7 +107,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       id: a.asset_id, name: a.name, bank: a.bank_name, type: ACCOUNT_TYPE_LABEL[a.account_type] ?? a.account_type,
       masked: a.account_no_masked, owners: ownersOf(a.asset_id), currency: a.currency, status: a.status,
       balance: bal, thb: thb(bal, a.currency), pct: pv.assetPct(a.asset_id), full,
-      lastDate, calculated: !!lastDate && lastDate < asOf, pendingLump: hasLump(a.asset_id),
+      lastDate, calculated: !!lastDate && lastDate < asOf,
       move: ordering ? <MoveButtons table="assets" id={a.asset_id} paths={paths} {...neighbors(all, i, (x) => x.asset_id)} /> : undefined,
     };
   });
@@ -196,14 +198,12 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       </TabPanel>
 
       <TabPanel id="accounts">
-        {canOrder && all.length > 1 && (
-          <div className="flex justify-end"><SortToggle active={ordering} {...orderHrefs("/financial/cash", { p: sp.p, m: sp.m, tab: "accounts" })} /></div>
-        )}
-        <AccountsTable rows={accountRows} empty={pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"} />
+        <AccountsTable rows={accountRows} empty={pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"}
+          toggle={canOrder && all.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/financial/cash", { p: sp.p, m: sp.m, tab: "accounts" })} /> : null} />
       </TabPanel>
 
       <TabPanel id="update">
-        <BatchUpdate date={upDate} today={today} minDate={minDate} rows={batchRows} canWrite={canWrite} ym={upDate.slice(0, 7)} />
+        <BatchUpdate key={upDate} date={upDate} today={today} minDate={minDate} rows={batchRows} canWrite={canWrite} ym={upDate.slice(0, 7)} />
       </TabPanel>
     </div>
     </TabsProvider>
