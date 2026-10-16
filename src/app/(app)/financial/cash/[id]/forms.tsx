@@ -13,8 +13,8 @@ function Msg({ s }: { s: ActionState }) {
   return null;
 }
 
-export function UpdateBalanceForm({ assetId, currency, today, minDate }:
-  { assetId: string; currency: string; today: string; minDate: string }) {
+export function UpdateBalanceForm({ assetId, currency, today, minDate, canSettle = false }:
+  { assetId: string; currency: string; today: string; minDate: string; canSettle?: boolean }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateBalance, {});
   return (
     <form action={action} className="flex flex-wrap items-end gap-3">
@@ -28,6 +28,14 @@ export function UpdateBalanceForm({ assetId, currency, today, minDate }:
       <label className="text-sm flex-1 min-w-48">หมายเหตุ
         <input name="notes" className={`mt-1 block w-full ${input}`} />
       </label>
+      {canSettle ? (
+        <label className="flex w-full items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" name="settle" defaultChecked /> ลงส่วนต่างเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ของเดือนนี้
+          (เงินน้อยกว่าที่บันทึก → ค่าใช้จ่ายก้อน · มากกว่า → รายได้ก้อน · เดือนละ 1 ก้อน บันทึกยอดซ้ำจะปรับก้อนเดิม)
+        </label>
+      ) : (
+        <p className="w-full text-xs text-slate-500">ส่วนต่างจาก Statement ให้ ADMIN / EDITOR ลงเป็นก้อนรอแยก (บันทึกยอดซ้ำแล้วติ๊ก) หรือที่ Month Closing</p>
+      )}
       <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอด"}</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

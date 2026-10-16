@@ -87,6 +87,36 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const isLatestFinal = isFinal && lastFinal === ym;
   const bankRows = (banks ?? []).filter((b) => b.confirmed_date && b.confirmed_date <= end || reconBy.has(b.asset_id));
 
+  // บัตรเครดิต ณ สิ้นเดือน = ยอด Statement ล่าสุด (≤ สิ้นเดือน) + รูดหลังวันนั้น − จ่ายบัตร − เงินคืน / รายได้เข้าบัตร
+  const asOf = end < today ? end : today;
+  const { data: cardsRaw } = await supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,status")
+    .is("deleted_at", null).eq("status", "ACTIVE").order("issuer");
+  const cardIds = (cardsRaw ?? []).map((c) => c.id as string);
+  const [{ data: stmts }, { data: cExp }, { data: cPay }, { data: cRe }, { data: cInc }] = cardIds.length ? await Promise.all([
+    supabase.from("credit_card_statements").select("credit_card_id,statement_date,balance").in("credit_card_id", cardIds)
+      .is("deleted_at", null).lte("statement_date", asOf).order("statement_date", { ascending: false }),
+    supabase.from("expense_items").select("paid_from_credit_card_id,date,amount").in("paid_from_credit_card_id", cardIds)
+      .is("deleted_at", null).lte("date", asOf),
+    supabase.from("cash_movements").select("to_credit_card_id,movement_date,amount").eq("movement_type", "CARD_PAYMENT")
+      .in("to_credit_card_id", cardIds).is("deleted_at", null).lte("movement_date", asOf),
+    supabase.from("expense_reimbursements").select("received_to_credit_card_id,received_date,amount").in("received_to_credit_card_id", cardIds)
+      .is("deleted_at", null).lte("received_date", asOf),
+    supabase.from("income_transactions").select("received_to_credit_card_id,date,amount,tax").in("received_to_credit_card_id", cardIds)
+      .is("deleted_at", null).lte("date", asOf),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+  const cardRows = (cardsRaw ?? []).map((c) => {
+    const st = (stmts ?? []).find((x) => x.credit_card_id === c.id);
+    if (!st) return null;
+    const after = (d: string) => d > st.statement_date;
+    const spend = (cExp ?? []).filter((x) => x.paid_from_credit_card_id === c.id && after(x.date)).reduce((t, x) => t + Number(x.amount), 0);
+    const paid = (cPay ?? []).filter((x) => x.to_credit_card_id === c.id && after(x.movement_date)).reduce((t, x) => t + Number(x.amount), 0);
+    const back = (cRe ?? []).filter((x) => x.received_to_credit_card_id === c.id && after(x.received_date)).reduce((t, x) => t + Number(x.amount), 0)
+      + (cInc ?? []).filter((x) => x.received_to_credit_card_id === c.id && after(x.date)).reduce((t, x) => t + Number(x.amount) - Number(x.tax ?? 0), 0);
+    return { id: c.id as string, name: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "),
+      currency: c.currency as string, stDate: st.statement_date as string, stBal: Number(st.balance), spend, paid, back,
+      total: Math.max(Number(st.balance) + spend - paid - back, 0), exact: st.statement_date >= asOf };
+  }).filter((x): x is NonNullable<typeof x> => !!x);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -203,6 +233,39 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
           </div>
         )}
       </section>
+
+      {/* ---------------------------------------------------------- บัตรเครดิต ณ สิ้นเดือน */}
+      {cardRows.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-900">บัตรเครดิต ณ {end < today ? `สิ้นเดือน ${thDate(end)}` : `วันนี้ ${thDate(today)}`}</h2>
+          <p className="mb-3 text-xs text-slate-500">
+            ยอด Statement ล่าสุด + รูดหลังวันตัดรอบ − จ่ายบัตร − เงินคืน = ยอดที่ใช้คิด Net Worth ·
+            ถ้าต้องการยอดจริงสิ้นเดือน ใส่ยอดจากแอปธนาคารที่หน้าบัตร (ส่วนต่างรวมเข้าก้อนรอแยกของเดือนนี้)
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[40rem] text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">บัตร</th><th className="px-2 text-right">ยอดตามยอดล่าสุด</th>
+                  <th className="px-2 text-right">+ รูดหลังจากนั้น</th><th className="px-2 text-right">− จ่าย / เงินคืน</th><th className="px-2 text-right">= ยอดสิ้นเดือน</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {cardRows.map((c) => (
+                  <tr key={c.id} className="align-top">
+                    <td className="py-2 pr-2"><Link href={`/liabilities/cards/${c.id}`} className="hover:underline">{c.name}</Link></td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(c.stBal, c.currency)}<div className="text-xs text-slate-500">{thDate(c.stDate)}</div></td>
+                    <td className="px-2 py-2 text-right tabular-nums text-red-700">{c.spend ? `+${money(c.spend, c.currency)}` : "–"}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{c.paid + c.back ? `−${money(c.paid + c.back, c.currency)}` : "–"}</td>
+                    <td className="px-2 py-2 text-right font-medium tabular-nums">{money(c.total, c.currency)}</td>
+                    <td className="py-2 pl-2 text-xs">{c.exact
+                      ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">ตามยอดที่บันทึก</span>
+                      : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">ประมาณ · ยังไม่มี Statement</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* ---------------------------------------------------------- Bridge + รายบุคคล */}
       {p && (

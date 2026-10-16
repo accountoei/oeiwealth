@@ -104,9 +104,9 @@ export async function updateCardBalance(_: ActionState, form: FormData): Promise
   if (error) return { error: friendlyError(error.message) };
   revalidateCards(cardId);
   revalidatePath("/income-expenses");
-  const r = data as { difference: number | null; lump: number; history_only?: boolean } | null;
+  const r = data as { difference: number | null; lump: number; history_only?: boolean; merged?: boolean } | null;
   if (r?.history_only) return { ok: "บันทึกเป็นประวัติยอดแล้ว (วันที่ก่อนยอดล่าสุด · ยอดปัจจุบันไม่เปลี่ยน)" };
-  return { ok: lumpMessage("อัปเดตยอดบัตรแล้ว", r, "ยอดบัตร") };
+  return { ok: lumpMessage(r?.merged ? "อัปเดตยอดบัตรแล้ว (ปรับก้อนรอแยกเดิมของเดือนนี้)" : "อัปเดตยอดบัตรแล้ว", r, "ยอดบัตร") };
 }
 
 /** ข้อความหลังอัปเดตยอดจาก Statement: บอกส่วนต่าง / ก้อนรอแยก */

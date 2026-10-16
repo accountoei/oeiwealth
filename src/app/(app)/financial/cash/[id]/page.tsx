@@ -91,7 +91,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           <div className="mt-1 text-xs text-slate-500">ณ {thDate(bal?.confirmed_date)}</div>
           {bal?.last_unexplained_difference != null && Number(bal.last_unexplained_difference) !== 0 && (
             <div className="mt-1 text-xs text-amber-700">
-              ผลต่างที่ยังไม่อธิบาย {money(bal.last_unexplained_difference, acc.currency)} (ตรวจตอนกระทบยอดสิ้นเดือน)
+              ผลต่างที่ยังไม่อธิบาย {money(bal.last_unexplained_difference, acc.currency)} (บันทึกยอดซ้ำแล้วติ๊กลงเป็นก้อนรอแยก หรือตรวจตอนกระทบยอดสิ้นเดือน)
             </div>
           )}
         </div>
@@ -112,7 +112,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           <p className="mb-3 text-xs text-slate-500">
             กรอกยอดจริงจากแอปธนาคาร / Statement · ระบบไม่สร้างรายการค่าใช้จ่ายจากผลต่างให้เอง
           </p>
-          <UpdateBalanceForm assetId={id} currency={acc.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} />
+          <UpdateBalanceForm assetId={id} currency={acc.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} canSettle={canEdit} />
         </section>
       )}
 
