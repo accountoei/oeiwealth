@@ -1408,6 +1408,44 @@ SELECT t.fails($$INSERT INTO public.recurring_expense_templates(family_id, name,
   SELECT id, 'จาก VIEWER', 'ทั่วไป', 1, '2026-09-01' FROM public.families$$, 'row-level security', 'VIEWER เพิ่มค่าใช้จ่ายประจำไม่ได้');
 RESET ROLE;
 
+\echo '== 13y. แก้รายการด้วยปุ่มบันทึกปุ่มเดียว (ช่องทั่วไป + บัญชี + ประเภท ในคำสั่งเดียว)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-13','description','ทดสอบแก้ครั้งเดียว','amount',80,
+  'expense_category','ทั่วไป','paid_from_asset_id', t.a('บัญชีทดสอบก้อน 2'))) IS NOT NULL AS ue1;
+SELECT public.update_entry('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+  jsonb_build_object('amount','90','notes','แก้แล้ว','description','ทดสอบแก้ครั้งเดียว'),
+  'c:' || (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')) IS NOT NULL AS ue2;
+SELECT t.ok((SELECT amount = 90 AND notes = 'แก้แล้ว' AND paid_from_asset_id IS NULL
+                AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '6677')
+             FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว')
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE is_derived AND deleted_at IS NULL
+              AND source_entity_id = (SELECT id FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว')),
+            'แก้ยอด + หมายเหตุ + ย้ายไปบัตร ในครั้งเดียว → ไม่มีเงินออกจากบัญชีแล้ว');
+SELECT t.fails($$SELECT public.update_entry('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+  jsonb_build_object('date','2026-07-15'), 'a:' || t.a('บัญชีทดสอบก้อน 2'))$$, 'ไม่อยู่ในเดือน', 'ย้ายวันที่ข้ามเดือนไม่ได้ (กติกาเดิม)');
+SELECT t.ok((SELECT paid_from_credit_card_id IS NOT NULL AND date = '2026-09-13' FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+            'ช่องหนึ่งผิด → ไม่บันทึกเลยสักช่อง (บัญชียังเป็นบัตรเดิม)');
+SELECT public.update_entry('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+  jsonb_build_object('amount','95'), NULL) IS NOT NULL AS ue3;
+SELECT t.ok((SELECT amount = 95 AND paid_from_credit_card_id IS NOT NULL FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+            'ไม่ส่งบัญชี → บัญชีเดิมไม่เปลี่ยน');
+INSERT INTO public.income_transactions(family_id, person_id, date, income_type, amount, currency, notes)
+  SELECT id, t.p('คุณพ่อ'), '2026-09-14', 'INTEREST', 300, 'THB', 'ทดสอบแก้รายได้ครั้งเดียว' FROM public.families;
+SELECT public.update_entry('INCOME', (SELECT id FROM public.income_transactions WHERE notes = 'ทดสอบแก้รายได้ครั้งเดียว'),
+  jsonb_build_object('amount','350','income_subtype','งานพิเศษ'), 'a:' || t.a('บัญชีทดสอบก้อน 2'), 'OTHER') IS NOT NULL AS ue4;
+SELECT t.ok((SELECT amount = 350 AND income_type = 'OTHER' AND income_subtype = 'งานพิเศษ' AND received_to_asset_id = t.a('บัญชีทดสอบก้อน 2')
+             FROM public.income_transactions WHERE notes = 'ทดสอบแก้รายได้ครั้งเดียว'),
+            'รายได้: ยอด + ประเภท + ประเภทย่อย + บัญชี ในครั้งเดียว');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.update_entry('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+  jsonb_build_object('amount','1'), NULL)$$, 'PERMISSION_DENIED|ไม่มีสิทธิ์', 'CONTRIBUTOR แก้รายการของคนอื่นไม่ได้');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.update_entry('EXPENSE', (SELECT id FROM public.expense_items WHERE description = 'ทดสอบแก้ครั้งเดียว'),
+  jsonb_build_object('amount','1'), NULL)$$, 'PERMISSION|สิทธิ์|role', 'VIEWER แก้รายการไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

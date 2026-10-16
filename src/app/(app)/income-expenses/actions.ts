@@ -204,12 +204,48 @@ export async function splitPending(_: ActionState, form: FormData): Promise<Acti
   return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${left.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "แยกครบแล้ว", ["/liabilities"]);
 }
 
-/** แก้บัญชีที่รับ / จ่าย (+ ประเภทรายได้) ของรายการที่บันทึกเอง · ยอดบัญชี / บัตร / ก้อนรอแยก ปรับตามในฐานข้อมูล */
-export async function changeAccount(_: ActionState, form: FormData): Promise<ActionState> {
+/** แก้รายได้ / ค่าใช้จ่ายที่บันทึกเอง ด้วยปุ่ม "บันทึก" ปุ่มเดียว (ช่องทั่วไป + บัญชี + ประเภท ในคำสั่งเดียว) */
+const ENTRY_FIELDS: Record<"INCOME" | "EXPENSE", Record<string, "num" | "str" | "date">> = {
+  INCOME: { date: "date", amount: "num", tax: "num", notes: "str", person_id: "str", income_subtype: "str" },
+  EXPENSE: { date: "date", description: "str", amount: "num", expense_category: "str", notes: "str", person_id: "str",
+    expected_reimbursement_amount: "num" },
+};
+export async function saveEntry(_: ActionState, form: FormData): Promise<ActionState> {
+  const kind = String(form.get("kind")) === "INCOME" ? "INCOME" : "EXPENSE";
+  const fields: Record<string, string | number | null> = {};
+  for (const [name, type] of Object.entries(ENTRY_FIELDS[kind])) {
+    if (!form.has(`f_${name}`)) continue;
+    if (type === "num") {
+      const v = num(form.get(`f_${name}`));
+      if (v !== null && Number.isNaN(v)) return { error: "ตัวเลขไม่ถูกต้อง" };
+      if (name === "amount" && (v === null || v <= 0)) return { error: "กรุณาใส่ยอดมากกว่า 0" };
+      fields[name] = v;
+    } else {
+      fields[name] = str(form.get(`f_${name}`));
+    }
+  }
+  if (kind === "EXPENSE" && fields.expense_category === null) return { error: "กรุณาเลือกหมวด" };
+  if (kind === "INCOME" && fields.tax != null && fields.amount != null && Number(fields.tax) > Number(fields.amount)) {
+    return { error: "ภาษีต้องไม่เกินยอดรายได้" };
+  }
+  // บัญชี: ส่งเฉพาะเมื่อฟอร์มมีช่องบัญชี · bank → a:<id> · card → c:<id> · cash → ไม่ผ่านบัญชี
+  let account: string | null = null;
+  if (form.has("pay_via")) {
+    const via = String(form.get("pay_via"));
+    if (via === "bank") {
+      const b = str(form.get("bank_asset_id"));
+      if (!b) return { error: "กรุณาเลือกบัญชี" };
+      account = `a:${b}`;
+    } else if (via === "card") {
+      const c = str(form.get("card_id"));
+      if (!c) return { error: "กรุณาเลือกบัตร" };
+      account = `c:${c}`;
+    } else account = "";
+  }
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("change_entry_account", {
-    p_kind: String(form.get("kind")), p_id: String(form.get("id")), p_account: String(form.get("account") ?? ""),
-    p_income_type: str(form.get("income_type")),
+  const { data, error } = await supabase.rpc("update_entry", {
+    p_kind: kind, p_id: String(form.get("id")), p_fields: fields, p_account: account,
+    p_income_type: kind === "INCOME" ? str(form.get("income_type")) : null,
   });
   if (error) return { error: friendlyError(error.message) };
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
