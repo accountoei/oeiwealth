@@ -33,15 +33,14 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 ## 2. Database changes (Supabase)
 
 - Migrations live in `supabase/migrations/` and run in filename order.
-- **Who runs them (agreed 16 Oct 2026):** the AI runs them itself through the Supabase connector (`apply_migration`), in this order — never the other way round:
+- **Who runs them (agreed 16 Oct 2026, revised same day):** the **owner** runs them by hand in the Supabase SQL Editor; the AI checks the result. Do **not** call `apply_migration` from a chat session — in this setup it is cancelled every time (tried 5× on 16 Oct, even with the connector set to "always allow"), and nothing is applied. Order — never the other way round:
   1. Write the migration on a branch; the local scenario tests (below), `tsc`, `eslint` and `next build` pass.
-  2. Open the PR, so the exact file is in the repo.
-  3. Apply **that file, unchanged**, to the Supabase project (one migration per call, filename order, name = the file's name without `.sql`).
-  4. Verify: the new tables / columns / functions exist, RLS is on for every new table, and `get_advisors` (security) shows nothing new. Report the result in Thai.
-  5. The owner then merges the PR (Vercel deploys the code after the database is ready).
+  2. Open the PR, so the exact file is in the repo. Give the owner the `raw.githubusercontent.com/accountoei/oeiwealth/<branch>/supabase/migrations/<file>` link with click steps (open link → Ctrl+A, Ctrl+C → Supabase → SQL Editor → New query → paste → Run → expect "Success").
+  3. Tell the owner clearly: **run the SQL first, then press Merge** (code that calls a new function breaks if it deploys before the database has it).
+  4. When the owner says it has run, verify with read-only `SELECT`s through the Supabase connector (`execute_sql` works): the new tables / columns / functions / triggers exist, the function bodies match the file (compare `md5(replace(prosrc, E'\r', ''))` with the same function in the local test DB — copy-paste adds `\r`), RLS is on for every new table, grants are right, and `get_advisors` (security) shows nothing new. Report the result in Thai.
+  5. Then the owner merges the PR (Vercel deploys the code after the database is ready).
 - **Ask the owner first** if a migration drops or renames a table / column / function that holds data, or updates / deletes existing rows. Never run SQL that is not in a committed migration file, except read-only `SELECT`s for checking.
 - If a migration fails half-way, stop and report; do not "fix forward" with ad-hoc SQL — write a new migration file.
-- If no Supabase connector is available, the owner runs the file by hand in the Supabase SQL Editor (give the `raw.githubusercontent.com` link).
 - **Never edit a migration that has already been run.** Always add a new file with the next timestamp, e.g. `20261005001500_short_name.sql`. Use `CREATE OR REPLACE`, `ADD COLUMN IF NOT EXISTS`, `DROP FUNCTION IF EXISTS` so re-running is safe.
 - When changing a function signature, `DROP FUNCTION IF EXISTS old_signature` first and re-grant.
 - New tables must get RLS (see `20261004001600_rls_grants.sql` for the standard policy set) and the generic META / soft-delete triggers.
@@ -89,7 +88,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 
 Always finish with, in Thai:
 1. What changed (short, non-technical).
-2. Exactly what they must do: which migration file(s) were run (by the AI) or still need running, whether to press Merge, which Edge Function to redeploy, any setting to change.
+2. Exactly what they must do: which migration file(s) to run (link + steps) **before** pressing Merge, whether to press Merge, which Edge Function to redeploy, any setting to change.
 3. A short test checklist using fake data.
 
 Do not press or ask the owner to press **Confirm Go-live** with test data, and do not reset or delete production data without an explicit request.
