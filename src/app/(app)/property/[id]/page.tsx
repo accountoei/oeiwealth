@@ -20,7 +20,7 @@ import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
-import { propertyCostFields } from "@/lib/source-edit";
+import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -335,11 +335,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                   <td className="pl-2 text-right">
                     {r.income_type !== "RENT" && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
-                    {canWrite && r.income_type === "RENT" && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete} fields={[
-                      { name: "date", label: "วันที่รับ", type: "date", value: r.date },
-                      { name: "amount", label: "ยอด", type: "number", value: r.amount },
-                      { name: "tax", label: "ภาษี", type: "number", value: r.tax },
-                      { name: "notes", label: "หมายเหตุ", value: r.notes, width: "w-40" }]} />}
+                    {canWrite && r.income_type === "RENT" && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
+                      fields={rentIncomeFields(r)} />}
                   </td>
                 </tr>
               ))}

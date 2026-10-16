@@ -14,6 +14,7 @@ import { ScheduleEditor } from "./schedule-editor";
 import { RestructureEditor } from "./restructure-editor";
 import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { ActionBar } from "@/components/ActionBar";
+import { loanInterestFields } from "@/lib/source-edit";
 
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
@@ -249,9 +250,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                           <span>ดอกเบี้ย (รายได้) <span className="tabular-nums">{money(e.interest.amount)}</span>
                             {Number(e.interest.tax ?? 0) ? ` · ภาษีหัก ณ ที่จ่าย ${money(e.interest.tax)}` : ""}</span>
-                          {canWrite && <RowActions table="income_transactions" id={e.interest.id} paths={paths} canDelete={canDelete} fields={[
-                            { name: "date", label: "วันที่", type: "date", value: e.interest.date }, { name: "amount", label: "ดอกเบี้ย", type: "number", value: e.interest.amount },
-                            { name: "tax", label: "ภาษี", type: "number", value: e.interest.tax }]} />}
+                          {canWrite && <RowActions table="income_transactions" id={e.interest.id} paths={paths} canDelete={canDelete} fields={loanInterestFields(e.interest)} />}
                         </div>
                       )}
                       {e.disburse && canWrite && !e.disburse.is_derived && (
