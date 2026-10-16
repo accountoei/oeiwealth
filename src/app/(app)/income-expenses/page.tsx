@@ -19,6 +19,7 @@ import DueTable from "./DueTable";
 import MovesView, { type MoveRow } from "./MovesView";
 import MonthPicker from "@/components/MonthPicker";
 import SplitForm from "./SplitForm";
+import TransferEditor from "./TransferEditor";
 import CategoryManager from "./CategoryManager";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -28,7 +29,8 @@ import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 import PayFilter, { PayScope, PayTotal } from "./PayFilter";
 import UndoButton from "@/components/UndoButton";
-import { businessDividendFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { splitMoves } from "@/lib/split-moves";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -145,13 +147,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const name = new Map<string, string>([...banks.map((b) => [b.asset_id, b.name] as [string, string]),
     ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string])]);
   const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
+  const splitLists = { banks, cards, liabs };
   const pname = (p: unknown) => ((Array.isArray(p) ? p[0] : p) as { name: string } | null)?.name;
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
   // รายการที่สร้างจากหน้าอื่น → แก้ / ลบที่หน้าต้นทาง (null = บันทึกที่หน้านี้ แก้ที่นี่ได้)
   const policyOf = (x: unknown) => one(x as { policy_id: string } | { policy_id: string }[] | null)?.policy_id;
   const incSource = (i: { source_transaction_id: string | null; lease_id: string | null; asset_id: string | null; income_type: string;
-    insurance_schedule_line_id: string | null; ins_line?: unknown }): { href: string; label: string } | null => {
+    insurance_schedule_line_id: string | null; ins_line?: unknown; received_to_liability_id?: string | null }): { href: string; label: string } | null => {
     if (i.source_transaction_id) return { href: `/investments/${i.asset_id}`, label: "พอร์ตลงทุน" };
+    if (i.received_to_liability_id) return { href: `/liabilities/${i.received_to_liability_id}`, label: "หนี้สิน" };
     if (i.lease_id) return { href: `/property/${i.asset_id}`, label: "ทรัพย์สิน (สัญญาเช่า)" };
     if (i.insurance_schedule_line_id || i.income_type === "INSURANCE_BENEFIT") {
       const pol = policyOf(i.ins_line);
@@ -181,8 +185,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     return null;
   };
   const incSourceEdit = (i: { date: string; full_amount: number; full_tax: number | null; notes: string | null; income_type: string;
-    lease_id: string | null; asset_id: string | null; source_transaction_id: string | null; insurance_schedule_line_id: string | null }) => {
+    lease_id: string | null; asset_id: string | null; source_transaction_id: string | null; insurance_schedule_line_id: string | null;
+    received_to_liability_id?: string | null }) => {
     const row = { date: i.date, amount: i.full_amount, tax: i.full_tax, notes: i.notes };
+    if (i.received_to_liability_id) return debtDropIncomeFields(row);
     if (i.source_transaction_id || i.insurance_schedule_line_id || i.income_type === "INSURANCE_BENEFIT") return null;
     if (i.lease_id) return i.income_type === "RENT" ? rentIncomeFields(row) : null;   // หักจากเงินประกัน → ยกเลิกที่สัญญา
     if (i.income_type === "LOAN_INTEREST" && i.asset_id) return loanInterestFields(row);
@@ -365,6 +371,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? (
         <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
           deleteNote={m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN" ? "รายการฝาก/ถอนในพอร์ตจะถูกลบตาม" : undefined}
+          editor={m.movement_type === "TRANSFER" && m.from_asset_id && m.to_asset_id && bankIds.has(m.from_asset_id) && bankIds.has(m.to_asset_id)
+            && (m.counter_currency == null || m.counter_currency === m.currency) ? (
+            <TransferEditor id={m.id} banks={banks.filter((b) => b.currency === m.currency)}
+              values={{ from: m.from_asset_id, to: m.to_asset_id, date: m.movement_date, amount: Number(m.amount),
+                fee: m.fee == null ? null : Number(m.fee), description: m.description }} />) : undefined}
           fields={[
             { name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
             { name: "amount", label: "จำนวน", type: "number", value: m.amount },
@@ -584,7 +595,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             : i.lease_id ? `ค่าเช่า ${pname(i.src_asset) ?? ""} (แบ่งตามเจ้าของทรัพย์สิน)`
                             : i.income_type === "LOAN_INTEREST" && i.asset_id ? `ดอกเบี้ยจาก ${pname(i.src_asset) ?? "เงินให้กู้"} (แบ่งตามเจ้าของ)`
                             : pname(i.persons) ?? (i.asset_id && pname(i.src_asset) ? `${pname(i.src_asset)} (แบ่งตามเจ้าของ)`
-                              : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : "ส่วนกลาง");
+                              : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : "ส่วนกลาง");
                           return src ? <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className="cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400">{text}</Link> : text;
                         })()}
                         {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
@@ -592,7 +603,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           <div className="mt-1 space-y-1">
                             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
                             {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []}
-                              transferBanks={i.received_to_asset_id ? banks.filter((b) => b.currency === i.currency && b.asset_id !== i.received_to_asset_id) : []} />}
+                              personDefault={i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : i.received_to_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
+                              moves={splitMoves({ kind: "INCOME", currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id, liab: i.received_to_liability_id }, splitLists)} />}
                           </div>
                         )}
                       </td>
@@ -807,7 +819,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             <div className="mt-1 space-y-1">
                               <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
                               {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
-                                transferBanks={i.paid_from_asset_id ? banks.filter((b) => b.currency === i.currency && b.asset_id !== i.paid_from_asset_id) : []} />}
+                                personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
+                                moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />}
                             </div>
                           )}
                           {i.is_reimbursable && (
@@ -832,6 +845,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             : "เงินสด"}
                           {!i.source_cash_movement_id && (pname(i.persons)
                             ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
+                            : i.liability_id ? <div className="text-slate-500">ตามผู้รับผิดชอบหนี้</div>
                             : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}
                         </td>
                         <td className="text-right tabular-nums">{money(i.amount, i.currency)}

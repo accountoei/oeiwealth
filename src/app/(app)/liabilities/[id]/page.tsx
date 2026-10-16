@@ -10,7 +10,9 @@ import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import EntityDocuments from "@/components/docs/EntityDocuments";
-import { debtInterestFields } from "@/lib/source-edit";
+import { debtDropIncomeFields, debtInterestFields } from "@/lib/source-edit";
+import { splitMoves } from "@/lib/split-moves";
+import SplitForm from "../../income-expenses/SplitForm";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
@@ -31,12 +33,16 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes,movement_group_id")
       .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
-    supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes")
+    supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes,pending_split,currency")
       .eq("liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
   ]);
   // ยอดหนี้ลดเกินที่คำนวณ → รายได้ก้อนรอแยก / รายการที่แยกแล้ว (แก้ / แยกที่ Income & Expenses)
-  const { data: drops } = await supabase.from("income_transactions").select("id,date,amount,tax,notes,pending_split")
-    .eq("received_to_liability_id", id).is("deleted_at", null).order("date", { ascending: false });
+  const [{ data: drops }, { data: cats }] = await Promise.all([
+    supabase.from("income_transactions").select("id,date,amount,tax,notes,pending_split,currency")
+      .eq("received_to_liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
+    supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
+  ]);
+  const expCats = (cats ?? []).map((c) => c.name as string);
   if (!l) notFound();
 
   const canWrite = me.role !== "VIEWER";
@@ -61,12 +67,14 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   const payRows = [
     ...(pays ?? []).map((m) => ({ key: `m${m.id}`, table: "cash_movements", id: m.id, date: m.movement_date as string, amount: Number(m.amount),
       kind: m.reduces_liability ? "เงินต้น" : "จ่ายรวม (ไม่ได้แยก)", group: m.movement_group_id as string | null, bank: m.from_asset_id as string | null, notes: m.notes as string | null,
-      dateField: "movement_date" })),
+      dateField: "movement_date", pending: false })),
     ...(ints ?? []).map((e) => ({ key: `e${e.id}`, table: "expense_items", id: e.id, date: e.date as string, amount: Number(e.amount),
-      kind: "ดอกเบี้ย", group: null as string | null, bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date" })),
-    ...(drops ?? []).map((i) => ({ key: `i${i.id}`, table: "", id: i.id, date: i.date as string, amount: Number(i.amount) - Number(i.tax ?? 0),
+      kind: e.pending_split ? "หนี้เพิ่ม (รอแยกรายละเอียด)" : e.paid_from_asset_id ? "ดอกเบี้ย" : "ดอกเบี้ย / ค่าธรรมเนียม (ทบเข้าหนี้)",
+      group: null as string | null, bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date",
+      pending: !!e.pending_split })),
+    ...(drops ?? []).map((i) => ({ key: `i${i.id}`, table: "income_transactions", id: i.id, date: i.date as string, amount: Number(i.amount) - Number(i.tax ?? 0),
       kind: i.pending_split ? "หนี้ลด (รอแยกรายละเอียด)" : "หนี้ลด (รายได้)", group: null as string | null, bank: null as string | null,
-      notes: i.notes as string | null, dateField: "date" })),
+      notes: i.notes as string | null, dateField: "date", pending: !!i.pending_split })),
   ].sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind, "th"));
   const today = todayBangkok();
   const minDate = family?.go_live_date ?? "";
@@ -122,7 +130,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-slate-900">ประวัติการจ่าย</h2>
-        <p className="mb-3 text-xs text-slate-500">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo; · หนี้ลด = ยอดตาม Statement ลดเกินที่คำนวณ (อยู่ในรายได้)</p>
+        <p className="mb-3 text-xs text-slate-500">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo; · หนี้เพิ่ม / หนี้ลด = ยอดตาม Statement ต่างจากที่คำนวณ · กดที่แถวเพื่อแยกรายการ / ลงเป็นการจ่าย / แก้ / ลบ</p>
         {payRows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีการจ่าย</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -132,14 +140,22 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
               {payRows.map((r) => (
                 <tr key={r.key}>
                   <td className="py-1.5">{thDate(r.date)}</td>
-                  <td className={r.kind === "ดอกเบี้ย" || r.kind.startsWith("หนี้ลด (รอ") ? "text-amber-700" : r.kind.startsWith("หนี้ลด") ? "text-emerald-700" : ""}>{r.kind}</td>
+                  <td className={r.pending || r.kind.startsWith("ดอกเบี้ย") ? "text-amber-700" : r.kind.startsWith("หนี้ลด") ? "text-emerald-700" : ""}>{r.kind}</td>
                   <td className="text-right tabular-nums">{money(r.amount)}</td>
                   <td className="pl-4 text-slate-600">{r.bank ? bankName.get(r.bank) ?? "บัญชี" : "-"}</td>
                   <td className="pl-4 text-slate-500">{r.notes}</td>
                   <td className="pl-2 text-right">
-                    {r.table === "" ? <Link href={`/income-expenses?tab=income&it=recorded&m=${r.date.slice(0, 7)}`} className="text-xs text-blue-700 hover:underline">แยก / แก้ที่ Income &amp; Expenses</Link>
-                    : canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
-                      fields={r.table === "expense_items" ? debtInterestFields(r)
+                    {canWrite && r.pending ? (
+                      <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={false}
+                        editor={canDelete ? <SplitForm kind={r.table === "income_transactions" ? "INCOME" : "EXPENSE"} id={r.id} amount={r.amount}
+                          currency={l.currency} persons={persons ?? []} categories={expCats} personDefault="ตามผู้รับผิดชอบหนี้"
+                          label={r.table === "income_transactions" ? "แยกรายการ / ลงเป็นการจ่าย" : "แยกรายการ"}
+                          moves={splitMoves({ kind: r.table === "income_transactions" ? "INCOME" : "EXPENSE", currency: l.currency, liab: id },
+                            { banks: banks.filter((b) => b.currency === l.currency) })} />
+                          : <span className="text-xs text-slate-500">ADMIN / EDITOR แยกรายการได้</span>} />
+                    ) : canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
+                      fields={r.table === "income_transactions" ? debtDropIncomeFields(r)
+                        : r.table === "expense_items" ? debtInterestFields(r)
                         : [{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
                            { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
                     {canDelete && r.group && groupInt.has(r.group) && <div className="mt-1"><UndoButton kind="PAYMENT" id={r.group} paths={paths}

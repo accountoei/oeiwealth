@@ -51,3 +51,10 @@ export const businessDividendFields = (r: IncRow): FieldSpec[] => [
   { name: "amount", label: "ยอด", type: "number", value: r.amount },
   { name: "tax", label: "ภาษี", type: "number", value: r.tax ?? null },
 ];
+
+/** รายได้ลดหนี้ (ยอดหนี้ลดเกินที่คำนวณ · แยกจากก้อน) — หน้าหนี้สิน → ประวัติการจ่าย */
+export const debtDropIncomeFields = (r: IncRow): FieldSpec[] => [
+  { name: "date", label: "วันที่", type: "date", value: r.date },
+  { name: "amount", label: "ยอด", type: "number", value: r.amount },
+  { name: "notes", label: "รายละเอียด", value: r.notes ?? null, width: "w-48" },
+];

@@ -1672,6 +1672,88 @@ SELECT t.ok((SELECT current_balance FROM public.v_card_balances WHERE card_id = 
 RESET ROLE;
 SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีจ่ายหนี้ลด'), '2026-09-20') = 46000, 'บัญชี: เงินออกรวม 4,000 (หนี้ 3,000 + บัตร 1,000)');
 
+\echo '== 13zd. แยกก้อนเป็นการจ่าย / โอน (split_lump) · ก้อนที่ปิดแล้วกลับมาเมื่อลบรายการ · ส่วนแบ่งตามผู้รับผิดชอบหนี้'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.liabilities(family_id, liability_type, name, currency) SELECT id, 'PERSONAL_LOAN', 'หนี้ก้อนกลับ', 'THB' FROM public.families;
+INSERT INTO public.liability_ownerships(liability_id, person_id, responsibility_percent)
+  SELECT id, t.p('คุณแม่'), 60 FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ';
+INSERT INTO public.liability_ownerships(liability_id, person_id, responsibility_percent)
+  SELECT id, t.p('คุณพ่อ'), 40 FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ';
+INSERT INTO public.liability_valuations(liability_id, valuation_date, balance, source)
+  SELECT id, '2026-08-31', 10000, 'STATEMENT' FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ';
+SELECT (public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ'), '2026-09-20', 8000))->>'lump' AS sl0;
+SELECT (public.pay_from_statement_drop(jsonb_build_object('kind','LIABILITY','id',(SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ'),
+  'bank_asset_id', t.a('บัญชีจ่ายหนี้ลด'), 'date','2026-09-20', 'amount', 2000)))->>'lump_left' AS sl1;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ')), 'ลงเป็นการจ่ายเต็มจำนวน → ก้อนหมด');
+UPDATE public.cash_movements SET deleted_at = now()
+ WHERE to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ') AND deleted_at IS NULL;
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ')) = 2000,
+            'ลบรายการจ่ายที่ลงไว้ → รายได้ก้อนลดหนี้กลับมา 2,000 (ก้อนเคยหมดไปแล้ว)');
+SELECT t.fails($$SELECT public.split_lump('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+  AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ')),
+  jsonb_build_array(jsonb_build_object('description','ส่วนลดทดสอบ','amount',500,'income_type','OTHER'),
+                    jsonb_build_object('move','TRANSFER','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',1500)))$$,
+  'แยกเป็น', 'ก้อนของหนี้แยกเป็นเงินโอนไม่ได้');
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+              AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ')) = 2000
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE notes = 'ส่วนลดทดสอบ'),
+            'แยกไม่สำเร็จ → ไม่มีอะไรเปลี่ยน (ทำทั้งหมดหรือไม่ทำเลย)');
+SELECT t.ok(public.split_lump('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+  AND received_to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ')),
+  jsonb_build_array(jsonb_build_object('description','ส่วนลดทดสอบ','amount',500,'income_type','OTHER'),
+                    jsonb_build_object('move','PAY_FROM','target', t.a('บัญชีจ่ายหนี้ลด'),'amount','1,500'))) = 0,
+            'แยกก้อนลดหนี้: ส่วนลด 500 (รายได้) + จ่ายจากบัญชี 1,500 ในคำสั่งเดียว → ก้อนหมด');
+SELECT t.ok((SELECT sum(amount) FROM public.cash_movements WHERE deleted_at IS NULL AND movement_type = 'LIABILITY_PAYMENT'
+              AND to_liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ')) = 1500
+            AND (SELECT outstanding_amount FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ') = 8000,
+            'จ่ายเงินต้น 1,500 จากบัญชี · ยอดหนี้ยัง 8,000 ตาม Statement');
+SELECT t.ok((SELECT share_percent FROM public.v_income_by_person WHERE person_id = t.p('คุณแม่')
+              AND income_id = (SELECT id FROM public.income_transactions WHERE notes = 'ส่วนลดทดสอบ' AND deleted_at IS NULL)) = 60
+            AND (SELECT share_percent FROM public.v_income_by_person WHERE person_id = t.p('คุณพ่อ')
+              AND income_id = (SELECT id FROM public.income_transactions WHERE notes = 'ส่วนลดทดสอบ' AND deleted_at IS NULL)) = 40,
+            'รายได้ลดหนี้ (ไม่ระบุคน) แบ่งตามผู้รับผิดชอบหนี้ 60 / 40');
+SELECT (public.update_liability_statement((SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ'), '2026-09-25', 8300))->>'lump' AS sl2;
+SELECT t.ok((SELECT share_percent FROM public.v_expense_by_person WHERE person_id = t.p('คุณแม่')
+              AND expense_item_id = (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+                AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ'))) = 60,
+            'ค่าใช้จ่ายก้อนของหนี้ (ไม่ระบุคน) แบ่งตามผู้รับผิดชอบหนี้');
+-- บัญชีธนาคาร: แยกก้อนค่าใช้จ่ายเป็น เงินโอน + จ่ายบัตร + ค่าใช้จ่าย
+SELECT public.create_bank_account('บัญชีก้อนโอน', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS sl3;
+SELECT (public.update_bank_statement(t.a('บัญชีก้อนโอน'), '2026-09-20', 7000))->>'lump' AS sl4;
+SELECT t.ok(public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนโอน')),
+  jsonb_build_array(jsonb_build_object('move','TRANSFER','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',1000),
+                    jsonb_build_object('move','CARD_PAYMENT','target',(SELECT id FROM public.credit_cards WHERE card_last4 = '6633'),'amount',500),
+                    jsonb_build_object('description','ค่าอาหารก้อนโอน','amount',1500,'expense_category','ทั่วไป'))) = 0,
+            'ก้อนบัญชี 3,000 → โอน 1,000 + จ่ายบัตร 500 + ค่าใช้จ่าย 1,500 → ก้อนหมด');
+SELECT t.ok((SELECT count(*) FROM public.cash_movements WHERE deleted_at IS NULL AND from_asset_id = t.a('บัญชีก้อนโอน')
+              AND movement_type IN ('TRANSFER','CARD_PAYMENT') AND metadata->>'via' = 'split_pending') = 2,
+            'เงินโอน / จ่ายบัตร บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน');
+-- แก้เงินโอน: เปลี่ยนบัญชีปลายทาง → ก้อนของบัญชีปลายทางปรับเอง
+SELECT public.update_transfer((SELECT id FROM public.cash_movements WHERE deleted_at IS NULL AND movement_type = 'TRANSFER'
+  AND from_asset_id = t.a('บัญชีก้อนโอน')), t.a('บัญชีก้อนโอน'), t.a('บัญชีกลับด้าน'), '2026-09-20', 1000, NULL, 'โอนแก้บัญชี') AS sl5;
+SELECT t.ok((SELECT to_asset_id FROM public.cash_movements WHERE deleted_at IS NULL AND movement_type = 'TRANSFER'
+              AND from_asset_id = t.a('บัญชีก้อนโอน')) = t.a('บัญชีกลับด้าน')
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีกลับด้าน')) = 16000
+            AND NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนโอน')),
+            'แก้บัญชีปลายทางของเงินโอน → ก้อนบัญชีปลายทางใหม่ปรับ (+1,000) · ก้อนบัญชีต้นทางยังหมด');
+SELECT t.fails($$SELECT public.update_transfer((SELECT id FROM public.cash_movements WHERE deleted_at IS NULL AND movement_type = 'TRANSFER'
+  AND from_asset_id = t.a('บัญชีก้อนโอน')), t.a('บัญชีก้อนโอน'), t.a('บัญชีก้อนโอน'), '2026-09-20', 1000, NULL, NULL)$$,
+  'คนละบัญชี', 'เงินโอนต้นทาง / ปลายทางต้องคนละบัญชี');
+-- ลบเงินโอน → ก้อนบัญชีต้นทางที่ปิดไปแล้วกลับมา · ก้อนบัญชีปลายทางกลับเป็น 15,000
+UPDATE public.cash_movements SET deleted_at = now() WHERE deleted_at IS NULL AND movement_type = 'TRANSFER' AND from_asset_id = t.a('บัญชีก้อนโอน');
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนโอน')) = 1000
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีกลับด้าน')) = 15000,
+            'ลบเงินโอน → ก้อนบัญชีต้นทางกลับมา 1,000 · ก้อนบัญชีปลายทางกลับเป็น 15,000');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีก้อนโอน'), '2026-09-20') = 7000, 'บัญชีต้นทางยังตรง Statement 7,000');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีก้อนโอน')),
+  jsonb_build_array(jsonb_build_object('description','x','amount',1,'expense_category','ทั่วไป')))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER แยกก้อนไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
