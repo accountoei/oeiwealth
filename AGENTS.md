@@ -14,6 +14,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 1. `git pull` — another AI or person may have pushed since you last looked. Never work on a stale copy.
    Then read **`docs/PRE_LAUNCH_CHECKLIST.md`** — current status, agreed decisions and what is still open.
 2. Only one agent should change code at a time. If you are not the primary agent, work on a **branch and open a Pull Request**; do not push to `main`.
+   **The owner merges PRs.** Exception: a PR that changes **only documentation** (`docs/`, `*.md`; no code, migrations, Edge Functions or workflows) may be merged by the AI itself — tell the owner afterwards.
 3. Read the relevant migration(s) and page(s) before changing them. The database is the source of truth for business rules.
 
 ## 1. Hard security rules (never break these)
@@ -31,7 +32,16 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ## 2. Database changes (Supabase)
 
-- Migrations live in `supabase/migrations/` and are **run by hand** by the owner in the Supabase SQL Editor, in filename order.
+- Migrations live in `supabase/migrations/` and run in filename order.
+- **Who runs them (agreed 16 Oct 2026):** the AI runs them itself through the Supabase connector (`apply_migration`), in this order — never the other way round:
+  1. Write the migration on a branch; the local scenario tests (below), `tsc`, `eslint` and `next build` pass.
+  2. Open the PR, so the exact file is in the repo.
+  3. Apply **that file, unchanged**, to the Supabase project (one migration per call, filename order, name = the file's name without `.sql`).
+  4. Verify: the new tables / columns / functions exist, RLS is on for every new table, and `get_advisors` (security) shows nothing new. Report the result in Thai.
+  5. The owner then merges the PR (Vercel deploys the code after the database is ready).
+- **Ask the owner first** if a migration drops or renames a table / column / function that holds data, or updates / deletes existing rows. Never run SQL that is not in a committed migration file, except read-only `SELECT`s for checking.
+- If a migration fails half-way, stop and report; do not "fix forward" with ad-hoc SQL — write a new migration file.
+- If no Supabase connector is available, the owner runs the file by hand in the Supabase SQL Editor (give the `raw.githubusercontent.com` link).
 - **Never edit a migration that has already been run.** Always add a new file with the next timestamp, e.g. `20261005001500_short_name.sql`. Use `CREATE OR REPLACE`, `ADD COLUMN IF NOT EXISTS`, `DROP FUNCTION IF EXISTS` so re-running is safe.
 - When changing a function signature, `DROP FUNCTION IF EXISTS old_signature` first and re-grant.
 - New tables must get RLS (see `20261004001600_rls_grants.sql` for the standard policy set) and the generic META / soft-delete triggers.
@@ -79,7 +89,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 
 Always finish with, in Thai:
 1. What changed (short, non-technical).
-2. Exactly what they must do: which migration file(s) to run, which Edge Function to redeploy, any setting to change.
+2. Exactly what they must do: which migration file(s) were run (by the AI) or still need running, whether to press Merge, which Edge Function to redeploy, any setting to change.
 3. A short test checklist using fake data.
 
 Do not press or ask the owner to press **Confirm Go-live** with test data, and do not reset or delete production data without an explicit request.
