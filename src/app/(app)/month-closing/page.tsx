@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
-import { ConfirmReconForm, FinalizeForm, PrepareButton, ReopenForm, SettleLaterButton } from "./forms";
+import { FinalizeForm, ReopenForm } from "./forms";
 
 type Issue = { severity: string; code: string; message: string; entity_type: string | null; entity_id: string | null };
 type Check = { category: string; status: string; issue_count: number; issues: Issue[] };
@@ -17,15 +17,11 @@ type Preview = {
 };
 
 const CAT: Record<string, string> = {
-  CASH: "Cash & Bank Accounts (กระทบยอดธนาคาร)", INVESTMENTS: "Investments", PROPERTY_OTHER: "Property / สินทรัพย์อื่น",
+  CASH: "Cash & Bank Accounts (อัปเดตยอดคงเหลือ)", INVESTMENTS: "Investments", PROPERTY_OTHER: "Property / สินทรัพย์อื่น",
   LIABILITIES: "Liabilities / บัตรเครดิต", INCOME_EXPENSES: "Income & Expenses", OWNERSHIP: "สัดส่วนเจ้าของ", FX_SYSTEM: "FX & ระบบ",
 };
 const PILL: Record<string, string> = {
   READY: "bg-emerald-50 text-emerald-700", REVIEW: "bg-amber-50 text-amber-800", BLOCKED: "bg-red-50 text-red-700",
-};
-const RECON: Record<string, { text: string; cls: string }> = {
-  OPEN: { text: "ยังไม่ยืนยัน", cls: "text-amber-700" }, RECONCILED: { text: "ตรงกัน ✓", cls: "text-emerald-700" },
-  CONFIRMED_WITH_DIFFERENCE: { text: "ยืนยันพร้อมผลต่าง", cls: "text-amber-700" },
 };
 
 function fixLink(i: Issue, ym: string): string | null {
@@ -42,7 +38,7 @@ function fixLink(i: Issue, ym: string): string | null {
     case "PENDING_INCOME": return `/income-expenses?tab=income&it=recorded&m=${ym}`;
   }
   if (i.code === "NOT_LIVE") return "/settings/opening";
-  if (i.code?.startsWith("RECON")) return "#recon";
+  if (i.code === "BALANCE_NOT_UPDATED" || i.code?.startsWith("RECON")) return "#cash-update";
   if (i.code === "IN_TRANSIT" && i.entity_id) return `/investments/${i.entity_id}`;
   if (i.entity_type === "ASSET" && i.entity_id) return `/a/${i.entity_id}`;
   if (i.entity_type === "LIABILITY" && i.entity_id) return `/liabilities/${i.entity_id}`;
@@ -65,12 +61,14 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : defaultYm;
   const { start, end, prev, next } = monthRange(ym);
 
-  const [{ data: checksRaw, error: checkErr }, { data: previewRaw, error: prevErr }, { data: banks }, { data: recons }] = await Promise.all([
+  const [{ data: checksRaw, error: checkErr }, { data: previewRaw, error: prevErr }, { data: banks }, { data: recons }, { data: balAt }] = await Promise.all([
     supabase.rpc("month_closing_checks", { p_month: start }),
     supabase.rpc("month_net_worth_preview", { p_month: start }),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,confirmed_date").eq("status", "ACTIVE").order("name"),
-    supabase.from("bank_reconciliations").select("*").eq("year_month", start).is("deleted_at", null),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("bank_reconciliations").select("bank_asset_id,status").eq("year_month", start).is("deleted_at", null).neq("status", "OPEN"),
+    supabase.rpc("bank_balances_at", { p_date: end < today ? end : today }),
   ]);
+  const lastAt = new Map(((balAt as { asset_id: string; last_date: string | null }[] | null) ?? []).map((r) => [r.asset_id, r.last_date]));
   // "ค่าใช้จ่ายบันทึกครบ / ไม่ครบ" ไม่ใช้แล้ว (เงินคงเหลือสุทธิคิดจากรายการที่บันทึกเสมอ) → ไม่แสดงเป็นข้อให้ตรวจ
   const notTracking = (i: Issue) => !i.code.startsWith("EXPENSE_");
   const checks = ((checksRaw as Check[] | null) ?? []).map((c) => {
@@ -87,7 +85,8 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const canWrite = me.role !== "VIEWER";
   const reconBy = new Map((recons ?? []).map((r) => [r.bank_asset_id, r]));
   const isLatestFinal = isFinal && lastFinal === ym;
-  const bankRows = (banks ?? []).filter((b) => b.confirmed_date && b.confirmed_date <= end || reconBy.has(b.asset_id));
+  // บัญชีที่มียอดแล้ว ณ สิ้นเดือน: ยอดล่าสุด (≤ สิ้นเดือน) วันไหน · อัปเดตยอดสิ้นเดือนแล้วหรือยัง
+  const bankRows = (banks ?? []).map((b) => ({ ...b, last: lastAt.get(b.asset_id) ?? null })).filter((b) => b.last || reconBy.has(b.asset_id));
 
   // บัตรเครดิต ณ สิ้นเดือน = ยอด Statement ล่าสุด (≤ สิ้นเดือน) + รูดหลังวันนั้น − จ่ายบัตร − เงินคืน / รายได้เข้าบัตร
   const asOf = end < today ? end : today;
@@ -124,7 +123,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Month Closing</h1>
-          <p className="text-sm text-slate-500">ตรวจความพร้อม → กระทบยอดธนาคาร → ปิดเดือน (ระดับครอบครัว)</p>
+          <p className="text-sm text-slate-500">ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</p>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <Link href={`/month-closing?m=${prev}`} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">←</Link>
@@ -190,49 +189,32 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
         </ul>
       </section>
 
-      {/* ---------------------------------------------------------- กระทบยอดธนาคาร */}
-      <section id="recon" className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">กระทบยอดธนาคาร {thMonth(start)}</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          ยอดต้นเดือน + เงินเข้า − เงินออก (ที่บันทึกไว้) = ยอดที่ควรเป็น · กรอกยอดจริงสิ้นเดือนจากแอปธนาคาร · ผลต่างลงเป็นค่าใช้จ่าย / รายได้ก้อน &ldquo;รอแยกรายละเอียด&rdquo; ได้ (แยกทีหลังได้แม้ปิดงวดแล้ว)
-        </p>
-        {bankRows.length === 0 ? <p className="text-sm text-slate-500">ไม่มีบัญชีที่ต้องกระทบยอด</p> : (
-          <div className="space-y-3">
-            {bankRows.map((b) => {
-              const r = reconBy.get(b.asset_id);
-              return (
-                <div key={b.asset_id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Link href={`/financial/cash/${b.asset_id}`} className="font-medium hover:underline">{b.name} <span className="text-xs text-slate-500">{b.currency}</span></Link>
-                    {r ? <span className={`text-xs ${RECON[r.status]?.cls}`}>{RECON[r.status]?.text}</span>
-                       : canWrite && !isFinal && <PrepareButton assetId={b.asset_id} month={start} label="เริ่มกระทบยอด" />}
-                  </div>
-                  {r && (
-                    <>
-                      <div className="mt-1 grid grid-cols-2 gap-x-4 text-xs text-slate-600 md:grid-cols-5">
-                        <span>ต้นเดือน {money(r.opening_balance)}</span>
-                        <span className="text-emerald-700">เข้า +{money(r.known_inflows)}</span>
-                        <span className="text-red-700">ออก −{money(r.known_outflows)}</span>
-                        <span>ควรเป็น <b>{money(r.calculated_closing)}</b></span>
-                        {r.actual_closing != null && <span>จริง <b>{money(r.actual_closing)}</b>{Number(r.difference) !== 0 && ` · ต่าง ${money(r.difference)}`}</span>}
-                      </div>
-                      {r.difference_reason && <div className="mt-1 text-xs text-amber-700">เหตุผล: {r.difference_reason}</div>}
-                      {r.status === "CONFIRMED_WITH_DIFFERENCE" && !isFinal && canClose && Number(r.difference) !== 0 && (
-                        <SettleLaterButton id={r.id} diff={Number(r.difference)} currency={b.currency} />
-                      )}
-                      {r.status === "OPEN" && !isFinal && (
-                        <>
-                          {canWrite && <div className="mt-1"><PrepareButton assetId={b.asset_id} month={start} label="คำนวณใหม่ (หลังเพิ่มรายการ)" /></div>}
-                          <ConfirmReconForm id={r.id} calculated={Number(r.calculated_closing)} currency={b.currency} canConfirm={canClose && ended} />
-                          <Link href={`/income-expenses?tab=expense&m=${ym}`} className="mt-1 inline-block text-xs text-slate-700 underline">+ เพิ่มรายการที่ขาด</Link>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
+      {/* ---------------------------------------------------------- อัปเดตยอดคงเหลือ (บัญชีธนาคาร) */}
+      <section id="cash-update" className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-slate-900">อัปเดตยอดคงเหลือบัญชีธนาคาร {thMonth(start)}</h2>
+            <p className="text-xs text-slate-500">
+              กรอกยอดจริงสิ้นเดือนจากแอปธนาคาร หลายบัญชีพร้อมกันที่หน้า Cash &amp; Bank Accounts · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ ·
+              ไม่ได้อัปเดต = ปิดงวดได้ โดยใช้ยอดตามระบบ (ยอดล่าสุด + เงินเข้า − เงินออก)
+            </p>
           </div>
+          {canWrite && !isFinal && (
+            <Link href={`/financial/cash?tab=update&d=${ended ? end : today}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
+              อัปเดตยอดคงเหลือ →</Link>
+          )}
+        </div>
+        {bankRows.length > 0 && (
+          <ul className="mt-3 divide-y divide-slate-100 text-sm">
+            {bankRows.map((b) => (
+              <li key={b.asset_id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                <Link href={`/financial/cash/${b.asset_id}`} className="hover:underline">{b.name} <span className="text-xs text-slate-500">{b.currency}</span></Link>
+                {b.last === end || reconBy.has(b.asset_id)
+                  ? <span className="text-xs text-emerald-700">อัปเดตยอดสิ้นเดือนแล้ว ✓</span>
+                  : <span className="text-xs text-amber-700">ยังไม่ได้อัปเดตยอดสิ้นเดือน · ใช้ยอดตามระบบ (ล่าสุด {thDate(b.last)})</span>}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

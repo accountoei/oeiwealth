@@ -12,7 +12,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 
 const SOURCE_LABEL: Record<string, string> = {
   OPENING: "ยอดตั้งต้น", ACCOUNT_SETUP: "เปิดบัญชีในระบบ", BALANCE_UPDATE: "อัปเดตยอด",
-  RECONCILIATION: "กระทบยอดสิ้นเดือน", STATEMENT: "Statement", USER: "ผู้ใช้", APPRAISAL: "ประเมิน",
+  RECONCILIATION: "อัปเดตยอดสิ้นเดือน", STATEMENT: "Statement", USER: "ผู้ใช้", APPRAISAL: "ประเมิน",
 };
 const MOVE_LABEL: Record<string, string> = {
   INCOME: "รายได้", EXPENSE: "ค่าใช้จ่าย", TRANSFER: "โอน", FX_EXCHANGE: "แลกเงิน", INVESTMENT_OUT: "โอนเข้าพอร์ต",

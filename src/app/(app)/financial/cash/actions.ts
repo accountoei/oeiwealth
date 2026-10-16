@@ -127,3 +127,27 @@ export async function revealAccountNo(_: ActionState, form: FormData): Promise<A
   if (error) return { error: friendlyError(error.message) };
   return { value: String(data) };
 }
+
+/** ผลรายบัญชีหลังอัปเดตยอดคงเหลือหลายบัญชีพร้อมกัน (lump: + = รายได้ก้อน · − = ค่าใช้จ่ายก้อน) */
+export type BatchResult = { asset_id: string; lump: number | null; history_only?: boolean };
+export type BatchState = { error?: string; ok?: string; results?: BatchResult[] };
+
+/** อัปเดตยอดคงเหลือหลายบัญชี ณ วันเดียวกัน — คำสั่งเดียว (บัญชีไหนผิด = ไม่บันทึกเลย) */
+export async function batchUpdate(_: BatchState, form: FormData): Promise<BatchState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  let rows: { asset_id: string; value: string }[] = [];
+  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const clean = rows.map((r) => ({ asset_id: r.asset_id, value: num(r.value) }));
+  if (!date) return { error: "กรุณาเลือกวันที่" };
+  if (!clean.length) return { error: "กรุณาเลือกบัญชีและกรอกยอดอย่างน้อย 1 บัญชี" };
+  if (clean.some((r) => r.value === null || Number.isNaN(r.value))) return { error: "ยอดที่กรอกต้องเป็นตัวเลขทุกบัญชีที่เลือก" };
+  const { data, error } = await supabase.rpc("batch_update_bank_statements", { p_date: date, p_rows: clean });
+  if (error) return { error: `ยังไม่ได้บันทึก (ทุกบัญชี) · ${friendlyError(error.message)}` };
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/income-expenses");
+  revalidatePath("/month-closing");
+  const results = ((data as { asset_id: string; lump: number | string | null; history_only?: boolean }[] | null) ?? [])
+    .map((r) => ({ asset_id: r.asset_id, lump: r.lump == null ? null : Number(r.lump), history_only: r.history_only }));
+  return { ok: `บันทึกยอดแล้ว ${results.length} บัญชี`, results };
+}
