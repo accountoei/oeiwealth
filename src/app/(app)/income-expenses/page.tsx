@@ -603,15 +603,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                           const src = incSource(i);
                           const fields = src && !i.pending_split ? incSourceEdit(i) : null;
                           if (!src || !fields || !canWrite) return null;
+                          // รับชำระครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่มลบปุ่มเดียว ลบทั้งการรับชำระครั้งนั้น
                           const grp = i.income_type === "LOAN_INTEREST" ? incGroup.get(i.id) : undefined;
+                          const whole = !!(grp && loanPrincipal.has(grp));
                           return (
                             <RowActions table="income_transactions" id={i.id} paths={[...PATHS, src.href, "/property", "/financial/loans", "/financial/business"]}
-                              canDelete={canDelete} fields={fields}
-                              extra={<span className="flex flex-wrap items-center gap-3">
-                                {canDelete && grp && loanPrincipal.has(grp) && <UndoButton kind="PAYMENT" id={grp} paths={[...PATHS, src.href, "/financial/loans"]}
-                                  confirmText={`ยกเลิกการรับชำระวันที่ ${thDate(i.date)} ทั้งก้อน?\nเงินต้น ${money(loanPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน`} />}
-                                <Link href={src.href} className="text-xs text-slate-600 underline">เปิดหน้า{src.label}</Link>
-                              </span>} />
+                              canDelete={canDelete && !whole} fields={fields}
+                              extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/financial/loans"]}
+                                confirmText={`ลบการรับชำระวันที่ ${thDate(i.date)}?\nเงินต้น ${money(loanPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
                           );
                         })()}
                         {!incSource(i) && canWrite && !i.pending_split && (
@@ -839,15 +838,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             const src = expSource(i);
                             const fields = src && !i.pending_split ? sourceEdit(i) : null;
                             if (!src || !fields || !canWrite) return null;
+                            // จ่ายหนี้ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่มลบปุ่มเดียว ลบทั้งการจ่ายครั้งนั้น
                             const grp = i.liability_id ? expGroup.get(i.id) : undefined;
+                            const whole = !!(grp && groupPrincipal.has(grp));
                             return (
                               <RowActions table="expense_items" id={i.id} paths={[...PATHS, src.href.split("?")[0], "/liabilities", "/property", "/insurance"]}
-                                canDelete={canDelete} fields={fields}
-                                extra={<span className="flex flex-wrap items-center gap-3">
-                                  {canDelete && grp && groupPrincipal.has(grp) && <UndoButton kind="PAYMENT" id={grp} paths={[...PATHS, src.href, "/liabilities"]}
-                                    confirmText={`ยกเลิกการจ่ายวันที่ ${thDate(i.date)} ทั้งก้อน?\nเงินต้น ${money(groupPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน`} />}
-                                  <Link href={src.href} className="text-xs text-slate-600 underline">เปิดหน้า{src.label}</Link>
-                                </span>} />
+                                canDelete={canDelete && !whole} fields={fields}
+                                extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/liabilities"]}
+                                  confirmText={`ลบการจ่ายวันที่ ${thDate(i.date)}?\nเงินต้น ${money(groupPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
                             );
                           })()}
                           {!expSource(i) && canWrite && !i.pending_split && (
