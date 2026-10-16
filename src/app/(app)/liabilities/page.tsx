@@ -63,7 +63,6 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const holder = (c: Card) => (Array.isArray(c.persons) ? c.persons[0]?.name : c.persons?.name) ?? "-";
   const bankName = new Map((banksRaw ?? []).map((b) => [b.asset_id as string, b.name as string]));
   const canWrite = me.role !== "VIEWER";
-  const canSettle = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
   const isSetup = family?.system_status === "SETUP";
   const goLive = family?.go_live_date ?? "";
@@ -172,7 +171,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
                       : <>ตาม Statement ณ {thDate(c.balance_date)}</>}
                   </div>
                   {canWrite && c.status !== "CLOSED" && (
-                    <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate} canSettle={canSettle} />
+                    <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate} />
                   )}
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-600">

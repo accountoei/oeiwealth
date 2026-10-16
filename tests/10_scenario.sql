@@ -1235,7 +1235,7 @@ SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND del
             'ลบรายการรูดบัตร → ส่วนต่างกลับด้าน เปลี่ยนเป็นค่าใช้จ่ายก้อน 200 แทน');
 RESET ROLE;
 
-\echo '== 13t. ประวัติยอดบัตร: ลืมติ๊ก → อัปเดตยอดวันเดิมซ้ำแล้วติ๊กได้ · ยอดย้อนหลังเก็บเป็นประวัติ'
+\echo '== 13t. ประวัติยอดบัตร: ลงก้อนเสมอ (ไม่มีช่องติ๊ก) · อัปเดตยอดวันเดิมซ้ำไม่ซ้ำก้อน · ยอดย้อนหลังเก็บเป็นประวัติ'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
 INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
   VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'ประวัติ', '8899', 1000, '2026-09-01');
@@ -1245,13 +1245,13 @@ SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE c
 SELECT t.ok((SELECT count(*) FROM public.credit_card_statements WHERE credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 2
             AND (SELECT notes FROM public.credit_card_statements WHERE statement_date = '2026-09-30'
                   AND credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 'รอบ ก.ย.'
-            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
-                  AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')),
-            'เพิ่มบัตร + อัปเดตยอด → ประวัติ 2 แถว (มีหมายเหตุ) · ไม่ติ๊ก = ไม่ลงก้อน');
+            AND (SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
+                  AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 200,
+            'เพิ่มบัตร + อัปเดตยอด → ประวัติ 2 แถว (มีหมายเหตุ) · ลงก้อน 200 ให้เลย (p_settle = false ก็ลง)');
 SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8899'), '2026-09-30', 1100, true))->>'lump' AS retick_lump;
 SELECT t.ok((SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL
               AND received_to_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '8899')) = 200,
-            'ลืมติ๊ก → อัปเดตยอดวันเดิมซ้ำแล้วติ๊ก → ได้ก้อน 200 (คิดจากยอดครั้งก่อนในประวัติ)');
+            'อัปเดตยอดวันเดิมซ้ำ → ก้อนยัง 200 (ไม่ซ้ำ · คิดจากยอดครั้งก่อนในประวัติ)');
 SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '8899'), '2026-09-15', 1200, false))->>'history_only' AS backdated;
 SELECT t.ok((SELECT outstanding_balance FROM public.credit_cards WHERE card_last4 = '8899') = 1100
             AND (SELECT balance_date FROM public.credit_cards WHERE card_last4 = '8899') = '2026-09-30'
@@ -1491,8 +1491,10 @@ SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีก้อนร�
             AND private.bank_calculated_balance(t.a('บัญชีก้อนรายเดือน'), '2026-09-20') = 9000,
             'ยอดบัญชีตรง Statement ทุกจุด (กลางเดือน / สิ้นเดือน)');
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
-SELECT t.fails($$SELECT public.update_bank_statement(t.a('บัญชีก้อนรายเดือน B'), '2026-09-20', 5050, NULL, true)$$,
-  'PERMISSION|สิทธิ์|role', 'CONTRIBUTOR ลงส่วนต่างเป็นก้อนไม่ได้');
+SELECT (public.update_bank_statement(t.a('บัญชีก้อนรายเดือน B'), '2026-09-20', 5050))->>'lump' AS mb_contrib;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+              AND paid_from_asset_id = t.a('บัญชีก้อนรายเดือน B')) = 50,
+            'CONTRIBUTOR บันทึกยอด → ลงก้อนให้อัตโนมัติ (รับโอน 100 แต่ยอดขึ้น 50 → ค่าใช้จ่ายก้อน 50)');
 RESET ROLE;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
 -- บัตร: หลายยอดในเดือนเดียว → ก้อนเดียว · เดือนถัดไป → ก้อนใหม่
@@ -1560,29 +1562,36 @@ SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND del
 RESET ROLE;
 SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีก้อนกลับ'), '2026-09-15') = 9000, 'ธนาคาร: ยอดบัญชียังตรง Statement');
 
-\echo '== 13zb. หน้าบัญชี: สถานะยอดล่าสุดแบบคำนวณสด · ลงส่วนต่างของยอดล่าสุดเป็นก้อน'
-SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+\echo '== 13zb. หน้าบัญชี: สถานะยอดล่าสุดแบบคำนวณสด · ปุ่มสำรองลงส่วนต่างของยอดล่าสุดเป็นก้อน'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT public.create_bank_account('บัญชีสถานะยอด', 'ทดสอบ', 'THB', 10000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
   jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS ss0;
 RESET ROLE;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
-SELECT (public.update_bank_statement(t.a('บัญชีสถานะยอด'), '2026-09-12', 9600))->>'difference' AS ss1;   -- CONTRIBUTOR: ลงก้อนไม่ได้
-SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = -400
-            AND public.bank_statement_status(t.a('บัญชีสถานะยอด'))->'lump' = 'null'::jsonb,
-            'ไม่ได้ลงก้อน → สถานะบอกยอดไม่ตรง −400 (ยังไม่มีก้อน)');
-SELECT t.fails($$SELECT public.settle_bank_latest(t.a('บัญชีสถานะยอด'))$$, 'PERMISSION|สิทธิ์|role', 'CONTRIBUTOR ลงก้อนจากหน้าบัญชีไม่ได้');
+SELECT (public.update_bank_statement(t.a('บัญชีสถานะยอด'), '2026-09-12', 9600))->>'lump' AS ss1;
+SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = 0
+            AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'lump')::numeric = 400,
+            'CONTRIBUTOR บันทึกยอด → ก้อน 400 อัตโนมัติ · ส่วนต่างเหลือ 0');
 RESET ROLE;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.asset_valuations SET value = 9500 WHERE asset_id = t.a('บัญชีสถานะยอด') AND valuation_date = '2026-09-12' AND deleted_at IS NULL;
+SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = -100,
+            'แก้ยอดในประวัติตรง ๆ (ก้อนไม่คำนวณใหม่) → สถานะบอกยอดไม่ตรง −100');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
 SELECT (public.settle_bank_latest(t.a('บัญชีสถานะยอด')))->>'lump' AS ss2;
 SELECT t.ok((public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = 0
-            AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'lump')::numeric = 400
+            AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'lump')::numeric = 500
             AND (SELECT count(*) FROM public.asset_valuations WHERE asset_id = t.a('บัญชีสถานะยอด') AND deleted_at IS NULL) = 2,
-            'EDITOR ลงก้อนจากหน้าบัญชี → ก้อน 400 · ส่วนต่างเหลือ 0 · ไม่สร้างยอดซ้ำ');
-SELECT public.add_expense(jsonb_build_object('date','2026-09-11','description','เจอค่าใช้จ่ายสถานะยอด','amount',400,
+            'ปุ่มสำรอง → ก้อนปรับเป็น 500 · ส่วนต่าง 0 · ไม่สร้างยอดซ้ำ');
+SELECT public.add_expense(jsonb_build_object('date','2026-09-11','description','เจอค่าใช้จ่ายสถานะยอด','amount',500,
   'paid_from_asset_id', t.a('บัญชีสถานะยอด'))) IS NOT NULL AS ss3;
 SELECT t.ok(public.bank_statement_status(t.a('บัญชีสถานะยอด'))->'lump' = 'null'::jsonb
             AND (public.bank_statement_status(t.a('บัญชีสถานะยอด'))->>'difference')::numeric = 0,
             'บันทึกรายการจริงครบ → ก้อนหมด · ส่วนต่าง 0 (ไม่ค้างตัวเลขเก่า)');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.settle_bank_latest(t.a('บัญชีสถานะยอด'))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER ใช้ปุ่มสำรองไม่ได้');
 RESET ROLE;
 
 \echo '== 14. Views'

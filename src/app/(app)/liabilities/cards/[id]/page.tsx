@@ -106,7 +106,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
 
       {canWrite && c.status !== "CLOSED" && (
         <ActionBar>
-          <CardBalanceForm cardId={id} currency={c.currency} today={today} minDate={minDate} canSettle={canDelete}
+          <CardBalanceForm cardId={id} currency={c.currency} today={today} minDate={minDate}
             label="อัปเดตยอดตาม Statement" />
         </ActionBar>
       )}
