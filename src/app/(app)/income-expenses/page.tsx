@@ -28,7 +28,7 @@ import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 import PayFilter from "./PayFilter";
 import UndoButton from "@/components/UndoButton";
-import { debtInterestFields, premiumPaymentFields, propertyCostFields } from "@/lib/source-edit";
+import { businessDividendFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -185,6 +185,20 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     if (i.liability_id) return debtInterestFields(row);
     return null;
   };
+  const incSourceEdit = (i: { date: string; full_amount: number; full_tax: number | null; notes: string | null; income_type: string;
+    lease_id: string | null; asset_id: string | null; source_transaction_id: string | null; insurance_schedule_line_id: string | null }) => {
+    const row = { date: i.date, amount: i.full_amount, tax: i.full_tax, notes: i.notes };
+    if (i.source_transaction_id || i.insurance_schedule_line_id || i.income_type === "INSURANCE_BENEFIT") return null;
+    if (i.lease_id) return i.income_type === "RENT" ? rentIncomeFields(row) : null;   // หักจากเงินประกัน → ยกเลิกที่สัญญา
+    if (i.income_type === "LOAN_INTEREST" && i.asset_id) return loanInterestFields(row);
+    if (i.income_type === "BUSINESS_DIVIDEND" && i.asset_id) return businessDividendFields(row);
+    return null;
+  };
+  // รับชำระเงินให้กู้ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ยกเลิกทั้งก้อนได้เหมือนหน้าเงินให้กู้
+  const incGroup = new Map((moves ?? []).filter((m) => m.source_entity_type === "INCOME" && m.source_entity_id && m.movement_group_id)
+    .map((m) => [m.source_entity_id as string, m.movement_group_id as string]));
+  const loanPrincipal = new Map((moves ?? []).filter((m) => m.movement_type === "LOAN_PRINCIPAL_RECEIPT" && m.movement_group_id)
+    .map((m) => [m.movement_group_id as string, Number(m.amount)]));
   // จ่ายหนี้ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ยกเลิกทั้งก้อนได้เหมือนหน้าหนี้สิน
   const expGroup = new Map((moves ?? []).filter((m) => m.source_entity_type === "EXPENSE" && m.source_entity_id && m.movement_group_id)
     .map((m) => [m.source_entity_id as string, m.movement_group_id as string]));
@@ -585,6 +599,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
                       <td className="pl-2 text-right">
+                        {(() => {
+                          const src = incSource(i);
+                          const fields = src && !i.pending_split ? incSourceEdit(i) : null;
+                          if (!src || !fields || !canWrite) return null;
+                          const grp = i.income_type === "LOAN_INTEREST" ? incGroup.get(i.id) : undefined;
+                          return (
+                            <RowActions table="income_transactions" id={i.id} paths={[...PATHS, src.href, "/property", "/financial/loans", "/financial/business"]}
+                              canDelete={canDelete} fields={fields}
+                              extra={<span className="flex flex-wrap items-center gap-3">
+                                {canDelete && grp && loanPrincipal.has(grp) && <UndoButton kind="PAYMENT" id={grp} paths={[...PATHS, src.href, "/financial/loans"]}
+                                  confirmText={`ยกเลิกการรับชำระวันที่ ${thDate(i.date)} ทั้งก้อน?\nเงินต้น ${money(loanPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน`} />}
+                                <Link href={src.href} className="text-xs text-slate-600 underline">เปิดหน้า{src.label}</Link>
+                              </span>} />
+                          );
+                        })()}
                         {!incSource(i) && canWrite && !i.pending_split && (
                           <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete}
                             editor={<EntryEditor kind="INCOME" id={i.id} currency={i.currency} banks={banks} persons={persons ?? []} subtypes={incSubs}

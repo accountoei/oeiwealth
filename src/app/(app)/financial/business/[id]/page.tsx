@@ -13,6 +13,7 @@ import { SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
+import { businessDividendFields } from "@/lib/source-edit";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -128,7 +129,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                 <tr key={i.id}>
                   <td className="py-1.5">{thDate(i.date)}</td><td>ปันผล</td><td className="text-right tabular-nums text-emerald-700">{money(i.amount, i.currency)}</td>
                   <td className="pl-2 text-right">{canWrite && <RowActions table="income_transactions" id={i.id} paths={paths} canDelete={canDelete}
-                    fields={[{ name: "date", label: "วันที่", type: "date", value: i.date }, { name: "amount", label: "ยอด", type: "number", value: i.amount }, { name: "tax", label: "ภาษี", type: "number", value: i.tax }]} />}</td>
+                    fields={businessDividendFields(i)} />}</td>
                 </tr>
               ))}
               {(moves ?? []).map((m) => (
