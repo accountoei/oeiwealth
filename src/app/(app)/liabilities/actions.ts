@@ -212,3 +212,21 @@ export async function confirmCardPayment(_: ActionState, form: FormData): Promis
   revalidatePath("/");
   return { ok: "บันทึกการตัดบัญชีแล้ว" };
 }
+
+/** แก้ข้อมูลบัตรเครดิต (หน้าต่าง "แก้ไขข้อมูล") · ไม่กระทบยอดค้าง */
+export async function updateCardInfo(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("card_id"));
+  const issuer = str(form.get("issuer"));
+  if (!issuer) return { error: "กรุณาใส่ผู้ออกบัตร" };
+  const { data, error } = await supabase.from("credit_cards").update({
+    issuer, card_name: str(form.get("card_name")), card_last4: str(form.get("card_last4")),
+    credit_limit: num(form.get("credit_limit")), statement_day: num(form.get("statement_day")), due_day: num(form.get("due_day")),
+    annual_fee: num(form.get("annual_fee")), expiry_date: str(form.get("expiry_date")), notes: str(form.get("notes")),
+  }).eq("id", id).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidatePath("/liabilities");
+  revalidatePath(`/liabilities/cards/${id}`);
+  return { ok: "บันทึกข้อมูลแล้ว" };
+}

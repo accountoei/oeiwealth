@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
@@ -41,6 +41,16 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const totals = new Map<string, number>();
   rows.filter((r) => r.status !== "CLOSED" && r.status !== "WRITTEN_OFF")
     .forEach((r) => totals.set(r.currency, (totals.get(r.currency) ?? 0) + Number(r.outstanding_principal ?? 0) * pv.assetShare(r.asset_id)));
+  // สรุปด้านบน (สัญญาที่ยังไม่ปิด · THB · ตามสัดส่วนของสมาชิกที่เลือก)
+  const open = rows.filter((r) => r.status !== "CLOSED" && r.status !== "WRITTEN_OFF");
+  const thbOf = (r: (typeof rows)[number], v: number | null | undefined) => (r.currency === "THB" ? Number(v ?? 0) * pv.assetShare(r.asset_id) : 0);
+  const outTotal = open.reduce((t, r) => t + thbOf(r, r.outstanding_principal), 0);
+  const principalTotal = open.reduce((t, r) => t + thbOf(r, r.principal), 0);
+  const overdueN = open.reduce((t, r) => t + (overdue.get(r.asset_id)?.n ?? 0), 0);
+  const overdueAmt = open.reduce((t, r) => t + thbOf(r, overdue.get(r.asset_id)?.amount), 0);
+  const ym = todayBangkok().slice(0, 7);
+  const dueThisMonth = open.reduce((t, r) => t + (nextDue.get(r.asset_id)?.due_date.startsWith(ym) ? thbOf(r, nextDue.get(r.asset_id)?.amount) : 0), 0);
+  const atRisk = open.filter((r) => r.status === "AT_RISK").length;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -54,6 +64,27 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">เงินต้นคงเหลือรวม (THB)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{money(outTotal, "THB")}</div>
+          {principalTotal > 0 && <div className="text-xs text-slate-500">รับคืนแล้ว {(((principalTotal - outTotal) * 100) / principalTotal).toFixed(1)}% ของเงินต้น {money(principalTotal, undefined, 0)}</div>}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">สัญญาที่ยังไม่ปิด</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{open.length} <span className="text-sm font-normal text-slate-500">สัญญา</span></div>
+          {atRisk > 0 && <div className="text-xs text-amber-700">มีความเสี่ยง {atRisk} สัญญา</div>}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ครบกำหนดรับเดือนนี้ (THB)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">{money(dueThisMonth, "THB")}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ค้างรับ (เลยกำหนด)</div>
+          <div className={`mt-1 text-xl font-semibold tabular-nums ${overdueN > 0 ? "text-red-700" : ""}`}>{money(overdueAmt, "THB")}</div>
+          <div className="text-xs text-slate-500">{overdueN} งวด</div>
+        </div>
+      </section>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">เงินให้กู้ทั้งหมด</h2>
@@ -94,6 +125,11 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
               </tr>
             ))}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr><td className="px-4 py-3">รวม {open.length} สัญญาที่ยังไม่ปิด</td><td className="px-4 text-right tabular-nums">{money(outTotal)}</td><td></td><td></td><td></td></tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

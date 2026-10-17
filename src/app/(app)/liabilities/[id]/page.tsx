@@ -9,6 +9,7 @@ import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import EditToggle from "@/components/EditToggle";
 import { debtDropIncomeFields, debtInterestFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
 import SplitForm from "../../income-expenses/SplitForm";
@@ -83,49 +84,73 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
     <div className="space-y-6">
       <div>
         <Link href="/liabilities" className="text-sm text-slate-500 hover:underline">← Liabilities</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{l.name}</h1>
-        <p className="text-sm text-slate-500">
-          {LIABILITY_TYPE_LABEL[l.liability_type] ?? l.liability_type}{l.lender && ` · ${l.lender}`} · {l.currency}
-          {" · "}<span className={l.status === "ACTIVE" ? "" : "text-slate-400"}>{STATUS_LABEL[l.status] ?? l.status}</span>
-        </p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{l.name}</h1>
+            <p className="text-sm text-slate-500">
+              {LIABILITY_TYPE_LABEL[l.liability_type] ?? l.liability_type}{l.lender && ` · ${l.lender}`} · {l.currency}
+              {" · "}<span className={l.status === "ACTIVE" ? "" : "text-slate-400"}>{STATUS_LABEL[l.status] ?? l.status}</span>
+            </p>
+          </div>
+          {canWrite && l.status === "ACTIVE" && (
+            <ActionBar>
+              <PayLiabilityForm liabilityId={id} currency={l.currency} banks={banks.filter((b) => b.currency === l.currency)}
+                monthlyPayment={l.monthly_payment != null ? Number(l.monthly_payment) : null} today={today} minDate={minDate} />
+            </ActionBar>
+          )}
+        </div>
       </div>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">ยอดคงค้างล่าสุด</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(l.outstanding_amount, l.currency)}</div>
-          <div className="mt-1 text-xs text-slate-500">ณ {thDate(l.balance_date)}
-            {(vals ?? [])[0] && (vals ?? [])[0].valuation_date !== l.balance_date && ` (ยอด ${thDate((vals ?? [])[0].valuation_date)} หักเงินต้นที่จ่ายหลังจากนั้น)`}</div>
-          {paid != null && paid > 0 && (
-            <div className="mt-1 text-xs text-slate-500">จากวงเงิน {money(l.original_amount)} · ชำระแล้ว {money(paid)}</div>
-          )}
+        {/* ซ้าย: ยอดคงค้าง + เอกสาร */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">ยอดคงค้างล่าสุด</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(l.outstanding_amount, l.currency)}</div>
+            <div className="mt-1 text-xs text-slate-500">ณ {thDate(l.balance_date)}
+              {(vals ?? [])[0] && (vals ?? [])[0].valuation_date !== l.balance_date && ` (ยอด ${thDate((vals ?? [])[0].valuation_date)} หักเงินต้นที่จ่ายหลังจากนั้น)`}</div>
+            {paid != null && paid > 0 && (
+              <div className="mt-1 text-xs text-slate-500">จากวงเงิน {money(l.original_amount)} · ชำระแล้ว {money(paid)}
+                {Number(l.original_amount) > 0 && ` (${((paid * 100) / Number(l.original_amount)).toFixed(1)}%)`}</div>
+            )}
+          </div>
+          <div className="flex-1">
+            <EntityDocuments entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="text-xs text-slate-500">เงื่อนไข</div>
-          <ul className="mt-1 space-y-0.5">
-            <li>ดอกเบี้ย {l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</li>
-            <li>ค่างวด {l.monthly_payment ? `${money(l.monthly_payment)}/เดือน` : "-"}{l.payment_due_day ? ` · ทุกวันที่ ${l.payment_due_day}` : ""}</li>
-            <li>สัญญา {thDate(l.start_date)} – {thDate(l.due_date)}</li>
-            {linked && <li>ผูกกับ: {linked.name}</li>}
-          </ul>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">ผู้รับผิดชอบหนี้</div>
-          <ul className="mt-1 space-y-0.5 text-sm">
-            {ownerRows.map((o) => <li key={o.id}>{o.name} · {o.pct}%</li>)}
-          </ul>
-          {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุผู้รับผิดชอบ {100 - ownerTotal}%</div>}
-          {canWrite && <OwnershipEditor kind="liability" id={id} persons={persons ?? []} paths={paths} today={todayBangkok()}
-            current={ownerRows.map((o) => ({ person_id: o.person_id, percent: o.pct }))} />}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canWrite}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="ประเภท">{LIABILITY_TYPE_LABEL[l.liability_type] ?? l.liability_type}</Item>
+                <Item label="ผู้ให้กู้">{l.lender || "-"}</Item>
+                <Item label="สถานะ">{STATUS_LABEL[l.status] ?? l.status}</Item>
+                <Item label="อัตราดอกเบี้ย">{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</Item>
+                <Item label="ค่างวด">{l.monthly_payment ? `${money(l.monthly_payment)}/เดือน` : "-"}{l.payment_due_day ? <span className="block text-xs text-slate-500">ทุกวันที่ {l.payment_due_day}</span> : null}</Item>
+                <Item label="ระยะสัญญา">{thDate(l.start_date)} – {thDate(l.due_date)}</Item>
+                <Item label="วงเงินกู้">{money(l.original_amount, l.currency)}</Item>
+                {linked && <Item label="ผูกกับทรัพย์สิน">{linked.name}</Item>}
+                <Item label="ผู้รับผิดชอบหนี้">
+                  {ownerRows.length === 0 ? "-" : ownerRows.map((o) => <div key={o.id}>{o.name} · {o.pct}%</div>)}
+                  {ownerTotal < 99.99999 && <div className="text-xs text-amber-700">ยังไม่ระบุผู้รับผิดชอบ {Math.round((100 - ownerTotal) * 10000) / 10000}%</div>}
+                </Item>
+                {l.notes && <Item label="หมายเหตุ" wide>{l.notes}</Item>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลสัญญา ไม่กระทบยอดคงค้าง (อัปเดตยอดที่กล่อง &ldquo;ยอดคงค้าง&rdquo; ด้านล่าง)</p>
+                <EditLiabilityForm l={l} remove={canDelete ? { kind: "liability", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบหนี้รายการนี้",
+                  hint: "ปิดหนี้จริงให้เปลี่ยนสถานะเป็น \"ปิดหนี้แล้ว\"" } : undefined} />
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผิดชอบหนี้</h3>
+                  <OwnershipEditor kind="liability" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    current={ownerRows.map((o) => ({ person_id: o.person_id, percent: o.pct }))} />
+                </div>
+              </div>
+            } />
         </div>
       </section>
-
-      {canWrite && l.status === "ACTIVE" && (
-        <ActionBar>
-          <PayLiabilityForm liabilityId={id} currency={l.currency} banks={banks.filter((b) => b.currency === l.currency)}
-            monthlyPayment={l.monthly_payment != null ? Number(l.monthly_payment) : null} today={today} minDate={minDate} />
-        </ActionBar>
-      )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-1 font-medium text-slate-900">ประวัติการจ่าย</h2>
@@ -167,18 +192,12 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
         )}
       </section>
 
-      {canWrite && l.status === "ACTIVE" && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-medium text-slate-900">อัปเดตยอดคงค้าง</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด
-          </p>
-          <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} banks={banks.filter((b) => b.currency === l.currency)} />
-        </section>
-      )}
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">ประวัติยอดคงค้าง</h2>
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+        <div>
+          <h2 className="font-medium text-slate-900">ยอดคงค้าง</h2>
+          <p className="text-xs text-slate-500">กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด</p>
+        </div>
+        {canWrite && l.status === "ACTIVE" && <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} banks={banks.filter((b) => b.currency === l.currency)} />}
         {(vals ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มียอด</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -204,15 +223,15 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
         )}
       </section>
 
-      {canWrite && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-1 font-medium text-slate-900">แก้ไขข้อมูลหนี้</h2>
-          <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูลสัญญา ไม่กระทบยอดคงค้าง</p>
-          <EditLiabilityForm l={l} remove={canDelete ? { kind: "liability", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบหนี้รายการนี้",
-            hint: "ปิดหนี้จริงให้เปลี่ยนสถานะเป็น \"ปิดหนี้แล้ว\"" } : undefined} />
-        </section>
-      )}
-      <EntityDocuments entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
+    </div>
+  );
+}
+
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

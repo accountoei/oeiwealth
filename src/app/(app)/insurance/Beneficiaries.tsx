@@ -37,10 +37,12 @@ export function BeneficiaryRows({ persons, rows, setRows }: {
   );
 }
 
-export default function BeneficiaryEditor({ policyId, persons, current }: {
+export default function BeneficiaryEditor({ policyId, persons, current, startOpen = false }: {
   policyId: string; persons: { id: string; name: string }[]; current: { person_id: string | null; name: string | null; percent: number }[];
+  /** เปิดฟอร์มค้างไว้ในหน้า (ใช้ในหน้าต่าง "แก้ไขข้อมูล") */
+  startOpen?: boolean;
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(startOpen);
   const [rows, setRows] = useState<Row[]>(current.map((c) => ({ person_id: c.person_id ?? "", name: c.name ?? "", percent: String(c.percent) })));
   const [state, action, pending] = useActionState<ActionState, FormData>(saveBeneficiaries, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>แก้ผู้รับผลประโยชน์</button>;
@@ -51,7 +53,7 @@ export default function BeneficiaryEditor({ policyId, persons, current }: {
       <BeneficiaryRows persons={persons} rows={rows} setRows={setRows} />
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+        {!startOpen && <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>}
         {state.error && <span className="text-xs text-red-600">{state.error}</span>}
         {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
       </div>
