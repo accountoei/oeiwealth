@@ -120,17 +120,17 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         <Kpi label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
       </section>
 
-      {list.length === 0
-        ? <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>
-        : <PortfolioTable rows={rows} ordering={ordering} paths={["/investments"]}
-            toggle={canOrder && rows.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/investments", { p: sp.p })} /> : null} />}
-
       {allocTotal > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
           <Alloc title="สัดส่วนตามประเภท" rows={[...byType.entries()].map(([k, v]) => [HOLDING_TYPE_LABEL[k] ?? k, v])} total={allocTotal} />
           <Alloc title="สัดส่วนตามสกุลเงิน" rows={[...byCcy.entries()]} total={allocTotal} />
         </section>
       )}
+
+      {list.length === 0
+        ? <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>
+        : <PortfolioTable rows={rows} ordering={ordering} paths={["/investments"]}
+            toggle={canOrder && rows.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/investments", { p: sp.p })} /> : null} />}
 
       <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
