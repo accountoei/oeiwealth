@@ -33,6 +33,8 @@ import UndoButton from "@/components/UndoButton";
 import { businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
 import { buildHints } from "@/lib/category-hints";
+import { stripPending } from "@/lib/ledger";
+import MoveBadge from "@/components/MoveBadge";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -87,7 +89,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,counter_amount,counter_currency,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id")
       .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons!insurance_policies_person_id_fkey(name))")
       .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
@@ -386,7 +388,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         {m.counter_amount == null && m.counter_currency && <div className="text-xs text-amber-700">→ รอยอด {m.counter_currency}</div>}
         {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
       </>,
-      detail: <>{pending && <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">รอแยกรายละเอียด</span>}{srcLink(link, detail || type)}</>,
+      thb: m.base_amount == null ? null : Number(m.base_amount),
+      detail: srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type),
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? (
         <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
           deleteNote={m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN" ? "รายการฝาก/ถอนในพอร์ตจะถูกลบตาม" : undefined}
@@ -606,14 +609,20 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {incomeList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายได้ในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1"><DateSortHead asc={!dsDesc} href={dsHref("income", !dsDesc)} /></th><th>ประเภท</th><th>ของใคร / ที่มา</th><th className="text-right">Gross</th><th className="text-right">ภาษี</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
+                  <tr><th className="py-1"><DateSortHead asc={!dsDesc} href={dsHref("income", !dsDesc)} /></th><th className="pr-3">ประเภท/หมวดหมู่</th><th>รายละเอียด</th><th className="pl-4">เข้าบัญชี</th><th className="pl-4 text-right">จำนวน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {byDate(incomeList).map((i) => (
+                  {byDate(incomeList).map((i) => {
+                    const gross = Number(i.amount ?? 0), tax = Number(i.tax ?? 0), net = gross - tax;
+                    const netThb = gross ? Number(i.base_amount ?? 0) * net / gross : 0;
+                    return (
                     <tr key={i.id} className="align-top">
-                      <td className="py-1.5">{thDate(i.date)}</td>
-                      <td>{INCOME_TYPE_LABEL[i.income_type] ?? i.income_type}
-                        {i.income_subtype && <div className="text-xs text-slate-500">{i.income_subtype}</div>}</td>
+                      <td className="whitespace-nowrap py-1.5 pr-3">{thDate(i.date)}</td>
+                      <td className="pr-3">
+                        {i.pending_split ? <MoveBadge label="รอแยกรายละเอียด" tone="amber" /> : <>
+                          <span className="text-indigo-700">{INCOME_TYPE_LABEL[i.income_type] ?? i.income_type}</span>
+                          {i.income_subtype && <div className="text-xs text-slate-500">{i.income_subtype}</div>}</>}
+                      </td>
                       <td className="text-slate-600">
                         {(() => {
                           // รายการจากหน้าอื่น: กดที่ชื่อเพื่อไปแก้ที่ต้นทาง
@@ -625,20 +634,20 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                               : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : "ส่วนกลาง");
                           return src ? <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className="cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400">{text}</Link> : text;
                         })()}
-                        {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{i.notes}</div>}
-                        {i.pending_split && (
-                          <div className="mt-1 space-y-1">
-                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
-                            {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []}
+                        {i.notes && !i.source_transaction_id && <div className="text-xs text-slate-400">{stripPending(i.notes)}</div>}
+                        {tax !== 0 && <div className="text-xs text-slate-500">รายได้รวม {money(gross, i.currency)} · ภาษี {money(tax, i.currency)}</div>}
+                        {i.pct != null && <div className="text-xs text-slate-500">ส่วนของคนนี้ {i.pct}% ของ {money(i.full_amount, i.currency)}</div>}
+                        {i.pending_split && canWrite && canDelete && (
+                          <div className="mt-1">
+                            <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []}
                               personDefault={i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : i.received_to_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
-                              moves={splitMoves({ kind: "INCOME", currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id, liab: i.received_to_liability_id }, splitLists)} />}
+                              moves={splitMoves({ kind: "INCOME", currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id, liab: i.received_to_liability_id }, splitLists)} />
                           </div>
                         )}
                       </td>
-                      <td className="text-right tabular-nums">{money(i.amount, i.currency)}
-                        {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
-                      <td className="text-right tabular-nums text-slate-500">{Number(i.tax ?? 0) ? money(i.tax) : ""}</td>
                       <td className="pl-4 text-xs text-slate-500">{i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}` : i.received_to_liability_id ? `ลดหนี้ ${name.get(i.received_to_liability_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี"}</td>
+                      <td className="whitespace-nowrap pl-4 text-right tabular-nums">{money(net, i.currency)}
+                        {i.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(netThb, "THB")}</div>}</td>
                       <td className="pl-2 text-right">
                         {(() => {
                           const src = incSource(i);
@@ -664,8 +673,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                         )}
                       </td>
                     </tr>
-                  ))}
+                  ); })}
                 </tbody>
+                <tfoot><IncomeTotal rows={incomeList} /></tfoot>
               </table>
             )}
           </section>
@@ -813,18 +823,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-medium text-slate-900">ค่าใช้จ่ายที่บันทึกแล้ว</h2>
-                <div className="mt-0.5 text-sm">
-                  <span className="font-semibold tabular-nums">{money(expenseThb, "THB", 0)}</span>
-                  {track === "NOT_TRACKED" && <span className="ml-2 text-xs text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span>}
-
-                </div>
+                {track === "NOT_TRACKED" && <div className="mt-0.5 text-xs text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</div>}
               </div>
               {itemList.length > 0 && <PayFilter banks={payBanks} cards={payCards} />}
             </div>
             {itemList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1"><DateSortHead asc={!dsDesc} href={dsHref("expense", !dsDesc)} /></th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th></th></tr>
+                  <tr><th className="py-1"><DateSortHead asc={!dsDesc} href={dsHref("expense", !dsDesc)} /></th><th className="pr-3">ประเภท/หมวดหมู่</th><th>รายละเอียด</th><th className="pl-4">จ่ายด้วย</th><th className="pl-4 text-right">จำนวน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {byDate(itemList).map((i) => {
@@ -833,21 +839,22 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     const remaining = cap - Number(r?.reimbursed_amount ?? 0);
                     return (
                       <tr key={i.id} className="align-top" data-pay={payOf(i)}>
-                        <td className="py-1.5">{thDate(i.date)}</td>
+                        <td className="whitespace-nowrap py-1.5 pr-3">{thDate(i.date)}</td>
+                        <td className="pr-3">{i.pending_split ? <MoveBadge label="รอแยกรายละเอียด" tone="amber" />
+                          : <span className="text-indigo-700">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</span>}</td>
                         <td>{(() => {
                           const src = i.pending_split ? null : expSource(i);
                           const cls = "cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400";
-                          if (!src) return i.description;
+                          if (!src) return i.pending_split ? stripPending(i.description) : i.description;
                           return src.label === "รายการโอน"
                             ? <TabLink tab="moves" href={src.href} className={cls}>{i.description}</TabLink>
                             : <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className={cls}>{i.description}</Link>;
                         })()}{i.notes && <div className="text-xs text-slate-400">{i.notes}</div>}
-                          {i.pending_split && (
-                            <div className="mt-1 space-y-1">
-                              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">รอแยกรายละเอียด</span>
-                              {canWrite && canDelete && <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
+                          {i.pending_split && canWrite && canDelete && (
+                            <div className="mt-1">
+                              <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
                                 personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"} hints={expHints}
-                                moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />}
+                                moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />
                             </div>
                           )}
                           {i.is_reimbursable && (
@@ -863,8 +870,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                               )}
                             </div>
                           )}</td>
-                        <td className="text-slate-600">{i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category}</td>
-                        <td className="text-xs text-slate-600">
+                        <td className="pl-4 text-xs text-slate-600">
                           {i.source_cash_movement_id ? "จากรายการโอน"
                             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
                             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
@@ -875,8 +881,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                             : i.liability_id ? <div className="text-slate-500">ตามผู้รับผิดชอบหนี้</div>
                             : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}
                         </td>
-                        <td className="text-right tabular-nums">{money(i.amount, i.currency)}
-                          {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount)}</div>}</td>
+                        <td className="whitespace-nowrap pl-4 text-right tabular-nums">{money(i.amount, i.currency)}
+                          {i.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(Number(i.base_amount ?? 0) * i.share, "THB")}</div>}
+                          {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount, i.currency)}</div>}</td>
                         <td className="pl-2 text-right">
                           {(() => {
                             const src = expSource(i);
@@ -1079,7 +1086,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 }
 
 type Move = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
-  to_credit_card_id: string | null; to_liability_id: string | null; amount: number; currency: string; counter_amount: number | null;
+  to_credit_card_id: string | null; to_liability_id: string | null; amount: number; currency: string; base_amount?: number | null; counter_amount: number | null;
   counter_currency: string | null; fee: number | null; is_derived: boolean; description: string | null; movement_group_id?: string | null;
   source_entity_type?: string | null; source_entity_id?: string | null; parts?: Move[] };
 
@@ -1092,6 +1099,7 @@ function mergeGroups(moves: Move[]): Move[] {
     if (merged && merged.to_asset_id && merged.to_asset_id === m.to_asset_id) {
       merged.parts = [...(merged.parts ?? [{ ...merged }]), m];       // เก็บสำเนาส่วนแรกก่อนรวมยอด
       merged.amount = Number(merged.amount) + Number(m.amount);
+      merged.base_amount = Number(merged.base_amount ?? 0) + Number(m.base_amount ?? 0);
       return;
     }
     const r = { ...m }; out.push(r);
@@ -1112,5 +1120,25 @@ function Kpi({ label, value, sub, cls, flag }: { label: string; value: string; s
       {sub && <div className={`mt-1 text-xs ${cls ?? "text-slate-500"}`}>{sub}</div>}
       {flag && <div className="mt-1 text-xs font-medium text-amber-700">{flag}</div>}
     </div>
+  );
+}
+
+/** แถวรวมท้ายตาราง "รายได้ที่บันทึกแล้ว" (ยอดสุทธิหลังภาษี · แยกสกุล + ≈ บาท) */
+function IncomeTotal({ rows }: { rows: { amount: number | null; tax: number | null; currency: string; base_amount: number | null }[] }) {
+  const by = new Map<string, number>(); let thb = 0;
+  rows.forEach((r) => {
+    const g = Number(r.amount ?? 0), net = g - Number(r.tax ?? 0);
+    by.set(r.currency, (by.get(r.currency) ?? 0) + net);
+    thb += g ? Number(r.base_amount ?? 0) * net / g : 0;
+  });
+  return (
+    <tr className="border-t-2 border-slate-200 align-top font-medium">
+      <td colSpan={4} className="py-2 text-slate-700">รวมทั้งเดือน {rows.length} รายการ <span className="text-xs font-normal text-slate-500">(สุทธิหลังภาษี)</span></td>
+      <td className="whitespace-nowrap py-2 pl-4 text-right tabular-nums">
+        {[...by].map(([c, v]) => <div key={c}>{money(v, c)}</div>)}
+        {(by.size > 1 || [...by.keys()].some((c) => c !== "THB")) && <div className="text-xs font-normal text-slate-500">≈ {money(thb, "THB")}</div>}
+      </td>
+      <td></td>
+    </tr>
   );
 }

@@ -12,6 +12,7 @@ export type MoveRow = {
   key: string; date: string; type: string; fromLabel: string; toLabel: string;
   fromBank: string | null; toBank: string | null;                 // บัญชีธนาคารในระบบ (ใช้กรอง / แยกเข้า–ออก)
   fromAmount: number; fromCcy: string; toAmount: number; toCcy: string; fee?: number;
+  thb?: number | null;                                             // ยอดเป็นบาท ณ วันที่ของรายการ (base_amount) · ใช้แสดง ≈ THB ของสกุลอื่น
   extra?: ReactNode; detail: ReactNode; sub?: ReactNode; actions?: ReactNode; typeCls?: string;
   kind: string; merged?: boolean;
   metaOpts?: { incomeType: string | null; incomeSubtype: string | null; expenseCategory: string | null; pending: boolean };
@@ -20,6 +21,11 @@ export type MoveRow = {
 export type StmtRow = { key: string; date: string; value: number; label: string };
 
 const small = "rounded-md border border-slate-300 bg-white px-2 py-1 text-sm";
+/** บรรทัด ≈ THB ใต้ยอดสกุลอื่น */
+function Approx({ ccy, thb }: { ccy: string; thb?: number | null }) {
+  if (ccy === "THB" || thb == null) return null;
+  return <div className="text-xs font-normal text-slate-400">≈ {money(thb, "THB")}</div>;
+}
 
 /**
  * ความเคลื่อนไหวของเงิน แบบ Statement: ป้ายประเภท · หมวด · เงินเข้า / ออก · ยอดคงเหลือ (เมื่อดูทีละบัญชี)
@@ -56,6 +62,9 @@ export default function MovesView({ rows, banks, showActions = false, openings =
   const opening = acct ? openings[acct] ?? null : null;
   const stmts = acct ? [...(statements[acct] ?? [])].sort((a, b) => a.date.localeCompare(b.date)) : [];
   const withBal = acct !== "" && (opening != null || stmts.length > 0);
+  const acctRow = acct ? inAcct[0] : undefined;
+  const balCcy = acctRow ? (acctRow.toBank === acct ? acctRow.toCcy : acctRow.fromCcy) : "THB";
+  const bm = (v: number | null) => money(v, balCcy === "THB" ? undefined : balCcy);
   type Line = { k: "move"; r: MoveRow; bal: number | null } | { k: "stmt"; s: StmtRow; bal: number; diff: number | null };
   const timeline: Line[] = [];
   if (acct) {
@@ -84,21 +93,24 @@ export default function MovesView({ rows, banks, showActions = false, openings =
   if (!asc) lines = [...lines].reverse();
 
   const totals = new Map<string, { inn: number; out: number }>();
-  const add = (ccy: string, k: "inn" | "out", v: number) => {
+  const thbTot = { inn: 0, out: 0 };
+  const add = (ccy: string, k: "inn" | "out", v: number, thb: number | null | undefined) => {
     const t = totals.get(ccy) ?? { inn: 0, out: 0 }; t[k] += v; totals.set(ccy, t);
+    thbTot[k] += ccy === "THB" ? v : Number(thb ?? 0);
   };
   shown.forEach((r) => {
     const d = dir(r);
-    if (d === "in") add(r.toCcy, "inn", r.toAmount);
-    if (d === "out") add(r.fromCcy, "out", r.fromAmount);
+    if (d === "in") add(r.toCcy, "inn", r.toAmount, r.thb);
+    if (d === "out") add(r.fromCcy, "out", r.fromAmount, r.thb);
   });
+  const foreign = [...totals.keys()].some((c) => c !== "THB");
   const cols = 6 + (withBal ? 1 : 0) + (showActions ? 1 : 0);
   const openRow = withBal && opening != null && !filtered && monthStart ? (
     <tr className="bg-slate-50/70 text-xs text-slate-500">
       <td className="whitespace-nowrap py-1.5 pr-2">{thDate(monthStart)}</td>
       <td className="pr-2"><MoveBadge label="ยอดยกมา" tone="slate" /></td>
       <td colSpan={4} className="pr-2">ยอดคงเหลือสิ้นเดือนก่อน</td>
-      <td className="whitespace-nowrap text-right font-medium tabular-nums text-slate-700">{money(opening)}</td>
+      <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-slate-700">{bm(opening)}</td>
       {showActions && <td></td>}
     </tr>
   ) : null;
@@ -136,9 +148,9 @@ export default function MovesView({ rows, banks, showActions = false, openings =
         <table className="w-full min-w-[52rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100">
-              <th className="py-1.5"><DateSortHead asc={asc} onToggle={() => setAsc(!asc)} /></th><th>ประเภท</th><th>รายละเอียด</th><th>หมวดหมู่</th>
-              <th className="text-right">เงินเข้า</th><th className="text-right">เงินออก</th>
-              {withBal && <th className="text-right">ยอดคงเหลือ</th>}{showActions && <th></th>}
+              <th className="py-1.5"><DateSortHead asc={asc} onToggle={() => setAsc(!asc)} /></th><th>ประเภท</th><th>หมวดหมู่</th><th>รายละเอียด</th>
+              <th className="pl-4 text-right">เงินเข้า</th><th className="pl-4 text-right">เงินออก</th>
+              {withBal && <th className="pl-4 text-right">ยอดคงเหลือ</th>}{showActions && <th></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -149,8 +161,8 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                 <tr key={l.s.key} className="bg-slate-50/70 text-xs text-slate-500">
                   <td className="whitespace-nowrap py-1.5 pr-2">{thDate(l.s.date)}</td>
                   <td className="pr-2"><MoveBadge label="ยอดตาม Statement" tone="slate" /></td>
-                  <td colSpan={4} className="pr-2">{l.s.label}{l.diff != null && <span className="ml-2 text-amber-700">ต่างจากรายการที่บันทึก {l.diff > 0 ? "+" : ""}{money(l.diff)}</span>}</td>
-                  <td className="whitespace-nowrap text-right font-medium tabular-nums text-slate-700">{money(l.s.value)}</td>
+                  <td colSpan={4} className="pr-2">{l.s.label}{l.diff != null && <span className="ml-2 text-amber-700">ต่างจากรายการที่บันทึก {l.diff > 0 ? "+" : ""}{bm(l.diff)}</span>}</td>
+                  <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-slate-700">{bm(l.s.value)}</td>
                   {showActions && <td></td>}
                 </tr>
               );
@@ -161,26 +173,26 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                 <tr key={r.key} className="align-top">
                   <td className="whitespace-nowrap py-2 pr-2">{thDate(r.date)}</td>
                   <td className="pr-2"><MoveBadge label={meta.label} tone={meta.tone} /></td>
+                  <td className="pr-2">{meta.pending ? <MoveBadge label={meta.category} tone="amber" /> : <span className="text-indigo-700">{meta.category}</span>}</td>
                   <td className="pr-2">
                     <div className="text-slate-800">{r.detail}</div>
                     {r.sub ?? (!fixedAcct && <div className="text-xs text-slate-400">{r.fromLabel} → {r.toLabel}</div>)}
                   </td>
-                  <td className="pr-2">{meta.pending ? <MoveBadge label={meta.category} tone="amber" /> : <span className="text-indigo-700">{meta.category}</span>}</td>
                   {d === "move" ? (
-                    <td colSpan={2} className="whitespace-nowrap text-right tabular-nums text-slate-500" title="โอนระหว่างบัญชีของครอบครัว (ไม่นับเป็นเงินเข้า / ออก)">
-                      ⇄ {money(r.fromAmount, r.fromCcy)}{r.extra}
+                    <td colSpan={2} className="whitespace-nowrap pl-4 text-right tabular-nums text-slate-500" title="โอนระหว่างบัญชีของครอบครัว (ไม่นับเป็นเงินเข้า / ออก)">
+                      ⇄ {money(r.fromAmount, r.fromCcy)}<Approx ccy={r.fromCcy} thb={r.thb} />{r.extra}
                     </td>
                   ) : (
                     <>
-                      <td className="whitespace-nowrap text-right tabular-nums text-emerald-700">
-                        {d === "in" ? <>{money(r.toAmount, r.toCcy)}{r.extra}</> : <span className="text-slate-300">–</span>}
+                      <td className="whitespace-nowrap pl-4 text-right tabular-nums text-emerald-700">
+                        {d === "in" ? <>{money(r.toAmount, r.toCcy)}<Approx ccy={r.toCcy} thb={r.thb} />{r.extra}</> : <span className="text-slate-300">–</span>}
                       </td>
-                      <td className="whitespace-nowrap text-right tabular-nums text-red-700">
-                        {d === "out" ? <>{money(r.fromAmount, r.fromCcy)}{r.extra}</> : <span className="text-slate-300">–</span>}
+                      <td className="whitespace-nowrap pl-4 text-right tabular-nums text-red-700">
+                        {d === "out" ? <>{money(r.fromAmount, r.fromCcy)}<Approx ccy={r.fromCcy} thb={r.thb} />{r.extra}</> : <span className="text-slate-300">–</span>}
                       </td>
                     </>
                   )}
-                  {withBal && <td className="whitespace-nowrap text-right tabular-nums text-slate-700">{l.bal == null ? "-" : money(l.bal)}</td>}
+                  {withBal && <td className="whitespace-nowrap pl-4 text-right tabular-nums text-slate-700">{l.bal == null ? "-" : bm(l.bal)}</td>}
                   {showActions && <td className="pl-2 text-right">{r.actions}</td>}
                 </tr>
               );
@@ -196,11 +208,21 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                     <span className={`ml-3 font-semibold ${t.inn - t.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                       สุทธิ {t.inn - t.out >= 0 ? "+" : "−"}{money(Math.abs(t.inn - t.out), ccy)}</span>
                   </td>
-                  <td className="whitespace-nowrap text-right font-medium tabular-nums text-emerald-700">{money(t.inn, ccy)}</td>
-                  <td className="whitespace-nowrap text-right font-medium tabular-nums text-red-700">{money(t.out, ccy)}</td>
+                  <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-emerald-700">{money(t.inn, ccy)}</td>
+                  <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-red-700">{money(t.out, ccy)}</td>
                   <td colSpan={cols - 6}></td>
                 </tr>
               ))}
+              {foreign && (
+                <tr className="text-xs text-slate-500">
+                  <td colSpan={4} className="pb-2">≈ รวมเป็นบาท (อัตรา ณ วันที่ของแต่ละรายการ)
+                    <span className={`ml-3 font-medium ${thbTot.inn - thbTot.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                      สุทธิ {thbTot.inn - thbTot.out >= 0 ? "+" : "−"}{money(Math.abs(thbTot.inn - thbTot.out), "THB")}</span></td>
+                  <td className="whitespace-nowrap pb-2 pl-4 text-right tabular-nums">≈ {money(thbTot.inn, "THB")}</td>
+                  <td className="whitespace-nowrap pb-2 pl-4 text-right tabular-nums">≈ {money(thbTot.out, "THB")}</td>
+                  <td colSpan={cols - 6}></td>
+                </tr>
+              )}
             </tfoot>
           )}
         </table>

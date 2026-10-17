@@ -48,3 +48,8 @@ export const TONE_CLS: Record<Tone, string> = {
   amber: "bg-amber-50 text-amber-800 ring-amber-200", violet: "bg-violet-50 text-violet-700 ring-violet-200",
   indigo: "bg-indigo-50 text-indigo-700 ring-indigo-200", slate: "bg-slate-100 text-slate-600 ring-slate-200",
 };
+
+/** ข้อความของก้อน "รอแยกรายละเอียด" ขึ้นต้นด้วยคำนี้ → ตัดออกตอนแสดง (ป้ายในช่องหมวดหมู่บอกแล้ว · ข้อมูลที่เก็บไม่เปลี่ยน) */
+export function stripPending<T extends string | null | undefined>(s: T): T {
+  return (typeof s === "string" ? s.replace(/^รอแยกรายละเอียด\s*·\s*/, "") : s) as T;
+}

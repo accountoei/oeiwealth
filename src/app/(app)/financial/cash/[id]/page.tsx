@@ -5,7 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type MoveRow, type StmtRow } from "../../../income-expenses/MovesView";
-import { moveMeta } from "@/lib/ledger";
+import { moveMeta, stripPending } from "@/lib/ledger";
 import TransferEditor from "../../../income-expenses/TransferEditor";
 import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
 import RowActions from "@/components/RowActions";
@@ -43,7 +43,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,fee,counter_amount,counter_currency,description,is_derived,source_entity_type,source_entity_id,movement_group_id,created_at")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,base_amount,fee,counter_amount,counter_currency,description,is_derived,source_entity_type,source_entity_id,movement_group_id,created_at")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null)
       .gte("movement_date", start).lte("movement_date", end)
       .order("movement_date", { ascending: true }).order("created_at", { ascending: true }),
@@ -100,6 +100,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
     if (merged && merged.to_asset_id === id && m.to_asset_id === id) {
       merged.parts = [...(merged.parts ?? [merged]), m];
       merged.amount = Number(merged.amount) + Number(m.amount);
+      merged.base_amount = Number(merged.base_amount ?? 0) + Number(m.base_amount ?? 0);
       return;
     }
     const r: Row = { ...m };
@@ -145,7 +146,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
       : r.movement_type === "CARD_PAYMENT" ? `จ่ายบัตร ${cardBy.get(r.to_credit_card_id ?? "") ?? ""}`
       : r.movement_type === "LIABILITY_PAYMENT" ? `จ่ายหนี้ ${liabBy.get(r.to_liability_id ?? "") ?? ""}`
       : ["INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "ASSET_PURCHASE", "ASSET_SALE"].includes(r.movement_type)
-        ? `${r.description ?? meta.label}` : r.description ?? meta.label;
+        ? `${r.description ?? meta.label}` : (meta.pending ? stripPending(r.description) : r.description) || meta.label;
     const sub = r.parts ? r.parts.map((x) => `${partLabel(x)} ${money(x.amount)}`).join(" + ")
       : ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PAYMENT"].includes(r.movement_type) && r.description && r.description !== detail ? r.description : null;
     lines.push({ key: r.id, date: r.movement_date, kind: "move", row: r, inAmt, outAmt, balance: run, meta, detail, sub });
@@ -182,6 +183,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
       key: m.id, date: m.movement_date, type: m.movement_type, fromLabel: "", toLabel: "",
       fromBank: isIn ? null : id, toBank: isIn ? id : null,
       fromAmount: Number(m.amount), fromCcy: acc.currency, toAmount: ll.inAmt ?? 0, toCcy: acc.currency, fee: Number(m.fee ?? 0),
+      thb: m.base_amount == null ? null : Number(m.base_amount),
       detail: ll.detail, sub: ll.sub ? <div className="text-xs text-slate-400">{ll.sub}</div> : undefined,
       extra: Number(m.fee ?? 0) > 0 ? <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div> : undefined,
       actions, kind: m.movement_type, merged: !!m.parts,
