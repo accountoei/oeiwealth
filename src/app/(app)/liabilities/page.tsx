@@ -67,6 +67,15 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const isSetup = family?.system_status === "SETUP";
   const goLive = family?.go_live_date ?? "";
   const minDate = isSetup ? "" : goLive;
+  // สรุปด้านบน (THB) · ยอดตามสัดส่วนของสมาชิกที่เลือก
+  const thbSum = (xs: { amount: number | null; currency: string }[]) => xs.reduce((t, r) => t + (r.currency === "THB" ? Number(r.amount ?? 0) : 0), 0);
+  const loanTotal = thbSum(loans);
+  const depRows = rows.filter((r) => r.liability_source === "SECURITY_DEPOSIT");
+  const depTotal = thbSum(depRows);
+  const openCards = cards.filter((c) => c.status !== "CLOSED");
+  const cardTotal = openCards.reduce((t, c) => t + (c.currency === "THB" ? curOf(c) : 0), 0);
+  const cardLimit = openCards.reduce((t, c) => t + (c.currency === "THB" ? Number(c.credit_limit ?? 0) : 0), 0);
+  const monthly = loans.reduce((t, r) => t + (r.currency === "THB" ? Number(r.monthly_payment ?? 0) * pv.liabilityShare(r.source_id) : 0), 0);
 
   return (
     <div className="space-y-6">
@@ -75,27 +84,41 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
           <h1 className="text-2xl font-semibold text-slate-900">Liabilities</h1>
           <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า</p>
         </div>
-        <PersonFilter persons={pv.persons} value={pv.personId} />
+        <div className="flex flex-wrap items-start gap-2">
+          <PersonFilter persons={pv.persons} value={pv.personId} />
+          {canWrite && (
+            <ActionBar>
+              <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้</Link>
+              <NewCardForm persons={persons ?? []} defaultDate={isSetup && goLive ? addDays(goLive, -1) : today} today={today}
+                minDate={goLive} isSetup={isSetup} />
+            </ActionBar>
+          )}
+        </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
-      {totals.size > 0 && (
-        <div className="flex flex-wrap gap-3">
-          {[...totals.entries()].map(([ccy, v]) => (
-            <div key={ccy} className="rounded-xl border border-slate-200 bg-white px-5 py-3">
-              <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้รวม"} {ccy}</div>
-              <div className="text-lg font-semibold tabular-nums text-red-700">{money(v, ccy)}</div>
-            </div>
-          ))}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้สินรวม"}</div>
+          {[...totals.entries()].length === 0 ? <div className="mt-1 text-xl font-semibold tabular-nums">{money(0, "THB")}</div>
+            : [...totals.entries()].map(([ccy, v]) => <div key={ccy} className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(v, ccy)}</div>)}
+          <div className="text-xs text-slate-500">เงินกู้ + บัตรเครดิต + เงินประกันการเช่า</div>
         </div>
-      )}
-
-      {canWrite && (
-        <ActionBar>
-          <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้</Link>
-          <NewCardForm persons={persons ?? []} defaultDate={isSetup && goLive ? addDays(goLive, -1) : today} today={today}
-            minDate={goLive} isSetup={isSetup} />
-        </ActionBar>
-      )}
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">เงินกู้ ({loans.length} รายการ)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(loanTotal, "THB")}</div>
+          {monthly > 0 && <div className="text-xs text-slate-500">ค่างวดรวม {money(monthly)}/เดือน</div>}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">บัตรเครดิต ({openCards.length} ใบ)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(cardTotal, "THB")}</div>
+          {cardLimit > 0 && <div className="text-xs text-slate-500">ใช้ไป {((cardTotal * 100) / cardLimit).toFixed(1)}% ของวงเงิน {money(cardLimit, undefined, 0)}</div>}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">เงินประกันการเช่า ({depRows.length} สัญญา)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(depTotal, "THB")}</div>
+          <div className="text-xs text-slate-500">ต้องคืนผู้เช่าเมื่อหมดสัญญา</div>
+        </div>
+      </section>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
@@ -134,6 +157,12 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
               );
             })}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr><td className="px-4 py-3">รวม</td><td className="px-4 text-right tabular-nums">{money(loanTotal + depTotal, "THB")}</td><td></td>
+                <td className="px-4 text-xs text-slate-600">{monthly > 0 ? `${money(monthly)}/เดือน` : ""}</td><td></td></tr>
+            </tfoot>
+          )}
         </table>
         <p className="px-4 py-3 text-xs text-slate-500">
           เงินต้นที่บันทึกจ่าย (แยกเงินต้น / ดอกเบี้ย) ลดยอดให้ทันที · อัปเดตยอดตาม Statement เป็นระยะเพื่อความถูกต้อง
@@ -188,6 +217,12 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
               </tr>
             ))}
           </tbody>
+          {cards.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr><td className="px-4 py-3">รวม {openCards.length} ใบ</td><td></td><td className="px-4 text-right tabular-nums">{money(cardTotal, "THB")}</td>
+                <td className="px-4 text-xs text-slate-600">{cardLimit > 0 ? `วงเงินรวม ${money(cardLimit, undefined, 0)}` : ""}</td></tr>
+            </tfoot>
+          )}
         </table>
         <p className="px-4 py-3 text-xs text-slate-500">
           ยอดค้าง = ยอดตาม Statement ล่าสุด + รูดบัตรที่บันทึก − จ่ายบัตร หลังวันที่ของยอด (คำนวณให้) · อัปเดตยอดตาม Statement ทุกเดือน ·

@@ -10,7 +10,7 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
 
-export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
@@ -36,8 +36,13 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
   // มุมมองรายบุคคล: กรมธรรม์ที่คนนั้นเป็นผู้เอาประกัน หรือเป็นเจ้าของมูลค่าเวนคืน · มูลค่าเวนคืน × สัดส่วนเจ้าของ
-  const rows = bySort((data ?? []).filter((r) => pv.isPerson(r.person_id) || (pv.personId !== "" && r.payer_person_id === pv.personId)
+  const mineRows = bySort((data ?? []).filter((r) => pv.isPerson(r.person_id) || (pv.personId !== "" && r.payer_person_id === pv.personId)
     || (!!r.cash_value_asset_id && pv.personId !== "" && pv.showAsset(r.cash_value_asset_id))), (r) => r.id, sortMap);
+  // ตัวกรองประเภท (?t=)
+  const types = [...new Set(mineRows.map((r) => r.insurance_type as string))];
+  const tFilter = types.includes(sp.t ?? "") ? sp.t : undefined;
+  const rows = tFilter ? mineRows.filter((r) => r.insurance_type === tFilter) : mineRows;
+  const tHref = (t?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`; };
   // เบี้ยงวดถัดไป / เลยกำหนด ต่อกรมธรรม์
   const nextPremium = new Map<string, { due_date: string; remaining: number }>();
   const overduePremium = new Map<string, number>();
@@ -64,6 +69,15 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const fupRows = (fups ?? []).filter((f) => pv.isPerson(f.person_id) || rows.some((r) => r.id === f.policy_id));
   const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id))
     .reduce((s, a) => s + (a.currency === "THB" ? Number(a.current_value ?? 0) * pv.assetShare(a.id) : 0), 0);
+  // สรุปด้านบน (กรมธรรม์ที่มีผล · THB)
+  const act = mineRows.filter((r) => r.status === "ACTIVE");
+  const sumThb = (f: (r: (typeof act)[number]) => number | null, ccyOf: (r: (typeof act)[number]) => string | null) =>
+    act.reduce((t, r) => t + ((ccyOf(r) ?? "THB") === "THB" ? Number(f(r) ?? 0) : 0), 0);
+  const insuredTotal = sumThb((r) => r.insured_amount, (r) => r.insured_amount_currency);
+  const premiumTotal = sumThb((r) => r.premium, (r) => r.premium_currency);
+  const overdueTotal = mineRows.reduce((t, r) => t + (overduePremium.get(r.id) ?? 0), 0);
+  const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
+    return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -77,6 +91,27 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">กรมธรรม์ที่มีผล</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{act.length} <span className="text-sm font-normal text-slate-500">ฉบับ</span></div>
+          <div className="text-xs text-slate-500">ทั้งหมด {mineRows.length} ฉบับ</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ทุนประกันรวม (THB)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{money(insuredTotal, "THB", 0)}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">เบี้ยรวมต่อปี (THB)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{money(premiumTotal, "THB", 0)}</div>
+          {overdueTotal > 0 && <div className="text-xs text-red-600">เบี้ยเลยกำหนด {overdueTotal} งวด</div>}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{money(cvTotal, "THB", 0)}</div>
+          <div className="text-xs text-slate-500">นับเป็นสินทรัพย์หมวดการเงิน</div>
+        </div>
+      </section>
       {fupRows.length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
           <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) · ค้าง {fupRows.length} รายการ</h2>
@@ -116,18 +151,24 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           ))}
         </section>
       )}
-      {cvTotal > 0 && (
-        <div className="inline-block rounded-xl border border-slate-200 bg-white px-5 py-3">
-          <div className="text-xs text-slate-500">{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</div>
-          <div className="text-lg font-semibold tabular-nums">{money(cvTotal, "THB", 0)}</div>
-        </div>
-      )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">กรมธรรม์ทั้งหมด</h2>
-          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p })} />}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-medium text-slate-900">กรมธรรม์ทั้งหมด</h2>
+            {types.length > 1 && (
+              <div className="flex flex-wrap gap-1 text-xs">
+                <Link href={tHref()} scroll={false} className={`rounded-full border px-2.5 py-0.5 ${!tFilter ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>ทั้งหมด</Link>
+                {types.map((t) => (
+                  <Link key={t} href={tHref(t)} scroll={false}
+                    className={`rounded-full border px-2.5 py-0.5 ${tFilter === t ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                    {TYPE[t] ?? t} ({mineRows.filter((r) => r.insurance_type === t).length})</Link>
+                ))}
+              </div>
+            )}
+          </div>
+          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, t: tFilter })} />}
         </div>
-        <table className="mt-2 w-full text-sm">
+        <table className="mt-2 w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">กรมธรรม์</th><th className="px-4">ผู้เอาประกัน</th><th className="px-4 text-right">ทุน / เบี้ย</th><th className="px-4 text-right">มูลค่าเวนคืน</th><th className="px-4">เบี้ยงวดถัดไป</th><th className="px-4">สถานะ</th></tr>
           </thead>
@@ -163,6 +204,15 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
               );
             })}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 text-xs font-medium">
+              <tr>
+                <td className="px-4 py-3 text-sm">รวม{tFilter ? "ตามประเภท" : ""} {rows.length} ฉบับ</td><td></td>
+                <td className="px-4 text-right tabular-nums">เบี้ย {money(rows.filter((r) => r.status === "ACTIVE" && (r.premium_currency ?? "THB") === "THB").reduce((t, r) => t + Number(r.premium ?? 0), 0), undefined, 0)}/ปี</td>
+                <td className="px-4 text-right tabular-nums text-sm">{money(rows.reduce((t, r) => t + cvOf(r), 0), undefined, 0)}</td><td></td><td></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

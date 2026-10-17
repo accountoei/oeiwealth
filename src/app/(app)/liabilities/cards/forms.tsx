@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { createCard, setCardAutopay, updateCardBalance, updateCardStatus, type ActionState } from "../actions";
+import { createCard, setCardAutopay, updateCardBalance, updateCardInfo, updateCardStatus, type ActionState } from "../actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import DropPrompt from "../DropPrompt";
 import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
@@ -148,6 +148,32 @@ export function CardAutopayForm({ cardId, banks, bank, mode }: {
         <button type="button" onClick={() => setEdit(false)} className="text-slate-500">ปิด</button>
       </div>
       <Msg s={state} />
+    </form>
+  );
+}
+
+/** แก้ข้อมูลบัตร (ในหน้าต่าง "แก้ไขข้อมูล") */
+export function CardInfoForm({ cardId, v }: { cardId: string; v: {
+  issuer: string; card_name: string | null; card_last4: string | null; credit_limit: number | null; statement_day: number | null;
+  due_day: number | null; annual_fee: number | null; expiry_date: string | null; notes: string | null } }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(updateCardInfo, {});
+  const d = (x: string | number | null) => (x == null ? "" : String(x));
+  return (
+    <form action={action} className="grid gap-3 md:grid-cols-2">
+      <input type="hidden" name="card_id" value={cardId} />
+      <label className="text-sm">ผู้ออกบัตร<input name="issuer" required defaultValue={v.issuer} className={input} /></label>
+      <label className="text-sm">ชื่อบัตร<input name="card_name" defaultValue={d(v.card_name)} className={input} /></label>
+      <label className="text-sm">เลขท้าย 4 ตัว<input name="card_last4" maxLength={4} inputMode="numeric" data-plain defaultValue={d(v.card_last4)} className={input} /></label>
+      <label className="text-sm">วงเงิน<input name="credit_limit" inputMode="decimal" defaultValue={d(v.credit_limit)} className={input} /></label>
+      <label className="text-sm">ตัดรอบวันที่<input name="statement_day" inputMode="numeric" data-plain defaultValue={d(v.statement_day)} className={input} /></label>
+      <label className="text-sm">ชำระภายในวันที่<input name="due_day" inputMode="numeric" data-plain defaultValue={d(v.due_day)} className={input} /></label>
+      <label className="text-sm">ค่าธรรมเนียมรายปี<input name="annual_fee" inputMode="decimal" defaultValue={d(v.annual_fee)} className={input} /></label>
+      <label className="text-sm">บัตรหมดอายุ<input name="expiry_date" type="date" defaultValue={d(v.expiry_date)} className={input} /></label>
+      <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={d(v.notes)} className={input} /></label>
+      <div className="flex items-center gap-3 md:col-span-2">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        <Msg s={state} />
+      </div>
     </form>
   );
 }

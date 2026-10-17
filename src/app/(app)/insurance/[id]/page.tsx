@@ -6,7 +6,8 @@ import {
   BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, money, thDate, todayBangkok,
 } from "@/lib/format";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { AddCashValueForm, BenefitForm, CoverageForm, InsScheduleEditor, PayPremiumForm } from "./ins-forms";
+import { AddCashValueForm, BenefitForm, CoverageForm, InsScheduleEditor, PayPremiumForm, PolicyInfoForm } from "./ins-forms";
+import EditToggle from "@/components/EditToggle";
 import BeneficiaryEditor from "../Beneficiaries";
 import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
@@ -97,84 +98,101 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       <div>
         <Link href="/insurance" className="text-sm text-slate-500 hover:underline">← Insurance</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{p.insurer}{p.policy_no && ` · ${p.policy_no}`}</h1>
-        <p className="text-sm text-slate-500">{TYPE[p.insurance_type] ?? p.insurance_type}
-          {p.person_id && ` · ผู้เอาประกัน ${allName.get(p.person_id) ?? ""}`}
-          {p.payer_person_id && p.payer_person_id !== p.person_id && ` · ผู้จ่ายเบี้ย ${allName.get(p.payer_person_id) ?? ""}`}
-          {insured && ` · คุ้มครอง ${insured.name}`}</p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{p.insurer}{p.policy_no && ` · ${p.policy_no}`}</h1>
+            <p className="text-sm text-slate-500">{TYPE[p.insurance_type] ?? p.insurance_type}
+              {p.person_id && ` · ผู้เอาประกัน ${allName.get(p.person_id) ?? ""}`}
+              {insured && ` · คุ้มครอง ${insured.name}`}</p>
+          </div>
+          {canWrite && policyActive && (
+            <ActionBar>
+              {p.insurance_type !== "PROPERTY" && <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
+                cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม)" canClose={canDelete} />}
+              <ClaimForm policyId={id} currency={ccy} today={today}
+                coverages={(covs ?? []).map((c) => ({ id: c.id, coverage_type: c.coverage_type, limit_amount: Number(c.limit_amount) }))} />
+            </ActionBar>
+          )}
+        </div>
       </div>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="text-xs text-slate-500">ความคุ้มครอง</div>
-          <ul className="mt-1 space-y-0.5">
-            <li>ทุนประกัน {money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</li>
-            <li>เบี้ย {money(p.premium, p.premium_currency ?? undefined, 0)} ต่อปี</li>
-            <li>{thDate(p.start_date)} – {thDate(p.end_date)}{p.derived_status === "EXPIRING_SOON" && <span className="text-amber-700"> · ใกล้ครบ</span>}</li>
-          </ul>
-          {canWrite && <div className="mt-2"><RowActions table="insurance_policies" id={id} paths={paths} canDelete={false} fields={[
-            ...(p.insurance_type !== "PROPERTY" ? [{ name: "person_id", label: "ผู้เอาประกัน", type: "select" as const, value: p.person_id ?? "",
-              options: (persons ?? []).map((x) => [x.id, x.name] as [string, string]) }] : []),
-            { name: "insurer", label: "บริษัท", value: p.insurer }, { name: "policy_no", label: "เลขกรมธรรม์", value: p.policy_no },
-            { name: "start_date", label: "เริ่ม", type: "date", value: p.start_date }, { name: "end_date", label: "สิ้นสุด", type: "date", value: p.end_date },
-            { name: "insured_amount", label: "ทุน", type: "number", value: p.insured_amount }, { name: "premium", label: "เบี้ย", type: "number", value: p.premium },
-            { name: "payer_person_id", label: "ผู้จ่ายเบี้ย", type: "select", value: p.payer_person_id ?? "",
-              options: [["", "คนเดียวกับผู้เอาประกัน"], ...(persons ?? []).map((x) => [x.id, x.name] as [string, string])] },
-            { name: "notes", label: "หมายเหตุ", value: p.notes, width: "w-48" }]} /></div>}
+        {/* ซ้าย: มูลค่าเวนคืน + เอกสาร */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">มูลค่าเวนคืน</div>
+            {cvAsset ? (
+              <>
+                <div className="mt-1 text-2xl font-semibold tabular-nums">{money(cvAsset.current_value, cvAsset.currency, 0)}</div>
+                <div className="text-xs text-slate-500">ณ {thDate(cvAsset.current_value_date)}</div>
+                <div className="mt-2 text-xs text-slate-600">เจ้าของ: {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}</div>
+                {p.person_id && !(activeOwners.length === 1 && activeOwners[0].person_id === p.person_id && Number(activeOwners[0].ownership_percent) === 100) && (
+                  <div className="mt-1 text-xs text-amber-700">เจ้าของมูลค่าเวนคืนไม่ใช่ผู้เอาประกัน 100% — ตรวจว่าถูกต้อง</div>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>
+                {canDelete && <div className="mt-2"><AddCashValueForm policyId={id} currency={ccy} today={today} goLive={family?.go_live_date ?? ""} /></div>}
+              </>
+            )}
+            <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">
+              เบี้ย {money(p.premium, p.premium_currency ?? undefined, 0)} / ปี{premNext && <> · งวดถัดไป {thDate(premNext.due_date)}</>}
+              {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
+            </div>
+          </div>
+          <div className="flex-1">
+            <EntityDocuments entityType="INSURANCE_POLICY" entityId={id} module="INSURANCE" role={me.role} paths={paths} fill />
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="text-xs text-slate-500">ผู้รับผลประโยชน์</div>
-          {(bens ?? []).length === 0 ? <p className="mt-1 text-slate-500">ยังไม่ระบุ</p> : (
-            <ul className="mt-1 space-y-0.5">{(bens ?? []).map((b) => <li key={b.id}>{benName(b)} · {Number(b.percentage)}%</li>)}</ul>
-          )}
-          {benTotal > 0 && benTotal < 100 && <div className="mt-1 text-xs text-amber-700">รวม {benTotal}% (ยังไม่ครบ 100%)</div>}
-          {canWrite && <BeneficiaryEditor policyId={id} persons={persons ?? []}
-            current={(bens ?? []).map((b) => ({ person_id: b.person_id, name: b.beneficiary_name, percent: Number(b.percentage) }))} />}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">มูลค่าเวนคืน</div>
-          {cvAsset ? (
-            <>
-              <div className="mt-1 text-2xl font-semibold tabular-nums">{money(cvAsset.current_value, cvAsset.currency, 0)}</div>
-              <div className="text-xs text-slate-500">ณ {thDate(cvAsset.current_value_date)}</div>
-              <div className="mt-2 text-xs text-slate-600">เจ้าของ: {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}</div>
-              {p.person_id && !(activeOwners.length === 1 && activeOwners[0].person_id === p.person_id && Number(activeOwners[0].ownership_percent) === 100) && (
-                <div className="mt-1 text-xs text-amber-700">เจ้าของมูลค่าเวนคืนไม่ใช่ผู้เอาประกัน 100% — ตรวจว่าถูกต้อง</div>
-              )}
-              {canWrite && <OwnershipEditor kind="asset" id={cvAsset.id} persons={persons ?? []} paths={paths} today={today}
-                current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
-            </>
-          ) : (
-            <>
-              <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>
-              {canDelete && <AddCashValueForm policyId={id} currency={ccy} today={today} goLive={family?.go_live_date ?? ""} />}
-            </>
-          )}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canWrite}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="ประเภท">{TYPE[p.insurance_type] ?? p.insurance_type}</Item>
+                <Item label="บริษัท / เลขกรมธรรม์">{p.insurer}{p.policy_no && <span className="block text-xs text-slate-500">{p.policy_no}</span>}</Item>
+                <Item label="สถานะ">{Object.fromEntries(INS_STATUS)[p.status] ?? p.status}
+                  {p.derived_status === "EXPIRING_SOON" && <span className="block text-xs text-amber-700">ใกล้ครบ</span>}
+                  {p.derived_status === "EXPIRED" && p.status === "ACTIVE" && <span className="block text-xs text-red-600">เลยวันสิ้นสุด</span>}</Item>
+                {p.insurance_type !== "PROPERTY" && <Item label="ผู้เอาประกัน">{p.person_id ? allName.get(p.person_id) ?? "-" : "-"}</Item>}
+                <Item label="ผู้จ่ายเบี้ย">{payerId ? allName.get(payerId) ?? "-" : "-"}</Item>
+                {insured && <Item label="ทรัพย์สินที่คุ้มครอง">{insured.name}</Item>}
+                <Item label="ระยะเวลา">{thDate(p.start_date)} – {thDate(p.end_date)}</Item>
+                <Item label="ทุนประกัน">{money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</Item>
+                <Item label="เบี้ยต่อปี">{money(p.premium, p.premium_currency ?? undefined, 0)}</Item>
+                <Item label="ผู้รับผลประโยชน์">
+                  {(bens ?? []).length === 0 ? "-" : (bens ?? []).map((b) => <div key={b.id}>{benName(b)} · {Number(b.percentage)}%</div>)}
+                  {benTotal > 0 && benTotal < 100 && <div className="text-xs text-amber-700">รวม {benTotal}% (ยังไม่ครบ 100%)</div>}
+                </Item>
+                {p.notes && <Item label="หมายเหตุ" wide>{p.notes}</Item>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <PolicyInfoForm policyId={id} persons={persons ?? []} showInsured={p.insurance_type !== "PROPERTY"} v={{
+                  person_id: p.person_id, payer_person_id: p.payer_person_id, insurer: p.insurer, policy_no: p.policy_no, start_date: p.start_date,
+                  end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes }} />
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผลประโยชน์</h3>
+                  <BeneficiaryEditor policyId={id} persons={persons ?? []} startOpen
+                    current={(bens ?? []).map((b) => ({ person_id: b.person_id, name: b.beneficiary_name, percent: Number(b.percentage) }))} />
+                </div>
+                {cvAsset && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <h3 className="mb-2 text-sm font-medium text-slate-800">เจ้าของมูลค่าเวนคืน</h3>
+                    <OwnershipEditor kind="asset" id={cvAsset.id} persons={persons ?? []} paths={paths} today={today} startOpen
+                      current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+                  </div>
+                )}
+                <div className="border-t border-slate-100 pt-4">
+                  <StatusSelect table="insurance_policies" id={id} value={p.status} paths={paths} label="สถานะกรมธรรม์" options={INS_STATUS}
+                    remove={canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้",
+                      hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined} />
+                </div>
+              </div>
+            } />
         </div>
       </section>
-
-      {cvAsset && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">มูลค่าเวนคืน</h2>
-          {canWrite && <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
-            methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />}
-          <table className="mt-3 w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              {(cvVals ?? []).map((v) => (
-                <tr key={v.id}>
-                  <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                  <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
-                  <td className="pl-4 text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes}</td>
-                  <td className="pl-2 text-right">
-                    {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
-                      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value }]} />}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
 
       {(fups ?? []).length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
@@ -196,7 +214,10 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
       )}
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
+          {canWrite && <CoverageForm policyId={id} currency={ccy} />}
+        </div>
         {(covs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p> : (
           <table className="w-full text-sm">
             <tbody className="divide-y divide-slate-100">
@@ -212,7 +233,6 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             </tbody>
           </table>
         )}
-        {canWrite && <CoverageForm policyId={id} currency={ccy} />}
       </section>
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
@@ -309,8 +329,6 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
               </table>
             </div>
           )}
-          {canWrite && policyActive && <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
-            cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม / อื่น ๆ)" canClose={canDelete} />}
         </section>
       )}
 
@@ -345,18 +363,33 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
           </table>
         )}
         <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
-        {canWrite && <ClaimForm policyId={id} currency={ccy} today={today}
-          coverages={(covs ?? []).map((c) => ({ id: c.id, coverage_type: c.coverage_type, limit_amount: Number(c.limit_amount) }))} />}
       </section>
 
-      {canWrite && (
+      {cvAsset && (
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <StatusSelect table="insurance_policies" id={id} value={p.status} paths={paths} label="สถานะกรมธรรม์" options={INS_STATUS}
-            remove={canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้",
-              hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined} />
+          <div>
+            <h2 className="font-medium text-slate-900">มูลค่าเวนคืน</h2>
+            <p className="text-xs text-slate-500">อัปเดตตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง)</p>
+          </div>
+          {canWrite && <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
+            methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />}
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {(cvVals ?? []).map((v) => (
+                <tr key={v.id}>
+                  <td className="py-1.5">{thDate(v.valuation_date)}</td>
+                  <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
+                  <td className="pl-4 text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes}</td>
+                  <td className="pl-2 text-right">
+                    {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
+                      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value }]} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
-      <EntityDocuments entityType="INSURANCE_POLICY" entityId={id} module="INSURANCE" role={me.role} paths={paths} />
     </div>
   );
 }
@@ -394,6 +427,15 @@ function ScheduleTable({ lines, canWrite, canDelete, paths, action, benefit = fa
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

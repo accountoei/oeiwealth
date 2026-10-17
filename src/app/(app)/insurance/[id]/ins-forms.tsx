@@ -2,7 +2,7 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, type ActionState } from "../actions";
+import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, updatePolicyInfo, type ActionState } from "../actions";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
@@ -320,4 +320,43 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
       <Msg s={state} />
     </form>
   ));
+}
+
+/** แก้ข้อมูลกรมธรรม์ (ในหน้าต่าง "แก้ไขข้อมูล") */
+export function PolicyInfoForm({ policyId, persons, showInsured, v }: {
+  policyId: string; persons: Person[]; showInsured: boolean;
+  v: { person_id: string | null; payer_person_id: string | null; insurer: string; policy_no: string | null; start_date: string | null;
+    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null };
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(updatePolicyInfo, {});
+  const d = (x: string | number | null) => (x == null ? "" : String(x));
+  return (
+    <form action={action} className="grid gap-3 md:grid-cols-2">
+      <input type="hidden" name="policy_id" value={policyId} />
+      <label className="text-sm">บริษัทประกัน<input name="insurer" required defaultValue={v.insurer} className={input} /></label>
+      <label className="text-sm">เลขกรมธรรม์<input name="policy_no" defaultValue={d(v.policy_no)} className={input} data-plain /></label>
+      {showInsured && (
+        <label className="text-sm">ผู้เอาประกัน
+          <select name="person_id" defaultValue={d(v.person_id)} className={input}>
+            {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="text-sm">ผู้จ่ายเบี้ย
+        <select name="payer_person_id" defaultValue={d(v.payer_person_id)} className={input}>
+          <option value="">คนเดียวกับผู้เอาประกัน</option>
+          {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+      </label>
+      <label className="text-sm">เริ่มคุ้มครอง<input name="start_date" type="date" defaultValue={d(v.start_date)} className={input} /></label>
+      <label className="text-sm">สิ้นสุด<input name="end_date" type="date" defaultValue={d(v.end_date)} className={input} /></label>
+      <label className="text-sm">ทุนประกัน<input name="insured_amount" inputMode="decimal" defaultValue={d(v.insured_amount)} className={input} /></label>
+      <label className="text-sm">เบี้ยต่อปี<input name="premium" inputMode="decimal" defaultValue={d(v.premium)} className={input} /></label>
+      <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={d(v.notes)} className={input} /></label>
+      <div className="flex items-center gap-3 md:col-span-2">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  );
 }

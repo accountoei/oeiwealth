@@ -140,3 +140,22 @@ export async function addCoverage(_: ActionState, form: FormData): Promise<Actio
   refresh(id);
   return { ok: "เพิ่มความคุ้มครองแล้ว" };
 }
+
+/** แก้ข้อมูลกรมธรรม์ (หน้าต่าง "แก้ไขข้อมูล") */
+export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("policy_id"));
+  const patch: Record<string, unknown> = {
+    insurer: str(form.get("insurer")), policy_no: str(form.get("policy_no")), start_date: str(form.get("start_date")),
+    end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")),
+    payer_person_id: str(form.get("payer_person_id")), notes: str(form.get("notes")),
+  };
+  if (form.has("person_id")) patch.person_id = str(form.get("person_id"));
+  if (!patch.insurer) return { error: "กรุณาใส่บริษัทประกัน" };
+  const { data, error } = await supabase.from("insurance_policies").update(patch).eq("id", id).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidatePath("/insurance");
+  revalidatePath(`/insurance/${id}`);
+  return { ok: "บันทึกข้อมูลแล้ว" };
+}
