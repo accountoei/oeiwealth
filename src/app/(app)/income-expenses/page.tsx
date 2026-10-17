@@ -363,8 +363,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       link = null;
     }
     const counter = m.counter_amount != null ? Number(m.counter_amount) : Number(m.amount);
+    const inc = m.is_derived && m.source_entity_type === "INCOME" && m.source_entity_id ? incById.get(m.source_entity_id) : undefined;
+    const exp = m.is_derived && m.source_entity_type === "EXPENSE" && m.source_entity_id ? expById.get(m.source_entity_id) : undefined;
     return {
       key: m.id, date: m.movement_date, type, typeCls: m.movement_type === "REIMBURSEMENT_IN" ? "text-sky-700" : undefined,
+      kind: m.movement_type, merged: !!m.parts,
+      metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
+        expenseCategory: exp?.expense_category ?? null, pending: !!(inc?.pending_split || exp?.pending_split) },
       fromLabel: placeOf(m.from_asset_id),
       toLabel: m.to_credit_card_id ? `บัตร ${placeOf(m.to_credit_card_id)}` : m.to_liability_id ? placeOf(m.to_liability_id) : placeOf(m.to_asset_id),
       fromBank: m.from_asset_id && bankIds.has(m.from_asset_id) ? m.from_asset_id : null,
@@ -394,6 +399,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     };
   });
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
+  // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี → ยอดคงเหลือหลังแต่ละรายการ เมื่อกรองทีละบัญชี
+  const { data: openRaw } = await supabase.rpc("bank_balances_at", { p_date: new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10) });
+  const openings = Object.fromEntries(((openRaw as { asset_id: string; calculated: number | null }[] | null) ?? [])
+    .map((r) => [r.asset_id, r.calculated == null ? null : Number(r.calculated)]));
   // สรุปเงินเข้า–ออก (ทุกบัญชี · ไม่นับโอนระหว่างบัญชีตัวเอง) สำหรับแท็บภาพรวม
   const moveSum = moveRows(false).reduce((acc, r) => {
     const t = (c: string) => acc.byCcy.get(c) ?? acc.byCcy.set(c, { inn: 0, out: 0 }).get(c)!;
@@ -1022,7 +1031,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
             <p className="mb-3 text-xs text-slate-500">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;</p>
-            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} />
+            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} />
           </section>
       </TabPanel>
 

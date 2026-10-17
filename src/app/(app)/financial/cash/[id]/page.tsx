@@ -2,7 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, bankLabel, money, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import MonthPicker from "@/components/MonthPicker";
+import MoveBadge from "@/components/MoveBadge";
+import { moveMeta } from "@/lib/ledger";
+import TransferEditor from "../../../income-expenses/TransferEditor";
 import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -22,23 +26,61 @@ const MOVE_LABEL: Record<string, string> = {
   REIMBURSEMENT_IN: "เงินคืนค่าใช้จ่าย", OTHER_IN: "เงินเข้าอื่น ๆ", OTHER_OUT: "เงินออกอื่น ๆ",
 };
 
-export default async function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AccountDetailPage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ m?: string; sort?: string }>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
+  const today = todayBangkok();
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
+  const { start, end } = monthRange(ym);
+  const asc = sp.sort === "asc";
+  const dayBefore = new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
   const [{ data: acc }, { data: bal }, { data: owners }, { data: vals }, { data: moves }, { data: family }, { data: persons }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_bank_balance_current").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency,description,is_derived,source_entity_type,movement_group_id")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,fee,counter_amount,counter_currency,description,is_derived,source_entity_type,source_entity_id,movement_group_id,created_at")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null)
-      .order("movement_date", { ascending: false }).limit(50),
+      .gte("movement_date", start).lte("movement_date", end)
+      .order("movement_date", { ascending: true }).order("created_at", { ascending: true }),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   if (!acc) notFound();
+  // ---------------------------------------------------------------- รายการเดือนนี้ + ยอดคงเหลือหลังแต่ละรายการ
+  const expIds = (moves ?? []).filter((m) => m.source_entity_type === "EXPENSE" && m.source_entity_id).map((m) => m.source_entity_id as string);
+  const incIds = (moves ?? []).filter((m) => m.source_entity_type === "INCOME" && m.source_entity_id).map((m) => m.source_entity_id as string);
+  const otherIds = [...new Set((moves ?? []).flatMap((m) => [m.from_asset_id, m.to_asset_id]).filter((x): x is string => !!x && x !== id))];
+  const cardIds = [...new Set((moves ?? []).map((m) => m.to_credit_card_id).filter((x): x is string => !!x))];
+  const liabIds = [...new Set((moves ?? []).map((m) => m.to_liability_id).filter((x): x is string => !!x))];
+  const none = Promise.resolve({ data: [] as never[] });
+  const [{ data: openRaw }, { data: expMeta }, { data: incMeta }, { data: banksAll }, { data: others }, { data: cardsMeta }, { data: liabsMeta }] = await Promise.all([
+    supabase.rpc("bank_balances_at", { p_date: dayBefore }),
+    expIds.length ? supabase.from("expense_items").select("id,expense_category,pending_split").in("id", expIds) : none,
+    incIds.length ? supabase.from("income_transactions").select("id,income_type,income_subtype,pending_split").in("id", incIds) : none,
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_no_masked,status"),
+    otherIds.length ? supabase.from("assets").select("id,name").in("id", otherIds) : none,
+    cardIds.length ? supabase.from("credit_cards").select("id,issuer,card_name,card_last4").in("id", cardIds) : none,
+    liabIds.length ? supabase.from("liabilities").select("id,name").in("id", liabIds) : none,
+  ]);
+  const opening = ((openRaw as { asset_id: string; calculated: number | null }[] | null) ?? []).find((r) => r.asset_id === id)?.calculated;
+  const expBy = new Map((expMeta ?? []).map((e) => [e.id as string, e]));
+  const incBy = new Map((incMeta ?? []).map((e) => [e.id as string, e]));
+  const bankBy = new Map((banksAll ?? []).map((b) => [b.asset_id as string, b]));
+  const otherBy = new Map((others ?? []).map((a) => [a.id as string, a.name as string]));
+  const cardBy = new Map((cardsMeta ?? []).map((c) => [c.id as string, [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")]));
+  const liabBy = new Map((liabsMeta ?? []).map((l) => [l.id as string, l.name as string]));
+  const acctLabel = (aid: string | null) => {
+    if (!aid) return "ภายนอก";
+    const b = bankBy.get(aid);
+    if (b) return `${bankLabel(b.bank_name as string).replace(/^.*\((.*)\)$/, "$1")} ${b.account_no_masked ? String(b.account_no_masked).replace(/^.*?(\d{4})$/, "••$1") : b.name}`;
+    return otherBy.get(aid) ?? "ทรัพย์สิน";
+  };
   // สถานะยอดล่าสุด (คำนวณสดทุกครั้ง): ก้อนรอแยกของเดือน · ส่วนต่างที่ยังไม่ลงก้อน
   const { data: stRaw } = await supabase.rpc("bank_statement_status", { p_asset_id: id });
   const st = stRaw as { latest_date: string; lump: number | null; lump_date: string | null; difference: number } | null;
@@ -68,6 +110,60 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
   const partLabel = (m: Mv) => (m.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "เงินต้น" : m.movement_type === "INCOME" ? "ดอกเบี้ย" : MOVE_LABEL[m.movement_type] ?? m.movement_type);
   const loanOf = (r: Row) => (r.parts ?? [r]).find((x) => x.movement_type === "LOAN_PRINCIPAL_RECEIPT")?.from_asset_id;
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
+
+  // เรียงตามเวลา: รายการของวัน → ยอดตาม Statement ของวันนั้น (เป็นยอดสิ้นวัน · ใช้เป็นจุดตั้งต้นใหม่)
+  type Line = { key: string; date: string; kind: "move"; row: Row; inAmt: number | null; outAmt: number | null; balance: number | null;
+    meta: ReturnType<typeof moveMeta>; detail: string; sub: string | null }
+    | { key: string; date: string; kind: "stmt"; value: number; balance: number; diff: number | null; source: string };
+  const monthVals = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end)
+    .sort((a, b) => a.valuation_date.localeCompare(b.valuation_date));
+  const lines: Line[] = [];
+  let run: number | null = opening == null ? null : Number(opening);
+  let sumIn = 0, sumOut = 0;
+  const pushStmts = (upto: string | null) => {
+    while (monthVals.length && (upto === null || monthVals[0].valuation_date < upto)) {
+      const v = monthVals.shift()!;
+      const diff = run == null ? null : Math.round((Number(v.value) - run) * 100) / 100;
+      run = Number(v.value);
+      lines.push({ key: `v${v.id}`, date: v.valuation_date, kind: "stmt", value: Number(v.value), balance: run,
+        diff: diff != null && Math.abs(diff) >= 0.005 ? diff : null, source: SOURCE_LABEL[v.source] ?? v.source });
+    }
+  };
+  for (const r of rows) {
+    pushStmts(r.movement_date);
+    const isIn = r.to_asset_id === id;
+    const inAmt = isIn ? Number(r.counter_currency ? r.counter_amount ?? 0 : r.amount) : null;
+    const outAmt = !isIn ? Number(r.amount) + Number(r.fee ?? 0) : null;
+    if (run != null) run = run + (inAmt ?? 0) - (outAmt ?? 0);
+    sumIn += inAmt ?? 0; sumOut += outAmt ?? 0;
+    const e = r.source_entity_type === "EXPENSE" && r.source_entity_id ? expBy.get(r.source_entity_id) : undefined;
+    const inc = r.source_entity_type === "INCOME" && r.source_entity_id ? incBy.get(r.source_entity_id) : undefined;
+    const meta = moveMeta(r.movement_type, isIn ? "in" : "out", { merged: !!r.parts, incomeType: inc?.income_type, incomeSubtype: inc?.income_subtype,
+      expenseCategory: e?.expense_category, pending: !!(e?.pending_split || inc?.pending_split) });
+    const other = isIn ? r.from_asset_id : r.to_asset_id;
+    const detail = r.parts ? "รับชำระเงินให้กู้"
+      : ["TRANSFER", "FX_EXCHANGE"].includes(r.movement_type) ? `${isIn ? "รับเงินจาก" : "โอนไป"} ${acctLabel(other)}`
+      : r.movement_type === "CARD_PAYMENT" ? `จ่ายบัตร ${cardBy.get(r.to_credit_card_id ?? "") ?? ""}`
+      : r.movement_type === "LIABILITY_PAYMENT" ? `จ่ายหนี้ ${liabBy.get(r.to_liability_id ?? "") ?? ""}`
+      : ["INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "ASSET_PURCHASE", "ASSET_SALE"].includes(r.movement_type)
+        ? `${r.description ?? meta.label}` : r.description ?? meta.label;
+    const sub = r.parts ? r.parts.map((x) => `${partLabel(x)} ${money(x.amount)}`).join(" + ")
+      : ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PAYMENT"].includes(r.movement_type) && r.description && r.description !== detail ? r.description : null;
+    lines.push({ key: r.id, date: r.movement_date, kind: "move", row: r, inAmt, outAmt, balance: run, meta, detail, sub });
+  }
+  pushStmts(null);
+  const closing = run;
+  const shownLines = asc ? lines : [...lines].reverse();
+  const months = monthOptions(family?.go_live_date, today, 0, ym);
+  const openRow = opening == null ? null : (
+    <tr className="text-xs text-slate-500">
+      <td className="py-1.5">{thDate(dayBefore)}</td><td colSpan={5}>ยอดยกมา (สิ้นเดือนก่อน)</td>
+      <td className="text-right font-medium tabular-nums text-slate-700">{money(opening)}</td><td></td>
+    </tr>
+  );
+  const sortHref = (a: boolean) => `/financial/cash/${id}?m=${ym}${a ? "&sort=asc" : ""}`;
+  const sameCcyBanks = (banksAll ?? []).filter((b) => b.currency === acc.currency && b.status === "ACTIVE")
+    .map((b) => ({ asset_id: b.asset_id as string, name: b.name as string }));
 
   return (
     <div className="space-y-6">
@@ -122,7 +218,7 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-medium text-slate-900">อัปเดตยอดคงเหลือ</h2>
           <p className="mb-3 text-xs text-slate-500">
-            กรอกยอดจริงจากแอปธนาคาร / Statement · ระบบไม่สร้างรายการค่าใช้จ่ายจากผลต่างให้เอง
+            กรอกยอดจริงจากแอปธนาคาร / Statement · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ · หลายบัญชีพร้อมกันได้ที่แท็บ &ldquo;อัปเดตยอดคงเหลือ&rdquo; ในหน้า Cash
           </p>
           <UpdateBalanceForm assetId={id} currency={acc.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} />
         </section>
@@ -163,46 +259,75 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-1 font-medium text-slate-900">รายการเงินเข้า–ออก (ล่าสุด 50 รายการ)</h2>
-        <p className="mb-3 text-xs text-slate-500">รายการเกิดจากการบันทึกรายได้ ค่าใช้จ่าย การโอน และการลงทุน ในหน้าที่เกี่ยวข้อง</p>
-        {(moves ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
-          <table className="w-full text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-medium text-slate-900">รายการเงินเข้า–ออก {thMonth(start)}</h2>
+          <MonthPicker months={months} value={ym} />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span className="text-slate-600">ยอดยกมา <b className="tabular-nums">{opening == null ? "-" : money(opening, acc.currency)}</b></span>
+          <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">+{money(sumIn)}</b></span>
+          <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
+          <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className="tabular-nums">{closing == null ? "-" : money(closing, acc.currency)}</b></span>
+        </div>
+        <p className="mb-3 mt-1 text-xs text-slate-500">รายการเกิดจากการบันทึกรายได้ ค่าใช้จ่าย การโอน และการลงทุนในหน้าที่เกี่ยวข้อง · ยอดคงเหลือ = ยอดตาม Statement + รายการหลังจากนั้น · กดที่แถวเพื่อแก้ / ลบ</p>
+        {lines.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการในเดือนนี้</p> : (
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[48rem] text-sm">
             <thead className="text-left text-xs text-slate-500">
-              <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>รายละเอียด</th><th className="text-right">เข้า</th><th className="text-right">ออก</th><th></th></tr>
+              <tr className="border-b border-slate-100">
+                <th className="py-1.5">
+                  <Link href={sortHref(!asc)} scroll={false} className="hover:text-slate-800" title={asc ? "เรียงใหม่ → เก่า" : "เรียงเก่า → ใหม่"}>วันที่ {asc ? "↑" : "↓"}</Link>
+                </th>
+                <th>ประเภท</th><th>รายละเอียด</th><th>หมวดหมู่</th>
+                <th className="text-right">เงินเข้า ({acc.currency})</th><th className="text-right">เงินออก ({acc.currency})</th>
+                <th className="text-right">ยอดคงเหลือ ({acc.currency})</th><th></th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((m) => {
-                const isIn = m.to_asset_id === id;
-                const inAmt = isIn ? (m.counter_currency ? m.counter_amount : m.amount) : null;
-                const pfLink = ["INVESTMENT_OUT", "INVESTMENT_IN"].includes(m.movement_type) && m.counter_currency
-                  ? (m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id) : null;
-                const outAmt = !isIn ? Number(m.amount) + Number(m.fee ?? 0) : null;
-                return (
-                  <tr key={m.id}>
-                    <td className="py-1.5">{thDate(m.movement_date)}</td>
-                    <td>{m.parts ? "รับชำระเงินกู้" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
-                    <td className="text-slate-500">
-                      {m.parts ? <>รับชำระเงินให้กู้
-                        <div className="text-xs">{m.parts.map((x) => `${partLabel(x)} ${money(x.amount)}`).join(" + ")}</div></> : m.description}
-                    </td>
-                    <td className="text-right tabular-nums text-emerald-700">{inAmt != null ? money(inAmt) : isIn ? <span className="text-xs text-amber-700">รอยอด</span> : ""}</td>
-                    <td className="text-right tabular-nums text-red-700">{outAmt != null ? money(outAmt) : ""}</td>
-                    <td className="pl-2 text-right">
-                      {m.parts && loanOf(m) && <Link href={`/financial/loans/${loanOf(m)}`} className="text-xs text-slate-500 underline">แก้ที่หน้าเงินให้กู้</Link>}
-                      {pfLink && <Link href={`/investments/${pfLink}`} className="text-xs text-slate-500 underline">แก้ที่หน้าพอร์ต</Link>}
-                      {!m.parts && !pfLink && canWrite && !m.is_derived && !["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type) && (
+              {asc && openRow}
+              {shownLines.map((l) => l.kind === "stmt" ? (
+                <tr key={l.key} className="bg-slate-50/70 text-xs text-slate-500">
+                  <td className="whitespace-nowrap py-1.5">{thDate(l.date)}</td>
+                  <td><MoveBadge label="ยอดตาม Statement" tone="slate" /></td>
+                  <td colSpan={4}>{l.source}{l.diff != null && <span className="ml-2 text-amber-700">ต่างจากรายการที่บันทึก {l.diff > 0 ? "+" : ""}{money(l.diff)}</span>}</td>
+                  <td className="text-right font-medium tabular-nums text-slate-700">{money(l.value)}</td><td></td>
+                </tr>
+              ) : (
+                <tr key={l.key} className="align-top">
+                  <td className="whitespace-nowrap py-2">{thDate(l.date)}</td>
+                  <td className="pr-2"><MoveBadge label={l.meta.label} tone={l.meta.tone} /></td>
+                  <td className="pr-2">{l.detail}{l.sub && <div className="text-xs text-slate-400">{l.sub}</div>}</td>
+                  <td className="pr-2 text-indigo-700">{l.meta.category}</td>
+                  <td className="text-right tabular-nums text-emerald-700">{l.inAmt != null ? money(l.inAmt) : <span className="text-slate-300">–</span>}</td>
+                  <td className="text-right tabular-nums text-red-700">{l.outAmt != null ? money(l.outAmt) : <span className="text-slate-300">–</span>}</td>
+                  <td className="text-right tabular-nums text-slate-700">{l.balance == null ? "-" : money(l.balance)}</td>
+                  <td className="pl-2 text-right">
+                    {(() => {
+                      const m = l.row;
+                      const pfLink = ["INVESTMENT_OUT", "INVESTMENT_IN"].includes(m.movement_type) && m.counter_currency
+                        ? (m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id) : null;
+                      if (m.parts && loanOf(m)) return <Link href={`/financial/loans/${loanOf(m)}`} className="text-xs text-slate-500 underline">แก้ที่หน้าเงินให้กู้</Link>;
+                      if (pfLink) return <Link href={`/investments/${pfLink}`} className="text-xs text-slate-500 underline">แก้ที่หน้าพอร์ต</Link>;
+                      if (m.is_derived) return <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>;
+                      if (!canWrite || ["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type)) return null;
+                      const bankPair = m.movement_type === "TRANSFER" && m.from_asset_id && m.to_asset_id && bankBy.has(m.from_asset_id) && bankBy.has(m.to_asset_id) && !m.counter_currency;
+                      return (
                         <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
+                          editor={bankPair ? <TransferEditor id={m.id} banks={sameCcyBanks}
+                            values={{ from: m.from_asset_id as string, to: m.to_asset_id as string, date: m.movement_date, amount: Number(m.amount),
+                              fee: m.fee == null ? null : Number(m.fee), description: m.description }} /> : undefined}
                           fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
                             { name: "amount", label: "จำนวน", type: "number", value: m.amount },
                             { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />
-                      )}
-                      {!m.parts && m.is_derived && <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>}
-                    </td>
-                  </tr>
-                );
-              })}
+                      );
+                    })()}
+                  </td>
+                </tr>
+              ))}
+              {!asc && openRow}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
