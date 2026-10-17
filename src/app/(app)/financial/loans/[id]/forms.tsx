@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
-import { disburseMore, receivePayment, type ActionState } from "../actions";
+import { disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
 import { ROW_BTN } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -124,4 +124,26 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
       </div>
     </form>
   ));
+}
+
+/** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
+export function LoanInfoForm({ assetId, v }: {
+  assetId: string; v: { name: string; borrower_name: string; interest_rate: number | null; due_date: string | null; notes: string | null };
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(updateLoanInfo, {});
+  return (
+    <form action={action} className="grid gap-3 md:grid-cols-2">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <label className="text-sm">ชื่อรายการ *<input name="name" required defaultValue={v.name} className={input} /></label>
+      <label className="text-sm">ผู้กู้ *<input name="borrower_name" required defaultValue={v.borrower_name} className={input} /></label>
+      <label className="text-sm">ดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={v.interest_rate ?? ""} className={input} /></label>
+      <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} className={input} /></label>
+      <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
+      <div className="flex items-center gap-3 md:col-span-2">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
+        {state.error && <span className="text-sm text-red-600">{state.error}</span>}
+        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+      </div>
+    </form>
+  );
 }

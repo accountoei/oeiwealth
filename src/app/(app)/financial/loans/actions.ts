@@ -85,3 +85,23 @@ export async function restructureSchedule(_: ActionState, form: FormData): Promi
   if (error) return { error: friendlyError(error.message) };
   return done(id, `ปรับตารางแล้ว · งวดใหม่ ${data} งวด`);
 }
+
+/** แก้รายละเอียดเงินให้กู้: ชื่อรายการ (assets.name) + ผู้กู้ / ดอกเบี้ย / ครบกำหนด / หมายเหตุ (loan_details) · RLS คุมสิทธิ์ */
+export async function updateLoanInfo(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const name = str(form.get("name"));
+  if (!name) return { error: "กรุณาใส่ชื่อรายการ" };
+  if (!str(form.get("borrower_name"))) return { error: "กรุณาใส่ชื่อผู้กู้" };
+  const { data: a, error: e1 } = await supabase.from("assets").update({ name }).eq("id", assetId).select("id");
+  if (e1) return { error: friendlyError(e1.message) };
+  if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  const { error: e2 } = await supabase.from("loan_details").update({
+    borrower_name: str(form.get("borrower_name")),
+    interest_rate: num(form.get("interest_rate")),
+    due_date: str(form.get("due_date")),
+    notes: str(form.get("notes")),
+  }).eq("asset_id", assetId);
+  if (e2) return { error: friendlyError(e2.message) };
+  return done(assetId, "บันทึกรายละเอียดแล้ว");
+}

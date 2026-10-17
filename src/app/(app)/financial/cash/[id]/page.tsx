@@ -7,7 +7,8 @@ import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type MoveRow, type StmtRow } from "../../../income-expenses/MovesView";
 import { moveMeta, stripPending } from "@/lib/ledger";
 import TransferEditor from "../../../income-expenses/TransferEditor";
-import { AccountNoPanel, EditInfoForm, EditToggle, SettleLatestButton, UpdateBalanceForm } from "./forms";
+import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
+import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
@@ -275,7 +276,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <EditToggle canEdit={canWrite}
+        <EditToggle title="รายละเอียดบัญชี" canEdit={canWrite}
           view={
             <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <Item label="ชื่อที่ใช้เรียกบัญชี">{acc.name}</Item>

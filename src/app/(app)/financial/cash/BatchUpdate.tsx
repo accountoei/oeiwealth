@@ -5,6 +5,7 @@ import { useActionState, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { batchUpdate, type BatchState } from "./actions";
+import { useOnMainTab } from "../../income-expenses/tabs";
 
 export type BatchRow = {
   id: string; name: string; bank: string; currency: string;
@@ -25,6 +26,10 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
   const router = useRouter();
   const pathname = usePathname();
   const [vals, setVals] = useState<Record<string, string>>({});
+  const [bank, setBank] = useState("");
+  useOnMainTab(() => setBank(""));
+  const bankList = [...new Set(rows.map((r) => r.bank))].sort((a, b) => a.localeCompare(b, "th"));
+  const shown = bank ? rows.filter((r) => r.bank === bank) : rows;
   const [state, action, pending] = useActionState<BatchState, FormData>(batchUpdate, {});
   // บันทึกแล้ว → ล้างช่องที่กรอก + โหลดยอดใหม่ (ผลรายบัญชียังแสดงอยู่)
   useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
@@ -35,20 +40,33 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
     q.set("tab", "update"); q.set("d", d);
     router.push(`${pathname}?${q}`, { scroll: false });
   };
+  // ยอดที่กรอกไว้ของบัญชีที่ถูกตัวกรองซ่อน ยังบันทึกด้วย (กรอกทีละธนาคาร แล้วกดบันทึกครั้งเดียว)
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
+  const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
   const onSubmit = (e: React.FormEvent) => {
-    if (!confirm(`บันทึกยอดคงเหลือ ${chosen.length} บัญชี ณ ${thDate(date)} ?\nส่วนต่างจะลงเป็นก้อน "รอแยกรายละเอียด" ให้อัตโนมัติ`)) e.preventDefault();
+    const list = chosen.map((r) => `• ${r.name}`).join("\n");
+    if (!confirm(`บันทึกยอดคงเหลือ ${chosen.length} บัญชี ณ ${thDate(date)} ?\n${list}\nส่วนต่างจะลงเป็นก้อน "รอแยกรายละเอียด" ให้อัตโนมัติ`)) e.preventDefault();
   };
 
   return (
     <form action={action} onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="date" value={date} />
       <input type="hidden" name="rows" value={JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] })))} />
-      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-        <label className="flex items-center gap-2">ยอด ณ วันที่
-          <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && pickDate(e.target.value)} className={small} />
-        </label>
-        <span className="text-xs text-slate-500">กรอกยอดจริงจากแอปธนาคาร / Statement เฉพาะบัญชีที่ต้องการ (ช่องว่าง = ไม่บันทึก) · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ</span>
+      <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2">ยอด ณ วันที่
+            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && pickDate(e.target.value)} className={small} />
+          </label>
+          {bankList.length > 1 && (
+            <label className="flex items-center gap-2">ธนาคาร
+              <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
+                <option value="">ทุกธนาคาร</option>
+                {bankList.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+        <p className="text-xs text-slate-500">กรอกยอดจริงจากแอปธนาคาร / Statement เฉพาะบัญชีที่ต้องการ (ช่องว่าง = ไม่บันทึก) · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ · สลับธนาคารได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -62,8 +80,8 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีบัญชีที่ใช้งานอยู่</td></tr>}
-            {rows.map((r) => {
+            {shown.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีบัญชีที่ใช้งานอยู่</td></tr>}
+            {shown.map((r) => {
               const v = vals[r.id] ?? "";
               const has = v.trim() !== "" && !Number.isNaN(n(v));
               const diff = has && r.calculated != null ? Math.round((n(v) - r.calculated) * 100) / 100 : null;
@@ -112,6 +130,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
           <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
             {pending ? "กำลังบันทึก…" : `ยืนยันประมวลผล · บันทึกยอด ${chosen.length} บัญชี ณ ${thDate(date)}`}
           </button>
+          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} บัญชีที่กรอกไว้ในธนาคารอื่น</span>}
           {chosen.length > 0 && !pending && (
             <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
           )}
