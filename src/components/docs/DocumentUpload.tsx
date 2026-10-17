@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { callDrive } from "./drive";
+import Modal from "@/components/Modal";
 import { createClient } from "@/lib/supabase/client";
 import { DOC_MODULE_LABEL, DOC_TYPES, ENTITY_MODULE, thDate } from "@/lib/format";
 
@@ -38,15 +39,15 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   const [pending, setPending] = useState<Pending | null>(null);
   const [dup, setDup] = useState<{ id: string; title: string; linked: boolean } | null>(null);
 
-  if (!open) {
-    return (
-      <span className="inline-flex items-center gap-2">
-        <button type="button" onClick={() => { setOpen(true); setMsg({}); }}
-          className={supersedes ? "text-xs text-slate-600 underline" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
-        {msg.ok && <span className="text-xs text-emerald-700">{msg.ok}</span>}
-      </span>
-    );
-  }
+  const trigger = (
+    <span className="inline-flex items-center gap-2">
+      <button type="button" onClick={() => { setOpen(true); setMsg({}); }}
+        className={supersedes ? "text-xs text-slate-600 underline" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
+      {msg.ok && <span className="text-xs text-emerald-700">{msg.ok}</span>}
+    </span>
+  );
+  if (!open) return trigger;
+  const close = () => { if (busy) return; setOpen(false); setPending(null); setDup(null); };
 
   function pickEntity(v: string) {
     setEntity(v); setPending(null); setDup(null);
@@ -132,8 +133,8 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   }
 
   const groups = [...new Set((entityOptions ?? []).map((o) => o.group))];
-  return (
-    <form ref={formRef} onSubmit={submit} className="mt-2 w-full space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-left">
+  return (<>{trigger}<Modal size="lg" onClose={close}>
+    <form ref={formRef} onSubmit={submit} className="w-full space-y-3 text-left" data-keep-open>
       <h3 className="text-sm font-medium text-slate-900">{supersedes ? `อัปโหลดฉบับใหม่แทน "${supersedes.title}"` : "แนบเอกสาร"}</h3>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-sm md:col-span-3">ไฟล์ * <span className="text-xs text-slate-500">(PDF, รูปภาพ, Word, Excel · ไม่เกิน 20 MB)</span>
@@ -210,12 +211,12 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
       )}
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={busy || !!pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{busy && !pending ? "กำลังตรวจ / อัปโหลด…" : "อัปโหลด"}</button>
-        <button type="button" onClick={() => { setOpen(false); setPending(null); setDup(null); }} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
         {msg.error && <span className="text-sm text-red-600">{msg.error}</span>}
       </div>
       {supersedes && <p className="text-xs text-slate-500">ฉบับเดิมยังเก็บไว้ (สถานะ &ldquo;ฉบับเก่า&rdquo;) · ฉบับใหม่ผูกกับรายการเดียวกันให้อัตโนมัติ</p>}
     </form>
-  );
+  </Modal></>);
 }
 
 const GROUP_LABEL: Record<string, string> = {

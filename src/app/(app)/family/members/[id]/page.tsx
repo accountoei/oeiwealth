@@ -5,7 +5,8 @@ import { requireAppUser } from "@/lib/auth";
 import { ageFrom, money, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, thDate, todayBangkok } from "@/lib/format";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
-import { setFamilyHead } from "../actions";
+import SetHeadButton from "./SetHeadButton";
+import { ActionBar } from "@/components/ActionBar";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
   "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id,death_date";
@@ -72,32 +73,37 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
   const passportExpired = p.passport_expiry && p.passport_expiry < today;
   const fullName = [p.title_prefix, p.full_name_th].filter(Boolean).join(" ");
 
+  const headLabel = nameOf.get(family?.head_person_id ?? "");
+  const canSetHead = me.role === "ADMIN" && !isHead && p.status === "ACTIVE";
+
   return (
     <div className="space-y-6">
-      <Link href="/family/members" className="text-sm text-slate-500 hover:underline">← Members</Link>
-
-      <section className="flex flex-wrap items-center gap-5 rounded-xl border border-slate-200 bg-white p-5">
-        {p.photo
-          // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={p.photo} alt="" className="h-24 w-24 rounded-full object-cover" />
-          : <div className="flex h-24 w-24 items-center justify-center rounded-full bg-slate-100 text-2xl font-semibold text-slate-400">{p.name.slice(0, 1)}</div>}
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold text-slate-900">{p.name}{p.nickname && <span className="ml-2 text-base font-normal text-slate-500">({p.nickname})</span>}</h1>
-          {fullName && <p className="text-sm text-slate-700">{fullName}</p>}
-          {p.full_name_en && <p className="text-sm text-slate-500">{p.full_name_en}</p>}
-          <p className="mt-1 text-xs text-slate-500">
-            {isHead && <span className="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">★ หัวหน้าครอบครัว</span>}
-            {!isHead && (RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-")}
-            {age != null && ` · อายุ ${age} ปี`}
-            {p.status !== "ACTIVE" && <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{PERSON_STATUS_LABEL[p.status]}</span>}
-          </p>
+      <div>
+        <Link href="/family/members" className="text-sm text-slate-500 hover:underline">← Members</Link>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-4">
+            {p.photo
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={p.photo} alt="" className="h-16 w-16 shrink-0 rounded-full object-cover" />
+              : <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl font-semibold text-slate-400">{p.name.slice(0, 1)}</div>}
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-slate-900">{p.name}{p.nickname && <span className="ml-2 text-base font-normal text-slate-500">({p.nickname})</span>}</h1>
+              <p className="text-sm text-slate-500">
+                {isHead ? <span className="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">★ หัวหน้าครอบครัว</span> : (RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-")}
+                {age != null && ` · อายุ ${age} ปี`}
+                {p.status !== "ACTIVE" && <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{PERSON_STATUS_LABEL[p.status]}</span>}
+              </p>
+            </div>
+          </div>
+          {(canEdit || canSetHead) && (
+            <ActionBar>
+              {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))}
+                isHead={isHead} headCandidates={people.filter((x) => x.id !== id && x.status === "ACTIVE").map((x) => ({ id: x.id, name: x.name }))} />}
+              {canSetHead && <SetHeadButton id={id} name={p.name} />}
+            </ActionBar>
+          )}
         </div>
-        <div className="text-right">
-          <div className="text-xs text-slate-500">Net Worth (ตามสัดส่วน)</div>
-          <div className="text-xl font-semibold tabular-nums">{money(nw?.net_worth ?? 0, "THB", 0)}</div>
-          <div className="text-xs text-slate-500">สินทรัพย์ {money(nw?.total_assets ?? 0, "THB", 0)} · หนี้ {money(nw?.total_liabilities ?? 0, "THB", 0)}</div>
-        </div>
-      </section>
+      </div>
 
       <nav className="flex flex-wrap gap-2 text-sm">
         {[[`/?p=${id}`, "Dashboard ของคนนี้"], [`/insurance?p=${id}`, `กรมธรรม์ (${policies ?? 0})`], [`/family/health?p=${id}`, "สุขภาพ"],
@@ -106,103 +112,104 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         ))}
       </nav>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">ข้อมูลทั่วไป</h2>
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <Item label="คำนำหน้า / ชื่อ-นามสกุล (ไทย)">{fullName}</Item>
-            <Item label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>
-            <Item label="ชื่อเล่น">{p.nickname}</Item>
-            <Item label="วันเกิด">{p.birth_date ? `${thDate(p.birth_date)}${age != null ? ` (${age} ปี)` : ""}` : ""}</Item>
-            {archived && <Item label="วันที่เสียชีวิต">{p.death_date ? thDate(p.death_date) : ""}</Item>}
-            <div className="sm:col-span-2"><Item label="หมายเหตุ">{p.notes}</Item></div>
-          </dl>
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">การติดต่อ</h2>
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <Item label="เบอร์โทร">{p.phone && <a href={`tel:${p.phone}`} className="text-blue-700 hover:underline">{p.phone}</a>}</Item>
-            <Item label="อีเมล">{p.email && <a href={`mailto:${p.email}`} className="text-blue-700 hover:underline">{p.email}</a>}</Item>
-            <div className="sm:col-span-2"><Item label="ที่อยู่">{p.address}</Item></div>
-            <Item label="ผู้ติดต่อฉุกเฉิน">{p.emergency_contact_name}</Item>
-            <Item label="เบอร์ผู้ติดต่อฉุกเฉิน">{p.emergency_contact_phone && <a href={`tel:${p.emergency_contact_phone}`} className="text-blue-700 hover:underline">{p.emergency_contact_phone}</a>}</Item>
-          </dl>
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium text-slate-900">ครอบครัว</h2>
-            {me.role === "ADMIN" && !isHead && p.status === "ACTIVE" && (
-              <form action={setFamilyHead}>
-                <input type="hidden" name="id" value={id} />
-                <button className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">ตั้งเป็นหัวหน้าครอบครัว</button>
-              </form>
-            )}
+      <section className="grid gap-4 md:grid-cols-3">
+        {/* ซ้าย: Net Worth + เอกสาร */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">Net Worth (ตามสัดส่วน)</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(nw?.net_worth ?? 0, "THB", 0)}</div>
+            <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">สินทรัพย์</dt><dd className="tabular-nums">{money(nw?.total_assets ?? 0, "THB", 0)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">หนี้สิน</dt><dd className="tabular-nums">{money(nw?.total_liabilities ?? 0, "THB", 0)}</dd></div>
+            </dl>
           </div>
-          <dl className="grid gap-3 sm:grid-cols-4">
-            <Item label="พ่อ"><PLink pid={p.father_id} /></Item>
-            <Item label="แม่"><PLink pid={p.mother_id} /></Item>
-            <Item label="คู่สมรส"><PLink pid={p.spouse_id} /></Item>
-            <Item label="ลูก">{children.length > 0 && children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<PLink pid={c.id} /></span>)}</Item>
-          </dl>
-          <p className="mt-2 text-xs text-slate-500">
-            ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{nameOf.get(family?.head_person_id ?? "") ? ` (${nameOf.get(family?.head_person_id ?? "")})` : ""}
-            {me.role === "ADMIN" && !isHead && p.status === "ACTIVE" && " · กดปุ่ม \"ตั้งเป็นหัวหน้าครอบครัว\" แล้วความสัมพันธ์ของทุกคนจะเปลี่ยนตาม"}
+          <div className="flex-1">
+            <EntityDocuments entityType="PERSON" entityId={id} module="FAMILY" role={me.role} title="เอกสารส่วนตัว" paths={[`/family/members/${id}`]} fill />
+          </div>
+        </div>
+
+        <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <div>
+            <h2 className="mb-3 font-medium text-slate-900">ข้อมูลทั่วไป</h2>
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Item label="คำนำหน้า / ชื่อ-นามสกุล (ไทย)">{fullName}</Item>
+              <Item label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>
+              <Item label="ชื่อเล่น">{p.nickname}</Item>
+              <Item label="วันเกิด">{p.birth_date ? `${thDate(p.birth_date)}${age != null ? ` (${age} ปี)` : ""}` : ""}</Item>
+              {archived && <Item label="วันที่เสียชีวิต">{p.death_date ? thDate(p.death_date) : ""}</Item>}
+              <div className="sm:col-span-2 lg:col-span-3"><Item label="หมายเหตุ">{p.notes}</Item></div>
+            </dl>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="mb-3 font-medium text-slate-900">การติดต่อ</h2>
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Item label="เบอร์โทร">{p.phone && <a href={`tel:${p.phone}`} className="text-blue-700 hover:underline">{p.phone}</a>}</Item>
+              <Item label="อีเมล">{p.email && <a href={`mailto:${p.email}`} className="text-blue-700 hover:underline">{p.email}</a>}</Item>
+              <Item label="ผู้ติดต่อฉุกเฉิน">{[p.emergency_contact_name, p.emergency_contact_phone].filter(Boolean).join(" · ")}</Item>
+              <div className="sm:col-span-2 lg:col-span-3"><Item label="ที่อยู่">{p.address}</Item></div>
+            </dl>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="mb-3 font-medium text-slate-900">ครอบครัว</h2>
+            <dl className="grid gap-3 sm:grid-cols-4">
+              <Item label="พ่อ"><PLink pid={p.father_id} /></Item>
+              <Item label="แม่"><PLink pid={p.mother_id} /></Item>
+              <Item label="คู่สมรส"><PLink pid={p.spouse_id} /></Item>
+              <Item label="ลูก">{children.length > 0 && children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<PLink pid={c.id} /></span>)}</Item>
+            </dl>
+            <p className="mt-2 text-xs text-slate-500">ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{headLabel ? ` (${headLabel})` : ""}</p>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว</h2>
+            <dl className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1"><Item label="เลขบัตรประชาชน">{fmtNid(p.national_id)}</Item><DocLink types={["บัตรประชาชน"]} /></div>
+              <div className="space-y-1"><Item label="เลขทะเบียนบ้าน">{p.house_registration_no}</Item><DocLink types={["ทะเบียนบ้าน"]} /></div>
+              <div className="space-y-1">
+                <Item label="หนังสือเดินทาง">
+                  {p.passport_no}{p.passport_expiry && <span className={passportExpired ? "text-red-600" : "text-slate-500"}> · หมดอายุ {thDate(p.passport_expiry)}{passportExpired ? " (หมดแล้ว)" : ""}</span>}
+                </Item>
+                <DocLink types={["หนังสือเดินทาง", "passport"]} />
+              </div>
+            </dl>
+            <p className="mt-3 text-xs text-slate-500">แนบสำเนาที่กล่อง &ldquo;เอกสารส่วนตัว&rdquo; โดยเลือกประเภท บัตรประชาชน / ทะเบียนบ้าน / หนังสือเดินทาง — ลิงก์จะขึ้นข้างเลขให้เอง</p>
+          </div>
+        </div>
+      </section>
+
+      {archived && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-5">
+          <h2 className="font-medium text-slate-900">ทรัพย์สินที่ต้องจัดการ</h2>
+          <p className="mb-3 text-xs text-slate-500">
+            รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับใน Net Worth ตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง
           </p>
+          {(estate ?? []).length === 0 ? <p className="text-sm text-emerald-700">ไม่มีรายการค้าง — จัดการครบแล้ว</p> : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1.5 pr-3">รายการ</th><th className="pr-3">ประเภท</th><th className="pr-3 text-right">สัดส่วน</th><th className="text-right">มูลค่าส่วนนี้ (บาท)</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(estate ?? []).map((e, i) => {
+                  const href = e.asset_id ? `/a/${e.asset_id}` : e.liability_id ? `/liabilities/${e.liability_id}`
+                    : e.credit_card_id ? `/liabilities/cards/${e.credit_card_id}` : e.lease_id ? "/property" : null;
+                  const debt = e.item_type !== "ASSET";
+                  return (
+                    <tr key={i}>
+                      <td className="py-1.5 pr-3">{href ? <Link href={href} className="text-blue-700 hover:underline">{e.item_name}</Link> : e.item_name}</td>
+                      <td className="pr-3 text-xs text-slate-500">{debt ? "หนี้สิน" : "สินทรัพย์"}{e.item_group ? ` · ${e.item_group}` : ""}</td>
+                      <td className="pr-3 text-right tabular-nums">{Number(e.ownership_percent).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
+                      <td className={`text-right tabular-nums ${debt ? "text-red-700" : ""}`}>{debt ? "-" : ""}{money(e.base_value, "THB", 0)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                <tr><td className="py-1.5 pr-3" colSpan={3}>รวมสุทธิ</td>
+                  <td className="text-right tabular-nums">{money((estate ?? []).reduce((t, e) => t + (e.item_type !== "ASSET" ? -1 : 1) * Number(e.base_value ?? 0), 0), "THB", 0)}</td></tr>
+              </tfoot>
+            </table>
+          )}
         </section>
-
-        {archived && (
-          <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-5 lg:col-span-2">
-            <h2 className="font-medium text-slate-900">ทรัพย์สินที่ต้องจัดการ</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับใน Net Worth ตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง
-            </p>
-            {(estate ?? []).length === 0 ? <p className="text-sm text-emerald-700">ไม่มีรายการค้าง — จัดการครบแล้ว</p> : (
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1.5 pr-3">รายการ</th><th className="pr-3">ประเภท</th><th className="pr-3 text-right">สัดส่วน</th><th className="text-right">มูลค่าส่วนนี้ (บาท)</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(estate ?? []).map((e, i) => {
-                    const href = e.asset_id ? `/a/${e.asset_id}` : e.liability_id ? `/liabilities/${e.liability_id}`
-                      : e.credit_card_id ? `/liabilities/cards/${e.credit_card_id}` : e.lease_id ? "/property" : null;
-                    const debt = e.item_type !== "ASSET";
-                    return (
-                      <tr key={i}>
-                        <td className="py-1.5 pr-3">{href ? <Link href={href} className="text-blue-700 hover:underline">{e.item_name}</Link> : e.item_name}</td>
-                        <td className="pr-3 text-xs text-slate-500">{debt ? "หนี้สิน" : "สินทรัพย์"}{e.item_group ? ` · ${e.item_group}` : ""}</td>
-                        <td className="pr-3 text-right tabular-nums">{Number(e.ownership_percent).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
-                        <td className={`text-right tabular-nums ${debt ? "text-red-700" : ""}`}>{debt ? "-" : ""}{money(e.base_value, "THB", 0)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </section>
-        )}
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว</h2>
-          <dl className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1"><Item label="เลขบัตรประชาชน">{fmtNid(p.national_id)}</Item><DocLink types={["บัตรประชาชน"]} /></div>
-            <div className="space-y-1"><Item label="เลขทะเบียนบ้าน">{p.house_registration_no}</Item><DocLink types={["ทะเบียนบ้าน"]} /></div>
-            <div className="space-y-1">
-              <Item label="หนังสือเดินทาง">
-                {p.passport_no}{p.passport_expiry && <span className={passportExpired ? "text-red-600" : "text-slate-500"}> · หมดอายุ {thDate(p.passport_expiry)}{passportExpired ? " (หมดแล้ว)" : ""}</span>}
-              </Item>
-              <DocLink types={["หนังสือเดินทาง", "passport"]} />
-            </div>
-          </dl>
-          <p className="mt-3 text-xs text-slate-500">แนบสำเนาที่ส่วน &ldquo;เอกสารส่วนตัว&rdquo; ด้านล่าง โดยเลือกประเภท บัตรประชาชน / ทะเบียนบ้าน / หนังสือเดินทาง — ลิงก์จะขึ้นข้างเลขให้เอง</p>
-        </section>
-      </div>
-
-      {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))}
-        isHead={isHead} headCandidates={people.filter((x) => x.id !== id && x.status === "ACTIVE").map((x) => ({ id: x.id, name: x.name }))} />}
-
-      <EntityDocuments entityType="PERSON" entityId={id} module="FAMILY" role={me.role} title="เอกสารส่วนตัว" paths={[`/family/members/${id}`]} />
+      )}
     </div>
   );
 }

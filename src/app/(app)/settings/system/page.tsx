@@ -1,23 +1,33 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { thDate, todayBangkok } from "@/lib/format";
+import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, thDate, todayBangkok } from "@/lib/format";
+import FxSourceForm from "./FxSourceForm";
+import { ActionBar } from "@/components/ActionBar";
 import OverrideForm from "./OverrideForm";
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
+const JOB_LABEL: Record<string, string> = { FX_FETCH: "อัตราแลกเปลี่ยน", FX_BACKFILL: "อัตราแลกเปลี่ยน (ย้อนหลัง)", BACKUP: "สำรองข้อมูล", PRICE_FETCH: "ราคาอัตโนมัติ" };
+const SKIP_REASON: Record<string, string> = { DEVIATION_OVER_5PCT: "ต่างจากก่อนหน้าเกิน 5%", NOT_CURRENT_SOURCE: "ไม่ใช่แหล่งปัจจุบัน", DEVIATION_OVER_20PCT: "ต่างจากก่อนหน้าเกิน 20%",
+  NO_HOLDING: "ไม่พบหลักทรัพย์ / ปิดดึงราคาแล้ว", NOT_FOUND: "ไม่พบราคา", HAS_STATEMENT: "มีราคาจาก Statement วันนั้นแล้ว", BAD_DATE: "วันที่ไม่ถูกต้อง", UNIT: "หน่วยไม่ใช่ บาททองคำ / กรัม" };
 
 export default async function SystemPage() {
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
-  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }] = await Promise.all([
-    supabase.from("families").select("base_currency,go_live_date,system_status").maybeSingle(),
+  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { count: autoHold }, { count: autoGold }, { data: lastPrice }] = await Promise.all([
+    supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since").maybeSingle(),
     supabase.from("v_fx_status").select("currency,latest_rate_date,rate_to_thb,source,is_override,age_days,is_stale").order("currency"),
     isAdmin
       ? supabase.from("system_job_runs").select("id,job_type,started_at,result,details").order("started_at", { ascending: false }).limit(10)
       : Promise.resolve({ data: [] as { id: number; job_type: string; started_at: string; result: string; details: unknown }[] }),
     supabase.from("fx_rates").select("rate_date,currency,rate_to_thb,source,override_reason").is("deleted_at", null)
       .in("currency", ["USD", "EUR", "GBP", "JPY", "SGD", "CNY"]).order("rate_date", { ascending: false }).limit(18),
+    supabase.from("investment_holdings").select("id", { count: "exact", head: true }).eq("auto_price", true).eq("status", "ACTIVE").is("deleted_at", null),
+    supabase.from("alternative_asset_details").select("id", { count: "exact", head: true }).eq("auto_price", true).is("deleted_at", null),
+    supabase.from("investment_valuations").select("valuation_date").eq("source", "MARKET").is("deleted_at", null).order("valuation_date", { ascending: false }).limit(1),
   ]);
+
+  const fxSource = family?.fx_source === "BBL" ? "BBL" : "BOT";
 
   return (
     <div className="space-y-6">
@@ -29,9 +39,19 @@ export default async function SystemPage() {
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">อัตราแลกเปลี่ยนของสกุลที่ใช้งาน</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          ดึงจาก ธปท. (อัตราเฉลี่ยรายวัน) ทุกวัน 19:30 · การคำนวณใช้ Rate ล่าสุด <b>ก่อน</b> วันที่ของรายการ · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้)
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-slate-900">อัตราแลกเปลี่ยนของสกุลที่ใช้งาน</h2>
+            <p className="mt-1 text-sm text-slate-700">
+              แหล่งปัจจุบัน: <b>{fxSource === "BBL" ? "ธนาคารกรุงเทพ" : "ธปท."}</b>
+              {fxSource === "BBL" && <> · {FX_BBL_RATE_LABEL[family?.fx_bbl_rate ?? "MID"]}</>}
+              {family?.fx_source_since && <span className="text-slate-500"> · ตั้งแต่ {thDate(family.fx_source_since)}</span>}
+            </p>
+          </div>
+          {isAdmin && <ActionBar><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /></ActionBar>}
+        </div>
+        <p className="mb-3 mt-1 text-xs text-slate-500">
+          ดึงอัตราทุกวัน 19:30 · การคำนวณใช้ Rate ล่าสุด <b>ก่อน</b> วันที่ของรายการ · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
         </p>
         {(fx ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">ยังไม่มีทรัพย์สินที่เป็นเงินต่างประเทศ</p>
@@ -46,7 +66,7 @@ export default async function SystemPage() {
                   <td className="py-1.5 font-medium">{r.currency}</td>
                   <td className="tabular-nums">{r.rate_to_thb ?? "-"}</td>
                   <td>{thDate(r.latest_rate_date)}</td>
-                  <td>{r.source === "ADMIN_OVERRIDE" ? "ADMIN Override" : r.source ? "ธปท." : "-"}</td>
+                  <td>{r.source ? FX_SOURCE_LABEL[r.source] ?? r.source : "-"}</td>
                   <td>{r.is_stale
                     ? <span className="text-red-600">ไม่มี / เก่าเกิน 5 วัน</span>
                     : <span className="text-emerald-700">ปกติ</span>}</td>
@@ -67,7 +87,7 @@ export default async function SystemPage() {
                 <tr key={`${r.rate_date}-${r.currency}`}>
                   <td className="py-1.5">{thDate(r.rate_date)}</td><td>{r.currency}</td>
                   <td className="tabular-nums">{r.rate_to_thb}</td>
-                  <td className="text-slate-500">{r.source === "ADMIN_OVERRIDE" ? `Override: ${r.override_reason}` : "ธปท."}</td>
+                  <td className="text-slate-500">{r.source === "ADMIN_OVERRIDE" ? `Override: ${r.override_reason}` : FX_SOURCE_LABEL[r.source] ?? r.source}</td>
                 </tr>
               ))}
             </tbody>
@@ -75,26 +95,49 @@ export default async function SystemPage() {
         )}
       </section>
 
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-medium text-slate-900">ราคาอัตโนมัติ</h2>
+        <p className="mt-1 text-sm text-slate-700">
+          เปิดอยู่: หลักทรัพย์ {autoHold ?? 0} ตัว · ทองคำ {autoGold ?? 0} รายการ
+          {lastPrice?.[0]?.valuation_date && <span className="text-slate-500"> · ราคาล่าสุด {thDate(lastPrice[0].valuation_date)}</span>}
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          ดึงทุกวันจันทร์–ศุกร์ 18:45 · หุ้นไทย / ต่างประเทศจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · กองทุนไทยจาก ก.ล.ต. (ต้องตั้ง SEC_API_KEY) ·
+          ทองคำประมาณจากราคาตลาดโลก × อัตราแลกเปลี่ยน · เปิดทีละรายการที่หน้าหลักทรัพย์ / หน้าทองคำ → แก้ไขข้อมูล ·
+          ราคาที่ต่างจากก่อนหน้าเกิน 20% ไม่บันทึก และไม่ทับราคาจาก Statement
+        </p>
+      </section>
+
       {isAdmin && (
         <>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">FX Override (ADMIN)</h2>
-            <p className="mb-3 text-xs text-slate-500">ใช้เฉพาะเมื่อ ธปท. ไม่มีข้อมูลหรือระบบดึงไม่สำเร็จ · ระบบดึงอัตโนมัติจะไม่เขียนทับค่าที่ Override · บันทึกใน Audit Log</p>
+            <p className="mb-3 text-xs text-slate-500">ใช้เฉพาะเมื่อแหล่งอัตราไม่มีข้อมูลหรือระบบดึงไม่สำเร็จ · ระบบดึงอัตโนมัติจะไม่เขียนทับค่าที่ Override · บันทึกใน Audit Log</p>
             <OverrideForm today={todayBangkok()} />
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-3 font-medium text-slate-900">ประวัติงานอัตโนมัติ (ล่าสุด 10 ครั้ง)</h2>
             {(jobs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">เวลา</th><th>งาน</th><th>ผล</th><th>จำนวน</th></tr></thead>
+                <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">เวลา</th><th>งาน</th><th>ผล</th><th>จำนวน</th><th>หมายเหตุ</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(jobs ?? []).map((j) => (
-                    <tr key={j.id}>
-                      <td className="py-1.5">{new Date(j.started_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}</td>
-                      <td>{j.job_type}</td><td>{JOB_RESULT[j.result] ?? j.result}</td>
-                      <td>{(j.details as { rows?: number } | null)?.rows ?? "-"}</td>
-                    </tr>
-                  ))}
+                  {(jobs ?? []).map((j) => {
+                    const d = (j.details ?? {}) as { rows?: number; source?: string; skipped?: { date: string; currency?: string; symbol?: string; rate?: number; price?: number; previous?: number; reason: string }[] };
+                    const sk = d.skipped ?? [];
+                    return (
+                      <tr key={j.id} className="align-top">
+                        <td className="py-1.5">{new Date(j.started_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}</td>
+                        <td>{JOB_LABEL[j.job_type] ?? j.job_type}{d.source && <div className="text-xs text-slate-500">{FX_SOURCE_LABEL[d.source] ?? d.source}</div>}</td>
+                        <td className={j.result === "PARTIAL" ? "text-amber-700" : j.result === "FAILED" ? "text-red-600" : ""}>{JOB_RESULT[j.result] ?? j.result}</td>
+                        <td>{d.rows ?? "-"}</td>
+                        <td className="text-xs text-slate-600">{sk.length === 0 ? "" : <>
+                          ไม่บันทึก {sk.length} รายการ
+                          {sk.slice(0, 3).map((x, i) => <div key={i}>{thDate(x.date)} {x.currency ?? x.symbol} {x.rate ?? x.price ?? ""}
+                            {x.previous != null && ` (ก่อนหน้า ${x.previous})`} · {SKIP_REASON[x.reason] ?? x.reason}</div>)}
+                        </>}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

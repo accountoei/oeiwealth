@@ -7,7 +7,7 @@ import { money, thDate } from "@/lib/format";
 
 export type PortfolioRow = {
   asset_id: string; name: string; sub: string; currency: string; value: number | null; valueThb: number; valueDate: string | null;
-  sharePct: number | null; fullValue: number | null; inTransit: boolean; atCost: boolean;
+  sharePct: number | null; fullValue: number | null; inTransit: boolean; atCost: boolean; closed?: boolean;
   unreal: number; real: number; fx: number; income: number; total: number; cost: number;
 };
 
@@ -16,22 +16,26 @@ const amt = (v: number) => (v ? `${v > 0 ? "+" : ""}${money(v, undefined, 0)}` :
 const pct = (total: number, cost: number) => (cost > 0 && total ? `${total > 0 ? "+" : ""}${((total / cost) * 100).toFixed(2)}%` : "");
 
 /** ตารางพอร์ต: มูลค่า (บาท) + ผลตอบแทนรวม (บาท / % เทียบต้นทุน) · กดแถวเพื่อดูผลตอบแทนแยกส่วน */
-export default function PortfolioTable({ rows, ordering = false, paths = [], toggle }: {
-  rows: PortfolioRow[]; ordering?: boolean; paths?: string[]; toggle?: ReactNode;
+export default function PortfolioTable({ rows, ordering = false, paths = [], toggle, filter, label = "รวมทุกพอร์ต" }: {
+  rows: PortfolioRow[]; ordering?: boolean; paths?: string[]; toggle?: ReactNode; filter?: ReactNode; label?: string;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const sum = (k: keyof PortfolioRow) => rows.reduce((t, r) => t + Number(r[k] ?? 0), 0);
   const tot = { valueThb: sum("valueThb"), total: sum("total"), cost: sum("cost") };
   return (
     <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
-        <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด</h2>
+          {filter}
+        </div>
         {toggle}
       </div>
-      <table className="mt-2 w-full min-w-[34rem] text-sm">
+      <table className="mt-2 w-full min-w-[44rem] text-sm">
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
           <tr>
             <th className="px-4 py-2">พอร์ต</th>
+            <th className="px-3 text-right">ต้นทุน (บาท)</th>
             <th className="px-3 text-right">มูลค่า (บาท)</th>
             <th className="px-3 text-right">ผลตอบแทนรวม (บาท)</th>
             <th className="w-8"></th>
@@ -43,13 +47,15 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
             return (
               <Fragment key={r.asset_id}>
                 <tr onClick={(e) => { if (!ordering && !(e.target as HTMLElement).closest("a,button,form")) setOpen(isOpen ? null : r.asset_id); }}
-                  className={`cursor-pointer align-top hover:bg-slate-50 ${isOpen ? "bg-blue-50/60" : ""}`} title="กดเพื่อดูผลตอบแทนแยกส่วน">
+                  className={`cursor-pointer align-top hover:bg-slate-50 ${isOpen ? "bg-blue-50/60" : ""} ${r.closed ? "opacity-50" : ""}`} title="กดเพื่อดูผลตอบแทนแยกส่วน">
                   <td className="min-w-40 px-4 py-2.5">
                     {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (x) => x.asset_id)} /></span>}
                     <Link href={`/investments/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                     <div className="text-xs text-slate-500">{r.sub}</div>
+                    {r.closed && <div className="text-xs text-slate-500">ปิดพอร์ตแล้ว</div>}
                     {r.atCost && <div className="text-xs text-amber-700">มีบางตัวยังใช้ราคาทุน (รอ Statement)</div>}
                   </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.cost ? money(r.cost, undefined, 2) : "-"}</td>
                   <td className="px-3 py-2.5 text-right">
                     <div className="font-medium tabular-nums">{money(r.valueThb, undefined, 2)}</div>
                     <div className="text-xs text-slate-500">
@@ -66,7 +72,7 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
                 </tr>
                 {isOpen && (
                   <tr className="bg-slate-50">
-                    <td colSpan={4} className="px-4 py-3">
+                    <td colSpan={5} className="px-4 py-3">
                       <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-5">
                         <Item label="ต้นทุน" value={money(r.cost, undefined, 0)} />
                         <Item label="ยังไม่รับรู้" value={amt(r.unreal)} cls={sign(r.unreal)} />
@@ -81,20 +87,23 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
               </Fragment>
             );
           })}
-          {rows.length > 1 && (
-            <tr className="bg-slate-50 font-medium">
-              <td className="px-4 py-2.5">รวมทุกพอร์ต</td>
+        </tbody>
+        {rows.length > 0 && (
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+            <tr>
+              <td className="px-4 py-2.5">{label}</td>
+              <td className="px-3 text-right tabular-nums">{money(tot.cost, undefined, 2)}</td>
               <td className="px-3 text-right tabular-nums">{money(tot.valueThb, undefined, 2)}</td>
               <td className={`px-3 text-right tabular-nums ${sign(tot.total)}`}>
                 {amt(tot.total)}{pct(tot.total, tot.cost) && <div className="text-xs font-normal">{pct(tot.total, tot.cost)}</div>}
               </td>
               <td></td>
             </tr>
-          )}
-        </tbody>
+          </tfoot>
+        )}
       </table>
       <p className="px-4 py-3 text-xs text-slate-500">
-        ผลตอบแทนนับตั้งแต่ยอดตั้งต้น (ต้นทุนเฉลี่ย) · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
+        ต้นทุน = ต้นทุนเฉลี่ยของหลักทรัพย์ที่ถืออยู่ · ผลตอบแทนนับตั้งแต่ยอดตั้งต้น · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
       </p>
     </section>
   );

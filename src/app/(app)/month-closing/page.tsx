@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { FinalizeForm, ReopenForm } from "./forms";
+import { ActionBar } from "@/components/ActionBar";
 
 type Issue = { severity: string; code: string; message: string; entity_type: string | null; entity_id: string | null };
 type Check = { category: string; status: string; issue_count: number; issues: Issue[] };
@@ -52,7 +53,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const today = todayBangkok();
   const [{ data: family }, { data: finals }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("net_worth_snapshots").select("snapshot_month,status,version").is("deleted_at", null)
+    supabase.from("net_worth_snapshots").select("snapshot_month,status,version,net_worth,total_assets,total_liabilities,finalized_at").is("deleted_at", null)
       .eq("status", "FINAL").order("snapshot_month", { ascending: false }),
   ]);
   const goMonth = (family?.go_live_date ?? today).slice(0, 7);
@@ -118,42 +119,77 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
       total: Math.max(Number(st.balance) + spend - paid - back, 0), exact: st.statement_date >= asOf };
   }).filter((x): x is NonNullable<typeof x> => !!x);
 
+  const cardTotal = cardRows.reduce((t, c) => t + (c.currency === "THB" ? c.total : 0), 0);
+  const cardOther = cardRows.some((c) => c.currency !== "THB");
+  const ready = checks.filter((c) => c.status === "READY").length;
+  const banksDone = bankRows.filter((b) => b.last === end || reconBy.has(b.asset_id)).length;
+  const sumPerson = (k: "assets" | "liabilities" | "net_worth") => (p?.by_person ?? []).reduce((t, x) => t + Number(x[k] ?? 0), 0);
+  const history = (finals ?? []).slice(0, 12);
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Month Closing</h1>
           <p className="text-sm text-slate-500">ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <Link href={`/month-closing?m=${prev}`} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">←</Link>
-          <span className="min-w-28 text-center font-medium">{thMonth(start)}</span>
-          <Link href={`/month-closing?m=${next}`} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">→</Link>
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex items-center gap-2 text-sm">
+            <Link href={`/month-closing?m=${prev}`} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนก่อน">←</Link>
+            <span className="min-w-28 text-center font-medium">{thMonth(start)}</span>
+            <Link href={`/month-closing?m=${next}`} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนถัดไป">→</Link>
+          </div>
+          {canWrite && !isFinal && (
+            <Link href={`/financial/cash?tab=update&d=${ended ? end : today}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">อัปเดตยอดคงเหลือ</Link>
+          )}
+          {!isFinal && canClose && blocked.length === 0 && (
+            <ActionBar>
+              <FinalizeForm month={start} warnings={warnings} label={`ปิดเดือน ${thMonth(start)}`}
+                summary={<>จะบันทึก Net Worth <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
+                  {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}
+                  {!ended && <span className="block text-xs text-amber-700">เดือนนี้ยังไม่สิ้นเดือน — ยอดเป็นยอด ณ วันนี้</span>}</>} />
+            </ActionBar>
+          )}
+          {isFinal && me.role === "ADMIN" && isLatestFinal && <ActionBar><ReopenForm month={start} /></ActionBar>}
         </div>
       </div>
 
       {(checkErr || prevErr) && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {checkErr?.message ?? prevErr?.message}</p>}
 
       {/* ---------------------------------------------------------- สรุป */}
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            Net Worth {p?.confirmed ? `ณ สิ้นเดือน ${thDate(p?.as_of)}` : `ณ วันนี้ (เดือนยังไม่จบ · ยอดประมาณการ)`}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            Net Worth {p?.confirmed ? `ณ ${thDate(p?.as_of)}` : "ณ วันนี้ (ประมาณการ)"}
             {isFinal
               ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">FINAL v{snap?.version}</span>
               : <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{ended ? "DRAFT" : "ยังไม่สิ้นเดือน"}</span>}
           </div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums">{money(isFinal ? snap?.net_worth : p?.net_worth, "THB", 0)}</div>
-          <div className="mt-1 text-xs text-slate-500">
-            สินทรัพย์ {money(p?.total_assets, undefined, 0)} · หนี้สิน {money(p?.total_liabilities, undefined, 0)}
-            {p && p.carried_forward_items > 0 && ` · ใช้ยอดเดิม (Carry Forward) ${p.carried_forward_items} รายการ`}
-          </div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{money(isFinal ? snap?.net_worth : p?.net_worth, "THB", 0)}</div>
+          <div className="mt-1 text-xs text-slate-500">สินทรัพย์ {money(p?.total_assets, undefined, 0)} · หนี้สิน {money(p?.total_liabilities, undefined, 0)}</div>
           {isFinal && snap && Number(snap.net_worth) !== Number(p?.net_worth) && (
-            <div className="mt-1 text-xs text-amber-700">ยอดปัจจุบันจากข้อมูลล่าสุด {money(p?.net_worth, undefined, 0)} ต่างจาก Snapshot ที่ปิดไว้</div>
+            <div className="mt-1 text-xs text-amber-700">ยอดจากข้อมูลล่าสุด {money(p?.net_worth, undefined, 0)} ต่างจาก Snapshot ที่ปิดไว้</div>
           )}
         </div>
-        <Mini label="การเงิน + ลงทุน" value={money(Number(p?.financial ?? 0) + Number(p?.investment ?? 0), undefined, 0)} />
-        <Mini label="อสังหาฯ + สินทรัพย์อื่น" value={money(Number(p?.property ?? 0) + Number(p?.alternative ?? 0), undefined, 0)} />
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ความพร้อม (Checklist)</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{ready} <span className="text-sm font-normal text-slate-500">/ {checks.length} หมวด</span></div>
+          <div className={`mt-1 text-xs ${blocked.length ? "text-red-700" : warnings ? "text-amber-700" : "text-emerald-700"}`}>
+            {blocked.length ? `BLOCKED ${blocked.length} หมวด` : warnings ? `คำเตือน ${warnings} รายการ (ปิดได้)` : "พร้อมปิดเดือน"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">บัญชีธนาคารอัปเดตยอดสิ้นเดือน</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{banksDone} <span className="text-sm font-normal text-slate-500">/ {bankRows.length} บัญชี</span></div>
+          <div className="mt-1 text-xs text-slate-500">ไม่อัปเดต = ใช้ยอดตามระบบ</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ตามหมวดสินทรัพย์</div>
+          <dl className="mt-1 space-y-0.5 text-xs">
+            <div className="flex justify-between gap-2"><dt className="text-slate-500">การเงิน + ลงทุน</dt><dd className="tabular-nums">{money(Number(p?.financial ?? 0) + Number(p?.investment ?? 0), undefined, 0)}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="text-slate-500">อสังหาฯ + สินทรัพย์อื่น</dt><dd className="tabular-nums">{money(Number(p?.property ?? 0) + Number(p?.alternative ?? 0), undefined, 0)}</dd></div>
+            {p && p.carried_forward_items > 0 && <div className="text-slate-500">ใช้ยอดเดิม (Carry Forward) {p.carried_forward_items} รายการ</div>}
+          </dl>
+        </div>
       </section>
 
       {/* ---------------------------------------------------------- Checklist */}
@@ -199,10 +235,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
               ไม่ได้อัปเดต = ปิดงวดได้ โดยใช้ยอดตามระบบ (ยอดล่าสุด + เงินเข้า − เงินออก)
             </p>
           </div>
-          {canWrite && !isFinal && (
-            <Link href={`/financial/cash?tab=update&d=${ended ? end : today}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
-              อัปเดตยอดคงเหลือ →</Link>
-          )}
+          <span className="text-sm text-slate-500">อัปเดตแล้ว <span className="font-medium text-slate-900">{banksDone} / {bankRows.length}</span></span>
         </div>
         {bankRows.length > 0 && (
           <ul className="mt-3 divide-y divide-slate-100 text-sm">
@@ -246,6 +279,12 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                   </tr>
                 ))}
               </tbody>
+              {cardRows.length > 1 && (
+                <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                  <tr><td className="py-2 pr-2">รวม{cardOther ? " (เฉพาะบัตรสกุลบาท)" : ""}</td><td colSpan={3}></td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(cardTotal, "THB")}</td><td></td></tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </section>
@@ -285,6 +324,13 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                   </tr>
                 ))}
               </tbody>
+              {p.by_person.length > 1 && (
+                <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                  <tr><td className="py-1.5">รวม</td><td className="text-right tabular-nums">{money(sumPerson("assets"), undefined, 0)}</td>
+                    <td className="text-right tabular-nums">{money(sumPerson("liabilities"), undefined, 0)}</td>
+                    <td className="text-right tabular-nums">{money(sumPerson("net_worth"), undefined, 0)}</td></tr>
+                </tfoot>
+              )}
             </table>
             {p.fx.length > 0 && (
               <p className="mt-3 text-xs text-slate-500">
@@ -295,46 +341,62 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
         </section>
       )}
 
-      {/* ---------------------------------------------------------- ปิดเดือน / Reopen */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-2 font-medium text-slate-900">{isFinal ? "ปิดเดือนแล้ว" : "ปิดเดือน"}</h2>
-        {isFinal ? (
-          <div className="space-y-3 text-sm">
-            <p>FINAL เวอร์ชัน {snap?.version} · ปิดเมื่อ {snap?.finalized_at ? new Date(snap.finalized_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-"}</p>
-            {snap?.closing_warnings && snap.closing_warnings.length > 0 && (
-              <details className="text-xs text-slate-600">
-                <summary className="cursor-pointer">คำเตือนที่ปิดผ่าน {snap.closing_warnings.length} หมวด</summary>
-                <ul className="mt-1 space-y-0.5">
-                  {snap.closing_warnings.flatMap((w) => w.issues.filter(notTracking).map((i, k) => <li key={`${w.category}-${k}`}>• {i.message}</li>))}
-                </ul>
-              </details>
+      {/* ---------------------------------------------------------- สถานะการปิดเดือน + ประวัติ */}
+      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="px-5 pt-4">
+          <h2 className="font-medium text-slate-900">การปิดเดือน</h2>
+          <div className="mt-1 text-sm">
+            {isFinal ? (
+              <>
+                <p>{thMonth(start)} ปิดแล้ว · FINAL เวอร์ชัน {snap?.version} · ปิดเมื่อ {snap?.finalized_at ? new Date(snap.finalized_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-"}</p>
+                {snap?.closing_warnings && snap.closing_warnings.length > 0 && (
+                  <details className="mt-1 text-xs text-slate-600">
+                    <summary className="cursor-pointer">คำเตือนที่ปิดผ่าน {snap.closing_warnings.length} หมวด</summary>
+                    <ul className="mt-1 space-y-0.5">
+                      {snap.closing_warnings.flatMap((w) => w.issues.filter(notTracking).map((i, k) => <li key={`${w.category}-${k}`}>• {i.message}</li>))}
+                    </ul>
+                  </details>
+                )}
+                {me.role === "ADMIN" && !isLatestFinal && <p className="text-xs text-slate-500">Reopen ได้เฉพาะเดือนที่ปิดล่าสุด</p>}
+              </>
+            ) : !canClose ? (
+              <p className="text-slate-500">ผู้ดูแลระบบ / ผู้แก้ไข เป็นผู้ปิดเดือน</p>
+            ) : blocked.length > 0 ? (
+              <p className="text-red-700">ยังปิดไม่ได้: {blocked.map((c) => CAT[c.category] ?? c.category).join(" · ")} เป็น BLOCKED</p>
+            ) : (
+              <p className="text-slate-600">พร้อมปิดเดือน — กดปุ่ม &ldquo;ปิดเดือน {thMonth(start)}&rdquo; มุมขวาบน</p>
             )}
-            <p className="text-xs text-slate-500">รายงาน PDF ประจำเดือนจะเพิ่มเมื่อเชื่อม Google Drive</p>
-            {me.role === "ADMIN" && (isLatestFinal ? <ReopenForm month={start} /> : <p className="text-xs text-slate-500">Reopen ได้เฉพาะเดือนที่ปิดล่าสุด</p>)}
+            <p className="mt-1 text-xs text-slate-500">รายงาน PDF ประจำเดือนจะเพิ่มเมื่อเชื่อม Google Drive</p>
           </div>
-        ) : !canClose ? (
-          <p className="text-sm text-slate-500">ผู้ดูแลระบบ / ผู้แก้ไข เป็นผู้ปิดเดือน</p>
-        ) : blocked.length > 0 ? (
-          <p className="text-sm text-red-700">ยังปิดไม่ได้: {blocked.map((c) => CAT[c.category] ?? c.category).join(" · ")} เป็น BLOCKED</p>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-slate-700">
-              จะบันทึก Net Worth <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
-              {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}
-            </p>
-            <FinalizeForm month={start} warnings={warnings} />
-          </div>
+        </div>
+        {history.length > 0 && (
+          <table className="mt-3 w-full min-w-[36rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-5 py-2">เดือนที่ปิดแล้ว</th><th className="px-3 text-right">สินทรัพย์</th><th className="px-3 text-right">หนี้สิน</th>
+                <th className="px-3 text-right">Net Worth</th><th className="px-3 text-right">เปลี่ยนจากเดือนก่อน</th><th className="px-3">เวอร์ชัน</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {history.map((h, i) => {
+                const before = (finals ?? [])[i + 1];
+                const d = before ? Number(h.net_worth) - Number(before.net_worth) : null;
+                return (
+                  <tr key={h.snapshot_month} className={h.snapshot_month.slice(0, 7) === ym ? "bg-blue-50/60" : ""}>
+                    <td className="px-5 py-2"><Link href={`/month-closing?m=${h.snapshot_month.slice(0, 7)}`} className="hover:underline">{thMonth(h.snapshot_month)}</Link></td>
+                    <td className="px-3 text-right tabular-nums">{money(h.total_assets, undefined, 0)}</td>
+                    <td className="px-3 text-right tabular-nums">{money(h.total_liabilities, undefined, 0)}</td>
+                    <td className="px-3 text-right font-medium tabular-nums">{money(h.net_worth, undefined, 0)}</td>
+                    <td className={`px-3 text-right tabular-nums ${d == null ? "text-slate-400" : d >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                      {d == null ? "-" : `${d >= 0 ? "+" : ""}${money(d, undefined, 0)}`}</td>
+                    <td className="px-3 text-xs text-slate-500">v{h.version}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
+        {history.length === 0 && <p className="px-5 pb-4 pt-2 text-sm text-slate-500">ยังไม่มีเดือนที่ปิดแล้ว</p>}
+        {history.length > 0 && <div className="h-2" />}
       </section>
-    </div>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

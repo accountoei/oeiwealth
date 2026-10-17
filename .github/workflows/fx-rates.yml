@@ -1,6 +1,7 @@
-# FX Job: ดึงอัตราแลกเปลี่ยนเฉลี่ยรายวันจาก ธปท. → Supabase (fx_rates)
-# Repository secrets ที่ต้องมี: BOT_API_TOKEN, SUPABASE_URL, SUPABASE_SECRET_KEY
-name: FX rates (Bank of Thailand)
+# FX Job: ดึงอัตราแลกเปลี่ยนรายวัน → Supabase (fx_rates)
+#   แหล่งตามที่ ADMIN เลือกที่ Settings → System: ธปท. หรือ ธนาคารกรุงเทพ
+# Repository secrets: SUPABASE_URL, SUPABASE_SECRET_KEY + BOT_API_TOKEN (ธปท.) / BBL_API_KEY (ธนาคารกรุงเทพ)
+name: FX rates
 
 on:
   schedule:
@@ -13,6 +14,10 @@ on:
       end_date:
         description: "ถึงวันที่ (YYYY-MM-DD) — เว้นว่าง = วันนี้"
         required: false
+      dry_run:
+        description: "ทดลองอ่านอย่างเดียว ไม่บันทึก (ใช้ตรวจครั้งแรกหลังตั้ง Key)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,9 +37,11 @@ jobs:
           node-version: 22
       - name: Test parser
         run: node scripts/fx-fetch.test.mjs
-      - name: Fetch BOT rates and upsert to Supabase
+      - name: Fetch rates and upsert to Supabase
         env:
           BOT_API_TOKEN: ${{ secrets.BOT_API_TOKEN }}
+          BBL_API_KEY: ${{ secrets.BBL_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           START_DATE: ${{ inputs.start_date }}

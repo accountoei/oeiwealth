@@ -84,29 +84,38 @@ export function ConfirmReconForm({ id, calculated, currency, canConfirm }:
   );
 }
 
-export function FinalizeForm({ month, warnings }: { month: string; warnings: number }) {
+export function FinalizeForm({ month, warnings, label, summary }: { month: string; warnings: number; label: string; summary: React.ReactNode }) {
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(finalizeMonth, {});
-  return (
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>{label}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
     <form action={action} className="space-y-3">
       <input type="hidden" name="month" value={month} />
+      <h2 className="font-medium text-slate-900">{label}</h2>
+      <div className="text-sm text-slate-700">{summary}</div>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" name="confirm" className="mt-1" />
         <span>ตรวจตัวเลขแล้ว{warnings > 0 ? ` และยอมรับคำเตือน ${warnings} รายการ (จะถูกบันทึกไว้กับงวดนี้)` : ""} · หลังปิดเดือนจะแก้รายการในเดือนนี้ไม่ได้จนกว่าจะ Reopen</span>
       </label>
-      <button disabled={pending} className={btn}>{pending ? "กำลังปิดเดือน…" : "ยืนยันปิดเดือน (Finalize)"}</button>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังปิดเดือน…" : "ยืนยันปิดเดือน (Finalize)"}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ยกเลิก</button>
+      </div>
       <Msg s={state} />
     </form>
-  );
+  ));
 }
 
 export function ReopenForm({ month }: { month: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(reopenMonth, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-sm text-red-700 underline")}>Reopen เดือนนี้</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50")}>Reopen เดือนนี้</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
       <input type="hidden" name="month" value={month} />
+      <p className="font-medium text-red-800">Reopen เดือนนี้</p>
       <p className="text-xs text-red-800">เปิดเดือนกลับเป็น DRAFT เพื่อแก้ไข แล้วต้องปิดเดือนใหม่ (เลขเวอร์ชันเพิ่ม) · บันทึกใน Audit Log</p>
       <input name="reason" required placeholder="เหตุผล เช่น ลืมบันทึกค่าใช้จ่าย" className={`w-full ${small}`} />
       <div className="flex items-center gap-2">

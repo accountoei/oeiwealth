@@ -25,7 +25,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
     expected_amount: "num", frequency: "str", due_day: "num", due_month: "num" },
   insurance_claims: { incident_date: "date", claim_date: "date", claimed_amount: "num", received_amount: "num", status: "str", notes: "str", coverage_id: "str" },
   credit_cards: { issuer: "str", card_name: "str", credit_limit: "num", statement_day: "num", due_day: "num", annual_fee: "num", expiry_date: "date", notes: "str" },
-  investment_holdings: { name: "str", symbol: "str", maturity_date: "date", notes: "str", status: "str", purpose: "str", interest_rate: "num" },
+  investment_holdings: { name: "str", symbol: "str", maturity_date: "date", notes: "str", status: "str", purpose: "str", interest_rate: "num", auto_price: "bool", price_ref: "str" },
   fcn_underlyings: { symbol: "str", name: "str", initial_price: "num", strike_price: "num", barrier_price: "num" },
   loan_details: { borrower_name: "str", interest_rate: "num", due_date: "date", status: "str", notes: "str" },
   loan_schedule_lines: { due_date: "date", principal_due: "num", interest_due: "num", notes: "str" },

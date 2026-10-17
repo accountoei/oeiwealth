@@ -55,6 +55,7 @@ export async function updateAlternativeInfo(_: ActionState, form: FormData): Pro
     brand: str(form.get("brand")), model: str(form.get("model")), serial_no: str(form.get("serial_no")),
     quantity: num(form.get("quantity")), unit: str(form.get("unit")), purity_pct: purity,
     storage_location: str(form.get("storage_location")), condition: str(form.get("condition")), details: str(form.get("details")),
+    ...(form.has("auto_price_shown") ? { auto_price: form.get("auto_price") === "on" } : {}),
   }).eq("asset_id", id);
   if (e2) return { error: friendlyError(e2.message) };
   revalidatePath("/alternative");

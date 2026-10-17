@@ -6,6 +6,7 @@ import { movePerson } from "./actions";
 import { AddPersonForm, FamilyNameForm } from "./forms";
 import { FamilyTree } from "./tree";
 import { SortToggle } from "@/components/SortControls";
+import { ActionBar } from "@/components/ActionBar";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
@@ -36,38 +37,66 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const list = showArchived ? all : all.filter((p) => p.status !== "DECEASED");
   const today = todayBangkok();
 
+  const active = all.filter((p) => p.status === "ACTIVE");
+  const ages = active.map((p) => ageFrom(p.birth_date, today)).filter((a): a is number => a != null);
+  const head = all.find((p) => p.id === family?.head_person_id);
+  const byRel = new Map<string, number>();
+  active.forEach((p) => { const k = RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "อื่น ๆ"; byRel.set(k, (byRel.get(k) ?? 0) + 1); });
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Members</h1>
-        <p className="text-sm text-slate-500">สมาชิกครอบครัว · ลำดับในหน้านี้ใช้เรียงรายชื่อทุกหน้าและตัวกรองสมาชิก</p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Members</h1>
+          <p className="text-sm text-slate-500">สมาชิกครอบครัว · ลำดับในหน้านี้ใช้เรียงรายชื่อทุกหน้าและตัวกรองสมาชิก</p>
+        </div>
+        {me.role !== "VIEWER" && <ActionBar><AddPersonForm /></ActionBar>}
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">ชื่อครอบครัว</h2>
-        <p className="mb-3 mt-2 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard{!isAdmin && " · แก้ได้เฉพาะผู้ดูแลระบบ"}</p>
-        {isAdmin ? <FamilyNameForm name={family?.name ?? ""} /> : <p className="text-sm">{family?.name ?? "-"}</p>}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว {isAdmin && <ActionBar><FamilyNameForm name={family?.name ?? ""} /></ActionBar>}</div>
+          <div className="mt-1 truncate text-xl font-semibold">{family?.name || "-"}</div>
+          <div className="mt-1 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">สมาชิก</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{active.length} <span className="text-sm font-normal text-slate-500">คน</span></div>
+          <div className="mt-1 text-xs text-slate-500">{archivedCount > 0 ? `Archived ${archivedCount} คน` : "ไม่มี Archived"}
+            {all.length - active.length - archivedCount > 0 && ` · สถานะอื่น ${all.length - active.length - archivedCount} คน`}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">หัวหน้าครอบครัว</div>
+          <div className="mt-1 truncate text-xl font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">{head.name}</Link> : "-"}</div>
+          <div className="mt-1 text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ตามความสัมพันธ์</div>
+          <div className="mt-1 space-y-0.5 text-xs">
+            {[...byRel.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-2"><span className="text-slate-600">{k}</span><span className="tabular-nums">{v}</span></div>))}
+            {ages.length > 0 && <div className="pt-1 text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
+          </div>
+        </div>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
-          <div className="flex items-center gap-3">
-            <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm">
-              <Link href={url({ archived: sp.archived === "1" })} className={`px-3 py-1 ${!tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
-              <Link href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-3 py-1 ${tree ? "bg-slate-800 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
+            <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs">
+              <Link href={url({ archived: sp.archived === "1" })} className={`px-2.5 py-1 ${!tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
+              <Link href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-2.5 py-1 ${tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
             </div>
-            {canEdit && !tree && list.length > 1 && (
-              <SortToggle active={ordering} href={url({ archived: sp.archived === "1", order: true })} doneHref={url({ archived: sp.archived === "1" })} />
+            {archivedCount > 0 && !ordering && (
+              <Link href={url({ view: tree ? "tree" : undefined, archived: sp.archived !== "1" })}
+                className={`rounded-full border px-2.5 py-0.5 text-xs ${sp.archived === "1" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                Archived ({archivedCount})
+              </Link>
             )}
           </div>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          {archivedCount > 0 && !ordering && (
-            <Link href={url({ view: tree ? "tree" : undefined, archived: sp.archived !== "1" })}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50">
-              {sp.archived === "1" ? "ซ่อน Archived" : `แสดง Archived (${archivedCount})`}
-            </Link>
+          {canEdit && !tree && list.length > 1 && (
+            <SortToggle active={ordering} href={url({ archived: sp.archived === "1", order: true })} doneHref={url({ archived: sp.archived === "1" })} />
           )}
         </div>
         <p className="mb-3 mt-2 text-xs text-slate-500">
@@ -119,9 +148,6 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
             </div>
           ))}
         </div>
-        )}
-        {me.role !== "VIEWER" && (
-          <div className="mt-4 border-t border-slate-100 pt-4"><AddPersonForm /></div>
         )}
       </section>
     </div>

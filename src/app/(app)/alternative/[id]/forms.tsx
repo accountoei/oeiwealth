@@ -10,7 +10,7 @@ const dv = (v: number | string | null | undefined) => (v == null ? "" : String(v
 export type AltInfo = {
   name: string; acquisition_date: string | null; acquisition_cost: number | null; notes: string | null;
   brand: string | null; model: string | null; serial_no: string | null; quantity: number | null; unit: string | null; purity_pct: number | null;
-  storage_location: string | null; condition: string | null; details: string | null;
+  storage_location: string | null; condition: string | null; details: string | null; auto_price?: boolean;
 };
 
 /** แก้ข้อมูลสินทรัพย์ (ในหน้าต่าง "แก้ไขข้อมูล") */
@@ -31,6 +31,13 @@ export function AltInfoForm({ assetId, code, defaultUnit, v }: { assetId: string
       </div>
       {(code === "GOLD" || v.purity_pct != null) && (
         <label className="text-sm">ความบริสุทธิ์ (%)<input name="purity_pct" inputMode="decimal" data-money="off" placeholder="เช่น 96.5" defaultValue={dv(v.purity_pct)} className={input} /></label>
+      )}
+      {code === "GOLD" && (
+        <label className="flex items-start gap-2 text-sm md:col-span-2">
+          <input type="hidden" name="auto_price_shown" value="1" />
+          <input type="checkbox" name="auto_price" defaultChecked={!!v.auto_price} className="mt-1" />
+          <span>ประเมินมูลค่าอัตโนมัติทุกวันทำการ <span className="block text-xs text-slate-500">ประมาณจากราคาทองตลาดโลก × อัตราแลกเปลี่ยน (บาทต่อบาททองคำ 96.5% ปรับตามความบริสุทธิ์) · ใช้กับหน่วย บาททองคำ / กรัม · มูลค่าที่ต่างจากเดิมเกิน 20% ระบบไม่บันทึก</span></span>
+        </label>
       )}
       <label className="text-sm">ที่เก็บ<input name="storage_location" defaultValue={dv(v.storage_location)} className={input} /></label>
       <label className="text-sm">สภาพ<input name="condition" defaultValue={dv(v.condition)} className={input} /></label>

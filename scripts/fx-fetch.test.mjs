@@ -1,6 +1,6 @@
 // node scripts/fx-fetch.test.mjs — ทดสอบการแปลงข้อมูล ธปท. (ไม่ต่อเน็ต)
 import assert from "node:assert/strict";
-import { parseBotResponse, addDays } from "./fx-fetch.mjs";
+import { parseBotResponse, parseBblResponse, addDays } from "./fx-fetch.mjs";
 
 const sample = { result: { data: { data_detail: [
   { period: "2026-09-29", currency_id: "USD", currency_name_eng: "USA : DOLLAR (USD)", buying_transfer: "32.10", selling: "32.50", mid_rate: "32.3050" },
@@ -18,4 +18,21 @@ assert.equal(r.find((x) => x.currency === "EUR").rate_to_thb, 37.3);           /
 assert.match(r.find((x) => x.currency === "EUR").source_reference, /avg/);
 assert.deepEqual(parseBotResponse({}), []);
 assert.equal(addDays("2026-09-30", 1), "2026-10-01");
+// ธนาคารกรุงเทพ (โครงสร้างตามเอกสาร API · ตัวเลขสมมติ)
+const bbl = [
+  { ID: "1", Family: "USD", Description: "USD 50-100", BuyingRates: "", SellingRates: "33.20", SightBill: "32.70", Bill_DD_TT: "32.75", TT: "32.80", Update: "3" },
+  { ID: "2", Family: "USD", Description: "USD 1", BuyingRates: "", SellingRates: "33.20", SightBill: "", Bill_DD_TT: "", TT: "32.80" },
+  { ID: "3", Family: "JPY", Description: "JPY 100", SellingRates: "22.40", TT: "21.60" },
+  { ID: "4", Family: "EUR", Description: "EURO", SellingRates: "38.10", TT: "" , Bill_DD_TT: "37.50" },
+  { ID: "5", Family: "XYZ", Description: "no data", SellingRates: "", TT: "" },
+];
+const m = parseBblResponse(bbl, "2026-10-16");
+assert.equal(m.length, 3);
+assert.equal(m.find((x) => x.currency === "USD").rate_to_thb, 33);              // (32.80 + 33.20) ÷ 2 · แถวแรกของสกุล
+assert.equal(m.find((x) => x.currency === "JPY").rate_to_thb, 0.22);            // ต่อ 1 เยน
+assert.equal(m.find((x) => x.currency === "EUR").rate_to_thb, 37.8);            // ไม่มี TT → Bill DD/TT
+assert.equal(parseBblResponse(bbl, "2026-10-16", "BUYING_TT").find((x) => x.currency === "USD").rate_to_thb, 32.8);
+assert.equal(parseBblResponse(bbl, "2026-10-16", "SELLING").find((x) => x.currency === "USD").rate_to_thb, 33.2);
+assert.equal(m[0].rate_date, "2026-10-16");
+assert.deepEqual(parseBblResponse(null, "2026-10-16"), []);
 console.log("fx-fetch tests passed");

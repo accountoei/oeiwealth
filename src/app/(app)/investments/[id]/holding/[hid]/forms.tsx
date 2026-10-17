@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addUnderlying, recordTx, saveFcn, type ActionState } from "../../../actions";
+import { updateRecord, type RecState } from "@/lib/records";
 import { COUPON_FREQ_LABEL } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
@@ -132,4 +133,50 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, i
       </div>
     </form>
   ));
+}
+
+/** แก้ไขข้อมูลหลักทรัพย์ (ใช้ใน pop up "แก้ไขข้อมูล") */
+export function HoldingInfoForm({ id, paths, v, autoKind }: {
+  id: string; paths: string[]; v: { name: string; symbol: string | null; maturity_date: string | null; notes: string | null; auto_price?: boolean; price_ref?: string | null };
+  /** EQUITY / FUND = ดึงราคาอัตโนมัติได้ */
+  autoKind?: "EQUITY" | "FUND" | null;
+}) {
+  const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
+  const [auto, setAuto] = useState(!!v.auto_price);
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="table" value="investment_holdings" />
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="paths" value={paths.join(",")} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="block text-sm text-slate-700 md:col-span-2">ชื่อ *<input name="f_name" required defaultValue={v.name} className={input} /></label>
+        <label className="block text-sm text-slate-700">สัญลักษณ์ / รหัส<input name="f_symbol" defaultValue={v.symbol ?? ""} className={input} /></label>
+        <label className="block text-sm text-slate-700">วันครบกำหนด<input type="date" name="f_maturity_date" defaultValue={v.maturity_date ?? ""} className={input} /></label>
+        <label className="block text-sm text-slate-700 md:col-span-2">หมายเหตุ<input name="f_notes" defaultValue={v.notes ?? ""} className={input} /></label>
+      </div>
+      {autoKind && (
+        <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+          <input type="hidden" name="f_auto_price" value={auto ? "on" : "off"} />
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="mt-1" />
+            <span>ดึงราคาอัตโนมัติทุกวันทำการ (18:45)
+              <span className="block text-xs text-slate-500">{autoKind === "FUND"
+                ? "ราคา NAV จาก ก.ล.ต. · ใส่ชื่อย่อกองทุนในช่อง \"สัญลักษณ์ / รหัส\" (เช่น K-FIXED-A) ระบบหารหัสกองทุนให้เอง"
+                : "ราคาจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่สัญลักษณ์ เช่น PTT · หุ้นต่างประเทศ เช่น AAPL"}
+                {" "}· ราคาที่ต่างจากราคาก่อนหน้าเกิน 20% ไม่บันทึก · ไม่ทับราคาจาก Statement</span></span>
+          </label>
+          {auto && (
+            <label className="block text-xs text-slate-600">รหัสสำหรับดึงราคา (ไม่บังคับ — เว้นว่าง = ใช้สัญลักษณ์ด้านบน)
+              <input name="f_price_ref" defaultValue={v.price_ref ?? ""} placeholder={autoKind === "FUND" ? "ระบบเติมให้เมื่อหาเจอ" : "เช่น PTT.BK · 7203.T"} className={input} data-plain />
+            </label>
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        {state.error && <span className="text-sm text-red-600">{state.error}</span>}
+        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+      </div>
+    </form>
+  );
 }
