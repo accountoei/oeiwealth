@@ -8,7 +8,7 @@ import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 export type CostRow = {
-  key: string; utilityId: string; assetId: string; property: string; label: string; period: string; due: string | null;
+  key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
   expected: number; paid: number; currency: string; status: string; category: string;
 };
 export type PayOpt = { value: string; label: string; currency: string };
@@ -33,6 +33,9 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
   const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key, firstPay(r.currency)])));
   const blank = (id: number): Extra => ({ id, asset: "", description: "", amount: "", pay: firstPay("THB") });
   const [extra, setExtra] = useState<Extra[]>([blank(1)]);
+  const [kind, setKind] = useState("");
+  const kinds = [...new Map(rows.map((r) => [r.type, r.typeLabel]))];
+  const shownRows = kind ? rows.filter((r) => r.type === kind) : rows;
   const [state, action, pending] = useActionState<BatchState, FormData>(batchPropertyExpenses, {});
   const cf = useConfirmSubmit();
   useEffect(() => { if (state.ok) { setVals({}); setExtra([blank(Date.now())]); router.refresh(); } }, [state, router]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,7 +77,18 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ งวด {thMonth(`${ym}-01`)}</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ งวด {thMonth(`${ym}-01`)}</h2>
+            {kinds.length > 1 && (
+              <div className="flex flex-wrap gap-1 text-xs">
+                {[["", "ทั้งหมด"] as [string, string], ...kinds].map(([k, l]) => (
+                  <button key={k || "all"} type="button" onClick={() => setKind(k)}
+                    className={`rounded-full border px-2.5 py-0.5 ${kind === k ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                    {l}{k && ` (${rows.filter((r) => r.type === k).length})`}</button>
+                ))}
+              </div>
+            )}
+          </div>
           {canWrite && open.length > 0 && (
             <button type="button" onClick={() => setVals({ ...vals, ...Object.fromEntries(open.filter((r) => r.expected > 0).map((r) => [r.key, fmt(r.expected)])) })}
               className="text-sm text-blue-700 hover:underline">ใส่ยอดประมาณทุกแถว</button>
@@ -86,8 +100,8 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
               <th className="px-3">สถานะ</th>{canWrite && <><th className="px-3 text-right">ยอดที่จ่าย</th><th className="px-3">จ่ายจาก</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีค่าใช้จ่ายประจำงวดเดือนนี้ (ตั้งค่าได้ที่หน้าของทรัพย์สิน)</td></tr>}
-            {rows.map((r) => {
+            {shownRows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีค่าใช้จ่ายประจำงวดเดือนนี้ (ตั้งค่าได้ที่หน้าของทรัพย์สิน)</td></tr>}
+            {shownRows.map((r) => {
               const done = r.status === "PAID" || r.status === "DISMISSED";
               const v = vals[r.key] ?? "";
               return (

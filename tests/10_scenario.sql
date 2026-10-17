@@ -2017,6 +2017,43 @@ UPDATE public.property_details SET province = 'แก้โดย VIEWER' WHERE 
 RESET ROLE;
 SELECT t.ok((SELECT province FROM public.property_details WHERE asset_id = t.a('บ้าน A')) = 'จังหวัดทดสอบ', 'ข้อมูลโฉนด: VIEWER แก้ไม่ได้');
 
+\echo '== 13za. ภาษีที่ดินและสิ่งปลูกสร้าง: คำนวณรายปี · คัดลอกจากปีก่อน · ยอดประมาณ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+INSERT INTO public.property_tax_lines(asset_id, tax_year, sort_order, description, land_sq_wa, land_price_per_sq_wa,
+  building_type, building_sqm, building_price_per_sqm, building_age, depreciation_pct, exemption, exemption_reason, rate_pct, discount_pct)
+VALUES (t.a('บ้าน A'), extract(year FROM current_date)::int, 1, 'ชั้น 2-4 ห้องพัก', 100, 10000, 'ตึกแถว', 200, 8000, 10, 20, 280000, 'ทดสอบ', 0.3, 10),
+       (t.a('บ้าน A'), extract(year FROM current_date)::int, 2, 'ชั้น 1 ร้านค้า', NULL, NULL, 'ตึกแถว', 100, 5000, NULL, 0, 0, NULL, 0.02, 0);
+SELECT t.ok((SELECT land_value = 1000000 AND building_value = 1280000 AND total_value = 2280000 AND taxable_value = 2000000
+               AND tax_full = 6000 AND tax_amount = 5400 FROM public.v_property_tax_lines WHERE description = 'ชั้น 2-4 ห้องพัก'),
+            'ภาษีที่ดิน: ที่ดิน + สิ่งปลูกสร้าง − ค่าเสื่อม − ยกเว้น × อัตรา − ส่วนลด = 5,400');
+SELECT t.ok((SELECT sum(tax_amount) FROM public.v_property_tax_lines WHERE asset_id = t.a('บ้าน A') AND tax_year = extract(year FROM current_date)::int) = 5500,
+            'ภาษีที่ดิน: หลายรายการ อัตราต่างกันในโฉนดเดียว รวม 5,500');
+SELECT public.sync_land_tax_estimate(t.a('บ้าน A'), extract(year FROM current_date)::int) AS land_tax_total;
+SELECT t.ok((SELECT expected_amount FROM public.property_utilities u JOIN public.property_details pd ON pd.id = u.property_id
+              WHERE pd.asset_id = t.a('บ้าน A') AND u.utility_type = 'LAND_TAX' AND u.deleted_at IS NULL ORDER BY u.active DESC, u.created_at LIMIT 1) = 5500,
+            'ภาษีที่ดิน: ยอดประมาณค่าใช้จ่ายประจำ = ภาษีรวมปีปัจจุบัน');
+SELECT t.ok(public.sync_land_tax_estimate(t.a('บ้าน A'), extract(year FROM current_date)::int - 1) IS NULL, 'ภาษีที่ดิน: ปีอื่นไม่แก้ยอดประมาณ');
+SELECT public.copy_property_tax_year(t.a('บ้าน A'), extract(year FROM current_date)::int, extract(year FROM current_date)::int + 1) AS copied;
+SELECT t.ok((SELECT count(*) FROM public.property_tax_lines WHERE asset_id = t.a('บ้าน A') AND tax_year = extract(year FROM current_date)::int + 1 AND deleted_at IS NULL) = 2
+            AND (SELECT building_age FROM public.property_tax_lines WHERE asset_id = t.a('บ้าน A') AND tax_year = extract(year FROM current_date)::int + 1
+                   AND description = 'ชั้น 2-4 ห้องพัก' AND deleted_at IS NULL) = 11
+            AND (SELECT rate_pct FROM public.property_tax_lines WHERE asset_id = t.a('บ้าน A') AND tax_year = extract(year FROM current_date)::int + 1
+                   AND description = 'ชั้น 1 ร้านค้า' AND deleted_at IS NULL) = 0.02,
+            'ภาษีที่ดิน: คัดลอกจากปีก่อน (อัตราเดิม · อายุอาคาร +1)');
+SELECT t.fails($$SELECT public.copy_property_tax_year(t.a('บ้าน A'), extract(year FROM current_date)::int, extract(year FROM current_date)::int + 1)$$,
+  'มีรายการแล้ว', 'ภาษีที่ดิน: คัดลอกซ้ำทับปีที่มีรายการไม่ได้');
+SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_pct) VALUES (t.a('KBank ออมทรัพย์'), 2026, 0.3)$$,
+  'อสังหาริมทรัพย์', 'ภาษีที่ดิน: ทรัพย์สินที่ไม่ใช่อสังหาฯ บันทึกไม่ได้');
+SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_pct) VALUES (t.a('บ้าน A'), 2026, -1)$$,
+  'check', 'ภาษีที่ดิน: อัตราติดลบไม่ได้');
+SELECT t.ok(NOT has_function_privilege('anon', 'private.tg_property_tax_line_check()', 'EXECUTE')
+            AND NOT has_function_privilege('authenticated', 'private.tg_property_tax_line_check()', 'EXECUTE'),
+            'ภาษีที่ดิน: ฟังก์ชัน trigger ไม่เปิดให้ผู้ใช้เรียกตรง');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_pct) VALUES (t.a('บ้าน A'), 2026, 0.3)$$,
+  'row-level|policy|PERMISSION', 'ภาษีที่ดิน: VIEWER บันทึกไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
