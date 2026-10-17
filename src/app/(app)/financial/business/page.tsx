@@ -18,10 +18,8 @@ const initials = (name: string) => {
   const latin = name.replace(/[^A-Za-z0-9]/g, "");
   return (latin || name).slice(0, latin ? 4 : 2).toUpperCase();
 };
-const SORTS = ["name", "pct", "reg", "cost", "val", "div"] as const;
-type SortKey = (typeof SORTS)[number];
 
-export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; s?: string; d?: string }> }) {
+export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -82,36 +80,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     divOf.set(x.asset_id, (divOf.get(x.asset_id) ?? 0) + v);
   });
 
-  // เรียงตามหัวคอลัมน์ (?s=…&d=desc) · ไม่เลือก = ลำดับที่ตั้งไว้
-  const sKey = (SORTS as readonly string[]).includes(sp.s ?? "") ? (sp.s as SortKey) : null;
-  const desc = sp.d === "desc";
-  const keyOf = (r: Row): string | number => {
-    switch (sKey) {
-      case "name": return r.assets.name; case "pct": return companyPct(r) ?? -1;
-      case "reg": return regCapital(r) ?? -1; case "cost": return costOf(r) ?? -1;
-      case "val": return myValue(r) ?? -1; case "div": return divOf.get(r.asset_id) ?? 0;
-      default: return 0;
-    }
-  };
-  const rows = sKey ? [...rowsBase].sort((a, b) => {
-    const x = keyOf(a), y = keyOf(b);
-    const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "th");
-    return desc ? -c : c;
-  }) : rowsBase;
-  const head = (k: SortKey, label: string, right = false) => {
-    const active = sKey === k;
-    const q = new URLSearchParams();
-    if (sp.p) q.set("p", sp.p);
-    q.set("s", k);
-    if (active && !desc) q.set("d", "desc");
-    return (
-      <th className={`px-3 py-2 ${right ? "text-right" : ""}`}>
-        <Link href={`/financial/business?${q}`} scroll={false} className="inline-flex items-center gap-0.5 whitespace-nowrap hover:text-slate-800">
-          {label}<span className={active ? "text-slate-700" : "text-slate-300"}>{active ? (desc ? "▾" : "▴") : "▾"}</span>
-        </Link>
-      </th>
-    );
-  };
+  const rows = rowsBase;
+  const th = (label: string, right = true) => <th className={`whitespace-nowrap px-3 py-2 ${right ? "text-right" : ""}`}>{label}</th>;
 
   // กล่องสรุป: สัดส่วนตามกิจการ · มูลค่าตามสมาชิก (ถือ ณ วันนี้)
   const active = rows.filter((r) => r.status === "ACTIVE" && (myValue(r) ?? 0) > 0);
@@ -174,42 +144,45 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           <h2 className="font-medium text-slate-900">กิจการทั้งหมด</h2>
           {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/business", { p: sp.p })} />}
         </div>
-        <table className="mt-2 w-full min-w-[46rem] text-sm">
+        <table className="mt-2 w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              {head("name", "กิจการ")}{head("pct", pv.personId ? `% ที่ ${pv.personName} ถือ` : "% ที่ครอบครัวถือ", true)}
-              {head("reg", "ทุนจดทะเบียน (THB)", true)}{head("cost", `ราคาทุน${pv.personId ? `ของ ${pv.personName}` : ""} (THB)`, true)}
-              {head("val", `มูลค่าปัจจุบัน${pv.personId ? `ของ ${pv.personName}` : ""} (THB)`, true)}{head("div", "ปันผลปีนี้ (THB)", true)}
+              {th("กิจการ", false)}{th(pv.personId ? `% ที่ ${pv.personName} ถือ` : "% ที่ครอบครัวถือ")}
+              {th("ทุนจดทะเบียน (THB)")}{th(`ราคาทุน${pv.personId ? `ของ ${pv.personName}` : ""} (THB)`)}
+              {th(`มูลค่าปัจจุบัน${pv.personId ? `ของ ${pv.personName}` : ""} (THB)`)}{th("เทียบทุน")}{th("ปันผลปีนี้ (THB)")}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกิจการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกิจการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
             {rows.map((r, i) => {
               const stale = !r.assets.current_value_date || r.assets.current_value_date < old;
               const dv = divOf.get(r.asset_id) ?? 0;
               const vc = vsCost(r);
+              const num = "px-3 py-3 align-top text-right tabular-nums";
               return (
                 <tr key={r.id} className={r.status !== "ACTIVE" ? "opacity-50" : ""}>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-3">
+                  <td className="px-3 py-3 align-top">
+                    <div className="flex items-start gap-3">
                       {ordering && <MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (x) => x.asset_id)} />}
                       <span className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
                         style={{ background: color.get(r.asset_id) }}>{initials(r.assets.name)}</span>
                       <div className="min-w-0">
                         <Link href={`/financial/business/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
-                        <div className="truncate text-xs text-slate-500">{r.company_name}{r.business_type && ` · ${r.business_type}`}{r.status !== "ACTIVE" && " · ไม่ได้ถือแล้ว"}</div>
+                        <div className="truncate text-xs text-slate-500">{r.company_name}</div>
+                        {(r.business_type || r.status !== "ACTIVE") && <div className="truncate text-xs text-slate-400">{[r.business_type, r.status !== "ACTIVE" ? "ไม่ได้ถือแล้ว" : null].filter(Boolean).join(" · ")}</div>}
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 text-right tabular-nums">{fmtPct(companyPct(r))}
+                  <td className={num}>{fmtPct(companyPct(r))}
                     {pv.assetShares(r.asset_id) != null && <div className="text-xs text-slate-400">{qty(pv.assetShares(r.asset_id))} หุ้น</div>}</td>
-                  <td className="px-3 text-right tabular-nums">{money(regCapital(r))}
+                  <td className={num}>{money(regCapital(r))}
                     {r.par_value != null && <div className="text-xs text-slate-400">หุ้นละ {money(r.par_value, undefined, 2)}</div>}</td>
-                  <td className="px-3 text-right tabular-nums">{money(costOf(r))}</td>
-                  <td className="px-3 text-right font-medium tabular-nums">{money(myValue(r))}
+                  <td className={num}>{money(costOf(r))}</td>
+                  <td className={`${num} font-medium`}>{money(myValue(r))}
                     <div className={`text-xs font-normal ${stale ? "text-amber-700" : "text-slate-400"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
-                    {vc != null && <div className={`text-xs font-normal ${vc >= 0 ? "text-emerald-700" : "text-red-700"}`}>เทียบทุน {vc >= 0 ? "+" : ""}{vc.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%</div>}</td>
-                  <td className={`px-3 text-right tabular-nums ${dv > 0 ? "text-emerald-700" : "text-slate-400"}`}>{money(dv)}</td>
+</td>
+                  <td className={`${num} ${vc == null ? "text-slate-400" : vc >= 0 ? "text-emerald-700" : "text-red-700"}`}>{vc == null ? "-" : `${vc >= 0 ? "+" : ""}${vc.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`}</td>
+                  <td className={`${num} ${dv > 0 ? "text-emerald-700" : "text-slate-400"}`}>{money(dv)}</td>
                 </tr>
               );
             })}
@@ -220,8 +193,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                 <td className="px-3 py-3">รวมทั้งหมด</td><td className="px-3 text-right text-slate-400">-</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.reg)}</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.cost)}</td>
-                <td className="px-3 text-right tabular-nums">{money(totals.val)}
-                  {totals.cost > 0 && <div className={`text-xs font-normal ${totals.val >= totals.cost ? "text-emerald-700" : "text-red-700"}`}>เทียบทุน {totals.val >= totals.cost ? "+" : ""}{(((totals.val - totals.cost) * 100) / totals.cost).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%</div>}</td>
+                <td className="px-3 text-right tabular-nums">{money(totals.val)}</td>
+                <td className={`px-3 text-right tabular-nums ${totals.cost <= 0 ? "text-slate-400" : totals.val >= totals.cost ? "text-emerald-700" : "text-red-700"}`}>{totals.cost > 0 ? `${totals.val >= totals.cost ? "+" : ""}${(((totals.val - totals.cost) * 100) / totals.cost).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%` : "-"}</td>
                 <td className="px-3 text-right tabular-nums text-emerald-700">{money(totals.div)}</td>
               </tr>
             </tfoot>
