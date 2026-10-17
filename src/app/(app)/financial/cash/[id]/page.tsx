@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
-import MoveBadge from "@/components/MoveBadge";
+import MovesView, { type MoveRow, type StmtRow } from "../../../income-expenses/MovesView";
 import { moveMeta } from "@/lib/ledger";
 import TransferEditor from "../../../income-expenses/TransferEditor";
 import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
@@ -27,7 +27,7 @@ const MOVE_LABEL: Record<string, string> = {
 };
 
 export default async function AccountDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ m?: string; sort?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ m?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -36,7 +36,6 @@ export default async function AccountDetailPage({ params, searchParams }: {
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   const { start, end } = monthRange(ym);
-  const asc = sp.sort === "asc";
   const dayBefore = new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
   const [{ data: acc }, { data: bal }, { data: owners }, { data: vals }, { data: moves }, { data: family }, { data: persons }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("*").eq("asset_id", id).maybeSingle(),
@@ -153,17 +152,43 @@ export default async function AccountDetailPage({ params, searchParams }: {
   }
   pushStmts(null);
   const closing = run;
-  const shownLines = asc ? lines : [...lines].reverse();
   const months = monthOptions(family?.go_live_date, today, 0, ym);
-  const openRow = opening == null ? null : (
-    <tr className="text-xs text-slate-500">
-      <td className="py-1.5">{thDate(dayBefore)}</td><td colSpan={5}>ยอดยกมา (สิ้นเดือนก่อน)</td>
-      <td className="text-right font-medium tabular-nums text-slate-700">{money(opening)}</td><td></td>
-    </tr>
-  );
-  const sortHref = (a: boolean) => `/financial/cash/${id}?m=${ym}${a ? "&sort=asc" : ""}`;
   const sameCcyBanks = (banksAll ?? []).filter((b) => b.currency === acc.currency && b.status === "ACTIVE")
     .map((b) => ({ asset_id: b.asset_id as string, name: b.name as string }));
+  // ตารางแบบเดียวกับแท็บเงินเข้า–ออก (MovesView) · rows ส่งแบบใหม่ → เก่า
+  const ledgerStmts: StmtRow[] = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end)
+    .map((v) => ({ key: `v${v.id}`, date: v.valuation_date, value: Number(v.value), label: SOURCE_LABEL[v.source] ?? v.source }));
+  const ledgerRows: MoveRow[] = lines.filter((l) => l.kind === "move").reverse().map((l) => {
+    const m = (l as Extract<Line, { kind: "move" }>).row;
+    const e = m.source_entity_type === "EXPENSE" && m.source_entity_id ? expBy.get(m.source_entity_id) : undefined;
+    const inc = m.source_entity_type === "INCOME" && m.source_entity_id ? incBy.get(m.source_entity_id) : undefined;
+    const isIn = m.to_asset_id === id;
+    const pfLink = ["INVESTMENT_OUT", "INVESTMENT_IN"].includes(m.movement_type) && m.counter_currency
+      ? (m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id) : null;
+    const bankPair = m.movement_type === "TRANSFER" && m.from_asset_id && m.to_asset_id && bankBy.has(m.from_asset_id) && bankBy.has(m.to_asset_id) && !m.counter_currency;
+    const actions = m.parts && loanOf(m) ? <Link href={`/financial/loans/${loanOf(m)}`} className="text-xs text-slate-500 underline">แก้ที่หน้าเงินให้กู้</Link>
+      : pfLink ? <Link href={`/investments/${pfLink}`} className="text-xs text-slate-500 underline">แก้ที่หน้าพอร์ต</Link>
+      : m.is_derived ? <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>
+      : !canWrite || ["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type) ? null
+      : <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
+          editor={bankPair ? <TransferEditor id={m.id} banks={sameCcyBanks}
+            values={{ from: m.from_asset_id as string, to: m.to_asset_id as string, date: m.movement_date, amount: Number(m.amount),
+              fee: m.fee == null ? null : Number(m.fee), description: m.description }} /> : undefined}
+          fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
+            { name: "amount", label: "จำนวน", type: "number", value: m.amount },
+            { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />;
+    const ll = l as Extract<Line, { kind: "move" }>;
+    return {
+      key: m.id, date: m.movement_date, type: m.movement_type, fromLabel: "", toLabel: "",
+      fromBank: isIn ? null : id, toBank: isIn ? id : null,
+      fromAmount: Number(m.amount), fromCcy: acc.currency, toAmount: ll.inAmt ?? 0, toCcy: acc.currency, fee: Number(m.fee ?? 0),
+      detail: ll.detail, sub: ll.sub ? <div className="text-xs text-slate-400">{ll.sub}</div> : undefined,
+      extra: Number(m.fee ?? 0) > 0 ? <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div> : undefined,
+      actions, kind: m.movement_type, merged: !!m.parts,
+      metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
+        expenseCategory: e?.expense_category ?? null, pending: !!(e?.pending_split || inc?.pending_split) },
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -264,71 +289,13 @@ export default async function AccountDetailPage({ params, searchParams }: {
           <MonthPicker months={months} value={ym} />
         </div>
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <span className="text-slate-600">ยอดยกมา <b className="tabular-nums">{opening == null ? "-" : money(opening, acc.currency)}</b></span>
           <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">+{money(sumIn)}</b></span>
           <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
           <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className="tabular-nums">{closing == null ? "-" : money(closing, acc.currency)}</b></span>
         </div>
-        <p className="mb-3 mt-1 text-xs text-slate-500">รายการเกิดจากการบันทึกรายได้ ค่าใช้จ่าย การโอน และการลงทุนในหน้าที่เกี่ยวข้อง · ยอดคงเหลือ = ยอดตาม Statement + รายการหลังจากนั้น · กดที่แถวเพื่อแก้ / ลบ</p>
-        {lines.length === 0 ? <p className="text-sm text-slate-500">ไม่มีรายการในเดือนนี้</p> : (
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[48rem] text-sm">
-            <thead className="text-left text-xs text-slate-500">
-              <tr className="border-b border-slate-100">
-                <th className="py-1.5">
-                  <Link href={sortHref(!asc)} scroll={false} className="hover:text-slate-800" title={asc ? "เรียงใหม่ → เก่า" : "เรียงเก่า → ใหม่"}>วันที่ {asc ? "↑" : "↓"}</Link>
-                </th>
-                <th>ประเภท</th><th>รายละเอียด</th><th>หมวดหมู่</th>
-                <th className="text-right">เงินเข้า ({acc.currency})</th><th className="text-right">เงินออก ({acc.currency})</th>
-                <th className="text-right">ยอดคงเหลือ ({acc.currency})</th><th></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {asc && openRow}
-              {shownLines.map((l) => l.kind === "stmt" ? (
-                <tr key={l.key} className="bg-slate-50/70 text-xs text-slate-500">
-                  <td className="whitespace-nowrap py-1.5">{thDate(l.date)}</td>
-                  <td><MoveBadge label="ยอดตาม Statement" tone="slate" /></td>
-                  <td colSpan={4}>{l.source}{l.diff != null && <span className="ml-2 text-amber-700">ต่างจากรายการที่บันทึก {l.diff > 0 ? "+" : ""}{money(l.diff)}</span>}</td>
-                  <td className="text-right font-medium tabular-nums text-slate-700">{money(l.value)}</td><td></td>
-                </tr>
-              ) : (
-                <tr key={l.key} className="align-top">
-                  <td className="whitespace-nowrap py-2">{thDate(l.date)}</td>
-                  <td className="pr-2"><MoveBadge label={l.meta.label} tone={l.meta.tone} /></td>
-                  <td className="pr-2">{l.detail}{l.sub && <div className="text-xs text-slate-400">{l.sub}</div>}</td>
-                  <td className="pr-2 text-indigo-700">{l.meta.category}</td>
-                  <td className="text-right tabular-nums text-emerald-700">{l.inAmt != null ? money(l.inAmt) : <span className="text-slate-300">–</span>}</td>
-                  <td className="text-right tabular-nums text-red-700">{l.outAmt != null ? money(l.outAmt) : <span className="text-slate-300">–</span>}</td>
-                  <td className="text-right tabular-nums text-slate-700">{l.balance == null ? "-" : money(l.balance)}</td>
-                  <td className="pl-2 text-right">
-                    {(() => {
-                      const m = l.row;
-                      const pfLink = ["INVESTMENT_OUT", "INVESTMENT_IN"].includes(m.movement_type) && m.counter_currency
-                        ? (m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id) : null;
-                      if (m.parts && loanOf(m)) return <Link href={`/financial/loans/${loanOf(m)}`} className="text-xs text-slate-500 underline">แก้ที่หน้าเงินให้กู้</Link>;
-                      if (pfLink) return <Link href={`/investments/${pfLink}`} className="text-xs text-slate-500 underline">แก้ที่หน้าพอร์ต</Link>;
-                      if (m.is_derived) return <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>;
-                      if (!canWrite || ["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type)) return null;
-                      const bankPair = m.movement_type === "TRANSFER" && m.from_asset_id && m.to_asset_id && bankBy.has(m.from_asset_id) && bankBy.has(m.to_asset_id) && !m.counter_currency;
-                      return (
-                        <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
-                          editor={bankPair ? <TransferEditor id={m.id} banks={sameCcyBanks}
-                            values={{ from: m.from_asset_id as string, to: m.to_asset_id as string, date: m.movement_date, amount: Number(m.amount),
-                              fee: m.fee == null ? null : Number(m.fee), description: m.description }} /> : undefined}
-                          fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
-                            { name: "amount", label: "จำนวน", type: "number", value: m.amount },
-                            { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />
-                      );
-                    })()}
-                  </td>
-                </tr>
-              ))}
-              {!asc && openRow}
-            </tbody>
-          </table>
-          </div>
-        )}
+        <p className="mb-3 mt-1 text-xs text-slate-500">รายการเกิดจากการบันทึกรายได้ ค่าใช้จ่าย การโอน และการลงทุนในหน้าที่เกี่ยวข้อง · ยอดคงเหลือ = ยอดยกมา / ยอดตาม Statement + รายการหลังจากนั้น · กดที่แถวเพื่อแก้ / ลบ</p>
+        <MovesView rows={ledgerRows} banks={[]} showActions={canWrite} fixedAcct={id}
+          openings={{ [id]: opening == null ? null : Number(opening) }} statements={{ [id]: ledgerStmts }} monthStart={start} />
       </section>
 
       {canWrite && (

@@ -20,6 +20,7 @@ import MovesView, { type MoveRow } from "./MovesView";
 import MonthPicker from "@/components/MonthPicker";
 import SplitForm from "./SplitForm";
 import TransferEditor from "./TransferEditor";
+import DateSortHead from "@/components/DateSortHead";
 import CategoryManager from "./CategoryManager";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -42,7 +43,7 @@ const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" }, DISMISSED: { text: "เดือนนี้ไม่ได้รับ", cls: "bg-slate-100 text-slate-500" },
 };
 
-type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; ds?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -276,6 +277,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     return s2 + thb(left, i.currency) * i.share;
   }, 0);
   const incPendingSplit = incomeList.some((i) => i.pending_split);
+  // ตาราง "บันทึกแล้ว": เรียงวันที่น้อย → มาก (ล่าสุดอยู่ล่าง) เป็นค่าเริ่มต้น · ?ds=desc = มาก → น้อย
+  const dsDesc = sp.ds === "desc";
+  const byDate = <T extends { date: string }>(xs: T[]) => [...xs].sort((a, b) => (dsDesc ? -1 : 1) * a.date.localeCompare(b.date));
+  const dsHref = (tab: "income" | "expense", desc: boolean) =>
+    `/income-expenses?tab=${tab}&${tab === "income" ? "it" : "et"}=recorded&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}${desc ? "&ds=desc" : ""}`;
   const expPendingSplit = itemList.some((i) => i.pending_split);
   const reimbThb = (reimbs ?? []).filter((r) => !pv.personId || itemShare.has(r.expense_item_id))
     .reduce((s, r) => s + thb(r.amount, r.currency) * (itemShare.get(r.expense_item_id) ?? 1), 0);
@@ -367,7 +373,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     const exp = m.is_derived && m.source_entity_type === "EXPENSE" && m.source_entity_id ? expById.get(m.source_entity_id) : undefined;
     return {
       key: m.id, date: m.movement_date, type, typeCls: m.movement_type === "REIMBURSEMENT_IN" ? "text-sky-700" : undefined,
-      kind: m.movement_type, merged: !!m.parts,
+      kind: m.movement_type, merged: !!m.parts, fee: Number(m.fee ?? 0),
       metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
         expenseCategory: exp?.expense_category ?? null, pending: !!(inc?.pending_split || exp?.pending_split) },
       fromLabel: placeOf(m.from_asset_id),
@@ -401,6 +407,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
   // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี → ยอดคงเหลือหลังแต่ละรายการ เมื่อกรองทีละบัญชี
   const { data: openRaw } = await supabase.rpc("bank_balances_at", { p_date: new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10) });
+  const { data: stmtRaw } = bankIds.size ? await supabase.from("asset_valuations").select("id,asset_id,valuation_date,value")
+    .in("asset_id", [...bankIds]).is("deleted_at", null).gte("valuation_date", start).lte("valuation_date", end) : { data: [] };
+  const statements: Record<string, { key: string; date: string; value: number; label: string }[]> = {};
+  (stmtRaw ?? []).forEach((v) => { (statements[v.asset_id as string] ??= []).push({ key: `v${v.id}`, date: v.valuation_date as string, value: Number(v.value), label: "อัปเดตยอดคงเหลือ" }); });
   const openings = Object.fromEntries(((openRaw as { asset_id: string; calculated: number | null }[] | null) ?? [])
     .map((r) => [r.asset_id, r.calculated == null ? null : Number(r.calculated)]));
   // สรุปเงินเข้า–ออก (ทุกบัญชี · ไม่นับโอนระหว่างบัญชีตัวเอง) สำหรับแท็บภาพรวม
@@ -521,14 +531,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                     currency: e.currency as string, expected: Number(e.expected_amount), done: Number(e.received_amount ?? 0),
                     open: e.status === "PENDING" || e.status === "OVERDUE", el: (
                     <ActionRow key={`${e.source_type}-${e.source_id}`} colSpan={6} cells={<>
-                      <td className="py-2 pr-2">
+                      <td className="whitespace-nowrap py-2 pr-2">{thDate(e.due_date)}</td>
+                      <td className="px-2 py-2">
                         <div className="font-medium">{e.source_type === "LEASE" && e.asset_id
                           ? <Link href={`/property/${e.asset_id}`} title="ไปหน้าทรัพย์สิน" className={NAME_LINK}>{e.name}</Link>
                           : <SubTabLink to="settings" className={NAME_LINK}>{e.name}</SubTabLink>}</div>
                         <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
                           {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2">{thDate(e.due_date)}</td>
                       <td className="px-2 py-2 text-right tabular-nums">{money(e.expected_amount, e.currency)}</td>
                       <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{e.received_amount != null ? money(e.received_amount) : ""}</td>
                       <td className="px-2 py-2"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${EXP_STATUS[e.status]?.cls ?? ""}`}>{EXP_STATUS[e.status]?.text ?? e.status}</span></td>
@@ -542,13 +552,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 ...loanDue.map((x) => ({ key: `l-${x.id}`, due: x.due_date, type: "เงินให้กู้", currency: x.currency, expected: Number(x.total_due),
                   done: Number(x.total_due) - Number(x.total_remaining), open: x.status !== "PAID", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
-                    <td className="py-2 pr-2">
+                    <td className="whitespace-nowrap py-2 pr-2">{thDate(x.due_date)}{x.due_date < start && <div className="text-xs text-red-600">งวด {thMonth(x.due_date)}</div>}</td>
+                    <td className="px-2 py-2">
                       <Link href={`/financial/loans/${x.loan_asset_id}`} title="ไปหน้าเงินให้กู้" className={`font-medium ${NAME_LINK}`}>{x.loan_name}</Link>
                       <div className="text-xs text-slate-500">เงินให้กู้ · {x.borrower_name} · งวดที่ {x.installment_no}
                         {pv.assetPct(x.loan_asset_id) != null && ` · ส่วนของ ${pv.personName} ${pv.assetPct(x.loan_asset_id)}%`}</div>
                       <div className="text-xs text-slate-400">เงินต้น {money(x.principal_due)} + ดอกเบี้ย {money(x.interest_due)} · เงินต้นไม่นับเป็นรายได้</div>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}{x.due_date < start && <div className="text-xs text-red-600">งวด {thMonth(x.due_date)}</div>}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(x.total_due, x.currency)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">
                       {Number(x.total_remaining) < Number(x.total_due) && <span className="text-emerald-700">{money(Number(x.total_due) - Number(x.total_remaining))}</span>}
@@ -568,12 +578,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 ...benefitDue.map((x) => ({ key: `b-${x.id}`, due: x.due_date, type: "ผลประโยชน์ประกัน", currency: x.currency, expected: Number(x.amount),
                   done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
-                    <td className="py-2 pr-2">
+                    <td className="whitespace-nowrap py-2 pr-2">{thDate(x.due_date)}</td>
+                    <td className="px-2 py-2">
                       <Link href={`/insurance/${x.policy_id}`} title="ไปหน้ากรมธรรม์" className={`font-medium ${NAME_LINK}`}>{insName(x)}</Link>
                       <div className="text-xs text-slate-500">ผลประโยชน์ประกัน · {BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]}</div>
                       {x.cash_value_asset_id && <div className="text-xs text-slate-400">ถอนจากมูลค่าเวนคืนก่อน · ส่วนที่เกินนับเป็นรายได้</div>}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(x.amount, x.currency)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">
                       {Number(x.remaining) < Number(x.amount) && <span className="text-emerald-700">{money(Number(x.amount) - Number(x.remaining))}</span>}
@@ -596,10 +606,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {incomeList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายได้ในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>ของใคร / ที่มา</th><th className="text-right">Gross</th><th className="text-right">ภาษี</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
+                  <tr><th className="py-1"><DateSortHead asc={!dsDesc} href={dsHref("income", !dsDesc)} /></th><th>ประเภท</th><th>ของใคร / ที่มา</th><th className="text-right">Gross</th><th className="text-right">ภาษี</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {incomeList.map((i) => (
+                  {byDate(incomeList).map((i) => (
                     <tr key={i.id} className="align-top">
                       <td className="py-1.5">{thDate(i.date)}</td>
                       <td>{INCOME_TYPE_LABEL[i.income_type] ?? i.income_type}
@@ -719,7 +729,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 ...rexpDue.map((x) => ({ key: `r-${x.template_id}-${x.cost_period}`, due: x.due_date, type: x.expense_category, currency: x.currency,
                   expected: Number(x.expected_amount), done: Number(x.paid_amount), open: costOpen(x.status), el: (
                   <ActionRow key={`${x.template_id}-${x.cost_period}`} colSpan={6} cells={<>
-                    <td className="py-2 pr-2">
+                    <td className="whitespace-nowrap py-2 pr-2">{thDate(x.due_date)}</td>
+                    <td className="px-2 py-2">
                       <SubTabLink to="settings" className={`font-medium ${NAME_LINK}`}>{x.name}</SubTabLink>
                       <div className="text-xs text-slate-500">
                         {x.expense_category}
@@ -728,7 +739,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       </div>
                       {x.status === "DISMISSED" && x.dismissal_reason && <div className="text-xs text-slate-400">{x.dismissal_reason}</div>}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(x.expected_amount, x.currency)}</td>
                     <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{Number(x.paid_amount) > 0 ? money(x.paid_amount) : ""}</td>
                     <td className="px-2 py-2">
@@ -746,7 +756,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 ...costs.map((c) => ({ key: `c-${c.utility_id}-${c.cost_period}`, due: c.due_date, type: UTIL_LABEL[c.utility_type] ?? "อื่น ๆ", currency: c.currency,
                   expected: Number(c.expected_amount), done: Number(c.paid_amount), open: costOpen(c.status), el: (
                   <ActionRow key={`${c.utility_id}-${c.cost_period}`} colSpan={6} cells={<>
-                    <td className="py-2 pr-2">
+                    <td className="whitespace-nowrap py-2 pr-2">{thDate(c.due_date)}</td>
+                    <td className="px-2 py-2">
                       <Link href={`/property/${c.property_asset_id}`} title="ไปหน้าทรัพย์สิน" className={`font-medium ${NAME_LINK}`}>{utilName(c.utility_type, c.provider)}</Link>
                       <div className="text-xs text-slate-500">
                         {c.property_name}
@@ -755,7 +766,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       </div>
                       {c.status === "DISMISSED" && c.dismissal_reason && <div className="text-xs text-slate-400">{c.dismissal_reason}</div>}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2">{thDate(c.due_date)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(c.expected_amount, c.currency)}</td>
                     <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{Number(c.paid_amount) > 0 ? money(c.paid_amount) : ""}</td>
                     <td className="px-2 py-2">
@@ -773,14 +783,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 ...premiumDue.map((x) => ({ key: `p-${x.id}`, due: x.due_date, type: "เบี้ยประกัน", currency: x.currency, expected: Number(x.amount),
                   done: Number(x.amount) - Number(x.remaining), open: x.status !== "PAID" && x.status !== "CLOSED", el: (
                   <ActionRow key={x.id} colSpan={6} cells={<>
-                    <td className="py-2 pr-2">
+                    <td className="whitespace-nowrap py-2 pr-2">{thDate(x.due_date)}</td>
+                    <td className="px-2 py-2">
                       <Link href={`/insurance/${x.policy_id}`} title="ไปหน้ากรมธรรม์" className={`font-medium ${NAME_LINK}`}>เบี้ยประกัน งวดที่ {x.installment_no}</Link>
                       <div className="text-xs text-slate-500">
                         {insName(x)}
                         {x.payer_person_id && ` · ผู้จ่าย ${persons?.find((p) => p.id === x.payer_person_id)?.name ?? ""}`}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2">{thDate(x.due_date)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(x.amount, x.currency)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">
                       {Number(x.remaining) < Number(x.amount) && <span className="text-emerald-700">{money(Number(x.amount) - Number(x.remaining))}</span>}
@@ -814,10 +824,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {itemList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</p> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1">วันที่</th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th></th></tr>
+                  <tr><th className="py-1"><DateSortHead asc={!dsDesc} href={dsHref("expense", !dsDesc)} /></th><th>รายละเอียด</th><th>หมวด</th><th>จ่ายด้วย</th><th className="text-right">จำนวน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {itemList.map((i) => {
+                  {byDate(itemList).map((i) => {
                     const r = rs.get(i.id);
                     const cap = Number(i.expected_reimbursement_amount ?? i.full_amount);   // เงินคืนคิดจากยอดเต็มของรายการ
                     const remaining = cap - Number(r?.reimbursed_amount ?? 0);
@@ -1031,7 +1041,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
             <p className="mb-3 text-xs text-slate-500">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;</p>
-            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} />
+            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} statements={statements} monthStart={start} />
           </section>
       </TabPanel>
 
