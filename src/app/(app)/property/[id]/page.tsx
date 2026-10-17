@@ -467,12 +467,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             acquisition_cost: a.acquisition_cost, asset_id: id }} />
           <div className="mt-4 border-t border-slate-100 pt-3">
             <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะทรัพย์สิน"
-              options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]} />
+              options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]}
+              remove={canDelete ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้",
+                hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined} />
           </div>
-          {canDelete && <div className="mt-4 border-t border-slate-100 pt-3">
-            <DeleteEntity kind="asset" id={id} redirectTo="/property" paths={["/property"]} label="ลบทรัพย์สินนี้"
-              hint="สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" />
-          </div>}
         </section>
       )}
       <EntityDocuments entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} />

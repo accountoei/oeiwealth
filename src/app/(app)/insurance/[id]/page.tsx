@@ -12,7 +12,6 @@ import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -352,9 +351,9 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
 
       {canWrite && (
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <StatusSelect table="insurance_policies" id={id} value={p.status} paths={paths} label="สถานะกรมธรรม์" options={INS_STATUS} />
-          {canDelete && <div><DeleteEntity kind="policy" id={id} redirectTo="/insurance" paths={["/insurance"]} label="ลบกรมธรรม์นี้"
-            hint="มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" /></div>}
+          <StatusSelect table="insurance_policies" id={id} value={p.status} paths={paths} label="สถานะกรมธรรม์" options={INS_STATUS}
+            remove={canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้",
+              hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined} />
         </section>
       )}
       <EntityDocuments entityType="INSURANCE_POLICY" entityId={id} module="INSURANCE" role={me.role} paths={paths} />

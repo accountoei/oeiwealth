@@ -8,7 +8,6 @@ import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ScheduleEditor } from "./schedule-editor";
@@ -161,12 +160,10 @@ export default async function LoanDetailPage({ params, searchParams }: {
               </div>
               <div className="border-t border-slate-100 pt-4">
                 <StatusSelect table="loan_details" id={l.id} value={l.status} paths={paths} label="สถานะ"
-                  options={LOAN_STATUS_OPTIONS} />
+                  options={LOAN_STATUS_OPTIONS}
+                  remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้",
+                    hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined} />
               </div>
-              {canDelete && <div className="border-t border-slate-100 pt-4">
-                <DeleteEntity kind="asset" id={id} redirectTo="/financial/loans" paths={["/financial/loans"]} label="ลบรายการนี้"
-                  hint="ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" />
-              </div>}
             </div>
           } />
         </div>

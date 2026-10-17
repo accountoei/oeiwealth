@@ -5,7 +5,6 @@ import { requireAppUser } from "@/lib/auth";
 import { money, thDate, todayBangkok } from "@/lib/format";
 import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
-import DeleteEntity from "@/components/DeleteEntity";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { CardAutopayForm, CardBalanceForm, CardStatusForm } from "../forms";
 import SplitForm from "../../../income-expenses/SplitForm";
@@ -189,7 +188,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
           <h2 className="mb-1 font-medium text-slate-900">แก้ไขข้อมูลบัตร</h2>
           <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูลบัตร ไม่กระทบยอดค้าง (ยอดแก้ด้วย &ldquo;อัปเดตยอดตาม Statement&rdquo;)</p>
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2 text-sm">สถานะ <CardStatusForm cardId={id} status={c.status} /></div>
+            <div className="flex items-center gap-2 text-sm">สถานะ <CardStatusForm cardId={id} status={c.status}
+              remove={canDelete ? { kind: "card", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบบัตรนี้",
+                hint: "บัตรที่เลิกใช้จริงให้เปลี่ยนสถานะเป็น \"ยกเลิกบัตรแล้ว\"" } : undefined} /></div>
             <RowActions table="credit_cards" id={id} paths={paths} canDelete={false} fields={[
               { name: "issuer", label: "ผู้ออกบัตร", value: c.issuer },
               { name: "card_name", label: "ชื่อบัตร", value: c.card_name },
@@ -200,10 +201,6 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
               { name: "expiry_date", label: "หมดอายุ", type: "date", value: c.expiry_date },
               { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />
           </div>
-          {canDelete && <div className="mt-4 border-t border-slate-100 pt-3">
-            <DeleteEntity kind="card" id={id} redirectTo="/liabilities" paths={["/liabilities"]} label="ลบบัตรนี้"
-              hint="บัตรที่เลิกใช้จริงให้เปลี่ยนสถานะเป็น &quot;ยกเลิกบัตรแล้ว&quot;" />
-          </div>}
         </section>
       )}
       <EntityDocuments entityType="CREDIT_CARD" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />

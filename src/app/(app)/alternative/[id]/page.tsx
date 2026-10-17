@@ -5,7 +5,6 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, money, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
@@ -121,8 +120,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
             { name: "name", label: "ชื่อ", value: a.name, width: "w-48" }, { name: "acquisition_date", label: "วันที่ได้มา", type: "date", value: a.acquisition_date },
             { name: "acquisition_cost", label: "ราคาที่ได้มา", type: "number", value: a.acquisition_cost }, { name: "notes", label: "หมายเหตุ", value: a.notes, width: "w-48" }]} />
           <div><StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะ"
-            options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]} /></div>
-          {canDelete && <div><DeleteEntity kind="asset" id={id} redirectTo="/alternative" paths={["/alternative"]} label="ลบรายการนี้" /></div>}
+            options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]}
+            remove={canDelete ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined} /></div>
         </section>
       )}
       <EntityDocuments entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} />
