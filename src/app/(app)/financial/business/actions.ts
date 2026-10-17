@@ -59,3 +59,29 @@ export async function addCapital(_: ActionState, form: FormData): Promise<Action
   if (error) return { error: friendlyError(error.message) };
   return done(id, "บันทึกเงินลงทุนเพิ่มแล้ว · อย่าลืมอัปเดตมูลค่ากิจการ");
 }
+
+/** แก้รายละเอียดธุรกิจ: ชื่อรายการ (assets.name) + ข้อมูลบริษัท (private_business_details) · RLS / trigger คุมสิทธิ์และหุ้น */
+export async function updateBusinessInfo(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const name = str(form.get("name"));
+  if (!name) return { error: "กรุณาใส่ชื่อรายการ" };
+  if (!str(form.get("company_name"))) return { error: "กรุณาใส่ชื่อบริษัท" };
+  const { data: a, error: e1 } = await supabase.from("assets").update({ name }).eq("id", assetId).select("id");
+  if (e1) return { error: friendlyError(e1.message) };
+  if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  const patch: Record<string, unknown> = {
+    company_name: str(form.get("company_name")),
+    registration_no: str(form.get("registration_no")),
+    business_type: str(form.get("business_type")),
+    total_shares: num(form.get("total_shares")),
+    investment_cost: num(form.get("investment_cost")),
+    notes: str(form.get("notes")),
+  };
+  // เจ้าของเป็น % (แบบเดิม): หุ้นที่ถือ / % ของบริษัท แก้เองได้ · เป็นจำนวนหุ้น: ระบบคำนวณให้
+  if (form.has("shares_owned")) patch.shares_owned = num(form.get("shares_owned"));
+  if (form.has("company_ownership_percent")) patch.company_ownership_percent = num(form.get("company_ownership_percent"));
+  const { error: e2 } = await supabase.from("private_business_details").update(patch).eq("asset_id", assetId);
+  if (e2) return { error: friendlyError(e2.message) };
+  return done(assetId, "บันทึกรายละเอียดแล้ว");
+}

@@ -17,8 +17,10 @@ export default function NewAccountForm(props: {
   const { persons, goLive, openingDate, today, isSetup, isAdmin } = props;
   const [state, action, pending] = useActionState<ActionState, FormData>(createBankAccount, {});
   // ช่วง SETUP: ค่าเริ่มต้น = บัญชีที่มีอยู่ก่อน Go-live (ยอดตั้งต้น) · หลัง LIVE: เฉพาะ ADMIN พร้อมเหตุผล
-  const canOpening = isSetup || isAdmin;
+  const canOpening = isSetup || isAdmin;  // ADMIN หลัง LIVE: ต้องกดลิงก์ก่อน (ดูด้านล่าง)
   const [opening, setOpening] = useState(isSetup);
+  // หลัง Go-live: ซ่อนตัวเลือก "มีอยู่ก่อน Go-live" (ไม่ติ๊ก) · ADMIN กดลิงก์เล็กเพื่อเพิ่มรายการที่ตกหล่น
+  const [late, setLate] = useState(false);
   const [shares, setShares] = useState<Record<string, string>>(
     persons.length === 1 ? { [persons[0].id]: "100" } : {},
   );
@@ -81,7 +83,10 @@ export default function NewAccountForm(props: {
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">ยอดคงเหลือแรก</h2>
-        {canOpening && (
+        {!isSetup && isAdmin && !late && (
+          <button type="button" onClick={() => setLate(true)} className="text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+        )}
+        {canOpening && (isSetup || late) && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="is_opening" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="mt-1" />
             <span>
