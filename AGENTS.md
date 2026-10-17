@@ -51,7 +51,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ```bash
 service postgresql start
-DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (438 checks)
+DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (439 checks)
 ```
 
 `tests/run.sh` **drops and recreates a database**. Run it **only against a local Postgres**, never against Supabase.

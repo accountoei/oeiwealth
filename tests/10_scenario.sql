@@ -2046,6 +2046,9 @@ SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_
   'อสังหาริมทรัพย์', 'ภาษีที่ดิน: ทรัพย์สินที่ไม่ใช่อสังหาฯ บันทึกไม่ได้');
 SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_pct) VALUES (t.a('บ้าน A'), 2026, -1)$$,
   'check', 'ภาษีที่ดิน: อัตราติดลบไม่ได้');
+SELECT t.ok(NOT has_function_privilege('anon', 'private.tg_property_tax_line_check()', 'EXECUTE')
+            AND NOT has_function_privilege('authenticated', 'private.tg_property_tax_line_check()', 'EXECUTE'),
+            'ภาษีที่ดิน: ฟังก์ชัน trigger ไม่เปิดให้ผู้ใช้เรียกตรง');
 SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_pct) VALUES (t.a('บ้าน A'), 2026, 0.3)$$,
   'row-level|policy|PERMISSION', 'ภาษีที่ดิน: VIEWER บันทึกไม่ได้');
