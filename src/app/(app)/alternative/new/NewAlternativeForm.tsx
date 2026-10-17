@@ -4,14 +4,14 @@ import Link from "next/link";
 import { startTransition, useActionState, useRef, useState } from "react";
 import { addCategory, createAlternative, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { thDate } from "@/lib/format";
+import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
 
 export default function NewAlternativeForm(props: {
-  persons: { id: string; name: string }[]; categories: { id: string; name: string }[];
+  persons: { id: string; name: string }[]; categories: { id: string; name: string; code: string; unit: string | null }[];
   goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean;
 }) {
   const { persons, categories, goLive, openingDate, today, isSetup, isAdmin } = props;
@@ -22,13 +22,19 @@ export default function NewAlternativeForm(props: {
   const [late, setLate] = useState(false);
   const [newCat, setNewCat] = useState(false);
   const catName = useRef<HTMLInputElement>(null);
+  const catUnit = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<Record<string, string>>({});   // หมวดที่เลือก ต่อรอบของรายการหมวด (เพิ่มหมวดใหม่ = เลือกหมวดใหม่)
   // เพิ่มหมวดโดยไม่ส่งฟอร์มหลัก (ข้อมูลที่กรอกไว้ไม่หาย)
   const addCat = () => {
     const fd = new FormData();
     fd.set("category_name", catName.current?.value ?? "");
+    fd.set("default_unit", catUnit.current?.value ?? "");
     startTransition(() => catAction(fd));
   };
-  const cats = cs.id && !categories.some((c) => c.id === cs.id) ? [...categories, { id: cs.id, name: cs.name ?? "" }] : categories;
+  const cats = cs.id && !categories.some((c) => c.id === cs.id) ? [...categories, { id: cs.id, name: cs.name ?? "", code: "", unit: cs.unit ?? "ชิ้น" }] : categories;
+  const chosenId = picked[cs.id ?? "base"] ?? cs.id ?? categories[0]?.id;
+  const chosen = cats.find((c) => c.id === chosenId) ?? cats[0];
+  const units = [...new Set([chosen?.unit, ...(ALT_UNITS_BY_CODE[chosen?.code ?? ""] ?? ALT_UNITS_ANY)].filter(Boolean) as string[])];
   return (
     <div className="space-y-6">
       <form action={action} className="space-y-6">
@@ -38,7 +44,8 @@ export default function NewAlternativeForm(props: {
           <div className={label}>
             <label htmlFor="category_id">หมวด *</label>
             {/* หมวดที่เพิ่งเพิ่ม → อยู่ในรายการและถูกเลือกทันที */}
-            <select id="category_id" name="category_id" required key={cs.id ?? "base"} defaultValue={cs.id ?? categories[0]?.id} className={input}>
+            <select id="category_id" name="category_id" required key={cs.id ?? "base"} defaultValue={cs.id ?? categories[0]?.id}
+              onChange={(e) => setPicked({ ...picked, [cs.id ?? "base"]: e.target.value })} className={input}>
               {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             {!newCat ? (
@@ -49,6 +56,9 @@ export default function NewAlternativeForm(props: {
                   <input ref={catName} placeholder="ชื่อหมวดใหม่ เช่น พระเครื่อง / งานศิลปะ" aria-label="ชื่อหมวดใหม่"
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCat(); } }}
                     className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+                  <input ref={catUnit} placeholder="หน่วย เช่น องค์" aria-label="หน่วยตั้งต้นของหมวด" list="alt-units-any"
+                    className="w-32 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+                  <datalist id="alt-units-any">{ALT_UNITS_ANY.map((u) => <option key={u} value={u} />)}</datalist>
                   <button type="button" onClick={addCat} disabled={adding}
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{adding ? "…" : "เพิ่มหมวด"}</button>
                   <button type="button" onClick={() => setNewCat(false)} className="text-xs text-slate-500">ปิด</button>
@@ -61,7 +71,14 @@ export default function NewAlternativeForm(props: {
           <label className={label}>ยี่ห้อ<input name="brand" className={input} /></label>
           <label className={label}>รุ่น<input name="model" className={input} /></label>
           <label className={label}>Serial / เลขใบรับรอง<input name="serial_no" className={input} /></label>
-          <label className={label}>จำนวน (เช่น น้ำหนักบาท / หน่วย)<input name="quantity" inputMode="decimal" className={input} /></label>
+          <div className="grid grid-cols-[1fr_9rem] gap-2">
+            <label className={label}>จำนวน<input name="quantity" inputMode="decimal" data-money="off" className={input} /></label>
+            <label className={label}>หน่วย<input name="unit" key={chosen?.id} list="alt-units" defaultValue={chosen?.unit ?? ""} className={input} />
+              <datalist id="alt-units">{units.map((u) => <option key={u} value={u} />)}</datalist></label>
+          </div>
+          {chosen?.code === "GOLD" && (
+            <label className={label}>ความบริสุทธิ์ (%)<input name="purity_pct" inputMode="decimal" data-money="off" placeholder="เช่น 96.5 / 99.99" className={input} /></label>
+          )}
           <label className={label}>ที่เก็บ<input name="storage_location" placeholder="เช่น ตู้เซฟธนาคาร" className={input} /></label>
           <label className={label}>สภาพ<input name="condition" className={input} /></label>
           <label className={`${label} md:col-span-2`}>รายละเอียด<input name="details" className={input} /></label>

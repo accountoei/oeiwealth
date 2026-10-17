@@ -345,3 +345,19 @@ export function landTaxCalc(x: { land_sq_wa?: number | null; land_price_per_sq_w
   const tax = r2(((taxable * (x.rate_pct ?? 0)) / 100) * (1 - (x.discount_pct ?? 0) / 100));
   return { land, gross, dep, building: gross - dep, total, taxable, full, tax };
 }
+
+/** Alternative Assets: หน่วยนับที่เลือกได้ตามหมวด (หมวดอื่น = ALT_UNITS_ANY) · พิมพ์หน่วยเองได้เสมอ */
+export const ALT_UNITS_BY_CODE: Record<string, string[]> = {
+  GOLD: ["บาททองคำ", "กรัม", "ออนซ์", "ชิ้น"], JEWELRY: ["ชิ้น", "ชุด", "กะรัต"], WATCH: ["เรือน"], SHOES: ["คู่"],
+  CRYPTO: ["เหรียญ"],
+};
+export const ALT_UNITS_ANY = ["ชิ้น", "ชุด", "ขวด", "ลัง", "องค์", "คัน", "ภาพ", "ใบ", "เล่ม", "เหรียญ"];
+export const GRAM_PER_GOLD_BAHT = 15.244;
+/** "5 บาททองคำ (76.22 กรัม)" · จำนวนทศนิยมตามที่มี (สูงสุด 8) */
+export function qtyUnit(q: number | string | null | undefined, unit: string | null | undefined): string {
+  if (q == null || q === "") return "-";
+  const n = Number(q);
+  const s = n.toLocaleString("en-US", { maximumFractionDigits: 8 });
+  const g = unit === "บาททองคำ" ? ` (${(n * GRAM_PER_GOLD_BAHT).toLocaleString("en-US", { maximumFractionDigits: 2 })} กรัม)` : "";
+  return `${s}${unit ? ` ${unit}` : ""}${g}`;
+}

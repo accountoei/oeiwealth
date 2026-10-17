@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
 
-export type ActionState = { error?: string; ok?: string; id?: string; name?: string };
+export type ActionState = { error?: string; ok?: string; id?: string; name?: string; unit?: string };
 
 export async function createAlternative(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
@@ -16,7 +16,8 @@ export async function createAlternative(_: ActionState, form: FormData): Promise
     value, value_date: str(form.get("value_date")), is_opening: form.get("is_opening") === "on",
     valuation_method: str(form.get("valuation_method")), acquisition_date: str(form.get("acquisition_date")),
     acquisition_cost: num(form.get("acquisition_cost")), brand: str(form.get("brand")), model: str(form.get("model")),
-    serial_no: str(form.get("serial_no")), quantity: num(form.get("quantity")), storage_location: str(form.get("storage_location")),
+    serial_no: str(form.get("serial_no")), quantity: num(form.get("quantity")), unit: str(form.get("unit")), purity_pct: num(form.get("purity_pct")),
+    storage_location: str(form.get("storage_location")),
     condition: str(form.get("condition")), details: str(form.get("details")), owners: ownersFromForm(form), notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
@@ -31,9 +32,32 @@ export async function addCategory(_: ActionState, form: FormData): Promise<Actio
   const { data: fam } = await supabase.from("families").select("id").maybeSingle();
   const code = "CUSTOM_" + Math.random().toString(36).slice(2, 8).toUpperCase();
   const { data, error } = await supabase.from("asset_categories")
-    .insert({ family_id: fam?.id, category_code: code, category_name: name }).select("id").single();
+    .insert({ family_id: fam?.id, category_code: code, category_name: name, default_unit: str(form.get("default_unit")) ?? "ชิ้น" }).select("id").single();
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/alternative/new");
   revalidatePath("/alternative");
-  return { ok: `เพิ่มหมวด "${name}" แล้ว และเลือกให้แล้ว`, id: data.id, name };
+  return { ok: `เพิ่มหมวด "${name}" แล้ว และเลือกให้แล้ว`, id: data.id, name, unit: str(form.get("default_unit")) ?? "ชิ้น" };
+}
+
+/** แก้ข้อมูลสินทรัพย์ (ชื่อ · วันที่ / ราคาที่ได้มา · หมายเหตุ + รายละเอียด หน่วย ความบริสุทธิ์ ฯลฯ) */
+export async function updateAlternativeInfo(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const purity = num(form.get("purity_pct"));
+  if (purity != null && (Number.isNaN(purity) || purity <= 0 || purity > 100)) return { error: "ความบริสุทธิ์ต้องอยู่ระหว่าง 0–100%" };
+  const { data: a, error: e1 } = await supabase.from("assets").update({
+    name: str(form.get("name")), acquisition_date: str(form.get("acquisition_date")), acquisition_cost: num(form.get("acquisition_cost")),
+    notes: str(form.get("notes")),
+  }).eq("id", id).select("id");
+  if (e1) return { error: friendlyError(e1.message) };
+  if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  const { error: e2 } = await supabase.from("alternative_asset_details").update({
+    brand: str(form.get("brand")), model: str(form.get("model")), serial_no: str(form.get("serial_no")),
+    quantity: num(form.get("quantity")), unit: str(form.get("unit")), purity_pct: purity,
+    storage_location: str(form.get("storage_location")), condition: str(form.get("condition")), details: str(form.get("details")),
+  }).eq("asset_id", id);
+  if (e2) return { error: friendlyError(e2.message) };
+  revalidatePath("/alternative");
+  revalidatePath(`/alternative/${id}`);
+  return { ok: "บันทึกข้อมูลแล้ว" };
 }

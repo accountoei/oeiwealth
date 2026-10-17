@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, money, thDate, todayBangkok } from "@/lib/format";
+import { addDays, money, qtyUnit, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
@@ -10,9 +10,13 @@ import AssetValuationForm from "@/components/AssetValuationForm";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
+import { AltInfoForm } from "./forms";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
+const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
+type Cat = { category_name: string; category_code: string; default_unit: string | null };
 
 export default async function AlternativeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,7 +24,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
   const supabase = await createClient();
   const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banks }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_group", "ALTERNATIVE").is("deleted_at", null).maybeSingle(),
-    supabase.from("alternative_asset_details").select("*, asset_categories(category_name)").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
+    supabase.from("alternative_asset_details").select("*, asset_categories(category_name,category_code,default_unit)").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
@@ -35,72 +39,108 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
   const goLive = family?.go_live_date ?? "";
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
-  const cat = (Array.isArray(d.asset_categories) ? d.asset_categories[0] : d.asset_categories)?.category_name;
+  const cat = (Array.isArray(d.asset_categories) ? d.asset_categories[0] : d.asset_categories) as Cat | null;
   const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
+  const qty = d.quantity == null ? null : Number(d.quantity);
+  const unit = d.unit ?? cat?.default_unit ?? null;
+  const perUnit = (v: number | null | undefined) => (v == null || !qty ? null : Number(v) / qty);
+  const vsCost = a.current_value != null && a.acquisition_cost ? ((Number(a.current_value) - Number(a.acquisition_cost)) * 100) / Number(a.acquisition_cost) : null;
+  const pctText = (v: number) => `${v >= 0 ? "+" : ""}${v.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
+
   return (
     <div className="space-y-6">
       <div>
         <Link href="/alternative" className="text-sm text-slate-500 hover:underline">← Alternative Assets</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{a.name}</h1>
-        <p className="text-sm text-slate-500">{cat} · {a.currency}</p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{a.name}</h1>
+            <p className="text-sm text-slate-500">{[cat?.category_name, d.brand, d.model].filter(Boolean).join(" · ")} · {a.currency}</p>
+          </div>
+          {canWrite && a.status === "ACTIVE" && (
+            <ActionBar>
+              <PayAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+              <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+            </ActionBar>
+          )}
+        </div>
       </div>
+
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">มูลค่าล่าสุด</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
-          <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}</div>
-          {a.acquisition_cost != null && <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>}
+        {/* ซ้าย: มูลค่า + เอกสาร */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">มูลค่าปัจจุบัน</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
+            <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}</div>
+            {perUnit(a.current_value) != null && <div className="mt-1 text-xs text-slate-500">{unit ?? "หน่วย"}ละ {money(perUnit(a.current_value))}</div>}
+            {vsCost != null && <div className={`mt-1 text-xs ${vsCost >= 0 ? "text-emerald-700" : "text-red-700"}`}>เทียบทุน {pctText(vsCost)}</div>}
+          </div>
+          <div className="flex-1">
+            <EntityDocuments entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} fill />
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="text-xs text-slate-500">รายละเอียด</div>
-          <ul className="mt-1 space-y-0.5">
-            {d.brand && <li>ยี่ห้อ {d.brand}{d.model && ` · รุ่น ${d.model}`}</li>}
-            {d.serial_no && <li>Serial {d.serial_no}</li>}
-            {d.quantity != null && <li>จำนวน {Number(d.quantity)}</li>}
-            {d.storage_location && <li>เก็บที่ {d.storage_location}</li>}
-            {d.condition && <li>สภาพ {d.condition}</li>}
-            {d.details && <li className="text-slate-600">{d.details}</li>}
-          </ul>
-          {canWrite && <div className="mt-2"><RowActions table="alternative_asset_details" id={d.id} paths={paths} canDelete={false} fields={[
-            { name: "brand", label: "ยี่ห้อ", value: d.brand }, { name: "model", label: "รุ่น", value: d.model },
-            { name: "serial_no", label: "Serial", value: d.serial_no }, { name: "quantity", label: "จำนวน", type: "number", value: d.quantity, width: "w-20" },
-            { name: "storage_location", label: "ที่เก็บ", value: d.storage_location }, { name: "condition", label: "สภาพ", value: d.condition },
-            { name: "details", label: "รายละเอียด", value: d.details, width: "w-48" }]} /></div>}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">เจ้าของ</div>
-          <ul className="mt-1 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
-          {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
-          {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
-            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canWrite}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="หมวด">{cat?.category_name ?? "-"}</Item>
+                <Item label="จำนวน">{qtyUnit(qty, unit)}</Item>
+                {d.purity_pct != null && <Item label="ความบริสุทธิ์">{Number(d.purity_pct)}%</Item>}
+                <Item label="ยี่ห้อ / รุ่น">{[d.brand, d.model].filter(Boolean).join(" · ") || "-"}</Item>
+                <Item label="Serial / เลขใบรับรอง">{d.serial_no || "-"}</Item>
+                <Item label="ที่เก็บ">{d.storage_location || "-"}</Item>
+                <Item label="สภาพ">{d.condition || "-"}</Item>
+                <Item label="ราคาทุน">{money(a.acquisition_cost, undefined, 0)}
+                  {perUnit(a.acquisition_cost) != null && <span className="block text-xs text-slate-500">{unit ?? "หน่วย"}ละ {money(perUnit(a.acquisition_cost))}</span>}</Item>
+                <Item label="วันที่ได้มา">{a.acquisition_date ? thDate(a.acquisition_date) : "-"}</Item>
+                <Item label="สถานะ">{ASSET_STATUS[a.status] ?? a.status}</Item>
+                <Item label="เจ้าของ">
+                  {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
+                  {ownerTotal < 99.99999 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {Math.round((100 - ownerTotal) * 10000) / 10000}%</div>}
+                </Item>
+                {d.details && <Item label="รายละเอียด" wide>{d.details}</Item>}
+                {a.notes && <Item label="หมายเหตุ" wide>{a.notes}</Item>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <AltInfoForm assetId={id} code={cat?.category_code ?? ""} defaultUnit={cat?.default_unit ?? null} v={{
+                  name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
+                  brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
+                  storage_location: d.storage_location, condition: d.condition, details: d.details }} />
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
+                  <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะ"
+                    options={Object.entries(ASSET_STATUS) as [string, string][]}
+                    remove={canDelete ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined} />
+                </div>
+              </div>
+            } />
         </div>
       </section>
 
-      {canWrite && a.status === "ACTIVE" && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">อัปเดตมูลค่า</h2>
-          <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />
-        </section>
-      )}
-
-      {canWrite && a.status === "ACTIVE" && (
-        <ActionBar>
-          <PayAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
-          <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
-        </ActionBar>
-      )}
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
         paths={paths} canWrite={canWrite} canDelete={canDelete} />
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">ประวัติมูลค่า</h2>
+      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+        <div>
+          <h2 className="font-medium text-slate-900">มูลค่า</h2>
+          <p className="text-xs text-slate-500">แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (ทอง / คริปโต ตามราคาตลาด)</p>
+        </div>
+        {canWrite && a.status === "ACTIVE" && <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />}
         <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th><th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th><th></th></tr></thead>
+          <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th>
+            {qty ? <th className="text-right">ต่อ{unit ?? "หน่วย"}</th> : null}<th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th><th></th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {(vals ?? []).map((v) => (
               <tr key={v.id}>
                 <td className="py-1.5">{thDate(v.valuation_date)}</td>
                 <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
+                {qty ? <td className="text-right tabular-nums text-slate-500">{money(perUnit(v.value))}</td> : null}
                 <td className="pl-4">{SOURCE[v.source] ?? v.source}</td>
                 <td className="pl-4 text-slate-500">{v.notes}</td>
                 <td className="pl-2 text-right">
@@ -113,18 +153,15 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
           </tbody>
         </table>
       </section>
+    </div>
+  );
+}
 
-      {canWrite && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <RowActions table="assets" id={id} paths={paths} canDelete={false} fields={[
-            { name: "name", label: "ชื่อ", value: a.name, width: "w-48" }, { name: "acquisition_date", label: "วันที่ได้มา", type: "date", value: a.acquisition_date },
-            { name: "acquisition_cost", label: "ราคาที่ได้มา", type: "number", value: a.acquisition_cost }, { name: "notes", label: "หมายเหตุ", value: a.notes, width: "w-48" }]} />
-          <div><StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะ"
-            options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]}
-            remove={canDelete ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined} /></div>
-        </section>
-      )}
-      <EntityDocuments entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} />
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

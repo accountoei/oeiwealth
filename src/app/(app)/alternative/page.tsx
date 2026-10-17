@@ -1,17 +1,24 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, money, thDate, todayBangkok } from "@/lib/format";
+import { addDays, money, qtyUnit, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 
-type Row = { id: string; asset_id: string; quantity: number | null; brand: string | null; storage_location: string | null;
-  asset_categories: { category_name: string } | { category_name: string }[] | null;
-  assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string } };
+type Cat = { id: string; category_name: string; category_code: string; default_unit: string | null };
+type Row = { id: string; asset_id: string; category_id: string; quantity: number | null; unit: string | null; purity_pct: number | null;
+  brand: string | null; model: string | null; storage_location: string | null;
+  asset_categories: Cat | Cat[] | null;
+  assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string; acquisition_cost: number | null } };
+type Own = { asset_id: string; person_id: string; ownership_percent: number; end_date: string | null };
 
-export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+const COLORS = ["#f59e0b", "#2563eb", "#7c3aed", "#10b981", "#f43f5e", "#0ea5e9", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
+/** ตัวย่อบนป้าย: ตัวอักษรภาษาอังกฤษ / ตัวเลข 4 ตัวแรก (ไม่มี = 2 ตัวแรก) */
+const initials = (name: string) => { const l = name.replace(/[^A-Za-z0-9]/g, ""); return (l || name).slice(0, l ? 4 : 2).toUpperCase(); };
+
+export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; c?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -19,15 +26,49 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const paths = ["/alternative"];
-  const sortMap = await loadSortMap("assets");
-  const { data, error } = await supabase.from("alternative_asset_details")
-    .select("id,asset_id,quantity,brand,storage_location,asset_categories(category_name),assets!inner(name,currency,current_value,current_value_date,status,deleted_at)")
-    .is("deleted_at", null).is("assets.deleted_at", null).order("created_at");
-  const rows = bySort(((data as unknown as Row[] | null) ?? []).filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
-  const cat = (r: Row) => (Array.isArray(r.asset_categories) ? r.asset_categories[0] : r.asset_categories)?.category_name ?? "-";
+  const [sortMap, { data, error }, { data: owners }, { data: fx }] = await Promise.all([
+    loadSortMap("assets"),
+    supabase.from("alternative_asset_details")
+      .select("id,asset_id,category_id,quantity,unit,purity_pct,brand,model,storage_location,asset_categories(id,category_name,category_code,default_unit),assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,deleted_at)")
+      .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
+    supabase.from("v_asset_ownerships_active").select("asset_id,person_id,ownership_percent,end_date"),
+    supabase.from("v_fx_status").select("currency,rate_to_thb"),
+  ]);
+  const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
+  const thb = (v: number | null | undefined, c: string) => (v == null ? null : Number(v) * (rate.get(c) ?? 0));
+  const all = (data as unknown as Row[] | null) ?? [];
+  const catOf = (r: Row) => (Array.isArray(r.asset_categories) ? r.asset_categories[0] : r.asset_categories) ?? null;
+  const color = new Map<string, string>();
+  [...new Set(all.map((r) => r.category_id))].forEach((c, i) => color.set(c, COLORS[i % COLORS.length]));
+  const mine = bySort(all.filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
+  const cats = [...new Map(mine.map((r) => [r.category_id, catOf(r)?.category_name ?? "-"]))];
+  const catFilter = cats.some(([k]) => k === sp.c) ? sp.c : undefined;
+  const rows = catFilter ? mine.filter((r) => r.category_id === catFilter) : mine;
+  const share = (id: string) => pv.assetShare(id);
+  const valueOf = (r: Row) => { const v = thb(r.assets.current_value, r.assets.currency); return v == null ? null : v * share(r.asset_id); };
+  const costOf = (r: Row) => { const v = thb(r.assets.acquisition_cost, r.assets.currency); return v == null ? null : v * share(r.asset_id); };
+  const unitOf = (r: Row) => r.unit ?? catOf(r)?.default_unit ?? null;
+  const per = (v: number | null, r: Row) => (v == null || !r.quantity ? null : v / (Number(r.quantity) * share(r.asset_id)));
+  const vs = (r: Row) => { const v = valueOf(r), c = costOf(r); return v == null || !c ? null : ((v - c) * 100) / c; };
+  const pctText = (v: number) => `${v >= 0 ? "+" : ""}${v.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
   const old = addDays(todayBangkok(), -90);
-  const totals = new Map<string, number>();
-  rows.filter((r) => r.assets.status === "ACTIVE").forEach((r) => totals.set(r.assets.currency, (totals.get(r.assets.currency) ?? 0) + Number(r.assets.current_value ?? 0) * pv.assetShare(r.asset_id)));
+
+  // กล่องสรุป: ตามหมวด (ตามสมาชิกที่เลือก) · ตามสมาชิก (ทั้งครอบครัวเสมอ)
+  const active = mine.filter((r) => r.assets.status === "ACTIVE" && (valueOf(r) ?? 0) > 0);
+  const totalMine = active.reduce((t, r) => t + (valueOf(r) ?? 0), 0);
+  const byCat = new Map<string, number>();
+  active.forEach((r) => byCat.set(r.category_id, (byCat.get(r.category_id) ?? 0) + (valueOf(r) ?? 0)));
+  const famActive = all.filter((r) => r.assets.status === "ACTIVE");
+  const ownRows = ((owners ?? []) as Own[]).filter((o) => !o.end_date);
+  const byPerson = new Map<string, number>();
+  famActive.forEach((r) => ownRows.filter((o) => o.asset_id === r.asset_id).forEach((o) =>
+    byPerson.set(o.person_id, (byPerson.get(o.person_id) ?? 0) + (thb(r.assets.current_value, r.assets.currency) ?? 0) * Number(o.ownership_percent) / 100)));
+  const totalFam = [...byPerson.values()].reduce((t, v) => t + v, 0);
+  const personName = new Map(pv.persons.map((x) => [x.id, x.name]));
+  const totals = { cost: rows.reduce((t, r) => t + (costOf(r) ?? 0), 0), val: rows.reduce((t, r) => t + (valueOf(r) ?? 0), 0) };
+  const href = (c?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (c) q.set("c", c); const s = q.toString(); return `/alternative${s ? `?${s}` : ""}`; };
+  const num = "px-3 py-3 align-top text-right tabular-nums";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -41,46 +82,121 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
-      {totals.size > 0 && (
-        <div className="flex flex-wrap gap-3">
-          {[...totals.entries()].map(([c, v]) => (
-            <div key={c} className="rounded-xl border border-slate-200 bg-white px-5 py-3">
-              <div className="text-xs text-slate-500">มูลค่ารวม {c}</div>
-              <div className="text-lg font-semibold tabular-nums">{money(v, c, 0)}</div>
-            </div>
-          ))}
-        </div>
+
+      {totalMine > 0 && (
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="font-medium text-slate-900">สัดส่วนมูลค่าตามหมวด{pv.personId ? `ของ ${pv.personName}` : ""}</h2>
+            <p className="mb-3 text-xs text-slate-500">รวม {money(totalMine, "THB")} · {active.length} รายการ</p>
+            <ShareTable label="หมวด" total={totalMine} rows={[...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
+              key: k, name: `${cats.find(([c]) => c === k)?.[1] ?? "-"} (${active.filter((r) => r.category_id === k).length})`, value: v, color: color.get(k) ?? COLORS[0] }))} />
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="font-medium text-slate-900">มูลค่าตามสมาชิกครอบครัว</h2>
+            <p className="mb-3 text-xs text-slate-500">รวม {money(totalFam, "THB")}</p>
+            <ShareTable label="สมาชิกครอบครัว" total={totalFam} rows={[...byPerson.entries()].sort((a, b) => b[1] - a[1]).map(([pid, v], i) => ({
+              key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[(i + 1) % COLORS.length] }))} />
+          </div>
+        </section>
       )}
+
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">รายการทั้งหมด</h2>
-          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/alternative", { p: sp.p })} />}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-medium text-slate-900">รายการทั้งหมด</h2>
+            {cats.length > 1 && (
+              <div className="flex flex-wrap gap-1 text-xs">
+                <Link href={href()} scroll={false} className={`rounded-full border px-2.5 py-0.5 ${!catFilter ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>ทั้งหมด</Link>
+                {cats.map(([k, l]) => (
+                  <Link key={k} href={href(k)} scroll={false}
+                    className={`rounded-full border px-2.5 py-0.5 ${catFilter === k ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                    {l} ({mine.filter((r) => r.category_id === k).length})</Link>
+                ))}
+              </div>
+            )}
+          </div>
+          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/alternative", { p: sp.p, c: catFilter })} />}
         </div>
-        <table className="mt-2 w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">รายการ</th><th className="px-4">หมวด</th><th className="px-4 text-right">มูลค่าล่าสุด</th></tr></thead>
+        <table className="mt-2 w-full min-w-[56rem] text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr><th className="px-3 py-2">รายการ</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ราคาทุน (THB)</th>
+              <th className="px-3 text-right">มูลค่าปัจจุบัน (THB)</th><th className="px-3 text-right">เทียบทุน</th><th className="px-3">ที่เก็บ</th></tr>
+          </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีรายการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีรายการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
             {rows.map((r, i) => {
+              const c = catOf(r);
               const stale = !r.assets.current_value_date || r.assets.current_value_date < old;
+              const u = unitOf(r);
+              const v = valueOf(r), cost = costOf(r), x = vs(r);
               return (
                 <tr key={r.id} className={r.assets.status !== "ACTIVE" ? "opacity-50" : ""}>
-                  <td className="px-4 py-3">
-                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (r) => r.asset_id)} /></span>}
-                    <Link href={`/alternative/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
-                    <div className="text-xs text-slate-500">{[r.brand, r.quantity != null ? `จำนวน ${Number(r.quantity)}` : null, r.storage_location].filter(Boolean).join(" · ")}</div>
+                  <td className="px-3 py-3 align-top">
+                    <div className="flex items-start gap-3">
+                      {ordering && <MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (y) => y.asset_id)} />}
+                      <span className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
+                        style={{ background: color.get(r.category_id) }}>{initials(r.assets.name)}</span>
+                      <div className="min-w-0">
+                        <Link href={`/alternative/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
+                        <div className="truncate text-xs text-slate-500">{c?.category_name ?? "-"}</div>
+                        {(r.brand || r.model || r.assets.status !== "ACTIVE") && <div className="truncate text-xs text-slate-400">
+                          {[r.brand, r.model, r.assets.status !== "ACTIVE" ? "ไม่ได้ถือแล้ว" : null].filter(Boolean).join(" · ")}</div>}
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-4">{cat(r)}</td>
-                  <td className="px-4 text-right">
-                    <div className="tabular-nums">{money(r.assets.current_value == null ? null : Number(r.assets.current_value) * pv.assetShare(r.asset_id), r.assets.currency, 0)}</div>
-                    {pv.assetPct(r.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(r.asset_id)}% ของ {money(r.assets.current_value, r.assets.currency, 0)}</div>}
-                    <div className={`text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 90 วัน"}</div>
-                  </td>
+                  <td className={num}>{qtyUnit(r.quantity, u)}
+                    {r.purity_pct != null && <div className="text-xs text-slate-400">ความบริสุทธิ์ {Number(r.purity_pct)}%</div>}
+                    {pv.assetPct(r.asset_id) != null && <div className="text-xs text-slate-400">ถือ {pv.assetPct(r.asset_id)}%</div>}</td>
+                  <td className={num}>{money(cost)}
+                    {per(cost, r) != null && <div className="text-xs text-slate-400">{u ?? "หน่วย"}ละ {money(per(cost, r))}</div>}</td>
+                  <td className={`${num} font-medium`}>{money(v)}
+                    {per(v, r) != null && <div className="text-xs font-normal text-slate-400">{u ?? "หน่วย"}ละ {money(per(v, r))}</div>}
+                    <div className={`text-xs font-normal ${stale ? "text-amber-700" : "text-slate-400"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 90 วัน"}</div></td>
+                  <td className={`${num} ${x == null ? "text-slate-400" : x >= 0 ? "text-emerald-700" : "text-red-700"}`}>{x == null ? "-" : pctText(x)}</td>
+                  <td className="px-3 py-3 align-top text-xs text-slate-600">{r.storage_location || "-"}</td>
                 </tr>
               );
             })}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr>
+                <td className="px-3 py-3">รวม{catFilter ? "ตามหมวด" : "ทั้งหมด"}</td><td className="px-3 text-right text-slate-400">-</td>
+                <td className="px-3 text-right tabular-nums">{money(totals.cost)}</td>
+                <td className="px-3 text-right tabular-nums">{money(totals.val)}</td>
+                <td className={`px-3 text-right tabular-nums ${totals.cost <= 0 ? "text-slate-400" : totals.val >= totals.cost ? "text-emerald-700" : "text-red-700"}`}>
+                  {totals.cost > 0 ? pctText(((totals.val - totals.cost) * 100) / totals.cost) : "-"}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
+      <p className="text-xs text-slate-500">มูลค่าสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · ทองคำ 1 บาททองคำ = 15.244 กรัม · ต่อหน่วย = มูลค่า ÷ จำนวน</p>
     </div>
+  );
+}
+
+/** ตารางสัดส่วน: ชื่อ · แถบ · มูลค่า · % */
+function ShareTable({ label, rows, total }: { label: string; rows: { key: string; name: string; value: number; color: string }[]; total: number }) {
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-slate-50 text-left text-xs text-slate-500">
+        <tr><th className="px-3 py-2">{label}</th><th className="px-3"></th><th className="px-3 text-right">มูลค่า (THB)</th><th className="px-3 text-right">สัดส่วน</th></tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {rows.map((r) => {
+          const pct = total > 0 ? (r.value * 100) / total : 0;
+          return (
+            <tr key={r.key}>
+              <td className="whitespace-nowrap px-3 py-2"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: r.color }} />{r.name}</td>
+              <td className="w-2/5 px-3"><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} /></div></td>
+              <td className="whitespace-nowrap px-3 text-right tabular-nums">{money(r.value, undefined, 0)}</td>
+              <td className="px-3 text-right tabular-nums">{pct.toFixed(1)}%</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

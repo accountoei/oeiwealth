@@ -2054,6 +2054,20 @@ SELECT t.fails($$INSERT INTO public.property_tax_lines(asset_id, tax_year, rate_
   'row-level|policy|PERMISSION', 'ภาษีที่ดิน: VIEWER บันทึกไม่ได้');
 RESET ROLE;
 
+\echo '== 13zb. Alternative: หน่วยนับ + ความบริสุทธิ์'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.create_alternative_asset(jsonb_build_object('name','ทองแท่งทดสอบ','category_id',(SELECT id FROM public.asset_categories WHERE category_code = 'GOLD'),
+  'value',100000,'value_date',current_date - 1,'is_opening',false,'acquisition_date',current_date - 1,'quantity',2.5,'purity_pct',96.5)) IS NOT NULL AS gold;
+SELECT t.ok((SELECT unit = 'บาททองคำ' AND purity_pct = 96.5 AND quantity = 2.5 FROM public.alternative_asset_details d JOIN public.assets a ON a.id = d.asset_id WHERE a.name = 'ทองแท่งทดสอบ'),
+            'Alternative: ไม่ระบุหน่วย = หน่วยตั้งต้นของหมวด (ทองคำ = บาททองคำ)');
+SELECT public.create_alternative_asset(jsonb_build_object('name','สร้อยทดสอบ','category_id',(SELECT id FROM public.asset_categories WHERE category_code = 'GOLD'),
+  'value',5000,'value_date',current_date - 1,'is_opening',false,'acquisition_date',current_date - 1,'quantity',3,'unit','กรัม')) IS NOT NULL AS gold2;
+SELECT t.ok((SELECT unit FROM public.alternative_asset_details d JOIN public.assets a ON a.id = d.asset_id WHERE a.name = 'สร้อยทดสอบ') = 'กรัม',
+            'Alternative: ระบุหน่วยเองได้');
+SELECT t.fails($$UPDATE public.alternative_asset_details SET purity_pct = 120 WHERE asset_id = t.a('ทองแท่งทดสอบ')$$, 'aad_purity_pct_ck', 'Alternative: ความบริสุทธิ์เกิน 100% ไม่ได้');
+RESET ROLE;
+SELECT t.ok((SELECT count(*) FROM public.asset_categories WHERE deleted_at IS NULL AND default_unit IS NULL) = 0, 'Alternative: ทุกหมวดมีหน่วยตั้งต้น');
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
