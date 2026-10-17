@@ -38,6 +38,10 @@ export function friendlyError(message: string): string {
   return m ? m[1] : message;
 }
 
+/** ที่มาของอัตราแลกเปลี่ยน (fx_rates.source) */
+export const FX_SOURCE_LABEL: Record<string, string> = { BOT_API: "ธปท.", BBL_API: "ธนาคารกรุงเทพ", ADMIN_OVERRIDE: "ADMIN Override" };
+export const FX_BBL_RATE_LABEL: Record<string, string> = { MID: "อัตรากลาง (ซื้อ TT + ขาย) ÷ 2", BUYING_TT: "อัตราซื้อ TT", SELLING: "อัตราขาย" };
+
 export const CURRENCIES = ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "HKD", "SGD", "AUD", "CHF"];
 
 export const ACCOUNT_TYPE_LABEL: Record<string, string> = {

@@ -8,6 +8,8 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { orderHrefs } from "@/lib/sort";
+import { ActionBar } from "@/components/ActionBar";
+import { addDays } from "@/lib/format";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null };
 
@@ -33,6 +35,15 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
   const pmap = new Map((persons ?? []).map((p) => [p.id, p.name]));
+  const soon = addDays(today, 60);
+  const activeMembers = memberRows.filter((m) => m.status === "ACTIVE");
+  const memberSoon = activeMembers.filter((m) => m.expiry_date && m.expiry_date >= today && m.expiry_date <= soon).length;
+  const memberExpired = activeMembers.filter((m) => m.expiry_date && m.expiry_date < today).length;
+  const pointSoon = pointRows.filter((pt) => pt.expiry_date && pt.expiry_date >= today && pt.expiry_date <= soon).length;
+  const pointsStale = pointRows.filter((pt) => !pt.balance_date || pt.balance_date < addDays(today, -90)).length;
+  const pointLinks = [
+    ...(members ?? []).map((m) => ({ value: `m:${m.id}`, label: `สมาชิกภาพ ${m.program_name}` })),
+    ...cards.map((c) => ({ value: `c:${c.id}`, label: `บัตร ${c.issuer} ${c.card_name ?? ""}` }))];
 
   return (
     <div className="space-y-6">
@@ -43,13 +54,25 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
             สมาชิกภาพ / สิทธิประโยชน์ และแต้มสะสม / ไมล์ ของสมาชิกในครอบครัว
           </p>
         </div>
-        <PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} />
+        <div className="flex flex-wrap items-start gap-2">
+          <PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} />
+          {canWrite && (
+            <ActionBar>
+              <MembershipForm persons={persons ?? []} />
+              <PointsForm persons={persons ?? []} today={today} links={pointLinks} />
+            </ActionBar>
+          )}
+        </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
-      <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-        บัตรเครดิตย้ายไปอยู่ที่ <Link href="/liabilities#cards" className="text-blue-700 hover:underline">Liabilities → บัตรเครดิต</Link> แล้ว
-      </p>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Box label="สมาชิกภาพที่ใช้งาน" value={activeMembers.length} unit="รายการ" sub={`ทั้งหมด ${memberRows.length} รายการ`} />
+        <Box label="สมาชิกภาพใกล้หมดอายุ (60 วัน)" value={memberSoon} unit="รายการ"
+          sub={memberExpired ? `เลยวันหมดอายุแล้ว ${memberExpired} รายการ` : "ไม่มีรายการเลยวันหมดอายุ"} warn={memberSoon + memberExpired > 0} />
+        <Box label="บัญชีแต้ม / ไมล์" value={pointRows.length} unit="บัญชี" sub={pointsStale ? `ยอดเกิน 90 วัน ${pointsStale} บัญชี` : "ยอดอัปเดตภายใน 90 วัน"} warn={pointsStale > 0} />
+        <Box label="แต้มใกล้หมดอายุ (60 วัน)" value={pointSoon} unit="บัญชี" sub="แต้ม / ไมล์ ไม่นับใน Net Worth" warn={pointSoon > 0} />
+      </section>
 
       <section className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
@@ -77,7 +100,6 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
             </tbody>
           </table>
         </div>
-        {canWrite && <MembershipForm persons={persons ?? []} />}
       </section>
 
       <section className="space-y-3">
@@ -104,11 +126,19 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
             </tbody>
           </table>
         </div>
-        {canWrite && <PointsForm persons={persons ?? []} today={today} links={[
-          ...(members ?? []).map((m) => ({ value: `m:${m.id}`, label: `สมาชิกภาพ ${m.program_name}` })),
-          ...cards.map((c) => ({ value: `c:${c.id}`, label: `บัตร ${c.issuer} ${c.card_name ?? ""}` }))]} />}
-        <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมใน Net Worth · กดแก้ไขเพื่ออัปเดตยอดตาม Statement</p>
+        <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมใน Net Worth · กดแก้ไขเพื่ออัปเดตยอดตาม Statement ·
+          บัตรเครดิตอยู่ที่ <Link href="/liabilities#cards" className="text-blue-700 hover:underline">Liabilities → บัตรเครดิต</Link></p>
       </section>
+    </div>
+  );
+}
+
+function Box({ label, value, unit, sub, warn }: { label: string; value: number; unit: string; sub?: string; warn?: boolean }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">{value} <span className="text-sm font-normal text-slate-500">{unit}</span></div>
+      {sub && <div className={`mt-1 text-xs ${warn ? "text-amber-700" : "text-slate-500"}`}>{sub}</div>}
     </div>
   );
 }

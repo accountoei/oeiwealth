@@ -14,7 +14,7 @@ import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { AltInfoForm } from "./forms";
 
-const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
+const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาดโลก (อัตโนมัติ)" };
 const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
 type Cat = { category_name: string; category_code: string; default_unit: string | null };
 
@@ -86,6 +86,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
                 <Item label="หมวด">{cat?.category_name ?? "-"}</Item>
                 <Item label="จำนวน">{qtyUnit(qty, unit)}</Item>
                 {d.purity_pct != null && <Item label="ความบริสุทธิ์">{Number(d.purity_pct)}%</Item>}
+                {cat?.category_code === "GOLD" && <Item label="ประเมินมูลค่าอัตโนมัติ">{d.auto_price ? "เปิด (ราคาตลาดโลก ทุกวันทำการ)" : "ปิด"}</Item>}
                 <Item label="ยี่ห้อ / รุ่น">{[d.brand, d.model].filter(Boolean).join(" · ") || "-"}</Item>
                 <Item label="Serial / เลขใบรับรอง">{d.serial_no || "-"}</Item>
                 <Item label="ที่เก็บ">{d.storage_location || "-"}</Item>
@@ -107,7 +108,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
                 <AltInfoForm assetId={id} code={cat?.category_code ?? ""} defaultUnit={cat?.default_unit ?? null} v={{
                   name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
                   brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
-                  storage_location: d.storage_location, condition: d.condition, details: d.details }} />
+                  storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price }} />
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen

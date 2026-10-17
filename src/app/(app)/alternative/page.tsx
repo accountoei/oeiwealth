@@ -6,6 +6,7 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
+import ShareTable, { SHARE_COLORS } from "@/components/ShareTable";
 
 type Cat = { id: string; category_name: string; category_code: string; default_unit: string | null };
 type Row = { id: string; asset_id: string; category_id: string; quantity: number | null; unit: string | null; purity_pct: number | null;
@@ -14,7 +15,7 @@ type Row = { id: string; asset_id: string; category_id: string; quantity: number
   assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string; acquisition_cost: number | null } };
 type Own = { asset_id: string; person_id: string; ownership_percent: number; end_date: string | null };
 
-const COLORS = ["#f59e0b", "#2563eb", "#7c3aed", "#10b981", "#f43f5e", "#0ea5e9", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
+const COLORS = SHARE_COLORS;
 /** ตัวย่อบนป้าย: ตัวอักษรภาษาอังกฤษ / ตัวเลข 4 ตัวแรก (ไม่มี = 2 ตัวแรก) */
 const initials = (name: string) => { const l = name.replace(/[^A-Za-z0-9]/g, ""); return (l || name).slice(0, l ? 4 : 2).toUpperCase(); };
 
@@ -174,29 +175,5 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
       </div>
       <p className="text-xs text-slate-500">มูลค่าสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · ทองคำ 1 บาททองคำ = 15.244 กรัม · ต่อหน่วย = มูลค่า ÷ จำนวน</p>
     </div>
-  );
-}
-
-/** ตารางสัดส่วน: ชื่อ · แถบ · มูลค่า · % */
-function ShareTable({ label, rows, total }: { label: string; rows: { key: string; name: string; value: number; color: string }[]; total: number }) {
-  return (
-    <table className="w-full text-sm">
-      <thead className="bg-slate-50 text-left text-xs text-slate-500">
-        <tr><th className="px-3 py-2">{label}</th><th className="px-3"></th><th className="px-3 text-right">มูลค่า (THB)</th><th className="px-3 text-right">สัดส่วน</th></tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {rows.map((r) => {
-          const pct = total > 0 ? (r.value * 100) / total : 0;
-          return (
-            <tr key={r.key}>
-              <td className="whitespace-nowrap px-3 py-2"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: r.color }} />{r.name}</td>
-              <td className="w-2/5 px-3"><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} /></div></td>
-              <td className="whitespace-nowrap px-3 text-right tabular-nums">{money(r.value, undefined, 0)}</td>
-              <td className="px-3 text-right tabular-nums">{pct.toFixed(1)}%</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
   );
 }

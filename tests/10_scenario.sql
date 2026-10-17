@@ -188,12 +188,54 @@ SELECT t.ok((SELECT outstanding_amount FROM public.liabilities) = 3000000, 'liab
 INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
   VALUES (t.p('คุณพ่อ'), 'SCB', 'Prestige', '7788', 20000, '2026-06-25');
 
+\echo '== 3b. เปลี่ยนวัน Go-live ก่อน Confirm (ย้ายยอดตั้งต้นให้)'
+SELECT t.fails($$SELECT public.change_go_live_date('2026-08-01')$$, 'PERMISSION_DENIED', 'Go-live: EDITOR เปลี่ยนวันไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.fails($$SELECT public.change_go_live_date('2026-08-15')$$, 'วันที่ 1 ของเดือน', 'Go-live: ต้องเป็นวันที่ 1 ของเดือน');
+SELECT t.ok((public.change_go_live_date('2026-07-01') ->> 'changed')::boolean = false, 'Go-live: วันเดิม = ไม่เปลี่ยนอะไร');
+SELECT public.change_go_live_date('2026-08-01') -> 'moved' AS moved_later;
+SELECT t.ok((SELECT go_live_date FROM public.families) = '2026-08-01', 'Go-live: เลื่อนเป็น 1 ส.ค.');
+SELECT t.ok((SELECT valuation_date FROM public.asset_valuations WHERE asset_id = t.a('KBank ออมทรัพย์') AND is_opening) = '2026-07-31'
+            AND (SELECT valuation_date FROM public.asset_valuations WHERE asset_id = t.a('บ้าน A') AND is_opening) = '2026-07-31'
+            AND (SELECT valuation_date FROM public.liability_valuations WHERE is_opening AND deleted_at IS NULL) = '2026-07-31'
+            AND (SELECT opening_date FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = '2026-07-31',
+            'Go-live: ยอดตั้งต้น บัญชี / บ้าน / หนี้ / เงินให้กู้ ย้ายไปวันก่อน Go-live ใหม่');
+SELECT t.ok((SELECT bool_and(transaction_date = '2026-07-31') FROM public.investment_transactions WHERE transaction_type = 'OPENING_BALANCE' AND deleted_at IS NULL)
+            AND (SELECT valuation_date FROM public.investment_valuations WHERE holding_id = t.h('AAPL') AND deleted_at IS NULL) = '2026-07-31',
+            'Go-live: ยอดตั้งต้นพอร์ต + ราคา ณ วันตั้งต้น ย้ายตาม');
+SELECT t.ok((SELECT quantity = 10 AND average_cost = 150 AND current_value = 2000 FROM public.investment_holdings WHERE name = 'AAPL')
+            AND (SELECT current_value FROM public.assets WHERE name = 'Brokerage USD') = 7000
+            AND (SELECT current_value FROM public.assets WHERE name = 'KBank ออมทรัพย์') = 1000000
+            AND (SELECT current_value FROM public.assets WHERE name = 'เงินกู้ญาติ') = 500000
+            AND (SELECT outstanding_amount FROM public.liabilities) = 3000000,
+            'Go-live: มูลค่าทุกรายการเท่าเดิมหลังย้ายวัน');
+SELECT t.ok((SELECT balance_date FROM public.credit_cards) = '2026-06-25', 'Go-live: ยอดบัตรที่ไม่ได้ลงวันก่อน Go-live เดิม ไม่ย้าย');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_go_live_readiness WHERE status = 'MISSING'), 'Go-live: Readiness ยังไม่มี MISSING หลังเลื่อน');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split) AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split),
+            'Go-live: ย้ายวันไม่สร้างก้อนรอแยกรายละเอียด');
+SELECT public.change_go_live_date('2026-07-01') -> 'moved' AS moved_back;
+SELECT t.ok((SELECT go_live_date FROM public.families) = '2026-07-01'
+            AND (SELECT valuation_date FROM public.asset_valuations WHERE asset_id = t.a('KBank ออมทรัพย์') AND is_opening) = '2026-06-30'
+            AND (SELECT bool_and(transaction_date = '2026-06-30') FROM public.investment_transactions WHERE transaction_type = 'OPENING_BALANCE' AND deleted_at IS NULL)
+            AND (SELECT opening_date FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = '2026-06-30'
+            AND (SELECT current_value FROM public.assets WHERE name = 'Brokerage USD') = 7000,
+            'Go-live: เลื่อนกลับ 1 ก.ค. → ยอดตั้งต้นกลับไป 30 มิ.ย.');
+SELECT t.fails($$SELECT public.change_go_live_date('2026-06-01')$$, 'GO_LIVE_CHANGE_BLOCKED.*ยอดตั้งต้นที่ลงวันที่',
+               'Go-live: เลื่อนเร็วขึ้นแต่มียอดตั้งต้นลงวันที่หลังวันใหม่ (บัตร 25 มิ.ย.) → ปฏิเสธ');
+SELECT t.fails($$SELECT public.change_go_live_date('2099-01-01')$$, 'GO_LIVE_CHANGE_BLOCKED.*ยังไม่ถึง',
+               'Go-live: วันตั้งต้นใหม่ในอนาคต แต่มียอดตั้งต้นแล้ว → ปฏิเสธ');
+SELECT t.ok((SELECT go_live_date FROM public.families) = '2026-07-01', 'Go-live: ปฏิเสธแล้วไม่แก้อะไร');
+SELECT t.ok((SELECT count(*) FROM public.audit_logs WHERE action = 'EDIT_OPENING_POSITION' AND metadata ->> 'kind' = 'CHANGE_GO_LIVE_DATE') = 2, 'Go-live: บันทึก Audit ทุกครั้งที่เปลี่ยน');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.change_go_live_date(date)', 'EXECUTE'), 'Go-live: anon เรียกไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+
 \echo '== 4. Go-live'
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_go_live_readiness WHERE status = 'MISSING'), 'Readiness ไม่มี MISSING');
 SELECT t.fails($$SELECT public.confirm_go_live()$$, 'PERMISSION_DENIED', 'EDITOR Confirm Go-live ไม่ได้');
 SELECT t.login('00000000-0000-0000-0000-00000000000a');
 SELECT public.confirm_go_live() ->> 'status' AS go_live_status;
 SELECT t.fails($$UPDATE public.families SET go_live_date = '2026-08-01'$$, 'GO_LIVE_LOCKED', 'หลัง LIVE แก้ go_live_date ไม่ได้');
+SELECT t.fails($$SELECT public.change_go_live_date('2026-08-01')$$, 'GO_LIVE_LOCKED', 'Go-live: หลัง LIVE เปลี่ยนวันด้วยปุ่มไม่ได้');
 
 \echo '== 5. July transactions (EDITOR)'
 SELECT t.login('00000000-0000-0000-0000-00000000000e');
@@ -2067,6 +2109,85 @@ SELECT t.ok((SELECT unit FROM public.alternative_asset_details d JOIN public.ass
 SELECT t.fails($$UPDATE public.alternative_asset_details SET purity_pct = 120 WHERE asset_id = t.a('ทองแท่งทดสอบ')$$, 'aad_purity_pct_ck', 'Alternative: ความบริสุทธิ์เกิน 100% ไม่ได้');
 RESET ROLE;
 SELECT t.ok((SELECT count(*) FROM public.asset_categories WHERE deleted_at IS NULL AND default_unit IS NULL) = 0, 'Alternative: ทุกหมวดมีหน่วยตั้งต้น');
+
+\echo '== 13zc. แหล่งอัตราแลกเปลี่ยน ธปท. / ธนาคารกรุงเทพ (ไม่เปลี่ยนอัตราเดิม)'
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_fx_rates(jsonb_build_array(jsonb_build_object('rate_date', current_date - 1, 'currency', 'EUR', 'rate_to_thb', 38, 'source_reference', 'TEST'))) AS eur_yesterday;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$SELECT public.set_fx_source('BBL')$$, 'PERMISSION_DENIED', 'FX: EDITOR เปลี่ยนแหล่งไม่ได้');
+SELECT t.fails($$SELECT public.server_fx_settings()$$, 'permission denied', 'FX: ผู้ใช้อ่านค่าของ Job ตรงไม่ได้');
+SELECT t.fails($$SELECT public.server_upsert_fx_rates('[]'::jsonb, 'FX_FETCH', 'BBL_API')$$, 'permission denied', 'FX: ผู้ใช้บันทึกอัตราตรงไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.fails($$SELECT public.set_fx_source('XYZ')$$, 'BOT หรือ BBL', 'FX: แหล่งต้องเป็น BOT / BBL');
+SELECT t.ok((public.set_fx_source('BBL', 'MID') ->> 'since')::date = (now() AT TIME ZONE 'Asia/Bangkok')::date, 'FX: เปลี่ยนเป็น BBL มีผลตั้งแต่วันนี้');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok((public.server_fx_settings() ->> 'source') = 'BBL', 'FX: Job อ่านแหล่งปัจจุบันได้');
+SELECT public.server_upsert_fx_rates(jsonb_build_array(
+  jsonb_build_object('rate_date', '2026-10-02', 'currency', 'USD', 'rate_to_thb', 35.5, 'source_reference', 'BBL TEST'),
+  jsonb_build_object('rate_date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'currency', 'EUR', 'rate_to_thb', 45, 'source_reference', 'BBL TEST'),
+  jsonb_build_object('rate_date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'currency', 'GBP', 'rate_to_thb', 44, 'source_reference', 'BBL TEST')),
+  'FX_FETCH', 'BBL_API') AS bbl_rows;
+SELECT t.ok((SELECT source = 'BOT_API' AND rate_to_thb <> 35.5 FROM public.fx_rates WHERE currency = 'USD' AND rate_date = '2026-10-02' AND deleted_at IS NULL),
+            'FX: อัตรา ธปท. เดิมไม่ถูกอัตรา BBL ทับ');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.fx_rates WHERE currency = 'EUR' AND rate_date = (now() AT TIME ZONE 'Asia/Bangkok')::date AND deleted_at IS NULL),
+            'FX: BBL ต่างจากอัตราก่อนหน้าเกิน 5% → ไม่บันทึก');
+SELECT t.ok((SELECT source = 'BBL_API' AND rate_to_thb = 44 FROM public.fx_rates WHERE currency = 'GBP' AND rate_date = (now() AT TIME ZONE 'Asia/Bangkok')::date AND deleted_at IS NULL),
+            'FX: BBL วันนี้ (ไม่มีอัตราก่อนหน้าให้เทียบ) → บันทึกเป็น BBL_API');
+SELECT t.ok((SELECT result = 'PARTIAL' AND jsonb_array_length(details -> 'skipped') = 1 FROM public.system_job_runs ORDER BY id DESC LIMIT 1),
+            'FX: รายการที่ไม่บันทึกแสดงใน Job log (PARTIAL)');
+SELECT public.server_upsert_fx_rates(jsonb_build_array(
+  jsonb_build_object('rate_date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'currency', 'GBP', 'rate_to_thb', 43, 'source_reference', 'BOT TEST'))) AS bot_today;
+SELECT t.ok((SELECT source = 'BBL_API' AND rate_to_thb = 44 FROM public.fx_rates WHERE currency = 'GBP' AND rate_date = (now() AT TIME ZONE 'Asia/Bangkok')::date AND deleted_at IS NULL),
+            'FX: ตั้งแต่วันเปลี่ยน รับเฉพาะแหล่งปัจจุบัน (ธปท. ไม่ทับ)');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.set_fx_source('BOT') ->> 'source' AS back_to_bot;
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_fx_rates(jsonb_build_array(
+  jsonb_build_object('rate_date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'currency', 'GBP', 'rate_to_thb', 43, 'source_reference', 'BOT TEST'))) AS bot_today2;
+SELECT t.ok((SELECT source = 'BBL_API' AND rate_to_thb = 44 FROM public.fx_rates WHERE currency = 'GBP' AND rate_date = (now() AT TIME ZONE 'Asia/Bangkok')::date AND deleted_at IS NULL),
+            'FX: เปลี่ยนกลับเป็น ธปท. → อัตรา BBL ที่บันทึกแล้วไม่เปลี่ยน');
+RESET ROLE;
+SELECT t.ok((SELECT count(*) FROM public.audit_logs WHERE metadata ->> 'kind' = 'FX_SOURCE') = 2, 'FX: บันทึก Audit ทุกครั้งที่เปลี่ยนแหล่ง');
+UPDATE public.fx_rates SET deleted_at = now() WHERE source_reference IN ('BBL TEST', 'BOT TEST') OR (currency = 'EUR' AND source_reference = 'TEST');
+
+\echo '== 13zd. ราคาอัตโนมัติ (หุ้น / กองทุน / ทองคำ)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.investment_holdings SET auto_price = true, price_ref = 'AAPL' WHERE id = t.h('AAPL');
+UPDATE public.alternative_asset_details SET auto_price = true WHERE asset_id IN (t.a('ทองแท่งทดสอบ'), t.a('สร้อยทดสอบ'));
+SELECT t.fails($$SELECT public.server_price_targets()$$, 'permission denied', 'ราคา: ผู้ใช้อ่านรายการของ Job ตรงไม่ได้');
+SELECT t.fails($$SELECT public.server_upsert_prices('[]'::jsonb)$$, 'permission denied', 'ราคา: ผู้ใช้บันทึกราคาตรงไม่ได้');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+  SELECT id, current_date - 1, 205, quantity, quantity * 205, 'USER' FROM public.investment_holdings WHERE id = t.h('AAPL');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok((SELECT count(*) FROM jsonb_array_elements(public.server_price_targets() -> 'holdings') x WHERE x ->> 'name' = 'AAPL') = 1
+            AND jsonb_array_length(public.server_price_targets() -> 'gold') = 2, 'ราคา: Job เห็นเฉพาะรายการที่เปิดดึงราคาอัตโนมัติ');
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('AAPL'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 210, 'source_reference', 'TEST'),
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('AAPL'), 'date', current_date - 1, 'price', 206, 'source_reference', 'TEST'),
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('Cash USD'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 1, 'source_reference', 'TEST'),
+  jsonb_build_object('kind', 'GOLD', 'asset_id', t.a('ทองแท่งทดสอบ'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price_per_baht_965', 41000, 'source_reference', 'TEST'),
+  jsonb_build_object('kind', 'GOLD', 'asset_id', t.a('สร้อยทดสอบ'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price_per_baht_965', 41000, 'source_reference', 'TEST'))) AS prices_saved;
+SELECT t.ok((SELECT current_price = 210 AND current_value = quantity * 210 FROM public.investment_holdings WHERE id = t.h('AAPL')),
+            'ราคา: หุ้น → ราคาล่าสุด × จำนวนที่ถือ');
+SELECT t.ok((SELECT price FROM public.investment_valuations WHERE holding_id = t.h('AAPL') AND valuation_date = current_date - 1 AND deleted_at IS NULL AND source = 'USER') = 205
+            AND NOT EXISTS (SELECT 1 FROM public.investment_valuations WHERE holding_id = t.h('AAPL') AND valuation_date = current_date - 1 AND source = 'MARKET'),
+            'ราคา: ไม่ทับราคาที่ผู้ใช้ / Statement บันทึกในวันเดียวกัน');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.investment_valuations WHERE holding_id = t.h('Cash USD') AND source = 'MARKET'), 'ราคา: รายการที่ไม่ได้เปิดดึงราคา ไม่บันทึก');
+SELECT t.ok((SELECT current_value FROM public.assets WHERE id = t.a('ทองแท่งทดสอบ')) = 102500, 'ราคา: ทองคำ 2.5 บาททองคำ × 41,000 = 102,500');
+SELECT t.ok((SELECT current_value FROM public.assets WHERE id = t.a('สร้อยทดสอบ')) = 5000, 'ราคา: มูลค่าใหม่ต่างจากเดิมเกิน 20% → ไม่บันทึก');
+SELECT t.ok((SELECT result = 'PARTIAL' AND (details ->> 'rows')::int = 2 AND jsonb_array_length(details -> 'skipped') = 3 FROM public.system_job_runs ORDER BY id DESC LIMIT 1),
+            'ราคา: Job log บอกจำนวนที่บันทึก + รายการที่ข้าม');
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('AAPL'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 211, 'source_reference', 'TEST'),
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('AAPL'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 900, 'source_reference', 'TEST'))) AS prices_again;
+SELECT t.ok((SELECT count(*) FROM public.investment_valuations WHERE holding_id = t.h('AAPL') AND valuation_date = (now() AT TIME ZONE 'Asia/Bangkok')::date AND source = 'MARKET' AND deleted_at IS NULL) = 1
+            AND (SELECT current_price FROM public.investment_holdings WHERE id = t.h('AAPL')) = 211,
+            'ราคา: ดึงซ้ำวันเดียวกัน = แก้ราคาเดิม · ราคาผิดปกติ (เกิน 20%) ไม่บันทึก');
+RESET ROLE;
+SELECT t.ok(NOT has_function_privilege('authenticated', 'public.server_upsert_prices(jsonb, text)', 'EXECUTE'), 'ราคา: authenticated ไม่มีสิทธิ์ server_upsert_prices');
 
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');

@@ -5,6 +5,7 @@ import { DOC_MODULE_LABEL, addDays, fileSize, thDate, todayBangkok } from "@/lib
 import RowActions from "@/components/RowActions";
 import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpload";
 import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
+import { ActionBar } from "@/components/ActionBar";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string; derived_status: string | null };
@@ -72,82 +73,100 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     return s ? `/documents?${s}` : "/documents";
   };
 
+  const exp = (expiring ?? []) as { id: string; title: string; document_type: string; expiry_date: string | null; derived_status: string | null; mime_type: string | null }[];
+  const expired = exp.filter((d) => d.derived_status === "EXPIRED").length;
+  const totalSize = docs.reduce((t, d) => t + Number(d.file_size ?? 0), 0);
+  const unlinked = docs.filter((d) => !(byDoc.get(d.id) ?? []).length).length;
+  const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 ${on ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Documents</h1>
-        <p className="text-sm text-slate-500">ไฟล์เก็บใน Google Drive ของระบบ · เปิดได้เฉพาะผู้ใช้ในระบบ (ทุกการเปิดบันทึกใน Audit Log)</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Documents</h1>
+          <p className="text-sm text-slate-500">ไฟล์เก็บใน Google Drive ของระบบ · เปิดได้เฉพาะผู้ใช้ในระบบ (ทุกการเปิดบันทึกใน Audit Log)</p>
+        </div>
+        {canWrite && st.connected && <ActionBar><DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" /></ActionBar>}
       </div>
 
       {sp.drive === "connected" && <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">เชื่อม Google Drive เรียบร้อยแล้ว</p>}
       {sp.drive_error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">เชื่อม Google Drive ไม่สำเร็จ: {sp.drive_error}</p>}
 
-      <section className={`rounded-xl border p-5 ${st.connected ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50"}`}>
-        {st.connected ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <div>
-              <div className="font-medium text-slate-900">Google Drive เชื่อมแล้ว</div>
-              <div className="text-slate-500">บัญชี {st.account_email} · ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
-            </div>
-            {isAdmin && (
-              <div className="flex flex-wrap items-center gap-3">
-                {st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
-                  className="text-sm text-sky-700 underline">เปิดโฟลเดอร์ใน Drive</a>}
-                <ConnectDrive label="เชื่อมใหม่" />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3 text-sm">
-            <div className="font-medium text-amber-900">ยังไม่ได้เชื่อม Google Drive</div>
-            {isAdmin ? (
-              <>
-                <p className="text-amber-900">กดปุ่มด้านล่าง แล้วเข้าสู่ระบบด้วยบัญชี Google ที่จะใช้เก็บเอกสาร และกดอนุญาต — ระบบขอสิทธิ์เฉพาะไฟล์ที่ระบบสร้างเอง (ไม่เห็นไฟล์อื่นใน Drive)</p>
-                <ConnectDrive />
-              </>
-            ) : <p className="text-amber-900">ให้ผู้ดูแลระบบ (ADMIN) เชื่อม Google Drive ก่อน จึงจะแนบเอกสารได้</p>}
-          </div>
-        )}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={`rounded-xl border p-5 ${st.connected ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50"}`}>
+          <div className="text-xs text-slate-500">Google Drive</div>
+          {st.connected ? (
+            <>
+              <div className="mt-1 text-xl font-semibold text-emerald-700">เชื่อมแล้ว</div>
+              <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email} · ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
+              {isAdmin && (
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                  {st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer" className="text-sky-700 underline">เปิดโฟลเดอร์</a>}
+                  <ConnectDrive label="เชื่อมใหม่" />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="mt-1 text-xl font-semibold text-amber-900">ยังไม่ได้เชื่อม</div>
+              {isAdmin ? (
+                <div className="mt-2 space-y-2 text-xs text-amber-900">
+                  <p>เข้าสู่ระบบด้วยบัญชี Google ที่จะเก็บเอกสาร แล้วกดอนุญาต — ระบบเห็นเฉพาะไฟล์ที่ระบบสร้างเอง</p>
+                  <ConnectDrive />
+                </div>
+              ) : <p className="mt-1 text-xs text-amber-900">ให้ผู้ดูแลระบบ (ADMIN) เชื่อมก่อน จึงจะแนบเอกสารได้</p>}
+            </>
+          )}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">เอกสาร{sp.m ? `หมวด ${DOC_MODULE_LABEL[sp.m] ?? sp.m}` : ""}{sp.q ? " (ตามที่ค้นหา)" : ""}</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{docs.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
+          <div className="mt-1 text-xs text-slate-500">{totalSize ? `รวม ${fileSize(totalSize)}` : "-"}{sp.all ? " · รวมฉบับเก่า" : ""}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">หมดอายุ / ใกล้หมด (60 วัน)</div>
+          <div className={`mt-1 text-xl font-semibold tabular-nums ${exp.length ? "text-amber-700" : ""}`}>{exp.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
+          <div className={`mt-1 text-xs ${expired ? "text-red-600" : "text-slate-500"}`}>{expired ? `หมดแล้ว ${expired} ไฟล์` : "ยังไม่มีไฟล์ที่หมดแล้ว"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ยังไม่ผูกกับรายการ</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{unlinked} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
+          <div className="mt-1 text-xs text-slate-500">ผูกได้ตอนอัปโหลดฉบับใหม่ หรือแนบจากหน้ารายการ</div>
+        </div>
       </section>
 
-      {(expiring ?? []).length > 0 && (
+      {exp.length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-white p-5">
           <h2 className="mb-2 font-medium text-slate-900">เอกสารหมดอายุ / ใกล้หมดอายุ (60 วัน)</h2>
           <ul className="space-y-1 text-sm">
-            {(expiring ?? []).map((d) => (
+            {exp.map((d) => (
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
                 <span>{st.connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="hover:underline">{d.title}</a> : d.title} <span className="text-xs text-slate-500">· {d.document_type}</span></span>
-                <span className="flex items-center gap-3">
-                  <span className={d.derived_status === "EXPIRED" ? "text-red-600" : "text-amber-700"}>{d.derived_status === "EXPIRED" ? "หมดแล้ว" : "หมด"} {thDate(d.expiry_date)}</span>
-                </span>
+                <span className={d.derived_status === "EXPIRED" ? "text-red-600" : "text-amber-700"}>{d.derived_status === "EXPIRED" ? "หมดแล้ว" : "หมด"} {thDate(d.expiry_date)}</span>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      {canWrite && st.connected && (
-        <section>
-          <DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" />
-        </section>
-      )}
-
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Link href={href({ m: undefined })} className={`rounded-full px-3 py-1 ${!sp.m ? "bg-blue-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>ทั้งหมด</Link>
-          {Object.entries(DOC_MODULE_LABEL).map(([k, v]) => (
-            <Link key={k} href={href({ m: k })} className={`rounded-full px-3 py-1 ${sp.m === k ? "bg-blue-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>{v}</Link>
-          ))}
-        </div>
-        <form className="flex flex-wrap items-center gap-2 text-sm" action="/documents">
-          {sp.m && <input type="hidden" name="m" value={sp.m} />}
-          <input name="q" defaultValue={sp.q ?? ""} placeholder="ค้นหาชื่อ / ประเภทเอกสาร" className="w-64 rounded-md border border-slate-300 px-3 py-1.5" />
-          <label className="flex items-center gap-1 text-slate-600"><input type="checkbox" name="all" value="1" defaultChecked={!!sp.all} /> รวมฉบับเก่า</label>
-          <button className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">ค้นหา</button>
-        </form>
-
+      <section>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="w-full text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="font-medium text-slate-900">เอกสารทั้งหมด</h2>
+              <div className="flex flex-wrap gap-1 text-xs">
+                <Link href={href({ m: undefined })} scroll={false} className={chip(!sp.m)}>ทั้งหมด</Link>
+                {Object.entries(DOC_MODULE_LABEL).map(([k, v]) => <Link key={k} href={href({ m: k })} scroll={false} className={chip(sp.m === k)}>{v}</Link>)}
+              </div>
+            </div>
+            <form className="flex flex-wrap items-center gap-2 text-sm" action="/documents">
+              {sp.m && <input type="hidden" name="m" value={sp.m} />}
+              <input name="q" defaultValue={sp.q ?? ""} placeholder="ค้นหาชื่อ / ประเภท" className="w-48 rounded-md border border-slate-300 px-2.5 py-1" />
+              <label className="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" name="all" value="1" defaultChecked={!!sp.all} /> รวมฉบับเก่า</label>
+              <button className="rounded-md border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50">ค้นหา</button>
+            </form>
+          </div>
+          <table className="mt-2 w-full min-w-[44rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr><th className="px-4 py-2">เอกสาร</th><th className="px-3">เป็นของ</th><th className="px-3">วันที่ออก / หมดอายุ</th><th className="px-3">อัปโหลด</th></tr>
             </thead>
@@ -189,6 +208,11 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                 );
               })}
             </tbody>
+            {docs.length > 0 && (
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                <tr><td className="px-4 py-2.5">รวม {docs.length} ไฟล์{totalSize ? ` · ${fileSize(totalSize)}` : ""}</td><td colSpan={3}></td></tr>
+              </tfoot>
+            )}
           </table>
         </div>
         {docs.length >= 300 && <p className="text-xs text-slate-500">แสดง 300 รายการล่าสุด — ใช้ตัวกรองหรือค้นหาเพื่อดูรายการอื่น</p>}

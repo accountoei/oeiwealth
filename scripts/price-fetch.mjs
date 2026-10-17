@@ -1,0 +1,154 @@
+// =====================================================================
+// Price Job — ดึงราคาล่าสุดของรายการที่เปิด "ดึงราคาอัตโนมัติ" แล้วบันทึกผ่าน server_upsert_prices
+//   หุ้นไทย / ต่างประเทศ: Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่ PTT → ใช้ PTT.BK ให้
+//   กองทุนไทย: ก.ล.ต. SEC Open API (ต้องมี SEC_API_KEY) · ใส่ชื่อย่อกองทุน → ระบบหา proj_id ให้ครั้งแรกแล้วจำไว้
+//   ทองคำ: ประมาณจากราคาทองตลาดโลก (GC=F, USD ต่อทรอยออนซ์) × USD/THB → บาท ต่อ 1 บาททองคำ 96.5%
+//   ฐานข้อมูลไม่รับราคาที่ต่างจากราคาก่อนหน้าเกิน 20% และไม่ทับราคาจาก Statement
+//
+// ENV: SUPABASE_URL, SUPABASE_SECRET_KEY · SEC_API_KEY (ไม่บังคับ — ไม่มี = ข้ามกองทุน) · DRY_RUN=true = แสดงอย่างเดียว
+// ใช้ Node 20+ ไม่ต้องติดตั้งแพ็กเกจ
+// =====================================================================
+
+const YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart";
+const SEC = "https://api.sec.or.th/v2/fund";
+export const GRAMS_PER_BAHT = 15.244;
+export const GRAMS_PER_TROY_OZ = 31.1034768;
+
+const num = (v) => { const n = Number(String(v ?? "").replace(/,/g, "").trim()); return Number.isFinite(n) && n > 0 ? n : null; };
+
+/** สัญลักษณ์สำหรับ Yahoo: ใช้ price_ref ก่อน แล้วค่อย symbol · หุ้นสกุลบาทที่ไม่มีตลาดต่อท้าย → .BK */
+export function yahooSymbol(h) {
+  const s = String(h.price_ref || h.symbol || "").trim().toUpperCase();
+  if (!s) return null;
+  return h.currency === "THB" && !s.includes(".") ? `${s}.BK` : s;
+}
+
+/** Yahoo chart → { price, currency, date (YYYY-MM-DD ตามเวลาตลาด) } */
+export function parseYahooChart(json) {
+  const meta = json?.chart?.result?.[0]?.meta;
+  const price = num(meta?.regularMarketPrice);
+  if (!meta || price === null) return null;
+  const tz = meta.exchangeTimezoneName || "Asia/Bangkok";
+  const date = meta.regularMarketTime ? new Date(meta.regularMarketTime * 1000).toLocaleDateString("en-CA", { timeZone: tz }) : null;
+  return { price, currency: meta.currency ?? null, date };
+}
+
+/** ราคาทอง บาท ต่อ 1 บาททองคำ 96.5% จากราคาโลก (USD/ozt) × USD/THB */
+export function goldBahtPrice(usdPerOz, thbPerUsd) {
+  return Math.round((usdPerOz * thbPerUsd * GRAMS_PER_BAHT / GRAMS_PER_TROY_OZ) * 0.965 * 100) / 100;
+}
+
+/** proj_id ของ ก.ล.ต. รูปแบบ M0123_2556 (ต่อท้าย |ชนิดหน่วย ได้) — อย่างอื่นถือเป็นชื่อย่อกองทุน */
+export const isSecProjId = (v) => /^M\d+_\d+(\|.+)?$/i.test(String(v ?? "").trim());
+
+/** หา array แรกในผลลัพธ์ (API ของ ก.ล.ต. ห่อข้อมูลไม่เหมือนกันทุก endpoint) */
+export function firstArray(json) {
+  if (Array.isArray(json)) return json;
+  if (json && typeof json === "object") for (const v of Object.values(json)) { const a = firstArray(v); if (a) return a; }
+  return null;
+}
+
+/** NAV ล่าสุดจากผลลัพธ์ daily-info/nav · cls = ชื่อชนิดหน่วย (ถ้ากองทุนมีหลายชนิด) */
+export function parseSecNav(json, cls) {
+  const rows = (firstArray(json) ?? []).filter((r) => num(r?.last_val) !== null && r?.nav_date);
+  const pick = cls ? rows.filter((r) => [r.class_abbr_name, r.fund_class_name].some((x) => String(x ?? "").toUpperCase() === cls.toUpperCase())) : rows;
+  const best = pick.sort((a, b) => (String(a.nav_date) < String(b.nav_date) ? 1 : -1))[0];
+  return best ? { price: num(best.last_val), date: String(best.nav_date).slice(0, 10) } : null;
+}
+
+const UA = { "User-Agent": "Mozilla/5.0 (FamilyWealthVault price job)", accept: "application/json" };
+
+async function yahoo(symbol) {
+  const res = await fetch(`${YAHOO}/${encodeURIComponent(symbol)}?range=5d&interval=1d`, { headers: UA });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Yahoo ${symbol} ${res.status}`);
+  return parseYahooChart(await res.json());
+}
+
+async function sec(path, key) {
+  const res = await fetch(`${SEC}${path}`, { headers: { "Ocp-Apim-Subscription-Key": key, accept: "application/json" } });
+  if (res.status === 401 || res.status === 403) throw new Error("ก.ล.ต. ปฏิเสธ Key (401/403) — ตรวจ SEC_API_KEY");
+  if (res.status === 404 || res.status === 204) return null;
+  if (!res.ok) throw new Error(`SEC ${path.split("?")[0]} ${res.status}`);
+  return res.json();
+}
+
+/** หา proj_id จากชื่อย่อกองทุน (ไล่หน้า profiles · จำกัด 60 หน้า) → "proj_id" หรือ "proj_id|ชนิดหน่วย" */
+async function findFund(abbr, key) {
+  const want = abbr.trim().toUpperCase();
+  let cursor = "";
+  for (let page = 0; page < 60; page++) {
+    const json = await sec(`/general-info/profiles${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, key);
+    const rows = firstArray(json) ?? [];
+    for (const r of rows) {
+      if (String(r.proj_abbr_name ?? "").toUpperCase() === want) return String(r.proj_id);
+      if (String(r.fund_class_name ?? r.class_abbr_name ?? "").toUpperCase() === want && r.proj_id) return `${r.proj_id}|${want}`;
+    }
+    cursor = json?.next_cursor ?? json?.cursor?.next ?? json?.meta?.next_cursor ?? "";
+    if (!cursor || !rows.length) break;
+  }
+  return null;
+}
+
+function addDays(iso, n) { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+async function rpc(url, key, fn, body) {
+  const res = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/${fn}`, {
+    method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Supabase ${fn} ${res.status}: ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : null;
+}
+
+async function main() {
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY, SEC_API_KEY } = process.env;
+  for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY })) if (!v) throw new Error(`ยังไม่ได้ตั้งค่า ${k}`);
+  const dry = /^(1|true|yes)$/i.test(process.env.DRY_RUN ?? "");
+  const t = await rpc(SUPABASE_URL, SUPABASE_SECRET_KEY, "server_price_targets", {});
+  const today = t.today;
+  const out = [];
+  const miss = (h, reason) => out.push({ kind: "HOLDING", id: h.id, date: today, price: null, reason, source_reference: "" });
+
+  for (const h of t.holdings ?? []) {
+    try {
+      if (h.holding_type === "FUND") {
+        if (!SEC_API_KEY) { miss(h, "ไม่มี SEC_API_KEY"); continue; }
+        let ref = isSecProjId(h.price_ref) ? h.price_ref : null;
+        if (!ref) ref = await findFund(h.price_ref || h.symbol || h.name, SEC_API_KEY);
+        if (!ref) { miss(h, "ไม่พบชื่อย่อกองทุนใน ก.ล.ต."); continue; }
+        const [proj, cls] = ref.split("|");
+        const nav = parseSecNav(await sec(`/daily-info/nav?proj_id=${encodeURIComponent(proj)}&start_nav_date=${addDays(today, -10)}&end_nav_date=${today}`, SEC_API_KEY), cls);
+        if (!nav) { miss(h, "ยังไม่มี NAV 10 วันล่าสุด"); continue; }
+        out.push({ kind: "HOLDING", id: h.id, date: nav.date, price: nav.price, price_ref: ref, source_reference: `SEC NAV ${proj}${cls ? ` ${cls}` : ""}` });
+      } else {
+        const sym = yahooSymbol(h);
+        if (!sym) { miss(h, "ยังไม่ได้ใส่สัญลักษณ์หุ้น"); continue; }
+        const q = await yahoo(sym);
+        if (!q) { miss(h, `ไม่พบ ${sym}`); continue; }
+        if (q.currency !== h.currency) { miss(h, `สกุล ${q.currency} ไม่ตรงกับ ${h.currency}`); continue; }
+        out.push({ kind: "HOLDING", id: h.id, date: q.date && q.date <= today ? q.date : today, price: q.price, source_reference: `Yahoo ${sym}` });
+      }
+    } catch (e) { miss(h, e.message.slice(0, 100)); }
+  }
+
+  if ((t.gold ?? []).length) {
+    try {
+      const [g, fx] = await Promise.all([yahoo("GC=F"), yahoo("THB=X")]);
+      if (!g || !fx) throw new Error("ไม่พบราคาทองโลก / USD-THB");
+      const p = goldBahtPrice(g.price, fx.price);
+      for (const a of t.gold) out.push({ kind: "GOLD", asset_id: a.asset_id, date: today, price_per_baht_965: p,
+        source_reference: `ประมาณจากราคาโลก ${g.price} USD/ozt × ${fx.price} = ${p} บาท/บาททองคำ 96.5%` });
+    } catch (e) { console.log(`::warning::ทองคำ: ${e.message}`); }
+  }
+
+  out.forEach((x) => console.log(`  ${x.date} ${x.kind} ${x.id ?? x.asset_id} ${x.price ?? x.price_per_baht_965 ?? "-"} ${x.reason ?? x.source_reference}`));
+  if (dry) { console.log(`DRY RUN: ${out.length} รายการ ไม่ได้บันทึก`); return; }
+  if (!out.length) { console.log("ไม่มีรายการที่เปิดดึงราคาอัตโนมัติ"); return; }
+  const n = await rpc(SUPABASE_URL, SUPABASE_SECRET_KEY, "server_upsert_prices", { p_prices: out, p_job_type: "PRICE_FETCH" });
+  console.log(`Done: บันทึก ${n} รายการ · รายการที่ข้ามดูได้ที่ Settings → System → ประวัติงานอัตโนมัติ`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => { console.error(`::error::${e.message}`); process.exit(1); });
+}

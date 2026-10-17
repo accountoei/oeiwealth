@@ -82,7 +82,7 @@ export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
         {ccy !== "THB" && (
           <>
             <label className={lbl}>ต้นทุนรวมเป็นบาท<input name="cost_base_thb" inputMode="decimal" className={input} /></label>
-            <label className={lbl}>หรือ FX ตอนซื้อ (บาท/{ccy})<input name="fx_rate" inputMode="decimal" placeholder="ไม่ใส่ทั้งคู่ = อัตรา ธปท. ณ วันตั้งต้น" className={input} /></label>
+            <label className={lbl}>หรือ FX ตอนซื้อ (บาท/{ccy})<input name="fx_rate" inputMode="decimal" placeholder="ไม่ใส่ทั้งคู่ = อัตรา อัตราของระบบ ณ วันตั้งต้น" className={input} /></label>
           </>
         )}
         <label className={`${lbl} md:col-span-3`}>หมายเหตุ {!isSetup && "(เหตุผล · จำเป็น เพราะระบบ LIVE แล้ว)"}

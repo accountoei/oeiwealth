@@ -20,7 +20,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 ## 1. Hard security rules (never break these)
 
 - **Never** put the Supabase service_role / secret key (`sb_secret_…`), the Google client secret, or any other secret in: code, `NEXT_PUBLIC_*` variables, Vercel, commits, or chat.
-  - The FX job reads `SUPABASE_SECRET_KEY` from **GitHub Secrets** only.
+  - The FX job (`fx-rates.yml`) and price job (`prices.yml`) read `SUPABASE_SECRET_KEY` (+ `BOT_API_TOKEN` / `BBL_API_KEY` / `SEC_API_KEY`) from **GitHub Secrets** only.
   - Edge Functions use the keys Supabase injects automatically (`SUPABASE_SECRET_KEYS` / `SUPABASE_SERVICE_ROLE_KEY`) and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` from Supabase Edge Function Secrets.
   - The publishable/anon key is public by design; security comes from RLS.
 - **Never ask for, print, rotate, or touch the Vault key `fwv_bank_account_key`.** It encrypts bank account numbers; changing it after real data exists destroys that data. The Google refresh token (`fwv_drive_refresh_token`) also lives in Vault — only the `drive` Edge Function reads it.
@@ -51,7 +51,8 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ```bash
 service postgresql start
-DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (443 checks)
+DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (484 checks)
+node scripts/fx-fetch.test.mjs && node scripts/price-fetch.test.mjs
 ```
 
 `tests/run.sh` **drops and recreates a database**. Run it **only against a local Postgres**, never against Supabase.

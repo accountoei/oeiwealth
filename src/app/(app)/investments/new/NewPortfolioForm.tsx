@@ -63,7 +63,7 @@ export default function NewPortfolioForm(props: {
               <input name="opening_cash" inputMode="decimal" defaultValue="0" className={input} />
             </label>
             {currency !== "THB" && (
-              <label className={label}>FX ต้นทุนของเงินฝาก (บาทต่อ 1 {currency}) · ไม่ใส่ = ใช้อัตรา ธปท. ณ วันตั้งต้น
+              <label className={label}>FX ต้นทุนของเงินฝาก (บาทต่อ 1 {currency}) · ไม่ใส่ = ใช้อัตรา อัตราของระบบ ณ วันตั้งต้น
                 <input name="opening_fx" inputMode="decimal" className={input} />
               </label>
             )}

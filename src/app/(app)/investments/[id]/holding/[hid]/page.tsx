@@ -7,7 +7,8 @@ import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
 import { MaturityForm, type CashAcct, type Holding } from "../../forms";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
-import { FcnForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
+import { FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
+import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
@@ -24,7 +25,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const { id, hid } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: pvRow }] = await Promise.all([
+  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: pvRow }, { data: autoRow }] = await Promise.all([
     supabase.from("v_holdings_active").select("*").eq("id", hid).eq("portfolio_asset_id", id).maybeSingle(),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
@@ -40,9 +41,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
     supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
+    supabase.from("investment_holdings").select("auto_price,price_ref").eq("id", hid).maybeSingle(),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
-  const h = hRow as H | null;
+  const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
   if (!h || !a || h.holding_type === "CASH") notFound();
 
   const canWrite = me.role !== "VIEWER";
@@ -71,29 +73,74 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     <div className="space-y-6">
       <div>
         <Link href={`/investments/${id}`} className="text-sm text-slate-500 hover:underline">← {a.name}</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{h.name}{h.symbol && <span className="ml-2 text-base text-slate-500">{h.symbol}</span>}</h1>
-        <p className="text-sm text-slate-500">
-          {HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency} · {STATUS_LABEL[h.status] ?? h.status}
-          {h.maturity_date && <> · ครบกำหนด {thDate(h.maturity_date)}{h.status === "ACTIVE" && daysLeft != null && daysLeft >= 0 && ` (อีก ${daysLeft} วัน)`}</>}
-          {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
-        </p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{h.name}{h.symbol && <span className="ml-2 text-base text-slate-500">{h.symbol}</span>}</h1>
+            <p className="text-sm text-slate-500">
+              {HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency} · {STATUS_LABEL[h.status] ?? h.status}
+              {h.maturity_date && <> · ครบกำหนด {thDate(h.maturity_date)}{h.status === "ACTIVE" && daysLeft != null && daysLeft >= 0 && ` (อีก ${daysLeft} วัน)`}</>}
+              {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
+            </p>
+          </div>
+          {canWrite && h.status === "ACTIVE" && (
+            <ActionBar>
+              <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              {canMature && <MaturityForm assetId={id} portfolioName={a.name} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
+              <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
+            </ActionBar>
+          )}
+        </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <Kpi label="จำนวนที่ถือ" value={qty(h.quantity)} sub={h.average_cost != null ? `ต้นทุนเฉลี่ย ${money(h.average_cost, undefined, 4)}` : undefined} />
-        <Kpi label={`มูลค่าตลาด (${h.currency})`} value={money(h.current_value)} sub={h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`} />
-        <Kpi label={`ต้นทุนที่ยังถือ (${h.currency})`} value={money(cost)}
-          sub={cost && h.current_value != null && !h.valued_at_cost ? `กำไร/ขาดทุน ${money(Number(h.current_value) - cost)} (${(((Number(h.current_value) - cost) / cost) * 100).toFixed(2)}%)` : undefined} />
-        <Kpi label={isStructured ? "Coupon ที่ได้รับ (สุทธิภาษี)" : "ปันผล / ดอกเบี้ยที่ได้รับ (สุทธิภาษี)"} value={money(couponSum, h.currency)} sub={`${coupons.length} ครั้ง`} />
+      <section className="grid gap-4 md:grid-cols-3">
+        {/* ซ้าย: มูลค่า */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">มูลค่าตลาด ({h.currency})</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(h.current_value)}</div>
+          <div className={`mt-1 text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>{h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}</div>
+          {(() => { const g = cost && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null; return g == null ? null : (
+            <div className={`mt-1 text-xs ${g >= 0 ? "text-emerald-700" : "text-red-700"}`}>กำไร / ขาดทุนยังไม่รับรู้ {money(g)} ({((g / (cost as number)) * 100).toFixed(2)}%)</div>); })()}
+          <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">จำนวนที่ถือ</dt><dd className="tabular-nums">{qty(h.quantity)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนเฉลี่ย</dt><dd className="tabular-nums">{money(h.average_cost, undefined, 4)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนที่ยังถือ</dt><dd className="tabular-nums">{money(cost)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">{isStructured ? "Coupon ที่ได้รับ (สุทธิภาษี)" : "ปันผล / ดอกเบี้ย (สุทธิภาษี)"}</dt>
+              <dd className="tabular-nums">{money(couponSum, h.currency)} · {coupons.length} ครั้ง</dd></div>
+          </dl>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canWrite}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item k="ชื่อ" v={h.name} />
+                <Item k="สัญลักษณ์ / รหัส" v={h.symbol || "-"} />
+                <Item k="ประเภท" v={HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} />
+                <Item k="สกุลเงิน" v={h.currency} />
+                <Item k="ครบกำหนด" v={h.maturity_date ? thDate(h.maturity_date) : "-"} />
+                <Item k="สถานะ" v={STATUS_LABEL[h.status] ?? h.status} />
+                {(h.holding_type === "EQUITY" || h.holding_type === "FUND") && <Item k="ราคาอัตโนมัติ"
+                  v={h.auto_price ? `เปิด · ${h.holding_type === "FUND" ? "NAV จาก ก.ล.ต." : "Yahoo Finance"}${h.price_ref ? ` (${h.price_ref})` : ""}` : "ปิด"} />}
+                {h.notes && <div className="sm:col-span-2 lg:col-span-3"><Item k="หมายเหตุ" v={h.notes} /></div>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <HoldingInfoForm id={hid} paths={paths} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
+                  v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }} />
+                {isStructured && ["MATURED", "AUTOCALLED"].includes(h.status) && (
+                  <div className="border-t border-slate-100 pt-4"><StatusSelect table="investment_holdings" id={hid} value={h.status} paths={paths} label="ปิดแบบ"
+                    options={[["MATURED", "ครบกำหนดตามปกติ"], ["AUTOCALLED", "Autocall (ถูกเรียกคืนก่อนกำหนด)"]]} /></div>
+                )}
+                {isStructured && h.status === "ACTIVE" && (
+                  <p className="text-xs text-slate-500">ถูก Autocall: กด &ldquo;ครบกำหนด&rdquo; ด้านบน (ใส่วันที่ถูกเรียกคืน) แล้วกลับมาเลือก &ldquo;ปิดแบบ Autocall&rdquo; ที่นี่</p>
+                )}
+              </div>
+            } />
+          {h.maturity_date && h.status === "ACTIVE" && h.maturity_date < addDays(today, 0) && (
+            <p className="mt-3 text-xs text-amber-700">เลยวันครบกำหนดแล้ว — บันทึก &ldquo;ครบกำหนด&rdquo; เมื่อได้รับเงินต้นคืน</p>
+          )}
+        </div>
       </section>
-
-      {canWrite && h.status === "ACTIVE" && (
-        <ActionBar>
-          <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-          {canMature && <MaturityForm assetId={id} portfolioName={a.name} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />}
-          <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
-        </ActionBar>
-      )}
 
       {ret.length > 0 && <ReturnsTable rows={ret} local={retLocal} portfolioCurrency={a.currency} rates={fxRates} title="ผลตอบแทนของหลักทรัพย์นี้" />}
 
@@ -197,7 +244,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                   <td className="text-right tabular-nums">{money(v.price, undefined, 4)}</td>
                   <td className="text-right tabular-nums">{qty(v.quantity)}</td>
                   <td className="text-right tabular-nums">{money(v.market_value)}</td>
-                  <td className="pl-4 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.source === "STATEMENT" ? "Statement" : v.source}</td>
+                  <td className="pl-4 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.source === "STATEMENT" ? "Statement" : v.source === "MARKET" ? "ราคาตลาด (อัตโนมัติ)" : v.source === "USER" ? "ผู้ใช้" : v.source}</td>
                   <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete}
                     fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "price", label: "ราคา", type: "number", value: v.price },
                       { name: "market_value", label: "มูลค่า", type: "number", value: v.market_value }]} />}</td>
@@ -208,36 +255,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         )}
       </section>
 
-      {canWrite && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <RowActions table="investment_holdings" id={hid} paths={paths} canDelete={false} fields={[
-            { name: "name", label: "ชื่อ", value: h.name, width: "w-48" }, { name: "symbol", label: "สัญลักษณ์", value: h.symbol, width: "w-24" },
-            { name: "maturity_date", label: "ครบกำหนด", type: "date", value: h.maturity_date }, { name: "notes", label: "หมายเหตุ", value: h.notes, width: "w-48" }]} />
-          {isStructured && ["MATURED", "AUTOCALLED"].includes(h.status) && (
-            <div><StatusSelect table="investment_holdings" id={hid} value={h.status} paths={paths} label="ปิดแบบ"
-              options={[["MATURED", "ครบกำหนดตามปกติ"], ["AUTOCALLED", "Autocall (ถูกเรียกคืนก่อนกำหนด)"]]} /></div>
-          )}
-          {isStructured && h.status === "ACTIVE" && (
-            <p className="text-xs text-slate-500">ถูก Autocall: กด &ldquo;ครบกำหนด&rdquo; ด้านบน (ใส่วันที่ถูกเรียกคืน) แล้วเลือก &ldquo;ปิดแบบ Autocall&rdquo; ที่ส่วนนี้</p>
-          )}
-          {h.maturity_date && h.status === "ACTIVE" && h.maturity_date < addDays(today, 0) && (
-            <p className="text-xs text-amber-700">เลยวันครบกำหนดแล้ว — บันทึก &ldquo;ครบกำหนด&rdquo; เมื่อได้รับเงินต้นคืน</p>
-          )}
-        </section>
-      )}
     </div>
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
-    </div>
-  );
-}
 function Item({ k, v }: { k: string; v: string }) {
   return <div><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>;
 }

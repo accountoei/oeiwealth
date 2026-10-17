@@ -15,7 +15,10 @@ import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { CurrencyScope } from "@/components/CurrencyContext";
 import TxFilter from "./tx-filter";
-import { CashNameEdit, PortfolioEditPanel, PortfolioStatusMenu } from "./portfolio-ui";
+import { CashNameEdit, PortfolioInfoForm } from "./portfolio-ui";
+import EditToggle from "@/components/EditToggle";
+import OwnershipEditor from "@/components/OwnershipEditor";
+import StatusSelect from "@/components/StatusSelect";
 import { ActionBar } from "@/components/ActionBar";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 
@@ -63,7 +66,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txHolding = sp.h && (hs ?? []).some((x: { id: string }) => x.id === sp.h) ? sp.h : "";
   // โหลดรายการทั้งหมดของพอร์ตครั้งเดียว → กรองในเบราว์เซอร์ (ไม่โหลดหน้าใหม่)
   const txq = supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id);
-  const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }, { data: mvs }] = await Promise.all([
+  const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: autoRows }] = await Promise.all([
     txq.order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(5000),
     supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
       .not("source_transaction_id", "is", null).is("deleted_at", null),
@@ -75,6 +78,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       .eq("is_derived", false).is("deleted_at", null)
       .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
       .order("movement_date", { ascending: false }).limit(2000),
+    supabase.from("investment_holdings").select("id").eq("portfolio_id", pf.id).eq("auto_price", true).is("deleted_at", null),
   ]);
 
   const canWrite = me.role !== "VIEWER";
@@ -85,6 +89,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const isSetup = family?.system_status === "SETUP";
   const openingDate = goLive ? addDays(goLive, -1) : today;
   const holdings = (hs as H[] | null) ?? [];
+  const autoIds = new Set((autoRows ?? []).map((x) => x.id as string));
   const byId = new Map(holdings.map((h) => [h.id, h]));
   // มูลค่าเป็นบาทรายตัว = ชุดเดียวกับ Net Worth (มูลค่าสกุลเดิม × อัตรา ณ วันนี้ จากฐานข้อมูล)
   const thbOf = (h: H) => (h.value_thb == null ? null : Number(h.value_thb));
@@ -138,44 +143,87 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     <div className="space-y-6">
       <div>
         <Link href="/investments" className="text-sm text-slate-500 hover:underline">← Investments</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{a.name}</h1>
-        <p className="text-sm text-slate-500">
-          {pf.institution} · {PORTFOLIO_TYPE_LABEL[pf.portfolio_type] ?? pf.portfolio_type} · สกุลพอร์ต {a.currency}
-          {" · "}เจ้าของ {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}
-          {ownerTotal < 100 && <span className="text-amber-700"> (ยังไม่ครบ {100 - ownerTotal}%)</span>}
-        </p>
-        {canDelete && <PortfolioEditPanel assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type}
-          currency={a.currency} notes={a.notes} persons={persons ?? []} paths={paths} today={today} canEditDetails={canDelete}
-          owners={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{a.name}</h1>
+            <p className="text-sm text-slate-500">{[pf.institution, PORTFOLIO_TYPE_LABEL[pf.portfolio_type] ?? pf.portfolio_type, `สกุลพอร์ต ${a.currency}`].filter(Boolean).join(" · ")}
+              {a.status === "CLOSED" && <span className="text-slate-700"> · ปิดพอร์ตแล้ว</span>}</p>
+          </div>
+          {canWrite && (
+            <ActionBar className="max-w-3xl">
+              <TxForm assetId={id} portfolioName={a.name} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              <TransferForm assetId={id} currency={a.currency} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              <MoveCashForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
+              <AddCashAccountForm assetId={id} currency={a.currency} isSetup={isSetup} openingDate={openingDate} />
+              {(isSetup || me.role === "ADMIN") && (
+                <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
+              )}
+            </ActionBar>
+          )}
+        </div>
       </div>
 
-      <section className={`grid gap-4 ${a.currency === "THB" ? "md:grid-cols-3" : "md:grid-cols-4"}`}>
-        {a.currency !== "THB" && (
-          <Kpi label={`มูลค่าพอร์ต (${a.currency})`} value={money(pv?.portfolio_value ?? null, undefined, 0)}
-            sub={`แปลงทุกสกุลเป็น ${a.currency} ด้วยอัตราล่าสุด${pv?.portfolio_fx_rate ? ` (1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท)` : ""}`} />
-        )}
-        <Kpi label="มูลค่าเป็นบาท (ใช้ใน Net Worth)" value={money(pv?.thb_value ?? null, "THB", 0)}
-          sub={Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"} />
-        <Kpi label="เงินฝากในพอร์ต" value={cashByCcy.size === 0 ? "-" : (
-            <div className="space-y-0.5">{[...cashByCcy.entries()].map(([c, x]) => <div key={c}>{money(x.value, c, 0)}</div>)}</div>)}
-          sub="คำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น" />
-        <Kpi label="รายได้ลงทุน (ปันผล/ดอกเบี้ย)" value={money(incomeThb, "THB", 0)} sub="ตั้งแต่ Go-live · ก่อนหักภาษี" />
-      </section>
-
-      {canWrite && (
-        <section>
-          <ActionBar right={canDelete ? <PortfolioStatusMenu assetId={id} name={a.name} status={a.status} paths={paths} isAdmin={me.role === "ADMIN"} /> : undefined}>
-            <TxForm assetId={id} portfolioName={a.name} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-            <TransferForm assetId={id} currency={a.currency} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-            <MoveCashForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-            <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
-            <AddCashAccountForm assetId={id} currency={a.currency} isSetup={isSetup} openingDate={openingDate} />
-            {(isSetup || me.role === "ADMIN") && (
-              <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
+      <section className="grid gap-4 md:grid-cols-3">
+        {/* ซ้าย: มูลค่า + เอกสาร */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ใน Net Worth)</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
+            {a.currency !== "THB" && (
+              <div className="mt-1 text-xs text-slate-500">= {money(pv?.portfolio_value ?? null, a.currency, 0)}
+                {pv?.portfolio_fx_rate ? ` · 1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท` : ""}</div>
             )}
-          </ActionBar>
-        </section>
-      )}
+            <div className={`mt-1 text-xs ${Number(pv?.in_transit ?? 0) !== 0 ? "text-amber-700" : "text-slate-500"}`}>
+              {Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"}</div>
+            <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินฝากในพอร์ต</dt>
+                <dd className="text-right tabular-nums">{cashByCcy.size === 0 ? "-" : [...cashByCcy.entries()].map(([c, x]) => <div key={c}>{money(x.value, c, 0)}</div>)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">หลักทรัพย์</dt><dd className="tabular-nums">{money(secThb, "THB", 0)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">รายได้ลงทุนตั้งแต่ Go-live</dt><dd className="tabular-nums">{money(incomeThb, "THB", 0)}</dd></div>
+            </dl>
+            <p className="mt-2 text-xs text-slate-400">เงินฝากคำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น · รายได้ก่อนหักภาษี</p>
+          </div>
+          <div className="flex-1">
+            <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canDelete}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="สถาบัน">{pf.institution || "-"}</Item>
+                <Item label="ประเภท">{PORTFOLIO_TYPE_LABEL[pf.portfolio_type] ?? pf.portfolio_type}</Item>
+                <Item label="สกุลพอร์ต">{a.currency}</Item>
+                <Item label="จำนวนหลักทรัพย์">{securities.filter((h) => h.status === "ACTIVE").length} ตัว
+                  {securities.some((h) => h.status !== "ACTIVE") && <span className="block text-xs text-slate-500">จบแล้ว {securities.filter((h) => h.status !== "ACTIVE").length} ตัว</span>}</Item>
+                <Item label="บัญชีเงินฝากในพอร์ต">{cashHoldings.length} บัญชี</Item>
+                <Item label="สถานะ">{a.status === "CLOSED" ? "ปิดพอร์ตแล้ว" : "ใช้งาน"}</Item>
+                <Item label="เจ้าของ">
+                  {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
+                  {ownerTotal < 99.99999 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {Math.round((100 - ownerTotal) * 10000) / 10000}%</div>}
+                </Item>
+                {a.notes && <Item label="หมายเหตุ" wide>{a.notes}</Item>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <PortfolioInfoForm assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type} currency={a.currency} notes={a.notes} />
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
+                  <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะพอร์ต"
+                    options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดพอร์ตแล้ว"]]}
+                    remove={me.role === "ADMIN" ? { kind: "asset", id, redirectTo: "/investments", paths: ["/investments"], label: "ลบพอร์ตนี้",
+                      hint: "ลบได้เฉพาะพอร์ตที่มีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" } : undefined} />
+                </div>
+              </div>
+            } />
+        </div>
+      </section>
 
       {Number(pv?.in_transit ?? 0) !== 0 && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
@@ -341,6 +389,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                       <div className="tabular-nums">{money(h.current_value)}</div>
                       <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>
                         {h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}
+                        {autoIds.has(h.id) && <span className="text-sky-700"> · อัตโนมัติ</span>}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-3 text-right">
@@ -360,7 +409,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             </tbody>
           </table>
           <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
-            มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตรา ธปท. ล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
+            มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
             · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
             · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / ครบกำหนด
           </p>
@@ -467,7 +516,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       </section>
       </TabsProvider>
 
-      <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} />
     </div>
     </CurrencyScope>
   );
@@ -493,12 +541,11 @@ function MoveButtons({ id, hid, first, last }: { id: string; hid: string; first:
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

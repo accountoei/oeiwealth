@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { HOLDING_TYPE_LABEL, ITX_LABEL, money, thDate, todayBangkok, addDays, blueAt } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, thDate, todayBangkok, addDays } from "@/lib/format";
+import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
@@ -15,7 +16,7 @@ type H = { id: string; portfolio_asset_id: string; holding_type: string; currenc
   status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
   value_thb: number | null };
 
-export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -23,14 +24,15 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const sortMap = await loadSortMap("assets");
-  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }] = await Promise.all([
+  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }, { data: owners }] = await Promise.all([
     supabase.from("v_portfolio_values").select("*").order("name"),
-    supabase.from("investment_portfolios").select("asset_id,institution,status").is("deleted_at", null),
+    supabase.from("investment_portfolios").select("asset_id,institution,status,portfolio_type").is("deleted_at", null),
     supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("investment_transactions")
       .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
       .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(pv.personId ? 60 : 10),
+    supabase.from("v_asset_ownerships_active").select("asset_id,person_id,ownership_percent,end_date"),
   ]);
   const goLive = family?.go_live_date ?? "";
   // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
@@ -80,15 +82,21 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const soon = holdings.filter((h) => h.maturity_date && h.maturity_date >= todayBangkok() && h.maturity_date <= addDays(todayBangkok(), 60))
     .sort((x, y) => (x.maturity_date! < y.maturity_date! ? -1 : 1));
   const pfName = new Map(list.map((p) => [p.asset_id, p.name]));
-  // ตารางพอร์ต (แทนกล่อง + ตารางผลตอบแทนเดิม) · เรียงตามมูลค่าเป็นบาท
+  const pfType = new Map((pfs ?? []).map((p) => [p.asset_id, p.portfolio_type as string]));
+  const pfStatus = new Map((pfs ?? []).map((p) => [p.asset_id, p.status as string]));
+  // ตัวกรองประเภทพอร์ต
+  const types = [...new Set(list.map((p) => pfType.get(p.asset_id) ?? "OTHER"))];
+  const tFilter = types.includes(sp.t ?? "") ? sp.t : undefined;
+  const tHref = (t?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); const s = q.toString(); return `/investments${s ? `?${s}` : ""}`; };
+  // ตารางพอร์ต · เรียงตามลำดับที่ตั้งไว้
   const ret = new Map(retRows.map((r) => [r.asset_id, r]));
-  const rows: PortfolioRow[] = bySort(list, (p) => p.asset_id, sortMap).map((p) => {
+  const rows: PortfolioRow[] = bySort(list.filter((p) => !tFilter || (pfType.get(p.asset_id) ?? "OTHER") === tFilter), (p) => p.asset_id, sortMap).map((p) => {
     const r = ret.get(p.asset_id);
     const n = holdings.filter((h) => h.portfolio_asset_id === p.asset_id && h.holding_type !== "CASH").length;
     const institution = inst.get(p.asset_id);
     return {
-      asset_id: p.asset_id, name: p.name, currency: p.portfolio_currency,
-      sub: [institution && institution !== p.name ? institution : null, p.portfolio_currency, `${n} หลักทรัพย์`].filter(Boolean).join(" · "),
+      asset_id: p.asset_id, name: p.name, currency: p.portfolio_currency, closed: pfStatus.get(p.asset_id) === "CLOSED",
+      sub: [PORTFOLIO_TYPE_LABEL[pfType.get(p.asset_id) ?? ""] ?? null, institution && institution !== p.name ? institution : null, p.portfolio_currency, `${n} หลักทรัพย์`].filter(Boolean).join(" · "),
       value: p.display_value, valueThb: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), valueDate: p.display_value_date,
       sharePct: pv.assetPct(p.asset_id), fullValue: p.full_display_value, inTransit: Number(p.in_transit_thb ?? 0) !== 0,
       atCost: holdings.some((h) => h.portfolio_asset_id === p.asset_id && h.valued_at_cost),
@@ -96,15 +104,26 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       total: r?.total ?? 0, cost: r?.cost ?? 0,
     };
   });
+  // มูลค่าตามสมาชิก (ทั้งครอบครัวเสมอ) = มูลค่าเป็นบาทเต็มพอร์ต × สัดส่วนเจ้าของ
+  const ownRows = (owners ?? []).filter((o) => !o.end_date);
+  const byPerson = new Map<string, number>();
+  ((pvs as PV[] | null) ?? []).forEach((p) => {
+    const v = Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0);
+    ownRows.filter((o) => o.asset_id === p.asset_id).forEach((o) => byPerson.set(o.person_id, (byPerson.get(o.person_id) ?? 0) + v * Number(o.ownership_percent) / 100));
+  });
+  const famTotal = [...byPerson.values()].reduce((t, v) => t + v, 0);
+  const personName = new Map(pv.persons.map((x) => [x.id, x.name]));
+  const share = (m: Map<string, number>, label: (k: string) => string, offset = 0) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, name: label(k), value: v, color: SHARE_COLORS[(i + offset) % SHARE_COLORS.length] }));
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Investments</h1>
-          <p className="text-sm text-slate-500">ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และ FX ล่าสุดของ ธปท.</p>
+          <p className="text-sm text-slate-500">ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และอัตราแลกเปลี่ยนล่าสุด</p>
         </div>
-        <div className="flex items-start gap-2">
+        <div className="flex flex-wrap items-start gap-2">
           <PersonFilter persons={pv.persons} value={pv.personId} />
           {me.role !== "VIEWER" && (
             <Link href="/investments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มพอร์ต</Link>
@@ -113,24 +132,37 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <Kpi label="มูลค่าลงทุนรวม" value={money(total, "THB", 0)} />
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
         <Kpi label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
-        <Kpi label="จำนวนพอร์ต" value={String(list.length)} />
+        <Kpi label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
+          sub={list.some((p) => pfStatus.get(p.asset_id) === "CLOSED") ? `ปิดแล้ว ${list.filter((p) => pfStatus.get(p.asset_id) === "CLOSED").length} พอร์ต` : undefined} />
         <Kpi label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
       </section>
 
       {allocTotal > 0 && (
-        <section className="grid gap-4 md:grid-cols-2">
-          <Alloc title="สัดส่วนตามประเภท" rows={[...byType.entries()].map(([k, v]) => [HOLDING_TYPE_LABEL[k] ?? k, v])} total={allocTotal} />
-          <Alloc title="สัดส่วนตามสกุลเงิน" rows={[...byCcy.entries()]} total={allocTotal} />
+        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <ShareBox title={`สัดส่วนตามประเภท${pv.personId ? `ของ ${pv.personName}` : ""}`} label="ประเภท" total={allocTotal}
+            rows={share(byType, (k) => HOLDING_TYPE_LABEL[k] ?? k)} />
+          <ShareBox title="สัดส่วนตามสกุลเงิน" label="สกุลเงิน" total={allocTotal} rows={share(byCcy, (k) => k, 3)} />
+          {famTotal > 0 && <ShareBox title="มูลค่าตามสมาชิกครอบครัว" label="สมาชิก" total={famTotal}
+            rows={share(byPerson, (k) => personName.get(k) ?? "สมาชิก", 1)} />}
         </section>
       )}
 
       {list.length === 0
         ? <p className="text-sm text-slate-500">{pv.personId ? `ไม่มีพอร์ตของ ${pv.personName}` : "ยังไม่มีพอร์ต"}</p>
-        : <PortfolioTable rows={rows} ordering={ordering} paths={["/investments"]}
-            toggle={canOrder && rows.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/investments", { p: sp.p })} /> : null} />}
+        : <PortfolioTable rows={rows} ordering={ordering} paths={["/investments"]} label={tFilter ? "รวมตามประเภท" : "รวมทุกพอร์ต"}
+            filter={types.length > 1 ? (
+              <div className="flex flex-wrap gap-1 text-xs">
+                <Link href={tHref()} scroll={false} className={`rounded-full border px-2.5 py-0.5 ${!tFilter ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>ทั้งหมด</Link>
+                {types.map((t) => (
+                  <Link key={t} href={tHref(t)} scroll={false}
+                    className={`rounded-full border px-2.5 py-0.5 ${tFilter === t ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                    {PORTFOLIO_TYPE_LABEL[t] ?? t} ({list.filter((p) => (pfType.get(p.asset_id) ?? "OTHER") === t).length})</Link>
+                ))}
+              </div>) : null}
+            toggle={canOrder && rows.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/investments", { p: sp.p, t: tFilter })} /> : null} />}
 
       <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -173,33 +205,6 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
-    </div>
-  );
-}
-
-function Alloc({ title, rows, total }: { title: string; rows: [string, number][]; total: number }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="mb-3 font-medium text-slate-900">{title}</h2>
-      <ul className="space-y-2 text-sm">
-        {rows.sort((a, b) => b[1] - a[1]).map(([k, v], i) => {
-          const pct = (v / total) * 100;
-          return (
-            <li key={k}>
-              <div className="flex justify-between gap-2">
-                <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: blueAt(i) }} />{k}</span>
-                <span className="tabular-nums text-slate-600"><span className="font-medium text-slate-800">{pct.toFixed(1)}%</span> · {money(v, undefined, 0)}</span>
-              </div>
-              <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-blue-50">
-                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${blueAt(i)}, ${blueAt(i + 1)})` }} />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-blue-50" aria-hidden>
-        {rows.map(([k, v], i) => <div key={k} style={{ width: `${(v / total) * 100}%`, background: blueAt(i) }} className="h-full border-r border-white/70 last:border-r-0" />)}
-      </div>
     </div>
   );
 }

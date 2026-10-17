@@ -8,6 +8,7 @@ import { METRIC_LABEL } from "./metrics";
 import { SortToggle } from "@/components/SortControls";
 import { moveHealthMetric } from "@/lib/sort-actions";
 import { orderHrefs } from "@/lib/sort";
+import { ActionBar } from "@/components/ActionBar";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
@@ -39,6 +40,10 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const metrics = [...new Set(results.map((r) => r.metric))];
   const cellOf = (m: string, c: string) => results.find((r) => r.metric === m && r.checkup_id === c);
   const paths = ["/family/health"];
+  const last = (checkups ?? [])[0];
+  const lastAbn = last ? results.filter((r) => r.checkup_id === last.id && r.abnormal_flag) : [];
+  const yearAgo = `${Number(todayBangkok().slice(0, 4)) - 1}${todayBangkok().slice(4)}`;
+  const costYear = (checkups ?? []).filter((c) => c.checkup_date > yearAgo).reduce((t, c) => t + Number(c.cost ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -47,10 +52,35 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
           <h1 className="text-2xl font-semibold text-slate-900">Health</h1>
           <p className="text-sm text-slate-500">ผลตรวจสุขภาพประจำปีของสมาชิก · ข้อมูลอ่อนไหว ผู้ใช้ทุกคนในระบบเห็นได้ตามสิทธิ์</p>
         </div>
-        <PersonPicker persons={list} value={pid} />
+        <div className="flex flex-wrap items-start gap-2">
+          <PersonPicker persons={list} value={pid} />
+          {canWrite && <ActionBar><CheckupForm personId={pid} today={todayBangkok()} /></ActionBar>}
+        </div>
       </div>
 
-      {canWrite && <CheckupForm personId={pid} today={todayBangkok()} />}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ตรวจล่าสุด</div>
+          <div className="mt-1 text-xl font-semibold">{last ? thDate(last.checkup_date) : "-"}</div>
+          <div className={`mt-1 text-xs ${last && last.checkup_date < yearAgo ? "text-amber-700" : "text-slate-500"}`}>
+            {!last ? "ยังไม่มีผลตรวจ" : last.checkup_date < yearAgo ? "เกิน 1 ปีแล้ว ควรตรวจประจำปี" : last.hospital || "ภายใน 1 ปี"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด</div>
+          <div className={`mt-1 text-xl font-semibold tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length} <span className="text-sm font-normal text-slate-500">รายการ</span></div>
+          <div className="mt-1 truncate text-xs text-slate-500">{lastAbn.length ? lastAbn.slice(0, 3).map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ") : "ปกติทั้งหมด"}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">จำนวนครั้งที่บันทึก</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{(checkups ?? []).length} <span className="text-sm font-normal text-slate-500">ครั้ง</span></div>
+          <div className="mt-1 text-xs text-slate-500">{metrics.length} รายการตรวจ</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">{money(costYear, "THB", 0)}</div>
+          <div className="mt-1 text-xs text-slate-500">ตามที่บันทึกในแต่ละครั้ง</div>
+        </div>
+      </section>
 
       {metrics.length > 0 && (
         <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">

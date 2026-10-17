@@ -28,3 +28,16 @@ export async function overrideFx(_: FxState, form: FormData): Promise<FxState> {
   revalidatePath("/settings/system");
   return { ok: `บันทึก ${currency} ${rate} ณ ${rate_date} แล้ว` };
 }
+
+/** ADMIN เลือกแหล่งอัตรา (ธปท. / ธนาคารกรุงเทพ) — มีผลตั้งแต่วันนี้ ไม่แก้อัตราเดิม */
+export async function setFxSource(_: FxState, form: FormData): Promise<FxState> {
+  const source = String(form.get("source") ?? "");
+  if (!["BOT", "BBL"].includes(source)) return { error: "กรุณาเลือกแหล่งอัตรา" };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("set_fx_source", { p_source: source, p_bbl_rate: String(form.get("bbl_rate") ?? "") || null });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/settings/system");
+  const d = data as { changed?: boolean; since?: string } | null;
+  if (!d?.changed) return { ok: "ไม่มีอะไรเปลี่ยน" };
+  return { ok: `เปลี่ยนแหล่งเป็น ${source === "BBL" ? "ธนาคารกรุงเทพ" : "ธปท."} แล้ว · มีผลตั้งแต่อัตราของวันที่ ${d.since}` };
+}

@@ -14,7 +14,7 @@ function Shell({ label, title, action, pending, state, children }: {
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
-    <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+    <form action={action} className="space-y-3">
       <h3 className="font-medium text-slate-900">{title}</h3>
       {children}
       <div className="flex items-center gap-3">

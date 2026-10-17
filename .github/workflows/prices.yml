@@ -1,0 +1,39 @@
+# Price Job: ดึงราคาล่าสุดของหุ้น / กองทุน / ทองคำ ที่เปิด "ดึงราคาอัตโนมัติ" → Supabase
+# Repository secrets: SUPABASE_URL, SUPABASE_SECRET_KEY · SEC_API_KEY (กองทุนไทย · ไม่มี = ข้ามกองทุน)
+name: Prices (auto)
+
+on:
+  schedule:
+    - cron: "45 11 * * 1-5"   # 18:45 เวลาไทย จันทร์–ศุกร์ (หลังตลาดหุ้นไทยปิด / ก.ล.ต. ประกาศ NAV)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "ทดลองอ่านอย่างเดียว ไม่บันทึก"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prices
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Test parser
+        run: node scripts/price-fetch.test.mjs
+      - name: Fetch prices and upsert to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEC_API_KEY: ${{ secrets.SEC_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/price-fetch.mjs
