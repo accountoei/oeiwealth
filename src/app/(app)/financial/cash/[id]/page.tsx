@@ -7,7 +7,7 @@ import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type MoveRow, type StmtRow } from "../../../income-expenses/MovesView";
 import { moveMeta, stripPending } from "@/lib/ledger";
 import TransferEditor from "../../../income-expenses/TransferEditor";
-import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
+import { AccountNoPanel, EditInfoForm, EditToggle, SettleLatestButton, UpdateBalanceForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
@@ -37,9 +37,8 @@ export default async function AccountDetailPage({ params, searchParams }: {
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   const { start, end } = monthRange(ym);
   const dayBefore = new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
-  const [{ data: acc }, { data: bal }, { data: owners }, { data: vals }, { data: moves }, { data: family }, { data: persons }] = await Promise.all([
+  const [{ data: acc }, { data: owners }, { data: vals }, { data: moves }, { data: family }, { data: persons }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("*").eq("asset_id", id).maybeSingle(),
-    supabase.from("v_bank_balance_current").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
@@ -153,6 +152,9 @@ export default async function AccountDetailPage({ params, searchParams }: {
   }
   pushStmts(null);
   const closing = run;
+  // ประวัติยอดที่ยืนยัน: เฉพาะเดือนที่เลือก (ใหม่ → เก่า) · ไม่มี = บอกยอดล่าสุดก่อนหน้า
+  const monthHist = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end);
+  const lastVal = (vals ?? []).find((v) => v.valuation_date <= end);
   const months = monthOptions(family?.go_live_date, today, 0, ym);
   const sameCcyBanks = (banksAll ?? []).filter((b) => b.currency === acc.currency && b.status === "ACTIVE")
     .map((b) => ({ asset_id: b.asset_id as string, name: b.name as string }));
@@ -187,6 +189,8 @@ export default async function AccountDetailPage({ params, searchParams }: {
       detail: ll.detail, sub: ll.sub ? <div className="text-xs text-slate-400">{ll.sub}</div> : undefined,
       extra: Number(m.fee ?? 0) > 0 ? <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div> : undefined,
       actions, kind: m.movement_type, merged: !!m.parts,
+      pendingHref: inc?.pending_split ? `/income-expenses?tab=income&it=recorded&m=${m.movement_date.slice(0, 7)}`
+        : e?.pending_split ? `/income-expenses?tab=expense&et=recorded&m=${m.movement_date.slice(0, 7)}` : undefined,
       metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
         expenseCategory: e?.expense_category ?? null, pending: !!(e?.pending_split || inc?.pending_split) },
     };
@@ -203,88 +207,6 @@ export default async function AccountDetailPage({ params, searchParams }: {
         </p>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">ยอดคงเหลือ (คำนวณ ณ วันนี้)</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(bal?.calculated_balance, acc.currency)}</div>
-          <div className={`mt-1 text-xs ${bal?.balance_label === "CALCULATED" ? "text-amber-700" : "text-emerald-700"}`}>
-            {bal?.balance_label === "CALCULATED" ? "มีรายการหลังวันที่ยืนยันยอด" : "ตรงกับยอดที่ยืนยันล่าสุด"}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">ยอดที่ยืนยันล่าสุด</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{money(bal?.confirmed_balance, acc.currency)}</div>
-          <div className="mt-1 text-xs text-slate-500">ณ {thDate(bal?.confirmed_date)}</div>
-          {st?.lump != null && Math.abs(Number(st.lump)) >= 0.005 && (
-            <div className="mt-1 text-xs font-medium text-amber-700">
-              <Link href={`/income-expenses?tab=${Number(st.lump) > 0 ? "expense&et" : "income&it"}=recorded&m=${(st.lump_date ?? st.latest_date).slice(0, 7)}`}
-                className="hover:underline">
-                มี{Number(st.lump) > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยกรายละเอียด {thMonth(`${(st.lump_date ?? st.latest_date).slice(0, 7)}-01`)} {money(Math.abs(Number(st.lump)), acc.currency)} → ไปแยก
-              </Link>
-            </div>
-          )}
-          {st && Math.abs(Number(st.difference)) >= 0.005 && (
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700">
-              <span>ยอดล่าสุดไม่ตรงกับรายการที่บันทึก {money(st.difference, acc.currency)}</span>
-              {canWrite && <SettleLatestButton assetId={id} />}
-            </div>
-          )}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">เจ้าของบัญชี</div>
-          <ul className="mt-1 space-y-0.5 text-sm">
-            {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
-          </ul>
-          {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
-          {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={todayBangkok()}
-            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
-        </div>
-      </section>
-
-      {canWrite && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-medium text-slate-900">อัปเดตยอดคงเหลือ</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            กรอกยอดจริงจากแอปธนาคาร / Statement · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ · หลายบัญชีพร้อมกันได้ที่แท็บ &ldquo;อัปเดตยอดคงเหลือ&rdquo; ในหน้า Cash
-          </p>
-          <UpdateBalanceForm assetId={id} currency={acc.currency} today={todayBangkok()} minDate={family?.go_live_date ?? ""} />
-        </section>
-      )}
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">เลขบัญชี</h2>
-        <AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked}
-          canReveal={canEdit} canSet={canWrite} />
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">ประวัติยอดที่ยืนยัน</h2>
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500">
-            <tr><th className="py-1">วันที่</th><th className="text-right">ยอด</th><th className="pl-4">ที่มา</th>
-              <th className="pl-4">หมายเหตุ</th><th></th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {(vals ?? []).map((v) => (
-              <tr key={v.id}>
-                <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                <td className="text-right tabular-nums">{money(v.value)}</td>
-                <td className="pl-4">{SOURCE_LABEL[v.source] ?? v.source}</td>
-                <td className="pl-4 text-slate-500">{v.notes}</td>
-                <td className="pl-2 text-right">
-                  {canWrite && v.source !== "RECONCILIATION" && (
-                    <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
-                      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
-                        { name: "value", label: "ยอด", type: "number", value: v.value },
-                        { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-medium text-slate-900">รายการเงินเข้า–ออก {thMonth(start)}</h2>
@@ -295,27 +217,119 @@ export default async function AccountDetailPage({ params, searchParams }: {
           <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
           <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className="tabular-nums">{closing == null ? "-" : money(closing, acc.currency)}</b></span>
         </div>
-        <p className="mb-3 mt-1 text-xs text-slate-500">รายการเกิดจากการบันทึกรายได้ ค่าใช้จ่าย การโอน และการลงทุนในหน้าที่เกี่ยวข้อง · ยอดคงเหลือ = ยอดยกมา / ยอดตาม Statement + รายการหลังจากนั้น · กดที่แถวเพื่อแก้ / ลบ</p>
-        <MovesView rows={ledgerRows} banks={[]} showActions={canWrite} fixedAcct={id}
-          openings={{ [id]: opening == null ? null : Number(opening) }} statements={{ [id]: ledgerStmts }} monthStart={start} />
+        {/* เตือนเฉพาะเมื่อมีเรื่องต้องทำ */}
+        {st?.lump != null && Math.abs(Number(st.lump)) >= 0.005 && (
+          <div className="mt-2 text-xs font-medium text-amber-700">
+            <Link href={`/income-expenses?tab=${Number(st.lump) > 0 ? "expense&et" : "income&it"}=recorded&m=${(st.lump_date ?? st.latest_date).slice(0, 7)}`}
+              className="hover:underline">
+              มี{Number(st.lump) > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยกรายละเอียด {thMonth(`${(st.lump_date ?? st.latest_date).slice(0, 7)}-01`)} {money(Math.abs(Number(st.lump)), acc.currency)} → ไปแยก
+            </Link>
+          </div>
+        )}
+        {st && Math.abs(Number(st.difference)) >= 0.005 && (
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700">
+            <span>ยอดล่าสุด ({thDate(st.latest_date)}) ไม่ตรงกับรายการที่บันทึก {money(st.difference, acc.currency)}</span>
+            {canWrite && <SettleLatestButton assetId={id} />}
+          </div>
+        )}
+        <div className="mt-3">
+          <MovesView rows={ledgerRows} banks={[]} showActions={canWrite} fixedAcct={id}
+            openings={{ [id]: opening == null ? null : Number(opening) }} statements={{ [id]: ledgerStmts }} monthStart={start} />
+        </div>
       </section>
 
-      {canWrite && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-1 font-medium text-slate-900">แก้ไขข้อมูลบัญชี</h2>
-          <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูลบัญชี ไม่กระทบยอดเงิน</p>
-          <EditInfoForm acc={acc} />
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <StatusSelect table="assets" id={id} value={acc.status} paths={paths}
-              options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี" />
-          </div>
-          {canDelete && <div className="mt-4 border-t border-slate-100 pt-3">
-            <DeleteEntity kind="asset" id={id} redirectTo="/financial/cash" paths={["/financial/cash"]} label="ลบบัญชีนี้"
-              hint="ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะในแก้ไขข้อมูล" />
-          </div>}
-        </section>
-      )}
-      <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
+      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-medium text-slate-900">ยอดคงเหลือตาม Statement · {thMonth(start)}</h2>
+        {canWrite && <UpdateBalanceForm assetId={id} currency={acc.currency} today={today} minDate={family?.go_live_date ?? ""} />}
+        {monthHist.length === 0 ? (
+          <p className="text-sm text-slate-500">ยังไม่มียอดเดือนนี้{lastVal ? <> · ยอดล่าสุด {thDate(lastVal.valuation_date)} = <span className="tabular-nums">{money(lastVal.value, acc.currency)}</span></> : ""}</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr><th className="py-1">วันที่</th><th className="text-right">ยอด</th><th className="pl-4">ที่มา</th>
+                <th className="pl-4">หมายเหตุ</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {monthHist.map((v) => (
+                <tr key={v.id}>
+                  <td className="whitespace-nowrap py-1.5">{thDate(v.valuation_date)}</td>
+                  <td className="whitespace-nowrap text-right tabular-nums">{money(v.value, acc.currency)}</td>
+                  <td className="pl-4">{SOURCE_LABEL[v.source] ?? v.source}</td>
+                  <td className="pl-4 text-slate-500">{v.notes}</td>
+                  <td className="pl-2 text-right">
+                    {canWrite && v.source !== "RECONCILIATION" && (
+                      <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
+                        fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
+                          { name: "value", label: "ยอด", type: "number", value: v.value },
+                          { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="border-t border-slate-100 pt-4">
+          <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} title="เอกสาร / Statement" bare />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <EditToggle canEdit={canWrite}
+          view={
+            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <Item label="ชื่อที่ใช้เรียกบัญชี">{acc.name}</Item>
+              <Item label="ธนาคาร">{bankLabel(acc.bank_name)}</Item>
+              <Item label="ประเภทบัญชี">{ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type} · {acc.currency}</Item>
+              <Item label="ชื่อบัญชี (ตามสมุด)">{acc.account_name || "-"}</Item>
+              <Item label="สาขา">{acc.branch || "-"}</Item>
+              <Item label="เลขบัญชี"><AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked} canReveal={canEdit} canSet={false} /></Item>
+              {acc.interest_rate != null && <Item label="อัตราดอกเบี้ย">{Number(acc.interest_rate)}% ต่อปี</Item>}
+              {acc.maturity_date && <Item label="วันครบกำหนด">{thDate(acc.maturity_date)}</Item>}
+              <Item label="สถานะ">{acc.status === "CLOSED" ? <span className="text-slate-500">ปิดบัญชีแล้ว</span> : "ใช้งาน"}</Item>
+              <Item label="เจ้าของบัญชี">
+                {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
+                {ownerTotal < 100 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
+              </Item>
+              {acc.notes && <Item label="หมายเหตุ" wide>{acc.notes}</Item>}
+            </dl>
+          }
+          edit={
+            <div className="space-y-5">
+              <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลบัญชี ไม่กระทบยอดเงิน</p>
+              <EditInfoForm acc={acc} />
+              <div className="border-t border-slate-100 pt-4">
+                <h3 className="mb-2 text-sm font-medium text-slate-800">เลขบัญชี</h3>
+                <AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked} canReveal={canEdit} canSet={canWrite} />
+              </div>
+              <div className="border-t border-slate-100 pt-4">
+                <h3 className="mb-2 text-sm font-medium text-slate-800">เจ้าของบัญชี</h3>
+                <ul className="mb-2 space-y-0.5 text-sm">
+                  {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
+                </ul>
+                <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                  current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+              </div>
+              <div className="border-t border-slate-100 pt-4">
+                <StatusSelect table="assets" id={id} value={acc.status} paths={paths}
+                  options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี" />
+              </div>
+              {canDelete && <div className="border-t border-slate-100 pt-4">
+                <DeleteEntity kind="asset" id={id} redirectTo="/financial/cash" paths={["/financial/cash"]} label="ลบบัญชีนี้"
+                  hint="ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น &ldquo;ปิดบัญชีแล้ว&rdquo;" />
+              </div>}
+            </div>
+          } />
+      </section>
+    </div>
+  );
+}
+
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

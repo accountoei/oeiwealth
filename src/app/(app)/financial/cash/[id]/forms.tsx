@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
 import BankSelect from "@/components/BankSelect";
@@ -29,7 +29,7 @@ export function UpdateBalanceForm({ assetId, currency, today, minDate }:
       <label className="text-sm flex-1 min-w-48">หมายเหตุ
         <input name="notes" className={`mt-1 block w-full ${input}`} />
       </label>
-      <p className="w-full text-xs text-slate-500">ส่วนต่างลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ของเดือนนี้ให้อัตโนมัติ (เงินน้อยกว่าที่บันทึก → ค่าใช้จ่ายก้อน · มากกว่า → รายได้ก้อน · บันทึกยอดซ้ำในเดือนเดียวกันจะปรับก้อนเดิม)</p>
+      <p className="w-full text-xs text-slate-500">ส่วนต่างจากรายการที่บันทึก ลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ของเดือนนั้นให้อัตโนมัติ</p>
       <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอด"}</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
@@ -126,5 +126,24 @@ export function SettleLatestButton({ assetId }: { assetId: string }) {
         {pending ? "…" : "ลงเป็นก้อนรอแยก"}</button>
       {state.error && <span className="ml-2 text-red-600">{state.error}</span>}
     </form>
+  );
+}
+
+/** กล่องรายละเอียดบัญชี: ดูอย่างเดียว → กด "แก้ไขข้อมูล" เพื่อเปิดส่วนแก้ไข */
+export function EditToggle({ view, edit, canEdit }: { view: ReactNode; edit: ReactNode; canEdit: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-medium text-slate-900">รายละเอียดบัญชี</h2>
+        {canEdit && (
+          <button type="button" onClick={() => setOpen(!open)}
+            className={open ? "rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" : "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"}>
+            {open ? "ปิดการแก้ไข" : "แก้ไขข้อมูล"}
+          </button>
+        )}
+      </div>
+      {open ? edit : view}
+    </div>
   );
 }
