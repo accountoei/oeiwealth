@@ -9,10 +9,12 @@ type Doc = { id: string; module: string; document_type: string; title: string; m
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string };
 
 /** ส่วน "เอกสาร" ในหน้ารายละเอียดของทรัพย์สิน / หนี้ / กรมธรรม์ */
-export default async function EntityDocuments({ entityType, entityId, module, role, title = "เอกสาร", paths: pagePaths = [], bare = false }: {
+export default async function EntityDocuments({ entityType, entityId, module, role, title = "เอกสาร", paths: pagePaths = [], bare = false, fill = false }: {
   entityType: string; entityId: string; module: string; role: string; title?: string; paths?: string[];
   /** วางในกล่องอื่น (ไม่มีกรอบของตัวเอง) */
   bare?: boolean;
+  /** ยืดเต็มความสูงของช่องที่วาง */
+  fill?: boolean;
 }) {
   const supabase = await createClient();
   const [{ data: links }, { data: status }] = await Promise.all([
@@ -32,7 +34,7 @@ export default async function EntityDocuments({ entityType, entityId, module, ro
   const old = docs.filter((d) => d.version_status !== "CURRENT");
 
   return (
-    <section className={bare ? "" : "rounded-xl border border-slate-200 bg-white p-5"}>
+    <section className={bare ? "" : `rounded-xl border border-slate-200 bg-white p-5${fill ? " h-full" : ""}`}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className={bare ? "text-sm font-medium text-slate-800" : "font-medium text-slate-900"}>{title}</h2>
         <Link href="/documents" className="text-xs text-slate-500 hover:underline">เอกสารทั้งหมด →</Link>

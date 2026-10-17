@@ -25,7 +25,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   assetId: string; currency: string; current: SchedLine[]; hasSchedule: boolean;
   defaults: { amount: number; ratePct: number; firstDue: string; interestFrom?: string };
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [mode, setMode] = useState<Mode>(hasSchedule ? "TEXT" : "FORMULA");
   const [text, setText] = useState(() => scheduleToText(current));
   const [generated, setGenerated] = useState<SchedLine[] | null>(null);

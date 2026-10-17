@@ -101,15 +101,33 @@ export default async function LoanDetailPage({ params, searchParams }: {
     <div className="space-y-6">
       <div>
         <Link href="/financial/loans" className="text-sm text-slate-500 hover:underline">← Loans Receivable</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{l.name}</h1>
-        <p className="text-sm text-slate-500">ผู้กู้ {l.borrower_name} · {l.currency}{l.derived_status === "OVERDUE" && <span className="text-red-600"> · เลยกำหนดคืน</span>}</p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{l.name}</h1>
+            <p className="text-sm text-slate-500">ผู้กู้ {l.borrower_name} · {l.currency}{l.derived_status === "OVERDUE" && <span className="text-red-600"> · เลยกำหนดคืน</span>}</p>
+          </div>
+          {canWrite && l.status !== "CLOSED" && l.status !== "WRITTEN_OFF" && (
+            <ActionBar>
+              <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
+                interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
+                principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
+              <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
+            </ActionBar>
+          )}
+        </div>
       </div>
 
-      <section className="grid items-start gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">เงินต้นคงเหลือ</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(l.status === "WRITTEN_OFF" ? 0 : l.outstanding_principal, l.currency)}</div>
-          <div className="mt-1 text-xs text-slate-500">เงินต้น {money(l.principal)} · รับคืนแล้ว {money(repaid)} · ดอกเบี้ยรับแล้ว {money(interest)}</div>
+      <section className="grid gap-4 md:grid-cols-3">
+        {/* ซ้าย: สรุปเงินต้น + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">เงินต้นคงเหลือ</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(l.status === "WRITTEN_OFF" ? 0 : l.outstanding_principal, l.currency)}</div>
+            <div className="mt-1 text-xs text-slate-500">เงินต้น {money(l.principal)} · รับคืนแล้ว {money(repaid)} · ดอกเบี้ยรับแล้ว {money(interest)}</div>
+          </div>
+          <div className="flex-1">
+            <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
+          </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
         <EditToggle title="รายละเอียด" canEdit={canWrite}
@@ -129,9 +147,6 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 </Item>
                 {l.notes && <Item label="หมายเหตุ" wide>{l.notes}</Item>}
               </dl>
-              <div className="border-t border-slate-100 pt-4">
-                <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} bare />
-              </div>
             </div>
           }
           edit={
@@ -157,14 +172,6 @@ export default async function LoanDetailPage({ params, searchParams }: {
         </div>
       </section>
 
-      {canWrite && l.status !== "CLOSED" && l.status !== "WRITTEN_OFF" && (
-        <ActionBar>
-          <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
-            interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
-            principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
-          <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
-        </ActionBar>
-      )}
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -256,6 +263,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 const total = e.disburse ? Number(e.disburse.amount) : Number(e.principal?.amount ?? 0) + Number(e.interest?.amount ?? 0);
                 const both = !!(e.principal && e.interest);
                 const group = e.principal?.movement_group_id ?? (e.interest ? incGroup.get(e.interest.id) : null);
+                // รับชำระครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่มลบปุ่มเดียว ลบทั้งการรับชำระครั้งนั้น (ถ้าผิดแค่ยอด ให้แก้ยอดแทน)
+                const wholeDelete = canDelete && both && group ? <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้"
+                  confirmText={`ลบการรับชำระวันที่ ${thDate(e.date)}?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined;
                 return (
                   <tr key={e.key} className="align-top">
                     <td className="py-2">{thDate(e.date)}</td>
@@ -266,7 +276,8 @@ export default async function LoanDetailPage({ params, searchParams }: {
                       {e.principal && (
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                           <span>เงินต้น <span className="tabular-nums">{money(e.principal.amount)}</span></span>
-                          {canWrite && !e.principal.is_derived && <RowActions table="cash_movements" id={e.principal.id} paths={paths} canDelete={canDelete} fields={[
+                          {canWrite && !e.principal.is_derived && <RowActions table="cash_movements" id={e.principal.id} paths={paths}
+                            canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={[
                             { name: "movement_date", label: "วันที่", type: "date", value: e.principal.movement_date },
                             { name: "amount", label: "เงินต้น", type: "number", value: e.principal.amount }]} />}
                         </div>
@@ -275,7 +286,8 @@ export default async function LoanDetailPage({ params, searchParams }: {
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                           <span>ดอกเบี้ย (รายได้) <span className="tabular-nums">{money(e.interest.amount)}</span>
                             {Number(e.interest.tax ?? 0) ? ` · ภาษีหัก ณ ที่จ่าย ${money(e.interest.tax)}` : ""}</span>
-                          {canWrite && <RowActions table="income_transactions" id={e.interest.id} paths={paths} canDelete={canDelete} fields={loanInterestFields(e.interest)} />}
+                          {canWrite && <RowActions table="income_transactions" id={e.interest.id} paths={paths}
+                            canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={loanInterestFields(e.interest)} />}
                         </div>
                       )}
                       {e.disburse && canWrite && !e.disburse.is_derived && (
@@ -285,10 +297,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                       )}
                     </td>
                     <td className="py-2 text-xs text-slate-500">{e.bank ? bankName.get(e.bank) ?? "บัญชี" : ""}</td>
-                    <td className={`py-2 text-right tabular-nums ${e.disburse ? "" : "text-emerald-700"}`}>{money(total)}
-                      {canDelete && both && group && <div className="mt-1"><UndoButton kind="PAYMENT" id={group} paths={paths}
-                        confirmText={`ยกเลิกการรับชำระวันที่ ${thDate(e.date)} ทั้งก้อน?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน`} /></div>}
-                    </td>
+                    <td className={`py-2 text-right tabular-nums ${e.disburse ? "" : "text-emerald-700"}`}>{money(total)}</td>
                   </tr>
                 );
               })}

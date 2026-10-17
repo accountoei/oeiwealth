@@ -3,6 +3,7 @@ import { requireAppUser, ROLE_LABEL } from "@/lib/auth";
 import { CurrencyProvider } from "@/components/CurrencyContext";
 import { getCurrencyLists } from "@/lib/currencies";
 import { createClient } from "@/lib/supabase/server";
+import { Toaster } from "@/components/Modal";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </form>
         </header>
         <main className="mx-auto max-w-7xl p-4 md:p-8"><CurrencyProvider used={ccy.used} others={ccy.others}>{children}</CurrencyProvider></main>
+        <Toaster />
       </div>
     </div>
   );

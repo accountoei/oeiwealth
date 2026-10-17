@@ -45,24 +45,25 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   const sumOf = (pp: string, iv: string) => setTotal(amt(num(pp) + num(iv)));
   const extra = principalDue != null ? Math.round((num(p) - principalDue) * 100) / 100 : 0;
   const [dismissed, setDismissed] = useState(false);
-  if (state.ok && extra > 0.01 && !dismissed) {
+  const trigger = <button type="button" onClick={() => setOpen(!open)}
+    className={activeCls(small ? ROW_BTN : btn)}>{button}</button>;
+  if (state.ok && extra > 0.01 && !dismissed && open) {
     const href = (k: string) => `/financial/loans/${assetId}?restructure=${k}`;
-    return (
-      <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm">
+    // ถามต่อในหน้าต่างเดิม (ไม่ปิดเอง)
+    return present(trigger, (
+      <div data-keep-open className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm">
         <p className="text-emerald-700">{state.ok}</p>
         <p className="font-medium text-slate-900">รับเงินต้นเกินงวด {amt(extra)} — จะคำนวณงวดที่เหลือใหม่เลยไหม?</p>
         <div className="flex flex-wrap gap-2">
-          <Link href={href("end")} className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700">ลดค่างวด (จบวันเดิม)</Link>
-          <Link href={href("payment")} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">จบเร็วขึ้น (ค่างวดเดิม)</Link>
-          <button type="button" onClick={() => setDismissed(true)} className="px-2 text-slate-500 underline">ไม่ต้อง (จ่ายล่วงหน้า ตารางเดิม)</button>
+          <Link href={href("end")} onClick={() => { setDismissed(true); setOpen(false); }} className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700">ลดค่างวด (จบวันเดิม)</Link>
+          <Link href={href("payment")} onClick={() => { setDismissed(true); setOpen(false); }} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">จบเร็วขึ้น (ค่างวดเดิม)</Link>
+          <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="px-2 text-slate-500 underline">ไม่ต้อง (จ่ายล่วงหน้า ตารางเดิม)</button>
         </div>
         <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — ส่วนที่เกินจะหักงวดถัดไปตามลำดับ</p>
       </div>
-    );
+    ));
   }
-  if (state.ok && small) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button type="button" onClick={() => setOpen(!open)}
-    className={activeCls(small ? ROW_BTN : btn)}>{button}</button>;
+  if (state.ok && small && !open) return <span className="text-xs text-emerald-700">{state.ok}</span>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">

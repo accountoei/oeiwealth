@@ -2,9 +2,10 @@
 
 import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Modal from "./Modal";
 
-// แถวปุ่มคำสั่ง: ปุ่มอยู่แถวบนตลอด · กดปุ่มไหน ฟอร์มนั้นเปิด "ใต้แถว" ทีละฟอร์ม (กดปุ่มอื่น = เปลี่ยนฟอร์ม · กดซ้ำ / ปิด = ปิด)
-// ฟอร์มที่อยู่นอก <ActionBar> ทำงานแบบเดิม (กางแทนที่ปุ่ม)
+// แถวปุ่มคำสั่ง: ปุ่มอยู่แถวบนตลอด · กดปุ่มไหน ฟอร์มนั้นเปิดเป็นหน้าต่าง pop up (Modal) ทีละฟอร์ม
+// ฟอร์มที่เปิดค้างตั้งแต่แรก (initial) ไม่ใช่ pop up: กาง "ใต้แถว" ใน <ActionBar> หรือแทนที่ปุ่มเหมือนเดิม
 type Ctx = { active: string | null; setActive: (k: string | null) => void; panel: HTMLElement | null };
 const BarCtx = createContext<Ctx | null>(null);
 
@@ -19,7 +20,7 @@ export function ActionBar({ children, right, className = "" }: { children: React
           <div className="flex min-w-0 flex-1 flex-wrap items-start gap-2">{children}</div>
           {right && <div className="shrink-0">{right}</div>}
         </div>
-        <div ref={setPanel} className={active ? "mt-3" : ""} />
+        <div ref={setPanel} className="[&:not(:empty)]:mt-3" />
       </div>
     </BarCtx.Provider>
   );
@@ -32,7 +33,8 @@ export function ActionBar({ children, right, className = "" }: { children: React
  *   if (!open) return trigger;
  *   return present(trigger, <form>…</form>);
  */
-export function useActionSlot(initial = false) {
+export function useActionSlot(initial = false, opts: { modal?: boolean; size?: "md" | "lg" } = {}) {
+  const modal = opts.modal ?? !initial;                       // ค่าเริ่มต้น: pop up · ฟอร์มที่เปิดค้างตั้งแต่แรก = กางในหน้า
   const bar = useContext(BarCtx);
   const id = useId();
   const [local, setLocal] = useState(initial);
@@ -44,7 +46,8 @@ export function useActionSlot(initial = false) {
   const setOpen = (v: boolean) => (bar ? bar.setActive(v ? id : null) : setLocal(v));
   const activeCls = (cls: string) => (inBar && open ? `${cls} ring-2 ring-blue-500 ring-offset-1` : cls);
   const present = (trigger: ReactNode, form: ReactNode) =>
-    bar && bar.panel ? <>{trigger}{createPortal(form, bar.panel)}</> : <>{form}</>;
+    modal ? <>{trigger}{open && <Modal size={opts.size} onClose={() => setOpen(false)}>{form}</Modal>}</>
+    : bar && bar.panel ? <>{trigger}{createPortal(form, bar.panel)}</> : <>{form}</>;
   return { open, setOpen, present, activeCls, inBar };
 }
 
@@ -65,7 +68,7 @@ export function ActionRow({ cells, actions, colSpan, className = "" }: {
           {actions && <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 whitespace-nowrap">{actions}</div>}
         </td>
       </tr>
-      <tr hidden={!active}>
+      <tr hidden={!active} className="has-[>td:empty]:hidden">
         <td ref={setPanel} colSpan={colSpan} className="bg-slate-50 px-3 py-3" />
       </tr>
     </BarCtx.Provider>

@@ -421,7 +421,7 @@ export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate,
 /* ------------------------------------------------------------------ อัปเดตราคา (Statement) */
 export function ValuationsForm({ assetId, holdings, today, minDate }:
   { assetId: string; holdings: Holding[]; today: string; minDate: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(saveValuations, {});
   const list = holdings.filter((h) => h.status === "ACTIVE");
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>อัปเดตราคา / Statement</button>;
