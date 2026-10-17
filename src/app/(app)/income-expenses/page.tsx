@@ -389,6 +389,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
       </>,
       thb: m.base_amount == null ? null : Number(m.base_amount),
+      pendingHref: inc?.pending_split ? tabLink("income", "แท็บรายได้").href : exp?.pending_split ? tabLink("expense", "แท็บค่าใช้จ่าย").href : undefined,
       detail: srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type),
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? (
         <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}

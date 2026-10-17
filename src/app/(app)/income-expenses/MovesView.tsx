@@ -15,6 +15,7 @@ export type MoveRow = {
   thb?: number | null;                                             // ยอดเป็นบาท ณ วันที่ของรายการ (base_amount) · ใช้แสดง ≈ THB ของสกุลอื่น
   extra?: ReactNode; detail: ReactNode; sub?: ReactNode; actions?: ReactNode; typeCls?: string;
   kind: string; merged?: boolean;
+  pendingHref?: string;                                            // ป้าย "รอแยกรายละเอียด" → ลิงก์ไปที่แยกรายการ
   metaOpts?: { incomeType: string | null; incomeSubtype: string | null; expenseCategory: string | null; pending: boolean };
 };
 /** ยอดตาม Statement ของบัญชี (ใช้เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ) */
@@ -173,7 +174,10 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                 <tr key={r.key} className="align-top">
                   <td className="whitespace-nowrap py-2 pr-2">{thDate(r.date)}</td>
                   <td className="pr-2"><MoveBadge label={meta.label} tone={meta.tone} /></td>
-                  <td className="pr-2">{meta.pending ? <MoveBadge label={meta.category} tone="amber" /> : <span className="text-indigo-700">{meta.category}</span>}</td>
+                  <td className="pr-2">{meta.pending
+                    ? (r.pendingHref ? <Link href={r.pendingHref} title="ไปแยกรายการ" className="hover:opacity-80"><MoveBadge label={`${meta.category} →`} tone="amber" /></Link>
+                      : <MoveBadge label={meta.category} tone="amber" />)
+                    : <span className="text-indigo-700">{meta.category}</span>}</td>
                   <td className="pr-2">
                     <div className="text-slate-800">{r.detail}</div>
                     {r.sub ?? (!fixedAcct && <div className="text-xs text-slate-400">{r.fromLabel} → {r.toLabel}</div>)}
