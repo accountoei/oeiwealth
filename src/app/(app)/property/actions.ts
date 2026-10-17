@@ -212,3 +212,40 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
   revalidatePath("/financial/cash", "layout");
   return { ok: "บันทึกจ่ายแล้ว" };
 }
+
+export type BatchState = { error?: string; ok?: string };
+
+/** รับค่าเช่าหลายสัญญาพร้อมกัน (แท็บ รายได้และสัญญาเช่า) · ผิดแถวเดียว = ไม่บันทึกเลย */
+export async function batchRent(_: BatchState, form: FormData): Promise<BatchState> {
+  const supabase = await createClient();
+  let rows: { lease_id: string; amount: string; date: string; received_to_asset_id: string; income_period: string }[] = [];
+  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const clean = rows.map((r) => ({ ...r, amount: num(r.amount), received_to_asset_id: r.received_to_asset_id || null }));
+  if (!clean.length) return { error: "กรุณากรอกยอดที่ได้รับอย่างน้อย 1 รายการ" };
+  if (clean.some((r) => r.amount == null || Number.isNaN(r.amount) || r.amount <= 0)) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  const { data, error } = await supabase.rpc("batch_record_rent", { p_rows: clean });
+  if (error) return { error: `ยังไม่ได้บันทึก (ทุกรายการ) · ${friendlyError(error.message)}` };
+  revalidateProperty();
+  revalidatePath("/financial/cash", "layout");
+  return { ok: `บันทึกรับค่าเช่าแล้ว ${data} รายการ` };
+}
+
+/** ค่าใช้จ่ายของทรัพย์สินหลายรายการพร้อมกัน (แท็บ ค่าใช้จ่าย) · ผิดแถวเดียว = ไม่บันทึกเลย */
+export async function batchPropertyExpenses(_: BatchState, form: FormData): Promise<BatchState> {
+  const supabase = await createClient();
+  let rows: ({ amount: string; pay: string; description?: string } & Record<string, string>)[] = [];
+  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 รายการ" };
+  const clean = rows.map(({ pay, amount, ...r }) => ({
+    ...r, description: String(r.description ?? ""), amount: num(amount),
+    paid_from_asset_id: pay?.startsWith("b:") ? pay.slice(2) : null,
+    paid_from_credit_card_id: pay?.startsWith("c:") ? pay.slice(2) : null,
+  }));
+  if (clean.some((r) => r.amount == null || Number.isNaN(r.amount) || r.amount <= 0)) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  if (clean.some((r) => !r.description.trim())) return { error: "กรุณาใส่รายการ (รายละเอียด) ทุกแถว" };
+  const { data, error } = await supabase.rpc("batch_add_property_expenses", { p_rows: clean });
+  if (error) return { error: `ยังไม่ได้บันทึก (ทุกรายการ) · ${friendlyError(error.message)}` };
+  revalidateProperty();
+  revalidatePath("/financial/cash", "layout");
+  return { ok: `บันทึกค่าใช้จ่ายแล้ว ${data} รายการ` };
+}

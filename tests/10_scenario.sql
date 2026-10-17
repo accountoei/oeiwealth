@@ -1965,6 +1965,36 @@ SELECT t.fails($$SELECT public.sell_business_shares(t.a('บริษัทข�
   'PERMISSION|สิทธิ์|role', 'VIEWER ขายหุ้นไม่ได้');
 RESET ROLE;
 
+\echo '== 13x. Property: บันทึกหลายรายการพร้อมกัน'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date, 'amount', 1234, 'received_to_asset_id', t.a('KBank ออมทรัพย์'), 'notes', 'batch-rent-test')));
+SELECT t.ok((SELECT income_type = 'RENT' AND asset_id IS NOT NULL AND amount = 1234 FROM public.income_transactions WHERE notes = 'batch-rent-test'),
+            'รับค่าเช่าหลายรายการ: บันทึกเป็น RENT ผูกทรัพย์สินจากสัญญา');
+SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date, 'amount', 500, 'notes', 'batch-rent-bad'),
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date + 1, 'amount', 500, 'notes', 'batch-rent-bad')))$$, 'อนาคต', 'รับค่าเช่า: วันที่อนาคตไม่ได้');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE notes = 'batch-rent-bad'), 'รับค่าเช่า: แถวไหนผิด = ไม่บันทึกเลยทั้งชุด');
+SELECT public.batch_add_property_expenses(jsonb_build_array(
+  jsonb_build_object('date', current_date, 'description', 'batch-exp-test', 'amount', 800, 'related_asset_id', t.a('บ้าน A'),
+                     'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'expense_category', 'บ้าน / สาธารณูปโภค')));
+SELECT t.ok((SELECT related_asset_id = t.a('บ้าน A') AND amount = 800 FROM public.expense_items WHERE description = 'batch-exp-test' AND deleted_at IS NULL),
+            'ค่าใช้จ่ายทรัพย์สินหลายรายการ: ผูกทรัพย์สิน + จ่ายจากบัญชี');
+SELECT t.fails($$SELECT public.batch_add_property_expenses(jsonb_build_array(
+  jsonb_build_object('date', current_date, 'description', 'batch-exp-bad', 'amount', 100, 'related_asset_id', t.a('KBank ออมทรัพย์'),
+                     'paid_from_asset_id', t.a('KBank ออมทรัพย์'))))$$, 'เลือกทรัพย์สิน', 'ค่าใช้จ่าย: ต้องผูกอสังหาฯ');
+SELECT t.fails($$SELECT public.batch_add_property_expenses(jsonb_build_array(
+  jsonb_build_object('date', current_date, 'description', 'batch-exp-bad', 'amount', 100, 'related_asset_id', t.a('บ้าน A'))))$$,
+  'บัญชี / บัตร', 'ค่าใช้จ่าย: ต้องเลือกบัญชี / บัตรที่จ่าย');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.batch_add_property_expenses(jsonb_build_array(
+  jsonb_build_object('date', current_date, 'description', 'batch-exp-viewer', 'amount', 100, 'related_asset_id', t.a('บ้าน A'),
+                     'paid_from_asset_id', t.a('KBank ออมทรัพย์'))))$$, 'PERMISSION|สิทธิ์|row-level|policy', 'VIEWER บันทึกค่าใช้จ่ายไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
