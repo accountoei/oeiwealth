@@ -1995,6 +1995,17 @@ SELECT t.fails($$SELECT public.batch_add_property_expenses(jsonb_build_array(
                      'paid_from_asset_id', t.a('KBank ออมทรัพย์'))))$$, 'PERMISSION|สิทธิ์|row-level|policy', 'VIEWER บันทึกค่าใช้จ่ายไม่ได้');
 RESET ROLE;
 
+\echo '== 13y. ความครบถ้วน: เจ้าของเป็นจำนวนหุ้นที่หารไม่ลงตัว = ครบ 100%'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.create_private_business(jsonb_build_object(
+  'name','บริษัทหุ้นหารไม่ลงตัว','company_name','บริษัท หารไม่ลงตัว จำกัด','total_shares',10,'investment_cost',3000,
+  'value',3000,'value_date',current_date - 2,'is_opening',false,'acquisition_date',current_date - 2,'valuation_method','BOOK_VALUE',
+  'owners', jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',1), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',2)))) IS NOT NULL AS biz3;
+SELECT t.ok((SELECT sum(ownership_percent) FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทหุ้นหารไม่ลงตัว') AND deleted_at IS NULL) < 100
+            AND (SELECT NOT ('ownership' = ANY (missing)) FROM public.asset_completeness() WHERE asset_id = t.a('บริษัทหุ้นหารไม่ลงตัว')),
+            'ความครบถ้วน: หุ้น 1 + 2 (% เก็บรวม 99.9999) ถือว่าเจ้าของครบ');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
