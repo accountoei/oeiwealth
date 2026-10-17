@@ -1031,6 +1031,10 @@ SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดส�
 SELECT t.ok((SELECT shares_owned = 9000 FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด')
             AND (SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id = t.p('คุณพ่อ')) = 450000,
             'แก้จำนวนหุ้นรายคน → มูลค่ารายคนเปลี่ยนตาม');
+UPDATE public.private_business_details SET par_value = 100 WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด';
+SELECT t.ok((SELECT total_shares * par_value FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด') = 1000000,
+            'มูลค่าหุ้นที่ตราไว้ (par) → ทุนจดทะเบียน = หุ้นทั้งหมด × par');
+SELECT t.fails($$UPDATE public.private_business_details SET par_value = 0 WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด'$$, 'pbd_par_value_ck', 'par ต้องมากกว่า 0');
 -- หุ้นหารไม่ลงตัว (3 คน × 3,000 หุ้น → 33.33…% × 3 = 99.99999…%) → หน้า Opening ต้องไม่เตือน "ระบุเจ้าของไม่ครบ"
 SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
   jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',3000), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',3000),

@@ -37,6 +37,8 @@ export default function NewBusinessForm(props: {
         <label className={label}>จำนวนหุ้นทั้งหมดของบริษัท{unit === "shares" && " *"}
           <input name="total_shares" inputMode="decimal" data-money="off" required={unit === "shares"} value={totalShares}
             onChange={(e) => setTotalShares(e.target.value)} className={input} /></label>
+        <label className={label}>มูลค่าหุ้นที่ตราไว้ (par · บาท/หุ้น)<input name="par_value" inputMode="decimal" className={input} />
+          <span className="text-xs text-slate-500">ทุนจดทะเบียน = หุ้นทั้งหมด × par</span></label>
         {unit === "percent" && <>
           <label className={label}>จำนวนหุ้นที่ครอบครัวถือ<input name="shares_owned" inputMode="decimal" data-money="off" className={input} /></label>
           <label className={label}>% ที่ครอบครัวถือในบริษัท<input name="company_ownership_percent" inputMode="decimal" className={input} /></label>
