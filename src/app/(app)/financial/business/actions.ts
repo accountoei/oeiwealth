@@ -85,3 +85,25 @@ export async function updateBusinessInfo(_: ActionState, form: FormData): Promis
   if (e2) return { error: friendlyError(e2.message) };
   return done(assetId, "บันทึกรายละเอียดแล้ว");
 }
+
+/** ขายหุ้นรายคน (บางส่วน / หมด) · ฐานข้อมูลปรับหุ้น มูลค่า และเงินเข้าบัญชีพร้อมกัน */
+export async function sellShares(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const { error } = await supabase.rpc("sell_business_shares", {
+    p_asset_id: assetId, p_person_id: str(form.get("person_id")), p_date: str(form.get("date")),
+    p_shares: num(form.get("shares")), p_price: num(form.get("price")), p_fee: num(form.get("fee")),
+    p_bank_asset_id: str(form.get("bank_asset_id")), p_notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  return done(assetId, "บันทึกการขายหุ้นแล้ว");
+}
+
+/** ยกเลิกการขายหุ้น (เฉพาะครั้งล่าสุด) */
+export async function undoShareSale(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const { error } = await supabase.rpc("undo_business_share_sale", { p_sale_id: String(form.get("sale_id")) });
+  if (error) return { error: friendlyError(error.message) };
+  return done(assetId, "ยกเลิกการขายแล้ว");
+}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addCapital, recordDividend, updateBusinessInfo, type ActionState } from "../actions";
+import { addCapital, recordDividend, sellShares, undoShareSale, updateBusinessInfo, type ActionState } from "../actions";
+import { money, qty } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -97,6 +98,85 @@ export function BusinessInfoForm({ assetId, byShares, v }: {
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
+    </form>
+  );
+}
+
+type Holder = { person_id: string; name: string; shares: number };
+const n = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
+
+/**
+ * ขายหุ้นรายคน: เลือกผู้ขายทีละคน · ขายบางส่วนหรือทั้งหมด · ราคาต่อหุ้นของหุ้นที่เหลือเท่าเดิม
+ *   ตัวเลขด้านล่างฟอร์มคำนวณให้ดูก่อนบันทึก (ฐานข้อมูลคำนวณซ้ำตอนบันทึก)
+ */
+export function ShareSaleForm({ assetId, currency, banks, holders, familyShares, value, today, minDate }: {
+  assetId: string; currency: string; banks: Bank[]; holders: Holder[]; familyShares: number; value: number | null; today: string; minDate: string;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(sellShares, {});
+  const [who, setWho] = useState(holders[0]?.person_id ?? "");
+  const [sh, setSh] = useState("");
+  const [price, setPrice] = useState("");
+  const [fee, setFee] = useState("");
+  const h = holders.find((x) => x.person_id === who);
+  const sold = n(sh);
+  const over = !!h && sold > h.shares;
+  const left = familyShares - sold;
+  const list = banks.filter((b) => b.currency === currency);
+  return (
+    <Box title="ขายหุ้น" label="ขายหุ้น" action={action} pending={pending} state={state}>
+      <input type="hidden" name="asset_id" value={assetId} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="text-sm">ผู้ขาย *
+          <select name="person_id" required value={who} onChange={(e) => { setWho(e.target.value); setSh(""); }} className={input}>
+            {holders.map((x) => <option key={x.person_id} value={x.person_id}>{x.name} · ถืออยู่ {qty(x.shares)} หุ้น</option>)}
+          </select>
+        </label>
+        <label className="text-sm">จำนวนหุ้นที่ขาย *
+          <span className="flex gap-2">
+            <input name="shares" required inputMode="decimal" data-money="off" value={sh} onChange={(e) => setSh(e.target.value)} className={input} />
+            {h && <button type="button" onClick={() => setSh(String(h.shares))} className="mt-1 whitespace-nowrap rounded-md border border-slate-300 px-2 text-xs hover:bg-slate-50">ขายทั้งหมด</button>}
+          </span>
+        </label>
+        <label className="text-sm">วันที่ขาย *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">ราคาขายรวม ({currency}) *<input name="price" required inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className={input} /></label>
+        <label className="text-sm">ค่าใช้จ่ายในการขาย<input name="fee" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="ค่าธรรมเนียม / ภาษี" className={input} /></label>
+        <label className="text-sm">เงินเข้าบัญชี
+          <select name="bank_asset_id" defaultValue={list[0]?.asset_id ?? ""} className={input}>
+            <option value="">— ไม่ผ่านบัญชี —</option>
+            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
+      </div>
+      {sold > 0 && (
+        <div className={`rounded-lg p-3 text-xs ${over ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-700"}`}>
+          {over ? <p>{h?.name} ถืออยู่ {qty(h?.shares)} หุ้น — ขายเกินที่ถือไม่ได้</p> : (
+            <ul className="space-y-0.5">
+              <li>ราคาต่อหุ้น {money(n(price) / sold, currency, 4)} · เงินเข้าบัญชีสุทธิ {money(n(price) - n(fee), currency)}</li>
+              <li>{h?.name} เหลือ {qty((h?.shares ?? 0) - sold)} หุ้น{(h?.shares ?? 0) - sold <= 0 ? " (ขายหมด · หลุดจากรายชื่อเจ้าของ)" : ""}</li>
+              <li>หุ้นที่ครอบครัวถือ {qty(familyShares)} → {qty(left)}
+                {value != null && familyShares > 0 && <> · มูลค่าส่วนของครอบครัว {money(value, currency)} → {money(Math.round(value * left / familyShares * 100) / 100, currency)}</>}</li>
+              {left <= 0 && <li className="font-medium text-amber-700">ทุกคนขายหมด → ธุรกิจจะเปลี่ยนเป็น &ldquo;ขายหุ้นแล้ว&rdquo;</li>}
+            </ul>
+          )}
+        </div>
+      )}
+      <p className="text-xs text-slate-500">เงินขายเข้าบัญชีที่เลือก (ไม่ใช่รายได้ประจำ) · หุ้นที่เหลือคิดราคาต่อหุ้นเท่าเดิม · โอนหุ้นให้กันในครอบครัวไม่ใช่การขาย ให้แก้จำนวนหุ้นของสมาชิกแทน</p>
+    </Box>
+  );
+}
+
+/** ยกเลิกการขายหุ้นครั้งล่าสุด (ถามยืนยันก่อน) */
+export function UndoShareSale({ assetId, saleId, confirmText }: { assetId: string; saleId: string; confirmText: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(undoShareSale, {});
+  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  return (
+    <form action={action} onSubmit={(e) => { if (!confirm(confirmText)) e.preventDefault(); }} className="inline-flex flex-col items-end">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="sale_id" value={saleId} />
+      <button disabled={pending} className="whitespace-nowrap rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">
+        {pending ? "…" : "ยกเลิกการขายนี้"}</button>
+      {state.error && <span className="mt-1 max-w-60 text-right text-xs text-red-600">{state.error}</span>}
     </form>
   );
 }
