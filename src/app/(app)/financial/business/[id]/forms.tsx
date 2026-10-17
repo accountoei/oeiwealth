@@ -53,7 +53,7 @@ export function DividendForm({ assetId, banks, today, minDate }: { assetId: stri
 /** แก้รายละเอียดธุรกิจ (ชื่อรายการ · ข้อมูลบริษัท · หุ้น · เงินลงทุน · หมายเหตุ) */
 export function BusinessInfoForm({ assetId, byShares, v }: {
   assetId: string; byShares: boolean;
-  v: { name: string; company_name: string; registration_no: string | null; business_type: string | null; total_shares: number | null;
+  v: { name: string; company_name: string; registration_no: string | null; business_type: string | null; total_shares: number | null; par_value: number | null;
     shares_owned: number | null; company_ownership_percent: number | null; investment_cost: number | null; notes: string | null };
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateBusinessInfo, {});
@@ -67,6 +67,7 @@ export function BusinessInfoForm({ assetId, byShares, v }: {
       <label className="text-sm">ประเภทกิจการ<input name="business_type" defaultValue={v.business_type ?? ""} className={input} /></label>
       <label className="text-sm">เงินลงทุน<input name="investment_cost" inputMode="decimal" defaultValue={dv(v.investment_cost)} className={input} /></label>
       <label className="text-sm">หุ้นทั้งหมดของบริษัท<input name="total_shares" inputMode="decimal" data-money="off" defaultValue={dv(v.total_shares)} className={input} /></label>
+      <label className="text-sm">มูลค่าหุ้นที่ตราไว้ (par · บาท/หุ้น)<input name="par_value" inputMode="decimal" defaultValue={dv(v.par_value)} className={input} /></label>
       {byShares ? (
         <p className="self-end text-xs text-slate-500 md:col-span-2">หุ้นที่ครอบครัวถือ และ % ของบริษัท คำนวณจากจำนวนหุ้นของสมาชิก (แก้ที่ &ldquo;สมาชิกที่เป็นเจ้าของ&rdquo; ด้านล่าง)</p>
       ) : (

@@ -113,6 +113,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                 <Item label="ประเภทกิจการ">{d.business_type || "-"}</Item>
                 <Item label="การถือหุ้น">ถือ {fmtPct(companyPct)} ของบริษัท</Item>
                 <Item label="หุ้นที่ถือ / หุ้นทั้งหมด">{qty(d.shares_owned)} / {qty(d.total_shares)}</Item>
+                <Item label="ทุนจดทะเบียน">{d.par_value != null && d.total_shares != null ? money(Number(d.par_value) * Number(d.total_shares), a.currency) : "-"}
+                  <span className="block text-xs text-slate-500">{d.par_value != null ? `หุ้นละ ${money(d.par_value, undefined, 4)} (par)` : "ยังไม่ได้ใส่มูลค่าหุ้นที่ตราไว้"}</span></Item>
                 <Item label="เงินลงทุน">{money(d.investment_cost, undefined, 0)}{avgCost != null && <span className="block text-xs text-slate-500">เฉลี่ยหุ้นละ {money(avgCost, undefined, 4)}</span>}</Item>
                 <Item label="ราคาหุ้นตามการประเมิน">{perShareNow != null ? money(perShareNow, a.currency, 4) : "-"}<span className="block text-xs text-slate-500">มูลค่า ÷ หุ้นที่ครอบครัวถือ</span></Item>
                 <Item label="สถานะกิจการ">{label(STATUS, d.status)}</Item>
@@ -131,7 +133,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             edit={
               <div className="space-y-5">
                 <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, company_name: d.company_name, registration_no: d.registration_no,
-                  business_type: d.business_type, total_shares: d.total_shares, shares_owned: d.shares_owned,
+                  business_type: d.business_type, total_shares: d.total_shares, par_value: d.par_value, shares_owned: d.shares_owned,
                   company_ownership_percent: d.company_ownership_percent, investment_cost: d.investment_cost, notes: d.notes }} />
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
