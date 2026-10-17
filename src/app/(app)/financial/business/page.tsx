@@ -87,14 +87,17 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const active = rows.filter((r) => r.status === "ACTIVE" && (myValue(r) ?? 0) > 0);
   const totalFam = active.reduce((t, r) => t + (myValue(r) ?? 0), 0);
   const latestDate = active.map((r) => r.assets.current_value_date ?? "").sort().at(-1) ?? null;
+  // มูลค่าตามสมาชิก: ทั้งครอบครัวเสมอ (ไม่เปลี่ยนตามสมาชิกที่เลือก)
   const byPerson = new Map<string, number>();
   const cur = nowOwn;
-  active.forEach((r) => {
+  const famActive = all.filter((r) => r.status === "ACTIVE" && (famValue(r) ?? 0) > 0);
+  const totalAll = famActive.reduce((t, r) => t + (famValue(r) ?? 0), 0);
+  const latestAll = famActive.map((r) => r.assets.current_value_date ?? "").sort().at(-1) ?? null;
+  famActive.forEach((r) => {
     const os = cur.filter((o) => o.asset_id === r.asset_id);
     const bySh = os.length > 0 && os.every((o) => o.shares != null);
     const tot = os.reduce((t, o) => t + Number(bySh ? o.shares : o.ownership_percent), 0);
     os.forEach((o) => {
-      if (pv.personId && o.person_id !== pv.personId) return;
       const pct = bySh ? (tot > 0 ? Number(o.shares) / tot : 0) : Number(o.ownership_percent) / 100;
       byPerson.set(o.person_id, (byPerson.get(o.person_id) ?? 0) + (famValue(r) ?? 0) * pct);
     });
@@ -133,8 +136,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">มูลค่าตามสมาชิกครอบครัว</h2>
-            <p className="mb-3 text-xs text-slate-500">รวม {money(totalFam, "THB")}{latestDate && ` ณ ${thDate(latestDate)}`}</p>
-            <ShareTable label="สมาชิกครอบครัว" rows={personRows.map(([pid, v], i) => ({ key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[i % COLORS.length] }))} total={totalFam} />
+            <p className="mb-3 text-xs text-slate-500">รวม {money(totalAll, "THB")}{latestAll && ` ณ ${thDate(latestAll)}`}</p>
+            <ShareTable label="สมาชิกครอบครัว" rows={personRows.map(([pid, v], i) => ({ key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[i % COLORS.length] }))} total={totalAll} />
           </div>
         </section>
       )}
@@ -147,9 +150,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
         <table className="mt-2 w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              {th("กิจการ", false)}{th(pv.personId ? `% ที่ ${pv.personName} ถือ` : "% ที่ครอบครัวถือ")}
-              {th("ทุนจดทะเบียน (THB)")}{th(`ราคาทุน${pv.personId ? `ของ ${pv.personName}` : ""} (THB)`)}
-              {th(`มูลค่าปัจจุบัน${pv.personId ? `ของ ${pv.personName}` : ""} (THB)`)}{th("เทียบทุน")}{th("ปันผลปีนี้ (THB)")}
+              {th("กิจการ", false)}{th("ทุนจดทะเบียน (THB)")}{th("% ที่ถือ")}
+              {th("ราคาทุน (THB)")}{th("มูลค่าปัจจุบัน (THB)")}{th("เทียบทุน")}{th("ปันผลปีนี้ (THB)")}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -158,6 +160,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
               const stale = !r.assets.current_value_date || r.assets.current_value_date < old;
               const dv = divOf.get(r.asset_id) ?? 0;
               const vc = vsCost(r);
+              const sh = pv.personId ? pv.assetShares(r.asset_id) : r.shares_owned != null ? Number(r.shares_owned) : null;
               const num = "px-3 py-3 align-top text-right tabular-nums";
               return (
                 <tr key={r.id} className={r.status !== "ACTIVE" ? "opacity-50" : ""}>
@@ -173,10 +176,10 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                       </div>
                     </div>
                   </td>
-                  <td className={num}>{fmtPct(companyPct(r))}
-                    {pv.assetShares(r.asset_id) != null && <div className="text-xs text-slate-400">{qty(pv.assetShares(r.asset_id))} หุ้น</div>}</td>
                   <td className={num}>{money(regCapital(r))}
                     {r.par_value != null && <div className="text-xs text-slate-400">หุ้นละ {money(r.par_value, undefined, 2)}</div>}</td>
+                  <td className={num}>{fmtPct(companyPct(r))}
+                    {sh != null && <div className="text-xs text-slate-400">{qty(sh)} หุ้น</div>}</td>
                   <td className={num}>{money(costOf(r))}</td>
                   <td className={`${num} font-medium`}>{money(myValue(r))}
                     <div className={`text-xs font-normal ${stale ? "text-amber-700" : "text-slate-400"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
@@ -190,8 +193,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           {rows.length > 0 && (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
               <tr>
-                <td className="px-3 py-3">รวมทั้งหมด</td><td className="px-3 text-right text-slate-400">-</td>
-                <td className="px-3 text-right tabular-nums">{money(totals.reg)}</td>
+                <td className="px-3 py-3">รวมทั้งหมด</td>
+                <td className="px-3 text-right tabular-nums">{money(totals.reg)}</td><td className="px-3 text-right text-slate-400">-</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.cost)}</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.val)}</td>
                 <td className={`px-3 text-right tabular-nums ${totals.cost <= 0 ? "text-slate-400" : totals.val >= totals.cost ? "text-emerald-700" : "text-red-700"}`}>{totals.cost > 0 ? `${totals.val >= totals.cost ? "+" : ""}${(((totals.val - totals.cost) * 100) / totals.cost).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%` : "-"}</td>
