@@ -31,7 +31,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   const router = useRouter();
   const pathname = usePathname();
   const box = useRef<HTMLDivElement>(null);
-  const { open, setOpen, present, activeCls } = useActionSlot(!!preset);
+  const { open, setOpen, present, activeCls } = useActionSlot(!!preset, { modal: true, size: "lg" });
   const [method, setMethod] = useState<SchedMethod>(methodGuess);
   const [basis, setBasis] = useState<SchedBasis>(preset === "payment" && methodGuess !== "INTEREST_ONLY" ? "PAYMENT" : "PERIODS");
   const [amount, setAmount] = useState(fmt2(outstanding));
