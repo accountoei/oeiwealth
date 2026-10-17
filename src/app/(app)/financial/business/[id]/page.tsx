@@ -6,7 +6,6 @@ import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/for
 import { CapitalForm, DividendForm } from "./forms";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { SellAssetForm } from "@/components/AssetTrade";
@@ -148,11 +147,11 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
       {canWrite && (
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
           <StatusSelect table="private_business_details" id={d.id} value={d.status} paths={paths} label="สถานะกิจการ"
-            options={[["ACTIVE", "ดำเนินการ"], ["DORMANT", "หยุดชั่วคราว"], ["CLOSED", "ปิดกิจการ"], ["SOLD", "ขายหุ้นแล้ว"]]} />
+            options={[["ACTIVE", "ดำเนินการ"], ["DORMANT", "หยุดชั่วคราว"], ["CLOSED", "ปิดกิจการ"], ["SOLD", "ขายหุ้นแล้ว"]]}
+            remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/business", paths: ["/financial/business"], label: "ลบรายการนี้",
+              hint: "ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" } : undefined} />
           <div><StatusSelect table="assets" id={id} value={a.status} paths={paths} label="นับเป็นทรัพย์สิน"
             options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["CLOSED", "ปิดแล้ว"]]} /></div>
-          {canDelete && <div><DeleteEntity kind="asset" id={id} redirectTo="/financial/business" paths={["/financial/business"]} label="ลบรายการนี้"
-            hint="ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" /></div>}
         </section>
       )}
       <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />

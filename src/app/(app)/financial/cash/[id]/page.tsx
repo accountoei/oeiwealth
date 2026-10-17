@@ -11,7 +11,6 @@ import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } f
 import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
 import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 
@@ -313,12 +312,10 @@ export default async function AccountDetailPage({ params, searchParams }: {
               </div>
               <div className="border-t border-slate-100 pt-4">
                 <StatusSelect table="assets" id={id} value={acc.status} paths={paths}
-                  options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี" />
+                  options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี"
+                  remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/cash", paths: ["/financial/cash"], label: "ลบบัญชีนี้",
+                    hint: "ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น \"ปิดบัญชีแล้ว\"" } : undefined} />
               </div>
-              {canDelete && <div className="border-t border-slate-100 pt-4">
-                <DeleteEntity kind="asset" id={id} redirectTo="/financial/cash" paths={["/financial/cash"]} label="ลบบัญชีนี้"
-                  hint="ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น &ldquo;ปิดบัญชีแล้ว&rdquo;" />
-              </div>}
             </div>
           } />
       </section>

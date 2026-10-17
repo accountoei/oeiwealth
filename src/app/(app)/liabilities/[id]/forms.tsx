@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { money } from "@/lib/format";
 import { addLiabilityBalance, payLiability, updateLiabilityInfo, type ActionState } from "../actions";
 import DropPrompt from "../DropPrompt";
+import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -50,10 +51,12 @@ export function AddBalanceForm({ liabilityId, currency, today, minDate, banks = 
 type Info = { id: string; name: string; lender: string | null; interest_rate: number | null; monthly_payment: number | null;
   payment_due_day: number | null; due_date: string | null; status: string; notes: string | null };
 
-export function EditLiabilityForm({ l }: { l: Info }) {
+export function EditLiabilityForm({ l, remove }: { l: Info; remove?: RemoveOpt }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateLiabilityInfo, {});
+  const del = useStatusDelete(remove, l.status);
   const f = "mt-1 block w-full " + input;
   return (
+    <>
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="liability_id" value={l.id} />
       <label className="text-sm">ชื่อที่ใช้เรียก<input name="name" required defaultValue={l.name} className={f} /></label>
@@ -63,10 +66,11 @@ export function EditLiabilityForm({ l }: { l: Info }) {
       <label className="text-sm">ครบกำหนดจ่ายทุกวันที่<input name="payment_due_day" type="number" min={1} max={31} defaultValue={l.payment_due_day ?? ""} className={f} /></label>
       <label className="text-sm">วันครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={l.due_date ?? ""} className={f} /></label>
       <label className="text-sm">สถานะ
-        <select name="status" defaultValue={l.status} className={f}>
+        <select name="status" defaultValue={l.status} onChange={(e) => { del.pick(e); }} className={f}>
           <option value="ACTIVE">ยังผ่อนอยู่</option>
           <option value="CLOSED">ปิดหนี้แล้ว</option>
           <option value="WRITTEN_OFF">ตัดหนี้สูญ / ยกหนี้</option>
+          {del.option}
         </select>
       </label>
       <label className="text-sm">หมายเหตุ<input name="notes" defaultValue={l.notes ?? ""} className={f} /></label>
@@ -78,6 +82,8 @@ export function EditLiabilityForm({ l }: { l: Info }) {
         ก่อนเปลี่ยนเป็น &ldquo;ปิดหนี้แล้ว&rdquo; ให้บันทึกยอดคงค้าง 0 ไว้ด้วย เพื่อให้ประวัติยอดครบ
       </p>
     </form>
+    {del.dialog}
+    </>
   );
 }
 

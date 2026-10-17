@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { createCard, setCardAutopay, updateCardBalance, updateCardStatus, type ActionState } from "../actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import DropPrompt from "../DropPrompt";
+import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -91,20 +92,25 @@ export function CardBalanceForm({ cardId, currency, today, minDate, banks = [], 
   </div>));
 }
 
-export function CardStatusForm({ cardId, status }: { cardId: string; status: string }) {
+export function CardStatusForm({ cardId, status, remove }: { cardId: string; status: string; remove?: RemoveOpt }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardStatus, {});
+  const del = useStatusDelete(remove, status);
   return (
+    <>
     <form action={action} className="flex items-center gap-1">
       <input type="hidden" name="card_id" value={cardId} />
       <select name="status" defaultValue={status} disabled={pending}
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+        onChange={(e) => { if (del.pick(e)) return; e.currentTarget.form?.requestSubmit(); }}
         className="rounded-md border border-slate-300 px-2 py-1 text-xs">
         <option value="ACTIVE">ใช้งาน</option>
         <option value="SUSPENDED">ระงับชั่วคราว</option>
         <option value="CLOSED">ยกเลิกบัตรแล้ว</option>
+        {del.option}
       </select>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
+    {del.dialog}
+    </>
   );
 }
 

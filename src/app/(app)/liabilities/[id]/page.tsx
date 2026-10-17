@@ -8,7 +8,6 @@ import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import DeleteEntity from "@/components/DeleteEntity";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { debtDropIncomeFields, debtInterestFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
@@ -209,11 +208,8 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-1 font-medium text-slate-900">แก้ไขข้อมูลหนี้</h2>
           <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูลสัญญา ไม่กระทบยอดคงค้าง</p>
-          <EditLiabilityForm l={l} />
-          {canDelete && <div className="mt-4 border-t border-slate-100 pt-3">
-            <DeleteEntity kind="liability" id={id} redirectTo="/liabilities" paths={["/liabilities"]} label="ลบหนี้รายการนี้"
-              hint="ปิดหนี้จริงให้เปลี่ยนสถานะเป็น &quot;ปิดหนี้แล้ว&quot;" />
-          </div>}
+          <EditLiabilityForm l={l} remove={canDelete ? { kind: "liability", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบหนี้รายการนี้",
+            hint: "ปิดหนี้จริงให้เปลี่ยนสถานะเป็น \"ปิดหนี้แล้ว\"" } : undefined} />
         </section>
       )}
       <EntityDocuments entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
