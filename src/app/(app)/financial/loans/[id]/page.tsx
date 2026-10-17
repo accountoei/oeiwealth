@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
-import { DisburseForm, PaymentForm } from "./forms";
+import { DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
+import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -104,31 +105,55 @@ export default async function LoanDetailPage({ params, searchParams }: {
         <p className="text-sm text-slate-500">ผู้กู้ {l.borrower_name} · {l.currency}{l.derived_status === "OVERDUE" && <span className="text-red-600"> · เลยกำหนดคืน</span>}</p>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid items-start gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="text-xs text-slate-500">เงินต้นคงเหลือ</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">{money(l.status === "WRITTEN_OFF" ? 0 : l.outstanding_principal, l.currency)}</div>
           <div className="mt-1 text-xs text-slate-500">เงินต้น {money(l.principal)} · รับคืนแล้ว {money(repaid)} · ดอกเบี้ยรับแล้ว {money(interest)}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="text-xs text-slate-500">เงื่อนไข</div>
-          <ul className="mt-1 space-y-0.5">
-            <li>ดอกเบี้ย {l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</li>
-            <li>ให้กู้ {thDate(l.loan_date)} · ครบ {thDate(l.due_date)}</li>
-            <li>ยอดตั้งต้น {money(l.opening_outstanding_principal)} ณ {thDate(l.opening_date)}</li>
-          </ul>
-          {canWrite && <div className="mt-2"><RowActions table="loan_details" id={l.id} paths={paths} canDelete={false} fields={[
-            { name: "borrower_name", label: "ผู้กู้", value: l.borrower_name },
-            { name: "interest_rate", label: "ดอกเบี้ย %", type: "number", value: l.interest_rate, width: "w-20" },
-            { name: "due_date", label: "ครบกำหนด", type: "date", value: l.due_date },
-            { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} /></div>}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">ผู้ให้กู้ (เจ้าของ)</div>
-          <ul className="mt-1 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
-          {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
-          {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
-            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        <EditToggle title="รายละเอียด" canEdit={canWrite}
+          view={
+            <div className="space-y-4">
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="ชื่อรายการ">{l.name}</Item>
+                <Item label="ผู้กู้">{l.borrower_name}</Item>
+                <Item label="ดอกเบี้ย">{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</Item>
+                <Item label="วันที่ให้กู้">{thDate(l.loan_date)}</Item>
+                <Item label="ครบกำหนดสัญญา">{thDate(l.due_date)}</Item>
+                <Item label="ยอดตั้งต้น">{money(l.opening_outstanding_principal, l.currency)} ณ {thDate(l.opening_date)}</Item>
+                <Item label="สถานะ">{LOAN_STATUS_LABEL[l.status] ?? l.status}</Item>
+                <Item label="ผู้ให้กู้ (เจ้าของ)">
+                  {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
+                  {ownerTotal < 100 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
+                </Item>
+                {l.notes && <Item label="หมายเหตุ" wide>{l.notes}</Item>}
+              </dl>
+              <div className="border-t border-slate-100 pt-4">
+                <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} bare />
+              </div>
+            </div>
+          }
+          edit={
+            <div className="space-y-5">
+              <p className="text-xs text-slate-500">วันที่ให้กู้และยอดตั้งต้นแก้ไม่ได้ (ผูกกับรายการเงินที่บันทึกแล้ว)</p>
+              <LoanInfoForm assetId={id} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes }} />
+              <div className="border-t border-slate-100 pt-4">
+                <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้ให้กู้ (เจ้าของ)</h3>
+                <ul className="mb-2 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
+                <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                  current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+              </div>
+              <div className="border-t border-slate-100 pt-4">
+                <StatusSelect table="loan_details" id={l.id} value={l.status} paths={paths} label="สถานะ"
+                  options={LOAN_STATUS_OPTIONS} />
+              </div>
+              {canDelete && <div className="border-t border-slate-100 pt-4">
+                <DeleteEntity kind="asset" id={id} redirectTo="/financial/loans" paths={["/financial/loans"]} label="ลบรายการนี้"
+                  hint="ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" />
+              </div>}
+            </div>
+          } />
         </div>
       </section>
 
@@ -273,15 +298,18 @@ export default async function LoanDetailPage({ params, searchParams }: {
         <p className="mt-2 text-xs text-slate-500">การรับชำระแต่ละครั้งแสดงเป็นยอดรวม (ตรงกับ Statement) · ข้างในแยก เงินต้น = ลดยอดเงินให้กู้ · ดอกเบี้ย = รายได้</p>
       </section>
 
-      {canWrite && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <StatusSelect table="loan_details" id={l.id} value={l.status} paths={paths} label="สถานะ"
-            options={[["ACTIVE", "ปกติ"], ["AT_RISK", "มีความเสี่ยงไม่ได้คืน"], ["CLOSED", "ปิดแล้ว (ได้คืนครบ)"], ["WRITTEN_OFF", "ตัดหนี้สูญ (มูลค่าเป็น 0)"]]} />
-          {canDelete && <div><DeleteEntity kind="asset" id={id} redirectTo="/financial/loans" paths={["/financial/loans"]} label="ลบรายการนี้"
-            hint="ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" /></div>}
-        </section>
-      )}
-      <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
+    </div>
+  );
+}
+
+const LOAN_STATUS_OPTIONS: [string, string][] = [["ACTIVE", "ปกติ"], ["AT_RISK", "มีความเสี่ยงไม่ได้คืน"], ["CLOSED", "ปิดแล้ว (ได้คืนครบ)"], ["WRITTEN_OFF", "ตัดหนี้สูญ (มูลค่าเป็น 0)"]];
+const LOAN_STATUS_LABEL: Record<string, string> = Object.fromEntries(LOAN_STATUS_OPTIONS);
+
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

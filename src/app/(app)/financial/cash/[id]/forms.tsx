@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
 import BankSelect from "@/components/BankSelect";
@@ -129,21 +129,3 @@ export function SettleLatestButton({ assetId }: { assetId: string }) {
   );
 }
 
-/** กล่องรายละเอียดบัญชี: ดูอย่างเดียว → กด "แก้ไขข้อมูล" เพื่อเปิดส่วนแก้ไข */
-export function EditToggle({ view, edit, canEdit }: { view: ReactNode; edit: ReactNode; canEdit: boolean }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-slate-900">รายละเอียดบัญชี</h2>
-        {canEdit && (
-          <button type="button" onClick={() => setOpen(!open)}
-            className={open ? "rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" : "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"}>
-            {open ? "ปิดการแก้ไข" : "แก้ไขข้อมูล"}
-          </button>
-        )}
-      </div>
-      {open ? edit : view}
-    </div>
-  );
-}

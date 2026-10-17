@@ -54,20 +54,17 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
-      {totals.size > 0 && (
-        <div className="flex flex-wrap gap-3">
-          {[...totals.entries()].map(([c, v]) => (
-            <div key={c} className="rounded-xl border border-slate-200 bg-white px-5 py-3">
-              <div className="text-xs text-slate-500">เงินต้นคงเหลือรวม {c}</div>
-              <div className="text-lg font-semibold tabular-nums">{money(v, c)}</div>
-            </div>
-          ))}
-        </div>
-      )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">เงินให้กู้ทั้งหมด</h2>
-          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/loans", { p: sp.p })} />}
+          <div className="flex flex-wrap items-baseline gap-4">
+            {totals.size > 0 && (
+              <span className="text-sm text-slate-600">เงินต้นคงเหลือรวม{" "}
+                {[...totals.entries()].map(([c, v], i) => <b key={c} className="tabular-nums text-slate-900">{i > 0 && " · "}{money(v, c)}</b>)}
+              </span>
+            )}
+            {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/loans", { p: sp.p })} />}
+          </div>
         </div>
         <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
