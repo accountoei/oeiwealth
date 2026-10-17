@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, FREQ_LABEL, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  COST_STATUS, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
   UTIL_LABEL, addDays, landText, money, scheduleText, thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import {
@@ -15,6 +15,7 @@ import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
+import { CopyTaxYear, DeleteTaxLine, TaxLineForm, type TaxLine } from "./LandTax";
 import StatusSelect from "@/components/StatusSelect";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
@@ -53,8 +54,11 @@ type Cost = { utility_id: string; utility_type: string; provider: string | null;
 type Rent = { lease_id: string; name: string; income_period: string; due_date: string; expected_amount: number;
   received_amount: number; currency: string; status: string };
 
-export default async function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PropertyDetailPage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ ty?: string }>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
@@ -104,12 +108,25 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
   const isRental = pd.usage_type === "RENTAL" || liveLeases.length > 0;
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }] = await Promise.all([
+  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
       .in("property_utility_id", utilIds).is("deleted_at", null).order("date", { ascending: false }).limit(60) : Promise.resolve({ data: [] as never[] }),
+    supabase.from("v_property_tax_lines").select("*").eq("asset_id", id).order("tax_year", { ascending: false }).order("sort_order").order("created_at"),
   ]);
+  // ภาษีที่ดิน: เลือกปี (?ty=) · ค่าเริ่มต้น = ปีปัจจุบัน · ปีที่มีข้อมูล + ปีปัจจุบัน + ปีหน้า
+  type TaxRow = TaxLine & { tax_year: number; land_value: number; building_value: number; depreciation: number; total_value: number;
+    taxable_value: number; tax_full: number; tax_amount: number };
+  const taxAll = (taxRaw ?? []) as TaxRow[];
+  const curYear = Number(today.slice(0, 4));
+  const taxYears = [...new Set([curYear + 1, curYear, ...taxAll.map((t) => Number(t.tax_year))])].sort((x, y) => y - x);
+  const ty = taxYears.includes(Number(sp.ty)) ? Number(sp.ty) : curYear;
+  const taxLines = taxAll.filter((t) => Number(t.tax_year) === ty);
+  const prevTaxYear = taxYears.filter((y) => y < ty && taxAll.some((t) => Number(t.tax_year) === y))[0];
+  const taxSum = (k: keyof TaxRow) => taxLines.reduce((t2, x) => t2 + Number(x[k] ?? 0), 0);
+  const suggestRate = taxLines.at(-1)?.rate_pct ?? taxAll.find((t) => prevTaxYear != null && Number(t.tax_year) === prevTaxYear)?.rate_pct
+    ?? LAND_TAX_RATE_BY_USAGE[pd.usage_type] ?? 0.3;
   const bankName = new Map(bankList.map((b) => [b.asset_id as string, b.name as string]));
   const cardName = new Map(cards.map((c) => [c.id, c.label]));
   const utilById = new Map(utilities.map((u) => [u.id, u]));
@@ -372,6 +389,71 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
           </table>
         </section>
       )}
+
+      {/* ---------------- ภาษีที่ดินและสิ่งปลูกสร้าง ---------------- */}
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง</h2>
+            <p className="text-xs text-slate-500">ที่ดิน + สิ่งปลูกสร้าง (หักค่าเสื่อม) − ยกเว้น = ฐานภาษี × อัตรา − ส่วนลด · ปีปัจจุบันตั้งเป็นยอดประมาณ &ldquo;ภาษีที่ดิน&rdquo; ในค่าใช้จ่ายประจำให้</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-slate-300 text-sm">
+              {taxYears.map((y) => (
+                <Link key={y} href={`/property/${id}?ty=${y}`} scroll={false}
+                  className={`px-3 py-1.5 ${y === ty ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}>{y + 543}</Link>
+              ))}
+            </div>
+            {canWrite && taxLines.length === 0 && prevTaxYear != null && <CopyTaxYear assetId={id} from={prevTaxYear} to={ty} />}
+            {canWrite && <TaxLineForm assetId={id} year={ty} label="+ เพิ่มรายการ" primary
+              defaults={{ rate_pct: Number(suggestRate), land_sq_wa: taxLines.some((t) => t.land_sq_wa != null) ? null : pd.land_area_sq_wa,
+                sort_order: taxLines.length + 1 }} />}
+          </div>
+        </div>
+        {taxLines.length === 0 ? (
+          <p className="text-sm text-slate-500">ยังไม่มีข้อมูลภาษีปี {ty + 543}{prevTaxYear != null ? ` · กด "คัดลอกจากปี ${prevTaxYear + 543}" เพื่อใช้ข้อมูลและอัตราเดิม แล้วแก้เฉพาะที่เปลี่ยน` : ` · อัตราที่ระบบเสนอตามการใช้งาน "${USAGE_LABEL[pd.usage_type] ?? pd.usage_type}" = ${LAND_TAX_RATE_BY_USAGE[pd.usage_type] ?? 0.3}%`}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[60rem] text-sm">
+              <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <tr><th className="px-2 py-2">รายการ</th><th className="px-2 text-right">ที่ดิน</th><th className="px-2 text-right">สิ่งปลูกสร้าง (หลังหักค่าเสื่อม)</th>
+                  <th className="px-2 text-right">รวมราคาประเมิน</th><th className="px-2 text-right">ยกเว้น</th><th className="px-2 text-right">ฐานภาษี</th>
+                  <th className="px-2 text-right">อัตรา</th><th className="px-2 text-right">ภาษี</th><th className="px-2"></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {taxLines.map((t) => (
+                  <tr key={t.id} className="align-top">
+                    <td className="px-2 py-2">{t.description || "-"}{t.building_type && <div className="text-xs text-slate-500">{t.building_type}</div>}
+                      {t.notes && <div className="text-xs text-slate-400">{t.notes}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.land_value) > 0 ? money(t.land_value) : "-"}
+                      {t.land_sq_wa != null && <div className="text-xs text-slate-500">{landText(t.land_sq_wa)} × {money(t.land_price_per_sq_wa)}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.building_value) > 0 ? money(t.building_value) : "-"}
+                      {t.building_sqm != null && <div className="text-xs text-slate-500">{Number(t.building_sqm).toLocaleString("th-TH")} ตร.ม. × {money(t.building_price_per_sqm)}
+                        {Number(t.depreciation_pct) > 0 && ` − ${Number(t.depreciation_pct)}%`}{t.building_age != null && ` · อายุ ${t.building_age} ปี`}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(t.total_value)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.exemption) !== 0 ? money(-Number(t.exemption)) : "-"}
+                      {t.exemption_reason && <div className="text-xs text-slate-500">{t.exemption_reason}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(t.taxable_value)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{Number(t.rate_pct)}%
+                      {Number(t.discount_pct) > 0 && <div className="text-xs text-slate-500">ลด {Number(t.discount_pct)}%</div>}</td>
+                    <td className="px-2 py-2 text-right font-medium tabular-nums">{money(t.tax_amount)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      {canWrite && <TaxLineForm assetId={id} year={ty} line={t} label="แก้ไข" />}
+                      {canDelete && <span className="ml-3"><DeleteTaxLine assetId={id} year={ty} id={t.id} label={t.description || "รายการ"} /></span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                <tr><td className="px-2 py-2">รวมปี {ty + 543}</td><td className="px-2 text-right tabular-nums">{money(taxSum("land_value"))}</td>
+                  <td className="px-2 text-right tabular-nums">{money(taxSum("building_value"))}</td><td className="px-2 text-right tabular-nums">{money(taxSum("total_value"))}</td>
+                  <td className="px-2 text-right tabular-nums">{money(-taxSum("exemption"))}</td><td className="px-2 text-right tabular-nums">{money(taxSum("taxable_value"))}</td>
+                  <td></td><td className="px-2 text-right tabular-nums">{money(taxSum("tax_amount"))}</td><td></td></tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* ---------------- ค่าใช้จ่ายประจำ / สาธารณูปโภค ---------------- */}
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">

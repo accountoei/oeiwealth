@@ -327,3 +327,21 @@ export function bankLabel(raw: string | null | undefined): string {
   const hit = BANKS.find((b) => b.aliases.some((a) => bankKey(a) === k) || bankKey(b.code) === k);
   return hit?.label ?? s;
 }
+
+/** อัตราภาษีที่ดินและสิ่งปลูกสร้างที่ระบบเสนอ (% ของฐานภาษี · ขั้นแรก) ตามการใช้งาน — ใช้เมื่อยังไม่มีรายการปีก่อน · แก้ได้ทุกครั้ง */
+export const LAND_TAX_RATE_BY_USAGE: Record<string, number> = {
+  OWNER_OCCUPIED: 0.02, PERSONAL_USE: 0.02, RENTAL: 0.3, BUSINESS_USE: 0.3, VACANT: 0.3, OTHER: 0.3,
+};
+/** ภาษีที่ดิน 1 รายการ (คำนวณแบบเดียวกับ v_property_tax_lines) */
+export function landTaxCalc(x: { land_sq_wa?: number | null; land_price_per_sq_wa?: number | null; building_sqm?: number | null;
+  building_price_per_sqm?: number | null; depreciation_pct?: number | null; exemption?: number | null; rate_pct?: number | null; discount_pct?: number | null }) {
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const land = r2((x.land_sq_wa ?? 0) * (x.land_price_per_sq_wa ?? 0));
+  const gross = r2((x.building_sqm ?? 0) * (x.building_price_per_sqm ?? 0));
+  const dep = r2((gross * (x.depreciation_pct ?? 0)) / 100);
+  const total = land + gross - dep;
+  const taxable = Math.max(total - (x.exemption ?? 0), 0);
+  const full = r2((taxable * (x.rate_pct ?? 0)) / 100);
+  const tax = r2(((taxable * (x.rate_pct ?? 0)) / 100) * (1 - (x.discount_pct ?? 0) / 100));
+  return { land, gross, dep, building: gross - dep, total, taxable, full, tax };
+}

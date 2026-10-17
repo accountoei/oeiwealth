@@ -252,3 +252,61 @@ export async function batchPropertyExpenses(_: BatchState, form: FormData): Prom
   revalidatePath("/financial/cash", "layout");
   return { ok: `บันทึกค่าใช้จ่ายแล้ว ${data} รายการ` };
 }
+
+// ---------------------------------------------------------------- ภาษีที่ดินและสิ่งปลูกสร้าง
+async function syncLandTax(supabase: Awaited<ReturnType<typeof createClient>>, assetId: string, year: number) {
+  const { error } = await supabase.rpc("sync_land_tax_estimate", { p_asset_id: assetId, p_tax_year: year });
+  return error ? friendlyError(error.message) : null;
+}
+
+/** เพิ่ม / แก้รายการภาษีที่ดิน 1 รายการ · ปีปัจจุบัน → ตั้งยอดประมาณ "ภาษีที่ดิน" ให้ตามภาษีรวม */
+export async function saveTaxLine(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const id = str(form.get("id"));
+  const year = Number(form.get("tax_year"));
+  const rate = num(form.get("rate_pct"));
+  if (!Number.isInteger(year)) return { error: "ปีภาษีไม่ถูกต้อง" };
+  if (rate == null || Number.isNaN(rate)) return { error: "กรุณาใส่อัตราภาษี (%)" };
+  const row = {
+    asset_id: assetId, tax_year: year, sort_order: num(form.get("sort_order")) ?? 0, description: str(form.get("description")),
+    land_sq_wa: sqwaFromForm(form), land_price_per_sq_wa: num(form.get("land_price_per_sq_wa")),
+    building_type: str(form.get("building_type")), building_sqm: num(form.get("building_sqm")),
+    building_price_per_sqm: num(form.get("building_price_per_sqm")), building_age: num(form.get("building_age")),
+    depreciation_pct: num(form.get("depreciation_pct")) ?? 0, exemption: num(form.get("exemption")) ?? 0,
+    exemption_reason: str(form.get("exemption_reason")), rate_pct: rate, discount_pct: num(form.get("discount_pct")) ?? 0,
+    notes: str(form.get("notes")),
+  };
+  const { data, error } = id
+    ? await supabase.from("property_tax_lines").update(row).eq("id", id).select("id")
+    : await supabase.from("property_tax_lines").insert(row).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  const warn = await syncLandTax(supabase, assetId, year);
+  revalidateProperty(assetId);
+  return { ok: warn ? `บันทึกแล้ว · ตั้งยอดประมาณไม่สำเร็จ: ${warn}` : "บันทึกรายการภาษีแล้ว" };
+}
+
+export async function deleteTaxLine(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const year = Number(form.get("tax_year"));
+  const { data, error } = await supabase.from("property_tax_lines").update({ deleted_at: new Date().toISOString() })
+    .eq("id", String(form.get("id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์ลบรายการนี้" };
+  await syncLandTax(supabase, assetId, year);
+  revalidateProperty(assetId);
+  return { ok: "ลบรายการแล้ว" };
+}
+
+export async function copyTaxYear(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const from = Number(form.get("from_year")), to = Number(form.get("to_year"));
+  const { data, error } = await supabase.rpc("copy_property_tax_year", { p_asset_id: assetId, p_from_year: from, p_to_year: to });
+  if (error) return { error: friendlyError(error.message) };
+  await syncLandTax(supabase, assetId, to);
+  revalidateProperty(assetId);
+  return { ok: `คัดลอกจากปี ${from + 543} แล้ว ${data} รายการ` };
+}

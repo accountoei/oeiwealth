@@ -78,11 +78,15 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
     .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
   const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount";
-  const [{ data: incRaw }, { data: expA }, { data: expU }] = await Promise.all([
+  const taxYear = Number(ym.slice(0, 4));
+  const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }, { data: landTaxTrack }] = await Promise.all([
     ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes")
       .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
     ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
     utilProp.size ? supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", start).lte("date", end).is("deleted_at", null) : none,
+    ids.length ? supabase.from("v_property_tax_lines").select("asset_id,total_value,exemption,taxable_value,tax_amount").in("asset_id", ids).eq("tax_year", taxYear) : none,
+    supabase.from("v_property_cost_tracking").select("property_asset_id,expected_amount,paid_amount,status")
+      .eq("utility_type", "LAND_TAX").gte("cost_period", `${taxYear}-01-01`).lte("cost_period", `${taxYear}-12-31`),
   ]);
 
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
@@ -167,9 +171,27 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const costRows: CostRow[] = ((costTrack ?? []) as CT[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
     key: `${c.utility_id}:${c.cost_period}`, utilityId: c.utility_id, assetId: c.property_asset_id, property: propName.get(c.property_asset_id) ?? "",
     label: [UTIL_LABEL[c.utility_type] ?? c.utility_type, c.provider].filter(Boolean).join(" · "), period: c.cost_period, due: c.due_date,
+    type: c.utility_type, typeLabel: UTIL_LABEL[c.utility_type] ?? c.utility_type,
     expected: Number(c.expected_amount ?? 0), paid: Number(c.paid_amount ?? 0), currency: c.currency, status: c.status,
     category: UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค",
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
+  // ---------------------------------------------------------------- สรุปภาษีที่ดินปีของเดือนที่เลือก
+  type TX = { asset_id: string; total_value: number; exemption: number; taxable_value: number; tax_amount: number };
+  const taxBy = new Map<string, { total: number; exemption: number; taxable: number; tax: number; n: number }>();
+  ((taxRaw ?? []) as TX[]).filter((x) => shown.has(x.asset_id)).forEach((x) => {
+    const o = taxBy.get(x.asset_id) ?? { total: 0, exemption: 0, taxable: 0, tax: 0, n: 0 };
+    taxBy.set(x.asset_id, { total: o.total + Number(x.total_value), exemption: o.exemption + Number(x.exemption),
+      taxable: o.taxable + Number(x.taxable_value), tax: o.tax + Number(x.tax_amount), n: o.n + 1 });
+  });
+  type LT = { property_asset_id: string; paid_amount: number | null; status: string };
+  const ltPaid = new Map<string, { paid: number; status: string }>();
+  ((landTaxTrack ?? []) as LT[]).forEach((x) => {
+    const o = ltPaid.get(x.property_asset_id);
+    ltPaid.set(x.property_asset_id, { paid: (o?.paid ?? 0) + Number(x.paid_amount ?? 0), status: o && o.status !== "PAID" ? o.status : x.status });
+  });
+  const taxRows = props.filter((p) => taxBy.has(p.asset_id) || p.assets.status === "ACTIVE").map((p) => ({ p, t: taxBy.get(p.asset_id), paid: ltPaid.get(p.asset_id) }));
+  const taxTotal = [...taxBy.values()].reduce((t, x) => ({ total: t.total + x.total, exemption: t.exemption + x.exemption, taxable: t.taxable + x.taxable, tax: t.tax + x.tax }),
+    { total: 0, exemption: 0, taxable: 0, tax: 0 });
   const pays: PayOpt[] = [
     ...banks.map((b) => ({ value: `b:${b.id}`, label: `บัญชี ${b.name}`, currency: b.currency })),
     ...((cardRows ?? []) as { id: string; issuer: string | null; card_name: string | null; card_last4: string | null; currency: string }[])
@@ -296,6 +318,45 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         <div className="space-y-4">
           <ExpenseBatch key={`e${ym}`} rows={costRows} props={props.filter((p) => p.assets.status === "ACTIVE").map((p) => ({ id: p.asset_id, name: p.assets.name }))}
             pays={pays} defaultDate={defaultDate} today={today} ym={ym} canWrite={canWrite} />
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <div className="px-4 pt-4">
+              <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง ปี {taxYear + 543}</h2>
+              <p className="text-xs text-slate-500">คำนวณจากข้อมูลภาษีในหน้าของทรัพย์สินแต่ละรายการ · ใช้ตรวจกับใบแจ้งภาษีของเขต / อบต.{pv.personId && ` · แสดงเต็มจำนวนของทรัพย์สินที่ ${pv.personName} ถือ`}</p>
+            </div>
+            <table className="mt-3 w-full min-w-[48rem] text-sm">
+              <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3 text-right">รวมราคาประเมิน</th><th className="px-3 text-right">ยกเว้น</th>
+                  <th className="px-3 text-right">ฐานภาษี</th><th className="px-3 text-right">ภาษีประจำปี</th><th className="px-3">การจ่าย</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {taxRows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ยังไม่มีทรัพย์สิน</td></tr>}
+                {taxRows.map(({ p, t, paid }) => (
+                  <tr key={p.asset_id}>
+                    <td className="px-3 py-2"><Link href={`/property/${p.asset_id}?ty=${taxYear}`} className="font-medium text-slate-900 hover:underline">{p.assets.name}</Link>
+                      {t && t.n > 1 && <div className="text-xs text-slate-500">{t.n} รายการ</div>}</td>
+                    {t ? <>
+                      <td className="px-3 text-right tabular-nums">{money(t.total)}</td>
+                      <td className="px-3 text-right tabular-nums">{t.exemption !== 0 ? money(-t.exemption) : "-"}</td>
+                      <td className="px-3 text-right tabular-nums">{money(t.taxable)}</td>
+                      <td className="px-3 text-right font-medium tabular-nums">{money(t.tax)}</td>
+                    </> : <td colSpan={4} className="px-3 text-right text-xs text-amber-700">ยังไม่ได้ใส่ข้อมูลภาษีปีนี้</td>}
+                    <td className="px-3 text-xs">{paid
+                      ? paid.status === "PAID" ? <span className="text-emerald-700">จ่ายแล้ว {money(paid.paid)}</span>
+                        : paid.status === "DISMISSED" ? <span className="text-slate-500">ปีนี้ไม่ได้จ่าย</span>
+                        : <span className={paid.status === "OVERDUE" ? "text-red-600" : "text-slate-600"}>{paid.status === "OVERDUE" ? "เลยกำหนด" : "รอจ่าย"}</span>
+                      : <span className="text-slate-400">-</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {taxBy.size > 0 && (
+                <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                  <tr><td className="px-3 py-2">รวม</td><td className="px-3 text-right tabular-nums">{money(taxTotal.total)}</td>
+                    <td className="px-3 text-right tabular-nums">{money(-taxTotal.exemption)}</td><td className="px-3 text-right tabular-nums">{money(taxTotal.taxable)}</td>
+                    <td className="px-3 text-right tabular-nums">{money(taxTotal.tax)}</td><td></td></tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
             <h2 className="px-4 pt-4 font-medium text-slate-900">ค่าใช้จ่ายทรัพย์สินที่บันทึกแล้ว · {thMonth(start)}</h2>
             <table className="mt-2 w-full min-w-[36rem] text-sm">
