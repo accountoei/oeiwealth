@@ -161,6 +161,9 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
               const dv = divOf.get(r.asset_id) ?? 0;
               const vc = vsCost(r);
               const sh = pv.personId ? pv.assetShares(r.asset_id) : r.shares_owned != null ? Number(r.shares_owned) : null;
+              // ราคาทุนต่อหุ้น = ราคาทุน ÷ หุ้นที่ถือ (ไม่มีจำนวนหุ้น = ใช้ par)
+              const cst = costOf(r);
+              const costPerShare = cst != null && sh ? cst / sh : r.par_value != null ? Number(r.par_value) : null;
               const num = "px-3 py-3 align-top text-right tabular-nums";
               return (
                 <tr key={r.id} className={r.status !== "ACTIVE" ? "opacity-50" : ""}>
@@ -177,10 +180,11 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                     </div>
                   </td>
                   <td className={num}>{money(regCapital(r))}
-                    {r.par_value != null && <div className="text-xs text-slate-400">หุ้นละ {money(r.par_value, undefined, 2)}</div>}</td>
+                    {r.total_shares != null && <div className="text-xs text-slate-400">{qty(r.total_shares)} หุ้น</div>}</td>
                   <td className={num}>{fmtPct(companyPct(r))}
                     {sh != null && <div className="text-xs text-slate-400">{qty(sh)} หุ้น</div>}</td>
-                  <td className={num}>{money(costOf(r))}</td>
+                  <td className={num}>{money(costOf(r))}
+                    {costPerShare != null && <div className="text-xs text-slate-400">หุ้นละ {money(costPerShare, undefined, 2)}</div>}</td>
                   <td className={`${num} font-medium`}>{money(myValue(r))}
                     <div className={`text-xs font-normal ${stale ? "text-amber-700" : "text-slate-400"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
 </td>
