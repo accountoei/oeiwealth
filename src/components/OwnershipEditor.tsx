@@ -7,7 +7,7 @@ import { setOwnership, type RecState } from "@/lib/records";
 /** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability) */
 export default function OwnershipEditor({ kind, id, persons, current, paths, today, startOpen = false, unit = "percent", totalShares }: {
   kind: "asset" | "liability"; id: string; persons: { id: string; name: string }[];
-  current: { person_id: string; percent: number; shares?: number | null }[]; paths: string[]; today: string; startOpen?: boolean;
+  current: { person_id: string; percent: number; shares?: number | null; cost?: number | null }[]; paths: string[]; today: string; startOpen?: boolean;
   /** ธุรกิจ: แก้เป็นจำนวนหุ้น (totalShares = หุ้นทั้งหมดของบริษัท) */
   unit?: "percent" | "shares"; totalShares?: number | null;
 }) {
@@ -16,6 +16,8 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
   const [mode, setMode] = useState("CORRECT");
   const [shares, setShares] = useState<Record<string, string>>(
     Object.fromEntries(current.map((c) => [c.person_id, bySh ? (c.shares != null ? String(Number(c.shares)) : "") : String(c.percent)])));
+  const [costs, setCosts] = useState<Record<string, string>>(
+    Object.fromEntries(current.map((c) => [c.person_id, c.cost != null ? String(Number(c.cost)) : ""])));
   const [state, action, pending] = useActionState<RecState, FormData>(setOwnership, {});
   const total = Object.values(shares).reduce((s, v) => s + (Number(String(v).replace(/,/g, "")) || 0), 0);
   const over = bySh ? !!totalShares && total > totalShares : total > 100;
@@ -35,13 +37,18 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
           {mode === "CHANGE" && <input name="effective_date" type="date" required defaultValue={today} className="ml-6 rounded-md border border-slate-300 px-2 py-1" />}
         </div>
       )}
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className={`grid gap-2 ${bySh ? "" : "sm:grid-cols-2"}`}>
         {persons.map((p) => (
           <label key={p.id} className="flex items-center gap-2">
             <span className="flex-1">{p.name}</span>
             <input name={bySh ? `shares_${p.id}` : `owner_${p.id}`} inputMode="decimal" data-money={bySh ? "off" : undefined} value={shares[p.id] ?? ""} placeholder="0"
               onChange={(e) => setShares({ ...shares, [p.id]: e.target.value })} className={`${bySh ? "w-28" : "w-20"} rounded-md border border-slate-300 px-2 py-1 text-right`} />
             <span className="text-xs text-slate-500">{bySh ? "หุ้น" : "%"}</span>
+            {bySh && <>
+              <input name={`cost_${p.id}`} inputMode="decimal" value={costs[p.id] ?? ""} placeholder="ทุน/หุ้น" title="ราคาทุนต่อหุ้น (ว่าง = เฉลี่ยจากเงินลงทุน)"
+                onChange={(e) => setCosts({ ...costs, [p.id]: e.target.value })} className="w-24 rounded-md border border-slate-300 px-2 py-1 text-right" />
+              <span className="text-xs text-slate-500">บาท/หุ้น</span>
+            </>}
           </label>
         ))}
       </div>
@@ -49,7 +56,7 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
         <div className={`text-xs ${over ? "text-red-600" : "text-slate-600"}`}>
           ครอบครัวถือรวม {total.toLocaleString("th-TH")} หุ้น
           {totalShares ? ` · ${((total * 100) / totalShares).toLocaleString("th-TH", { maximumFractionDigits: 2 })}% ของบริษัท` : ""}
-          {over && " · เกินจำนวนหุ้นทั้งหมด"} · ใส่ตาม บอจ.5 ฉบับล่าสุด (ไม่ต้องใส่ผู้ถือหุ้นนอกครอบครัว)
+          {over && " · เกินจำนวนหุ้นทั้งหมด"} · ใส่ตาม บอจ.5 ฉบับล่าสุด (ไม่ต้องใส่ผู้ถือหุ้นนอกครอบครัว) · ราคาทุนต่อหุ้นไม่บังคับ (ว่าง = เฉลี่ยจากเงินลงทุน)
         </div>
       ) : (
         <div className={`text-xs ${total === 100 ? "text-emerald-700" : total > 100 ? "text-red-600" : "text-amber-700"}`}>

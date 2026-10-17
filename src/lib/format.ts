@@ -51,12 +51,15 @@ export const LIABILITY_TYPE_LABEL: Record<string, string> = {
 
 /** อ่าน owner_<id> จาก FormData → [{person_id, percent}] */
 /** เจ้าของจากฟอร์ม: owner_<id> = % · shares_<id> = จำนวนหุ้น (ธุรกิจ) */
-export function ownersFromForm(form: FormData): { person_id: string; percent?: number; shares?: number }[] {
-  const out: { person_id: string; percent?: number; shares?: number }[] = [];
+export function ownersFromForm(form: FormData): { person_id: string; percent?: number; shares?: number; cost_per_share?: number }[] {
+  const out: { person_id: string; percent?: number; shares?: number; cost_per_share?: number }[] = [];
   for (const [k, v] of form.entries()) {
     const n = Number(String(v).replace(/,/g, ""));
     if (k.startsWith("owner_") && n > 0) out.push({ person_id: k.slice(6), percent: n });
-    if (k.startsWith("shares_") && n > 0) out.push({ person_id: k.slice(7), shares: n });
+    if (k.startsWith("shares_") && n > 0) {
+      const c = String(form.get(`cost_${k.slice(7)}`) ?? "").replace(/,/g, "").trim();
+      out.push({ person_id: k.slice(7), shares: n, ...(c !== "" && !Number.isNaN(Number(c)) ? { cost_per_share: Number(c) } : {}) });
+    }
   }
   return out;
 }
