@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addCapital, recordDividend, sellShares, undoShareSale, updateBusinessInfo, type ActionState } from "../actions";
 import { money, qty } from "@/lib/format";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -169,14 +170,16 @@ export function ShareSaleForm({ assetId, currency, banks, holders, familyShares,
 /** ยกเลิกการขายหุ้นครั้งล่าสุด (ถามยืนยันก่อน) */
 export function UndoShareSale({ assetId, saleId, confirmText }: { assetId: string; saleId: string; confirmText: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(undoShareSale, {});
+  const cf = useConfirmSubmit();
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
   return (
-    <form action={action} onSubmit={(e) => { if (!confirm(confirmText)) e.preventDefault(); }} className="inline-flex flex-col items-end">
+    <form action={action} onSubmit={cf.guard(confirmText, { danger: true, okLabel: "ยืนยันยกเลิกการขาย" })} className="inline-flex flex-col items-end">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="sale_id" value={saleId} />
       <button disabled={pending} className="whitespace-nowrap rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">
         {pending ? "…" : "ยกเลิกการขายนี้"}</button>
       {state.error && <span className="mt-1 max-w-60 text-right text-xs text-red-600">{state.error}</span>}
+      {cf.dialog}
     </form>
   );
 }

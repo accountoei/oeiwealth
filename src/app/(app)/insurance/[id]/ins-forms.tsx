@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, type ActionState } from "../actions";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -45,6 +46,7 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
   const [text, setText] = useState("");
   const [fileMsg, setFileMsg] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(saveInsSchedule, {});
+  const cf = useConfirmSubmit();
   const parsed = useMemo(() => parseAmountText(text), [text]);
   const lines = mode === "FORMULA" ? generated ?? [] : parsed.lines;
   const errors = mode === "FORMULA" ? [] : parsed.errors;
@@ -152,7 +154,7 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
         </section>
       )}
       <form action={action} className="flex flex-wrap items-center gap-3"
-        onSubmit={(e) => { if (hasLines && !confirm("แทนงวดที่ยังไม่ชำระด้วยตารางนี้?")) e.preventDefault(); }}>
+        onSubmit={cf.guard("แทนงวดที่ยังไม่ชำระด้วยตารางนี้?", {}, hasLines)}>{cf.dialog}
         <input type="hidden" name="policy_id" value={policyId} />
         <input type="hidden" name="kind" value={kind} />
         <input type="hidden" name="lines" value={JSON.stringify(payload)} />

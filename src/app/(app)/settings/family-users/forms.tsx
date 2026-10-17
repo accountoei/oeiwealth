@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import {
   inviteUser, resendInvite, resetMfa, resetPasswordLink, setUserRole, setUserStatus, type ActionState, type InviteState,
 } from "./actions";
@@ -113,13 +114,14 @@ export function ResendInviteForm({ id }: { id: string }) {
 export function UserRecovery({ id }: { id: string }) {
   const [ps, pwAction, pwPending] = useActionState<InviteState, FormData>(resetPasswordLink, {});
   const [ms, mfaAction, mfaPending] = useActionState<ActionState, FormData>(resetMfa, {});
+  const cf = useConfirmSubmit();
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap gap-3 text-xs">
         <form action={pwAction}><input type="hidden" name="id" value={id} />
           <button disabled={pwPending} className="text-slate-700 underline disabled:opacity-50">{pwPending ? "…" : "ลิงก์ตั้งรหัสผ่านใหม่"}</button>
         </form>
-        <form action={mfaAction} onSubmit={(e) => { if (!confirm("ลบ MFA ของผู้ใช้นี้? (ใช้เมื่อทำมือถือหาย) ผู้ใช้ต้องสแกน QR ใหม่ตอนเข้าระบบครั้งถัดไป")) e.preventDefault(); }}>
+        <form action={mfaAction} onSubmit={cf.guard("ลบ MFA ของผู้ใช้นี้? (ใช้เมื่อทำมือถือหาย) ผู้ใช้ต้องสแกน QR ใหม่ตอนเข้าระบบครั้งถัดไป", {danger: true})}>{cf.dialog}
           <input type="hidden" name="id" value={id} />
           <button disabled={mfaPending} className="text-slate-700 underline disabled:opacity-50">{mfaPending ? "…" : "รีเซ็ต MFA"}</button>
         </form>

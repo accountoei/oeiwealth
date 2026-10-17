@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { deleteRecord, updateRecord, type RecState } from "@/lib/records";
 import { useRowPanel } from "@/components/RowPanel";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 export type FieldSpec = {
   name: string; label: string; type?: "text" | "number" | "date" | "select";
@@ -27,6 +28,7 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
   const [ds, delAction, deleting] = useActionState<RecState, FormData>(deleteRecord, {});
   const editable = canEdit && (fields.length > 0 || !!editor);
   const row = useRowPanel(editable || canDelete || !!extra);
+  const cf = useConfirmSubmit();
   if (ds.ok) return <span className="text-xs text-slate-400">ลบแล้ว</span>;
 
   const hidden = (
@@ -36,9 +38,8 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
       <input type="hidden" name="paths" value={paths.join(",")} />
     </>
   );
-  const confirmDelete = (e: React.FormEvent) => {
-    if (!confirm(`ลบรายการนี้?${deleteNote ? `\n${deleteNote}` : ""}\n(รายการที่ระบบสร้างต่อจากรายการนี้จะถูกลบตามไปด้วย)`)) e.preventDefault();
-  };
+  const confirmDelete = cf.guard(`ลบรายการนี้?${deleteNote ? `\n${deleteNote}` : ""}\n(รายการที่ระบบสร้างต่อจากรายการนี้จะถูกลบตามไปด้วย)`,
+    { danger: true, okLabel: "ยืนยันลบ" });
   const fieldInputs = fields.map((f) => (
     <label key={f.name} className="text-xs text-slate-600">{f.label}
       {f.type === "select" ? (
@@ -75,12 +76,14 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
         <button type="button" onClick={() => row.setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       </div>
       {ds.error && <div className="w-full text-xs text-red-600">{ds.error}</div>}
+      {cf.dialog}
     </div>
   );
   if (!row.showButtons) return row.render(panel);
 
   return (
     <div className="inline-block text-left">
+      {cf.dialog}
       {!editing && (
         <span className="inline-flex flex-wrap items-center gap-2 text-xs">
           {extra}

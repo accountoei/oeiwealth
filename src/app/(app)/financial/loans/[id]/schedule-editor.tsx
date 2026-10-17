@@ -7,6 +7,7 @@ import { generateSchedule, parseScheduleRows, parseScheduleText, PAYMENT_LABEL, 
   type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate } from "@/lib/format";
 import { DayCountFields } from "./day-count";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -44,6 +45,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const [fileName, setFileName] = useState("");
   const [fileMsg, setFileMsg] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(saveSchedule, {});
+  const cf = useConfirmSubmit();
   const parsed = useMemo(() => parseScheduleText(text), [text]);
   const lines = mode === "FORMULA" ? generated ?? [] : parsed.lines;
   const errors = mode === "FORMULA" ? [] : parsed.errors;
@@ -202,7 +204,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
       )}
 
       <form action={action} className="flex flex-wrap items-center gap-3"
-        onSubmit={(e) => { if (hasSchedule && !confirm("แทนที่ตารางผ่อนเดิมทั้งชุด?")) e.preventDefault(); }}>
+        onSubmit={cf.guard("แทนที่ตารางผ่อนเดิมทั้งชุด?", {}, hasSchedule)}>{cf.dialog}
         <input type="hidden" name="asset_id" value={assetId} />
         <input type="hidden" name="lines" value={JSON.stringify(lines)} />
         <button disabled={pending || lines.length === 0 || errors.length > 0} className={btn}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { createClient } from "@/lib/supabase/client";
 
 type Factor = { id: string; friendly_name?: string; status: string; created_at: string };
@@ -17,6 +18,7 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
   const [enroll, setEnroll] = useState<{ id: string; qr: string; secret: string } | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const { ask, dialog } = useConfirm();
 
   async function load() {
     const { data } = await supabase.auth.mfa.listFactors();
@@ -54,19 +56,20 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
   }
   async function remove(id: string) {
     if (isAdmin && factors.length <= 1) return setMfaMsg({ error: "ผู้ดูแลระบบต้องมี MFA อย่างน้อย 1 อุปกรณ์ — เพิ่มอุปกรณ์ใหม่ก่อนแล้วค่อยลบอันเก่า" });
-    if (!confirm("ลบอุปกรณ์ MFA นี้?")) return;
+    if (!(await ask("ลบอุปกรณ์ MFA นี้?", { danger: true }))) return;
     const { error } = await supabase.auth.mfa.unenroll({ factorId: id });
     if (error) return setMfaMsg({ error: error.message });
     setMfaMsg({ ok: "ลบแล้ว" }); load();
   }
   async function signOutAll() {
-    if (!confirm("ออกจากระบบทุกอุปกรณ์ (รวมเครื่องนี้)?")) return;
+    if (!(await ask("ออกจากระบบทุกอุปกรณ์ (รวมเครื่องนี้)?"))) return;
     await supabase.auth.signOut({ scope: "global" });
     window.location.href = "/login";
   }
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      {dialog}
       <form onSubmit={changePassword} className={box}>
         <h2 className="font-medium text-slate-900">เปลี่ยนรหัสผ่าน</h2>
         <input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="รหัสผ่านใหม่ (อย่างน้อย 10 ตัว)" className={`block w-full ${input}`} />

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { batchUpdate, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 export type BatchRow = {
   id: string; name: string; bank: string; currency: string;
@@ -31,6 +32,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
   const bankList = [...new Set(rows.map((r) => r.bank))].sort((a, b) => a.localeCompare(b, "th"));
   const shown = bank ? rows.filter((r) => r.bank === bank) : rows;
   const [state, action, pending] = useActionState<BatchState, FormData>(batchUpdate, {});
+  const cf = useConfirmSubmit();
   // บันทึกแล้ว → ล้างช่องที่กรอก + โหลดยอดใหม่ (ผลรายบัญชียังแสดงอยู่)
   useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
   const result = new Map((state.results ?? []).map((r) => [r.asset_id, r]));
@@ -43,12 +45,12 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
   // ยอดที่กรอกไว้ของบัญชีที่ถูกตัวกรองซ่อน ยังบันทึกด้วย (กรอกทีละธนาคาร แล้วกดบันทึกครั้งเดียว)
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
-  const onSubmit = (e: React.FormEvent) => {
-    const list = chosen.map((r) => `• ${r.name}`).join("\n");
-    if (!confirm(`บันทึกยอดคงเหลือ ${chosen.length} บัญชี ณ ${thDate(date)} ?\n${list}\nส่วนต่างจะลงเป็นก้อน "รอแยกรายละเอียด" ให้อัตโนมัติ`)) e.preventDefault();
-  };
+  const onSubmit = cf.guard(`บันทึกยอดคงเหลือ ${chosen.length} บัญชี ณ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}\nส่วนต่างจะลงเป็นก้อน "รอแยกรายละเอียด" ให้อัตโนมัติ`,
+    { okLabel: "ยืนยันบันทึก" });
 
   return (
+    <>
+    {cf.dialog}
     <form action={action} onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="date" value={date} />
       <input type="hidden" name="rows" value={JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] })))} />
@@ -139,5 +141,6 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
         </div>
       )}
     </form>
+    </>
   );
 }

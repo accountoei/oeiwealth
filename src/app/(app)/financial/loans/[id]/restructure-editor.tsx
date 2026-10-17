@@ -7,6 +7,7 @@ import { restructureSchedule, type ActionState } from "../actions";
 import { generateSchedule, PAYMENT_LABEL, SCHED_METHOD_LABEL, type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate } from "@/lib/format";
 import { DayCountFields } from "./day-count";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -47,6 +48,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   const [lines, setLines] = useState<SchedLine[] | null>(null);
   const [err, setErr] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(restructureSchedule, {});
+  const cf = useConfirmSubmit();
   useEffect(() => { if (preset) box.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [preset]);
   // บันทึกแล้ว: เอา ?restructure= ออกจากลิงก์ (กด Refresh จะได้ไม่เปิดซ้ำ)
   useEffect(() => { if (state.ok && preset) router.replace(pathname, { scroll: false }); }, [state.ok, preset, pathname, router]);
@@ -180,7 +182,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
             </div>
           </section>
           <form action={action} className="flex flex-wrap items-center gap-3"
-            onSubmit={(e) => { if (!confirm("ยืนยันปรับตาราง? งวดที่ยังไม่ได้รับจะถูกแทนด้วยตารางใหม่")) e.preventDefault(); }}>
+            onSubmit={cf.guard("ยืนยันปรับตาราง? งวดที่ยังไม่ได้รับจะถูกแทนด้วยตารางใหม่", {})}>{cf.dialog}
             <input type="hidden" name="asset_id" value={assetId} />
             <input type="hidden" name="lines" value={JSON.stringify(lines)} />
             <input type="hidden" name="note" value={note} />
