@@ -1031,6 +1031,17 @@ SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดส�
 SELECT t.ok((SELECT shares_owned = 9000 FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด')
             AND (SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทหุ้นทดสอบ') AND person_id = t.p('คุณพ่อ')) = 450000,
             'แก้จำนวนหุ้นรายคน → มูลค่ารายคนเปลี่ยนตาม');
+-- หุ้นหารไม่ลงตัว (3 คน × 3,000 หุ้น → 33.33…% × 3 = 99.99999…%) → หน้า Opening ต้องไม่เตือน "ระบุเจ้าของไม่ครบ"
+SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
+  jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',3000), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',3000),
+                    jsonb_build_object('person_id',t.p('ญาติทดสอบ'),'shares',3000)), 'CORRECT', NULL);
+RESET ROLE;
+SELECT t.ok((SELECT sum(pct) FROM private.asset_owner_shares(t.a('บริษัทหุ้นทดสอบ'), current_date) WHERE person_id IS NOT NULL) < 100
+            AND NOT EXISTS (SELECT 1 FROM private.go_live_readiness(private.default_family_id()) r WHERE r.category = 'OWNERSHIP' AND r.entity_id = t.a('บริษัทหุ้นทดสอบ')),
+            'หุ้นหารไม่ลงตัว (รวม 99.99999…%) → Opening ไม่เตือนระบุเจ้าของไม่ครบ');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
+  jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',4500), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',4500)), 'CORRECT', NULL);
 SELECT t.fails($$SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
   jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',8000), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',4000)), 'CORRECT', NULL)$$,
   'เกินจำนวนหุ้นทั้งหมด', 'หุ้นรวมเกินหุ้นทั้งหมดของบริษัทไม่ได้');

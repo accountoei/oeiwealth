@@ -16,6 +16,8 @@ export default function NewBusinessForm(props: {
   const { persons, goLive, openingDate, today, isSetup, isAdmin } = props;
   const [state, action, pending] = useActionState<ActionState, FormData>(createBusiness, {});
   const [opening, setOpening] = useState(isSetup);
+  // หลัง Go-live: ซ่อนตัวเลือก "มีอยู่ก่อน Go-live" (ไม่ติ๊ก) · ADMIN กดลิงก์เล็กเพื่อเพิ่มรายการที่ตกหล่น
+  const [late, setLate] = useState(false);
   const [unit, setUnit] = useState<"shares" | "percent">("shares");      // เจ้าของ: จำนวนหุ้น (บริษัทจำกัด) / % (ห้างหุ้นส่วน ฯลฯ)
   const [totalShares, setTotalShares] = useState("");
   const total = Number(totalShares.replace(/,/g, "")) || null;
@@ -50,7 +52,10 @@ export default function NewBusinessForm(props: {
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">มูลค่าส่วนของครอบครัว (บังคับ)</h2>
-        {(isSetup || isAdmin) && (
+        {!isSetup && isAdmin && !late && (
+          <button type="button" onClick={() => setLate(true)} className="text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+        )}
+        {(isSetup || late) && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="is_opening" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="mt-1" />
             <span>มีอยู่ก่อน Go-live ({thDate(goLive)}) — มูลค่าตั้งต้น ณ สิ้นวัน {thDate(openingDate)}

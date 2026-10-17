@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 const TOAST_EVENT = "fwv-toast";
+const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: Esc ปิดเฉพาะบนสุด
 
 /**
  * หน้าต่าง pop up ของฟอร์มที่เปิดจากปุ่ม (ใช้ผ่าน useActionSlot ใน ActionBar.tsx)
@@ -11,7 +12,7 @@ const TOAST_EVENT = "fwv-toast";
  *   บันทึกสำเร็จ (ฟอร์มขึ้นข้อความสีเขียวใหม่หลังกดบันทึก) → ปิดเอง + แจ้งข้อความมุมจอ
  *   ไม่ต้องการให้ปิดเอง (เช่น ถามต่อหลังบันทึก) → ใส่ data-keep-open ในเนื้อหา
  */
-export default function Modal({ children, onClose, size = "md" }: { children: ReactNode; onClose: () => void; size?: "md" | "lg" }) {
+export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: "md" | "lg"; title?: string }) {
   const [mounted, setMounted] = useState(false);
   const body = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -20,11 +21,17 @@ export default function Modal({ children, onClose, size = "md" }: { children: Re
   useEffect(() => { setMounted(true); }, []);
   // Esc = ปิด · ล็อกการเลื่อนหน้าหลังระหว่างเปิด
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close.current(); };
+    const me = {};
+    stack.push(me);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && stack[stack.length - 1] === me) close.current(); };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      stack.splice(stack.indexOf(me), 1);
+      document.body.style.overflow = stack.length ? "hidden" : prev;
+    };
   }, []);
   // บันทึกสำเร็จ → ปิดเอง
   //   หลังกดบันทึก: รอจนปุ่มที่ถูกปิดระหว่างบันทึกกลับมากดได้ (หรือมีข้อความสีเขียวใหม่) → ไม่มีข้อความสีแดง + มีข้อความสีเขียว = สำเร็จ
@@ -59,6 +66,7 @@ export default function Modal({ children, onClose, size = "md" }: { children: Re
       <div className={`relative w-full ${size === "lg" ? "max-w-6xl" : "max-w-3xl"} rounded-xl bg-white p-5 pt-10 text-left shadow-xl`}>
         <button type="button" onClick={() => close.current()} aria-label="ปิด"
           className="absolute right-3 top-3 rounded-md px-2 py-0.5 text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-800">✕</button>
+        {title && <h2 className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}
         {/* กรอบ / พื้นหลังของฟอร์มเดิมไม่ต้องซ้อนในหน้าต่าง */}
         <div ref={body} className="[&>*:first-child]:mt-0 [&>*:first-child]:rounded-none [&>*:first-child]:border-0 [&>*:first-child]:bg-transparent [&>*:first-child]:p-0">
           {children}

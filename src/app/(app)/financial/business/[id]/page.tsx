@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
-import { CapitalForm, DividendForm } from "./forms";
+import { BusinessInfoForm, CapitalForm, DividendForm } from "./forms";
+import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
@@ -47,72 +48,103 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const fmtPct = (v: number | null) => (v == null ? "-" : `${v.toLocaleString("th-TH", { maximumFractionDigits: 2 })}%`);
   const companyPct = byShares && d.shares_owned != null && totalShares ? pctOfCompany(Number(d.shares_owned))
     : d.company_ownership_percent != null ? Number(d.company_ownership_percent) : null;
-  const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
+  // มูลค่าธุรกิจปกติอัปเดตปีละครั้ง (ตามงบการเงิน) → เตือนเมื่อเกิน 1 ปี
+  const stale = !a.current_value_date || a.current_value_date < addDays(today, -365);
+  const STATUS: [string, string][] = [["ACTIVE", "ดำเนินการ"], ["DORMANT", "หยุดชั่วคราว"], ["CLOSED", "ปิดกิจการ"], ["SOLD", "ขายหุ้นแล้ว"]];
+  const ASSET_STATUS: [string, string][] = [["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["CLOSED", "ปิดแล้ว"]];
+  const label = (list: [string, string][], v: string) => list.find(([k]) => k === v)?.[1] ?? v;
   return (
     <div className="space-y-6">
       <div>
         <Link href="/financial/business" className="text-sm text-slate-500 hover:underline">← Private Business</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{a.name}</h1>
-        <p className="text-sm text-slate-500">{d.company_name}{d.registration_no && ` · ${d.registration_no}`}{d.business_type && ` · ${d.business_type}`}</p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{a.name}</h1>
+            <p className="text-sm text-slate-500">{d.company_name}{d.registration_no && ` · ${d.registration_no}`}{d.business_type && ` · ${d.business_type}`}</p>
+          </div>
+          {canWrite && a.status === "ACTIVE" && (
+            <ActionBar>
+              <CapitalForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
+              <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+            </ActionBar>
+          )}
+        </div>
       </div>
+
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">มูลค่าส่วนของครอบครัว</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
-          <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน"}</div>
+        {/* ซ้าย: มูลค่า + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">มูลค่าส่วนของครอบครัว</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
+            <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
+          </div>
+          <div className="flex-1">
+            <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="text-xs text-slate-500">การถือหุ้น</div>
-          <ul className="mt-1 space-y-0.5">
-            <li>ถือ {fmtPct(companyPct)} ของบริษัท</li>
-            <li>หุ้น {qty(d.shares_owned)} / {qty(d.total_shares)}</li>
-            <li>เงินลงทุน {money(d.investment_cost, undefined, 0)}</li>
-          </ul>
-          {canWrite && <div className="mt-2"><RowActions table="private_business_details" id={d.id} paths={paths} canDelete={false} fields={[
-            { name: "company_name", label: "ชื่อบริษัท", value: d.company_name, width: "w-44" }, { name: "registration_no", label: "เลขทะเบียน", value: d.registration_no },
-            { name: "business_type", label: "ประเภท", value: d.business_type }, { name: "total_shares", label: "หุ้นทั้งหมด", type: "number", value: d.total_shares },
-            ...(byShares ? [] : [{ name: "shares_owned", label: "หุ้นที่ถือ", type: "number" as const, value: d.shares_owned },
-              { name: "company_ownership_percent", label: "% ที่ถือ", type: "number" as const, value: d.company_ownership_percent, width: "w-20" }]),
-            { name: "investment_cost", label: "เงินลงทุน", type: "number", value: d.investment_cost }]} /></div>}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">สมาชิกที่เป็นเจ้าของ</div>
-          <ul className="mt-1 space-y-0.5 text-sm">{activeOwners.map((o) => (
-            <li key={o.person_id}>{o.person_name} · {o.shares != null
-              ? <>{qty(o.shares)} หุ้น <span className="text-slate-500">({fmtPct(pctOfCompany(Number(o.shares)))} ของบริษัท)</span></>
-              : `${Number(o.ownership_percent)}%`}</li>))}</ul>
-          {!byShares && ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
-          {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
-            unit={byShares ? "shares" : "percent"} totalShares={totalShares}
-            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent), shares: o.shares }))} />}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canWrite}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="ชื่อบริษัท">{d.company_name}</Item>
+                <Item label="เลขทะเบียน">{d.registration_no || "-"}</Item>
+                <Item label="ประเภทกิจการ">{d.business_type || "-"}</Item>
+                <Item label="การถือหุ้น">ถือ {fmtPct(companyPct)} ของบริษัท</Item>
+                <Item label="หุ้นที่ถือ / หุ้นทั้งหมด">{qty(d.shares_owned)} / {qty(d.total_shares)}</Item>
+                <Item label="เงินลงทุน">{money(d.investment_cost, undefined, 0)}</Item>
+                <Item label="สถานะกิจการ">{label(STATUS, d.status)}</Item>
+                <Item label="นับเป็นทรัพย์สิน">{label(ASSET_STATUS, a.status)}</Item>
+                <Item label="สมาชิกที่เป็นเจ้าของ">
+                  {activeOwners.length === 0 ? "-" : activeOwners.map((o) => (
+                    <div key={o.person_id}>{o.person_name} · {o.shares != null
+                      ? <>{qty(o.shares)} หุ้น <span className="text-slate-500">({fmtPct(pctOfCompany(Number(o.shares)))} ของบริษัท)</span></>
+                      : `${Number(o.ownership_percent)}%`}</div>))}
+                  {!byShares && ownerTotal < 100 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
+                </Item>
+                {d.notes && <Item label="หมายเหตุ" wide>{d.notes}</Item>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, company_name: d.company_name, registration_no: d.registration_no,
+                  business_type: d.business_type, total_shares: d.total_shares, shares_owned: d.shares_owned,
+                  company_ownership_percent: d.company_ownership_percent, investment_cost: d.investment_cost, notes: d.notes }} />
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
+                  <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    unit={byShares ? "shares" : "percent"} totalShares={totalShares}
+                    current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent), shares: o.shares }))} />
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-3 border-t border-slate-100 pt-4">
+                  <StatusSelect table="private_business_details" id={d.id} value={d.status} paths={paths} label="สถานะกิจการ" options={STATUS}
+                    remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/business", paths: ["/financial/business"], label: "ลบรายการนี้",
+                      hint: "ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" } : undefined} />
+                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="นับเป็นทรัพย์สิน" options={ASSET_STATUS} />
+                </div>
+              </div>
+            } />
         </div>
       </section>
 
-      {canWrite && a.status === "ACTIVE" && (
-        <ActionBar>
-          <DividendForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
-          <CapitalForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
-          <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
-        </ActionBar>
-      )}
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} paths={paths} canWrite={canWrite} canDelete={canDelete} showMoves={false}
         cost={d.investment_cost != null ? Number(d.investment_cost) : a.acquisition_cost != null ? Number(a.acquisition_cost) : null} />
 
-      {canWrite && a.status === "ACTIVE" && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">อัปเดตมูลค่า</h2>
-          <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths}
-            methods={[["BOOK_VALUE", "มูลค่าตามบัญชี"], ["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]]} />
-        </section>
-      )}
-
       <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">ประวัติมูลค่า</h2>
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+          <div>
+            <h2 className="font-medium text-slate-900">มูลค่า</h2>
+            <p className="text-xs text-slate-500">ปกติอัปเดตปีละครั้ง ตามงบการเงิน</p>
+            {stale && a.status === "ACTIVE" && <p className="mt-1 text-xs font-medium text-amber-700">มูลค่าล่าสุดเกิน 1 ปีแล้ว ({thDate(a.current_value_date)})</p>}
+          </div>
+          {canWrite && a.status === "ACTIVE" && (
+            <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths}
+              methods={[["BOOK_VALUE", "มูลค่าตามบัญชี"], ["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]]} />
+          )}
           <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
             {(vals ?? []).map((v) => (
               <tr key={v.id}>
-                <td className="py-1.5">{thDate(v.valuation_date)}</td><td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
+                <td className="whitespace-nowrap py-1.5">{thDate(v.valuation_date)}</td><td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
                 <td className="pl-3 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes}</td>
                 <td className="pl-2 text-right">{canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
                   fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value }]} />}</td>
@@ -121,19 +153,22 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           </tbody></table>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">ปันผล / เงินลงทุนเพิ่ม / ขาย</h2>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-medium text-slate-900">ปันผล / เงินลงทุนเพิ่ม / ขาย</h2>
+            {canWrite && a.status === "ACTIVE" && <DividendForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />}
+          </div>
           {(incomes ?? []).length === 0 && (moves ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
             <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
               {(incomes ?? []).map((i) => (
                 <tr key={i.id}>
-                  <td className="py-1.5">{thDate(i.date)}</td><td>ปันผล</td><td className="text-right tabular-nums text-emerald-700">{money(i.amount, i.currency)}</td>
+                  <td className="whitespace-nowrap py-1.5">{thDate(i.date)}</td><td>ปันผล</td><td className="text-right tabular-nums text-emerald-700">{money(i.amount, i.currency)}</td>
                   <td className="pl-2 text-right">{canWrite && <RowActions table="income_transactions" id={i.id} paths={paths} canDelete={canDelete}
                     fields={businessDividendFields(i)} />}</td>
                 </tr>
               ))}
               {(moves ?? []).map((m) => (
                 <tr key={m.id}>
-                  <td className="py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : m.movement_type === "ASSET_SALE" ? "เงินขายหุ้น (สุทธิ)" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
+                  <td className="whitespace-nowrap py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : m.movement_type === "ASSET_SALE" ? "เงินขายหุ้น (สุทธิ)" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
                   <td className="text-right tabular-nums">{money(m.amount, m.currency)}</td>
                   <td className="pl-2 text-right">{canWrite && !m.is_derived && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
                     fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount }]} />}</td>
@@ -143,18 +178,15 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           )}
         </div>
       </section>
+    </div>
+  );
+}
 
-      {canWrite && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <StatusSelect table="private_business_details" id={d.id} value={d.status} paths={paths} label="สถานะกิจการ"
-            options={[["ACTIVE", "ดำเนินการ"], ["DORMANT", "หยุดชั่วคราว"], ["CLOSED", "ปิดกิจการ"], ["SOLD", "ขายหุ้นแล้ว"]]}
-            remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/business", paths: ["/financial/business"], label: "ลบรายการนี้",
-              hint: "ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" } : undefined} />
-          <div><StatusSelect table="assets" id={id} value={a.status} paths={paths} label="นับเป็นทรัพย์สิน"
-            options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["CLOSED", "ปิดแล้ว"]]} /></div>
-        </section>
-      )}
-      <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }
