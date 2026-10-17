@@ -162,16 +162,16 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           <h2 className="font-medium text-slate-900">กิจการทั้งหมด</h2>
           {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/financial/business", { p: sp.p })} />}
         </div>
-        <table className="mt-2 w-full min-w-[64rem] text-sm">
+        <table className="mt-2 w-full min-w-[46rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              {head("name", "กิจการ")}{head("type", "ประเภทธุรกิจ")}{head("pct", pv.personId ? `% ที่ ${pv.personName} ถือ` : "% ที่ครอบครัวถือ", true)}
+              {head("name", "กิจการ")}{head("pct", pv.personId ? `% ที่ ${pv.personName} ถือ` : "% ที่ครอบครัวถือ", true)}
               {head("company", "มูลค่ากิจการ (THB)", true)}{head("family", `มูลค่าส่วนของ${who} (THB)`, true)}{head("div", "ปันผลปีนี้ (THB)", true)}
-              {head("val", "มูลค่าประเมินล่าสุด (THB)", true)}{head("date", "ประเมินล่าสุด", true)}
+              {head("val", "มูลค่าประเมินล่าสุด (THB)", true)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกิจการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกิจการของ ${pv.personName}` : "ยังไม่มีรายการ"}</td></tr>}
             {rows.map((r, i) => {
               const stale = !r.assets.current_value_date || r.assets.current_value_date < old;
               const dv = divOf.get(r.asset_id) ?? 0;
@@ -184,18 +184,17 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                         style={{ background: color.get(r.asset_id) }}>{initials(r.assets.name)}</span>
                       <div className="min-w-0">
                         <Link href={`/financial/business/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
-                        <div className="truncate text-xs text-slate-500">{r.company_name}{r.status !== "ACTIVE" && " · ไม่ได้ถือแล้ว"}</div>
+                        <div className="truncate text-xs text-slate-500">{r.company_name}{r.business_type && ` · ${r.business_type}`}{r.status !== "ACTIVE" && " · ไม่ได้ถือแล้ว"}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-3">{r.business_type || "-"}</td>
                   <td className="px-3 text-right tabular-nums">{fmtPct(companyPct(r))}
                     {pv.assetShares(r.asset_id) != null && <div className="text-xs text-slate-400">{qty(pv.assetShares(r.asset_id))} หุ้น</div>}</td>
                   <td className="px-3 text-right tabular-nums">{money(companyValue(r))}</td>
                   <td className="px-3 text-right font-medium tabular-nums">{money(myValue(r))}</td>
                   <td className={`px-3 text-right tabular-nums ${dv > 0 ? "text-emerald-700" : "text-slate-400"}`}>{money(dv)}</td>
-                  <td className="px-3 text-right tabular-nums">{money(famValue(r))}</td>
-                  <td className={`whitespace-nowrap px-3 text-right ${stale ? "text-amber-700" : ""}`}>{thDate(r.assets.current_value_date)}{stale && <div className="text-xs">เกิน 1 ปี</div>}</td>
+                  <td className="px-3 text-right tabular-nums">{money(famValue(r))}
+                    <div className={`text-xs ${stale ? "text-amber-700" : "text-slate-400"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 1 ปี"}</div></td>
                 </tr>
               );
             })}
@@ -203,12 +202,11 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           {rows.length > 0 && (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
               <tr>
-                <td className="px-3 py-3">รวมทั้งหมด</td><td className="px-3 text-slate-400">-</td><td className="px-3 text-right text-slate-400">-</td>
+                <td className="px-3 py-3">รวมทั้งหมด</td><td className="px-3 text-right text-slate-400">-</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.company)}</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.family)}</td>
                 <td className="px-3 text-right tabular-nums text-emerald-700">{money(totals.div)}</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.val)}</td>
-                <td className="px-3 text-right text-slate-400">-</td>
               </tr>
             </tfoot>
           )}
