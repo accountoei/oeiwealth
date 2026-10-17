@@ -14,6 +14,7 @@ import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
+import EditToggle from "@/components/EditToggle";
 import StatusSelect from "@/components/StatusSelect";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
@@ -52,11 +53,8 @@ type Cost = { utility_id: string; utility_type: string; provider: string | null;
 type Rent = { lease_id: string; name: string; income_period: string; due_date: string; expected_amount: number;
   received_amount: number; currency: string; status: string };
 
-export default async function PropertyDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }>;
-}) {
+export default async function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const editing = (await searchParams).edit === "1";
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
@@ -121,47 +119,84 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     <div className="space-y-6">
       <div>
         <Link href="/property" className="text-sm text-slate-500 hover:underline">← Property</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{a.name}</h1>
-        <p className="text-sm text-slate-500">
-          {PROPERTY_TYPE_LABEL[pd.property_type] ?? pd.property_type} · {USAGE_LABEL[pd.usage_type] ?? pd.usage_type}
-          {pd.location_group && ` · ${pd.location_group}`} · {a.currency}
-        </p>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">{a.name}</h1>
+            <p className="text-sm text-slate-500">
+              {PROPERTY_TYPE_LABEL[pd.property_type] ?? pd.property_type} · {USAGE_LABEL[pd.usage_type] ?? pd.usage_type}
+              {pd.location_group && ` · ${pd.location_group}`} · {a.currency}
+            </p>
+          </div>
+          {canWrite && a.status === "ACTIVE" && (
+            <ActionBar>
+              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} />
+              <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
+            </ActionBar>
+          )}
+        </div>
       </div>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">มูลค่าล่าสุด</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
-          <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
-            ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}
+        {/* ซ้าย: มูลค่า + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="text-xs text-slate-500">มูลค่าล่าสุด</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
+            <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
+              ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}
+            </div>
+            {a.acquisition_cost != null && (
+              <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
+            )}
           </div>
-          {a.acquisition_cost != null && (
-            <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
-          )}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-slate-500">รายละเอียด</div>
-            {canWrite && (editing
-              ? <Link href={`/property/${id}`} scroll={false} className="text-xs text-slate-500 underline">ปิดแก้ไข</Link>
-              : <Link href={`/property/${id}?edit=1#edit`} className="text-xs text-blue-700 underline">แก้ไข</Link>)}
+          <div className="flex-1">
+            <EntityDocuments entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
           </div>
-          <ul className="mt-1 space-y-0.5">
-            <li>เนื้อที่ {landText(pd.land_area_sq_wa)}</li>
-            <li>เอกสารสิทธิ์ {[pd.title_type, pd.title_deed_no && `เลขที่ ${pd.title_deed_no}`, pd.land_no && `เลขที่ดิน ${pd.land_no}`].filter(Boolean).join(" · ") || "-"}</li>
-            {pd.address && <li className="text-slate-600">{pd.address}</li>}
-          </ul>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">เจ้าของ</div>
-          <ul className="mt-1 space-y-0.5 text-sm">
-            {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
-          </ul>
-          {ownerTotal < 100 && <div className="mt-1 text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
-          {canWrite && <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
-            current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <EditToggle title="รายละเอียด" canEdit={canWrite}
+            view={
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <Item label="ประเภท / การใช้งาน">{PROPERTY_TYPE_LABEL[pd.property_type] ?? pd.property_type} · {USAGE_LABEL[pd.usage_type] ?? pd.usage_type}</Item>
+                <Item label="เนื้อที่">{landText(pd.land_area_sq_wa)}</Item>
+                <Item label="กลุ่มทำเล">{pd.location_group || "-"}</Item>
+                <Item label="เอกสารสิทธิ์">{[pd.title_type, pd.title_deed_no && `เลขที่ ${pd.title_deed_no}`].filter(Boolean).join(" · ") || "-"}
+                  {(pd.deed_book || pd.deed_page) && <span className="block text-xs text-slate-500">{[pd.deed_book && `เล่ม ${pd.deed_book}`, pd.deed_page && `หน้า ${pd.deed_page}`].filter(Boolean).join(" · ")}</span>}</Item>
+                <Item label="เลขที่ดิน / ระวาง / หน้าสำรวจ">{[pd.land_no, pd.map_sheet && `ระวาง ${pd.map_sheet}`, pd.survey_page && `หน้าสำรวจ ${pd.survey_page}`].filter(Boolean).join(" · ") || "-"}</Item>
+                <Item label="ตำบล / อำเภอ / จังหวัด">{[pd.subdistrict, pd.district, pd.province].filter(Boolean).join(" · ") || "-"}</Item>
+                <Item label="วันที่ได้มา / ราคาที่ได้มา">{a.acquisition_date ? thDate(a.acquisition_date) : "-"} · {money(a.acquisition_cost, undefined, 0)}</Item>
+                <Item label="สถานะ">{ASSET_STATUS_LABEL[a.status] ?? a.status}</Item>
+                <Item label="เจ้าของ">
+                  {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
+                  {ownerTotal < 99.99999 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {Math.round((100 - ownerTotal) * 10000) / 10000}%</div>}
+                </Item>
+                {pd.address && <Item label="ที่อยู่" wide>{pd.address}</Item>}
+                {a.notes && <Item label="หมายเหตุ" wide>{a.notes}</Item>}
+              </dl>
+            }
+            edit={
+              <div className="space-y-5">
+                <p className="text-xs text-slate-500">แก้เฉพาะข้อมูล ไม่กระทบมูลค่า (อัปเดตมูลค่าที่กล่อง &ldquo;มูลค่า&rdquo;)</p>
+                <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
+                  acquisition_cost: a.acquisition_cost, asset_id: id }} />
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
+                  <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะทรัพย์สิน"
+                    options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]}
+                    remove={canDelete ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้",
+                      hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined} />
+                </div>
+              </div>
+            } />
         </div>
       </section>
+
+      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+        paths={paths} canWrite={canWrite} canDelete={canDelete} />
 
       {/* ---------------- มูลค่า: อัปเดต + ประวัติ ---------------- */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -197,18 +232,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </table>
       </section>
 
-      {canWrite && a.status === "ACTIVE" && (
-        <ActionBar>
-          <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} />
-          <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
-        </ActionBar>
-      )}
-      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-        paths={paths} canWrite={canWrite} canDelete={canDelete} />
-
       {/* ---------------- สัญญาเช่า ---------------- */}
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">สัญญาเช่า</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-medium text-slate-900">สัญญาเช่า</h2>
+          {canWrite && (
+            <NewLeaseForm assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions}
+              label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา"} />
+          )}
+        </div>
         {!isRental && leases.length === 0 && (
           <p className="text-sm text-slate-500">
             ทรัพย์สินนี้{USAGE_LABEL[pd.usage_type] ?? ""} — ไม่ต้องมีสัญญาเช่า (ไม่นับว่าข้อมูลขาด)
@@ -280,10 +312,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           );
         })}
 
-        {canWrite && (
-          <NewLeaseForm assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions}
-            label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา"} />
-        )}
       </section>
 
       {rents.length > 0 && (
@@ -347,11 +375,14 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
       {/* ---------------- ค่าใช้จ่ายประจำ / สาธารณูปโภค ---------------- */}
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ / สาธารณูปโภค</h2>
-          {[...yearly.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
-            <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ / สาธารณูปโภค</h2>
+            {[...yearly.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
+              <p key={ccy} className="text-xs text-slate-500">ประมาณการต่อปี <span className="font-medium tabular-nums text-slate-700">{money(v, ccy, 0)}</span></p>
+            ))}
+          </div>
+          {canWrite && <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} />}
         </div>
         {utilities.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล · เพิ่มค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ พร้อมยอดประมาณเพื่อติดตามการจ่าย</p> : (
           <table className="w-full text-sm">
@@ -384,8 +415,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             </tbody>
           </table>
         )}
-        {canWrite && <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} />}
-
         {costs.length > 0 && (
           <div>
             <h3 className="mb-1 text-sm font-medium text-slate-700">ประมาณ vs จ่ายจริง</h3>
@@ -456,24 +485,17 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         )}
       </section>
 
-      {canWrite && editing && (
-        <section id="edit" className="scroll-mt-20 rounded-xl border border-blue-200 bg-white p-5 ring-1 ring-blue-100">
-          <div className="mb-1 flex items-center justify-between">
-            <h2 className="font-medium text-slate-900">แก้ไขข้อมูลทรัพย์สิน</h2>
-            <Link href={`/property/${id}`} scroll={false} className="text-xs text-slate-500 underline">ปิด</Link>
-          </div>
-          <p className="mb-3 text-xs text-slate-500">แก้เฉพาะข้อมูล ไม่กระทบมูลค่า · แก้เจ้าของที่การ์ด &ldquo;เจ้าของ&rdquo; ด้านบน</p>
-          <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
-            acquisition_cost: a.acquisition_cost, asset_id: id }} />
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะทรัพย์สิน"
-              options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]}
-              remove={canDelete ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้",
-                hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined} />
-          </div>
-        </section>
-      )}
-      <EntityDocuments entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} />
+    </div>
+  );
+}
+
+const ASSET_STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย", CLOSED: "ปิดแล้ว" };
+
+function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

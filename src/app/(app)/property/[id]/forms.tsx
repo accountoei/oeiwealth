@@ -197,7 +197,9 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
 
 type Info = { asset_id: string; name: string; notes: string | null; acquisition_date: string | null; acquisition_cost: number | null;
   property_type: string; usage_type: string; location_group: string | null; address: string | null;
-  land_area_sq_wa: number | null; title_type: string | null; title_deed_no: string | null; land_no: string | null };
+  land_area_sq_wa: number | null; title_type: string | null; title_deed_no: string | null; land_no: string | null;
+  deed_book: string | null; deed_page: string | null; map_sheet: string | null; survey_page: string | null;
+  subdistrict: string | null; district: string | null; province: string | null };
 
 export function EditPropertyForm({ p }: { p: Info }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
@@ -219,6 +221,11 @@ export function EditPropertyForm({ p }: { p: Info }) {
       </label>
       <label className="text-sm">กลุ่มทำเล<input name="location_group" defaultValue={p.location_group ?? ""} className={f} /></label>
       <label className="text-sm md:col-span-2">ที่อยู่<input name="address" defaultValue={p.address ?? ""} className={f} /></label>
+      <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+        <label className="text-sm">ตำบล / แขวง<input name="subdistrict" defaultValue={p.subdistrict ?? ""} className={f} /></label>
+        <label className="text-sm">อำเภอ / เขต<input name="district" defaultValue={p.district ?? ""} className={f} /></label>
+        <label className="text-sm">จังหวัด<input name="province" defaultValue={p.province ?? ""} className={f} /></label>
+      </div>
       <div className="text-sm">เนื้อที่ (ไร่-งาน-ตารางวา)
         <div className="mt-1 flex gap-2">
           <input name="land_rai" inputMode="numeric" placeholder="ไร่" defaultValue={land.rai} className={`w-full ${input}`} />
@@ -229,6 +236,12 @@ export function EditPropertyForm({ p }: { p: Info }) {
       <label className="text-sm">ประเภทเอกสารสิทธิ์<input name="title_type" defaultValue={p.title_type ?? ""} className={f} /></label>
       <label className="text-sm">เลขที่โฉนด<input name="title_deed_no" defaultValue={p.title_deed_no ?? ""} className={f} /></label>
       <label className="text-sm">เลขที่ดิน<input name="land_no" defaultValue={p.land_no ?? ""} className={f} /></label>
+      <div className="grid grid-cols-2 gap-3 md:col-span-2 md:grid-cols-4">
+        <label className="text-sm">เล่ม<input name="deed_book" defaultValue={p.deed_book ?? ""} className={f} data-plain /></label>
+        <label className="text-sm">หน้า<input name="deed_page" defaultValue={p.deed_page ?? ""} className={f} data-plain /></label>
+        <label className="text-sm">ระวาง<input name="map_sheet" defaultValue={p.map_sheet ?? ""} className={f} data-plain /></label>
+        <label className="text-sm">หน้าสำรวจ<input name="survey_page" defaultValue={p.survey_page ?? ""} className={f} data-plain /></label>
+      </div>
       <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} /></label>
       <label className="text-sm">ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" defaultValue={p.acquisition_cost ?? ""} className={f} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={p.notes ?? ""} className={f} /></label>

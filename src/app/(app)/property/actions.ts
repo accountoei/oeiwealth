@@ -90,6 +90,9 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
     location_group: str(form.get("location_group")), address: str(form.get("address")),
     land_area_sq_wa: sqwaFromForm(form), title_type: str(form.get("title_type")),
     title_deed_no: str(form.get("title_deed_no")), land_no: str(form.get("land_no")),
+    deed_book: str(form.get("deed_book")), deed_page: str(form.get("deed_page")), map_sheet: str(form.get("map_sheet")),
+    survey_page: str(form.get("survey_page")), subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
+    province: str(form.get("province")),
   }).eq("asset_id", id);
   if (e2) return { error: friendlyError(e2.message) };
   revalidateProperty(id);
