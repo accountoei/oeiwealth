@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
-import { BusinessInfoForm, CapitalForm, DividendForm, ShareSaleForm, UndoShareSale } from "./forms";
+import { BusinessInfoForm, BuySharesForm, DividendForm, ShareSaleForm, UndoShareSale } from "./forms";
 import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -21,15 +21,15 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }, { data: sales }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle(),
     supabase.from("private_business_details").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
+    supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,cost_per_share,start_date,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
-    supabase.from("income_transactions").select("id,date,amount,tax,currency,notes").eq("asset_id", id).is("deleted_at", null).order("date", { ascending: false }),
+    supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,income_type,income_subtype").eq("asset_id", id).is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("cash_movements").select("id,movement_date,movement_type,amount,currency,description,is_derived,metadata").or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`)
       .is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("business_share_sales").select("id,sale_date,shares,price,fee,currency,bank_asset_id,value_before,value_after,notes,created_at,persons(name)")
+    supabase.from("business_share_sales").select("id,kind,sale_date,shares,price,fee,currency,bank_asset_id,value_before,value_after,book_value,gain,cost_basis,new_issue,notes,created_at,persons(name)")
       .eq("asset_id", id).is("deleted_at", null).order("sale_date", { ascending: false }).order("created_at", { ascending: false }),
   ]);
   if (!a || !d) notFound();
@@ -38,7 +38,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const today = todayBangkok();
   const goLive = family?.go_live_date ?? "";
   const paths = [`/financial/business/${id}`, "/financial/business", "/income-expenses", "/financial/cash"];
-  type Own = { person_id: string; ownership_percent: number; shares: number | null; end_date: string | null; persons: { name: string } | { name: string }[] | null };
+  type Own = { person_id: string; ownership_percent: number; shares: number | null; cost_per_share: number | null; start_date: string; end_date: string | null;
+    persons: { name: string } | { name: string }[] | null };
   const activeOwners = ((owners ?? []) as Own[]).filter((o) => !o.end_date)
     .map((o) => ({ ...o, person_name: (Array.isArray(o.persons) ? o.persons[0]?.name : o.persons?.name) ?? "" }));
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
@@ -56,11 +57,17 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const label = (list: [string, string][], v: string) => list.find(([k]) => k === v)?.[1] ?? v;
   // ขายหุ้นรายคน: ต้องระบุเจ้าของเป็นจำนวนหุ้น
   const holders = activeOwners.filter((o) => o.shares != null && Number(o.shares) > 0)
-    .map((o) => ({ person_id: o.person_id, name: o.person_name, shares: Number(o.shares) }));
+    .map((o) => ({ person_id: o.person_id, name: o.person_name, shares: Number(o.shares), cost: o.cost_per_share == null ? null : Number(o.cost_per_share) }));
   const familyShares = holders.reduce((s2, o) => s2 + o.shares, 0);
+  const avgCost = d.investment_cost != null && familyShares > 0 ? Number(d.investment_cost) / familyShares : null;
+  const perShareNow = a.current_value != null && familyShares > 0 ? Number(a.current_value) / familyShares : null;
+  // หุ้นที่ครอบครัวถือ ณ วันที่ (ใช้คิดราคาหุ้นตามการประเมินในประวัติมูลค่า)
+  const sharesAt = (dt: string) => ((owners ?? []) as Own[]).filter((o) => o.shares != null && o.start_date <= dt && (!o.end_date || o.end_date >= dt))
+    .reduce((s2, o) => s2 + Number(o.shares), 0);
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
-  type Sale = { id: string; sale_date: string; shares: number; price: number; fee: number; currency: string; bank_asset_id: string | null;
-    value_before: number | null; value_after: number | null; notes: string | null; persons: { name: string } | { name: string }[] | null };
+  type Sale = { id: string; kind: string; sale_date: string; shares: number; price: number; fee: number; currency: string; bank_asset_id: string | null;
+    value_before: number | null; value_after: number | null; book_value: number | null; gain: number | null; cost_basis: number | null; new_issue: boolean;
+    notes: string | null; persons: { name: string } | { name: string }[] | null };
   const saleList = (sales ?? []) as Sale[];
   const pn = (x: Sale["persons"]) => (Array.isArray(x) ? x[0]?.name : x?.name) ?? "";
   return (
@@ -74,10 +81,11 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           </div>
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
-              <CapitalForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
+              {canDelete && byShares && <BuySharesForm assetId={id} currency={a.currency} banks={banks ?? []} persons={persons ?? []} holders={holders}
+                avgCost={avgCost} today={today} minDate={goLive} />}
               {canDelete && (byShares && holders.length > 0
                 ? <ShareSaleForm assetId={id} currency={a.currency} banks={banks ?? []} holders={holders} familyShares={familyShares}
-                    value={a.current_value == null ? null : Number(a.current_value)} today={today} minDate={goLive} />
+                    value={a.current_value == null ? null : Number(a.current_value)} avgCost={avgCost} today={today} minDate={goLive} />
                 : <span className="self-center text-xs text-slate-500" title="แก้ที่ แก้ไขข้อมูล → สมาชิกที่เป็นเจ้าของ">ขายหุ้นได้เมื่อระบุเจ้าของเป็นจำนวนหุ้น</span>)}
             </ActionBar>
           )}
@@ -105,13 +113,15 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                 <Item label="ประเภทกิจการ">{d.business_type || "-"}</Item>
                 <Item label="การถือหุ้น">ถือ {fmtPct(companyPct)} ของบริษัท</Item>
                 <Item label="หุ้นที่ถือ / หุ้นทั้งหมด">{qty(d.shares_owned)} / {qty(d.total_shares)}</Item>
-                <Item label="เงินลงทุน">{money(d.investment_cost, undefined, 0)}</Item>
+                <Item label="เงินลงทุน">{money(d.investment_cost, undefined, 0)}{avgCost != null && <span className="block text-xs text-slate-500">เฉลี่ยหุ้นละ {money(avgCost, undefined, 4)}</span>}</Item>
+                <Item label="ราคาหุ้นตามการประเมิน">{perShareNow != null ? money(perShareNow, a.currency, 4) : "-"}<span className="block text-xs text-slate-500">มูลค่า ÷ หุ้นที่ครอบครัวถือ</span></Item>
                 <Item label="สถานะกิจการ">{label(STATUS, d.status)}</Item>
                 <Item label="นับเป็นทรัพย์สิน">{label(ASSET_STATUS, a.status)}</Item>
                 <Item label="สมาชิกที่เป็นเจ้าของ">
                   {activeOwners.length === 0 ? "-" : activeOwners.map((o) => (
                     <div key={o.person_id}>{o.person_name} · {o.shares != null
-                      ? <>{qty(o.shares)} หุ้น <span className="text-slate-500">({fmtPct(pctOfCompany(Number(o.shares)))} ของบริษัท)</span></>
+                      ? <>{qty(o.shares)} หุ้น <span className="text-slate-500">({fmtPct(pctOfCompany(Number(o.shares)))} ของบริษัท)</span>
+                          <span className="block text-xs text-slate-500">ทุนหุ้นละ {money(o.cost_per_share ?? avgCost, a.currency, 4)}{o.cost_per_share == null && avgCost != null ? " (เฉลี่ย)" : ""}</span></>
                       : `${Number(o.ownership_percent)}%`}</div>))}
                   {!byShares && ownerTotal < 100 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
                 </Item>
@@ -127,7 +137,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                     unit={byShares ? "shares" : "percent"} totalShares={totalShares}
-                    current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent), shares: o.shares }))} />
+                    current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent), shares: o.shares, cost: o.cost_per_share }))} />
                 </div>
                 <div className="flex flex-wrap gap-x-6 gap-y-3 border-t border-slate-100 pt-4">
                   <StatusSelect table="private_business_details" id={d.id} value={d.status} paths={paths} label="สถานะกิจการ" options={STATUS}
@@ -145,32 +155,39 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
 
       {saleList.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">ประวัติขายหุ้น</h2>
+          <h2 className="mb-2 font-medium text-slate-900">ประวัติซื้อ / ขายหุ้น</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500">
-                <tr><th className="py-1">วันที่</th><th>ผู้ขาย</th><th className="text-right">จำนวนหุ้น</th><th className="pl-4 text-right">ราคาขาย</th>
-                  <th className="pl-4 text-right">เงินเข้าบัญชี</th><th className="pl-4">บัญชี</th><th></th></tr>
+                <tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">จำนวนหุ้น</th><th className="pl-4 text-right">ราคา</th>
+                  <th className="pl-4 text-right">กำไร / ขาดทุน</th><th className="pl-4">บัญชี</th><th></th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {saleList.map((x, i) => (
                   <tr key={x.id} className="align-top">
                     <td className="whitespace-nowrap py-1.5">{thDate(x.sale_date)}</td>
-                    <td>{pn(x.persons)}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
+                    <td><span className={x.kind === "BUY" ? "text-indigo-700" : "text-orange-700"}>{x.kind === "BUY" ? (x.new_issue ? "ลงทุนเพิ่ม (หุ้นใหม่)" : "ซื้อหุ้นเพิ่ม") : "ขาย"}</span> · {pn(x.persons)}
+                      {x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
                     <td className="text-right tabular-nums">{qty(x.shares)}</td>
                     <td className="whitespace-nowrap pl-4 text-right tabular-nums">{money(x.price, x.currency)}
+                      {Number(x.shares) > 0 && <div className="text-xs text-slate-500">หุ้นละ {money(Number(x.price) / Number(x.shares), undefined, 4)}</div>}
                       {Number(x.fee) > 0 && <div className="text-xs text-slate-500">ค่าใช้จ่าย {money(x.fee)}</div>}</td>
-                    <td className="whitespace-nowrap pl-4 text-right tabular-nums text-emerald-700">{x.bank_asset_id ? money(Number(x.price) - Number(x.fee), x.currency) : "-"}</td>
+                    <td className="whitespace-nowrap pl-4 text-right tabular-nums">{x.kind === "SELL" && x.gain != null ? (
+                      <><span className={Number(x.gain) >= 0 ? "text-emerald-700" : "text-red-700"}>{Number(x.gain) >= 0 ? "+" : "−"}{money(Math.abs(Number(x.gain)))}</span>
+                        {x.cost_basis != null && <div className="text-xs text-slate-500">เทียบทุน {(() => { const g = Number(x.price) - Number(x.fee) - Number(x.cost_basis); return `${g >= 0 ? "+" : "−"}${money(Math.abs(g))}`; })()}</div>}</>
+                    ) : "-"}</td>
                     <td className="pl-4 text-xs text-slate-500">{x.bank_asset_id ? bankName.get(x.bank_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                     <td className="pl-2 text-right">{canDelete && i === 0 && (
                       <UndoShareSale assetId={id} saleId={x.id}
-                        confirmText={`ยกเลิกการขายหุ้นของ ${pn(x.persons)} วันที่ ${thDate(x.sale_date)}?\n${qty(x.shares)} หุ้นจะกลับคืน · มูลค่ากลับเป็นก่อนขาย · เงินเข้าบัญชีของครั้งนี้ถูกลบ`} />)}</td>
+                        confirmText={x.kind === "BUY"
+                          ? `ยกเลิกการลงทุนเพิ่มของ ${pn(x.persons)} วันที่ ${thDate(x.sale_date)}?\nหุ้น ${qty(x.shares)} หุ้นจะถูกหักคืน · มูลค่า / เงินลงทุนกลับเป็นก่อนหน้า · เงินจ่ายของครั้งนี้ถูกลบ`
+                          : `ยกเลิกการขายหุ้นของ ${pn(x.persons)} วันที่ ${thDate(x.sale_date)}?\n${qty(x.shares)} หุ้นจะกลับคืน · มูลค่ากลับเป็นก่อนขาย · เงินเข้าบัญชีและกำไร / ขาดทุนของครั้งนี้ถูกลบ`} />)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs text-slate-500">ยกเลิกได้เฉพาะครั้งล่าสุด · ถ้าจะแก้ครั้งเก่ากว่า ให้ยกเลิกย้อนทีละครั้ง</p>
+          <p className="mt-2 text-xs text-slate-500">กำไร / ขาดทุน = เงินขายสุทธิ − มูลค่าตามราคาประเมินล่าสุด (ลงเป็นรายได้ / ค่าใช้จ่ายของผู้ขาย) · เทียบทุน = ดูเป็นข้อมูล · ยกเลิกได้เฉพาะครั้งล่าสุด</p>
         </section>
       )}
 
@@ -188,7 +205,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
             {(vals ?? []).map((v) => (
               <tr key={v.id}>
-                <td className="whitespace-nowrap py-1.5">{thDate(v.valuation_date)}</td><td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
+                <td className="whitespace-nowrap py-1.5">{thDate(v.valuation_date)}</td><td className="text-right tabular-nums">{money(v.value, undefined, 0)}
+                  {byShares && sharesAt(v.valuation_date) > 0 && <div className="text-xs text-slate-500">หุ้นละ {money(Number(v.value) / sharesAt(v.valuation_date), undefined, 4)}</div>}</td>
                 <td className="pl-3 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes}</td>
                 <td className="pl-2 text-right">{canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
                   fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value }]} />}</td>
@@ -205,16 +223,16 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
               {(incomes ?? []).map((i) => (
                 <tr key={i.id}>
-                  <td className="whitespace-nowrap py-1.5">{thDate(i.date)}</td><td>ปันผล</td><td className="text-right tabular-nums text-emerald-700">{money(i.amount, i.currency)}</td>
-                  <td className="pl-2 text-right">{canWrite && <RowActions table="income_transactions" id={i.id} paths={paths} canDelete={canDelete}
+                  <td className="whitespace-nowrap py-1.5">{thDate(i.date)}</td><td>{i.income_type === "BUSINESS_DIVIDEND" ? "ปันผล" : i.income_subtype ?? "รายได้อื่น"}</td><td className="text-right tabular-nums text-emerald-700">{money(i.amount, i.currency)}</td>
+                  <td className="pl-2 text-right">{canWrite && i.income_type === "BUSINESS_DIVIDEND" && <RowActions table="income_transactions" id={i.id} paths={paths} canDelete={canDelete}
                     fields={businessDividendFields(i)} />}</td>
                 </tr>
               ))}
               {(moves ?? []).map((m) => (
                 <tr key={m.id}>
-                  <td className="whitespace-nowrap py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : m.movement_type === "ASSET_SALE" ? "เงินขายหุ้น (สุทธิ)" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
+                  <td className="whitespace-nowrap py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : m.movement_type === "ASSET_SALE" ? "เงินขายหุ้น (ทุนคืน)" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
                   <td className="text-right tabular-nums">{money(m.amount, m.currency)}</td>
-                  <td className="pl-2 text-right">{canWrite && !m.is_derived && !(m.metadata as { share_sale?: boolean } | null)?.share_sale && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
+                  <td className="pl-2 text-right">{canWrite && !m.is_derived && !(m.metadata as { share_sale?: boolean; share_buy?: boolean } | null)?.share_sale && !(m.metadata as { share_buy?: boolean } | null)?.share_buy && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
                     fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount }]} />}</td>
                 </tr>
               ))}

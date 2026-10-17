@@ -52,7 +52,7 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
         <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
       </div>
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
-        <li>เงินเข้าบัญชี = ราคาขาย − ค่าใช้จ่าย (เป็นเงินขายทรัพย์สิน ไม่ใช่รายได้ประจำ)</li>
+        <li>เงินเข้าบัญชี = ราคาขาย − ค่าใช้จ่าย · กำไร / ขาดทุน = เงินเข้าบัญชี − มูลค่าล่าสุด → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ขาดทุนไม่มีเงินออกจากบัญชี)</li>
         <li>บันทึกมูลค่า ณ วันขาย = ราคาขาย แล้วเปลี่ยนสถานะเป็น &ldquo;ขายแล้ว&rdquo; (ไม่นับใน Net Worth หลังวันขาย)</li>
         {hasLease && <li className="text-amber-700">ถ้ายังมีสัญญาเช่าที่มีผลหลังวันขาย ต้องบันทึกเลิกสัญญา / คืนเงินประกันก่อน</li>}
       </ul>

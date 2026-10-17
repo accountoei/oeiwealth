@@ -19,7 +19,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
   ]);
   const list = moves ?? [];
   const sale = list.find((m) => m.movement_type === "ASSET_SALE");
-  const meta = (sale?.metadata ?? {}) as { sale_price?: number; fee?: number };
+  const meta = (sale?.metadata ?? {}) as { sale_price?: number; fee?: number; book_value?: number | null; gain?: number | null };
   const price = meta.sale_price != null ? Number(meta.sale_price) : saleVal ? Number(saleVal.value) : null;
   const fee = Number(meta.fee ?? 0);
   const paid = list.filter((m) => m.movement_type === "ASSET_PURCHASE").reduce((s, m) => s + Number(m.amount), 0);
@@ -36,12 +36,18 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           <div><div className="text-xs text-slate-500">ค่าใช้จ่ายในการขาย</div><div className="tabular-nums">{money(fee, currency, 0)}</div></div>
           <div><div className="text-xs text-slate-500">ต้นทุน (ราคาที่ได้มา)</div><div className="tabular-nums">{basis != null ? money(basis, currency, 0) : "ยังไม่ได้ระบุ"}</div></div>
           <div>
-            <div className="text-xs text-slate-500">กำไร / ขาดทุนจากการขาย</div>
+            <div className="text-xs text-slate-500">เทียบต้นทุน (ดูเป็นข้อมูล)</div>
             {basis != null ? (() => { const g = (price ?? 0) - fee - basis; return (
               <div className={`font-semibold tabular-nums ${g >= 0 ? "text-emerald-700" : "text-red-600"}`}>{g >= 0 ? "+" : ""}{money(g, currency, 0)}</div>); })()
               : <div className="text-xs text-amber-700">ใส่ &ldquo;ราคาที่ได้มา&rdquo; เพื่อคำนวณ</div>}
           </div>
-          {lastVal && <div className="text-xs text-slate-500 md:col-span-4">
+          {meta.gain != null ? (
+            <div className="text-sm md:col-span-4">
+              กำไร / ขาดทุนที่ลงบัญชี (เทียบมูลค่าล่าสุด {money(meta.book_value, currency, 0)}):{" "}
+              <b className={Number(meta.gain) >= 0 ? "text-emerald-700" : "text-red-600"}>{Number(meta.gain) >= 0 ? "+" : ""}{money(meta.gain, currency, 0)}</b>
+              <span className="text-xs text-slate-500"> · ลงเป็น{Number(meta.gain) >= 0 ? "รายได้" : "ค่าใช้จ่าย"}ของเจ้าของตามสัดส่วน</span>
+            </div>
+          ) : lastVal && <div className="text-xs text-slate-500 md:col-span-4">
             เทียบมูลค่าล่าสุดก่อนขาย {money(lastVal.value, currency, 0)} ({thDate(lastVal.valuation_date)}) → ส่วนต่าง {money((price ?? 0) - Number(lastVal.value), currency, 0)}
           </div>}
         </div>
@@ -51,7 +57,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           {list.map((m) => (
             <tr key={m.id}>
               <td className="py-1.5">{thDate(m.movement_date)}</td>
-              <td>{m.movement_type === "ASSET_SALE" ? "เงินขาย (สุทธิ) เข้าบัญชี" : "จ่ายซื้อ / จ่ายเพิ่ม"}</td>
+              <td>{m.movement_type === "ASSET_SALE" ? ((m.metadata as { gain?: number } | null)?.gain != null ? "เงินขาย (ทุนคืน) เข้าบัญชี" : "เงินขาย (สุทธิ) เข้าบัญชี") : "จ่ายซื้อ / จ่ายเพิ่ม"}</td>
               <td className="text-slate-500">{m.description}</td>
               <td className={`text-right tabular-nums ${m.movement_type === "ASSET_SALE" ? "text-emerald-700" : ""}`}>{money(m.amount, m.currency)}</td>
               <td className="pl-2 text-right">{canWrite && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete} canEdit={m.movement_type === "ASSET_PURCHASE"}
@@ -62,7 +68,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           ))}
         </tbody></table>
       )}
-      {sold && <p className="mt-2 text-xs text-slate-500">บันทึกขายผิด: ลบ &ldquo;เงินขาย&rdquo; ด้านบน ลบมูลค่า &ldquo;ราคาขาย&rdquo; ในประวัติมูลค่า แล้วเปลี่ยนสถานะกลับเป็น &ldquo;ถืออยู่&rdquo;</p>}
+      {sold && <p className="mt-2 text-xs text-slate-500">บันทึกขายผิด: ลบ &ldquo;เงินขาย&rdquo; ด้านบน ลบรายได้กำไร / ค่าใช้จ่ายขาดทุนจากการขายในหน้ารายได้ / ค่าใช้จ่าย ลบมูลค่า &ldquo;ราคาขาย&rdquo; ในประวัติมูลค่า แล้วเปลี่ยนสถานะกลับเป็น &ldquo;ถืออยู่&rdquo;</p>}
     </section>
   );
 }

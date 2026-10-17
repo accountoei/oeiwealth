@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addCapital, recordDividend, sellShares, undoShareSale, updateBusinessInfo, type ActionState } from "../actions";
+import { buyShares, recordDividend, sellShares, undoShareSale, updateBusinessInfo, type ActionState } from "../actions";
 import { money, qty } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
@@ -50,24 +50,6 @@ export function DividendForm({ assetId, banks, today, minDate }: { assetId: stri
   );
 }
 
-export function CapitalForm({ assetId, banks, today, minDate }: { assetId: string; banks: Bank[]; today: string; minDate: string }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(addCapital, {});
-  return (
-    <Box title="ลงทุนเพิ่ม / เพิ่มทุน" label="+ ลงทุนเพิ่ม" action={action} pending={pending} state={state}>
-      <input type="hidden" name="asset_id" value={assetId} />
-      <div className="grid gap-3 md:grid-cols-3">
-        <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">จ่ายจากบัญชี *
-          <select name="bank_asset_id" required className={input}>{banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}</select>
-        </label>
-        <label className="text-sm">จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
-        <label className="text-sm md:col-span-3">รายละเอียด<input name="description" className={input} /></label>
-      </div>
-      <p className="text-xs text-slate-500">เงินออกจากบัญชี (ไม่ใช่ค่าใช้จ่าย) · มูลค่ากิจการไม่เปลี่ยนเอง ให้อัปเดตมูลค่าด้านล่างหลังบันทึก</p>
-    </Box>
-  );
-}
-
 /** แก้รายละเอียดธุรกิจ (ชื่อรายการ · ข้อมูลบริษัท · หุ้น · เงินลงทุน · หมายเหตุ) */
 export function BusinessInfoForm({ assetId, byShares, v }: {
   assetId: string; byShares: boolean;
@@ -103,19 +85,24 @@ export function BusinessInfoForm({ assetId, byShares, v }: {
   );
 }
 
-type Holder = { person_id: string; name: string; shares: number };
+type Holder = { person_id: string; name: string; shares: number; cost: number | null };
 const n = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
+const fx = (v: number) => (Number.isFinite(v) ? String(Math.round(v * 10000) / 10000) : "");
+const signed = (v: number, ccy: string) => `${v >= 0 ? "+" : "−"}${money(Math.abs(v), ccy)}`;
 
 /**
- * ขายหุ้นรายคน: เลือกผู้ขายทีละคน · ขายบางส่วนหรือทั้งหมด · ราคาต่อหุ้นของหุ้นที่เหลือเท่าเดิม
- *   ตัวเลขด้านล่างฟอร์มคำนวณให้ดูก่อนบันทึก (ฐานข้อมูลคำนวณซ้ำตอนบันทึก)
+ * ขายหุ้นรายคน: เลือกผู้ขายทีละคน · ใส่ราคาต่อหุ้นหรือราคารวม (อีกช่องคำนวณให้)
+ *   กำไร / ขาดทุนที่ลงบัญชี = เงินขายสุทธิ − หุ้นที่ขาย × ราคาหุ้นตามการประเมินล่าสุด · เทียบราคาทุน = ดูเป็นข้อมูล
+ *   ตัวเลขใต้ฟอร์มคำนวณให้ดูก่อนบันทึก (ฐานข้อมูลคำนวณซ้ำตอนบันทึก)
  */
-export function ShareSaleForm({ assetId, currency, banks, holders, familyShares, value, today, minDate }: {
-  assetId: string; currency: string; banks: Bank[]; holders: Holder[]; familyShares: number; value: number | null; today: string; minDate: string;
+export function ShareSaleForm({ assetId, currency, banks, holders, familyShares, value, avgCost, today, minDate }: {
+  assetId: string; currency: string; banks: Bank[]; holders: Holder[]; familyShares: number; value: number | null;
+  avgCost: number | null; today: string; minDate: string;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(sellShares, {});
   const [who, setWho] = useState(holders[0]?.person_id ?? "");
   const [sh, setSh] = useState("");
+  const [unit, setUnit] = useState("");
   const [price, setPrice] = useState("");
   const [fee, setFee] = useState("");
   const h = holders.find((x) => x.person_id === who);
@@ -123,6 +110,13 @@ export function ShareSaleForm({ assetId, currency, banks, holders, familyShares,
   const over = !!h && sold > h.shares;
   const left = familyShares - sold;
   const list = banks.filter((b) => b.currency === currency);
+  const perShare = value != null && familyShares > 0 ? value / familyShares : null;   // ราคาหุ้นตามการประเมิน
+  const book = perShare != null ? Math.round(perShare * sold * 100) / 100 : null;
+  const net = n(price) - n(fee);
+  const gain = book != null ? net - book : null;
+  const cps = h?.cost ?? avgCost;
+  const costGain = cps != null ? net - cps * sold : null;
+  const setShares = (v: string) => { setSh(v); if (n(unit) > 0) setPrice(fx(n(unit) * n(v))); };
   return (
     <Box title="ขายหุ้น" label="ขายหุ้น" action={action} pending={pending} state={state}>
       <input type="hidden" name="asset_id" value={assetId} />
@@ -134,12 +128,17 @@ export function ShareSaleForm({ assetId, currency, banks, holders, familyShares,
         </label>
         <label className="text-sm">จำนวนหุ้นที่ขาย *
           <span className="flex gap-2">
-            <input name="shares" required inputMode="decimal" data-money="off" value={sh} onChange={(e) => setSh(e.target.value)} className={input} />
-            {h && <button type="button" onClick={() => setSh(String(h.shares))} className="mt-1 whitespace-nowrap rounded-md border border-slate-300 px-2 text-xs hover:bg-slate-50">ขายทั้งหมด</button>}
+            <input name="shares" required inputMode="decimal" data-money="off" value={sh} onChange={(e) => setShares(e.target.value)} className={input} />
+            {h && <button type="button" onClick={() => setShares(String(h.shares))} className="mt-1 whitespace-nowrap rounded-md border border-slate-300 px-2 text-xs hover:bg-slate-50">ขายทั้งหมด</button>}
           </span>
         </label>
         <label className="text-sm">วันที่ขาย *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">ราคาขายรวม ({currency}) *<input name="price" required inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className={input} /></label>
+        <label className="text-sm">ราคาขายต่อหุ้น
+          <input inputMode="decimal" value={unit} onChange={(e) => { setUnit(e.target.value); if (sold > 0) setPrice(fx(n(e.target.value) * sold)); }} className={input} />
+        </label>
+        <label className="text-sm">ราคาขายรวม ({currency}) *
+          <input name="price" required inputMode="decimal" value={price} onChange={(e) => { setPrice(e.target.value); if (sold > 0) setUnit(fx(n(e.target.value) / sold)); }} className={input} />
+        </label>
         <label className="text-sm">ค่าใช้จ่ายในการขาย<input name="fee" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="ค่าธรรมเนียม / ภาษี" className={input} /></label>
         <label className="text-sm">เงินเข้าบัญชี
           <select name="bank_asset_id" defaultValue={list[0]?.asset_id ?? ""} className={input}>
@@ -147,22 +146,75 @@ export function ShareSaleForm({ assetId, currency, banks, holders, familyShares,
             {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
           </select>
         </label>
-        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
+        <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
       </div>
       {sold > 0 && (
         <div className={`rounded-lg p-3 text-xs ${over ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-700"}`}>
           {over ? <p>{h?.name} ถืออยู่ {qty(h?.shares)} หุ้น — ขายเกินที่ถือไม่ได้</p> : (
             <ul className="space-y-0.5">
-              <li>ราคาต่อหุ้น {money(n(price) / sold, currency, 4)} · เงินเข้าบัญชีสุทธิ {money(n(price) - n(fee), currency)}</li>
-              <li>{h?.name} เหลือ {qty((h?.shares ?? 0) - sold)} หุ้น{(h?.shares ?? 0) - sold <= 0 ? " (ขายหมด · หลุดจากรายชื่อเจ้าของ)" : ""}</li>
-              <li>หุ้นที่ครอบครัวถือ {qty(familyShares)} → {qty(left)}
-                {value != null && familyShares > 0 && <> · มูลค่าส่วนของครอบครัว {money(value, currency)} → {money(Math.round(value * left / familyShares * 100) / 100, currency)}</>}</li>
+              <li>เงินขายสุทธิ {money(net, currency)}{perShare != null && <> · ราคาหุ้นตามการประเมิน {money(perShare, currency, 4)} → มูลค่าส่วนที่ขาย {money(book, currency)}</>}</li>
+              {gain != null && <li className={`font-medium ${gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                {gain >= 0 ? "กำไร" : "ขาดทุน"}จากการขาย {money(Math.abs(gain), currency)} → ลงเป็น{gain >= 0 ? "รายได้" : "ค่าใช้จ่าย"}ของ {h?.name}</li>}
+              {costGain != null && <li className="text-slate-500">เทียบราคาทุน ({money(cps, currency, 4)}/หุ้น): {signed(costGain, currency)} (ดูเป็นข้อมูล)</li>}
+              <li>{h?.name} เหลือ {qty((h?.shares ?? 0) - sold)} หุ้น{(h?.shares ?? 0) - sold <= 0 ? " (ขายหมด · หลุดจากรายชื่อเจ้าของ)" : ""}
+                {" · "}หุ้นที่ครอบครัวถือ {qty(familyShares)} → {qty(left)}</li>
               {left <= 0 && <li className="font-medium text-amber-700">ทุกคนขายหมด → ธุรกิจจะเปลี่ยนเป็น &ldquo;ขายหุ้นแล้ว&rdquo;</li>}
             </ul>
           )}
         </div>
       )}
-      <p className="text-xs text-slate-500">เงินขายเข้าบัญชีที่เลือก (ไม่ใช่รายได้ประจำ) · หุ้นที่เหลือคิดราคาต่อหุ้นเท่าเดิม · โอนหุ้นให้กันในครอบครัวไม่ใช่การขาย ให้แก้จำนวนหุ้นของสมาชิกแทน</p>
+      <p className="text-xs text-slate-500">เงินเข้าบัญชีรวม = เงินขายสุทธิ (ทุนคืน + กำไร) · ขาดทุนไม่มีเงินออกจากบัญชี · โอนหุ้นให้กันในครอบครัวไม่ใช่การขาย ให้แก้จำนวนหุ้นของสมาชิกแทน</p>
+    </Box>
+  );
+}
+
+/** ลงทุนเพิ่ม: ผู้ลงทุน · หุ้นที่ได้ × ราคาต่อหุ้น · บริษัทออกหุ้นใหม่หรือซื้อต่อจากคนนอกครอบครัว */
+export function BuySharesForm({ assetId, currency, banks, persons, holders, avgCost, today, minDate }: {
+  assetId: string; currency: string; banks: Bank[]; persons: { id: string; name: string }[]; holders: Holder[]; avgCost: number | null; today: string; minDate: string;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(buyShares, {});
+  const [who, setWho] = useState(holders[0]?.person_id ?? persons[0]?.id ?? "");
+  const [sh, setSh] = useState("");
+  const [unit, setUnit] = useState("");
+  const [amount, setAmount] = useState("");
+  const list = banks.filter((b) => b.currency === currency);
+  const h = holders.find((x) => x.person_id === who);
+  const got = n(sh);
+  const oldCost = h ? h.cost ?? avgCost : null;
+  const newCost = got > 0 && n(amount) > 0 ? (h && oldCost != null ? (h.shares * oldCost + n(amount)) / (h.shares + got) : !h ? n(amount) / got : null) : null;
+  return (
+    <Box title="ลงทุนเพิ่ม (ได้หุ้นเพิ่ม)" label="+ ลงทุนเพิ่ม" action={action} pending={pending} state={state}>
+      <input type="hidden" name="asset_id" value={assetId} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="text-sm">ผู้ลงทุน *
+          <select name="person_id" required value={who} onChange={(e) => setWho(e.target.value)} className={input}>
+            {persons.map((p) => { const x = holders.find((y) => y.person_id === p.id); return <option key={p.id} value={p.id}>{p.name}{x ? ` · ถืออยู่ ${qty(x.shares)} หุ้น` : ""}</option>; })}
+          </select>
+        </label>
+        <label className="text-sm">จำนวนหุ้นที่ได้ *
+          <input name="shares" required inputMode="decimal" data-money="off" value={sh}
+            onChange={(e) => { setSh(e.target.value); if (n(unit) > 0) setAmount(fx(n(unit) * n(e.target.value))); }} className={input} />
+        </label>
+        <label className="text-sm">ราคาต่อหุ้น
+          <input inputMode="decimal" value={unit} onChange={(e) => { setUnit(e.target.value); if (got > 0) setAmount(fx(n(e.target.value) * got)); }} className={input} />
+        </label>
+        <label className="text-sm">ยอดจ่าย ({currency}) *
+          <input name="amount" required inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value); if (got > 0) setUnit(fx(n(e.target.value) / got)); }} className={input} />
+        </label>
+        <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">จ่ายจากบัญชี *
+          <select name="bank_asset_id" required defaultValue={list[0]?.asset_id ?? ""} className={input}>
+            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm md:col-span-3">
+          <input type="checkbox" name="new_issue" defaultChecked /> บริษัทออกหุ้นใหม่ (เพิ่มทุน · หุ้นทั้งหมดของบริษัทเพิ่มขึ้น) — ไม่ติ๊ก = ซื้อต่อจากผู้ถือหุ้นนอกครอบครัว
+        </label>
+        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" className={input} /></label>
+      </div>
+      {newCost != null && <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
+        ราคาทุนเฉลี่ยของ {persons.find((p) => p.id === who)?.name} หลังลงทุน {money(newCost, currency, 4)}/หุ้น · มูลค่าส่วนของครอบครัว + {money(n(amount), currency)}</p>}
+      <p className="text-xs text-slate-500">เงินออกจากบัญชี (ไม่ใช่ค่าใช้จ่าย) · มูลค่ากิจการเพิ่มเท่ายอดจ่าย · ให้กู้กับบริษัทให้บันทึกที่หน้า Loans Receivable</p>
     </Box>
   );
 }

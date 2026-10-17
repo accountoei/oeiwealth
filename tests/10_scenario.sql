@@ -1869,8 +1869,13 @@ SELECT t.ok((SELECT shares_owned FROM public.private_business_details WHERE asse
             AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND end_date IS NULL AND deleted_at IS NULL) = 400
             AND (SELECT end_date FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND shares = 600 AND deleted_at IS NULL) = current_date - 2
             AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('บริษัทขายหุ้น') AND valuation_date = current_date - 1 AND deleted_at IS NULL) = 800000
-            AND (SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL) = 299000,
-            'ขายหุ้นบางส่วน: หุ้นผู้ขายลดตั้งแต่วันขาย (แถวเดิมปิดวันก่อน) · หุ้นครอบครัว 800 · มูลค่า 800,000 (ราคาต่อหุ้นเดิม) · เงินเข้าบัญชีสุทธิ 299,000');
+            AND (SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL) = 200000
+            AND (SELECT amount FROM public.income_transactions WHERE asset_id = t.a('บริษัทขายหุ้น') AND income_subtype = 'กำไรจากการขายหุ้น' AND deleted_at IS NULL) = 99000
+            AND (SELECT person_id FROM public.income_transactions WHERE asset_id = t.a('บริษัทขายหุ้น') AND income_subtype = 'กำไรจากการขายหุ้น' AND deleted_at IS NULL) = t.p('คุณพ่อ'),
+            'ขายหุ้นบางส่วน: หุ้นผู้ขายลดตั้งแต่วันขาย · หุ้นครอบครัว 800 · มูลค่า 800,000 · เงินเข้าบัญชี 299,000 = ทุนคืน 200,000 + กำไร 99,000 (รายได้ของผู้ขาย)');
+SELECT t.ok((SELECT investment_cost FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 800000
+            AND (SELECT gain FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL) = 99000,
+            'เงินลงทุนลดตามทุนของหุ้นที่ขาย (เฉลี่ย 1,000 × 200) · บันทึกกำไรในประวัติขาย');
 SELECT t.ok((SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ')) = 400000
             AND (SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่')) = 400000,
             'มูลค่ารายคนหลังขาย: พ่อ 400 หุ้น = 400,000 · แม่ 400 หุ้น = 400,000');
@@ -1884,7 +1889,7 @@ SELECT t.ok((SELECT shares_owned FROM public.private_business_details WHERE asse
             AND (SELECT status FROM public.assets WHERE id = t.a('บริษัทขายหุ้น')) = 'ACTIVE',
             'แม่ขายหมด (วันเดียวกัน): หลุดจากเจ้าของ · หุ้นครอบครัว 400 · มูลค่า 400,000 · ธุรกิจยังถืออยู่');
 SELECT t.fails($$SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL))$$,
-  'ครั้งล่าสุด', 'ยกเลิกได้เฉพาะการขายครั้งล่าสุด');
+  'รายการล่าสุด', 'ยกเลิกได้เฉพาะการขายครั้งล่าสุด');
 SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND deleted_at IS NULL));
 SELECT t.ok((SELECT shares_owned FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 800
             AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND end_date IS NULL AND deleted_at IS NULL) = 400
@@ -1903,6 +1908,54 @@ SELECT t.ok((SELECT status FROM public.assets WHERE id = t.a('บริษัท
             AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND end_date IS NULL AND deleted_at IS NULL) = 400
             AND (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL) = 2,
             'ยกเลิกการขายที่ทำให้ขายหมด → กลับมาถืออยู่ · เงินเข้าบัญชีของครั้งนั้นถูกลบ');
+-- ขาดทุน → ค่าใช้จ่าย (ไม่มีเงินออก) · ยกเลิกแล้วหายด้วย
+SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณพ่อ'), current_date, 100, 70000, NULL, t.a('KBank ออมทรัพย์'), NULL) IS NOT NULL AS sale_loss;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE related_asset_id = t.a('บริษัทขายหุ้น') AND expense_category = 'ขาดทุนจากการขายหุ้น' AND deleted_at IS NULL) = 30000
+            AND (SELECT paid_from_asset_id FROM public.expense_items WHERE related_asset_id = t.a('บริษัทขายหุ้น') AND expense_category = 'ขาดทุนจากการขายหุ้น' AND deleted_at IS NULL) IS NULL
+            AND (SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL AND movement_date = current_date AND amount = 70000) = 70000,
+            'ขายขาดทุน (มูลค่า 100,000 ขายได้ 70,000): ค่าใช้จ่ายขาดทุน 30,000 ไม่ผ่านบัญชี · เงินเข้าบัญชี 70,000');
+SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND sale_date = current_date AND deleted_at IS NULL));
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE related_asset_id = t.a('บริษัทขายหุ้น') AND expense_category = 'ขาดทุนจากการขายหุ้น' AND deleted_at IS NULL),
+            'ยกเลิกการขาย → ค่าใช้จ่ายขาดทุนถูกลบด้วย');
+-- ลงทุนเพิ่ม (ออกหุ้นใหม่): หุ้น / ทุนเฉลี่ย / มูลค่า + ยอดจ่าย · ยกเลิก
+SELECT public.buy_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณแม่'), current_date, 200, 300000, t.a('KBank ออมทรัพย์'), true, NULL) IS NOT NULL AS buy1;
+SELECT t.ok((SELECT total_shares FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 1200
+            AND (SELECT shares_owned FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 600
+            AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND end_date IS NULL AND deleted_at IS NULL) = 200
+            AND (SELECT round(cost_per_share, 2) FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND end_date IS NULL AND deleted_at IS NULL) = 1500
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('บริษัทขายหุ้น') AND valuation_date = current_date AND deleted_at IS NULL) = 700000
+            AND (SELECT investment_cost FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 700000
+            AND (SELECT sum(ownership_percent) FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND end_date IS NULL AND deleted_at IS NULL) BETWEEN 99.99 AND 100,
+            'ลงทุนเพิ่ม (ผู้ถือใหม่) 200 หุ้น 300,000 ออกหุ้นใหม่: หุ้นทั้งหมด 1,200 · ครอบครัว 600 · แม่ 200 หุ้น ทุนหุ้นละ 1,500 · มูลค่า +300,000 · เงินลงทุน +300,000');
+SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND kind = 'BUY' AND deleted_at IS NULL));
+SELECT t.ok((SELECT total_shares FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 1000
+            AND (SELECT shares_owned FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 400
+            AND NOT EXISTS (SELECT 1 FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND end_date IS NULL AND deleted_at IS NULL)
+            AND (SELECT investment_cost FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 400000
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'ASSET_PURCHASE' AND to_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL AND metadata ? 'share_buy'),
+            'ยกเลิกการลงทุนเพิ่ม: หุ้นทั้งหมด / ครอบครัว / ของแม่ กลับเป็นเดิม · เงินจ่ายถูกลบ');
+SELECT t.fails($$SELECT public.buy_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณแม่'), current_date, 700, 100, t.a('KBank ออมทรัพย์'), false, NULL)$$,
+  'เกินหุ้นทั้งหมด', 'ซื้อหุ้น (ไม่ออกหุ้นใหม่) เกินหุ้นทั้งหมดของบริษัทไม่ได้');
+-- ขายทั้งก้อน (สินทรัพย์อื่น): กำไรเทียบมูลค่าล่าสุด → รายได้แบ่งตามเจ้าของ · ขาดทุน → ค่าใช้จ่ายรายคน
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency, acquisition_date, acquisition_cost)
+  SELECT id, 'ALTERNATIVE', 'COLLECTIBLE', 'ของสะสมขายกำไร', 'THB', current_date - 2, 1000 FROM public.families;
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES (t.a('ของสะสมขายกำไร'), current_date - 2, 5000, 'USER_ESTIMATE', 'USER');
+SELECT public.set_asset_ownership(t.a('ของสะสมขายกำไร'), jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'percent',50), jsonb_build_object('person_id',t.p('คุณแม่'),'percent',50)), 'CORRECT', NULL);
+SELECT public.sell_asset(t.a('ของสะสมขายกำไร'), current_date, 8000, t.a('KBank ออมทรัพย์'), 500, NULL);
+SELECT t.ok((SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ของสะสมขายกำไร') AND deleted_at IS NULL) = 5000
+            AND (SELECT amount FROM public.income_transactions WHERE asset_id = t.a('ของสะสมขายกำไร') AND income_subtype = 'กำไรจากการขายทรัพย์สิน' AND deleted_at IS NULL) = 2500
+            AND (SELECT sum(amount_share) FROM public.v_income_by_person v JOIN public.income_transactions i ON i.id = v.income_id
+                  WHERE i.asset_id = t.a('ของสะสมขายกำไร') AND v.person_id = t.p('คุณพ่อ')) = 1250,
+            'ขายทั้งก้อน: ขาย 8,000 ค่าใช้จ่าย 500 · มูลค่าล่าสุด 5,000 → ทุนคืน 5,000 + กำไร 2,500 (แบ่งตามเจ้าของ 50/50)');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency, acquisition_date, acquisition_cost)
+  SELECT id, 'ALTERNATIVE', 'COLLECTIBLE', 'ของสะสมขายขาดทุน', 'THB', current_date - 2, 1000 FROM public.families;
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES (t.a('ของสะสมขายขาดทุน'), current_date - 2, 5000, 'USER_ESTIMATE', 'USER');
+SELECT public.set_asset_ownership(t.a('ของสะสมขายขาดทุน'), jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'percent',60), jsonb_build_object('person_id',t.p('คุณแม่'),'percent',40)), 'CORRECT', NULL);
+SELECT public.sell_asset(t.a('ของสะสมขายขาดทุน'), current_date, 4000, t.a('KBank ออมทรัพย์'), NULL, NULL);
+SELECT t.ok((SELECT sum(amount) FROM public.expense_items WHERE related_asset_id = t.a('ของสะสมขายขาดทุน') AND expense_category = 'ขาดทุนจากการขายทรัพย์สิน' AND deleted_at IS NULL) = 1000
+            AND (SELECT amount FROM public.expense_items WHERE related_asset_id = t.a('ของสะสมขายขาดทุน') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL) = 600
+            AND (SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ของสะสมขายขาดทุน') AND deleted_at IS NULL) = 4000,
+            'ขายทั้งก้อนขาดทุน 1,000: ค่าใช้จ่ายรายคนตามเจ้าของ (พ่อ 600 · แม่ 400) · เงินเข้าบัญชี 4,000');
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณพ่อ'), current_date, 1, 1, NULL, NULL, NULL)$$,
   'PERMISSION|สิทธิ์|role', 'VIEWER ขายหุ้นไม่ได้');

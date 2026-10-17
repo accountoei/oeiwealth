@@ -29,7 +29,7 @@
   - ยกเว้น PR ที่แก้**เฉพาะเอกสาร** (`docs/`, `*.md` — ไม่แตะโค้ด / migration / Edge Function / workflow) AI Merge เองได้ แล้วแจ้งเจ้าของ
 - migration ใหม่ = ไฟล์ใหม่เสมอ (ห้ามแก้ไฟล์ที่รันแล้ว) · **เจ้าของรันเองใน Supabase SQL Editor** จากลิงก์ `raw.githubusercontent.com/accountoei/oeiwealth/<branch>/supabase/migrations/<file>` → AI ตรวจผลด้วย SELECT (ฟังก์ชัน / ตาราง / RLS / advisors) → เจ้าของกด Merge · **รัน SQL ก่อนกด Merge เสมอ**
   - AI ห้ามเรียก `apply_migration` เอง (ในแชทถูกยกเลิกทุกครั้ง แม้ตั้ง "อนุญาตเสมอ") · migration ที่ลบ / เปลี่ยนชื่อ / แก้ข้อมูลเดิม ต้องถามเจ้าของก่อน
-- ก่อน push: `DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **407 checks**, เฉพาะ Postgres ในเครื่อง) + `tsc` + `eslint` + `next build`
+- ก่อน push: `DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **415 checks**, เฉพาะ Postgres ในเครื่อง) + `tsc` + `eslint` + `next build`
 - ทุก PR อัปเดตไฟล์นี้ (แถวการตัดสินใจ + แถวประวัติ PR) และจำนวน checks ใน `AGENTS.md`
 - ปิดงานด้วยภาษาไทย 3 ส่วน: เปลี่ยนอะไร · ต้องทำอะไร (migration / Merge) · เช็กลิสต์ทดสอบด้วยข้อมูลสมมติ
 - เจ้าของพิมพ์ "ถามก่อนจะทำต่อ" / "ยังไม่ต้องแก้ไข ตอบก่อน" = ตอบอย่างเดียว ห้ามแก้โค้ด
@@ -59,7 +59,7 @@
   - หมวด: `ie_categories` (EXPENSE / INCOME_OTHER) · `income_transactions.income_subtype`
   - Trigger บังคับกติกา: period lock · go-live lock · derived lock · cache guard · META / soft delete · audit
 - **Edge Functions** `invite-user` · `drive` (Verify JWT off) · **GitHub Actions** `db-backup.yml` (สำรองเข้ารหัสรายสัปดาห์ → Drive) · `fx-rates.yml` · `supabase-keepalive.yml`
-- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (407 checks) · `tests/00_supabase_stub.sql`
+- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (415 checks) · `tests/00_supabase_stub.sql`
 
 ### เสร็จแล้ว (รอบล่าสุด 14–15 ต.ค. · PR #59–#75 Merge แล้ว · migration รันแล้วถึง `20261015000300`)
 ก้อนรอแยกเข้าบัตร · บัตรย้ายไป Liabilities + ประวัติยอดบัตร · แถบสรุปตามหมวด + ตัวเลือกเดือน ‹ › · แก้บัญชีที่รับ / จ่าย · ตารางที่ต้องรับ / จ่าย + ตัวกรอง · แก้ที่ต้นทาง · ยกเลิกทั้งก้อน · ตารางเงินเข้า–ออก · แท็บย่อย · PR A (เลิกปุ่มยืนยันครบ) · PR B (หมวดตั้งเองได้) · PR C (ค่าใช้จ่ายประจำทั่วไป + เดือนนี้ไม่ได้จ่าย) · แก้หน้าไม่อัปเดตหลังบันทึก (#74, #75)

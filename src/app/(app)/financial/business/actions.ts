@@ -45,21 +45,6 @@ export async function recordDividend(_: ActionState, form: FormData): Promise<Ac
   return done(id, "บันทึกเงินปันผลแล้ว");
 }
 
-export async function addCapital(_: ActionState, form: FormData): Promise<ActionState> {
-  const supabase = await createClient();
-  const id = String(form.get("asset_id"));
-  const amount = num(form.get("amount"));
-  if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const bank = str(form.get("bank_asset_id"));
-  const { data: a } = await supabase.from("assets").select("currency").eq("id", bank ?? "").maybeSingle();
-  const { error } = await supabase.from("cash_movements").insert({
-    movement_date: str(form.get("date")), movement_type: "ASSET_PURCHASE", from_asset_id: bank, to_asset_id: id,
-    amount, currency: a?.currency ?? "THB", description: str(form.get("description")) ?? "ลงทุนเพิ่มในกิจการ",
-  });
-  if (error) return { error: friendlyError(error.message) };
-  return done(id, "บันทึกเงินลงทุนเพิ่มแล้ว · อย่าลืมอัปเดตมูลค่ากิจการ");
-}
-
 /** แก้รายละเอียดธุรกิจ: ชื่อรายการ (assets.name) + ข้อมูลบริษัท (private_business_details) · RLS / trigger คุมสิทธิ์และหุ้น */
 export async function updateBusinessInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
@@ -106,4 +91,17 @@ export async function undoShareSale(_: ActionState, form: FormData): Promise<Act
   const { error } = await supabase.rpc("undo_business_share_sale", { p_sale_id: String(form.get("sale_id")) });
   if (error) return { error: friendlyError(error.message) };
   return done(assetId, "ยกเลิกการขายแล้ว");
+}
+
+/** ลงทุนเพิ่ม: ผู้ลงทุน · หุ้นที่ได้ · ยอดจ่าย · บริษัทออกหุ้นใหม่หรือไม่ (ฐานข้อมูลปรับหุ้น ทุนเฉลี่ย มูลค่า และเงินออกพร้อมกัน) */
+export async function buyShares(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const { error } = await supabase.rpc("buy_business_shares", {
+    p_asset_id: assetId, p_person_id: str(form.get("person_id")), p_date: str(form.get("date")),
+    p_shares: num(form.get("shares")), p_amount: num(form.get("amount")), p_bank_asset_id: str(form.get("bank_asset_id")),
+    p_new_issue: form.get("new_issue") === "on", p_notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  return done(assetId, "บันทึกการลงทุนเพิ่มแล้ว");
 }
