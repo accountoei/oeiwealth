@@ -3,13 +3,12 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
-import { BusinessInfoForm, CapitalForm, DividendForm } from "./forms";
+import { BusinessInfoForm, CapitalForm, DividendForm, ShareSaleForm, UndoShareSale } from "./forms";
 import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
-import { SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
@@ -19,17 +18,19 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }] = await Promise.all([
+  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }, { data: sales }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle(),
     supabase.from("private_business_details").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes").eq("asset_id", id).is("deleted_at", null).order("date", { ascending: false }),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,amount,currency,description,is_derived").or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`)
+    supabase.from("cash_movements").select("id,movement_date,movement_type,amount,currency,description,is_derived,metadata").or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`)
       .is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+    supabase.from("business_share_sales").select("id,sale_date,shares,price,fee,currency,bank_asset_id,value_before,value_after,notes,created_at,persons(name)")
+      .eq("asset_id", id).is("deleted_at", null).order("sale_date", { ascending: false }).order("created_at", { ascending: false }),
   ]);
   if (!a || !d) notFound();
   const canWrite = me.role !== "VIEWER";
@@ -53,6 +54,15 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const STATUS: [string, string][] = [["ACTIVE", "ดำเนินการ"], ["DORMANT", "หยุดชั่วคราว"], ["CLOSED", "ปิดกิจการ"], ["SOLD", "ขายหุ้นแล้ว"]];
   const ASSET_STATUS: [string, string][] = [["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["CLOSED", "ปิดแล้ว"]];
   const label = (list: [string, string][], v: string) => list.find(([k]) => k === v)?.[1] ?? v;
+  // ขายหุ้นรายคน: ต้องระบุเจ้าของเป็นจำนวนหุ้น
+  const holders = activeOwners.filter((o) => o.shares != null && Number(o.shares) > 0)
+    .map((o) => ({ person_id: o.person_id, name: o.person_name, shares: Number(o.shares) }));
+  const familyShares = holders.reduce((s2, o) => s2 + o.shares, 0);
+  const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
+  type Sale = { id: string; sale_date: string; shares: number; price: number; fee: number; currency: string; bank_asset_id: string | null;
+    value_before: number | null; value_after: number | null; notes: string | null; persons: { name: string } | { name: string }[] | null };
+  const saleList = (sales ?? []) as Sale[];
+  const pn = (x: Sale["persons"]) => (Array.isArray(x) ? x[0]?.name : x?.name) ?? "";
   return (
     <div className="space-y-6">
       <div>
@@ -65,7 +75,10 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
               <CapitalForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />
-              <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+              {canDelete && (byShares && holders.length > 0
+                ? <ShareSaleForm assetId={id} currency={a.currency} banks={banks ?? []} holders={holders} familyShares={familyShares}
+                    value={a.current_value == null ? null : Number(a.current_value)} today={today} minDate={goLive} />
+                : <span className="self-center text-xs text-slate-500" title="แก้ที่ แก้ไขข้อมูล → สมาชิกที่เป็นเจ้าของ">ขายหุ้นได้เมื่อระบุเจ้าของเป็นจำนวนหุ้น</span>)}
             </ActionBar>
           )}
         </div>
@@ -130,6 +143,37 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} paths={paths} canWrite={canWrite} canDelete={canDelete} showMoves={false}
         cost={d.investment_cost != null ? Number(d.investment_cost) : a.acquisition_cost != null ? Number(a.acquisition_cost) : null} />
 
+      {saleList.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-2 font-medium text-slate-900">ประวัติขายหุ้น</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1">วันที่</th><th>ผู้ขาย</th><th className="text-right">จำนวนหุ้น</th><th className="pl-4 text-right">ราคาขาย</th>
+                  <th className="pl-4 text-right">เงินเข้าบัญชี</th><th className="pl-4">บัญชี</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {saleList.map((x, i) => (
+                  <tr key={x.id} className="align-top">
+                    <td className="whitespace-nowrap py-1.5">{thDate(x.sale_date)}</td>
+                    <td>{pn(x.persons)}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
+                    <td className="text-right tabular-nums">{qty(x.shares)}</td>
+                    <td className="whitespace-nowrap pl-4 text-right tabular-nums">{money(x.price, x.currency)}
+                      {Number(x.fee) > 0 && <div className="text-xs text-slate-500">ค่าใช้จ่าย {money(x.fee)}</div>}</td>
+                    <td className="whitespace-nowrap pl-4 text-right tabular-nums text-emerald-700">{x.bank_asset_id ? money(Number(x.price) - Number(x.fee), x.currency) : "-"}</td>
+                    <td className="pl-4 text-xs text-slate-500">{x.bank_asset_id ? bankName.get(x.bank_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
+                    <td className="pl-2 text-right">{canDelete && i === 0 && (
+                      <UndoShareSale assetId={id} saleId={x.id}
+                        confirmText={`ยกเลิกการขายหุ้นของ ${pn(x.persons)} วันที่ ${thDate(x.sale_date)}?\n${qty(x.shares)} หุ้นจะกลับคืน · มูลค่ากลับเป็นก่อนขาย · เงินเข้าบัญชีของครั้งนี้ถูกลบ`} />)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">ยกเลิกได้เฉพาะครั้งล่าสุด · ถ้าจะแก้ครั้งเก่ากว่า ให้ยกเลิกย้อนทีละครั้ง</p>
+        </section>
+      )}
+
       <section className="grid gap-4 md:grid-cols-2">
         <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
           <div>
@@ -170,7 +214,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                 <tr key={m.id}>
                   <td className="whitespace-nowrap py-1.5">{thDate(m.movement_date)}</td><td>{m.movement_type === "ASSET_PURCHASE" ? "ลงทุนเพิ่ม" : m.movement_type === "ASSET_SALE" ? "เงินขายหุ้น (สุทธิ)" : MOVE_LABEL[m.movement_type] ?? m.movement_type}</td>
                   <td className="text-right tabular-nums">{money(m.amount, m.currency)}</td>
-                  <td className="pl-2 text-right">{canWrite && !m.is_derived && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
+                  <td className="pl-2 text-right">{canWrite && !m.is_derived && !(m.metadata as { share_sale?: boolean } | null)?.share_sale && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
                     fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount }]} />}</td>
                 </tr>
               ))}

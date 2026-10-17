@@ -1858,6 +1858,56 @@ SELECT t.fails($$SELECT public.batch_update_bank_statements('2026-09-28', jsonb_
   jsonb_build_object('asset_id', t.a('บัญชีชุด A'), 'value', 9000)))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER อัปเดตยอดไม่ได้');
 RESET ROLE;
 
+\echo '== 13zg. ธุรกิจ: ขายหุ้นรายคน (บางส่วน · หมด · ยกเลิกครั้งล่าสุด)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_private_business(jsonb_build_object(
+  'name','บริษัทขายหุ้น','company_name','บริษัท ขายหุ้นทดสอบ จำกัด','total_shares',1000,'investment_cost',1000000,
+  'value',1000000,'value_date',current_date - 2,'is_opening',false,'acquisition_date',current_date - 2,'valuation_method','BOOK_VALUE',
+  'owners', jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',600), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',400)))) IS NOT NULL AS biz2;
+SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณพ่อ'), current_date - 1, 200, 300000, 1000, t.a('KBank ออมทรัพย์'), 'ผู้ซื้อทดสอบ') IS NOT NULL AS sale1;
+SELECT t.ok((SELECT shares_owned FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 800
+            AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND end_date IS NULL AND deleted_at IS NULL) = 400
+            AND (SELECT end_date FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND shares = 600 AND deleted_at IS NULL) = current_date - 2
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('บริษัทขายหุ้น') AND valuation_date = current_date - 1 AND deleted_at IS NULL) = 800000
+            AND (SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL) = 299000,
+            'ขายหุ้นบางส่วน: หุ้นผู้ขายลดตั้งแต่วันขาย (แถวเดิมปิดวันก่อน) · หุ้นครอบครัว 800 · มูลค่า 800,000 (ราคาต่อหุ้นเดิม) · เงินเข้าบัญชีสุทธิ 299,000');
+SELECT t.ok((SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ')) = 400000
+            AND (SELECT base_value FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่')) = 400000,
+            'มูลค่ารายคนหลังขาย: พ่อ 400 หุ้น = 400,000 · แม่ 400 หุ้น = 400,000');
+SELECT t.fails($$SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณแม่'), current_date - 1, 500, 100, NULL, NULL, NULL)$$,
+  'ขายเกินที่ถือ', 'ขายเกินจำนวนหุ้นที่ถือไม่ได้');
+-- ขายหมดวันเดียวกัน (แถวที่เริ่มวันขาย → แก้ในแถว)
+SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณแม่'), current_date - 1, 400, 420000, NULL, NULL, NULL) IS NOT NULL AS sale2;
+SELECT t.ok((SELECT shares_owned FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 400
+            AND NOT EXISTS (SELECT 1 FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND end_date IS NULL AND deleted_at IS NULL)
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('บริษัทขายหุ้น') AND valuation_date = current_date - 1 AND deleted_at IS NULL) = 400000
+            AND (SELECT status FROM public.assets WHERE id = t.a('บริษัทขายหุ้น')) = 'ACTIVE',
+            'แม่ขายหมด (วันเดียวกัน): หลุดจากเจ้าของ · หุ้นครอบครัว 400 · มูลค่า 400,000 · ธุรกิจยังถืออยู่');
+SELECT t.fails($$SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL))$$,
+  'ครั้งล่าสุด', 'ยกเลิกได้เฉพาะการขายครั้งล่าสุด');
+SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND deleted_at IS NULL));
+SELECT t.ok((SELECT shares_owned FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 800
+            AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณแม่') AND end_date IS NULL AND deleted_at IS NULL) = 400
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('บริษัทขายหุ้น') AND valuation_date = current_date - 1 AND deleted_at IS NULL) = 800000,
+            'ยกเลิกครั้งล่าสุด: แม่ได้หุ้นคืน 400 · หุ้นครอบครัว 800 · มูลค่ากลับเป็น 800,000');
+-- ทุกคนขายหมด → ขายหุ้นแล้ว · ยกเลิก → กลับมาถืออยู่
+SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณแม่'), current_date, 400, 400000, NULL, t.a('KBank ออมทรัพย์'), NULL) IS NOT NULL AS sale3;
+SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณพ่อ'), current_date, 400, 400000, NULL, t.a('KBank ออมทรัพย์'), NULL) IS NOT NULL AS sale4;
+SELECT t.ok((SELECT status FROM public.assets WHERE id = t.a('บริษัทขายหุ้น')) = 'SOLD'
+            AND (SELECT status FROM public.private_business_details WHERE asset_id = t.a('บริษัทขายหุ้น')) = 'SOLD'
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('บริษัทขายหุ้น') AND valuation_date = current_date AND deleted_at IS NULL) = 0
+            AND NOT EXISTS (SELECT 1 FROM public.v_net_worth_items_current WHERE asset_id = t.a('บริษัทขายหุ้น') AND base_value <> 0),
+            'ทุกคนขายหมด → ขายหุ้นแล้ว · มูลค่า 0 · ไม่นับใน Net Worth');
+SELECT public.undo_business_share_sale((SELECT id FROM public.business_share_sales WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND sale_date = current_date AND deleted_at IS NULL));
+SELECT t.ok((SELECT status FROM public.assets WHERE id = t.a('บริษัทขายหุ้น')) = 'ACTIVE'
+            AND (SELECT shares FROM public.asset_ownerships WHERE asset_id = t.a('บริษัทขายหุ้น') AND person_id = t.p('คุณพ่อ') AND end_date IS NULL AND deleted_at IS NULL) = 400
+            AND (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('บริษัทขายหุ้น') AND deleted_at IS NULL) = 2,
+            'ยกเลิกการขายที่ทำให้ขายหมด → กลับมาถืออยู่ · เงินเข้าบัญชีของครั้งนั้นถูกลบ');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.sell_business_shares(t.a('บริษัทขายหุ้น'), t.p('คุณพ่อ'), current_date, 1, 1, NULL, NULL, NULL)$$,
+  'PERMISSION|สิทธิ์|role', 'VIEWER ขายหุ้นไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
