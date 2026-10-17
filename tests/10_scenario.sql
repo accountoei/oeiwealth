@@ -2006,6 +2006,17 @@ SELECT t.ok((SELECT sum(ownership_percent) FROM public.asset_ownerships WHERE as
             'ความครบถ้วน: หุ้น 1 + 2 (% เก็บรวม 99.9999) ถือว่าเจ้าของครบ');
 RESET ROLE;
 
+\echo '== 13z. Property: ข้อมูลโฉนดเพิ่ม'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.property_details SET deed_book = '12', deed_page = '34', map_sheet = '5136 IV', survey_page = '99',
+  subdistrict = 'ตำบลทดสอบ', district = 'อำเภอทดสอบ', province = 'จังหวัดทดสอบ' WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT deed_book = '12' AND map_sheet = '5136 IV' AND province = 'จังหวัดทดสอบ' FROM public.property_details WHERE asset_id = t.a('บ้าน A')),
+            'ข้อมูลโฉนด: เล่ม / ระวาง / จังหวัด บันทึกได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+UPDATE public.property_details SET province = 'แก้โดย VIEWER' WHERE asset_id = t.a('บ้าน A');
+RESET ROLE;
+SELECT t.ok((SELECT province FROM public.property_details WHERE asset_id = t.a('บ้าน A')) = 'จังหวัดทดสอบ', 'ข้อมูลโฉนด: VIEWER แก้ไม่ได้');
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
