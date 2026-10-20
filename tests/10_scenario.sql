@@ -2234,6 +2234,16 @@ UPDATE public.cash_movements SET deleted_at = now() WHERE description = 'เง�
 SELECT t.ok(NOT (SELECT issues::text LIKE '%NEGATIVE_BALANCE%' FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'), 'บัญชีติดลบ: ลบรายการแล้วกลับเป็นบวก → เงื่อนไขหายไป');
 RESET ROLE;
 
+\echo '== 13zz2. เงินให้กู้: เบอร์ติดต่อ / เลขที่สัญญา / วัตถุประสงค์'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.loan_details SET borrower_phone = '080-000-0000', contract_no = 'LN-TEST-001', purpose = 'ทดสอบ' WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok((SELECT borrower_phone = '080-000-0000' AND contract_no = 'LN-TEST-001' AND purpose = 'ทดสอบ' FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')),
+            'เงินให้กู้: บันทึกเบอร์ติดต่อ / เลขที่สัญญา / วัตถุประสงค์ได้ (แม้มีเดือน FINAL — ไม่ใช่ยอดเงิน)');
+SELECT t.fails($$UPDATE public.loan_details SET borrower_phone = repeat('9', 60) WHERE asset_id = t.a('เงินกู้ญาติ')$$, 'loan_details_extra_len', 'เงินให้กู้: เบอร์ติดต่อยาวเกิน 50 ตัวอักษรไม่ได้');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.loan_details WHERE borrower_phone = '080-000-0000') = 1, 'เงินให้กู้: VIEWER อ่านเบอร์ได้ (ตามสิทธิ์อ่านเดิม)');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

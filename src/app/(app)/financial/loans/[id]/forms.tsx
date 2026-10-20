@@ -131,7 +131,8 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
 
 /** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
 export function LoanInfoForm({ assetId, v }: {
-  assetId: string; v: { name: string; borrower_name: string; interest_rate: number | null; due_date: string | null; notes: string | null };
+  assetId: string; v: { name: string; borrower_name: string; interest_rate: number | null; due_date: string | null; notes: string | null;
+    borrower_phone: string | null; contract_no: string | null; purpose: string | null };
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateLoanInfo, {});
   return (
@@ -139,6 +140,9 @@ export function LoanInfoForm({ assetId, v }: {
       <input type="hidden" name="asset_id" value={assetId} />
       <label className="text-sm">ชื่อรายการ *<input name="name" required defaultValue={v.name} className={input} /></label>
       <label className="text-sm">ผู้กู้ *<input name="borrower_name" required defaultValue={v.borrower_name} className={input} /></label>
+      <label className="text-sm">เบอร์ติดต่อผู้กู้<input name="borrower_phone" type="tel" maxLength={50} defaultValue={v.borrower_phone ?? ""} className={input} /></label>
+      <label className="text-sm">เลขที่สัญญา<input name="contract_no" maxLength={100} defaultValue={v.contract_no ?? ""} className={input} /></label>
+      <label className="text-sm md:col-span-2">วัตถุประสงค์<input name="purpose" maxLength={500} defaultValue={v.purpose ?? ""} className={input} /></label>
       <label className="text-sm">ดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={v.interest_rate ?? ""} className={input} /></label>
       <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} className={input} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
