@@ -11,6 +11,8 @@ export type LTx = {
   settle_from_asset_id: string | null; settle_to_asset_id: string | null; cash_movement_id: string | null;
   counter_amount: number | null; counter_currency: string | null; cash_holding_id: string | null; counter_cash_holding_id: string | null;
   net_cash: number; notes: string | null; created_at: string;
+  /** PAYMENT: จ่ายให้ค่าใช้จ่าย / บัตร (คอลัมน์ใหม่ · ก่อนรัน SQL ไม่มี) */
+  source_expense_item_id?: string | null; to_credit_card_id?: string | null;
 };
 export type LMove = {
   id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;

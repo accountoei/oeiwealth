@@ -9,6 +9,7 @@ export type ActionState = { error?: string; ok?: string };
 function done(msg: string, extra: string[] = []): ActionState {
   revalidatePath("/income-expenses");
   revalidatePath("/financial/cash", "layout");
+  revalidatePath("/investments", "layout");                       // จ่ายจากบัญชีเงินฝากในพอร์ต
   extra.forEach((p) => revalidatePath(p));
   return { ok: msg };
 }
@@ -151,6 +152,7 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
     paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
     paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
+    paid_from_cash_holding_id: via === "portfolio" ? str(form.get("pf_cash_id")) : null,
     person_id: str(form.get("person_id")),
     is_reimbursable: reimb, expected_reimbursement_amount: reimb ? num(form.get("expected_reimbursement_amount")) : null,
     notes: str(form.get("notes")),
@@ -204,6 +206,21 @@ export async function addMovement(_: ActionState, form: FormData): Promise<Actio
   if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
   const date = str(form.get("date"));
   const fromBank = str(form.get("from_asset_id"));
+  // จ่ายบัตรจากบัญชีเงินฝากในพอร์ต ("h:<id>") → รายการในพอร์ต (ไม่ใช่เงินออกจากธนาคาร)
+  if (type === "CARD_PAYMENT" && fromBank?.startsWith("h:")) {
+    const cardId = str(form.get("card_id"));
+    const { error } = await supabase.rpc("pay_credit_card", { p: {
+      card_id: cardId, cash_holding_id: fromBank.slice(2), date, amount, notes: str(form.get("description")),
+    } });
+    if (error) return { error: friendlyError(error.message) };
+    const nb = num(form.get("new_balance"));
+    if (form.get("update_balance") === "on" && nb !== null && !Number.isNaN(nb)) {
+      const { error: e2 } = await supabase.from("credit_cards").update({ outstanding_balance: nb, balance_date: date }).eq("id", cardId ?? "");
+      if (e2) return { error: `บันทึกการจ่ายแล้ว แต่อัปเดตยอดบัตรไม่สำเร็จ: ${friendlyError(e2.message)}` };
+    }
+    return done("บันทึกการจ่ายบัตรจากพอร์ตแล้ว", ["/liabilities"]);
+  }
+  if (fromBank?.startsWith("h:")) return { error: "เงินฝากในพอร์ตใช้ได้เฉพาะจ่ายบัตร — โอนเข้า / ออกพอร์ตทำที่หน้า Investments" };
   const toBank = str(form.get("to_asset_id"));
   const isIn = type === "OTHER_IN";
   const mainBank = isIn ? toBank : fromBank;
@@ -316,6 +333,10 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
       const c = str(form.get("card_id"));
       if (!c) return { error: "กรุณาเลือกบัตร" };
       account = `c:${c}`;
+    } else if (via === "portfolio") {
+      const h = str(form.get("pf_cash_id"));
+      if (!h) return { error: "กรุณาเลือกบัญชีเงินฝากในพอร์ต" };
+      account = `h:${h}`;
     } else account = "";
   }
   const supabase = await createClient();

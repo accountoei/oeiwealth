@@ -33,7 +33,8 @@ type Tx = { id: string; holding_id: string | null; transaction_date: string; set
   fee: number | null; tax: number | null; direction: string | null; settle_from_asset_id: string | null;
   settle_to_asset_id: string | null; cash_movement_id: string | null; notes: string | null; net_cash: number;
   settlement_status: string; counter_amount: number | null; counter_currency: string | null;
-  cash_holding_id: string | null; counter_cash_holding_id: string | null };
+  cash_holding_id: string | null; counter_cash_holding_id: string | null;
+  source_expense_item_id?: string | null; to_credit_card_id?: string | null };
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
@@ -481,7 +482,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                               })()}
                               {t.notes && <div>{t.notes}</div>}
                             </div>
-                            {canWrite && !t.cash_movement_id && (
+                            {t.source_expense_item_id && <div className="text-xs text-slate-500">ค่าใช้จ่ายที่จ่ายจากพอร์ต · แก้ที่หน้าบัญชีเงินฝาก / Income &amp; Expenses</div>}
+                            {t.to_credit_card_id && <div className="text-xs text-slate-500">จ่ายบัตรเครดิตจากพอร์ต</div>}
+                            {canWrite && !t.cash_movement_id && !t.source_expense_item_id && (
                               <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
                                 deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
                                 fields={[
@@ -490,7 +493,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                                   ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
                                   ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
                                   ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
-                                  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
+                                  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT", "PAYMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
                                   ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
                                   { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
                             )}

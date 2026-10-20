@@ -115,16 +115,19 @@ export function CardStatusForm({ cardId, status, remove }: { cardId: string; sta
 }
 
 /** ตั้งค่าตัดบัญชีอัตโนมัติ: ถึงวันครบชำระ หน้า Income &amp; Expenses จะแสดงรายการ "รอยืนยัน" */
-export function CardAutopayForm({ cardId, banks, bank, mode }: {
-  cardId: string; banks: { asset_id: string; name: string }[]; bank: string | null; mode: string | null;
+export function CardAutopayForm({ cardId, banks, pfCash = [], bank, hold = null, mode }: {
+  cardId: string; banks: { asset_id: string; name: string }[];
+  /** บัญชีเงินฝากในพอร์ต (สกุลเดียวกับบัตร) */
+  pfCash?: { id: string; label: string }[];
+  bank: string | null; hold?: string | null; mode: string | null;
 }) {
   const [edit, setEdit] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(setCardAutopay, {});
-  const [sel, setSel] = useState(bank ?? "");
+  const [sel, setSel] = useState(bank ?? (hold ? `h:${hold}` : ""));
   if (!edit) {
     return (
       <button type="button" onClick={() => setEdit(true)} className="mt-1 text-left text-xs text-blue-700 hover:underline">
-        {bank ? "แก้ตัดบัญชีอัตโนมัติ" : "+ ตั้งตัดบัญชีอัตโนมัติ"}
+        {bank || hold ? "แก้ตัดบัญชีอัตโนมัติ" : "+ ตั้งตัดบัญชีอัตโนมัติ"}
       </button>
     );
   }
@@ -134,7 +137,10 @@ export function CardAutopayForm({ cardId, banks, bank, mode }: {
       <label className="block">ตัดจากบัญชี
         <select name="autopay_asset_id" value={sel} onChange={(e) => setSel(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1">
           <option value="">— ไม่ตัดอัตโนมัติ —</option>
-          {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          {pfCash.length > 0 ? (<>
+            <optgroup label="บัญชีธนาคาร">{banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</optgroup>
+            <optgroup label="เงินฝากในพอร์ต">{pfCash.map((h) => <option key={h.id} value={`h:${h.id}`}>{h.label}</option>)}</optgroup>
+          </>) : banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
         </select>
       </label>
       {sel && (

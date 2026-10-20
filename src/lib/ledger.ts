@@ -54,6 +54,7 @@ export function moveMeta(type: string, dir: "in" | "out" | "move", o: {
     case "ITX_DEPOSIT": return { label: "ฝากเพิ่ม", tone: "sky", category: "เงินเข้าออกพอร์ต" };
     case "ITX_WITHDRAWAL": return { label: "ถอนออก", tone: "orange", category: "เงินเข้าออกพอร์ต" };
     case "ITX_ADJUSTMENT": return { label: "ปรับปรุง", tone: "slate", category: "อื่น ๆ" };
+    case "ITX_PAYMENT": return { label: "จ่ายออก", tone: "red", category: "อื่น ๆ" };
     default: return { label: type, tone: "slate", category: "-" };
   }
 }

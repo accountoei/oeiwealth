@@ -12,6 +12,7 @@ import SplitForm from "../../../income-expenses/SplitForm";
 import { splitMoves } from "@/lib/split-moves";
 import { buildHints } from "@/lib/category-hints";
 import { DetailItem as Item } from "@/components/Boxes";
+import { loadPfCash } from "@/lib/pf-cash";
 
 type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean };
 
@@ -32,7 +33,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   // รายการบัตร ตั้งแต่ Statement ก่อนหน้า (หรือยอดล่าสุด) ถึงวันนี้
   const statements = hist ?? [];
   const from = statements[1]?.statement_date ?? c.balance_date ?? "1900-01-01";
-  const [{ data: exps }, { data: pays }, { data: reimbs }, { data: incs }] = await Promise.all([
+  const [{ data: exps }, { data: pays }, { data: reimbs }, { data: incs }, { data: pfPays }, pfAll] = await Promise.all([
     supabase.from("expense_items").select("id,date,description,amount,pending_split").eq("paid_from_credit_card_id", id)
       .is("deleted_at", null).gt("date", from),
     supabase.from("cash_movements").select("id,movement_date,amount,description").eq("to_credit_card_id", id).eq("movement_type", "CARD_PAYMENT")
@@ -41,7 +42,13 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       .is("deleted_at", null).gt("received_date", from),
     supabase.from("income_transactions").select("id,date,amount,tax,notes,pending_split").eq("received_to_credit_card_id", id)
       .is("deleted_at", null).gt("date", from),
+    // จ่ายบัตรจากบัญชีเงินฝากในพอร์ต
+    supabase.from("investment_transactions").select("id,transaction_date,amount,notes,cash_holding_id").eq("to_credit_card_id", id)
+      .eq("transaction_type", "PAYMENT").is("deleted_at", null).gt("transaction_date", from),
+    loadPfCash(supabase),
   ]);
+  const pfCash = pfAll.filter((h) => h.currency === c.currency);
+  const pfName = new Map(pfAll.map((h) => [h.id, h.label]));
   // ก้อนรอแยก: แยกได้ที่หน้านี้ (คน / หมวด ชุดเดียวกับ Income & Expenses)
   const [{ data: persons }, { data: cats }] = await Promise.all([
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
@@ -58,6 +65,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       amount: Number(e.amount), pending: !!e.pending_split })),
     ...(pays ?? []).map((m) => ({ key: `m${m.id}`, id: m.id as string, table: "" as const, date: m.movement_date as string, kind: "จ่ายบัตร", text: (m.description as string | null) ?? "",
       amount: -Number(m.amount), pending: false })),
+    ...(pfPays ?? []).map((t) => ({ key: `t${t.id}`, id: t.id as string, table: "" as const, date: t.transaction_date as string, kind: "จ่ายบัตร",
+      text: [`จากพอร์ต ${pfName.get(t.cash_holding_id as string) ?? ""}`, t.notes as string | null].filter(Boolean).join(" · "),
+      amount: -Number(t.amount), pending: false })),
     ...(reimbs ?? []).map((r) => ({ key: `r${r.id}`, id: r.id as string, table: "" as const, date: r.received_date as string, kind: "เงินคืน", text: (r.notes as string | null) ?? "",
       amount: -Number(r.amount), pending: false })),
     ...(incs ?? []).map((i) => ({ key: `i${i.id}`, id: i.id as string, table: "income_transactions" as const, date: i.date as string, kind: "เครดิตเข้าบัตร", text: (i.notes as string | null) ?? "",
@@ -123,10 +133,11 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                 <Item label="รอบบิล">ตัดรอบวันที่ {c.statement_day ?? "-"}<span className="block text-xs text-slate-500">ชำระภายในวันที่ {c.due_day ?? "-"}</span></Item>
                 <Item label="ค่าธรรมเนียมรายปี" num>{c.annual_fee ? money(c.annual_fee) : "-"}</Item>
                 <Item label="บัตรหมดอายุ">{c.expiry_date ? thDate(c.expiry_date) : "-"}</Item>
-                <Item label="ตัดบัญชีอัตโนมัติ">{c.autopay_asset_id
-                  ? <span className="text-emerald-700">{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {bankName.get(c.autopay_asset_id) ?? "บัญชี"}</span>
+                <Item label="ตัดบัญชีอัตโนมัติ">{c.autopay_asset_id || c.autopay_cash_holding_id
+                  ? <span className="text-emerald-700">{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {c.autopay_asset_id
+                      ? bankName.get(c.autopay_asset_id) ?? "บัญชี" : `พอร์ต ${pfName.get(c.autopay_cash_holding_id) ?? ""}`}</span>
                   : <span className="text-slate-500">ไม่ได้ตั้ง</span>}
-                  {c.autopay_asset_id && !c.due_day && <span className="block text-xs text-amber-700">ยังไม่ได้ใส่วันครบชำระ</span>}</Item>
+                  {(c.autopay_asset_id || c.autopay_cash_holding_id) && !c.due_day && <span className="block text-xs text-amber-700">ยังไม่ได้ใส่วันครบชำระ</span>}</Item>
                 <Item label="สถานะ">{c.status === "CLOSED" ? "ยกเลิกบัตรแล้ว" : c.status === "SUSPENDED" ? "ระงับชั่วคราว" : "ใช้งานอยู่"}</Item>
                 {c.notes && <Item label="หมายเหตุ" wide>{c.notes}</Item>}
               </dl>
@@ -139,7 +150,8 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                 {c.status !== "CLOSED" && (
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="text-sm font-medium text-slate-800">ตัดบัญชีอัตโนมัติ</h3>
-                    <CardAutopayForm cardId={id} banks={banks.filter((b) => b.currency === c.currency)} bank={c.autopay_asset_id} mode={c.autopay_mode} />
+                    <CardAutopayForm cardId={id} banks={banks.filter((b) => b.currency === c.currency)} pfCash={pfCash}
+                      bank={c.autopay_asset_id} hold={c.autopay_cash_holding_id} mode={c.autopay_mode} />
                   </div>
                 )}
                 <div className="flex items-center gap-2 border-t border-slate-100 pt-4 text-sm">สถานะ <CardStatusForm cardId={id} status={c.status}

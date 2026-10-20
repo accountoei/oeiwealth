@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buildHints } from "@/lib/category-hints";
 import type { Bank, Card, Liab } from "./forms";
 import { EXP_SELECT, INC_SELECT, type KitCtx, type Move } from "./entry-kit";
+import { loadPfCash } from "@/lib/pf-cash";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
 
@@ -14,7 +15,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   const expIds = [...new Set(moves.filter((m) => m.source_entity_type === "EXPENSE" && m.source_entity_id).map((m) => m.source_entity_id as string))];
   const none = Promise.resolve({ data: [] as never[] });
   const [{ data: banksRaw }, { data: cardsRaw }, { data: cardBal }, { data: liabRaw }, { data: persons }, { data: cats }, { data: hintRows },
-    { data: incs }, { data: exps }] = await Promise.all([
+    { data: incs }, { data: exps }, pfCash] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
@@ -27,6 +28,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
       .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500),
     incIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("id", incIds) : none,
     expIds.length ? supabase.from("expense_items").select(EXP_SELECT).in("id", expIds) : none,
+    loadPfCash(supabase),
   ]);
   const banks = (banksRaw as Bank[] | null) ?? [];
   const bankSet = new Set(banks.map((b) => b.asset_id));
@@ -38,7 +40,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   const expCats = (cats ?? []).filter((c) => c.kind === "EXPENSE" && c.active).map((c) => c.name as string);
   const incSubs = (cats ?? []).filter((c) => c.kind === "INCOME_OTHER" && c.active).map((c) => c.name as string);
   return {
-    ...base, banks, cards, liabs: (liabRaw as Liab[] | null) ?? [], persons: persons ?? [], incSubs, expCats,
+    ...base, banks, cards, pfCash, liabs: (liabRaw as Liab[] | null) ?? [], persons: persons ?? [], incSubs, expCats,
     expHints: buildHints(hintRows ?? [], expCats), moves,
     incById: new Map((incs ?? []).map((i) => [i.id as string, i])), expById: new Map((exps ?? []).map((i) => [i.id as string, i])),
     otherAssets: (others ?? []) as { id: string; name: string; asset_type: string }[], tabLinks: false,
