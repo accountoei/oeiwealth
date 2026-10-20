@@ -128,7 +128,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
         <StatBox label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
           sub={list.some((p) => pfStatus.get(p.asset_id) === "CLOSED") ? `ปิดแล้ว ${list.filter((p) => pfStatus.get(p.asset_id) === "CLOSED").length} พอร์ต` : undefined} />
-        <StatBox label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
+        <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)} />
       </section>
 
       {allocTotal > 0 && (

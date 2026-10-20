@@ -12,6 +12,7 @@ import { DetailItem as Item } from "@/components/Boxes";
 import { TransferEditForm, type CashAcct, type PfTransfer } from "../../forms";
 import { cashLedger, type LEvent, type LHolding, type LMove, type LTx, type LVal } from "../../cash-ledger";
 import { CashInfoForm, CashStatementForm, SetDefaultButton } from "./forms";
+import { PfPayButton } from "../../pf-pay-forms";
 import { EXP_SELECT, makeEntryKit } from "../../../../income-expenses/entry-kit";
 import { loadKitCtx } from "../../../../income-expenses/entry-kit-load";
 
@@ -81,7 +82,6 @@ export default async function PortfolioCashPage({ params, searchParams }: {
   const kit = makeEntryKit({ ...kitBase, expById });
   const cardName = new Map((cardRows ?? []).map((c) => [c.id as string, [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")]));
   const waiting = all.filter((e) => e.amt == null || e.waitBank);
-  const latestBase = now.base.date;
 
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
   const holdingName = new Map(holdings.map((x) => [x.id, x.name]));
@@ -151,7 +151,6 @@ export default async function PortfolioCashPage({ params, searchParams }: {
     const isIn = m.movement_type === "INVESTMENT_OUT";
     const bank = transferBank(m);
     const pending = e.amt == null;
-    const transit = !pending && e.date > latestBase;
     const fx = m.counter_currency && m.counter_currency !== m.currency;
     const fees = [Number(m.fee ?? 0) > 0 ? money(m.fee, m.currency) : null, Number(m.counter_fee ?? 0) > 0 ? money(m.counter_fee, m.counter_currency ?? undefined) : null].filter(Boolean);
     const amt = Math.abs(e.amt ?? 0);
@@ -165,7 +164,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
       sub: <div className="text-xs text-slate-400">{isIn ? "จาก" : "ไป"} {bank}
         {fx && ` · ${money(m.amount, m.currency)} → ${m.counter_amount != null ? money(m.counter_amount, m.counter_currency ?? undefined) : `รอยอด ${m.counter_currency}`}`}
         {fees.length > 0 && ` · ค่าธรรมเนียม ${fees.join(" + ")}`}</div>,
-      extra: pending ? tiny("รอยอดที่เข้า") : e.waitBank ? tiny("รอยอดฝั่งธนาคาร") : transit ? tiny("ระหว่างทาง · รอ Statement") : undefined,
+      extra: pending ? tiny("รอยอดที่เข้า") : e.waitBank ? tiny("รอยอดฝั่งธนาคาร") : undefined,
       actions: canWrite ? <TransferEditForm assetId={id} t={m as PfTransfer} bankLabel={bank} cashAccounts={cashAccounts} minDate={goLive} today={today} rowMode /> : undefined,
     };
   };
@@ -191,6 +190,9 @@ export default async function PortfolioCashPage({ params, searchParams }: {
           <p className="text-sm text-slate-500">{["เงินฝากในพอร์ต", a.name, pf.institution, ccy].filter(Boolean).join(" · ")}</p>
         </div>
         {canWrite && (
+          <div className="flex flex-wrap items-start gap-2">
+          <PfPayButton ctx={{ accounts: cashAccounts, categories: kitBase.expCats, persons: kitBase.persons, cards: kitBase.cards }}
+            today={today} minDate={goLive} fixed={hid} />
           <EditButton label="บันทึกยอดคงเหลือตาม Statement" title={`บันทึกยอดคงเหลือตาม Statement · ${h.name}`}>
             <div className="space-y-5">
               <CashStatementForm assetId={id} holdingId={hid} currency={ccy} today={today} minDate={goLive} />
@@ -220,6 +222,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
               </div>
             </div>
           </EditButton>
+          </div>
         )}
       </div>
 
@@ -231,9 +234,6 @@ export default async function PortfolioCashPage({ params, searchParams }: {
             <div className={`mt-1 text-2xl font-semibold tabular-nums ${neg(now.balance)}`}>{money(now.balance, ccy)}</div>
             {thbNow != null && <div className="mt-0.5 text-xs text-slate-500">≈ {money(thbNow, "THB", 0)} · 1 {ccy} = {money(h.fx_rate, undefined, 4)} บาท</div>}
             <div className="mt-1 text-xs text-slate-500">{now.base.statement ? `ยอดตาม Statement ล่าสุด ${thDate(now.base.date)}` : "ยังไม่มียอดตาม Statement (เริ่มจากยอดตั้งต้น)"}</div>
-            {Math.abs(now.transit) >= 0.005 && (
-              <div className="mt-1 text-xs text-amber-700">รวมเงินโอนระหว่างทาง {money(now.transit, ccy)} — หายเมื่อบันทึกยอดตาม Statement หลังวันโอน</div>
-            )}
             {waiting.length > 0 && <div className="mt-1 text-xs text-amber-700">รอใส่ยอดที่เข้า {waiting.length} รายการ (กดที่แถวในตารางด้านล่าง)</div>}
             <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-slate-100 pt-3 text-sm">
               <span className="text-slate-500">ยอดสิ้นเดือนก่อน <span className="text-xs">({thDate(prevEnd)})</span></span>
@@ -288,7 +288,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
         </div>
         <p className="mt-3 text-xs text-slate-500">
           ซื้อ / ขาย / ปันผล ฯลฯ บันทึกที่หน้าพอร์ต · กดที่แถวเพื่อแก้ไข / ลบ · ยอดตาม Statement เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ ·
-          เงินโอนจากธนาคารนับในยอดคงเหลือทันที และเป็น &ldquo;เงินระหว่างทาง&rdquo; ใน Net Worth จนกว่าจะบันทึกยอดตาม Statement หลังวันโอน
+          เงินโอนธนาคาร ↔ พอร์ต นับในยอดคงเหลือทันที (เหมือนบัญชีธนาคาร) · ยังไม่ทราบยอดที่เข้า = ป้าย &ldquo;รอยอด&rdquo; กดที่แถวเพื่อใส่ยอด
         </p>
       </section>
     </div>

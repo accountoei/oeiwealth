@@ -28,7 +28,7 @@ export function CashStatementForm({ assetId, holdingId, currency, today, minDate
       <label className="text-sm">ยอด ณ วันที่
         <input name="valuation_date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${input}`} />
       </label>
-      <p className="w-full text-xs text-slate-500">ยอดตาม Statement เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ · เงินโอนเข้า–ออกก่อนวันที่นี้ไม่นับเป็นเงินระหว่างทางอีก</p>
+      <p className="w-full text-xs text-slate-500">ยอดตาม Statement เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ · รายการก่อน / วันเดียวกับวันที่นี้ถือว่าอยู่ในยอดนี้แล้ว</p>
       <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอด"}</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

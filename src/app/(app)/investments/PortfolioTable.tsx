@@ -62,7 +62,7 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
                       {r.currency !== "THB" && <>{money(r.value, r.currency, 2)} · </>}ณ {thDate(r.valueDate)}
                     </div>
                     {r.sharePct != null && <div className="text-xs text-slate-400">{r.sharePct}% ของ {money(r.fullValue, r.currency, 0)}</div>}
-                    {r.inTransit && <div className="text-xs text-amber-700">มีเงินระหว่างทาง</div>}
+                    {r.inTransit && <div className="text-xs text-amber-700">มีเงินโอนรอใส่ยอด</div>}
                   </td>
                   <td className={`px-3 py-2.5 text-right tabular-nums ${sign(r.total)}`}>
                     <div className="font-medium">{amt(r.total)}</div>

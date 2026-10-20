@@ -10,6 +10,7 @@ import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
+import { PfCardPayBody, PfExpenseBody, type PfPayCtx } from "./pf-pay-forms";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -48,16 +49,14 @@ function Msg({ s }: { s: ActionState }) {
 const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 
 /* ------------------------------------------------------------------ ยอดตั้งต้น */
-export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
-  { assetId: string; currency: string; openingDate: string; isSetup: boolean }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+/** ยอดตั้งต้น (หลักทรัพย์ที่ถืออยู่ก่อน Go-live) — อยู่ในปุ่ม "+ รายการ" */
+function OpeningBody({ assetId, currency, openingDate, isSetup, onClose }:
+  { assetId: string; currency: string; openingDate: string; isSetup: boolean; onClose: () => void }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addHolding, {});
   const [ccy, setCcy] = useState(currency);
   const [type, setType] = useState("EQUITY");
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ ยอดตั้งต้น</button>;
-  if (!open) return trigger;
-  return present(trigger, (
-    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+  return (
+    <form action={action} className="space-y-4">
       <input type="hidden" name="asset_id" value={assetId} />
       <div>
         <h3 className="font-medium text-slate-900">หลักทรัพย์ที่ถืออยู่ก่อน Go-live</h3>
@@ -92,11 +91,11 @@ export function OpeningHoldingForm({ assetId, currency, openingDate, isSetup }:
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอดตั้งต้น"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" onClick={onClose} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
-  ));
+  );
 }
 
 /* ------------------------------------------------------------------ + รายการ */
@@ -105,8 +104,12 @@ const TX_TYPES: [string, string][] = [
   ["REDEMPTION", "ไถ่ถอน / ขายคืนกองทุน"], ["FEE", "ค่าธรรมเนียม"], ["TAX", "ภาษี"], ["ADJUSTMENT", "ปรับปรุงจำนวน / เงินฝาก"],
 ];
 
-export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holdings, banks, cashAccounts, today, minDate }: {
+export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holdings, banks, cashAccounts, today, minDate, pay, opening }: {
   assetId: string; portfolioName?: string; portfolioCurrency: string; holdings: Holding[]; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
+  /** จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) */
+  pay?: PfPayCtx;
+  /** ยอดตั้งต้น (ADMIN / ช่วงตั้งค่าระบบ) */
+  opening?: { openingDate: string; isSetup: boolean };
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
@@ -141,6 +144,32 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>+ รายการ</button>;
   if (!open) return trigger;
 
+  const typeSelect = (
+    <label className={lbl}>ประเภท
+      <select name="type" value={type} onChange={(e) => { setType(e.target.value); setHoldingId(""); setMode("cash"); }} className={input}>
+        <optgroup label="รายการลงทุน">{TX_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>
+        {pay && <optgroup label="จ่ายออกจากพอร์ต">
+          <option value="PF_EXPENSE">ค่าใช้จ่าย (จ่ายจากพอร์ต)</option>
+          <option value="PF_CARD">จ่ายบัตรเครดิต</option>
+        </optgroup>}
+        {opening && <optgroup label="ตั้งค่า"><option value="OPENING">ยอดตั้งต้น (ถืออยู่ก่อน Go-live)</option></optgroup>}
+      </select>
+    </label>
+  );
+  const special = type === "PF_EXPENSE" || type === "PF_CARD" || type === "OPENING";
+  if (special) {
+    return present(trigger, (
+      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="font-medium text-slate-900">{type === "OPENING" ? "หลักทรัพย์ที่ถืออยู่ก่อน Go-live" : "จ่ายออกจากบัญชีเงินฝากในพอร์ต"}</h3>
+        <div className="grid gap-4 md:grid-cols-3">{typeSelect}</div>
+        {type === "PF_EXPENSE" && pay && <PfExpenseBody ctx={pay} today={today} minDate={minDate} onClose={() => setOpen(false)} />}
+        {type === "PF_CARD" && pay && <PfCardPayBody ctx={pay} today={today} minDate={minDate} onClose={() => setOpen(false)} />}
+        {type === "OPENING" && opening && <OpeningBody assetId={assetId} currency={portfolioCurrency} openingDate={opening.openingDate}
+          isSetup={opening.isSetup} onClose={() => setOpen(false)} />}
+      </div>
+    ));
+  }
+
   const summary: string[] = [];
   if (type === "BUY") summary.push(mode === "bank" ? `โอนจากบัญชีธนาคาร ${money(net, ccy)} เข้าพอร์ตเพื่อซื้อ` : `หักเงินฝากในพอร์ต ${money(net, ccy)}`);
   if (["SELL", "REDEMPTION"].includes(type)) summary.push(mode === "bank" ? `โอนออกไปบัญชีธนาคาร ${money(net, ccy)}` : `เพิ่มเงินฝากในพอร์ต ${money(net, ccy)}`);
@@ -155,11 +184,7 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">บันทึกรายการลงทุน</h3>
       <div className="grid gap-4 md:grid-cols-3">
-        <label className={lbl}>ประเภท
-          <select name="type" value={type} onChange={(e) => { setType(e.target.value); setHoldingId(""); setMode("cash"); }} className={input}>
-            {TX_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </label>
+        {typeSelect}
         <label className={`${lbl} md:col-span-2`}>หลักทรัพย์ {needsHolding && "*"}
           <select name="holding_id" value={holdingId} onChange={(e) => setHoldingId(e.target.value)} required={needsHolding} className={input}>
             <option value="">{optionalHolding ? `— เงินฝากในพอร์ต / ทั้งพอร์ต (${portfolioCurrency}) —` : "— เลือก —"}</option>
@@ -347,7 +372,7 @@ export function TransferForm({ assetId, currency, banks, cashAccounts, today, mi
         {rate && <li className="text-slate-700">{rate}</li>}
         <li>ยอดที่เข้าจริง = ยอดหลังหักค่าธรรมเนียมฝั่งปลายทาง (ตาม Statement) · ค่าธรรมเนียมทั้ง 2 ฝั่งลงเป็นค่าใช้จ่าย &ldquo;ค่าธรรมเนียมธนาคาร&rdquo;</li>
         <li>ส่วนต่างอัตราแลกเปลี่ยน = มูลค่าเปลี่ยน (ไม่ใช่ค่าใช้จ่าย)</li>
-        <li>รอยอด: เงินนับเป็น &ldquo;เงินระหว่างทาง&rdquo; ไม่หายจาก Net Worth · ใส่ยอดได้ที่กล่อง &ldquo;รอยอดปลายทาง&rdquo;</li>
+        <li>รอยอด: ยอดที่ส่งยังนับรวมใน Net Worth (ไม่หาย) · ใส่ยอดแล้วเงินเข้ายอดบัญชีเงินฝากทันที · ใส่ยอดได้ที่กล่อง &ldquo;รอยอดปลายทาง&rdquo;</li>
       </ul>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
