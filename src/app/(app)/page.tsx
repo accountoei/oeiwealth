@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
+import { DetailBox } from "./DashDetail";
 
 type Preview = {
   as_of: string; financial: number; investment: number; property: number; alternative: number;
@@ -105,7 +106,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           person={personId} month={ym} />
       </div>
 
-      {/* ------------------------------------------------ การ์ดหลัก */}
+      {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → ความมั่งคั่งสุทธิ */}
       <Suspense fallback={<section className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <CardSkeleton key={i} />)}</section>}>
         <TopCards start={start} personId={personId} personName={personName} />
       </Suspense>
@@ -120,12 +121,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Suspense>
         </div>
 
-        {/* ------------------------------------------------ Attention */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">สิ่งที่ต้องทำ <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
-          <Suspense fallback={<Lines n={4} />}>
-            <AttentionBody family={family} isSetup={isSetup} today={today} />
-          </Suspense>
+        <div className="flex flex-col gap-4">
+          {/* ------------------------------------------------ เปลี่ยนเพราะอะไร (กด → pop up) */}
+          <DetailBox kind="change" start={start} personId={personId} ym={ym}
+            title={<>ความมั่งคั่งเปลี่ยนเพราะอะไร {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> · {personName}</span> : null}</>}
+            popupTitle={`ความมั่งคั่งเปลี่ยนเพราะอะไร ${thMonth(start)}${personName ? ` · ${personName}` : ""}`}
+            bridge={<Suspense fallback={<Lines n={6} />}><ChangeBody start={start} isCurrent={isCurrent} personId={personId} /></Suspense>}>
+            <Suspense fallback={<Lines n={6} />}>
+              <ChangeBody start={start} isCurrent={isCurrent} personId={personId} />
+            </Suspense>
+          </DetailBox>
+
+          {/* ------------------------------------------------ รายได้ / ค่าใช้จ่าย (กด → pop up) */}
+          <DetailBox kind="flows" start={start} personId={personId} ym={ym}
+            title={<>รายได้ &amp; ค่าใช้จ่าย {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> · {personName}</span> : null}</>}
+            popupTitle={`รายได้ & ค่าใช้จ่าย ${thMonth(start)}${personName ? ` · ${personName}` : ""}`}>
+            <Suspense fallback={<Lines n={4} />}>
+              <IncomeBody start={start} personId={personId} />
+            </Suspense>
+          </DetailBox>
         </div>
       </section>
 
@@ -139,32 +153,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Suspense>
         </div>
 
-        <div className="flex flex-col gap-4">
-          {/* ------------------------------------------------ เปลี่ยนเพราะอะไร */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-2 font-medium text-slate-900">{thMonth(start)} ความมั่งคั่งเปลี่ยนเพราะอะไร{personName ? ` · ${personName}` : ""}</h2>
-            <Suspense fallback={<Lines n={6} />}>
-              <ChangeBody start={start} isCurrent={isCurrent} personId={personId} />
-            </Suspense>
-          </div>
-
-          {/* ------------------------------------------------ รายได้ / ค่าใช้จ่าย (ทั้งครอบครัว) */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-2 font-medium text-slate-900">รายได้ &amp; ค่าใช้จ่าย {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> (ทั้งครอบครัว)</span> : null}</h2>
-            <Suspense fallback={<Lines n={3} />}>
-              <IncomeBody start={start} />
-            </Suspense>
-            <Link href={`/income-expenses?m=${ym}`} className="mt-3 inline-block text-xs text-slate-700 underline">ดูรายละเอียด</Link>
-          </div>
+        {/* ------------------------------------------------ รายบุคคล: Net Worth + % */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-900">รายบุคคล</h2>
+          <p className="mb-3 text-xs text-slate-500">Net Worth ตามสัดส่วนเจ้าของ · % ของ Net Worth ครอบครัว · กดชื่อเพื่อดูของคนนั้น</p>
+          <Suspense fallback={<Lines n={4} />}>
+            <PersonsBody start={start} ym={ym} personId={personId} />
+          </Suspense>
         </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        {/* ------------------------------------------------ รายบุคคล */}
+        {/* ------------------------------------------------ Attention */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">รายบุคคล</h2>
+          <h2 className="mb-2 font-medium text-slate-900">สิ่งที่ต้องทำ <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
           <Suspense fallback={<Lines n={4} />}>
-            <PersonsBody start={start} ym={ym} />
+            <AttentionBody family={family} isSetup={isSetup} today={today} />
           </Suspense>
         </div>
 
@@ -230,10 +234,10 @@ async function TopCards({ start, personId, personName }: { start: string; person
   return (
     <>
       <section className="grid gap-4 md:grid-cols-3">
+        <Big label={person ? `สินทรัพย์รวม · ${person.name}` : "สินทรัพย์รวม"} value={assets} base={!person && base ? Number(base.total_assets) : null} baseLabel={base?.label} />
+        <Big label={person ? `หนี้สินรวม · ${person.name}` : "หนี้สินรวม"} value={liab} base={!person && base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
         <Big label={person ? `ความมั่งคั่งสุทธิ · ${person.name}` : "ความมั่งคั่งสุทธิ (Net Worth)"} value={nw}
           base={!person && base ? Number(base.net_worth) : null} baseLabel={base?.label} />
-        <Big label="สินทรัพย์รวม" value={assets} base={!person && base ? Number(base.total_assets) : null} baseLabel={base?.label} />
-        <Big label="หนี้สินรวม" value={liab} base={!person && base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
       </section>
       {!person && unalloc && Number(unalloc.net_worth) !== 0 && (
         <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {money(unalloc.net_worth, "THB", 0)} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
@@ -437,33 +441,60 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
   );
 }
 
-async function IncomeBody({ start }: { start: string }) {
-  const [p, track] = await Promise.all([getPreview(start), getTrack(start)]);
+async function IncomeBody({ start, personId }: { start: string; personId: string }) {
+  // ยอดเดียวกับหน้ารายได้ / ค่าใช้จ่าย: เงินคงเหลือสุทธิ = รายได้หลังภาษี (รวมรายได้ลงทุน) − (ค่าใช้จ่าย − เงินคืน)
+  const [p, track] = await Promise.all([personId ? getPersonDash(start, personId) : getPreview(start), getTrack(start)]);
+  const income = Number(p?.income ?? 0) + Number(p?.investment_income ?? 0);
+  const expense = Number(p?.expenses ?? 0) - Number(p?.reimbursements ?? 0);
+  const net = income - expense;
   return (
     <dl className="space-y-1.5 text-sm">
-      <div className="flex justify-between"><dt>รายได้ (หลังภาษี)</dt><dd className="tabular-nums">{money(Number(p?.income ?? 0) + Number(p?.investment_income ?? 0), undefined, 0)}</dd></div>
+      <div className="flex justify-between"><dt>รายได้ (หลังภาษี)</dt><dd className="tabular-nums">{money(income, undefined, 0)}</dd></div>
       <div className="flex justify-between text-xs text-slate-500"><dt>รวมรายได้ลงทุน</dt><dd className="tabular-nums">{money(p?.investment_income ?? 0, undefined, 0)}</dd></div>
       <div className="flex justify-between"><dt>ค่าใช้จ่ายสุทธิ</dt>
-        <dd className="tabular-nums">{track === "NOT_TRACKED" ? <span className="text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span> : money(Number(p?.expenses ?? 0) - Number(p?.reimbursements ?? 0), undefined, 0)}</dd></div>
+        <dd className="tabular-nums">{track === "NOT_TRACKED" && !expense ? <span className="text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span> : money(expense, undefined, 0)}</dd></div>
+      <div className="flex justify-between border-t border-slate-100 pt-1.5 font-medium"><dt>เงินคงเหลือสุทธิ</dt>
+        <dd className={`tabular-nums ${net < 0 ? "text-red-700" : net > 0 ? "text-emerald-700" : ""}`}>{money(net, undefined, 0)}</dd></div>
     </dl>
   );
 }
 
-async function PersonsBody({ start, ym }: { start: string; ym: string }) {
+async function PersonsBody({ start, ym, personId }: { start: string; ym: string; personId: string }) {
   const dm = await getMonth(start);
+  const rows = [...(dm?.by_person ?? [])].sort((a, b) => (a.person_id ? 0 : 1) - (b.person_id ? 0 : 1) || Number(b.net_worth) - Number(a.net_worth));
+  const total = Number(dm?.net_worth ?? 0);                                // % ของ Net Worth ครอบครัว (รวมส่วนที่ไม่ระบุเจ้าของ)
+  if (!rows.length) return <p className="text-sm text-slate-500">ยังไม่มีข้อมูล</p>;
   return (
     <table className="w-full text-sm">
-      <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">สมาชิก</th><th className="text-right">สินทรัพย์</th><th className="text-right">หนี้สิน</th><th className="text-right">สุทธิ</th></tr></thead>
+      <thead className="text-left text-xs text-slate-500">
+        <tr><th className="py-1">สมาชิก</th><th className="hidden sm:table-cell"></th><th className="px-2 text-right">%</th><th className="text-right">Net Worth</th></tr>
+      </thead>
       <tbody className="divide-y divide-slate-100">
-        {(dm?.by_person ?? []).map((x) => (
-          <tr key={x.person_id ?? "none"} className={x.person_id ? "" : "text-amber-700"}>
-            <td className="py-1.5">{x.person_id ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="hover:underline">{x.name}</Link> : x.name}</td>
-            <td className="text-right tabular-nums">{money(x.assets, undefined, 0)}</td>
-            <td className="text-right tabular-nums">{money(x.liabilities, undefined, 0)}</td>
-            <td className="text-right font-medium tabular-nums">{money(x.net_worth, undefined, 0)}</td>
-          </tr>
-        ))}
+        {rows.map((x, i) => {
+          const v = Number(x.net_worth);
+          const pct = total ? (v * 100) / total : 0;
+          const color = x.person_id ? blueAt(i) : "#d97706";
+          return (
+            <tr key={x.person_id ?? "none"} className={`${x.person_id ? "" : "text-amber-700"} ${x.person_id && x.person_id === personId ? "bg-blue-50/60" : ""}`}>
+              <td className="whitespace-nowrap py-2 pr-2">
+                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: color }} />
+                {x.person_id ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="hover:underline">{x.name}</Link> : x.name}
+              </td>
+              <td className="hidden w-full min-w-12 sm:table-cell">
+                <div className="h-2.5 overflow-hidden rounded-full bg-blue-50">
+                  {pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
+                </div>
+              </td>
+              <td className={`whitespace-nowrap px-2 text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</td>
+              <td className={`whitespace-nowrap text-right font-medium tabular-nums ${v < 0 ? "text-red-700" : ""}`}>{money(v, undefined, 0)}</td>
+            </tr>
+          );
+        })}
       </tbody>
+      <tfoot className="border-t-2 border-slate-200 font-medium">
+        <tr><td className="py-2">รวมครอบครัว</td><td className="hidden sm:table-cell"></td><td className="px-2 text-right tabular-nums">100.0%</td>
+          <td className="text-right tabular-nums">{money(total, undefined, 0)}</td></tr>
+      </tfoot>
     </table>
   );
 }
