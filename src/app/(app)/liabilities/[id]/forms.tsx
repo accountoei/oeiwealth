@@ -6,6 +6,7 @@ import { money } from "@/lib/format";
 import { addLiabilityBalance, payLiability, updateLiabilityInfo, type ActionState } from "../actions";
 import DropPrompt from "../DropPrompt";
 import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -129,6 +130,7 @@ export function PayLiabilityForm({ liabilityId, currency, banks, monthlyPayment,
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการจ่าย"}</button>
+        <BalanceGuard amount={["principal", "interest"]} />
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>

@@ -269,7 +269,7 @@ async function ChartBody({ start, isCurrent, personId }: { start: string; isCurr
 
 async function AttentionBody({ family, isSetup, today }: { family: Family | null; isSetup: boolean; today: string }) {
   const supabase = await createClient();
-  const [h, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }] = await Promise.all([
+  const [h, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }] = await Promise.all([
     getHistory(),
     isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
     supabase.from("v_fx_status").select("currency,latest_rate_date,is_stale"),
@@ -279,6 +279,9 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
     supabase.from("v_lease_status").select("tenant_name,unit_label,end_date,property_asset_id,lease_status").eq("lease_status", "EXPIRING_SOON"),
     supabase.from("v_insurance_schedule_status").select("policy_id,kind").eq("status", "OVERDUE"),
     supabase.from("insurance_followups").select("id").is("deleted_at", null).in("status", ["OPEN", "IN_PROGRESS"]),
+    // บัญชีธนาคารที่ยอดตามระบบติดลบ ณ วันนี้ (แสดงสีแดง · ปิดเดือนไม่ได้จนกว่าจะกลับเป็นบวก)
+    supabase.rpc("bank_balances_at", { p_date: today }),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE"),
   ]);
   const finals = (h?.snapshots ?? []).filter((s) => s.status === "FINAL");
 
@@ -292,6 +295,11 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
     const toClose = lastFinal ? monthRange(lastFinal).next : family.go_live_date.slice(0, 7);
     if (monthRange(toClose).end < today) attention.push({ text: `ปิดเดือน ${thMonth(`${toClose}-01`)}`, href: `/month-closing?m=${toClose}`, tone: "red" });
   }
+  const accName = new Map((bankAcc ?? []).map((b) => [b.asset_id as string, b]));
+  ((bankBal as { asset_id: string; calculated: number | null }[] | null) ?? [])
+    .filter((r) => accName.has(r.asset_id) && r.calculated != null && Number(r.calculated) < -0.005)
+    .forEach((r) => attention.push({ text: `บัญชี ${accName.get(r.asset_id)?.name} ติดลบ ${money(Number(r.calculated), accName.get(r.asset_id)?.currency as string)}`,
+      href: `/financial/cash/${r.asset_id}`, tone: "red" }));
   (fx ?? []).filter((f) => f.is_stale).forEach((f) => attention.push({ text: `อัตราแลกเปลี่ยน ${f.currency} ไม่อัปเดต (ล่าสุด ${thDate(f.latest_rate_date)})`, href: "/settings/system", tone: "red" }));
   if ((fups ?? []).length) attention.push({ text: `กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
   const premOver = (insOverdue ?? []).filter((x) => x.kind === "PREMIUM").length;

@@ -6,6 +6,7 @@ import { createLoan, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import { thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -66,6 +67,7 @@ export default function NewLoanForm(props: {
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       <div className="flex gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <BalanceGuard bank="disburse_from_asset_id" amount="principal" date="disburse_date" />
         <Link href="/financial/loans" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
       </div>
     </form>

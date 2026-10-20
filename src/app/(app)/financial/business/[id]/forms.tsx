@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { buyShares, recordDividend, sellShares, undoShareSale, updateBusinessInfo, type ActionState } from "../actions";
 import { money, qty } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -230,6 +231,7 @@ export function UndoShareSale({ assetId, saleId, confirmText }: { assetId: strin
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="sale_id" value={saleId} />
       <button disabled={pending} className="whitespace-nowrap rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">
+      <BalanceGuard />
         {pending ? "…" : "ยกเลิกการขายนี้"}</button>
       {state.error && <span className="mt-1 max-w-60 text-right text-xs text-red-600">{state.error}</span>}
       {cf.dialog}

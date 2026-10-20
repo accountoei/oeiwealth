@@ -9,6 +9,7 @@ import {
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
 import { PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -188,6 +189,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
       {asIncome && <input type="hidden" name="record_as_income" value="on" />}
       <div className="flex items-center gap-2">
         <button disabled={pending} className={sbtn}>ยืนยัน</button>
+        <BalanceGuard bank="refund_from_asset_id" amount="refunded_amount" date="settled_date" />
         <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
@@ -389,6 +391,7 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
       )}
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
+      <BalanceGuard />
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
       <div className="w-full"><Msg s={state} /></div>

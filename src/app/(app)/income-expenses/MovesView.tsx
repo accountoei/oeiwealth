@@ -111,7 +111,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
       <td className="whitespace-nowrap py-1.5 pr-2">{thDate(monthStart)}</td>
       <td className="pr-2"><MoveBadge label="ยอดยกมา" tone="slate" /></td>
       <td colSpan={4} className="pr-2">ยอดคงเหลือสิ้นเดือนก่อน</td>
-      <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-slate-700">{bm(opening)}</td>
+      <td className={`whitespace-nowrap pl-4 text-right font-medium tabular-nums ${Number(opening ?? 0) < -0.005 ? "text-red-700" : "text-slate-700"}`}>{bm(opening)}</td>
       {showActions && <td></td>}
     </tr>
   ) : null;
@@ -163,7 +163,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                   <td className="whitespace-nowrap py-1.5 pr-2">{thDate(l.s.date)}</td>
                   <td className="pr-2"><MoveBadge label="ยอดตาม Statement" tone="slate" /></td>
                   <td colSpan={4} className="pr-2">{l.s.label}{l.diff != null && <span className="ml-2 text-amber-700">ต่างจากรายการที่บันทึก {l.diff > 0 ? "+" : ""}{bm(l.diff)}</span>}</td>
-                  <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-slate-700">{bm(l.s.value)}</td>
+                  <td className={`whitespace-nowrap pl-4 text-right font-medium tabular-nums ${Number(l.s.value ?? 0) < -0.005 ? "text-red-700" : "text-slate-700"}`}>{bm(l.s.value)}</td>
                   {showActions && <td></td>}
                 </tr>
               );
@@ -196,7 +196,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                       </td>
                     </>
                   )}
-                  {withBal && <td className="whitespace-nowrap pl-4 text-right tabular-nums text-slate-700">{l.bal == null ? "-" : bm(l.bal)}</td>}
+                  {withBal && <td className={`whitespace-nowrap pl-4 text-right tabular-nums ${Number(l.bal ?? 0) < -0.005 ? "text-red-700" : "text-slate-700"}`}>{l.bal == null ? "-" : bm(l.bal)}</td>}
                   {showActions && <td className="pl-2 text-right">{r.actions}</td>}
                 </tr>
               );
