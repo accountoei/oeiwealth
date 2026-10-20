@@ -6,17 +6,18 @@ import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import {
-  AddCashAccountForm, MoveCashForm, OpeningHoldingForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
+  AddCashAccountForm, MoveCashForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
   type CashAcct, type Holding,
 } from "./forms";
-import { moveHolding, setDefaultCash } from "../actions";
+import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { CurrencyScope } from "@/components/CurrencyContext";
 import TxFilter from "./tx-filter";
 import { PortfolioInfoForm } from "./portfolio-ui";
-import { cashLedger, type LMove, type LTx, type LVal } from "./cash-ledger";
+import { cashLedger, type LMove, type LTx } from "./cash-ledger";
+import type { PfPayCtx } from "./pf-pay-forms";
 import EditToggle from "@/components/EditToggle";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
@@ -125,15 +126,22 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txList = (txs as Tx[] | null) ?? [];
   const transfers = (mvs as PfTransfer[] | null) ?? [];
   const transferById = new Map(transfers.map((m) => [m.id, m]));
-  // เงินโอนระหว่างทางรายบัญชี (หลังยอดตาม Statement ล่าสุดของบัญชี) — ชุดเดียวกับหน้าบัญชีเงินฝากในพอร์ต
+  // เงินโอนที่ยังไม่ทราบยอด (รอยอด) รายบัญชี — ที่ทราบยอดแล้วนับในยอดบัญชีเงินฝากทันที
   const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
-  const { data: cashVals } = cashHoldings.length
-    ? await supabase.from("investment_valuations").select("id,holding_id,valuation_date,market_value,created_at")
-      .in("holding_id", cashHoldings.map((h) => h.id)).is("deleted_at", null)
-    : { data: [] };
-  const transitOf = (h: H) => ledger.balanceAt(h.id, h.currency, (cashVals ?? []).filter((v) => v.holding_id === h.id) as LVal[],
-    today, goLive ? addDays(goLive, -1) : "1900-01-01").nwTransit;
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
+  const waitingOf = (h: H) => waitingTransfers.filter((m) => ledger.moveHolding(m as LMove) === h.id).length;
+  // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
+  const [{ data: catRows }, { data: cardRows }, { data: cardBal }] = canWrite ? await Promise.all([
+    supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
+    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
+    supabase.from("v_card_balances").select("card_id,current_balance"),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+  const curBal = new Map((cardBal ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
+  const pay: PfPayCtx = {
+    accounts: cashAccounts, categories: (catRows ?? []).map((c) => c.name as string), persons: persons ?? [],
+    cards: (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string, outstanding_balance: curBal.get(c.id as string) ?? Number(c.outstanding_balance),
+      label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") })),
+  };
   const transferBank = (m: PfTransfer) => bankName.get((m.movement_type === "INVESTMENT_OUT" ? m.from_asset_id : m.to_asset_id) ?? "") ?? "บัญชีธนาคาร";
   // ตัวเลือกเดือน: เดือนปัจจุบัน → เดือนยอดตั้งต้น (ใหม่สุดก่อน) + ทุกเดือน
   const txMonths: { value: string; label: string }[] = [];
@@ -162,14 +170,12 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           </div>
           {canWrite && (
             <ActionBar className="max-w-3xl">
-              <TxForm assetId={id} portfolioName={a.name} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              <TxForm assetId={id} portfolioName={a.name} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive}
+                pay={pay} opening={isSetup || me.role === "ADMIN" ? { openingDate, isSetup } : undefined} />
               <TransferForm assetId={id} currency={a.currency} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
               <MoveCashForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
               <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
               <AddCashAccountForm assetId={id} currency={a.currency} isSetup={isSetup} openingDate={openingDate} />
-              {(isSetup || me.role === "ADMIN") && (
-                <OpeningHoldingForm assetId={id} currency={a.currency} openingDate={openingDate} isSetup={isSetup} />
-              )}
             </ActionBar>
           )}
         </div>
@@ -186,7 +192,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 {pv?.portfolio_fx_rate ? ` · 1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท` : ""}</div>
             )}
             <div className={`mt-1 text-xs ${Number(pv?.in_transit ?? 0) !== 0 ? "text-amber-700" : "text-slate-500"}`}>
-              {Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินระหว่างทาง ${money(pv?.in_transit ?? 0, a.currency, 0)}` : "ไม่มีเงินระหว่างทาง"}</div>
+              {Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินโอนที่รอใส่ยอด ${money(pv?.in_transit ?? 0, a.currency, 0)}` : ""}</div>
             <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
               <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินฝากในพอร์ต</dt>
                 <dd className="text-right tabular-nums">{cashByCcy.size === 0 ? "-" : [...cashByCcy.entries()].map(([c, x]) => <div key={c}>{money(x.value, c, 0)}</div>)}</dd></div>
@@ -236,17 +242,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         </div>
       </section>
 
-      {Number(pv?.in_transit ?? 0) !== 0 && (
-        <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-          เงินโอนเข้าพอร์ต {money(pv?.in_transit ?? 0, a.currency)} ยังเป็น &ldquo;เงินระหว่างทาง&rdquo; — นับรวมใน Net Worth แล้ว
-          และจะรวมเข้าเงินฝากในพอร์ตเมื่อบันทึกยอดเงินฝากตาม Statement (อัปเดตราคา / Statement)
-        </p>
-      )}
-
       {waitingTransfers.length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <h2 className="font-medium text-amber-900">รอยอดปลายทาง ({waitingTransfers.length})</h2>
-          <p className="text-xs text-amber-800">โอนแล้วแต่ยังไม่ได้ใส่ยอดที่เข้าจริง — นับเป็นเงินระหว่างทางใน Net Worth แล้ว · ได้ Statement แล้วกด &ldquo;ใส่ยอดที่เข้า&rdquo;</p>
+          <p className="text-xs text-amber-800">โอนแล้วแต่ยังไม่ได้ใส่ยอดที่เข้าจริง — นับรวมใน Net Worth แล้ว (ยอดที่ส่ง) · ได้ Statement แล้วกด &ldquo;ใส่ยอดที่เข้า&rdquo; เงินจะเข้ายอดบัญชีเงินฝากทันที</p>
           <ul className="mt-2 divide-y divide-amber-200">
             {waitingTransfers.map((m) => (
               <li key={m.id} className="py-2 text-sm">
@@ -304,7 +303,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                       <td className="whitespace-nowrap px-3 text-right">
                         <div className="tabular-nums">{money(h.current_value, h.currency)}</div>
                         <div className="text-xs text-slate-500">{h.current_value_date ? `ณ ${thDate(h.current_value_date)}` : ""}</div>
-                        {Math.abs(transitOf(h)) >= 0.005 && <div className="text-xs text-amber-700">+ ระหว่างทาง {money(transitOf(h), h.currency)}</div>}
+                        {waitingOf(h) > 0 && <div className="text-xs text-amber-700">รอใส่ยอดที่เข้า {waitingOf(h)} รายการ</div>}
                       </td>
                       <td className="whitespace-nowrap px-3 text-right">
                         <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
@@ -312,13 +311,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                       </td>
                       <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                       <td className="px-3 py-2.5 text-right">
-                        {orderMode === "cash" ? <MoveButtons id={id} hid={h.id} first={k === 0} last={k === rows.length - 1} /> : (
-                          canDelete && many && !h.is_default_cash && (
-                            <form action={setDefaultCash}>
-                              <input type="hidden" name="holding_id" value={h.id} /><input type="hidden" name="asset_id" value={id} />
-                              <button className="whitespace-nowrap text-xs text-slate-700 underline">ตั้งเป็นบัญชีหลัก</button>
-                            </form>
-                          ))}
+                        {orderMode === "cash" && <MoveButtons id={id} hid={h.id} first={k === 0} last={k === rows.length - 1} />}
                       </td>
                     </tr>
                   );
@@ -448,7 +441,13 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                   <tbody className="divide-y divide-slate-100">
                     {txList.map((t) => {
                       const bank = t.settle_from_asset_id ?? t.settle_to_asset_id;
-                      const cashEffect = bank || (t.cash_movement_id && ["DEPOSIT", "WITHDRAWAL"].includes(t.transaction_type)) ? null : Number(t.net_cash);
+                      // เงินโอนธนาคาร ↔ พอร์ต: นับในบัญชีเงินฝากทันที (ยังไม่ทราบยอด = —)
+                      const tm = t.cash_movement_id ? transferById.get(t.cash_movement_id) : undefined;
+                      const cashEffect = bank ? null
+                        : t.cash_movement_id && ["DEPOSIT", "WITHDRAWAL"].includes(t.transaction_type)
+                          ? (tm ? (tm.movement_type === "INVESTMENT_OUT" ? Number(tm.counter_currency ? tm.counter_amount ?? NaN : tm.amount)
+                            : -(Number(tm.amount) + (tm.counter_currency ? Number(tm.fee ?? 0) : 0))) : Number(t.net_cash))
+                          : Number(t.net_cash);
                       return (
                         <tr key={t.id} className="align-top" data-tx="" data-m={t.transaction_date.slice(0, 7)} data-type={t.transaction_type}
                           data-h={[t.holding_id, t.cash_holding_id, t.counter_cash_holding_id].filter(Boolean).join(" ")}>
@@ -511,7 +510,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                             )}
                           </td>
                           <td className={`text-right tabular-nums ${cashEffect == null || cashEffect === 0 ? "text-slate-400" : cashEffect > 0 ? "text-emerald-700" : "text-red-700"}`}>
-                            {cashEffect == null ? "—" : cashEffect === 0 ? "0" : money(cashEffect)}
+                            {cashEffect == null || Number.isNaN(cashEffect) ? "—" : cashEffect === 0 ? "0" : money(cashEffect)}
                           </td>
                         </tr>
                       );
@@ -521,7 +520,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               </div>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              กดที่รายการเพื่อแก้ไข / ลบ · &ldquo;—&rdquo; ในช่องเงินฝากเพิ่ม / ลด = เงินผ่านบัญชีธนาคารโดยตรง หรือเป็นเงินระหว่างทางจากการโอน · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
+              กดที่รายการเพื่อแก้ไข / ลบ · &ldquo;—&rdquo; ในช่องเงินฝากเพิ่ม / ลด = เงินผ่านบัญชีธนาคารโดยตรง · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
             </p>
           </div>
         </TabPanel>

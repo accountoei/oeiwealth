@@ -1,8 +1,8 @@
 /**
  * ยอดเคลื่อนไหวของ "บัญชีเงินฝากในพอร์ต" (CASH holding) — คิดแบบเดียวกับฐานข้อมูล
- *   private.holding_value_at (รายการลงทุน) + private.portfolio_in_transit (เงินโอนธนาคาร ↔ พอร์ต)
+ *   private.holding_value_at (รายการลงทุน + เงินโอนธนาคาร ↔ พอร์ต ผ่าน private.pf_transfers)
  *   ยอดตาม Statement (investment_valuations) = จุดตั้งต้นใหม่ · ไม่มี = ยอดตั้งต้น (OPENING_BALANCE)
- *   เงินโอนธนาคาร ↔ พอร์ต หลัง Statement ล่าสุดของบัญชี = "เงินระหว่างทาง" (Net Worth นับแยก จนกว่าจะมี Statement หลังวันโอน)
+ *   เงินโอนธนาคาร ↔ พอร์ต ที่ทราบยอดฝั่งพอร์ตแล้ว นับในบัญชีทันที (เหมือนบัญชีธนาคาร) · ยังไม่ทราบยอด = รอยอด (ไม่นับในยอดคงเหลือ)
  */
 
 export type LTx = {
@@ -82,16 +82,11 @@ export function cashLedger(holdings: LHolding[], txs: LTx[], moves: LMove[]) {
     return { value: 0, date: fallbackDate, statement: false };
   }
 
-  /** ยอดคงเหลือ ณ สิ้นวัน d (รวมเงินโอนที่ยังรอ Statement) + เงินระหว่างทาง */
+  /** ยอดคงเหลือ ณ สิ้นวัน d = จุดตั้งต้น + รายการหลังจากนั้น (เงินโอนที่ทราบยอดแล้วนับทันที · ชุดเดียวกับ holding_value_at) */
   function balanceAt(hid: string, ccy: string, vals: LVal[], d: string, fallbackDate: string) {
     const b = baseAt(hid, vals, d, fallbackDate);
-    const after = events(hid, ccy).filter((e) => e.date > b.date && e.date <= d);
-    const sum = after.reduce((t, e) => t + (e.amt ?? 0), 0);
-    const transit = after.filter((e) => e.mv).reduce((t, e) => t + (e.amt ?? 0), 0);
-    // Net Worth: เงินถอนออกที่ยังไม่ใส่ยอดฝั่งธนาคาร ยังนับไว้ที่พอร์ต (ยอดที่ออก) จนกว่าจะใส่ยอด
-    const held = events(hid, ccy).filter((e) => e.waitBank && e.date <= d).reduce((t, e) => t + Number(e.mv!.amount), 0);
-    return { balance: Math.round((b.value + sum) * 100) / 100, transit: Math.round(transit * 100) / 100,
-      nwTransit: Math.round((transit + held) * 100) / 100, base: b };
+    const sum = events(hid, ccy).filter((e) => e.date > b.date && e.date <= d).reduce((t, e) => t + (e.amt ?? 0), 0);
+    return { balance: Math.round((b.value + sum) * 100) / 100, base: b };
   }
 
   return { events, baseAt, balanceAt, moveHolding };
