@@ -66,10 +66,10 @@ export function useRowPanel(enabled: boolean) {
   /** ยังไม่รู้ (ก่อนโหลดเสร็จ) หรืออยู่ในแถว = ไม่ต้องแสดงปุ่มแบบเดิม */
   const showButtons = checked && !inRow;
   /** ตัวยึดตำแหน่ง (ใส่ในเซลล์) + หน้าต่าง pop up เมื่อเปิด */
-  const render = (panel: ReactNode, title?: string) => (
+  const render = (panel: ReactNode, title?: string, size?: "md" | "lg") => (
     <>
       <span ref={anchor} className="hidden" />
-      {inRow && open ? <Modal title={title} onClose={() => setOpen(false)}>{panel}</Modal> : null}
+      {inRow && open ? <Modal title={title} size={size} onClose={() => setOpen(false)}>{panel}</Modal> : null}
     </>
   );
   return { inRow, showButtons, open, setOpen, render };

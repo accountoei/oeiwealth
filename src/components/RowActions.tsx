@@ -19,18 +19,21 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
  *   อยู่ในแถวตาราง → กดที่แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ"
  *   บันทึกสำเร็จ → หน้าต่างปิดเอง + รีเฟรชหน้า
  */
-export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, extra, editor }: {
+export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, extra, editor, button }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
   /** ปุ่มเพิ่มเติมในกล่องใต้แถว (เช่น ดาวน์โหลด / อัปโหลดฉบับใหม่) */
   extra?: React.ReactNode;
   /** ฟอร์มแก้ไขของหน้านั้นเอง (มีปุ่มบันทึกของตัวเอง) — ใช้แทนช่อง fields */
   editor?: React.ReactNode;
+  /** ปุ่มเดียว (เช่น "แก้ไข") เปิดหน้าต่างแก้ไข + ลบ — ใช้แทนการกดที่แถว (ช่องสถานะของตารางรายได้ / ค่าใช้จ่าย) */
+  button?: string;
 }) {
   const [editing, setEditing] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [es, editAction, saving] = useActionState<RecState, FormData>(updateRecord, {});
   const [ds, delAction, deleting] = useActionState<RecState, FormData>(deleteRecord, {});
   const editable = canEdit && (fields.length > 0 || !!editor);
-  const row = useRowPanel(editable || canDelete || !!extra);
+  const row = useRowPanel(!button && (editable || canDelete || !!extra));
   const cf = useConfirmSubmit();
   const router = useRouter();
   useEffect(() => { if (ds.ok) router.refresh(); }, [ds.ok, router]);   // ลบแล้ว → รีเฟรชหน้า
@@ -90,6 +93,13 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
     </div>
   );
   const title = editable ? "แก้ไขรายการ" : "จัดการรายการ";
+  if (button) return (
+    <>
+      <button type="button" onClick={() => setPanelOpen(true)}
+        className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">{button}</button>
+      {panelOpen && <Modal title={title} onClose={() => setPanelOpen(false)}>{panel}</Modal>}
+    </>
+  );
   if (!row.showButtons) return row.render(panel, title);
 
   return (
