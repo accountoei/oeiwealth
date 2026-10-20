@@ -2189,6 +2189,51 @@ SELECT t.ok((SELECT count(*) FROM public.investment_valuations WHERE holding_id 
 RESET ROLE;
 SELECT t.ok(NOT has_function_privilege('authenticated', 'public.server_upsert_prices(jsonb, text)', 'EXECUTE'), 'ราคา: authenticated ไม่มีสิทธิ์ server_upsert_prices');
 
+\echo '== 13zz. ปิดเดือนไม่ได้ถ้าบัญชีติดลบ · แยกก้อน: เงินโอนเกินยอดก้อนได้'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีโอนเกิน', 'ทดสอบ', 'THB', 5000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS ov0;
+SELECT (public.update_bank_statement(t.a('บัญชีโอนเกิน'), '2026-09-20', 4000))->>'lump' AS ov1;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน')) = 1000,
+            'โอนเกิน: ก้อนค่าใช้จ่ายรอแยก 1,000');
+SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน')),
+  jsonb_build_array(jsonb_build_object('description','ค่าใช้จ่ายเกินก้อน','amount',1200,'expense_category','ทั่วไป')))$$,
+  'มากกว่ายอดรอแยก', 'โอนเกิน: ค่าใช้จ่ายอย่างเดียวเกินก้อนไม่ได้');
+SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน')),
+  jsonb_build_array(jsonb_build_object('description','ค่าใช้จ่ายเกินก้อน','amount',1100,'expense_category','ทั่วไป'),
+                    jsonb_build_object('move','TRANSFER','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',100)))$$,
+  'เฉพาะเงินโอน', 'โอนเกิน: บรรทัดที่ไม่ใช่เงินโอนรวมกันยังต้องไม่เกินก้อน');
+SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน')),
+  jsonb_build_array(jsonb_build_object('move','CARD_PAYMENT','target',(SELECT id FROM public.credit_cards WHERE card_last4 = '6633'),'amount',1500)))$$,
+  'มากกว่ายอดรอแยก', 'โอนเกิน: จ่ายบัตรเกินก้อนไม่ได้ (เกินได้เฉพาะเงินโอน)');
+SELECT t.ok(public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน')),
+  jsonb_build_array(jsonb_build_object('description','ค่าใช้จ่ายโอนเกิน','amount',400,'expense_category','ทั่วไป'),
+                    jsonb_build_object('move','TRANSFER','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',900))) = -300,
+            'โอนเกิน: ค่าใช้จ่าย 400 + โอน 900 (เกินก้อน 300) → คืนค่า −300');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน'))
+            AND (SELECT amount FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีโอนเกิน')) = 300,
+            'โอนเกิน: ก้อนค่าใช้จ่ายหมด · ส่วนเกินเป็นรายได้รอแยก 300 ในบัญชีเดียวกัน');
+SELECT t.ok(public.split_lump('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีโอนเกิน')),
+  jsonb_build_array(jsonb_build_object('move','TRANSFER','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',350))) = -50,
+            'โอนเกิน: ก้อนรายได้ 300 แยกเป็นโอนเข้า 350 → ส่วนเกิน 50 รวมเป็นก้อนค่าใช้จ่ายของเดือนเดียวกัน');
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีโอนเกิน')) = 1
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีโอนเกิน')),
+            'โอนเกิน: ก้อนของบัญชีในเดือนนั้นมีฝั่งเดียว แถวเดียว');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีโอนเกิน'), '2026-09-20') = 4000, 'โอนเกิน: ยอดบัญชียังตรง Statement 4,000');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีติดลบทดสอบ', 'ทดสอบ', 'THB', 100, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS ng0;
+SELECT t.ok(NOT (SELECT issues::text LIKE '%NEGATIVE_BALANCE%' FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'), 'บัญชีติดลบ: ยังไม่ติดลบ → ไม่มีเงื่อนไขนี้');
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, amount, currency, description)
+  SELECT id, '2026-09-15', 'OTHER_OUT', t.a('บัญชีติดลบทดสอบ'), 500, 'THB', 'เงินออกทดสอบติดลบ' FROM public.families;
+SELECT t.ok((SELECT status = 'BLOCKED' AND issues::text LIKE '%NEGATIVE_BALANCE%' AND issues::text LIKE '%บัญชีติดลบทดสอบ%'
+               FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'),
+            'บัญชีติดลบ ณ สิ้นเดือน (−400) → หมวด Cash เป็น BLOCKED (ปิดเดือนไม่ได้)');
+UPDATE public.cash_movements SET deleted_at = now() WHERE description = 'เงินออกทดสอบติดลบ' AND deleted_at IS NULL;
+SELECT t.ok(NOT (SELECT issues::text LIKE '%NEGATIVE_BALANCE%' FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'), 'บัญชีติดลบ: ลบรายการแล้วกลับเป็นบวก → เงื่อนไขหายไป');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

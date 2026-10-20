@@ -37,6 +37,10 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50">{label}</button>;
   const sum = lines.reduce((t, l) => t + n(l.amount), 0);
   const left = Math.round((amount - sum) * 100) / 100;
+  // เกินยอดก้อนได้เฉพาะส่วนที่เป็นเงินโอน → ส่วนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน (กติกาจริงอยู่ใน public.split_lump)
+  const fixedSum = lines.filter((l) => l.move !== "TRANSFER").reduce((t, l) => t + n(l.amount), 0);
+  const hasXfer = lines.some((l) => l.move === "TRANSFER" && n(l.amount) > 0);
+  const overOk = left < 0 && hasXfer && fixedSum <= amount + 0.005;
   const missingCat = lines.some((l) => !l.move && (l.description.trim() || l.amount.trim()) && !l.cat.trim());
   const missingTo = lines.some((l) => l.move && l.amount.trim() && !l.to);
   const moveOf = (l: Line) => moves.find((m) => m.value === l.move);
@@ -96,16 +100,20 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
         <button type="button" onClick={() => setLines([...lines, blank()])} className="text-slate-700 underline">+ เพิ่มบรรทัด</button>
         {missingCat && <span className="text-amber-700">เลือก{income ? "ประเภท" : "หมวด"}ให้ทุกบรรทัดก่อนบันทึก</span>}
         {missingTo && <span className="text-amber-700">เลือกบัญชี / บัตร / หนี้ ของบรรทัดเคลื่อนเงินก่อนบันทึก</span>}
-        <span>แยกแล้ว {money(sum, currency)} · {left < 0 ? <b className="text-red-700">เกิน {money(-left, currency)}</b> : <>ยังรอแยก {money(left, currency)}</>}</span>
+        <span>แยกแล้ว {money(sum, currency)} · {left < 0
+          ? overOk
+            ? <b className="text-amber-700">โอนเกิน {money(-left, currency)} → เป็น{income ? "ค่าใช้จ่าย" : "รายได้"}รอแยกในบัญชีเดียวกัน</b>
+            : <b className="text-red-700">เกิน {money(-left, currency)}{hasXfer ? " (เกินได้เฉพาะเงินโอน)" : ""}</b>
+          : <>ยังรอแยก {money(left, currency)}</>}</span>
       </div>
       <div className="flex items-center gap-2">
-        <button disabled={pending || left < 0 || sum <= 0 || missingCat || missingTo} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
+        <button disabled={pending || (left < 0 && !overOk) || sum <= 0 || missingCat || missingTo} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
           {pending ? "…" : "บันทึกการแยก"}</button>
         <button type="button" onClick={() => { setOpen(false); setLines([blank()]); }} className="text-xs text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-xs text-red-600">{state.error}</p>}
-      <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)
-        {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่แท็บเงินเข้า–ออก · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
+      <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)
+        {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
     </form>
     {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
     </Modal>

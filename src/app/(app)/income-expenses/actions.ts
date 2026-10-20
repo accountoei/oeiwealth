@@ -261,6 +261,8 @@ export async function splitPending(_: ActionState, form: FormData): Promise<Acti
   if (error) return { error: friendlyError(error.message) };
   const left = Number(data ?? 0);
   revalidatePath("/liabilities", "layout");
+  // ค่าติดลบ = โอนเกินยอดก้อน → ส่วนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน
+  if (left < -0.005) return done(`แยกครบแล้ว · ส่วนที่โอนเกินเป็น${kind === "EXPENSE" ? "รายได้" : "ค่าใช้จ่าย"}รอแยก ${f2(-left)} ในบัญชีเดียวกัน`);
   return done(left > 0.005 ? `แยกแล้ว · ยังรอแยกอีก ${f2(left)}` : "แยกครบแล้ว");
 }
 
