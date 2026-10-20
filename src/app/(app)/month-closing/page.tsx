@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { FinalizeForm, ReopenForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
+import { StatBox } from "@/components/Boxes";
 
 type Issue = { severity: string; code: string; message: string; entity_type: string | null; entity_id: string | null };
 type Check = { category: string; status: string; issue_count: number; issues: Issue[] };
@@ -177,11 +178,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
           <div className={`mt-1 text-xs ${blocked.length ? "text-red-700" : warnings ? "text-amber-700" : "text-emerald-700"}`}>
             {blocked.length ? `BLOCKED ${blocked.length} หมวด` : warnings ? `คำเตือน ${warnings} รายการ (ปิดได้)` : "พร้อมปิดเดือน"}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">บัญชีธนาคารอัปเดตยอดสิ้นเดือน</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{banksDone} <span className="text-sm font-normal text-slate-500">/ {bankRows.length} บัญชี</span></div>
-          <div className="mt-1 text-xs text-slate-500">ไม่อัปเดต = ใช้ยอดตามระบบ</div>
-        </div>
+        <StatBox label="บัญชีธนาคารอัปเดตยอดสิ้นเดือน" value={banksDone} unit={<>/ {bankRows.length} บัญชี</>} sub="ไม่อัปเดต = ใช้ยอดตามระบบ" />
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="text-xs text-slate-500">ตามหมวดสินทรัพย์</div>
           <dl className="mt-1 space-y-0.5 text-xs">

@@ -13,6 +13,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { AltInfoForm } from "./forms";
+import { DetailItem as Item } from "@/components/Boxes";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาดโลก (อัตโนมัติ)" };
 const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
@@ -154,15 +155,6 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
           </tbody>
         </table>
       </section>
-    </div>
-  );
-}
-
-function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
-  return (
-    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

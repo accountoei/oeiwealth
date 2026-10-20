@@ -18,6 +18,7 @@ import AssetValuationForm from "@/components/AssetValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { premiumPaymentFields } from "@/lib/source-edit";
+import { DetailItem as Item } from "@/components/Boxes";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -427,15 +428,6 @@ function ScheduleTable({ lines, canWrite, canDelete, paths, action, benefit = fa
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
-  return (
-    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

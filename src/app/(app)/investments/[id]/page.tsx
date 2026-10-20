@@ -21,6 +21,7 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
 import { ActionBar } from "@/components/ActionBar";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { DetailItem as Item } from "@/components/Boxes";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
@@ -537,15 +538,6 @@ function MoveButtons({ id, hid, first, last }: { id: string; hid: string; first:
         <input type="hidden" name="dir" value="-1" /><button className={b} disabled={first} aria-label="เลื่อนขึ้น">↑</button></form>
       <form action={moveHolding}><input type="hidden" name="holding_id" value={hid} /><input type="hidden" name="asset_id" value={id} />
         <input type="hidden" name="dir" value="1" /><button className={b} disabled={last} aria-label="เลื่อนลง">↓</button></form>
-    </div>
-  );
-}
-
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

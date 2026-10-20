@@ -8,6 +8,7 @@ import PersonFilter from "@/components/PersonFilter";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
+import { StatBox } from "@/components/Boxes";
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null;
@@ -133,11 +134,11 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
-        <Kpi label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
-        <Kpi label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
+        <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
+        <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
+        <StatBox label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
           sub={list.some((p) => pfStatus.get(p.asset_id) === "CLOSED") ? `ปิดแล้ว ${list.filter((p) => pfStatus.get(p.asset_id) === "CLOSED").length} พอร์ต` : undefined} />
-        <Kpi label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
+        <StatBox label="เงินฝากในพอร์ต (รวมระหว่างทาง)" value={money(cash, "THB", 0)} />
       </section>
 
       {allocTotal > 0 && (
@@ -195,16 +196,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           )}
         </div>
       </section>
-    </div>
-  );
-}
-
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
     </div>
   );
 }

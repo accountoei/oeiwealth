@@ -15,6 +15,7 @@ import { RestructureEditor } from "./restructure-editor";
 import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { ActionBar } from "@/components/ActionBar";
 import { loanInterestFields } from "@/lib/source-edit";
+import { DetailItem as Item, StatBox } from "@/components/Boxes";
 
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
@@ -119,11 +120,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: สรุปเงินต้น + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">เงินต้นคงเหลือ</div>
-            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(l.status === "WRITTEN_OFF" ? 0 : l.outstanding_principal, l.currency)}</div>
-            <div className="mt-1 text-xs text-slate-500">เงินต้น {money(l.principal)} · รับคืนแล้ว {money(repaid)} · ดอกเบี้ยรับแล้ว {money(interest)}</div>
-          </div>
+          <StatBox label="เงินต้นคงเหลือ" value={money(l.status === "WRITTEN_OFF" ? 0 : l.outstanding_principal, l.currency)} size="2xl" sub={<>เงินต้น {money(l.principal)} · รับคืนแล้ว {money(repaid)} · ดอกเบี้ยรับแล้ว {money(interest)}</>} />
           <div className="flex-1">
             <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
           </div>
@@ -310,12 +307,3 @@ export default async function LoanDetailPage({ params, searchParams }: {
 
 const LOAN_STATUS_OPTIONS: [string, string][] = [["ACTIVE", "ปกติ"], ["AT_RISK", "มีความเสี่ยงไม่ได้คืน"], ["CLOSED", "ปิดแล้ว (ได้คืนครบ)"], ["WRITTEN_OFF", "ตัดหนี้สูญ (มูลค่าเป็น 0)"]];
 const LOAN_STATUS_LABEL: Record<string, string> = Object.fromEntries(LOAN_STATUS_OPTIONS);
-
-function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
-  return (
-    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
-    </div>
-  );
-}

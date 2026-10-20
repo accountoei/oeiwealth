@@ -13,6 +13,7 @@ import EditToggle from "@/components/EditToggle";
 import { debtDropIncomeFields, debtInterestFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
 import SplitForm from "../../income-expenses/SplitForm";
+import { DetailItem as Item } from "@/components/Boxes";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
@@ -223,15 +224,6 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
         )}
       </section>
 
-    </div>
-  );
-}
-
-function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
-  return (
-    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

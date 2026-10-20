@@ -13,6 +13,7 @@ import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
+import { DetailItem as Item } from "@/components/Boxes";
 
 const SOURCE_LABEL: Record<string, string> = {
   OPENING: "ยอดตั้งต้น", ACCOUNT_SETUP: "เปิดบัญชีในระบบ", BALANCE_UPDATE: "อัปเดตยอด",
@@ -319,15 +320,6 @@ export default async function AccountDetailPage({ params, searchParams }: {
             </div>
           } />
       </section>
-    </div>
-  );
-}
-
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }
