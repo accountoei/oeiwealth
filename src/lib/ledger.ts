@@ -38,6 +38,22 @@ export function moveMeta(type: string, dir: "in" | "out" | "move", o: {
     case "SECURITY_DEPOSIT_OUT": return { label: "คืนเงินประกัน", tone: "slate", category: "เงินประกันการเช่า" };
     case "OTHER_IN": return { label: "เงินเข้าอื่น", tone: "green", category: "อื่น ๆ" };
     case "OTHER_OUT": return { label: "เงินออกอื่น", tone: "red", category: "อื่น ๆ" };
+    // เงินฝากในพอร์ต (รายการลงทุนที่มีผลกับเงินสดของบัญชี)
+    case "ITX_BUY": return { label: "ซื้อ", tone: "indigo", category: "ลงทุน" };
+    case "ITX_SELL": return { label: "ขาย", tone: "indigo", category: "ลงทุน" };
+    case "ITX_REDEMPTION": return { label: "ไถ่ถอน", tone: "indigo", category: "ลงทุน" };
+    case "ITX_MATURITY": return { label: "ครบกำหนด", tone: "indigo", category: "ลงทุน" };
+    case "ITX_DIVIDEND": return { label: "ปันผล", tone: "green", category: "รายได้ลงทุน" };
+    case "ITX_INTEREST": return { label: "ดอกเบี้ยรับ", tone: "green", category: "รายได้ลงทุน" };
+    case "ITX_COUPON": return { label: "Coupon", tone: "green", category: "รายได้ลงทุน" };
+    case "ITX_FEE": return { label: "ค่าธรรมเนียม", tone: "red", category: "ค่าธรรมเนียม / ภาษี" };
+    case "ITX_TAX": return { label: "ภาษี", tone: "red", category: "ค่าธรรมเนียม / ภาษี" };
+    case "ITX_FX_EXCHANGE": return { label: "แลกเงิน", tone: "violet", category: "โอนระหว่างบัญชี" };
+    case "ITX_CASH_TRANSFER":
+      return dir === "in" ? { label: "โอนเข้า", tone: "sky", category: "โอนในพอร์ต" } : { label: "โอนออก", tone: "orange", category: "โอนในพอร์ต" };
+    case "ITX_DEPOSIT": return { label: "ฝากเพิ่ม", tone: "sky", category: "เงินเข้าออกพอร์ต" };
+    case "ITX_WITHDRAWAL": return { label: "ถอนออก", tone: "orange", category: "เงินเข้าออกพอร์ต" };
+    case "ITX_ADJUSTMENT": return { label: "ปรับปรุง", tone: "slate", category: "อื่น ๆ" };
     default: return { label: type, tone: "slate", category: "-" };
   }
 }

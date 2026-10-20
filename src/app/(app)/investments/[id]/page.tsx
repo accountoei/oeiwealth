@@ -15,7 +15,8 @@ import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { CurrencyScope } from "@/components/CurrencyContext";
 import TxFilter from "./tx-filter";
-import { CashNameEdit, PortfolioInfoForm } from "./portfolio-ui";
+import { PortfolioInfoForm } from "./portfolio-ui";
+import { cashLedger, type LMove, type LTx, type LVal } from "./cash-ledger";
 import EditToggle from "@/components/EditToggle";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
@@ -123,6 +124,14 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txList = (txs as Tx[] | null) ?? [];
   const transfers = (mvs as PfTransfer[] | null) ?? [];
   const transferById = new Map(transfers.map((m) => [m.id, m]));
+  // เงินโอนระหว่างทางรายบัญชี (หลังยอดตาม Statement ล่าสุดของบัญชี) — ชุดเดียวกับหน้าบัญชีเงินฝากในพอร์ต
+  const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
+  const { data: cashVals } = cashHoldings.length
+    ? await supabase.from("investment_valuations").select("id,holding_id,valuation_date,market_value,created_at")
+      .in("holding_id", cashHoldings.map((h) => h.id)).is("deleted_at", null)
+    : { data: [] };
+  const transitOf = (h: H) => ledger.balanceAt(h.id, h.currency, (cashVals ?? []).filter((v) => v.holding_id === h.id) as LVal[],
+    today, goLive ? addDays(goLive, -1) : "1900-01-01").nwTransit;
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
   const transferBank = (m: PfTransfer) => bankName.get((m.movement_type === "INVESTMENT_OUT" ? m.from_asset_id : m.to_asset_id) ?? "") ?? "บัญชีธนาคาร";
   // ตัวเลือกเดือน: เดือนปัจจุบัน → เดือนยอดตั้งต้น (ใหม่สุดก่อน) + ทุกเดือน
@@ -283,10 +292,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                   return (
                     <tr key={h.id} className="align-top">
                       <td className="px-4 py-2.5">
-                        <CashNameEdit id={h.id} name={h.name} purpose={h.purpose} interestRate={h.interest_rate} paths={paths}
-                          canEdit={canWrite && orderMode !== "cash"}>
-                          {h.is_default_cash && many && <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-normal text-blue-700" title="บัญชีหลักของสกุลนี้ — รายการที่ไม่ได้เลือกบัญชีจะเข้าบัญชีนี้">★ บัญชีหลัก</span>}
-                        </CashNameEdit>
+                        <Link href={`/investments/${id}/cash/${h.id}`} className="font-medium text-slate-900 hover:underline" title="ดูรายการเงินเข้า–ออก / บันทึกยอดตาม Statement">{h.name}</Link>
+                        {h.is_default_cash && many && <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-normal text-blue-700" title="บัญชีหลักของสกุลนี้ — รายการที่ไม่ได้เลือกบัญชีจะเข้าบัญชีนี้">★ บัญชีหลัก</span>}
                         <div className="text-xs text-slate-500">
                           {h.currency}
                           {h.interest_rate != null && ` · ดอกเบี้ย ${Number(h.interest_rate)}% ต่อปี`}
@@ -296,6 +303,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                       <td className="whitespace-nowrap px-3 text-right">
                         <div className="tabular-nums">{money(h.current_value, h.currency)}</div>
                         <div className="text-xs text-slate-500">{h.current_value_date ? `ณ ${thDate(h.current_value_date)}` : ""}</div>
+                        {Math.abs(transitOf(h)) >= 0.005 && <div className="text-xs text-amber-700">+ ระหว่างทาง {money(transitOf(h), h.currency)}</div>}
                       </td>
                       <td className="whitespace-nowrap px-3 text-right">
                         <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
@@ -326,7 +334,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             })}
           </tbody>
         </table>
-        {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง) · กดชื่อบัญชีเพื่อแก้ไข</p>}
+        {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง) · กดชื่อบัญชีเพื่อดูรายการเงินเข้า–ออก / บันทึกยอดตาม Statement / แก้ไข</p>}
       </section>
 
       {(unsettled ?? []).length > 0 && (

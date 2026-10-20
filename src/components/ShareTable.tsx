@@ -34,7 +34,7 @@ export function ShareBox({ title, sub, label, rows, total }: {
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <h2 className="font-medium text-slate-900">{title}</h2>
       <p className="mb-3 text-xs text-slate-500">{sub ?? `รวม ${money(total, "THB")}`}</p>
-      <ShareTable label={label} total={total} rows={rows} />
+      <div className="overflow-x-auto"><ShareTable label={label} total={total} rows={rows} /></div>
     </div>
   );
 }

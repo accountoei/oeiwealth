@@ -197,14 +197,14 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
           </div>
         </section>
         <p className="-mt-3 text-xs text-slate-500">เงินเข้า–ออกไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง · ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</p>
-        <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2">
           <ShareBars title="เงินฝากตามธนาคาร" rows={bankRows} />
           <div className="flex flex-col gap-4">
           {pv.personId
             ? <ShareBars title="เงินฝากตามสมาชิกครอบครัว" rows={personRows.filter((r) => r.key === pv.personId)} note={`แสดงเฉพาะ ${pv.personName} · เลือก "ทั้งครอบครัว" เพื่อดูทุกคน`} />
             : <ShareBars title="เงินฝากตามสมาชิกครอบครัว" rows={personRows}
                 footer={ownGap.length > 0 && <p className="mt-3 text-xs text-amber-700">ระบุเจ้าของยังไม่ครบ 100%: {ownGap.map((a) => a.name).join(", ")}</p>} />}
-          <ShareBars title="เงินฝากตามประเภทบัญชี" head="ประเภทบัญชี" rows={typeRows} />
+          <ShareBars title="เงินฝากตามประเภทบัญชี" head="ประเภทบัญชี" rows={typeRows} className="flex-1" />
           </div>
         </div>
         <AccountsTable rows={accountRows} today={today} empty={pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"}
