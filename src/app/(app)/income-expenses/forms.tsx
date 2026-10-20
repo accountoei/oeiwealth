@@ -11,6 +11,7 @@ import {
 import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { findHint, type ExpHint } from "@/lib/category-hints";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import BalanceGuard from "@/components/BalanceGuard";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 
 export type Bank = { asset_id: string; name: string; currency: string };
@@ -494,6 +495,7 @@ export function RecurringPayActions(props: {
       </label>
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
+      <BalanceGuard />
       <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
       <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
       <div className="w-full"><Msg s={rs} /></div>
@@ -587,10 +589,11 @@ export function ExpenseForm({ banks, cards, persons, today, minDate, categories,
           </div>
           <p className="text-xs text-slate-500">
             {via === "bank" ? "ระบบสร้างรายการเงินออกจากบัญชีให้" : via === "card" ? "ยังไม่มีเงินออกจากบัญชี จนกว่าจะบันทึก \"จ่ายบัตรเครดิต\"" : "ไม่มีเงินออกจากบัญชีในระบบ"}
-            {" · "}ซื้อทรัพย์สิน / ลงทุน / โอน / จ่ายหนี้ ไม่ใช่ค่าใช้จ่าย ให้บันทึกที่แท็บ &ldquo;เงินเข้า–ออก &amp; โอน&rdquo;
+            {" · "}ซื้อทรัพย์สิน / ลงทุน / โอน / จ่ายหนี้ ไม่ใช่ค่าใช้จ่าย ให้บันทึกที่ปุ่ม &ldquo;โอน / จ่ายบัตร / จ่ายหนี้&rdquo; ในแท็บภาพรวม
           </p>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+            <BalanceGuard />
             <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
@@ -753,6 +756,7 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
           </div>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+            <BalanceGuard bank="from_asset_id" amount={["amount", "fee", "principal", "interest"]} />
             <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
@@ -782,6 +786,7 @@ export function AutopayConfirmForm({ cardId, bankId, currency, dueDate, amount, 
           placeholder={minimum ? "ยอดขั้นต่ำตามใบแจ้งยอด" : ""} className={`mt-0.5 block w-36 ${small}`} />
       </label>
       <button disabled={pending} className={sbtn}>{pending ? "…" : "บันทึก"}</button>
+      <BalanceGuard />
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

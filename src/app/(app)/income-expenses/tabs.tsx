@@ -62,12 +62,29 @@ export function TabPanel({ id, children }: { id: string; children: ReactNode }) 
 }
 
 /** ลิงก์ไปแท็บอื่นในหน้านี้ · สลับแท็บทันที (ไม่ต้องรอโหลด / Refresh) */
-export function TabLink({ tab, href, className, children }: { tab: string; href: string; className?: string; children: ReactNode }) {
+export function TabLink({ tab, href, className, anchor, children }: {
+  tab: string; href: string; className?: string;
+  /** เลื่อนไปกล่องนี้ (id) หลังสลับแท็บ · ไม่ระบุ = เลื่อนขึ้นบนสุด */
+  anchor?: string; children: ReactNode;
+}) {
   const { setActive } = useContext(Ctx);
   return (
     <Link href={href} scroll={false} className={className}
-      onClick={() => { setActive(tab); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{children}</Link>
+      onClick={() => {
+        setActive(tab);
+        if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+        else window.scrollTo({ top: 0, behavior: "smooth" });
+      }}>{children}</Link>
   );
+}
+
+/** เปิดหน้าแล้วเลื่อนไปกล่อง id (ใช้กับลิงก์เดิม ?tab=moves → กล่อง "เงินเข้า–ออกบัญชีเดือนนี้" ในภาพรวม) */
+export function ScrollToHash({ id }: { id: string }) {
+  useEffect(() => {
+    const t = setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: "start" }), 50);
+    return () => clearTimeout(t);
+  }, [id]);
+  return null;
 }
 
 // แท็บย่อยในแท็บ (เช่น ที่ต้องได้รับ / บันทึกแล้ว / รายได้ประจำ) · จำไว้ใน URL (?it= / ?et=)

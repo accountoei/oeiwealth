@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { money, thDate } from "@/lib/format";
 import { payFromDrop, type ActionState, type Drop } from "./actions";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
@@ -41,6 +42,7 @@ export default function DropPrompt({ drop, currency, banks }: {
           </label>
           <span className="pb-1.5 text-xs text-slate-600">วันที่ {thDate(drop.date)}</span>
           <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
+          <BalanceGuard />
             {pending ? "กำลังบันทึก…" : "ลงเป็นการจ่าย"}
           </button>
           <button type="button" onClick={() => setClosed(true)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700">

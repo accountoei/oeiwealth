@@ -190,8 +190,8 @@ export default async function AccountDetailPage({ params, searchParams }: {
       detail: ll.detail, sub: ll.sub ? <div className="text-xs text-slate-400">{ll.sub}</div> : undefined,
       extra: Number(m.fee ?? 0) > 0 ? <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div> : undefined,
       actions, kind: m.movement_type, merged: !!m.parts,
-      pendingHref: inc?.pending_split ? `/income-expenses?tab=income&it=recorded&m=${m.movement_date.slice(0, 7)}`
-        : e?.pending_split ? `/income-expenses?tab=expense&et=recorded&m=${m.movement_date.slice(0, 7)}` : undefined,
+      pendingHref: inc?.pending_split ? `/income-expenses?tab=income&it=split&m=${m.movement_date.slice(0, 7)}`
+        : e?.pending_split ? `/income-expenses?tab=expense&et=split&m=${m.movement_date.slice(0, 7)}` : undefined,
       metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
         expenseCategory: e?.expense_category ?? null, pending: !!(e?.pending_split || inc?.pending_split) },
     };
@@ -216,7 +216,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">+{money(sumIn)}</b></span>
           <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
-          <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className="tabular-nums">{closing == null ? "-" : money(closing, acc.currency)}</b></span>
+          <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className={`tabular-nums ${Number(closing ?? 0) < -0.005 ? "text-red-700" : ""}`}>{closing == null ? "-" : money(closing, acc.currency)}</b></span>
         </div>
         {/* เตือนเฉพาะเมื่อมีเรื่องต้องทำ */}
         {st?.lump != null && Math.abs(Number(st.lump)) >= 0.005 && (
@@ -254,7 +254,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
               {monthHist.map((v) => (
                 <tr key={v.id}>
                   <td className="whitespace-nowrap py-1.5">{thDate(v.valuation_date)}</td>
-                  <td className="whitespace-nowrap text-right tabular-nums">{money(v.value, acc.currency)}</td>
+                  <td className={`whitespace-nowrap text-right tabular-nums ${Number(v.value) < -0.005 ? "text-red-700" : ""}`}>{money(v.value, acc.currency)}</td>
                   <td className="pl-4">{SOURCE_LABEL[v.source] ?? v.source}</td>
                   <td className="pl-4 text-slate-500">{v.notes}</td>
                   <td className="pl-2 text-right">

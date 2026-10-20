@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
 import { ROW_BTN } from "@/lib/format";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -120,6 +121,7 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <BalanceGuard />
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>

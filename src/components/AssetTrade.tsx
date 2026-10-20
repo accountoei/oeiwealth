@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { payForAsset, sellAsset, type TradeState } from "@/lib/asset-trade";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -77,6 +78,7 @@ export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, 
         </label>
         <label className="text-sm">จำนวนเงิน ({currency}) *<input name="amount" required inputMode="decimal" className={input} /></label>
         <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>
+        <BalanceGuard amount={["amount", "fee"]} />
         <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ผ่อนดาวน์งวด 3 / ต่อเติมห้องครัว" className={input} /></label>
       </div>
       {list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}

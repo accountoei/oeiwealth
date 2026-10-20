@@ -6,6 +6,7 @@ import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule,
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -199,6 +200,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
         {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50">บันทึก</button>
+      <BalanceGuard />
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

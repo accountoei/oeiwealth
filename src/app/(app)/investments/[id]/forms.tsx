@@ -9,6 +9,7 @@ import {
 import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
+import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -251,6 +252,7 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
       )}
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <BalanceGuard amount={["amount", "fee"]} date={["settlement_date", "date"]} when={["type", ["BUY", "FEE", "TAX"]]} />
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
@@ -349,6 +351,7 @@ export function TransferForm({ assetId, currency, banks, cashAccounts, today, mi
       </ul>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
+        <BalanceGuard amount={["amount", "fee"]} when={["direction", ["IN"]]} />
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>

@@ -95,11 +95,11 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
                     <Link href={`/financial/cash/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                     <div className="text-xs text-slate-500">{r.bank} · {r.currency}</div>
                   </td>
-                  <td className="px-3 text-right tabular-nums">
+                  <td className={`px-3 text-right tabular-nums ${Number(r.lastValue ?? 0) < -0.005 ? "text-red-700" : ""}`}>
                     {r.lastValue == null ? "-" : money(r.lastValue, r.currency)}
                     {r.lastDate && <div className="text-xs text-slate-400">{thDate(r.lastDate)}</div>}
                   </td>
-                  <td className="px-3 text-right tabular-nums">{r.calculated == null ? "-" : money(r.calculated, r.currency)}</td>
+                  <td className={`px-3 text-right tabular-nums ${Number(r.calculated ?? 0) < -0.005 ? "text-red-700" : ""}`}>{r.calculated == null ? "-" : money(r.calculated, r.currency)}</td>
                   <td className="px-3 text-right">
                     <input inputMode="decimal" value={v} disabled={!canWrite} placeholder={r.currency} aria-label={`ยอดจริง ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })}
@@ -118,7 +118,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
                       : r.lastDate == null ? <span className="text-slate-500">ยังไม่มียอด</span>
                       : old != null && old > 30 ? <span className="text-amber-700">ยอดล่าสุดเก่ากว่า 30 วัน</span>
                       : <span className="text-slate-500">ล่าสุด {thDate(r.lastDate)}</span>}
-                    {!res && r.pendingLump && <div><Link href={`/income-expenses?tab=expense&et=recorded&m=${ym}`} className="text-amber-700 underline">มีก้อนรอแยก</Link></div>}
+                    {!res && r.pendingLump && <div><Link href={`/income-expenses?tab=expense&et=split&m=${ym}`} className="text-amber-700 underline">มีก้อนรอแยก</Link></div>}
                   </td>
                 </tr>
               );
