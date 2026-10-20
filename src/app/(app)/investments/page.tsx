@@ -25,7 +25,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const sortMap = await loadSortMap("assets");
-  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }, { data: owners }] = await Promise.all([
+  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }] = await Promise.all([
     supabase.from("v_portfolio_values").select("*").order("name"),
     supabase.from("investment_portfolios").select("asset_id,institution,status,portfolio_type").is("deleted_at", null),
     supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
@@ -33,7 +33,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     supabase.from("investment_transactions")
       .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
       .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(pv.personId ? 60 : 10),
-    supabase.from("v_asset_ownerships_active").select("asset_id,person_id,ownership_percent,end_date"),
   ]);
   const goLive = family?.go_live_date ?? "";
   // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
@@ -105,15 +104,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       total: r?.total ?? 0, cost: r?.cost ?? 0,
     };
   });
-  // มูลค่าตามสมาชิก (ทั้งครอบครัวเสมอ) = มูลค่าเป็นบาทเต็มพอร์ต × สัดส่วนเจ้าของ
-  const ownRows = (owners ?? []).filter((o) => !o.end_date);
-  const byPerson = new Map<string, number>();
-  ((pvs as PV[] | null) ?? []).forEach((p) => {
-    const v = Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0);
-    ownRows.filter((o) => o.asset_id === p.asset_id).forEach((o) => byPerson.set(o.person_id, (byPerson.get(o.person_id) ?? 0) + v * Number(o.ownership_percent) / 100));
-  });
-  const famTotal = [...byPerson.values()].reduce((t, v) => t + v, 0);
-  const personName = new Map(pv.persons.map((x) => [x.id, x.name]));
   const share = (m: Map<string, number>, label: (k: string) => string, offset = 0) =>
     [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, name: label(k), value: v, color: SHARE_COLORS[(i + offset) % SHARE_COLORS.length] }));
 
@@ -142,12 +132,10 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       </section>
 
       {allocTotal > 0 && (
-        <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-2">
           <ShareBox title={`สัดส่วนตามประเภท${pv.personId ? `ของ ${pv.personName}` : ""}`} label="ประเภท" total={allocTotal}
             rows={share(byType, (k) => HOLDING_TYPE_LABEL[k] ?? k)} />
           <ShareBox title="สัดส่วนตามสกุลเงิน" label="สกุลเงิน" total={allocTotal} rows={share(byCcy, (k) => k, 3)} />
-          {famTotal > 0 && <ShareBox title="มูลค่าตามสมาชิกครอบครัว" label="สมาชิก" total={famTotal}
-            rows={share(byPerson, (k) => personName.get(k) ?? "สมาชิก", 1)} />}
         </section>
       )}
 

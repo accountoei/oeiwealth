@@ -1,9 +1,6 @@
 "use client";
 
-import Modal from "@/components/Modal";
-
 import { useActionState, useState } from "react";
-import { updateRecord, type RecState } from "@/lib/records";
 import { updatePortfolio, type ActionState } from "../actions";
 import { PORTFOLIO_TYPE_LABEL } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
@@ -59,35 +56,3 @@ export function PortfolioInfoForm({ assetId, name, institution, portfolioType, c
   );
 }
 
-/* ------------------------------------------------------------------ กดชื่อบัญชีเงินฝาก → แก้ไข */
-export function CashNameEdit({ id, name, purpose, interestRate, paths, canEdit, children }: {
-  id: string; name: string; purpose: string | null; interestRate: number | null; paths: string[]; canEdit: boolean; children?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
-  if (!canEdit) return <span className="font-medium text-slate-900">{name}{children}</span>;
-  const trigger = (
-    <button type="button" onClick={() => setOpen(true)} className="text-left font-medium text-slate-900 hover:underline" title="กดเพื่อแก้ไข">
-      {name}{children}
-    </button>
-  );
-  if (!open) return trigger;
-  return (<>{trigger}<Modal title="แก้ไขบัญชีเงินฝากในพอร์ต" onClose={() => setOpen(false)}>
-    <form action={action} className="space-y-3 text-sm">
-      <input type="hidden" name="table" value="investment_holdings" />
-      <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="paths" value={paths.join(",")} />
-      <div className="grid gap-2 md:grid-cols-3">
-        <label className="text-xs text-slate-600">ชื่อบัญชี<input name="f_name" required defaultValue={name} className={input} /></label>
-        <label className="text-xs text-slate-600">วัตถุประสงค์<input name="f_purpose" defaultValue={purpose ?? ""} className={input} /></label>
-        <label className="text-xs text-slate-600">ดอกเบี้ย % ต่อปี<input name="f_interest_rate" inputMode="decimal" defaultValue={interestRate ?? ""} className={input} /></label>
-      </div>
-      <div className="flex items-center gap-3">
-        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
-        {state.error && <span className="text-xs text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-xs text-emerald-700">บันทึกแล้ว</span>}
-      </div>
-    </form>
-  </Modal></>);
-}

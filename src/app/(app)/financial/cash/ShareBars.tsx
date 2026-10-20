@@ -3,11 +3,12 @@ import { money } from "@/lib/format";
 export type BarRow = { key: string; label: string; value: number; color: string; sub?: string };
 
 /** แท่งสัดส่วน (เงินฝากตามธนาคาร / ตามสมาชิก) · ยอดเป็นบาท · เรียงมาก → น้อย */
-export default function ShareBars({ title, rows, note, footer, head }: { title: string; rows: BarRow[]; note?: string; footer?: React.ReactNode; head?: string }) {
+export default function ShareBars({ title, rows, note, footer, head, className }: { title: string; rows: BarRow[]; note?: string; footer?: React.ReactNode; head?: string;
+  /** เช่น flex-1 = ยืดให้ขอบล่างเท่ากล่องข้าง ๆ */ className?: string }) {
   const sorted = [...rows].filter((r) => Math.abs(r.value) > 0.005).sort((a, b) => b.value - a.value);
   const total = sorted.reduce((t, r) => t + r.value, 0);
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5">
+    <section className={`rounded-xl border border-slate-200 bg-white p-5 ${className ?? ""}`}>
       <h2 className="font-medium text-slate-900">{title} <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>
       {note && <p className="text-xs text-slate-500">{note}</p>}
       {sorted.length === 0 ? <p className="mt-3 text-sm text-slate-500">ยังไม่มีข้อมูล</p> : (
