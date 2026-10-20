@@ -12,6 +12,7 @@ import SplitForm from "./SplitForm";
 import TransferEditor from "./TransferEditor";
 import { TabLink } from "./tabs";
 import type { MoveRow } from "./MovesView";
+import type { PfCash } from "@/lib/pf-cash";
 
 /**
  * ชุดคำสั่งกลางของรายได้ / ค่าใช้จ่าย / เงินเข้า–ออก — ใช้ร่วมกันระหว่างหน้า Income & Expenses และหน้ารายละเอียดบัญชีธนาคาร
@@ -23,7 +24,7 @@ import type { MoveRow } from "./MovesView";
 
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
 export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name)";
-export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)";
+export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)";
 export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -72,6 +73,8 @@ export type KitCtx = {
   /** หน้าที่ต้องโหลดใหม่หลังแก้ */
   paths: string[];
   banks: Bank[]; cards: Card[]; liabs: Liab[]; persons: { id: string; name: string }[];
+  /** บัญชีเงินฝากในพอร์ต (ค่าใช้จ่ายจ่ายจากพอร์ต) */
+  pfCash: PfCash[];
   incSubs: string[]; expCats: string[]; expHints: ExpHint[];
   /** เงินเข้า–ออกของเดือน (ใช้หาการรับ / จ่ายครั้งเดียวกัน: เงินต้น + ดอกเบี้ย) */
   moves: Move[];
@@ -184,11 +187,11 @@ export function makeEntryKit(c: KitCtx) {
     }
     return (
       <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} button={button}
-        editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} persons={persons}
+        editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} pfCash={c.pfCash} persons={persons}
           categories={expCats} reimbursable={!!i.is_reimbursable}
           values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category,
             person_id: i.person_id, notes: i.notes, expected_reimbursement_amount: i.expected_reimbursement_amount,
-            bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id }} />} />
+            bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, hold: i.paid_from_cash_holding_id }} />} />
     );
   };
   /** แยกก้อนรอแยก: ปุ่ม (ตาราง) หรือกดที่แถว (ตารางเงินเข้า–ออก) */

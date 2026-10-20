@@ -31,6 +31,7 @@ import { buildHints } from "@/lib/category-hints";
 import { stripPending } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
 import { StatBox } from "@/components/Boxes";
+import { loadPfCash } from "@/lib/pf-cash";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -71,7 +72,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: loanRows }, { data: insRows }] = await Promise.all([
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_mode")
+    supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_cash_holding_id,autopay_mode")
       .is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
@@ -82,7 +83,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
       .is("deleted_at", null).order("name"),
     supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
+    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
@@ -147,10 +148,17 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: cardCur.get(c.id) ?? Number(c.outstanding_balance),
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const liabs = (liabRaw as Liab[] | null) ?? [];
+  // บัญชีเงินฝากในพอร์ต (ค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ต) + จ่ายบัตรจากพอร์ตเดือนนี้
+  const [pfCash, { data: pfCardPays }] = await Promise.all([
+    loadPfCash(supabase),
+    supabase.from("investment_transactions").select("to_credit_card_id").eq("transaction_type", "PAYMENT").not("to_credit_card_id", "is", null)
+      .is("deleted_at", null).gte("transaction_date", start).lte("transaction_date", end),
+  ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
   const name = new Map<string, string>([...banks.map((b) => [b.asset_id, b.name] as [string, string]),
-    ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string])]);
+    ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string]),
+    ...pfCash.map((h) => [h.id, `พอร์ต ${h.label}`] as [string, string])]);
   const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
   // เดาหมวด / บัญชีจากรายการค่าใช้จ่ายที่เคยบันทึกเอง (ไม่รวมรายการจากหน้าอื่น / ก้อนรอแยก)
   const { data: hintRows } = await supabase.from("expense_items")
@@ -251,13 +259,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   // บัตรตัดบัญชีอัตโนมัติ: งวดของเดือนนี้ที่ยังไม่มีรายการจ่ายบัตร → ถึงวันครบชำระแล้ว = "รอยืนยัน" · ยังไม่ถึง = "จะตัด"
   const lastDay = Number(end.slice(8, 10));
   const autopay = (cardsRaw ?? [])
-    .filter((c) => c.status === "ACTIVE" && c.autopay_asset_id && c.due_day && pv.isPerson(c.person_id))
+    .filter((c) => c.status === "ACTIVE" && (c.autopay_asset_id || c.autopay_cash_holding_id) && c.due_day && pv.isPerson(c.person_id))
     .map((c) => ({
-      id: c.id as string, bank: c.autopay_asset_id as string, currency: c.currency as string, minimum: c.autopay_mode === "MINIMUM",
+      id: c.id as string, bank: (c.autopay_asset_id ?? c.autopay_cash_holding_id) as string, hold: (c.autopay_cash_holding_id ?? null) as string | null, currency: c.currency as string, minimum: c.autopay_mode === "MINIMUM",
       label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "),
       balance: Number(c.outstanding_balance), balanceDate: c.balance_date as string | null,
       due: `${start.slice(0, 8)}${String(Math.min(Number(c.due_day), lastDay)).padStart(2, "0")}`,
-      paid: (moves ?? []).some((m) => m.movement_type === "CARD_PAYMENT" && m.to_credit_card_id === c.id),
+      paid: (moves ?? []).some((m) => m.movement_type === "CARD_PAYMENT" && m.to_credit_card_id === c.id)
+        || (pfCardPays ?? []).some((x) => x.to_credit_card_id === c.id),
     }))
     .filter((x) => !x.paid && (!goLive || x.due >= goLive) && (x.minimum || x.balance > 0))
     .sort((a, b) => a.due.localeCompare(b.due));
@@ -267,7 +276,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const expById = new Map((items ?? []).map((i) => [i.id as string, i]));
   // ชุดคำสั่งกลาง (แก้ไข / ลบ / แยกก้อน / แถวเงินเข้า–ออก) — ใช้ร่วมกับหน้ารายละเอียดบัญชี
   const kit = makeEntryKit({ ym, personId: pv.personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons: persons ?? [],
-    incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets: (otherAssets ?? []) as { id: string; name: string; asset_type: string }[],
+    pfCash, incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets: (otherAssets ?? []) as { id: string; name: string; asset_type: string }[],
     tabLinks: true });
   const { incSource, expSource, incEdit, expEdit, incSplit, expSplit } = kit;
   const moveRows = (withActions: boolean): MoveRow[] => kit.buildMoveRows(moveList as Move[], withActions);
@@ -524,9 +533,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {i.source_cash_movement_id ? "จากรายการโอน"
             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
+            : i.paid_from_cash_holding_id ? name.get(i.paid_from_cash_holding_id) ?? "เงินฝากในพอร์ต"
             : i.liability_id ? `ทบเข้าหนี้ ${name.get(i.liability_id) ?? ""}` : "เงินสด"}
           {!i.source_cash_movement_id && (pname(i.persons) ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
             : i.liability_id ? <div className="text-slate-500">ตามผู้รับผิดชอบหนี้</div>
+            : i.paid_from_cash_holding_id ? <div className="text-slate-500">ตามเจ้าของพอร์ต</div>
             : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}
         </>,
         action: i.pending_split ? expSplit(i) ?? <MoveBadge label="รอแยกรายละเอียด" tone="amber" />
@@ -641,7 +652,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 <h2 className="font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
                 <p className="text-xs text-slate-500">ทุกบัญชีธนาคารในระบบ · ยอดสรุปไม่นับโอนระหว่างบัญชีตัวเอง · {moveSum.count} รายการ</p>
               </div>
-              {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
+              {canWrite && inMonth && <MovementForm banks={banks} cards={cards} pfCash={pfCash} liabilities={liabs} today={maxDate} minDate={minDate} />}
             </div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm tabular-nums">
               {moveSum.count === 0 ? <span className="text-slate-500">ยังไม่มีเงินเข้า–ออกในเดือนนี้</span> : <>
@@ -674,7 +685,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                       </div>
                       {canWrite && x.due <= today && (
                         <div className="mt-2">
-                          <AutopayConfirmForm cardId={x.id} bankId={x.bank} currency={x.currency} dueDate={x.due} amount={x.balance}
+                          <AutopayConfirmForm cardId={x.id} bankId={x.hold ? null : x.bank} holdId={x.hold} currency={x.currency} dueDate={x.due} amount={x.balance}
                             minimum={x.minimum} today={today} minDate={minDate} />
                         </div>
                       )}
@@ -700,7 +711,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       <TabPanel id="expense">
             <MonthTable kind="expense" rows={expRows} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
               empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}
-              actions={canWrite && inMonth ? <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /> : undefined} />
+              actions={canWrite && inMonth ? <ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /> : undefined} />
             <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้
               · รายการที่คาดไว้มาจากค่าใช้จ่ายประจำ (ทั่วไป และของทรัพย์สิน) และตารางเบี้ยประกัน กดปุ่ม &ldquo;บันทึกจ่าย&rdquo; ในช่องสถานะด้วยยอดจริง
               · เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม (รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ)</p>

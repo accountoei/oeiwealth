@@ -2244,6 +2244,85 @@ SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.ok((SELECT count(*) FROM public.loan_details WHERE borrower_phone = '080-000-0000') = 1, 'เงินให้กู้: VIEWER อ่านเบอร์ได้ (ตามสิทธิ์อ่านเดิม)');
 RESET ROLE;
 
+\echo '== 13zz3. จ่ายออกจากบัญชีเงินฝากในพอร์ต: ค่าใช้จ่าย · จ่ายบัตร · ตัดบัตรอัตโนมัติ'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) AS pf_thb0 \gset
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ค่าเทอมจากพอร์ต', 'amount', 500,
+  'expense_category', 'ทั่วไป', 'paid_from_cash_holding_id', t.h('เงินฝาก THB'))) AS pf_exp \gset
+SELECT t.ok((SELECT currency = 'THB' AND paid_from_cash_holding_id = t.h('เงินฝาก THB') AND paid_from_asset_id IS NULL FROM public.expense_items WHERE id = :'pf_exp')
+            AND (SELECT count(*) FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp' AND transaction_type = 'PAYMENT'
+                   AND amount = 500 AND cash_holding_id = t.h('เงินฝาก THB') AND deleted_at IS NULL) = 1
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE source_entity_type = 'EXPENSE' AND source_entity_id = :'pf_exp' AND deleted_at IS NULL),
+            'ค่าใช้จ่ายจากพอร์ต → รายการ PAYMENT ในพอร์ต (ไม่มีเงินออกจากบัญชีธนาคาร)');
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0 - 500,
+            'ค่าใช้จ่ายจากพอร์ต: เงินฝากในพอร์ตลด 500');
+SELECT t.fails($$UPDATE public.investment_transactions SET amount = 1 WHERE source_expense_item_id = '$$ || :'pf_exp' || $$'$$,
+               'DERIVED_RECORD', 'รายการ PAYMENT ที่สร้างจากค่าใช้จ่าย แก้ตรง ๆ ไม่ได้');
+SELECT t.fails($$INSERT INTO public.investment_transactions(portfolio_id, transaction_date, transaction_type, amount, currency, source_expense_item_id)
+  SELECT portfolio_id, current_date, 'PAYMENT', 1, 'THB', '$$ || :'pf_exp' || $$' FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')$$,
+               'DERIVED_RECORD', 'สร้างรายการ PAYMENT ผูกค่าใช้จ่ายเองไม่ได้');
+SELECT public.update_entry('EXPENSE', :'pf_exp', jsonb_build_object('amount', 650)) IS NOT NULL AS pf_exp_edit;
+SELECT t.ok((SELECT amount FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp') = 650
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0 - 650,
+            'แก้ยอดค่าใช้จ่าย → รายการในพอร์ตและเงินฝากเปลี่ยนตาม');
+SELECT t.fails($$SELECT public.update_entry('EXPENSE', '$$ || :'pf_exp' || $$', '{}'::jsonb, 'h:' || t.h('เงินสด USD บัญชี A'))$$,
+               'INVALID_CURRENCY', 'ย้ายไปบัญชีเงินฝากในพอร์ตคนละสกุลไม่ได้');
+SELECT public.update_entry('EXPENSE', :'pf_exp', '{}'::jsonb, 'a:' || t.a('KBank ออมทรัพย์')) IS NOT NULL AS pf_to_bank;
+SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp')
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0
+            AND EXISTS (SELECT 1 FROM public.cash_movements WHERE source_entity_type = 'EXPENSE' AND source_entity_id = :'pf_exp'
+                          AND from_asset_id = t.a('KBank ออมทรัพย์') AND deleted_at IS NULL),
+            'เปลี่ยนไปจ่ายจากบัญชีธนาคาร → รายการในพอร์ตถูกลบ · เงินออกจากบัญชีธนาคารแทน');
+SELECT public.update_entry('EXPENSE', :'pf_exp', '{}'::jsonb, 'h:' || t.h('เงินฝาก THB')) IS NOT NULL AS pf_back;
+SELECT t.ok((SELECT deleted_at IS NULL FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp')
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE source_entity_type = 'EXPENSE' AND source_entity_id = :'pf_exp' AND deleted_at IS NULL)
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0 - 650,
+            'เปลี่ยนกลับมาจ่ายจากพอร์ต → รายการในพอร์ตกลับมา · เงินออกจากธนาคารหาย');
+SELECT t.ok((SELECT round(sum(share_percent), 4) FROM public.v_expense_by_person WHERE expense_item_id = :'pf_exp') = 100,
+            'ค่าใช้จ่ายจากพอร์ต: แบ่งรายบุคคลตามเจ้าของพอร์ต ครบ 100%');
+SELECT t.fails($$SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'x', 'amount', 1, 'expense_category', 'ทั่วไป',
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'paid_from_cash_holding_id', t.h('เงินฝาก THB')))$$, 'ทางเดียว', 'ค่าใช้จ่าย: เลือกจ่ายจากได้ทางเดียว');
+UPDATE public.expense_items SET deleted_at = now() WHERE id = :'pf_exp';
+SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp')
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0,
+            'ลบค่าใช้จ่าย → รายการในพอร์ตถูกลบตาม · เงินฝากกลับเท่าเดิม');
+-- จ่ายบัตรจากพอร์ต
+SELECT (SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455')) AS card0 \gset
+SELECT public.pay_credit_card(jsonb_build_object('card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'),
+  'cash_holding_id', t.h('เงินฝาก THB'), 'date', current_date, 'amount', 300)) AS pf_card_pay \gset
+SELECT t.ok((SELECT transaction_type = 'PAYMENT' AND to_credit_card_id IS NOT NULL AND cash_holding_id = t.h('เงินฝาก THB')
+               FROM public.investment_transactions WHERE id = :'pf_card_pay')
+            AND (SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0 - 300
+            AND (SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'))
+                = greatest(:card0 - 300, 0),
+            'จ่ายบัตรจากพอร์ต: เงินฝากในพอร์ตลด 300 · ยอดบัตรปัจจุบันลด 300');
+SELECT t.fails($$SELECT public.pay_credit_card(jsonb_build_object('card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'),
+  'cash_holding_id', t.h('เงินสด USD บัญชี A'), 'date', current_date, 'amount', 1))$$, 'INVALID_CURRENCY', 'จ่ายบัตรจากพอร์ตคนละสกุลไม่ได้');
+SELECT t.fails($$SELECT public.pay_credit_card(jsonb_build_object('card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'),
+  'cash_holding_id', t.h('เงินฝาก THB'), 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'amount', 1))$$, 'ทางเดียว', 'จ่ายบัตร: เลือกบัญชีที่จ่ายได้ทางเดียว');
+UPDATE public.investment_transactions SET deleted_at = now() WHERE id = :'pf_card_pay';
+SELECT t.ok((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝาก THB')) = :pf_thb0
+            AND (SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '4455')) = :card0,
+            'ลบการจ่ายบัตรจากพอร์ต → เงินฝากและยอดบัตรกลับเท่าเดิม');
+-- ตัดบัตรอัตโนมัติจากพอร์ต (สกุลเดียวกับบัตร · ผูกได้ทางเดียว)
+UPDATE public.credit_cards SET autopay_cash_holding_id = t.h('เงินฝาก THB'), autopay_mode = 'FULL' WHERE card_last4 = '4455';
+SELECT t.ok((SELECT autopay_cash_holding_id = t.h('เงินฝาก THB') FROM public.credit_cards WHERE card_last4 = '4455'), 'ตั้งบัตรตัดอัตโนมัติจากบัญชีเงินฝากในพอร์ตได้');
+SELECT t.fails($$UPDATE public.credit_cards SET autopay_asset_id = t.a('KBank ออมทรัพย์') WHERE card_last4 = '4455'$$, 'cc_autopay', 'ตัดอัตโนมัติผูกได้ทางเดียว (ธนาคาร หรือ พอร์ต)');
+SELECT t.fails($$UPDATE public.credit_cards SET autopay_cash_holding_id = t.h('เงินสด USD บัญชี A') WHERE card_last4 = '4455'$$, 'INVALID_CURRENCY', 'ตัดอัตโนมัติจากพอร์ตต้องสกุลเดียวกับบัตร');
+UPDATE public.credit_cards SET autopay_cash_holding_id = NULL, autopay_mode = NULL WHERE card_last4 = '4455';
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ค่าใช้จ่ายพอร์ต (ผู้บันทึก)', 'amount', 50,
+  'expense_category', 'ทั่วไป', 'paid_from_cash_holding_id', t.h('เงินฝาก THB'))) AS pf_exp_c \gset
+SELECT t.ok((SELECT count(*) FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp_c' AND deleted_at IS NULL) = 1,
+            'CONTRIBUTOR บันทึกค่าใช้จ่ายจากพอร์ตได้ (ระบบสร้างรายการในพอร์ตให้)');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.expense_items SET deleted_at = now() WHERE id = :'pf_exp_c';
+SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.investment_transactions WHERE source_expense_item_id = :'pf_exp_c'), 'ลบค่าใช้จ่ายของผู้บันทึก → รายการในพอร์ตถูกลบตาม');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.pay_credit_card(jsonb_build_object('card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '4455'),
+  'cash_holding_id', t.h('เงินฝาก THB'), 'date', current_date, 'amount', 1))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER จ่ายบัตรจากพอร์ตไม่ได้');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

@@ -184,15 +184,18 @@ export async function payLiability(_: ActionState, form: FormData): Promise<Acti
 /** ตั้งค่าบัตรตัดบัญชีอัตโนมัติ (บัญชีที่ตัด + เต็มจำนวน / ขั้นต่ำ) · ไม่เลือกบัญชี = ปิด */
 export async function setCardAutopay(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
-  const bank = str(form.get("autopay_asset_id"));
-  const mode = bank ? (str(form.get("autopay_mode")) ?? "FULL") : null;
+  // ค่า "h:<id>" = บัญชีเงินฝากในพอร์ต · อื่น ๆ = บัญชีธนาคาร · ผูกได้ทางเดียว
+  const sel = str(form.get("autopay_asset_id"));
+  const hold = sel?.startsWith("h:") ? sel.slice(2) : null;
+  const bank = sel && !hold ? sel : null;
+  const mode = sel ? (str(form.get("autopay_mode")) ?? "FULL") : null;
   const { data, error } = await supabase.from("credit_cards")
-    .update({ autopay_asset_id: bank, autopay_mode: mode }).eq("id", String(form.get("card_id"))).select("id");
+    .update({ autopay_asset_id: bank, autopay_cash_holding_id: hold, autopay_mode: mode }).eq("id", String(form.get("card_id"))).select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขบัตรนี้" };
   revalidateCards(String(form.get("card_id")));
   revalidatePath("/income-expenses");
-  return { ok: bank ? "ตั้งค่าตัดบัญชีอัตโนมัติแล้ว" : "ปิดตัดบัญชีอัตโนมัติแล้ว" };
+  return { ok: sel ? "ตั้งค่าตัดบัญชีอัตโนมัติแล้ว" : "ปิดตัดบัญชีอัตโนมัติแล้ว" };
 }
 
 /** ยืนยันว่าตัดบัญชีอัตโนมัติแล้ว (หรือจ่ายบัตรเอง) → บันทึกจ่ายบัตร (ยอดค้างบัตรลดเองจากการคำนวณ) */
@@ -201,8 +204,8 @@ export async function confirmCardPayment(_: ActionState, form: FormData): Promis
   const amount = num(form.get("amount"));
   if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ตัดจริง" };
   const { error } = await supabase.rpc("pay_credit_card", { p: {
-    card_id: str(form.get("card_id")), bank_asset_id: str(form.get("bank_asset_id")), date: str(form.get("date")),
-    amount, reduce_balance: false, autopay: form.get("autopay") === "true",
+    card_id: str(form.get("card_id")), bank_asset_id: str(form.get("bank_asset_id")), cash_holding_id: str(form.get("cash_holding_id")),
+    date: str(form.get("date")), amount, reduce_balance: false, autopay: form.get("autopay") === "true",
   } });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/income-expenses");

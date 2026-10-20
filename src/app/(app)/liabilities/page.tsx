@@ -16,7 +16,7 @@ type Row = { liability_source: string; source_id: string; name: string; subtype:
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null; card_last4: string | null;
   credit_limit: number | null; currency: string; statement_day: number | null; due_day: number | null;
-  outstanding_balance: number; balance_date: string | null; status: string; autopay_asset_id: string | null; autopay_mode: string | null;
+  outstanding_balance: number; balance_date: string | null; status: string; autopay_asset_id: string | null; autopay_cash_holding_id: string | null; autopay_mode: string | null;
   persons: { name: string } | { name: string }[] | null };
 
 const SOURCE_LABEL: Record<string, string> = { LOAN: "เงินกู้", SECURITY_DEPOSIT: "เงินประกันการเช่า" };
@@ -38,7 +38,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     loadPersonView(sp.p, { liabilities: true }),
     supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
     loadSortMap("liabilities"),
-    supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,credit_limit,currency,statement_day,due_day,outstanding_balance,balance_date,status,autopay_asset_id,autopay_mode,persons(name)")
+    supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,credit_limit,currency,statement_day,due_day,outstanding_balance,balance_date,status,autopay_asset_id,autopay_cash_holding_id,autopay_mode,persons(name)")
       .is("deleted_at", null).order("sort_order").order("issuer"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
@@ -205,9 +205,9 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
                   {c.credit_limit ? `วงเงิน ${money(c.credit_limit)}` : "-"}
                   {c.statement_day ? <div>ตัดรอบวันที่ {c.statement_day}</div> : null}
                   {c.due_day ? <div>ชำระภายในวันที่ {c.due_day}</div> : null}
-                  {c.autopay_asset_id && (
+                  {(c.autopay_asset_id || c.autopay_cash_holding_id) && (
                     <div className="mt-1 text-emerald-700">
-                      ตัดบัญชีอัตโนมัติ{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {bankName.get(c.autopay_asset_id) ?? "บัญชี"}
+                      ตัดบัญชีอัตโนมัติ{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {c.autopay_asset_id ? bankName.get(c.autopay_asset_id) ?? "บัญชี" : "เงินฝากในพอร์ต"}
                     </div>
                   )}
                 </td>

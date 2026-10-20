@@ -12,6 +12,8 @@ import { DetailItem as Item } from "@/components/Boxes";
 import { TransferEditForm, type CashAcct, type PfTransfer } from "../../forms";
 import { cashLedger, type LEvent, type LHolding, type LMove, type LTx, type LVal } from "../../cash-ledger";
 import { CashInfoForm, CashStatementForm, SetDefaultButton } from "./forms";
+import { EXP_SELECT, makeEntryKit } from "../../../../income-expenses/entry-kit";
+import { loadKitCtx } from "../../../../income-expenses/entry-kit-load";
 
 type HC = LHolding & { name: string; status: string; purpose: string | null; interest_rate: number | null;
   current_value: number | null; current_value_date: string | null; value_thb: number | null; fx_rate: number | null; holding_type: string };
@@ -65,6 +67,19 @@ export default async function PortfolioCashPage({ params, searchParams }: {
   const prev = L.balanceAt(hid, ccy, valList, prevEnd, fallback);
   const opening = L.balanceAt(hid, ccy, valList, dayBefore, fallback).balance;
   const all = L.events(hid, ccy);
+  // จ่ายออกจากพอร์ต: ค่าใช้จ่าย (แก้ด้วยฟอร์มชุดเดียวกับ Income & Expenses) · จ่ายบัตร (ชื่อบัตร)
+  const pays = all.filter((e) => e.tx?.transaction_type === "PAYMENT");
+  const expIds = pays.map((e) => e.tx!.source_expense_item_id).filter((x): x is string => !!x);
+  const cardIds = [...new Set(pays.map((e) => e.tx!.to_credit_card_id).filter((x): x is string => !!x))];
+  const [{ data: exps }, { data: cardRows }, kitBase] = await Promise.all([
+    expIds.length ? supabase.from("expense_items").select(EXP_SELECT).in("id", expIds) : Promise.resolve({ data: [] as never[] }),
+    cardIds.length ? supabase.from("credit_cards").select("id,issuer,card_name,card_last4").in("id", cardIds) : Promise.resolve({ data: [] as never[] }),
+    loadKitCtx(supabase, [], { ym, personId: "", canWrite: me.role !== "VIEWER", canDelete: me.role === "ADMIN" || me.role === "EDITOR",
+      paths: [`/investments/${id}/cash/${hid}`, `/investments/${id}`, "/investments", "/income-expenses"] }),
+  ]);
+  const expById = new Map((exps ?? []).map((x) => [x.id as string, x]));
+  const kit = makeEntryKit({ ...kitBase, expById });
+  const cardName = new Map((cardRows ?? []).map((c) => [c.id as string, [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")]));
   const waiting = all.filter((e) => e.amt == null || e.waitBank);
   const latestBase = now.base.date;
 
@@ -77,8 +92,29 @@ export default async function PortfolioCashPage({ params, searchParams }: {
 
   // ---------------------------------------------------------------- แถวของตาราง (เดือนที่เลือก) → แบบเดียวกับหน้าบัญชีธนาคาร
   const tiny = (t: string, cls = "text-amber-700") => <div className={`text-xs font-normal ${cls}`}>{t}</div>;
+  const payRow = (e: LEvent): MoveRow => {
+    const t = e.tx!;
+    const ex = t.source_expense_item_id ? expById.get(t.source_expense_item_id) : undefined;
+    const card = t.to_credit_card_id ? cardName.get(t.to_credit_card_id) ?? "บัตรเครดิต" : null;
+    const amt = Math.abs(e.amt ?? 0);
+    return {
+      key: e.key, date: e.date, type: "PAYMENT", kind: ex ? "EXPENSE" : card ? "CARD_PAYMENT" : "ITX_PAYMENT",
+      metaOpts: { incomeType: null, incomeSubtype: null, expenseCategory: ex?.expense_category ?? null, pending: false },
+      fromLabel: h.name, toLabel: card ? `บัตร ${card}` : "ภายนอก", fromBank: hid, toBank: null,
+      fromAmount: amt, fromCcy: ccy, toAmount: amt, toCcy: ccy,
+      detail: ex ? ex.description : card ? `จ่ายบัตร ${card}` : t.notes ?? "จ่ายออก",
+      sub: ex?.notes || (!ex && t.notes && card) ? <div className="text-xs text-slate-400">{ex ? ex.notes : t.notes}</div> : undefined,
+      actions: !canWrite ? undefined : ex ? kit.expEdit({ ...ex, full_amount: Number(ex.amount) })
+        : t.source_expense_item_id ? undefined
+        : <RowActions table="investment_transactions" id={t.id} paths={[...paths, "/liabilities"]} canDelete={canDelete}
+            fields={[{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date },
+              { name: "amount", label: "ยอด", type: "number" as const, value: t.amount },
+              { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />,
+    };
+  };
   const txRow = (e: LEvent): MoveRow => {
     const t = e.tx!;
+    if (t.transaction_type === "PAYMENT") return payRow(e);
     const isIn = (e.amt ?? 0) > 0;
     const amt = Math.abs(e.amt ?? 0);
     const other = t.transaction_type === "CASH_TRANSFER" || t.transaction_type === "FX_EXCHANGE"

@@ -12,6 +12,7 @@ import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { findHint, type ExpHint } from "@/lib/category-hints";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
+import type { PfCash } from "@/lib/pf-cash";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 
 export type Bank = { asset_id: string; name: string; currency: string };
@@ -45,10 +46,12 @@ export type EntryValues = {
   date: string; amount: number | string; tax?: number | string | null; description?: string | null; category?: string | null;
   person_id?: string | null; notes?: string | null; income_type?: string; income_subtype?: string | null;
   expected_reimbursement_amount?: number | string | null; bank?: string | null; card?: string | null;
+  /** จ่ายจากบัญชีเงินฝากในพอร์ต */
+  hold?: string | null;
 };
-export function EntryEditor({ kind, id, currency, values, banks, cards = [], persons, categories = [], subtypes = [],
+export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfCash = [], persons, categories = [], subtypes = [],
   accountEditable = true, reimbursable = false, personFallback }: {
-  kind: "INCOME" | "EXPENSE"; id: string; currency: string; values: EntryValues; banks: Bank[]; cards?: Card[]; persons: Person[];
+  kind: "INCOME" | "EXPENSE"; id: string; currency: string; values: EntryValues; banks: Bank[]; cards?: Card[]; pfCash?: PfCash[]; persons: Person[];
   categories?: string[]; subtypes?: string[]; accountEditable?: boolean; reimbursable?: boolean;
   /** ข้อความ "ของใคร" เมื่อไม่ได้เลือกคน (ถ้าไม่ส่ง ระบบเลือกตามบัญชี / บัตรที่เลือก) */
   personFallback?: string;
@@ -59,10 +62,11 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], per
   useEffect(() => { if (state.ok) router.refresh(); }, [state, router]);
   const sameBanks = banks.filter((b) => b.currency === currency || b.asset_id === values.bank);
   const sameCards = cards.filter((c) => c.currency === currency || c.id === values.card);
-  const [via, setVia] = useState(values.card ? "card" : values.bank ? "bank" : "cash");
+  const samePf = income ? [] : pfCash.filter((h) => h.currency === currency || h.id === values.hold);
+  const [via, setVia] = useState(values.card ? "card" : values.bank ? "bank" : values.hold ? "portfolio" : "cash");
   const [itype, setItype] = useState(values.income_type ?? "OTHER");
   const keep = (list: string[], cur?: string | null) => (cur && !list.includes(cur) ? [cur, ...list] : list);
-  const who = personFallback ?? (via === "card" ? "ตามเจ้าของบัตร" : via === "bank" ? "ตามเจ้าของบัญชี" : "ส่วนกลาง");
+  const who = personFallback ?? (via === "card" ? "ตามเจ้าของบัตร" : via === "bank" ? "ตามเจ้าของบัญชี" : via === "portfolio" ? "ตามเจ้าของพอร์ต" : "ส่วนกลาง");
   const f = (label: string, el: React.ReactNode) => <label className="text-xs text-slate-600">{label}{el}</label>;
   const cls = `mt-0.5 block ${small}`;
   return (
@@ -95,6 +99,7 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], per
         <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={cls}>
           <option value="bank">บัญชี</option>
           {!income && sameCards.length > 0 && <option value="card">บัตรเครดิต</option>}
+          {samePf.length > 0 && <option value="portfolio">เงินฝากในพอร์ต</option>}
           <option value="cash">{income ? "ไม่ผ่านบัญชี (เงินสด ฯลฯ)" : "เงินสด / อื่น ๆ"}</option>
         </select>
       ))}
@@ -107,6 +112,11 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], per
       {accountEditable && via === "card" && f("บัตร", (
         <select name="card_id" required defaultValue={values.card ?? sameCards[0]?.id ?? ""} className={`${cls} max-w-56`}>
           {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      ))}
+      {accountEditable && via === "portfolio" && f("บัญชีในพอร์ต", (
+        <select name="pf_cash_id" required defaultValue={values.hold ?? samePf[0]?.id ?? ""} className={`${cls} max-w-64`}>
+          {samePf.map((h) => <option key={h.id} value={h.id}>{h.label}</option>)}
         </select>
       ))}
       {f("ของใคร", (
@@ -504,8 +514,8 @@ export function RecurringPayActions(props: {
 }
 
 /* ================================================================== ค่าใช้จ่าย */
-export function ExpenseForm({ banks, cards, persons, today, minDate, categories, hints = [] }:
-  { banks: Bank[]; cards: Card[]; persons: Person[]; today: string; minDate: string; categories: string[]; hints?: ExpHint[] }) {
+export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate, categories, hints = [] }:
+  { banks: Bank[]; cards: Card[]; pfCash?: PfCash[]; persons: Person[]; today: string; minDate: string; categories: string[]; hints?: ExpHint[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addExpense, {});
   const [via, setVia] = useState(banks.length ? "bank" : "cash");
   const [reimb, setReimb] = useState(false);
@@ -552,6 +562,7 @@ export function ExpenseForm({ banks, cards, persons, today, minDate, categories,
               <div className="mt-2 flex flex-wrap gap-3">
                 <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="bank" checked={via === "bank"} onChange={() => { touched.current.acc = true; setVia("bank"); }} /> บัญชี</label>
                 <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="card" checked={via === "card"} onChange={() => { touched.current.acc = true; setVia("card"); }} /> บัตรเครดิต</label>
+                {pfCash.length > 0 && <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="portfolio" checked={via === "portfolio"} onChange={() => { touched.current.acc = true; setVia("portfolio"); }} /> เงินฝากในพอร์ต</label>}
                 <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="cash" checked={via === "cash"} onChange={() => { touched.current.acc = true; setVia("cash"); }} /> เงินสด / อื่น ๆ</label>
               </div>
             </div>
@@ -569,9 +580,16 @@ export function ExpenseForm({ banks, cards, persons, today, minDate, categories,
                 </select>
               </label>
             )}
+            {via === "portfolio" && (
+              <label className={lbl}>บัญชีเงินฝากในพอร์ต *
+                <select name="pf_cash_id" required defaultValue={pfCash[0]?.id ?? ""} className={input}>
+                  {pfCash.map((h) => <option key={h.id} value={h.id}>{h.label} ({h.currency})</option>)}
+                </select>
+              </label>
+            )}
             <label className={lbl}>ของใคร
               <select name="person_id" defaultValue="" className={input}>
-                <option value="">{via === "bank" ? "— ตามเจ้าของบัญชี —" : via === "card" ? "— ตามเจ้าของบัตร —" : "— ส่วนกลางครอบครัว —"}</option>
+                <option value="">{via === "bank" ? "— ตามเจ้าของบัญชี —" : via === "card" ? "— ตามเจ้าของบัตร —" : via === "portfolio" ? "— ตามเจ้าของพอร์ต —" : "— ส่วนกลางครอบครัว —"}</option>
                 {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
@@ -588,7 +606,7 @@ export function ExpenseForm({ banks, cards, persons, today, minDate, categories,
             <label className={`${lbl} md:col-span-2`}>หมายเหตุ<input name="notes" className={input} /></label>
           </div>
           <p className="text-xs text-slate-500">
-            {via === "bank" ? "ระบบสร้างรายการเงินออกจากบัญชีให้" : via === "card" ? "ยังไม่มีเงินออกจากบัญชี จนกว่าจะบันทึก \"จ่ายบัตรเครดิต\"" : "ไม่มีเงินออกจากบัญชีในระบบ"}
+            {via === "bank" ? "ระบบสร้างรายการเงินออกจากบัญชีให้" : via === "portfolio" ? "ระบบหักเงินฝากในพอร์ตให้ (ดูได้ที่หน้าบัญชีเงินฝากในพอร์ต)" : via === "card" ? "ยังไม่มีเงินออกจากบัญชี จนกว่าจะบันทึก \"จ่ายบัตรเครดิต\"" : "ไม่มีเงินออกจากบัญชีในระบบ"}
             {" · "}ซื้อทรัพย์สิน / ลงทุน / โอน / จ่ายหนี้ ไม่ใช่ค่าใช้จ่าย ให้บันทึกที่ปุ่ม &ldquo;โอน / จ่ายบัตร / จ่ายหนี้&rdquo; ในแท็บภาพรวม
           </p>
           <div className="flex items-center gap-3">
@@ -671,14 +689,16 @@ const MOVE_TYPES: [string, string][] = [
   ["OTHER_IN", "เงินเข้าอื่น ๆ (ไม่ใช่รายได้)"], ["OTHER_OUT", "เงินออกอื่น ๆ (ไม่ใช่ค่าใช้จ่าย)"],
 ];
 
-export function MovementForm({ banks, cards, liabilities, today, minDate }:
-  { banks: Bank[]; cards: Card[]; liabilities: Liab[]; today: string; minDate: string }) {
+export function MovementForm({ banks, cards, pfCash = [], liabilities, today, minDate }:
+  { banks: Bank[]; cards: Card[]; pfCash?: PfCash[]; liabilities: Liab[]; today: string; minDate: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addMovement, {});
   const [type, setType] = useState("TRANSFER");
   const [from, setFrom] = useState(banks[0]?.asset_id ?? "");
   const [upd, setUpd] = useState(false);
   const [pr, setPr] = useState(""); const [it, setIt] = useState("");
-  const fromCcy = banks.find((b) => b.asset_id === from)?.currency ?? "THB";
+  // จ่ายบัตร: จ่ายจากบัญชีเงินฝากในพอร์ตได้ (ค่า "h:<id>") — เฉพาะบัตรสกุลเดียวกับบัญชี
+  const fromPf = from.startsWith("h:") ? pfCash.find((h) => `h:${h.id}` === from) : undefined;
+  const fromCcy = fromPf?.currency ?? banks.find((b) => b.asset_id === from)?.currency ?? "THB";
   const hasFee = type === "TRANSFER" || type === "FX_EXCHANGE";
   const toList = type === "TRANSFER" ? banks.filter((b) => b.currency === fromCcy && b.asset_id !== from)
     : type === "FX_EXCHANGE" ? banks.filter((b) => b.currency !== fromCcy) : banks;
@@ -689,7 +709,8 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
           <h3 className="font-medium text-slate-900">บันทึกเงินเคลื่อนไหว</h3>
           <div className="grid gap-4 md:grid-cols-3">
             <label className={`${lbl} md:col-span-2`}>ประเภท
-              <select name="movement_type" value={type} onChange={(e) => { setType(e.target.value); setUpd(false); setPr(""); setIt(""); }} className={input}>
+              <select name="movement_type" value={type} onChange={(e) => { setType(e.target.value); setUpd(false); setPr(""); setIt("");
+                if (e.target.value !== "CARD_PAYMENT" && from.startsWith("h:")) setFrom(banks[0]?.asset_id ?? ""); }} className={input}>
                 {MOVE_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
@@ -697,7 +718,10 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
             {type !== "OTHER_IN" && (
               <label className={lbl}>จากบัญชี *
                 <select name="from_asset_id" value={from} onChange={(e) => setFrom(e.target.value)} required className={input}>
-                  {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                  {type === "CARD_PAYMENT" && pfCash.length > 0 ? (<>
+                    <optgroup label="บัญชีธนาคาร">{banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}</optgroup>
+                    <optgroup label="เงินฝากในพอร์ต">{pfCash.map((h) => <option key={h.id} value={`h:${h.id}`}>{h.label} ({h.currency})</option>)}</optgroup>
+                  </>) : banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
                 </select>
               </label>
             )}
@@ -767,8 +791,9 @@ export function MovementForm({ banks, cards, liabilities, today, minDate }:
 }
 
 /* ================================================================== บัตรตัดบัญชีอัตโนมัติ: ยืนยัน */
-export function AutopayConfirmForm({ cardId, bankId, currency, dueDate, amount, minimum, today, minDate }: {
-  cardId: string; bankId: string; currency: string; dueDate: string; amount: number; minimum: boolean; today: string; minDate: string;
+export function AutopayConfirmForm({ cardId, bankId, holdId = null, currency, dueDate, amount, minimum, today, minDate }: {
+  /** ตัดจากบัญชีธนาคาร (bankId) หรือ บัญชีเงินฝากในพอร์ต (holdId) */
+  cardId: string; bankId: string | null; holdId?: string | null; currency: string; dueDate: string; amount: number; minimum: boolean; today: string; minDate: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(confirmCardPayment, {});
@@ -777,7 +802,8 @@ export function AutopayConfirmForm({ cardId, bankId, currency, dueDate, amount, 
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="card_id" value={cardId} />
-      <input type="hidden" name="bank_asset_id" value={bankId} />
+      {bankId && <input type="hidden" name="bank_asset_id" value={bankId} />}
+      {holdId && <input type="hidden" name="cash_holding_id" value={holdId} />}
       <input type="hidden" name="autopay" value="true" />
       <label className="text-xs">วันที่ตัด<input name="date" type="date" required defaultValue={dueDate > today ? today : dueDate}
         min={minDate} max={today} className={`mt-0.5 block ${small}`} /></label>
