@@ -115,7 +115,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
   // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
   const [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc },
-    { data: rexpRows }, { data: rexpTplRaw }] = await Promise.all([
+    { data: rexpRows }, { data: rexpTplRaw }, { data: leaseRaw }] = await Promise.all([
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("ie_categories").select("id,kind,name,sort_order,active").is("deleted_at", null).order("sort_order").order("name"),
     supabase.from("expense_items").select("expense_category").is("deleted_at", null).not("expense_category", "is", null),
@@ -127,6 +127,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("recurring_expense_templates")
       .select("id,name,expense_category,person_id,expected_amount,currency,frequency,due_day,pay_via,pay_from_asset_id,pay_from_credit_card_id,start_date,end_date,active,notes,persons(name)")
       .is("deleted_at", null).order("name"),
+    // ค่าเช่าจากสัญญาเช่าที่ยังมีผล (ดูอย่างเดียวในแท็บตั้งค่า · แก้ที่หน้าทรัพย์สิน)
+    supabase.from("v_lease_status")
+      .select("id,property_asset_id,unit_label,tenant_name,rent_amount,rent_currency,payment_frequency,payment_due_day,start_date,end_date,lease_status")
+      .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]).order("end_date"),
   ]);
   // หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเองในแท็บ "ตั้งค่า")
   const useCount = new Map<string, number>();
@@ -421,13 +425,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const openings = Object.fromEntries(((openRaw as { asset_id: string; calculated: number | null }[] | null) ?? [])
     .map((r) => [r.asset_id, r.calculated == null ? null : Number(r.calculated)]));
   // สรุปเงินเข้า–ออก (ทุกบัญชี · ไม่นับโอนระหว่างบัญชีตัวเอง) สำหรับแท็บภาพรวม
+  //   ≈ บาท: ตามอัตรา ณ วันที่ของแต่ละรายการ (base_amount) · ยอดแยกสกุลอยู่ท้ายตารางด้านล่าง
   const moveSum = moveRows(false).reduce((acc, r) => {
-    const t = (c: string) => acc.byCcy.get(c) ?? acc.byCcy.set(c, { inn: 0, out: 0 }).get(c)!;
-    if (r.toBank && !r.fromBank) t(r.toCcy).inn += r.toAmount;
-    else if (r.fromBank && !r.toBank) t(r.fromCcy).out += r.fromAmount;
+    const thbOf = (ccy: string, v: number) => (ccy === "THB" ? v : Number(r.thb ?? 0));
+    if (r.toBank && !r.fromBank) acc.inn += thbOf(r.toCcy, r.toAmount);
+    else if (r.fromBank && !r.toBank) acc.out += thbOf(r.fromCcy, r.fromAmount);
+    if (r.toCcy !== "THB" || r.fromCcy !== "THB") acc.fx = true;
     acc.count += 1;
     return acc;
-  }, { count: 0, byCcy: new Map<string, { inn: number; out: number }>() });
+  }, { count: 0, inn: 0, out: 0, fx: false });
   const savings = grossThb - taxThb - (expenseThb - reimbThb);
   const inMonth = start <= today && (!goLive || end >= goLive);
   const months = monthOptions(goLive, today, 3, ym);
@@ -744,6 +750,29 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       };
     }),
   ];
+  // ค่าเช่าจากสัญญาเช่า (ดูอย่างเดียว · แก้ที่หน้าทรัพย์สิน) · รายบุคคล = ทรัพย์สินที่คนนั้นถือ (ยอดตามสัดส่วน)
+  type Lease = { id: string; property_asset_id: string; unit_label: string | null; tenant_name: string; rent_amount: number; rent_currency: string;
+    payment_frequency: string; payment_due_day: number | null; start_date: string; end_date: string; lease_status: string };
+  const leases = ((leaseRaw as Lease[] | null) ?? []).filter((l) => pv.showAsset(l.property_asset_id));
+  const leaseIds = [...new Set(leases.map((l) => l.property_asset_id))];
+  const { data: leaseProps } = leaseIds.length
+    ? await supabase.from("property_details").select("asset_id,property_type,assets!inner(name)").in("asset_id", leaseIds)
+    : { data: [] as { asset_id: string; property_type: string; assets: unknown }[] };
+  const propOf = new Map((leaseProps ?? []).map((x) => [x.asset_id as string, { type: x.property_type as string, name: pname(x.assets) ?? "ทรัพย์สิน" }]));
+  const leaseRowsView: PropCostRow[] = leases.map((l) => {
+    const k = pv.assetShare(l.property_asset_id);
+    return {
+      id: l.id, assetId: l.property_asset_id, assetName: propOf.get(l.property_asset_id)?.name ?? "ทรัพย์สิน",
+      ptype: propOf.get(l.property_asset_id)?.type ?? "OTHER", item: [l.tenant_name, l.unit_label].filter(Boolean).join(" · "),
+      amount: Number(l.rent_amount) * k, currency: l.rent_currency, freq: l.payment_frequency,
+      schedule: scheduleText(l.payment_frequency, l.payment_due_day, null),
+      perYear: Number(l.rent_amount) * (PERIODS_PER_YEAR[l.payment_frequency] ?? 0) * k,
+      note: l.lease_status === "UPCOMING" ? `เริ่ม ${thDate(l.start_date)} · ถึง ${thDate(l.end_date)}`
+        : `ถึง ${thDate(l.end_date)}${l.lease_status === "EXPIRING_SOON" ? " · ใกล้หมดสัญญา" : ""}`,
+      warn: l.lease_status === "EXPIRING_SOON",
+    };
+  });
+  const leaseYear = leaseRowsView.reduce((m, r) => m.set(r.currency, (m.get(r.currency) ?? 0) + r.perYear), new Map<string, number>());
   // ค่าใช้จ่ายประจำของทรัพย์สิน (ดูอย่างเดียว · แก้ที่หน้าทรัพย์สิน)
   const utilRowsView: PropCostRow[] = utils.map((u) => ({
     id: u.id, assetId: u.property_details.asset_id, assetName: u.property_details.assets.name,
@@ -799,15 +828,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section className="grid gap-4 md:grid-cols-4">
             <StatBox label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"}
               flag={incPendingSplit ? <TabLink tab="income" href={`/income-expenses?tab=income&it=split&m=${ym}`} className="hover:underline">มีรายการรอแยกรายละเอียด</TabLink> : undefined} />
-            <StatBox label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
-            <StatBox label="ค่าใช้จ่าย" value={money(expenseThb, "THB", 0)}
+            <StatBox label="รายได้สุทธิ (หลังภาษี)" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
+            {/* ค่าใช้จ่ายสุทธิ = ค่าใช้จ่าย − เงินคืน (ยอดเดียวกับ Dashboard) */}
+            <StatBox label="ค่าใช้จ่ายสุทธิ" value={money(expenseThb - reimbThb, "THB", 0)}
               sub={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย" : <>{itemList.length} รายการ
-                {(reimbThb > 0 || reimbPendingThb > 0) && <div>{[reimbThb > 0 && `ได้เงินคืน ${money(reimbThb, undefined, 0)}`,
-                  reimbPendingThb > 0 && `รอเงินคืน ${money(reimbPendingThb, undefined, 0)}`].filter(Boolean).join(" · ")}</div>}</>}
+                {reimbThb > 0 && <div>ค่าใช้จ่าย {money(expenseThb, undefined, 0)} − เงินคืน {money(reimbThb, undefined, 0)}</div>}
+                {reimbPendingThb > 0 && <div>รอเงินคืน {money(reimbPendingThb, undefined, 0)}</div>}</>}
               subClass={track === "NOT_TRACKED" ? "text-slate-500" : undefined}
               flag={expPendingSplit ? <TabLink tab="expense" href={`/income-expenses?tab=expense&et=split&m=${ym}`} className="hover:underline">มีรายการรอแยกรายละเอียด</TabLink> : undefined} />
             <StatBox label="เงินคงเหลือสุทธิ" value={money(savings, "THB", 0)} subClass={savings < 0 ? "text-red-700" : undefined}
-              sub={<>รายได้สุทธิ − ค่าใช้จ่าย<div>{track === "NOT_TRACKED" ? "(ยังไม่ได้บันทึกค่าใช้จ่าย)" : "(คิดจากรายการที่บันทึกไว้)"}</div></>} />
+              sub={<>รายได้สุทธิ − ค่าใช้จ่ายสุทธิ<div>{track === "NOT_TRACKED" ? "(ยังไม่ได้บันทึกค่าใช้จ่าย)" : "(คิดจากรายการที่บันทึกไว้)"}</div></>} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
             <CategoryBars kind="income" title={`รายได้ตามประเภท ${thMonth(start)}`} rows={incomeCats}
@@ -826,14 +856,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               {canWrite && inMonth && <MovementForm banks={banks} cards={cards} liabilities={liabs} today={maxDate} minDate={minDate} />}
             </div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm tabular-nums">
-              {moveSum.byCcy.size === 0 && <span className="text-slate-500">ยังไม่มีเงินเข้า–ออกในเดือนนี้</span>}
-              {[...moveSum.byCcy.entries()].map(([ccy, t]) => (
-                <span key={ccy} className="flex flex-wrap gap-x-4">
-                  <span className="text-emerald-700">เข้า +{money(t.inn, ccy)}</span>
-                  <span className="text-red-700">ออก −{money(t.out, ccy)}</span>
-                  <span className={`font-semibold ${t.inn - t.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>สุทธิ {t.inn - t.out >= 0 ? "+" : "−"}{money(Math.abs(t.inn - t.out), ccy)}</span>
-                </span>
-              ))}
+              {moveSum.count === 0 ? <span className="text-slate-500">ยังไม่มีเงินเข้า–ออกในเดือนนี้</span> : <>
+                <span className="text-emerald-700">เข้า {moveSum.fx ? "≈ " : ""}+{money(moveSum.inn, "THB")}</span>
+                <span className="text-red-700">ออก {moveSum.fx ? "≈ " : ""}−{money(moveSum.out, "THB")}</span>
+                <span className={`font-semibold ${moveSum.inn - moveSum.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                  สุทธิ {moveSum.fx ? "≈ " : ""}{moveSum.inn - moveSum.out >= 0 ? "+" : "−"}{money(Math.abs(moveSum.inn - moveSum.out), "THB")}</span>
+                {moveSum.fx && <span className="text-xs text-slate-500">รวมเป็นบาท (อัตรา ณ วันที่ของแต่ละรายการ) · แยกสกุลอยู่ท้ายตาราง</span>}
+              </>}
             </div>
             {autopay.length > 0 && (
               <div className={`rounded-lg border p-4 ${autopayPending.length ? "border-amber-200 bg-amber-50/40" : "border-slate-200"}`}>
@@ -866,7 +895,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 </div>
               </div>
             )}
-            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} statements={statements} monthStart={start} />
+            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} statements={statements} monthStart={start} limit={20} />
             <p className="text-xs text-slate-500">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;
               · โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           </section>
@@ -930,6 +959,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             )}
             {canWrite && templateList.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ</p>}
             {canWrite && <TemplateForm banks={banks} persons={persons ?? []} today={today} />}
+          </section>
+          <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-medium text-slate-900">ค่าเช่าจากสัญญาเช่า</h2>
+              {[...leaseYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
+                <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
+              ))}
+            </div>
+            <PropertyCostTable rows={leaseRowsView} itemHead="ผู้เช่า · ห้อง / ยูนิต" freqLabel="ความถี่ในการรับ" whenHead="รับเมื่อ" />
+            <p className="text-xs text-slate-500">ดูอย่างเดียว · สัญญาที่ยังมีผล (รวมสัญญาที่ยังไม่เริ่ม) · เพิ่ม / แก้ไข / ต่อสัญญา ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน){pv.personId ? " · ยอดตามสัดส่วนที่ถือ" : ""}</p>
           </section>
           </SubPanel>
           <SubPanel id="expense">

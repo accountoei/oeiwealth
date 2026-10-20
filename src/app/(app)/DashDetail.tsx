@@ -7,9 +7,9 @@ import { money } from "@/lib/format";
 import { loadGroupChanges, loadMonthFlows, type GroupChange, type MonthFlows, type Row } from "./dashboard-detail";
 
 /** กล่องบน Dashboard ที่กดได้ → pop up รายละเอียด (โหลดตอนกด) */
-export function DetailBox({ title, hint, children, popupTitle, kind, start, personId, ym, bridge }: {
+export function DetailBox({ title, hint, children, popupTitle, start, personId, ym, bridge }: {
   title: ReactNode; hint?: string; children: ReactNode; popupTitle: string;
-  kind: "flows" | "change"; start: string; personId: string; ym: string;
+  start: string; personId: string; ym: string;
   /** กล่องความมั่งคั่ง: บรรทัดสรุปเดียวกับในกล่อง (แสดงบนสุดของ pop up) */
   bridge?: ReactNode;
 }) {
@@ -30,9 +30,7 @@ export function DetailBox({ title, hint, children, popupTitle, kind, start, pers
       {open && (
         <Modal title={popupTitle} size="lg" onClose={() => setOpen(false)}>
           <div data-keep-open>
-            {kind === "flows"
-              ? <FlowsDetail start={start} personId={personId} ym={ym} />
-              : <ChangeDetail start={start} personId={personId} ym={ym} bridge={bridge} />}
+            <ChangeDetail start={start} personId={personId} ym={ym} bridge={bridge} />
           </div>
         </Modal>
       )}
@@ -83,53 +81,6 @@ function RowsTable({ title, rows, total, totalLabel = "รวม", empty, negati
   );
 }
 
-function FlowsDetail({ start, personId, ym }: { start: string; personId: string; ym: string }) {
-  const { data: f, err } = useLoad<MonthFlows>(() => loadMonthFlows(start, personId));
-  if (err) return <p className="text-sm text-red-600">โหลดไม่สำเร็จ: {err}</p>;
-  if (!f) return <Loading />;
-  const net = f.incomeTotal + f.investmentTotal - (f.expenseTotal - f.reimbursements);
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-5 md:grid-cols-2">
-        <div className="space-y-5">
-          <RowsTable title="รายได้ (หลังภาษี) ตามประเภท" rows={f.income} total={f.incomeTotal} empty="ไม่มีรายได้" />
-          {f.investment.length > 0 && <RowsTable title="รายได้ลงทุน (หลังภาษี) ตามพอร์ต" rows={f.investment} total={f.investmentTotal} empty="-" />}
-        </div>
-        <RowsTable title="ค่าใช้จ่ายตามหมวด" rows={f.expense} total={f.expenseTotal} empty="ไม่มีค่าใช้จ่าย" negative />
-      </div>
-      <section className="rounded-lg bg-slate-50 p-3 text-sm">
-        <dl className="space-y-1">
-          <div className="flex justify-between gap-3"><dt>รายได้ (หลังภาษี) รวมรายได้ลงทุน</dt><dd className="tabular-nums">{money(f.incomeTotal + f.investmentTotal, undefined, 0)}</dd></div>
-          <div className="flex justify-between gap-3"><dt>− ค่าใช้จ่าย</dt><dd className="tabular-nums text-red-700">{money(f.expenseTotal, undefined, 0)}</dd></div>
-          {f.reimbursements !== 0 && <div className="flex justify-between gap-3"><dt>+ ได้เงินคืน</dt><dd className="tabular-nums">{money(f.reimbursements, undefined, 0)}</dd></div>}
-          <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 font-medium"><dt>= เงินคงเหลือสุทธิ</dt><dd className={`tabular-nums ${sign(net)}`}>{money(net, undefined, 0)}</dd></div>
-        </dl>
-      </section>
-      {f.topExpenses.length > 0 && (
-        <section>
-          <h3 className="mb-1 text-sm font-medium text-slate-800">ค่าใช้จ่ายสูงสุด {f.topExpenses.length} รายการ</h3>
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              {f.topExpenses.map((e, i) => (
-                <tr key={i}>
-                  <td className="w-24 py-1.5 pr-3 text-xs text-slate-500">{e.date.slice(8, 10)}/{e.date.slice(5, 7)}</td>
-                  <td className="py-1.5 pr-3">{e.label}{e.category && <span className="text-xs text-slate-400"> · {e.category}</span>}</td>
-                  <td className="py-1.5 text-right tabular-nums text-red-700">{money(e.value, undefined, 0)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-        <p className="text-xs text-slate-500">{personId ? "ส่วนของสมาชิกที่เลือก (ตามสัดส่วน) · " : ""}ยอดเป็นบาท · ถึงวันนี้ถ้าเป็นเดือนปัจจุบัน</p>
-        <Link href={`/income-expenses?m=${ym}${personId ? `&p=${personId}` : ""}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
-          เปิดหน้ารายได้ / ค่าใช้จ่าย (ทุกรายการ)</Link>
-      </div>
-    </div>
-  );
-}
-
 function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId: string; ym: string; bridge?: ReactNode }) {
   const { data: f, err: e1 } = useLoad<MonthFlows>(() => loadMonthFlows(start, personId));
   const { data: g, err: e2 } = useLoad<GroupChange[]>(() => loadGroupChanges(start, personId));
@@ -174,15 +125,35 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
           </section>
           <div className="grid gap-5 md:grid-cols-2">
             <div className="space-y-5">
-              <RowsTable title="+ รายได้ (หลังภาษี) ตามประเภท" rows={f.income} total={f.incomeTotal} empty="ไม่มีรายได้" />
+              <RowsTable title="+ รายได้สุทธิ (หลังภาษี) ตามประเภท" rows={f.income} total={f.incomeTotal} empty="ไม่มีรายได้" />
               {f.investment.length > 0 && <RowsTable title="+ รายได้ลงทุน ตามพอร์ต" rows={f.investment} total={f.investmentTotal} empty="-" />}
             </div>
             <RowsTable title="− ค่าใช้จ่ายตามหมวด" rows={f.expense} total={f.expenseTotal} empty="ไม่มีค่าใช้จ่าย" negative
               totalLabel={f.reimbursements ? `รวม (ก่อนหักเงินคืน ${money(f.reimbursements, undefined, 0)})` : "รวม"} />
           </div>
+          {f.topExpenses.length > 0 && (
+            <section>
+              <h3 className="mb-1 text-sm font-medium text-slate-800">ค่าใช้จ่ายสูงสุด {f.topExpenses.length} รายการ</h3>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-slate-100">
+                  {f.topExpenses.map((e, i) => (
+                    <tr key={i}>
+                      <td className="w-24 py-1.5 pr-3 text-xs text-slate-500">{e.date.slice(8, 10)}/{e.date.slice(5, 7)}</td>
+                      <td className="py-1.5 pr-3">{e.label}{e.category && <span className="text-xs text-slate-400"> · {e.category}</span>}</td>
+                      <td className="py-1.5 text-right tabular-nums text-red-700">{money(e.value, undefined, 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
             <p className="text-xs text-slate-500">{personId ? "ส่วนของสมาชิกที่เลือก (ตามสัดส่วน) · " : ""}&ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ราคา · อัตราแลกเปลี่ยน · ประเมินใหม่ · ยอดหนี้ · รายการที่ไม่ได้บันทึก</p>
-            <Link href={`/month-closing?m=${ym}`} className="text-sm text-blue-700 hover:underline">เปิดหน้า Month Closing ›</Link>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link href={`/month-closing?m=${ym}`} className="text-sm text-blue-700 hover:underline">เปิดหน้า Month Closing ›</Link>
+              <Link href={`/income-expenses?m=${ym}${personId ? `&p=${personId}` : ""}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
+                เปิดหน้ารายได้ / ค่าใช้จ่าย (ทุกรายการ)</Link>
+            </div>
           </div>
         </>
       )}
