@@ -8,6 +8,8 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 const Ctx = createContext<{ active: string; setActive: (k: string) => void }>({ active: "overview", setActive: () => {} });
 // สลับแท็บหลักด้วยปุ่มแท็บ → แท็บย่อยกลับไปหน้าแรก (ที่ต้องได้รับ / ที่ต้องจ่าย) เสมอ
 const MAIN_TAB_EVENT = "fwv:main-tab";
+// ลิงก์จากแท็บอื่นสั่งเปิดแท็บย่อย (เช่น ชื่อรายได้ประจำ → ตั้งค่า → รายได้ประจำ)
+const SUB_TAB_EVENT = "fwv:sub-tab";
 
 /** เรียก cb เมื่อผู้ใช้กดเปลี่ยนแท็บหลัก (ใช้รีเซ็ตตัวกรอง / ช่องติ๊กกลับค่าเริ่มต้น) */
 export function useOnMainTab(cb: () => void) {
@@ -62,8 +64,10 @@ export function TabPanel({ id, children }: { id: string; children: ReactNode }) 
 }
 
 /** ลิงก์ไปแท็บอื่นในหน้านี้ · สลับแท็บทันที (ไม่ต้องรอโหลด / Refresh) */
-export function TabLink({ tab, href, className, anchor, children }: {
+export function TabLink({ tab, href, className, anchor, sub, children }: {
   tab: string; href: string; className?: string;
+  /** เปิดแท็บย่อยด้วย: [ชื่อพารามิเตอร์ของแท็บย่อย, แท็บย่อย] */
+  sub?: [string, string];
   /** เลื่อนไปกล่องนี้ (id) หลังสลับแท็บ · ไม่ระบุ = เลื่อนขึ้นบนสุด */
   anchor?: string; children: ReactNode;
 }) {
@@ -72,6 +76,7 @@ export function TabLink({ tab, href, className, anchor, children }: {
     <Link href={href} scroll={false} className={className}
       onClick={() => {
         setActive(tab);
+        if (sub) window.dispatchEvent(new CustomEvent(SUB_TAB_EVENT, { detail: { param: sub[0], tab: sub[1] } }));
         if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
         else window.scrollTo({ top: 0, behavior: "smooth" });
       }}>{children}</Link>
@@ -103,6 +108,14 @@ export function SubTabs({ param, initial, home, tabs, children }: {
     window.addEventListener(MAIN_TAB_EVENT, onMain);
     return () => window.removeEventListener(MAIN_TAB_EVENT, onMain);
   }, [first]);
+  useEffect(() => {
+    const onSub = (e: Event) => {
+      const d = (e as CustomEvent<{ param: string; tab: string }>).detail;
+      if (d?.param === param) pick(d.tab);
+    };
+    window.addEventListener(SUB_TAB_EVENT, onSub);
+    return () => window.removeEventListener(SUB_TAB_EVENT, onSub);
+  });
   const pick = (k: string) => {
     setState(k);
     try {

@@ -13,8 +13,7 @@ import {
   RecurringPayActions, UndoDismissButton, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { ScrollToHash, SubPanel, SubTabLink, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
-import RowMenu from "@/components/RowMenu";
+import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
 import MonthTable, { type MonthRow } from "./MonthTable";
 import PropertyCostTable, { type PropCostRow } from "./PropertyCostTable";
 import CategoryBars, { type CatRow } from "./CategoryBars";
@@ -46,7 +45,7 @@ const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" }, DISMISSED: { text: "เดือนนี้ไม่ได้รับ", cls: "bg-slate-100 text-slate-500" },
 };
 
-type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; st?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -55,7 +54,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   // ?tab=moves (ลิงก์เดิม) → ภาพรวม แล้วเลื่อนไปกล่อง "เงินเข้า–ออกบัญชีเดือนนี้"
-  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
+  const tab = sp.it === "settings" || sp.et === "settings" ? "settings" : TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const { start, end } = monthRange(ym);
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
@@ -352,11 +351,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         type = INCOME_TYPE_LABEL[inc.income_type] ?? type;
         pending = !!inc.pending_split;
         detail = [inc.lease_id || inc.asset_id ? pname(inc.src_asset) : null, inc.notes].filter(Boolean).join(" · ") || type;
-        link = incSource(inc) ?? tabLink("income", "แท็บรายได้");
+        link = incSource(inc);                                  // บันทึกที่หน้านี้ → กดที่แถวเพื่อแก้ (ไม่ต้องมีลิงก์)
       } else link = tabLink("income", "แท็บรายได้");
     } else if (m.is_derived && m.source_entity_type === "EXPENSE") {
       const it = m.source_entity_id ? expById.get(m.source_entity_id) : undefined;
-      if (it) { detail = it.description; pending = !!it.pending_split; link = expSource(it); if (link?.label === "รายการโอน") link = null; else link = link ?? tabLink("expense", "แท็บค่าใช้จ่าย"); }
+      if (it) { detail = it.description; pending = !!it.pending_split; link = expSource(it); if (link?.label === "รายการโอน") link = null; }
       else link = tabLink("expense", "แท็บค่าใช้จ่าย");
     } else if (m.is_derived && m.source_entity_type === "REIMBURSEMENT") {
       link = tabLink("expense", "แท็บค่าใช้จ่าย");
@@ -385,7 +384,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         {Number(m.fee ?? 0) > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div>}
       </>,
       thb: m.base_amount == null ? null : Number(m.base_amount),
-      pendingHref: inc?.pending_split ? `${tabLink("income", "แท็บรายได้").href}&it=split` : exp?.pending_split ? `${tabLink("expense", "แท็บค่าใช้จ่าย").href}&et=split` : undefined,
+      // แยกก้อนได้ที่นี่ (กดที่แถว) → ป้ายไม่ต้องเป็นลิงก์
+      pendingHref: withActions && canDelete ? undefined : inc?.pending_split ? `${tabLink("income", "แท็บรายได้").href}&it=split` : exp?.pending_split ? `${tabLink("expense", "แท็บค่าใช้จ่าย").href}&et=split` : undefined,
       detail: srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type),
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? (
         <RowActions table="cash_movements" id={m.id} paths={PATHS} canDelete={canDelete}
@@ -401,7 +401,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             ...(m.movement_type === "FX_EXCHANGE" ? [{ name: "counter_amount", label: "ยอดปลายทาง", type: "number" as const, value: m.counter_amount }] : []),
             ...(["TRANSFER", "FX_EXCHANGE"].includes(m.movement_type) ? [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: m.fee }] : []),
             { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />
-      ) : null,
+      )
+        // เงินเข้า–ออกจากรายได้ / ค่าใช้จ่าย → กดที่แถว: แก้ไข (ฟอร์มชุดเดียวกับแท็บรายได้ / ค่าใช้จ่าย) หรือแยกก้อนรอแยก
+        //   แก้ที่นี่ไม่ได้ (พอร์ตลงทุน / รับชำระเงินให้กู้ / เงินประกัน ฯลฯ) → แถวกดไม่ได้ · กดชื่อไปหน้าต้นทาง
+        : withActions && inc && !m.parts ? (inc.pending_split ? incSplit({ ...inc, full_amount: Number(inc.amount), full_tax: inc.tax }, true)
+            : incEdit({ ...inc, full_amount: Number(inc.amount), full_tax: inc.tax }))
+        : withActions && exp ? (exp.pending_split ? expSplit({ ...exp, full_amount: Number(exp.amount) }, true)
+            : expEdit({ ...exp, full_amount: Number(exp.amount) }))
+        : null,
     };
   });
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
@@ -426,19 +433,26 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const months = monthOptions(goLive, today, 3, ym);
   const costOpen = (st: string) => st === "PENDING" || st === "OVERDUE";
   // แท็บย่อย: รายการของเดือน (ค่าเริ่มต้น) · ตั้งค่ารายได้ / ค่าใช้จ่ายประจำ · ?it=split / ?et=split = เปิดตัวกรอง "รอแยกรายละเอียด"
-  const subOf = (v?: string) => (v === "settings" ? "settings" : "list");
-  const incTab = subOf(sp.it), expTab = subOf(sp.et);
+  // แท็บย่อยของ "ตั้งค่า" (?st=) · ลิงก์เดิม ?it=settings / ?et=settings → รายได้ประจำ / ค่าใช้จ่ายประจำ
+  const setTab = ["income", "expense", "types"].includes(sp.st ?? "") ? (sp.st as string) : sp.et === "settings" ? "expense" : "income";
 
   // ===== ตารางรวมของเดือน (รายการที่คาดไว้ซึ่งยังค้าง + รายการที่บันทึกแล้ว) =====
   const badge = (text: string, cls: string) => <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${cls}`}>{text}</span>;
   const share = (pct: number | null | undefined) => (pct == null ? 1 : pct / 100);
-  const menu = (...xs: React.ReactNode[]) => {
+  // ช่องสถานะ: ปุ่มคำสั่งหลายปุ่มในแถวเดียว (ข้ามช่องว่าง)
+  const acts = (...xs: React.ReactNode[]) => {
     const list = xs.filter((x) => x != null && x !== false && x !== "");
-    return list.length ? <RowMenu>{list.map((x, n) => <Fragment key={n}>{x}</Fragment>)}</RowMenu> : null;
+    return list.length ? <>{list.map((x, n) => <Fragment key={n}>{x}</Fragment>)}</> : null;
   };
-  const goSrc = (s: { href: string; label: string } | null) => s
-    ? <Link href={s.href} className="text-xs text-blue-700 hover:underline">แก้ที่หน้า{s.label} ›</Link> : null;
   const late = (d: string) => d < start ? <div className="text-xs text-red-600">งวด {thMonth(d)}</div> : null;
+  const SPLIT_BTN = "rounded-md border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100";
+  const DONE_INC = badge("ได้รับแล้ว", "bg-emerald-50 text-emerald-700");
+  const DONE_EXP = badge("จ่ายแล้ว", "bg-emerald-50 text-emerald-700");
+  // ชื่อรายการประจำ → แท็บตั้งค่า แท็บย่อยที่ถูกต้อง
+  const toSettings = (st: "income" | "expense", text: React.ReactNode) => (
+    <TabLink tab="settings" sub={["st", st]} href={`/income-expenses?tab=settings&st=${st}&m=${ym}`} className={`font-medium ${NAME_LINK}`}>{text}</TabLink>
+  );
+
   const incLabel = (i: { source_transaction_id: string | null; lease_id: string | null; income_type: string; asset_id: string | null;
     insurance_schedule_line_id: string | null; received_to_liability_id: string | null; recurring_template_id: string | null }) =>
     i.source_transaction_id ? "รายได้ลงทุน" : i.lease_id ? "ค่าเช่า" : i.income_type === "LOAN_INTEREST" && i.asset_id ? "เงินให้กู้"
@@ -448,6 +462,73 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     property_utility_id: string | null; recurring_expense_id: string | null }) =>
     i.source_cash_movement_id ? "ค่าธรรมเนียมโอน" : i.liability_id ? "หนี้สิน" : i.insurance_schedule_line_id ? "เบี้ยประกัน"
       : i.property_utility_id ? "ทรัพย์สิน" : i.recurring_expense_id ? "ค่าใช้จ่ายประจำ" : "บันทึกเอง";
+
+  // แก้ไข / ลบ รายได้ · ค่าใช้จ่าย (ใช้ทั้งตารางรายได้ / ค่าใช้จ่าย และกล่องเงินเข้า–ออก)
+  //   รายการจากหน้าอื่น → ฟอร์มชุดเดียวกับหน้าต้นทาง (ถ้ามี) · บันทึกที่นี่ → ฟอร์มเต็ม · ไม่มีฟอร์ม → null (แก้ที่หน้าต้นทาง)
+  //   button = ปุ่มเดียวในช่องสถานะ · ไม่ใส่ = กดที่แถว
+  type IncRow = NonNullable<typeof incomes>[number] & { full_amount: number; full_tax: number | null };
+  type ExpRow = NonNullable<typeof items>[number] & { full_amount: number };
+  const incEdit = (i: IncRow, button?: string): React.ReactNode => {
+    if (!canWrite || i.pending_split) return null;
+    const src = incSource(i);
+    if (src) {
+      const fields = incSourceEdit(i);
+      if (!fields) return null;
+      const grp = i.income_type === "LOAN_INTEREST" ? incGroup.get(i.id) : undefined;
+      const whole = !!(grp && loanPrincipal.has(grp));
+      return (
+        <RowActions table="income_transactions" id={i.id} paths={[...PATHS, src.href, "/property", "/financial/loans", "/financial/business"]}
+          canDelete={canDelete && !whole} fields={fields} button={button}
+          extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/financial/loans"]}
+            confirmText={`ลบการรับชำระวันที่ ${thDate(i.date)}?\nเงินต้น ${money(loanPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
+      );
+    }
+    return (
+      <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} button={button}
+        editor={<EntryEditor kind="INCOME" id={i.id} currency={i.currency} banks={banks} persons={persons ?? []} subtypes={incSubs}
+          accountEditable={!i.received_to_credit_card_id && !i.received_to_liability_id}
+          personFallback={i.asset_id ? "ตามเจ้าของทรัพย์สิน" : undefined}
+          values={{ date: i.date, amount: i.full_amount, tax: i.full_tax, person_id: i.person_id, notes: i.notes,
+            income_type: i.income_type, income_subtype: i.income_subtype, bank: i.received_to_asset_id }} />} />
+    );
+  };
+  const expEdit = (i: ExpRow, button?: string): React.ReactNode => {
+    if (!canWrite || i.pending_split) return null;
+    const src = expSource(i);
+    if (src) {
+      const fields = sourceEdit(i);
+      if (!fields) return null;
+      const grp = i.liability_id ? expGroup.get(i.id) : undefined;
+      const whole = !!(grp && groupPrincipal.has(grp));
+      return (
+        <RowActions table="expense_items" id={i.id} paths={[...PATHS, src.href.split("?")[0], "/liabilities", "/property", "/insurance"]}
+          canDelete={canDelete && !whole} fields={fields} button={button}
+          extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/liabilities"]}
+            confirmText={`ลบการจ่ายวันที่ ${thDate(i.date)}?\nเงินต้น ${money(groupPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
+      );
+    }
+    return (
+      <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} button={button}
+        editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} persons={persons ?? []}
+          categories={expCats} reimbursable={!!i.is_reimbursable}
+          values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category,
+            person_id: i.person_id, notes: i.notes, expected_reimbursement_amount: i.expected_reimbursement_amount,
+            bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id }} />} />
+    );
+  };
+  // แยกก้อนรอแยก: ปุ่ม (ตาราง) หรือกดที่แถว (กล่องเงินเข้า–ออก)
+  const incSplit = (i: IncRow, rowClick = false) => canWrite && canDelete && i.pending_split ? (
+    <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []}
+      label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
+      personDefault={i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : i.received_to_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
+      moves={splitMoves({ kind: "INCOME", currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id, liab: i.received_to_liability_id }, splitLists)} />
+  ) : null;
+  const expSplit = (i: ExpRow, rowClick = false) => canWrite && canDelete && i.pending_split ? (
+    <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
+      label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
+      personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"} hints={expHints}
+      moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />
+  ) : null;
 
   const incRows: MonthRow[] = [
     ...expectedList.filter((e) => e.status !== "RECEIVED").map((e): MonthRow => {
@@ -461,17 +542,17 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         item: <>
           <div className="font-medium">{e.source_type === "LEASE" && e.asset_id
             ? <Link href={`/property/${e.asset_id}`} title="ไปหน้าทรัพย์สิน" className={NAME_LINK}>{e.name}</Link>
-            : <SubTabLink to="settings" className={NAME_LINK}>{e.name}</SubTabLink>}</div>
+            : toSettings("income", e.name)}</div>
           <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
             {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
         </>,
         account: e.receive_to_asset_id ? name.get(e.receive_to_asset_id) ?? "บัญชี" : "",
-        badge: badge(EXP_STATUS[e.status]?.text ?? e.status, EXP_STATUS[e.status]?.cls ?? ""),
-        manage: canWrite && open ? menu(
+        late: e.status === "OVERDUE",
+        action: canWrite && open ? (
           <ExpectedActions sourceType={e.source_type} sourceId={e.source_id} period={start} incomeType={e.income_type}
             personId={tpl?.person_id ?? null} expected={Number(e.expected_amount)} currency={e.currency}
-            receiveTo={e.receive_to_asset_id} banks={banks} today={maxDate} minDate={minDate} />,
-        ) : null,
+            receiveTo={e.receive_to_asset_id} banks={banks} today={maxDate} minDate={minDate} />
+        ) : badge(EXP_STATUS[e.status]?.text ?? e.status, EXP_STATUS[e.status]?.cls ?? ""),
       };
     }),
     ...loanDue.filter((x) => x.status !== "PAID").map((x): MonthRow => {
@@ -487,19 +568,19 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <div className="text-xs text-slate-500">{x.borrower_name} · งวดที่ {x.installment_no}{pct != null && ` · ส่วนของ ${pv.personName} ${pct}%`}</div>
           <div className="text-xs text-slate-400">เงินต้น {money(x.principal_due)} + ดอกเบี้ย {money(x.interest_due)} · นับเป็นรายได้เฉพาะดอกเบี้ย</div>
           {late(x.due_date)}
+          {got > 0 && <div className="text-xs text-amber-700">ได้รับบางส่วน · ค้าง {money(x.total_remaining)}</div>}
         </>,
         account: "",
-        badge: <>{badge(LOAN_SCHED_STATUS[x.status]?.text ?? x.status, LOAN_SCHED_STATUS[x.status]?.cls ?? "")}
-          {got > 0 && <div className="mt-0.5 text-xs text-amber-700">ค้าง {money(x.total_remaining)}</div>}</>,
-        manage: canWrite ? menu(
+        late: x.status === "OVERDUE",
+        action: !canWrite ? badge(LOAN_SCHED_STATUS[x.status]?.text ?? x.status, LOAN_SCHED_STATUS[x.status]?.cls ?? "") : (
           <LoanPaymentForm assetId={x.loan_asset_id} currency={x.currency} banks={banks} today={today} minDate={goLive} small button="บันทึกรับ"
             title={`รับชำระ ${x.loan_name} งวดที่ ${x.installment_no}`}
             principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
             interestOwed={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
               .reduce((s, y) => s + Number(y.interest_remaining), 0)}
             principalDue={loanDue.filter((y) => y.loan_asset_id === x.loan_asset_id && y.due_date <= x.due_date)
-              .reduce((s, y) => s + Number(y.principal_remaining), 0)} />,
-        ) : null,
+              .reduce((s, y) => s + Number(y.principal_remaining), 0)} />
+        ),
       };
     }),
     ...benefitDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").map((x): MonthRow => {
@@ -514,11 +595,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {late(x.due_date)}
         </>,
         account: "",
-        badge: badge(INS_SCHED_STATUS[x.status]?.text ?? x.status, INS_SCHED_STATUS[x.status]?.cls ?? ""),
-        manage: canWrite ? menu(
+        late: x.status === "OVERDUE",
+        action: canWrite ? (
           <BenefitForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks}
-            persons={persons ?? []} hasCashValue={!!x.cash_value_asset_id} today={today} small canClose={canDelete} />,
-        ) : null,
+            persons={persons ?? []} hasCashValue={!!x.cash_value_asset_id} today={today} small canClose={canDelete} />
+        ) : badge(INS_SCHED_STATUS[x.status]?.text ?? x.status, INS_SCHED_STATUS[x.status]?.cls ?? ""),
       };
     }),
     ...incomeList.map((i): MonthRow => {
@@ -533,30 +614,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           : i.received_to_asset_id ? "ตามเจ้าของบัญชีที่รับ" : i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : "ส่วนกลาง");
       const title = i.pending_split ? stripPending(i.notes ?? "") || "ก้อนรอแยกรายละเอียด"
         : `${type}${i.income_subtype ? ` · ${i.income_subtype}` : ""}`;
-      // แก้ / ลบ: รายการจากหน้าอื่นใช้ฟอร์มชุดเดียวกับหน้าต้นทาง (ถ้ามี) · รายการที่บันทึกที่นี่ใช้ฟอร์มเต็ม
-      let edit: React.ReactNode = null;
-      if (canWrite && !i.pending_split) {
-        if (src) {
-          const fields = incSourceEdit(i);
-          const grp = i.income_type === "LOAN_INTEREST" ? incGroup.get(i.id) : undefined;
-          const whole = !!(grp && loanPrincipal.has(grp));
-          edit = fields ? (
-            <RowActions table="income_transactions" id={i.id} paths={[...PATHS, src.href, "/property", "/financial/loans", "/financial/business"]}
-              canDelete={canDelete && !whole} fields={fields}
-              extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/financial/loans"]}
-                confirmText={`ลบการรับชำระวันที่ ${thDate(i.date)}?\nเงินต้น ${money(loanPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
-          ) : null;
-        } else {
-          edit = (
-            <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete}
-              editor={<EntryEditor kind="INCOME" id={i.id} currency={i.currency} banks={banks} persons={persons ?? []} subtypes={incSubs}
-                accountEditable={!i.received_to_credit_card_id && !i.received_to_liability_id}
-                personFallback={i.asset_id ? "ตามเจ้าของทรัพย์สิน" : undefined}
-                values={{ date: i.date, amount: i.full_amount, tax: i.full_tax, person_id: i.person_id, notes: i.notes,
-                  income_type: i.income_type, income_subtype: i.income_subtype, bank: i.received_to_asset_id }} />} />
-          );
-        }
-      }
       return {
         key: `i-${i.id}`, date: i.date, source: incLabel(i), status: "DONE", split: !!i.pending_split, currency: i.currency,
         expected: null, done: net, thbDone: netThb, thbLeft: 0,
@@ -570,17 +627,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         </>,
         account: i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}`
           : i.received_to_liability_id ? `ลดหนี้ ${name.get(i.received_to_liability_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี",
-        badge: i.pending_split ? <MoveBadge label="รอแยกรายละเอียด" tone="amber" /> : badge("ได้รับแล้ว", "bg-emerald-50 text-emerald-700"),
-        manage: menu(
-          i.pending_split && canWrite && canDelete && (
-            <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []}
-              label="แยกรายละเอียด"
-              personDefault={i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : i.received_to_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
-              moves={splitMoves({ kind: "INCOME", currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id, liab: i.received_to_liability_id }, splitLists)} />
-          ),
-          edit,
-          goSrc(src),
-        ),
+        action: i.pending_split ? incSplit(i) ?? <MoveBadge label="รอแยกรายละเอียด" tone="amber" /> : incEdit(i, "แก้ไข") ?? DONE_INC,
       };
     }),
   ];
@@ -594,20 +641,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         currency: x.currency, expected: Number(x.expected_amount), done: paid || null,
         thbDone: 0, thbLeft: open ? thb(Math.max(Number(x.expected_amount) - paid, 0), x.currency) : 0,
         item: <>
-          <SubTabLink to="settings" className={`font-medium ${NAME_LINK}`}>{x.name}</SubTabLink>
+          {toSettings("expense", x.name)}
           <div className="text-xs text-slate-500">{x.expense_category}{x.person_id && ` · ${persons?.find((p) => p.id === x.person_id)?.name ?? ""}`}</div>
           {x.status === "DISMISSED" && x.dismissal_reason && <div className="text-xs text-slate-400">{x.dismissal_reason}</div>}
           {late(x.cost_period)}
         </>,
         account: x.pay_via === "CARD" ? `บัตร ${name.get(x.pay_from_credit_card_id ?? "") ?? ""}` : x.pay_via === "CASH" ? "เงินสด"
           : x.pay_from_asset_id ? name.get(x.pay_from_asset_id) ?? "บัญชี" : "",
-        badge: badge(COST_STATUS[x.status]?.text ?? x.status, `${x.status === "OVERDUE" ? "bg-red-50" : "bg-slate-100"} ${COST_STATUS[x.status]?.cls ?? ""}`),
-        manage: canWrite && open ? menu(
+        late: x.status === "OVERDUE",
+        action: canWrite && open ? (
           <RecurringPayActions templateId={x.template_id} period={x.cost_period} label={`${x.name} (${thMonth(x.cost_period)})`}
             category={x.expense_category} expected={Number(x.expected_amount)} currency={x.currency} payVia={x.pay_via}
             bankId={x.pay_from_asset_id} cardId={x.pay_from_credit_card_id} personId={x.person_id}
-            banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />,
-        ) : canDelete && x.status === "DISMISSED" && x.dismissal_id ? menu(<UndoDismissButton id={x.dismissal_id} />) : null,
+            banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} />
+        ) : acts(badge(COST_STATUS[x.status]?.text ?? x.status, `bg-slate-100 ${COST_STATUS[x.status]?.cls ?? ""}`),
+          canDelete && x.status === "DISMISSED" && x.dismissal_id && <UndoDismissButton id={x.dismissal_id} />),
       };
     }),
     ...costs.filter((c) => c.status !== "PAID").map((c): MonthRow => {
@@ -625,13 +673,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {late(c.cost_period)}
         </>,
         account: "",
-        badge: badge(COST_STATUS[c.status]?.text ?? c.status, `${c.status === "OVERDUE" ? "bg-red-50" : "bg-slate-100"} ${COST_STATUS[c.status]?.cls ?? ""}`),
-        manage: canWrite && open ? menu(
+        late: c.status === "OVERDUE",
+        action: canWrite && open ? (
           <RecordCostForm assetId={c.property_asset_id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
             label={`${utilName(c.utility_type, c.provider)} · ${c.property_name} (${thMonth(c.cost_period)})`}
             category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
-            banks={banks} cards={cards} persons={persons ?? []} today={today} />,
-        ) : canDelete && c.status === "DISMISSED" && c.dismissal_id ? menu(<UndoDismissButton id={c.dismissal_id} />) : null,
+            banks={banks} cards={cards} persons={persons ?? []} today={today} />
+        ) : acts(badge(COST_STATUS[c.status]?.text ?? c.status, `bg-slate-100 ${COST_STATUS[c.status]?.cls ?? ""}`),
+          canDelete && c.status === "DISMISSED" && c.dismissal_id && <UndoDismissButton id={c.dismissal_id} />),
       };
     }),
     ...premiumDue.filter((x) => x.status !== "PAID" && x.status !== "CLOSED").map((x): MonthRow => {
@@ -645,12 +694,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {late(x.due_date)}
         </>,
         account: "",
-        badge: badge(INS_SCHED_STATUS[x.status]?.text ?? x.status, INS_SCHED_STATUS[x.status]?.cls ?? ""),
-        manage: canWrite ? menu(
+        late: x.status === "OVERDUE",
+        action: !canWrite ? badge(INS_SCHED_STATUS[x.status]?.text ?? x.status, INS_SCHED_STATUS[x.status]?.cls ?? "") : (
           <PayPremiumForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency}
             label={`เบี้ยประกัน ${insName(x)} งวดที่ ${x.installment_no}`} banks={banks} cards={cards} persons={persons ?? []}
-            defaultPerson={x.payer_person_id} today={today} />,
-        ) : null,
+            defaultPerson={x.payer_person_id} today={today} />
+        ),
       };
     }),
     ...itemList.map((i): MonthRow => {
@@ -659,29 +708,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       const remaining = cap - Number(r?.reimbursed_amount ?? 0);
       const src = i.pending_split ? null : expSource(i);
       const cat = i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category;
-      let edit: React.ReactNode = null;
-      if (canWrite && !i.pending_split) {
-        if (src) {
-          const fields = sourceEdit(i);
-          const grp = i.liability_id ? expGroup.get(i.id) : undefined;
-          const whole = !!(grp && groupPrincipal.has(grp));
-          edit = fields ? (
-            <RowActions table="expense_items" id={i.id} paths={[...PATHS, src.href.split("?")[0], "/liabilities", "/property", "/insurance"]}
-              canDelete={canDelete && !whole} fields={fields}
-              extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/liabilities"]}
-                confirmText={`ลบการจ่ายวันที่ ${thDate(i.date)}?\nเงินต้น ${money(groupPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
-          ) : null;
-        } else {
-          edit = (
-            <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete}
-              editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} persons={persons ?? []}
-                categories={expCats} reimbursable={!!i.is_reimbursable}
-                values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category,
-                  person_id: i.person_id, notes: i.notes, expected_reimbursement_amount: i.expected_reimbursement_amount,
-                  bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id }} />} />
-          );
-        }
-      }
       const title = i.pending_split ? stripPending(i.description) : i.description;
       return {
         key: `e-${i.id}`, date: i.date, source: expLabel(i), status: "DONE", split: !!i.pending_split, currency: i.currency,
@@ -709,21 +735,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             : i.liability_id ? <div className="text-slate-500">ตามผู้รับผิดชอบหนี้</div>
             : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}
         </>,
-        badge: i.pending_split ? <MoveBadge label="รอแยกรายละเอียด" tone="amber" /> : badge("จ่ายแล้ว", "bg-emerald-50 text-emerald-700"),
-        manage: menu(
-          i.pending_split && canWrite && canDelete && (
-            <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons ?? []} categories={expCats}
-              label="แยกรายละเอียด"
-              personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"} hints={expHints}
-              moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />
-          ),
-          canWrite && i.is_reimbursable && remaining > 0 && (
-            <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims}
-              today={today} minDate={goLive} />
-          ),
-          edit,
-          src && src.label !== "รายการโอน" ? goSrc(src) : null,
-        ),
+        action: i.pending_split ? expSplit(i) ?? <MoveBadge label="รอแยกรายละเอียด" tone="amber" />
+          : acts(expEdit(i, "แก้ไข") ?? DONE_EXP,
+            canWrite && i.is_reimbursable && remaining > 0 && (
+              <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims}
+                today={today} minDate={goLive} />
+            )),
       };
     }),
   ];
@@ -857,14 +874,25 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ รายได้ */}
       <TabPanel id="income">
-          <SubTabs param="it" initial={incTab} tabs={[["list", `รายได้เดือนนี้ (${incRows.length})`], ["settings", "รายได้ประจำ"]]}>
-          <SubPanel id="list">
             <MonthTable kind="income" rows={incRows} empty="ยังไม่มีรายได้ หรือรายการที่คาดไว้ในเดือนนี้" initialSource={sp.it === "split" ? "split" : ""}
               actions={canWrite && inMonth ? <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} /> : undefined} />
-            <p className="text-xs text-slate-500">รายการที่คาดไว้มาจากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กด &ldquo;จัดการ → บันทึกรับ&rdquo; ด้วยยอดจริง</p>
-          </SubPanel>
+            <p className="text-xs text-slate-500">รายการที่คาดไว้มาจากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กดปุ่ม &ldquo;บันทึกรับ&rdquo; ในช่องสถานะด้วยยอดจริง</p>
+      </TabPanel>
 
-          <SubPanel id="settings">
+      {/* ============================================================ ค่าใช้จ่าย */}
+      <TabPanel id="expense">
+            <MonthTable kind="expense" rows={expRows} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
+              empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}
+              actions={canWrite && inMonth ? <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /> : undefined} />
+            <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้
+              · รายการที่คาดไว้มาจากค่าใช้จ่ายประจำ (ทั่วไป และของทรัพย์สิน) และตารางเบี้ยประกัน กดปุ่ม &ldquo;บันทึกจ่าย&rdquo; ในช่องสถานะด้วยยอดจริง
+              · เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม (รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ)</p>
+      </TabPanel>
+
+      {/* ============================================================ ตั้งค่า: รายได้ประจำ · ค่าใช้จ่ายประจำ · ประเภท / หมวด */}
+      <TabPanel id="settings">
+          <SubTabs param="st" initial={setTab} tabs={[["income", "รายได้ประจำ"], ["expense", "ค่าใช้จ่ายประจำ"], ["types", "ประเภท / หมวด"]]}>
+          <SubPanel id="income">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
             {templateList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
@@ -904,22 +932,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             {canWrite && <TemplateForm banks={banks} persons={persons ?? []} today={today} />}
           </section>
           </SubPanel>
-          </SubTabs>
-      </TabPanel>
-
-      {/* ============================================================ ค่าใช้จ่าย */}
-      <TabPanel id="expense">
-          <SubTabs param="et" initial={expTab} tabs={[["list", `ค่าใช้จ่ายเดือนนี้ (${expRows.length})`], ["settings", "ค่าใช้จ่ายประจำ"]]}>
-          <SubPanel id="list">
-            <MonthTable kind="expense" rows={expRows} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
-              empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}
-              actions={canWrite && inMonth ? <ExpenseForm banks={banks} cards={cards} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /> : undefined} />
-            <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้
-              · รายการที่คาดไว้มาจากค่าใช้จ่ายประจำ (ทั่วไป และของทรัพย์สิน) และตารางเบี้ยประกัน กด &ldquo;จัดการ → บันทึกจ่าย&rdquo; ด้วยยอดจริง
-              · เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม (รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ)</p>
-          </SubPanel>
-
-          <SubPanel id="settings">
+          <SubPanel id="expense">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำทั่วไป</h2>
@@ -979,20 +992,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <p className="text-xs text-slate-500">ดูอย่างเดียว · เพิ่ม / แก้ไข / ลบ ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน) · ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;</p>
           </section>
           </SubPanel>
-          </SubTabs>
-      </TabPanel>
-
-      {/* ============================================================ ตั้งค่า */}
-      <TabPanel id="settings">
-          <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">หมวดค่าใช้จ่าย</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              ใช้เป็นตัวเลือกตอนบันทึก / แยกรายการ / แก้ไขค่าใช้จ่าย · เปลี่ยนชื่อแล้วรายการเดิมทุกเดือนเปลี่ยนตาม (ยอดเงินไม่เปลี่ยน)
-              · &ldquo;ซ่อน&rdquo; = ไม่ขึ้นในตัวเลือกอีก แต่รายการเดิมยังอยู่ · ลำดับนี้ใช้ในตัวเลือกทุกที่
-              · ค่าใช้จ่ายประจำของ Property ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;
-            </p>
-            <CategoryManager kind="EXPENSE" cats={expCatAll} canEdit={canDelete} unit="หมวด" />
-          </section>
+          <SubPanel id="types">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 font-medium text-slate-900">ประเภทรายได้</h2>
             <p className="mb-3 text-xs text-slate-500">ประเภทหลักระบบกำหนดไว้ (ใช้คำนวณภาษี / รายงาน และผูกกับหน้าลงทุน / ทรัพย์สิน / ประกัน) จึงแก้ไม่ได้
@@ -1008,7 +1008,18 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             <p className="mb-3 text-xs text-slate-500">เช่น ขายของมือสอง · ค่าคอมมิชชั่น · เงินรางวัล — เลือกได้ตอนบันทึก &ldquo;รายได้อื่น&rdquo; (ไม่บังคับ) และแยกแท่งในกราฟภาพรวม</p>
             <CategoryManager kind="INCOME_OTHER" cats={incSubAll} canEdit={canDelete} unit="ประเภทย่อย" />
           </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-1 font-medium text-slate-900">หมวดค่าใช้จ่าย</h2>
+            <p className="mb-3 text-xs text-slate-500">
+              ใช้เป็นตัวเลือกตอนบันทึก / แยกรายการ / แก้ไขค่าใช้จ่าย · เปลี่ยนชื่อแล้วรายการเดิมทุกเดือนเปลี่ยนตาม (ยอดเงินไม่เปลี่ยน)
+              · &ldquo;ซ่อน&rdquo; = ไม่ขึ้นในตัวเลือกอีก แต่รายการเดิมยังอยู่ · ลำดับนี้ใช้ในตัวเลือกทุกที่
+              · ค่าใช้จ่ายประจำของ Property ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;
+            </p>
+            <CategoryManager kind="EXPENSE" cats={expCatAll} canEdit={canDelete} unit="หมวด" />
+          </section>
           {!canDelete && <p className="text-xs text-slate-500">เฉพาะ ADMIN / EDITOR เพิ่มหรือแก้ไขได้</p>}
+          </SubPanel>
+          </SubTabs>
       </TabPanel>
     </div>
     </TabsProvider>

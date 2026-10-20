@@ -1,6 +1,7 @@
 "use client";
 
 import Modal from "@/components/Modal";
+import { useRowPanel } from "@/components/RowPanel";
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 const blank = (): Line => ({ description: "", amount: "", cat: "", person_id: "", move: "", to: "" });   // หมวด / ประเภท ต้องเลือกเอง
 
 /** แยกรายการรอแยกรายละเอียด → หลายบรรทัด · ยอดรวมต้องไม่เกินก้อน (ส่วนที่เหลือยังรอแยก) */
-export default function SplitForm({ kind, id, amount, currency, persons, categories = [], moves = [], personDefault = "ตามเจ้าของบัญชี / บัตร", label = "แยกรายการ", hints = [] }: {
+export default function SplitForm({ kind, id, amount, currency, persons, categories = [], moves = [], personDefault = "ตามเจ้าของบัญชี / บัตร", label = "แยกรายการ", hints = [], rowClick = false, buttonCls }: {
   kind: "EXPENSE" | "INCOME"; id: string; amount: number; currency: string; persons: { id: string; name: string }[]; categories?: string[];
   /** บรรทัดแบบเคลื่อนเงินที่ก้อนนี้แยกได้ (ไม่มี = แยกเป็นรายได้ / ค่าใช้จ่ายอย่างเดียว) */
   moves?: SplitMove[];
@@ -24,6 +25,10 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   label?: string;
   /** ค่าใช้จ่าย: เดาหมวดจากรายการเดิมที่รายละเอียดเหมือนกัน */
   hints?: ExpHint[];
+  /** กดที่แถวตารางเพื่อเปิด (ไม่มีปุ่ม) — ใช้ในกล่องเงินเข้า–ออก */
+  rowClick?: boolean;
+  /** สีปุ่ม (ค่าเริ่มต้น เส้นขอบน้ำเงิน) */
+  buttonCls?: string;
 }) {
   const income = kind === "INCOME";
   const [open, setOpen] = useState(false);
@@ -33,8 +38,12 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   // บันทึกแล้ว → โหลดข้อมูลหน้าใหม่ทันที (ยอดที่ยังรอแยกอัปเดต · กดแยกต่อได้เลย)
   useEffect(() => { if (state.ok) router.refresh(); }, [state, router]);
   const box = useRef<HTMLFormElement>(null);
-  if (state.ok && !open) return <p className="text-xs text-emerald-700">{state.ok}</p>;
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50">{label}</button>;
+  const row = useRowPanel(rowClick);
+  const isOpen = rowClick ? row.open : open;
+  const close = () => { if (rowClick) row.setOpen(false); else setOpen(false); setLines([blank()]); };
+  if (rowClick && !isOpen) return row.render(null);
+  if (state.ok && !isOpen) return <p className="text-xs text-emerald-700">{state.ok}</p>;
+  if (!isOpen) return <button type="button" onClick={() => setOpen(true)} className={buttonCls ?? "rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"}>{label}</button>;
   const sum = lines.reduce((t, l) => t + n(l.amount), 0);
   const left = Math.round((amount - sum) * 100) / 100;
   // เกินยอดก้อนได้เฉพาะส่วนที่เป็นเงินโอน → ส่วนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน (กติกาจริงอยู่ใน public.split_lump)
@@ -45,8 +54,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   const missingTo = lines.some((l) => l.move && l.amount.trim() && !l.to);
   const moveOf = (l: Line) => moves.find((m) => m.value === l.move);
   const set = (i: number, patch: Partial<Line>) => setLines(lines.map((l, k) => (k === i ? { ...l, ...patch } : l)));
-  return (
-    <Modal title={label} size="lg" onClose={() => setOpen(false)}>
+  const body = (<>
     <form ref={box} action={action} className="space-y-2 text-left" data-no-row-click>
       {!income && hints.length > 0 && <datalist id={`split-hints-${id}`}>{hints.slice(0, 300).map((h) => <option key={h.d} value={h.d} />)}</datalist>}
       <input type="hidden" name="kind" value={kind} />
@@ -109,13 +117,14 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
       <div className="flex items-center gap-2">
         <button disabled={pending || (left < 0 && !overOk) || sum <= 0 || missingCat || missingTo} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
           {pending ? "…" : "บันทึกการแยก"}</button>
-        <button type="button" onClick={() => { setOpen(false); setLines([blank()]); }} className="text-xs text-slate-500">ปิด</button>
+        <button type="button" onClick={close} className="text-xs text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-xs text-red-600">{state.error}</p>}
       <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)
         {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
     </form>
     {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
-    </Modal>
-  );
+  </>);
+  if (rowClick) return row.render(body, label, "lg");
+  return <Modal title={label} size="lg" onClose={() => setOpen(false)}>{body}</Modal>;
 }
