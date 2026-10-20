@@ -6,6 +6,7 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
+import { StatBox } from "@/components/Boxes";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -92,25 +93,14 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">กรมธรรม์ที่มีผล</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{act.length} <span className="text-sm font-normal text-slate-500">ฉบับ</span></div>
-          <div className="text-xs text-slate-500">ทั้งหมด {mineRows.length} ฉบับ</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">ทุนประกันรวม (THB)</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{money(insuredTotal, "THB", 0)}</div>
-        </div>
+        <StatBox label="กรมธรรม์ที่มีผล" value={act.length} unit="ฉบับ" sub={<>ทั้งหมด {mineRows.length} ฉบับ</>} />
+        <StatBox label="ทุนประกันรวม (THB)" value={money(insuredTotal, "THB", 0)} />
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เบี้ยรวมต่อปี (THB)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(premiumTotal, "THB", 0)}</div>
           {overdueTotal > 0 && <div className="text-xs text-red-600">เบี้ยเลยกำหนด {overdueTotal} งวด</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{money(cvTotal, "THB", 0)}</div>
-          <div className="text-xs text-slate-500">นับเป็นสินทรัพย์หมวดการเงิน</div>
-        </div>
+        <StatBox label={<>{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</>} value={money(cvTotal, "THB", 0)} sub="นับเป็นสินทรัพย์หมวดการเงิน" />
       </section>
       {fupRows.length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">

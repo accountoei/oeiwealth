@@ -7,20 +7,13 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
 import SetHeadButton from "./SetHeadButton";
 import { ActionBar } from "@/components/ActionBar";
+import { DetailItem as Item } from "@/components/Boxes";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
   "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id,death_date";
 
 type Doc = { id: string; title: string; document_type: string; mime_type: string | null; version_status: string; deleted_at: string | null; created_at: string };
 
-function Item({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-sm text-slate-900 whitespace-pre-line">{children || <span className="text-slate-400">-</span>}</dd>
-    </div>
-  );
-}
 
 function fmtNid(n: string | null) {
   return n && n.length === 13 ? `${n[0]}-${n.slice(1, 5)}-${n.slice(5, 10)}-${n.slice(10, 12)}-${n[12]}` : n;
@@ -131,41 +124,41 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <div>
             <h2 className="mb-3 font-medium text-slate-900">ข้อมูลทั่วไป</h2>
-            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Item label="คำนำหน้า / ชื่อ-นามสกุล (ไทย)">{fullName}</Item>
-              <Item label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>
-              <Item label="ชื่อเล่น">{p.nickname}</Item>
-              <Item label="วันเกิด">{p.birth_date ? `${thDate(p.birth_date)}${age != null ? ` (${age} ปี)` : ""}` : ""}</Item>
-              {archived && <Item label="วันที่เสียชีวิต">{p.death_date ? thDate(p.death_date) : ""}</Item>}
-              <div className="sm:col-span-2 lg:col-span-3"><Item label="หมายเหตุ">{p.notes}</Item></div>
+            <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Item dash label="คำนำหน้า / ชื่อ-นามสกุล (ไทย)">{fullName}</Item>
+              <Item dash label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>
+              <Item dash label="ชื่อเล่น">{p.nickname}</Item>
+              <Item dash label="วันเกิด">{p.birth_date ? `${thDate(p.birth_date)}${age != null ? ` (${age} ปี)` : ""}` : ""}</Item>
+              {archived && <Item dash label="วันที่เสียชีวิต">{p.death_date ? thDate(p.death_date) : ""}</Item>}
+              <Item dash wide label="หมายเหตุ">{p.notes}</Item>
             </dl>
           </div>
           <div className="border-t border-slate-100 pt-4">
             <h2 className="mb-3 font-medium text-slate-900">การติดต่อ</h2>
-            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Item label="เบอร์โทร">{p.phone && <a href={`tel:${p.phone}`} className="text-blue-700 hover:underline">{p.phone}</a>}</Item>
-              <Item label="อีเมล">{p.email && <a href={`mailto:${p.email}`} className="text-blue-700 hover:underline">{p.email}</a>}</Item>
-              <Item label="ผู้ติดต่อฉุกเฉิน">{[p.emergency_contact_name, p.emergency_contact_phone].filter(Boolean).join(" · ")}</Item>
-              <div className="sm:col-span-2 lg:col-span-3"><Item label="ที่อยู่">{p.address}</Item></div>
+            <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Item dash label="เบอร์โทร">{p.phone && <a href={`tel:${p.phone}`} className="text-blue-700 hover:underline">{p.phone}</a>}</Item>
+              <Item dash label="อีเมล">{p.email && <a href={`mailto:${p.email}`} className="text-blue-700 hover:underline">{p.email}</a>}</Item>
+              <Item dash label="ผู้ติดต่อฉุกเฉิน">{[p.emergency_contact_name, p.emergency_contact_phone].filter(Boolean).join(" · ")}</Item>
+              <Item dash wide label="ที่อยู่">{p.address}</Item>
             </dl>
           </div>
           <div className="border-t border-slate-100 pt-4">
             <h2 className="mb-3 font-medium text-slate-900">ครอบครัว</h2>
-            <dl className="grid gap-3 sm:grid-cols-4">
-              <Item label="พ่อ"><PLink pid={p.father_id} /></Item>
-              <Item label="แม่"><PLink pid={p.mother_id} /></Item>
-              <Item label="คู่สมรส"><PLink pid={p.spouse_id} /></Item>
-              <Item label="ลูก">{children.length > 0 && children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<PLink pid={c.id} /></span>)}</Item>
+            <dl className="text-sm grid gap-3 sm:grid-cols-4">
+              <Item dash label="พ่อ"><PLink pid={p.father_id} /></Item>
+              <Item dash label="แม่"><PLink pid={p.mother_id} /></Item>
+              <Item dash label="คู่สมรส"><PLink pid={p.spouse_id} /></Item>
+              <Item dash label="ลูก">{children.length > 0 && children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<PLink pid={c.id} /></span>)}</Item>
             </dl>
             <p className="mt-2 text-xs text-slate-500">ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{headLabel ? ` (${headLabel})` : ""}</p>
           </div>
           <div className="border-t border-slate-100 pt-4">
             <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว</h2>
-            <dl className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-1"><Item label="เลขบัตรประชาชน">{fmtNid(p.national_id)}</Item><DocLink types={["บัตรประชาชน"]} /></div>
-              <div className="space-y-1"><Item label="เลขทะเบียนบ้าน">{p.house_registration_no}</Item><DocLink types={["ทะเบียนบ้าน"]} /></div>
+            <dl className="text-sm grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1"><Item dash label="เลขบัตรประชาชน">{fmtNid(p.national_id)}</Item><DocLink types={["บัตรประชาชน"]} /></div>
+              <div className="space-y-1"><Item dash label="เลขทะเบียนบ้าน">{p.house_registration_no}</Item><DocLink types={["ทะเบียนบ้าน"]} /></div>
               <div className="space-y-1">
-                <Item label="หนังสือเดินทาง">
+                <Item dash label="หนังสือเดินทาง">
                   {p.passport_no}{p.passport_expiry && <span className={passportExpired ? "text-red-600" : "text-slate-500"}> · หมดอายุ {thDate(p.passport_expiry)}{passportExpired ? " (หมดแล้ว)" : ""}</span>}
                 </Item>
                 <DocLink types={["หนังสือเดินทาง", "passport"]} />

@@ -10,6 +10,7 @@ import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { orderHrefs } from "@/lib/sort";
 import { ActionBar } from "@/components/ActionBar";
 import { addDays } from "@/lib/format";
+import { StatBox } from "@/components/Boxes";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null };
 
@@ -67,11 +68,11 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Box label="สมาชิกภาพที่ใช้งาน" value={activeMembers.length} unit="รายการ" sub={`ทั้งหมด ${memberRows.length} รายการ`} />
-        <Box label="สมาชิกภาพใกล้หมดอายุ (60 วัน)" value={memberSoon} unit="รายการ"
-          sub={memberExpired ? `เลยวันหมดอายุแล้ว ${memberExpired} รายการ` : "ไม่มีรายการเลยวันหมดอายุ"} warn={memberSoon + memberExpired > 0} />
-        <Box label="บัญชีแต้ม / ไมล์" value={pointRows.length} unit="บัญชี" sub={pointsStale ? `ยอดเกิน 90 วัน ${pointsStale} บัญชี` : "ยอดอัปเดตภายใน 90 วัน"} warn={pointsStale > 0} />
-        <Box label="แต้มใกล้หมดอายุ (60 วัน)" value={pointSoon} unit="บัญชี" sub="แต้ม / ไมล์ ไม่นับใน Net Worth" warn={pointSoon > 0} />
+        <StatBox label="สมาชิกภาพที่ใช้งาน" value={activeMembers.length} unit="รายการ" sub={`ทั้งหมด ${memberRows.length} รายการ`} />
+        <StatBox label="สมาชิกภาพใกล้หมดอายุ (60 วัน)" value={memberSoon} unit="รายการ"
+          sub={memberExpired ? `เลยวันหมดอายุแล้ว ${memberExpired} รายการ` : "ไม่มีรายการเลยวันหมดอายุ"} subClass={(memberSoon + memberExpired > 0) ? "text-amber-700" : undefined} />
+        <StatBox label="บัญชีแต้ม / ไมล์" value={pointRows.length} unit="บัญชี" sub={pointsStale ? `ยอดเกิน 90 วัน ${pointsStale} บัญชี` : "ยอดอัปเดตภายใน 90 วัน"} subClass={(pointsStale > 0) ? "text-amber-700" : undefined} />
+        <StatBox label="แต้มใกล้หมดอายุ (60 วัน)" value={pointSoon} unit="บัญชี" sub="แต้ม / ไมล์ ไม่นับใน Net Worth" subClass={(pointSoon > 0) ? "text-amber-700" : undefined} />
       </section>
 
       <section className="space-y-3">
@@ -129,16 +130,6 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
         <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมใน Net Worth · กดแก้ไขเพื่ออัปเดตยอดตาม Statement ·
           บัตรเครดิตอยู่ที่ <Link href="/liabilities#cards" className="text-blue-700 hover:underline">Liabilities → บัตรเครดิต</Link></p>
       </section>
-    </div>
-  );
-}
-
-function Box({ label, value, unit, sub, warn }: { label: string; value: number; unit: string; sub?: string; warn?: boolean }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value} <span className="text-sm font-normal text-slate-500">{unit}</span></div>
-      {sub && <div className={`mt-1 text-xs ${warn ? "text-amber-700" : "text-slate-500"}`}>{sub}</div>}
     </div>
   );
 }

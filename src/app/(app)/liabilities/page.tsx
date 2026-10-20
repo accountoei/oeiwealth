@@ -8,6 +8,7 @@ import { ActionBar } from "@/components/ActionBar";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { CardBalanceForm, NewCardForm } from "./cards/forms";
+import { StatBox } from "@/components/Boxes";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
   amount: number | null; balance_date: string | null; due_date: string | null; monthly_payment: number | null;
@@ -113,11 +114,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
           <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(cardTotal, "THB")}</div>
           {cardLimit > 0 && <div className="text-xs text-slate-500">ใช้ไป {((cardTotal * 100) / cardLimit).toFixed(1)}% ของวงเงิน {money(cardLimit, undefined, 0)}</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">เงินประกันการเช่า ({depRows.length} สัญญา)</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(depTotal, "THB")}</div>
-          <div className="text-xs text-slate-500">ต้องคืนผู้เช่าเมื่อหมดสัญญา</div>
-        </div>
+        <StatBox label={<>เงินประกันการเช่า ({depRows.length} สัญญา)</>} value={money(depTotal, "THB")} valueClass="text-red-700" sub="ต้องคืนผู้เช่าเมื่อหมดสัญญา" />
       </section>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

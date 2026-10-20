@@ -9,6 +9,7 @@ import { SortToggle } from "@/components/SortControls";
 import { moveHealthMetric } from "@/lib/sort-actions";
 import { orderHrefs } from "@/lib/sort";
 import { ActionBar } from "@/components/ActionBar";
+import { StatBox } from "@/components/Boxes";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
@@ -70,16 +71,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
           <div className={`mt-1 text-xl font-semibold tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length} <span className="text-sm font-normal text-slate-500">รายการ</span></div>
           <div className="mt-1 truncate text-xs text-slate-500">{lastAbn.length ? lastAbn.slice(0, 3).map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ") : "ปกติทั้งหมด"}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">จำนวนครั้งที่บันทึก</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{(checkups ?? []).length} <span className="text-sm font-normal text-slate-500">ครั้ง</span></div>
-          <div className="mt-1 text-xs text-slate-500">{metrics.length} รายการตรวจ</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{money(costYear, "THB", 0)}</div>
-          <div className="mt-1 text-xs text-slate-500">ตามที่บันทึกในแต่ละครั้ง</div>
-        </div>
+        <StatBox label="จำนวนครั้งที่บันทึก" value={(checkups ?? []).length} unit="ครั้ง" sub={<>{metrics.length} รายการตรวจ</>} />
+        <StatBox label="ค่าตรวจ 12 เดือนล่าสุด" value={money(costYear, "THB", 0)} sub="ตามที่บันทึกในแต่ละครั้ง" />
       </section>
 
       {metrics.length > 0 && (

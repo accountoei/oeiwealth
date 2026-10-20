@@ -11,6 +11,7 @@ import EditToggle from "@/components/EditToggle";
 import SplitForm from "../../../income-expenses/SplitForm";
 import { splitMoves } from "@/lib/split-moves";
 import { buildHints } from "@/lib/category-hints";
+import { DetailItem as Item } from "@/components/Boxes";
 
 type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean };
 
@@ -208,15 +209,6 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
         )}
       </section>
 
-    </div>
-  );
-}
-
-function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
-  return (
-    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
+import { StatBox } from "@/components/Boxes";
 
 const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "มีความเสี่ยง", CLOSED: "ปิดแล้ว", WRITTEN_OFF: "ตัดหนี้สูญ" };
 const DERIVED: Record<string, { text: string; cls: string }> = {
@@ -75,10 +76,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
           <div className="mt-1 text-xl font-semibold tabular-nums">{open.length} <span className="text-sm font-normal text-slate-500">สัญญา</span></div>
           {atRisk > 0 && <div className="text-xs text-amber-700">มีความเสี่ยง {atRisk} สัญญา</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">ครบกำหนดรับเดือนนี้ (THB)</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">{money(dueThisMonth, "THB")}</div>
-        </div>
+        <StatBox label="ครบกำหนดรับเดือนนี้ (THB)" value={money(dueThisMonth, "THB")} valueClass="text-emerald-700" />
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ค้างรับ (เลยกำหนด)</div>
           <div className={`mt-1 text-xl font-semibold tabular-nums ${overdueN > 0 ? "text-red-700" : ""}`}>{money(overdueAmt, "THB")}</div>

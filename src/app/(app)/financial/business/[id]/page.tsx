@@ -13,6 +13,7 @@ import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { businessDividendFields } from "@/lib/source-edit";
+import { DetailItem as Item } from "@/components/Boxes";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -242,15 +243,6 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
           )}
         </div>
       </section>
-    </div>
-  );
-}
-
-function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
-  return (
-    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
   );
 }

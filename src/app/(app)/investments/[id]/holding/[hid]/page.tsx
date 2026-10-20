@@ -10,6 +10,7 @@ import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
 import { FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
+import { DetailItem as Item } from "@/components/Boxes";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
@@ -112,15 +113,14 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                <Item k="ชื่อ" v={h.name} />
-                <Item k="สัญลักษณ์ / รหัส" v={h.symbol || "-"} />
-                <Item k="ประเภท" v={HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} />
-                <Item k="สกุลเงิน" v={h.currency} />
-                <Item k="ครบกำหนด" v={h.maturity_date ? thDate(h.maturity_date) : "-"} />
-                <Item k="สถานะ" v={STATUS_LABEL[h.status] ?? h.status} />
-                {(h.holding_type === "EQUITY" || h.holding_type === "FUND") && <Item k="ราคาอัตโนมัติ"
-                  v={h.auto_price ? `เปิด · ${h.holding_type === "FUND" ? "NAV จาก ก.ล.ต." : "Yahoo Finance"}${h.price_ref ? ` (${h.price_ref})` : ""}` : "ปิด"} />}
-                {h.notes && <div className="sm:col-span-2 lg:col-span-3"><Item k="หมายเหตุ" v={h.notes} /></div>}
+                <Item label="ชื่อ">{h.name}</Item>
+                <Item label="สัญลักษณ์ / รหัส">{h.symbol || "-"}</Item>
+                <Item label="ประเภท">{HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type}</Item>
+                <Item label="สกุลเงิน">{h.currency}</Item>
+                <Item label="ครบกำหนด">{h.maturity_date ? thDate(h.maturity_date) : "-"}</Item>
+                <Item label="สถานะ">{STATUS_LABEL[h.status] ?? h.status}</Item>
+                {(h.holding_type === "EQUITY" || h.holding_type === "FUND") && <Item label="ราคาอัตโนมัติ">{h.auto_price ? `เปิด · ${h.holding_type === "FUND" ? "NAV จาก ก.ล.ต." : "Yahoo Finance"}${h.price_ref ? ` (${h.price_ref})` : ""}` : "ปิด"}</Item>}
+                {h.notes && <Item label="หมายเหตุ" wide>{h.notes}</Item>}
               </dl>
             }
             edit={
@@ -152,14 +152,14 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           </div>
           {fcn && (
             <dl className="grid gap-x-6 gap-y-2 text-sm md:grid-cols-4">
-              <Item k="ผู้ออก" v={fcn.issuer} /><Item num k="เงินต้น" v={money(fcn.principal, h.currency)} />
-              <Item k="วันที่ซื้อ / ออก" v={`${thDate(fcn.trade_date)} / ${thDate(fcn.issue_date)}`} />
-              <Item k="ครบกำหนด" v={thDate(h.maturity_date)} />
-              <Item k="Coupon" v={`${pct(fcn.coupon_rate)} ต่อปี${fcn.coupon_frequency ? ` · ${COUPON_FREQ_LABEL[fcn.coupon_frequency] ?? fcn.coupon_frequency}` : ""}`} />
-              <Item k="Strike" v={pct(fcn.strike_level)} /><Item k="Knock-in / Barrier" v={pct(fcn.barrier_level)} />
-              <Item k="Autocall" v={`${pct(fcn.autocall_level)}${fcn.observation_frequency ? ` · สังเกต ${fcn.observation_frequency}` : ""}`} />
-              {fcn.coupon_rate != null && <Item num k="Coupon ต่องวด (ประมาณ)" v={money(Number(fcn.principal) * Number(fcn.coupon_rate) / 100 /
-                ({ MONTHLY: 12, QUARTERLY: 4, SEMI_ANNUAL: 2, ANNUAL: 1 }[fcn.coupon_frequency ?? ""] ?? 1), h.currency)} />}
+              <Item label="ผู้ออก">{fcn.issuer}</Item><Item num label="เงินต้น">{money(fcn.principal, h.currency)}</Item>
+              <Item label="วันที่ซื้อ / ออก">{`${thDate(fcn.trade_date)} / ${thDate(fcn.issue_date)}`}</Item>
+              <Item label="ครบกำหนด">{thDate(h.maturity_date)}</Item>
+              <Item label="Coupon">{`${pct(fcn.coupon_rate)} ต่อปี${fcn.coupon_frequency ? ` · ${COUPON_FREQ_LABEL[fcn.coupon_frequency] ?? fcn.coupon_frequency}` : ""}`}</Item>
+              <Item label="Strike">{pct(fcn.strike_level)}</Item><Item label="Knock-in / Barrier">{pct(fcn.barrier_level)}</Item>
+              <Item label="Autocall">{`${pct(fcn.autocall_level)}${fcn.observation_frequency ? ` · สังเกต ${fcn.observation_frequency}` : ""}`}</Item>
+              {fcn.coupon_rate != null && <Item num label="Coupon ต่องวด (ประมาณ)">{money(Number(fcn.principal) * Number(fcn.coupon_rate) / 100 /
+                ({ MONTHLY: 12, QUARTERLY: 4, SEMI_ANNUAL: 2, ANNUAL: 1 }[fcn.coupon_frequency ?? ""] ?? 1), h.currency)}</Item>}
             </dl>
           )}
           {canWrite && <FcnForm assetId={id} holdingId={hid} fcn={fcn} defaultPrincipal={cost} />}
@@ -257,8 +257,4 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
 
     </div>
   );
-}
-
-function Item({ k, v, num }: { k: string; v: string; num?: boolean }) {
-  return <div className={num ? "num-item tabular-nums" : ""}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>;
 }

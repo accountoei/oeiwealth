@@ -35,6 +35,7 @@ import { splitMoves } from "@/lib/split-moves";
 import { buildHints } from "@/lib/category-hints";
 import { stripPending } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
+import { StatBox } from "@/components/Boxes";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -482,16 +483,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             </p>
           )}
           <section className="grid gap-4 md:grid-cols-4">
-            <Kpi label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"}
+            <StatBox label="รายได้รวม (Gross)" value={money(grossThb, "THB", 0)} sub={investThb ? `รวมรายได้ลงทุน ${money(investThb, undefined, 0)}` : "รวมรายได้ลงทุน"}
               flag={incPendingSplit ? <TabLink tab="income" href={`/income-expenses?tab=income&it=recorded&m=${ym}`} className="hover:underline">มีรายการรอแยกรายละเอียด</TabLink> : undefined} />
-            <Kpi label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
-            <Kpi label="ค่าใช้จ่าย" value={money(expenseThb, "THB", 0)}
+            <StatBox label="รายได้สุทธิหลังภาษี" value={money(grossThb - taxThb, "THB", 0)} sub={`ภาษีหัก ณ ที่จ่าย ${money(taxThb, undefined, 0)}`} />
+            <StatBox label="ค่าใช้จ่าย" value={money(expenseThb, "THB", 0)}
               sub={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย" : <>{itemList.length} รายการ
                 {(reimbThb > 0 || reimbPendingThb > 0) && <div>{[reimbThb > 0 && `ได้เงินคืน ${money(reimbThb, undefined, 0)}`,
                   reimbPendingThb > 0 && `รอเงินคืน ${money(reimbPendingThb, undefined, 0)}`].filter(Boolean).join(" · ")}</div>}</>}
-              cls={track === "NOT_TRACKED" ? "text-slate-500" : undefined}
+              subClass={track === "NOT_TRACKED" ? "text-slate-500" : undefined}
               flag={expPendingSplit ? <TabLink tab="expense" href={`/income-expenses?tab=expense&et=recorded&m=${ym}`} className="hover:underline">มีรายการรอแยกรายละเอียด</TabLink> : undefined} />
-            <Kpi label="เงินคงเหลือสุทธิ" value={money(savings, "THB", 0)} cls={savings < 0 ? "text-red-700" : undefined}
+            <StatBox label="เงินคงเหลือสุทธิ" value={money(savings, "THB", 0)} subClass={savings < 0 ? "text-red-700" : undefined}
               sub={<>รายได้สุทธิ − ค่าใช้จ่าย<div>{track === "NOT_TRACKED" ? "(ยังไม่ได้บันทึกค่าใช้จ่าย)" : "(คิดจากรายการที่บันทึกไว้)"}</div></>} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
@@ -1113,16 +1114,6 @@ const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PA
   "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "SECURITY_DEPOSIT_IN"];
 
 
-function Kpi({ label, value, sub, cls, flag }: { label: string; value: string; sub?: React.ReactNode; cls?: string; flag?: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {sub && <div className={`mt-1 text-xs ${cls ?? "text-slate-500"}`}>{sub}</div>}
-      {flag && <div className="mt-1 text-xs font-medium text-amber-700">{flag}</div>}
-    </div>
-  );
-}
 
 /** แถวรวมท้ายตาราง "รายได้ที่บันทึกแล้ว" (ยอดสุทธิหลังภาษี · แยกสกุล + ≈ บาท) */
 function IncomeTotal({ rows }: { rows: { amount: number | null; tax: number | null; currency: string; base_amount: number | null }[] }) {
