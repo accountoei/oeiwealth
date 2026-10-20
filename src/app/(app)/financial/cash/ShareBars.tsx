@@ -3,7 +3,7 @@ import { money } from "@/lib/format";
 export type BarRow = { key: string; label: string; value: number; color: string; sub?: string };
 
 /** แท่งสัดส่วน (เงินฝากตามธนาคาร / ตามสมาชิก) · ยอดเป็นบาท · เรียงมาก → น้อย */
-export default function ShareBars({ title, rows, note, footer }: { title: string; rows: BarRow[]; note?: string; footer?: React.ReactNode }) {
+export default function ShareBars({ title, rows, note, footer, head }: { title: string; rows: BarRow[]; note?: string; footer?: React.ReactNode; head?: string }) {
   const sorted = [...rows].filter((r) => Math.abs(r.value) > 0.005).sort((a, b) => b.value - a.value);
   const total = sorted.reduce((t, r) => t + r.value, 0);
   return (
@@ -13,7 +13,7 @@ export default function ShareBars({ title, rows, note, footer }: { title: string
       {sorted.length === 0 ? <p className="mt-3 text-sm text-slate-500">ยังไม่มีข้อมูล</p> : (
         <div className="mt-3 divide-y divide-slate-100 text-sm">
           <div className="hidden grid-cols-[11rem_1fr_8rem_4rem] gap-3 pb-2 text-xs text-slate-500 sm:grid">
-            <span>{title.includes("สมาชิก") ? "สมาชิก" : "ธนาคาร"}</span><span></span><span className="text-right">ยอด (THB)</span><span className="text-right">สัดส่วน</span>
+            <span>{head ?? (title.includes("สมาชิก") ? "สมาชิก" : "ธนาคาร")}</span><span></span><span className="text-right">ยอด (THB)</span><span className="text-right">สัดส่วน</span>
           </div>
           {sorted.map((r) => {
             const pct = total > 0 ? (r.value / total) * 100 : 0;

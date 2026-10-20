@@ -9,13 +9,17 @@ export type AccountRow = {
   id: string; name: string; bank: string; type: string; masked: string | null; owners: string; currency: string;
   status: string; balance: number | null; thb: number; pct: number | null; full: number | null;
   lastDate: string | null; calculated: boolean; move?: ReactNode;
+  /** อัตราดอกเบี้ย (% ต่อปี) · วันครบกำหนด (ฝากประจำ) */
+  rate: number | null; maturity: string | null;
 };
 
 const STATUS: Record<string, string> = { ACTIVE: "ใช้งานอยู่", INACTIVE: "ไม่ได้ใช้งาน", CLOSED: "ปิดบัญชีแล้ว", SOLD: "ปิดแล้ว" };
 const small = "ml-2 rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 /** บัญชีทั้งหมด + ตัวกรอง สกุลเงิน / ธนาคาร / สถานะ (ตั้งต้น = ใช้งานอยู่) · แถวรวมตามตัวกรอง */
-export default function AccountsTable({ rows, empty, toggle }: { rows: AccountRow[]; empty: string; toggle?: ReactNode }) {
+export default function AccountsTable({ rows, empty, toggle, today }: { rows: AccountRow[]; empty: string; toggle?: ReactNode; today: string }) {
+  // วันครบกำหนด: เหลือไม่เกิน 30 วัน = ส้ม · เลยแล้ว = แดง (ต้องต่อ / ถอน)
+  const soon = new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 86400000).toISOString().slice(0, 10);
   const [ccy, setCcy] = useState("");
   const [bank, setBank] = useState("");
   const [status, setStatus] = useState("ACTIVE");
@@ -30,7 +34,8 @@ export default function AccountsTable({ rows, empty, toggle }: { rows: AccountRo
   const filtered = !!(ccy || bank || status !== "ACTIVE");
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center gap-4 px-4 pt-4 text-xs text-slate-600">
+      <h2 className="px-4 pt-4 font-medium text-slate-900">บัญชีทั้งหมด</h2>
+      <div className="flex flex-wrap items-center gap-4 px-4 pt-3 text-xs text-slate-600">
         <label>สกุลเงิน
           <select value={ccy} onChange={(e) => setCcy(e.target.value)} className={small}>
             <option value="">ทั้งหมด</option>{ccys.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -60,11 +65,11 @@ export default function AccountsTable({ rows, empty, toggle }: { rows: AccountRo
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
           <tr>
             <th className="px-4 py-2">บัญชี</th><th className="px-4">เจ้าของ</th>
-            <th className="px-4 text-right">ยอดคงเหลือ</th><th className="px-4">ยอดตาม Statement</th>
+            <th className="px-4 text-right">ยอดคงเหลือ</th><th className="px-4 text-right">อัตราดอกเบี้ย</th><th className="px-4">วันครบกำหนด</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {shown.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{rows.length ? "ไม่มีบัญชีตามตัวกรอง" : empty}</td></tr>}
+          {shown.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{rows.length ? "ไม่มีบัญชีตามตัวกรอง" : empty}</td></tr>}
           {shown.map((a) => (
             <tr key={a.id} className="hover:bg-slate-50">
               <td className="px-4 py-3">
@@ -80,11 +85,13 @@ export default function AccountsTable({ rows, empty, toggle }: { rows: AccountRo
                 {Number(a.balance) < -0.005 && <div className="text-xs font-normal">ติดลบ</div>}
                 {a.pct != null && <div className="text-xs text-slate-400">{a.pct}% ของ {money(a.full, a.currency)}</div>}
                 {a.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(a.thb, "THB")}</div>}
+                <div className="text-xs font-normal text-slate-400">{a.lastDate ? `อัปเดตล่าสุด ${thDate(a.lastDate)}` : "ยังไม่มียอด"}</div>
               </td>
-              <td className="px-4 text-xs">
-                {a.lastDate == null ? <span className="text-slate-400">-</span>
-                  : a.calculated ? <span className="text-amber-700">ล่าสุด {thDate(a.lastDate)} + รายการหลังจากนั้น</span>
-                  : <span className="text-emerald-700">ล่าสุด {thDate(a.lastDate)}</span>}
+              <td className="px-4 text-right tabular-nums text-slate-600">{a.rate != null ? `${Number(a.rate).toFixed(2)}%` : <span className="text-slate-400">-</span>}</td>
+              <td className="whitespace-nowrap px-4">
+                {!a.maturity ? <span className="text-slate-400">-</span>
+                  : <span className={a.maturity < today ? "font-medium text-red-700" : a.maturity <= soon ? "font-medium text-amber-700" : "text-slate-600"}>
+                      {thDate(a.maturity)}{a.maturity < today ? " · เลยกำหนด" : a.maturity <= soon ? " · ใกล้ครบ" : ""}</span>}
               </td>
             </tr>
           ))}

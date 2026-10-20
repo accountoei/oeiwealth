@@ -76,13 +76,12 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="px-3 py-2">บัญชี</th>
-              <th className="px-3 text-right">ยอดตาม Statement ล่าสุด</th>
-              <th className="px-3 text-right">ยอดตามระบบ ณ {thDate(date)}</th>
+              <th className="px-3 text-right">ยอดคงเหลือ ณ {thDate(date)}</th>
               <th className="px-3 text-right">ยอดจริง</th><th className="px-3 text-right">ส่วนต่าง</th><th className="px-3">สถานะ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีบัญชีที่ใช้งานอยู่</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ไม่มีบัญชีที่ใช้งานอยู่</td></tr>}
             {shown.map((r) => {
               const v = vals[r.id] ?? "";
               const has = v.trim() !== "" && !Number.isNaN(n(v));
@@ -95,11 +94,11 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
                     <Link href={`/financial/cash/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                     <div className="text-xs text-slate-500">{r.bank} · {r.currency}</div>
                   </td>
-                  <td className={`px-3 text-right tabular-nums ${Number(r.lastValue ?? 0) < -0.005 ? "text-red-700" : ""}`}>
-                    {r.lastValue == null ? "-" : money(r.lastValue, r.currency)}
-                    {r.lastDate && <div className="text-xs text-slate-400">{thDate(r.lastDate)}</div>}
+                  {/* ยอดคงเหลือ = ยอดล่าสุดที่อัปเดต + รายการที่บันทึกหลังจากนั้น ถึงวันที่ที่เลือก (คำเดียวกับตารางบัญชี) */}
+                  <td className={`px-3 text-right tabular-nums ${Number(r.calculated ?? 0) < -0.005 ? "text-red-700" : ""}`}>
+                    {r.calculated == null ? "-" : money(r.calculated, r.currency)}
+                    <div className="text-xs text-slate-400">{r.lastDate ? `อัปเดตล่าสุด ${thDate(r.lastDate)}` : "ยังไม่มียอด"}</div>
                   </td>
-                  <td className={`px-3 text-right tabular-nums ${Number(r.calculated ?? 0) < -0.005 ? "text-red-700" : ""}`}>{r.calculated == null ? "-" : money(r.calculated, r.currency)}</td>
                   <td className="px-3 text-right">
                     <input inputMode="decimal" value={v} disabled={!canWrite} placeholder={r.currency} aria-label={`ยอดจริง ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })}
@@ -109,12 +108,15 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
                     {diff == null ? "-" : Math.abs(diff) < 0.005 ? "ตรง ✓" : `${diff > 0 ? "+" : ""}${money(diff, r.currency)}`}
                   </td>
                   <td className="px-3 text-xs">
-                    {res ? (
-                      res.history_only ? <span className="text-slate-600">บันทึกแล้ว (เป็นประวัติ · ก้อนผูกกับยอดวันหลังกว่า)</span>
-                      : res.lump == null || Math.abs(res.lump) < 0.005 ? <span className="text-emerald-700">บันทึกแล้ว · ตรง ✓</span>
-                      : <Link href={`/income-expenses?tab=${res.lump > 0 ? "income&it" : "expense&et"}=recorded&m=${date.slice(0, 7)}`} className="text-amber-700 underline">
-                          บันทึกแล้ว · {res.lump > 0 ? "รายได้" : "ค่าใช้จ่าย"}ก้อนรอแยก {money(Math.abs(res.lump), r.currency)}</Link>
-                    ) : r.lastDate === date ? <span className="text-emerald-700">อัปเดตแล้ว ณ {thDate(date)}</span>
+                    {/* บันทึกแล้ว = ข้อความเดียวกันทุกกรณี · มีก้อนรอแยก → บรรทัดเล็กต่อท้าย */}
+                    {res ? (<>
+                      <span className="text-emerald-700">อัปเดตแล้ว ณ {thDate(date)}</span>
+                      {res.history_only && <div className="text-slate-500">เป็นประวัติ (ก้อนผูกกับยอดวันหลังกว่า)</div>}
+                      {!res.history_only && res.lump != null && Math.abs(res.lump) >= 0.005 && (
+                        <div><Link href={`/income-expenses?tab=${res.lump > 0 ? "income&it" : "expense&et"}=split&m=${date.slice(0, 7)}`} className="text-amber-700 underline">
+                          {res.lump > 0 ? "รายได้" : "ค่าใช้จ่าย"}รอแยก {money(Math.abs(res.lump), r.currency)} →</Link></div>
+                      )}
+                    </>) : r.lastDate === date ? <span className="text-emerald-700">อัปเดตแล้ว ณ {thDate(date)}</span>
                       : r.lastDate == null ? <span className="text-slate-500">ยังไม่มียอด</span>
                       : old != null && old > 30 ? <span className="text-amber-700">ยอดล่าสุดเก่ากว่า 30 วัน</span>
                       : <span className="text-slate-500">ล่าสุด {thDate(r.lastDate)}</span>}
