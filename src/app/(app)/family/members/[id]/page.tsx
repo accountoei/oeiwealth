@@ -88,11 +88,9 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
               </p>
             </div>
           </div>
-          {(canEdit || canSetHead) && (
+          {canSetHead && (
             <ActionBar>
-              {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))}
-                isHead={isHead} headCandidates={people.filter((x) => x.id !== id && x.status === "ACTIVE").map((x) => ({ id: x.id, name: x.name }))} />}
-              {canSetHead && <SetHeadButton id={id} name={p.name} />}
+              <SetHeadButton id={id} name={p.name} />
             </ActionBar>
           )}
         </div>
@@ -116,14 +114,18 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
               <div className="flex justify-between gap-3"><dt className="text-slate-500">หนี้สิน</dt><dd className="tabular-nums">{money(nw?.total_liabilities ?? 0, "THB", 0)}</dd></div>
             </dl>
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="PERSON" entityId={id} module="FAMILY" role={me.role} title="เอกสารส่วนตัว" paths={[`/family/members/${id}`]} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="PERSON" entityType="PERSON" entityId={id} module="FAMILY" role={me.role} title="เอกสารส่วนตัว" paths={[`/family/members/${id}`]} fill />
           </div>
         </div>
 
         <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <div>
-            <h2 className="mb-3 font-medium text-slate-900">ข้อมูลทั่วไป</h2>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <h2 className="font-medium text-slate-900">รายละเอียด</h2>
+              {canEdit && <PersonDetailsForm p={p} others={people.filter((x) => x.id !== id).map((x) => ({ id: x.id, name: x.name }))}
+                isHead={isHead} headCandidates={people.filter((x) => x.id !== id && x.status === "ACTIVE").map((x) => ({ id: x.id, name: x.name }))} />}
+            </div>
             <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Item dash label="คำนำหน้า / ชื่อ-นามสกุล (ไทย)">{fullName}</Item>
               <Item dash label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>

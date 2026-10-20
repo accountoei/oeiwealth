@@ -167,8 +167,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
             )}
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">

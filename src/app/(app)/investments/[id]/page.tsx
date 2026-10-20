@@ -185,8 +185,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             </dl>
             <p className="mt-2 text-xs text-slate-400">เงินฝากคำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น · รายได้ก่อนหักภาษี</p>
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">

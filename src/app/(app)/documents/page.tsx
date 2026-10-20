@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { DOC_MODULE_LABEL, addDays, fileSize, thDate, todayBangkok } from "@/lib/format";
+import { DOC_CATEGORY_LABEL, DOC_MODULE_LABEL, addDays, docCategory, fileSize, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpload";
 import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
@@ -10,7 +10,7 @@ import { StatBox } from "@/components/Boxes";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string; derived_status: string | null };
-type Sp = Promise<{ m?: string; q?: string; all?: string; drive?: string; drive_error?: string }>;
+type Sp = Promise<{ c?: string; m?: string; q?: string; all?: string; drive?: string; drive_error?: string }>;
 
 const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
 
@@ -33,8 +33,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     supabase.from("v_documents_status").select("id,title,document_type,expiry_date,derived_status,mime_type")
       .eq("version_status", "CURRENT").not("derived_status", "is", null).order("expiry_date"),
   ]);
-  const docs = (rows as Doc[] | null) ?? [];
-  const ids = docs.map((d) => d.id);
+  const allDocs = (rows as Doc[] | null) ?? [];
+  const ids = allDocs.map((d) => d.id);
   const { data: links } = ids.length
     ? await supabase.from("document_links").select("id,document_id,entity_type,entity_id").in("document_id", ids).is("deleted_at", null)
     : { data: [] };
@@ -58,17 +58,29 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: `/liabilities/cards/${c.id}` }));
   const byDoc = new Map<string, { id: string; key: string }[]>();
   (links ?? []).forEach((l) => byDoc.set(l.document_id, [...(byDoc.get(l.document_id) ?? []), { id: l.id, key: `${l.entity_type}:${l.entity_id}` }]));
+  // หมวดเอกสาร = ตามหน้าที่แนบ (รายการที่ผูกรายการแรก) · ไม่ผูก = ตามหมวดเดิม (module)
+  const assetBy = new Map((assets ?? []).map((a) => [a.id as string, a]));
+  const catOf = (d: Doc) => {
+    const l = (links ?? []).find((x) => x.document_id === d.id);
+    const a = l?.entity_type === "ASSET" ? assetBy.get(l.entity_id) : undefined;
+    return docCategory(l?.entity_type, a?.asset_type, a?.asset_group, l ? undefined : d.module);
+  };
+  const cat = new Map(allDocs.map((d) => [d.id, catOf(d)]));
+  const catCount = new Map<string, number>();
+  allDocs.forEach((d) => catCount.set(cat.get(d.id)!, (catCount.get(cat.get(d.id)!) ?? 0) + 1));
+  const docs = sp.c && DOC_CATEGORY_LABEL[sp.c] ? allDocs.filter((d) => cat.get(d.id) === sp.c) : allDocs;
 
   const options: EntityOption[] = [
-    ...(assets ?? []).filter((a) => a.status === "ACTIVE").map((a) => ({ type: "ASSET", id: a.id, label: a.name, group: a.asset_group })),
-    ...(liabs ?? []).filter((l) => l.status === "ACTIVE").map((l) => ({ type: "LIABILITY", id: l.id, label: l.name, group: "LIABILITY" })),
-    ...(pols ?? []).filter((p) => !["CANCELLED", "SURRENDERED"].includes(p.status)).map((p) => ({ type: "INSURANCE_POLICY", id: p.id, label: polName(p), group: "INSURANCE_POLICY" })),
-    ...(persons ?? []).map((p) => ({ type: "PERSON", id: p.id, label: p.name, group: "PERSON" })),
-    ...(cards ?? []).map((c) => ({ type: "CREDIT_CARD", id: c.id, label: cardName(c), group: "CREDIT_CARD" })),
+    ...(assets ?? []).filter((a) => a.status === "ACTIVE").map((a) => ({ type: "ASSET", id: a.id, label: a.name, group: a.asset_group,
+      category: docCategory("ASSET", a.asset_type, a.asset_group) })),
+    ...(liabs ?? []).filter((l) => l.status === "ACTIVE").map((l) => ({ type: "LIABILITY", id: l.id, label: l.name, group: "LIABILITY", category: "LIABILITY" })),
+    ...(pols ?? []).filter((p) => !["CANCELLED", "SURRENDERED"].includes(p.status)).map((p) => ({ type: "INSURANCE_POLICY", id: p.id, label: polName(p), group: "INSURANCE_POLICY", category: "INSURANCE" })),
+    ...(persons ?? []).map((p) => ({ type: "PERSON", id: p.id, label: p.name, group: "PERSON", category: "PERSON" })),
+    ...(cards ?? []).map((c) => ({ type: "CREDIT_CARD", id: c.id, label: cardName(c), group: "CREDIT_CARD", category: "CARD" })),
   ];
-  const href = (patch: Partial<Record<"m" | "q" | "all", string | undefined>>) => {
+  const href = (patch: Partial<Record<"c" | "m" | "q" | "all", string | undefined>>) => {
     const p = new URLSearchParams();
-    const v = { m: sp.m, q: sp.q, all: sp.all, ...patch };
+    const v = { c: sp.c, m: sp.m, q: sp.q, all: sp.all, ...patch };
     Object.entries(v).forEach(([k, x]) => { if (x) p.set(k, x); });
     const s = p.toString();
     return s ? `/documents?${s}` : "/documents";
@@ -119,7 +131,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
             </>
           )}
         </div>
-        <StatBox label={<>เอกสาร{sp.m ? `หมวด ${DOC_MODULE_LABEL[sp.m] ?? sp.m}` : ""}{sp.q ? " (ตามที่ค้นหา)" : ""}</>} value={docs.length} unit="ไฟล์" sub={<>{totalSize ? `รวม ${fileSize(totalSize)}` : "-"}{sp.all ? " · รวมฉบับเก่า" : ""}</>} />
+        <StatBox label={<>เอกสาร{sp.c && DOC_CATEGORY_LABEL[sp.c] ? `หมวด ${DOC_CATEGORY_LABEL[sp.c]}` : sp.m ? `หมวด ${DOC_MODULE_LABEL[sp.m] ?? sp.m}` : ""}{sp.q ? " (ตามที่ค้นหา)" : ""}</>} value={docs.length} unit="ไฟล์" sub={<>{totalSize ? `รวม ${fileSize(totalSize)}` : "-"}{sp.all ? " · รวมฉบับเก่า" : ""}</>} />
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">หมดอายุ / ใกล้หมด (60 วัน)</div>
           <div className={`mt-1 text-xl font-semibold tabular-nums ${exp.length ? "text-amber-700" : ""}`}>{exp.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
@@ -148,11 +160,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="font-medium text-slate-900">เอกสารทั้งหมด</h2>
               <div className="flex flex-wrap gap-1 text-xs">
-                <Link href={href({ m: undefined })} scroll={false} className={chip(!sp.m)}>ทั้งหมด</Link>
-                {Object.entries(DOC_MODULE_LABEL).map(([k, v]) => <Link key={k} href={href({ m: k })} scroll={false} className={chip(sp.m === k)}>{v}</Link>)}
+                <Link href={href({ c: undefined, m: undefined })} scroll={false} className={chip(!sp.c && !sp.m)}>ทั้งหมด ({allDocs.length})</Link>
+                {Object.entries(DOC_CATEGORY_LABEL).filter(([k]) => catCount.get(k) || sp.c === k).map(([k, v]) =>
+                  <Link key={k} href={href({ c: k, m: undefined })} scroll={false} className={chip(sp.c === k)}>{v} ({catCount.get(k) ?? 0})</Link>)}
               </div>
             </div>
             <form className="flex flex-wrap items-center gap-2 text-sm" action="/documents">
+              {sp.c && <input type="hidden" name="c" value={sp.c} />}
               {sp.m && <input type="hidden" name="m" value={sp.m} />}
               <input name="q" defaultValue={sp.q ?? ""} placeholder="ค้นหาชื่อ / ประเภท" className="w-48 rounded-md border border-slate-300 px-2.5 py-1" />
               <label className="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" name="all" value="1" defaultChecked={!!sp.all} /> รวมฉบับเก่า</label>
@@ -173,13 +187,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                       <div className="font-medium text-slate-900">
                         {st.connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="hover:underline">{d.title}</a> : d.title}
                         {d.version_status !== "CURRENT" && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs font-normal text-slate-500">ฉบับเก่า</span>}</div>
-                      <div className="text-xs text-slate-500">{DOC_MODULE_LABEL[d.module] ?? d.module} · {d.document_type}{d.file_size ? ` · ${fileSize(d.file_size)}` : ""}{d.notes && ` · ${d.notes}`}</div>
+                      <div className="text-xs text-slate-500">{DOC_CATEGORY_LABEL[cat.get(d.id) ?? "OTHER"]} · {d.document_type}{d.file_size ? ` · ${fileSize(d.file_size)}` : ""}{d.notes && ` · ${d.notes}`}</div>
                       <RowActions table="documents" id={d.id} paths={["/documents"]} canEdit={canWrite} canDelete={canWrite && canDelete}
                         deleteNote="ลบออกจากระบบ (ไฟล์ใน Google Drive ยังเก็บไว้ · ADMIN กู้คืนได้)"
                         extra={st.connected ? <>
                           <DownloadDoc id={d.id} title={d.title} mime={d.mime_type} />
                           {canWrite && d.version_status === "CURRENT" &&
-                            <DocumentUpload supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
+                            <DocumentUpload category={cat.get(d.id)} supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
                         </> : undefined}
                         fields={[
                           { name: "title", label: "ชื่อ", value: d.title, width: "w-48" }, { name: "document_type", label: "ประเภท", value: d.document_type },
@@ -196,7 +210,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                       {d.issue_date ? thDate(d.issue_date) : "-"}
                       {d.expiry_date && <div className={d.expiry_date < today ? "text-red-600" : d.expiry_date <= addDays(today, 60) ? "text-amber-700" : ""}>ถึง {thDate(d.expiry_date)}</div>}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-500">{thDate(d.created_at.slice(0, 10))}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-500">{thDate(new Date(d.created_at).toLocaleDateString("sv-SE", { timeZone: "Asia/Bangkok" }))}</td>
                   </tr>
                 );
               })}

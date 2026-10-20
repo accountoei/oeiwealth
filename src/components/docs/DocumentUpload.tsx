@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { callDrive } from "./drive";
 import Modal from "@/components/Modal";
 import { createClient } from "@/lib/supabase/client";
-import { DOC_MODULE_LABEL, DOC_TYPES, ENTITY_MODULE, thDate } from "@/lib/format";
+import { DOC_MODULE_LABEL, DOC_TYPES_BY_CATEGORY, ENTITY_MODULE, docCategory, thDate } from "@/lib/format";
 
 type Cand = { id: string; title: string; expiry_date: string | null; created_at: string };
 type Pending = { file: File; meta: Record<string, unknown>; cands: Cand[]; picked: string[] };
@@ -16,7 +16,9 @@ async function sha256(file: File) {
 }
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
-export type EntityOption = { type: string; id: string; label: string; group: string };
+export type EntityOption = { type: string; id: string; label: string; group: string;
+  /** หมวดเอกสารของรายการนี้ (ตามหน้าที่แนบ · lib/format docCategory) */
+  category?: string };
 
 /**
  * อัปโหลดเอกสารเข้า Google Drive แล้วบันทึกในระบบ
@@ -24,9 +26,11 @@ export type EntityOption = { type: string; id: string; label: string; group: str
  * - หน้า Documents: เลือกรายการที่จะผูกจาก entityOptions (ไม่บังคับ)
  * - ฉบับใหม่แทนฉบับเดิม: ส่ง supersedes มา
  */
-export default function DocumentUpload({ module: fixedModule, link, entityOptions, supersedes, label = "+ แนบเอกสาร" }: {
+export default function DocumentUpload({ module: fixedModule, link, entityOptions, supersedes, label = "+ แนบเอกสาร", category }: {
   module?: string; link?: { type: string; id: string }; entityOptions?: EntityOption[];
   supersedes?: { id: string; title: string; document_type: string; module: string }; label?: string;
+  /** หมวดเอกสาร (หน้าที่แนบ) → รายการประเภทให้เลือก */
+  category?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -35,6 +39,13 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   const [entity, setEntity] = useState("");
   const [module, setModule] = useState(supersedes?.module ?? fixedModule ?? "PROPERTY");
   const [title, setTitle] = useState(supersedes?.title ?? "");
+  // ประเภทเอกสาร: เลือกจากรายการของหมวด · "อื่น ๆ" = พิมพ์เอง
+  const [cat, setCat] = useState(category ?? docCategory(null, null, null, supersedes?.module ?? fixedModule ?? "PROPERTY"));
+  const types = DOC_TYPES_BY_CATEGORY[cat] ?? [];
+  const t0 = supersedes?.document_type ?? "";
+  const [typeSel, setTypeSel] = useState(t0 ? (types.includes(t0) ? t0 : "__other") : types.length ? "" : "__other");
+  const [typeOther, setTypeOther] = useState(t0 && !types.includes(t0) ? t0 : "");
+  const docType = typeSel === "__other" ? typeOther : typeSel;
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [dup, setDup] = useState<{ id: string; title: string; linked: boolean } | null>(null);
@@ -53,6 +64,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
     setEntity(v); setPending(null); setDup(null);
     const opt = entityOptions?.find((o) => `${o.type}:${o.id}` === v);
     if (opt && !fixedModule) setModule(ENTITY_MODULE[opt.group] ?? ENTITY_MODULE[opt.type] ?? module);
+    if (opt?.category) { setCat(opt.category); setTypeSel((DOC_TYPES_BY_CATEGORY[opt.category] ?? []).length ? "" : "__other"); }
   }
   function pickFile(f: File | undefined) {
     setPending(null); setDup(null);
@@ -155,14 +167,20 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
         )}
         {!fixedModule && !supersedes && (
           <label className="text-sm">หมวด
-            <select value={module} onChange={(e) => setModule(e.target.value)} className={input}>
+            <select value={module} onChange={(e) => { setModule(e.target.value); if (!entity) { const c = docCategory(null, null, null, e.target.value); setCat(c); setTypeSel((DOC_TYPES_BY_CATEGORY[c] ?? []).length ? "" : "__other"); } }} className={input}>
               {Object.entries(DOC_MODULE_LABEL).filter(([k]) => k !== "SYSTEM").map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </label>
         )}
         <label className="text-sm">ประเภทเอกสาร *
-          <input name="document_type" required onChange={() => setPending(null)} list={`doc-types-${module}`} defaultValue={supersedes?.document_type ?? ""} placeholder="เลือกหรือพิมพ์เอง" className={input} />
-          <datalist id={`doc-types-${module}`}>{(DOC_TYPES[module] ?? []).map((t) => <option key={t} value={t} />)}</datalist>
+          <select value={typeSel} required onChange={(e) => { setTypeSel(e.target.value); setPending(null); }} className={input}>
+            {types.length > 0 && <option value="">— เลือก —</option>}
+            {types.map((t) => <option key={t} value={t}>{t}</option>)}
+            <option value="__other">อื่น ๆ (พิมพ์เอง)</option>
+          </select>
+          {typeSel === "__other" && <input value={typeOther} required onChange={(e) => { setTypeOther(e.target.value); setPending(null); }}
+            placeholder="พิมพ์ประเภทเอกสาร" className={input} />}
+          <input type="hidden" name="document_type" value={docType} />
         </label>
         <label className="text-sm md:col-span-2">ชื่อเอกสาร *<input name="title" required value={title} onChange={(e) => setTitle(e.target.value)} className={input} /></label>
         <label className="text-sm">วันที่ออกเอกสาร<input name="issue_date" type="date" className={input} /></label>
