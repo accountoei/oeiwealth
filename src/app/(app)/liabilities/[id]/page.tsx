@@ -115,8 +115,8 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                 {Number(l.original_amount) > 0 && ` (${((paid * 100) / Number(l.original_amount)).toFixed(1)}%)`}</div>
             )}
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="LIABILITY" entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">

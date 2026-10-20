@@ -76,8 +76,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
             {perUnit(a.current_value) != null && <div className="mt-1 text-xs text-slate-500">{unit ?? "หน่วย"}ละ {money(perUnit(a.current_value))}</div>}
             {vsCost != null && <div className={`mt-1 text-xs ${vsCost >= 0 ? "text-emerald-700" : "text-red-700"}`}>เทียบทุน {pctText(vsCost)}</div>}
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="ALTERNATIVE" entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} fill />
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">

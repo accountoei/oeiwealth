@@ -42,7 +42,7 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
   const [status, setStatus] = useState(p.status);
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePersonDetails, {});
 
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>แก้ไขข้อมูล</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700")}>แก้ไขข้อมูล</button>;
   if (!open) return trigger;
 
   async function pick(f: File | undefined) {

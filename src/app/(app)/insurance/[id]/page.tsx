@@ -142,8 +142,8 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
               {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
             </div>
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="INSURANCE_POLICY" entityId={id} module="INSURANCE" role={me.role} paths={paths} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="INSURANCE" entityType="INSURANCE_POLICY" entityId={id} module="INSURANCE" role={me.role} paths={paths} fill />
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">

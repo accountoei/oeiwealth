@@ -129,7 +129,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
     const st = LOAN_SCHED_STATUS[x.status];
     return {
       id: x.id, no: x.installment_no, due: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), total: Number(x.total_due),
-      remaining: Number(x.total_remaining), status: x.status, statusText: x.status === "PAID" ? "ชำระแล้ว" : st?.text ?? x.status, statusCls: st?.cls ?? "",
+      remaining: Number(x.total_remaining), balance: Math.max(Math.round((schedP - cumP) * 100) / 100, 0), status: x.status, statusText: x.status === "PAID" ? "ชำระแล้ว" : st?.text ?? x.status, statusCls: st?.cls ?? "",
       notes: x.notes, paidOn: x.status === "PAID" ? [dp, di].filter(Boolean).sort().at(-1) ?? null : undefined,
       action: canWrite && loanOpen && firstOpen?.id === x.id && payable.has(x.id) ? (
         <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} small button="บันทึกรับ"
@@ -150,37 +150,11 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <p className="text-sm text-slate-500">ผู้กู้ {l.borrower_name}{extra?.borrower_phone && <> · โทร <a href={`tel:${extra.borrower_phone}`} className="hover:underline">{extra.borrower_phone}</a></>}
               {" · "}{l.currency}{l.derived_status === "OVERDUE" && <span className="text-red-600"> · เลยกำหนดคืน</span>}</p>
           </div>
-          <div className="flex flex-wrap items-start gap-2">
-            {canWrite && loanOpen && (
-              <ActionBar>
-                <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
-                  interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
-                  principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
-                <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
-              </ActionBar>
-            )}
-            {canWrite && (
-              <EditButton title="แก้ไขข้อมูลเงินให้กู้">
-                <div className="space-y-5">
-                  <p className="text-xs text-slate-500">วันที่ให้กู้และยอดตั้งต้นแก้ไม่ได้ (ผูกกับรายการเงินที่บันทึกแล้ว)</p>
-                  <LoanInfoForm assetId={id} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
-                    borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
-                  <div className="border-t border-slate-100 pt-4">
-                    <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้ให้กู้ (เจ้าของ)</h3>
-                    <ul className="mb-2 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
-                    <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
-                      current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
-                  </div>
-                  <div className="border-t border-slate-100 pt-4">
-                    <StatusSelect table="loan_details" id={l.id} value={l.status} paths={paths} label="สถานะ"
-                      options={LOAN_STATUS_OPTIONS}
-                      remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้",
-                        hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined} />
-                  </div>
-                </div>
-              </EditButton>
-            )}
-          </div>
+          {canWrite && loanOpen && (
+            <ActionBar>
+              <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
+            </ActionBar>
+          )}
         </div>
       </div>
 
@@ -207,11 +181,36 @@ export default async function LoanDetailPage({ params, searchParams }: {
             </div>
             <p className="mt-3 text-xs text-slate-500">ดอกเบี้ยรับแล้ว (รายได้) {money(interest, l.currency)}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าใน Net Worth = 0" : ""}</p>
           </div>
-          <EntityDocuments entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="LOAN" entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
+          </div>
         </div>
-        {/* ขวา: ข้อมูลเงินให้กู้ */}
+        {/* ขวา: รายละเอียด (ปุ่มแก้ไขอยู่ในกล่อง) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">ข้อมูลเงินให้กู้</h2>
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <h2 className="font-medium text-slate-900">รายละเอียด</h2>
+            {canWrite && (
+              <EditButton title="แก้ไขรายละเอียด" small>
+                <div className="space-y-5">
+                  <p className="text-xs text-slate-500">วันที่ให้กู้และยอดตั้งต้นแก้ไม่ได้ (ผูกกับรายการเงินที่บันทึกแล้ว)</p>
+                  <LoanInfoForm assetId={id} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
+                    borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
+                  <div className="border-t border-slate-100 pt-4">
+                    <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้ให้กู้ (เจ้าของ)</h3>
+                    <ul className="mb-2 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
+                    <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                      current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+                  </div>
+                  <div className="border-t border-slate-100 pt-4">
+                    <StatusSelect table="loan_details" id={l.id} value={l.status} paths={paths} label="สถานะ"
+                      options={LOAN_STATUS_OPTIONS}
+                      remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้",
+                        hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined} />
+                  </div>
+                </div>
+              </EditButton>
+            )}
+          </div>
           <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2.5 text-sm">
             <dt className="text-slate-500">เลขที่สัญญา</dt><dd>{extra?.contract_no || <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">วันที่ทำสัญญา</dt><dd>{l.loan_date ? thDate(l.loan_date) : <span className="text-slate-400">—</span>}</dd>
@@ -248,6 +247,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
               <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา ({money(l.principal)}) — สถานะ &ldquo;รับแล้ว&rdquo; อาจคลาดเคลื่อน</p>
             )}
           </div>
+          <div className="flex flex-col items-end gap-2">
           {canDelete && loanOpen && open.length > 0 && (
             <RestructureEditor assetId={id} currency={l.currency} outstanding={Number(l.outstanding_principal ?? 0)}
               ratePct={Number(l.interest_rate ?? 0)}
@@ -262,10 +262,16 @@ export default async function LoanDetailPage({ params, searchParams }: {
               defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0), interestFrom: l.loan_date ?? undefined,
                 firstDue: addMonthsKeepDay(l.loan_date ?? today, 1) }} />
           )}
+          {canWrite && loanOpen && (
+            <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
+              interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
+              principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
+          )}
+          </div>
         </div>
         {sched.length > 0 && <ScheduleTable rows={schedRows} currency={l.currency} />}
         {sched.length > 0 && <p className="text-xs text-slate-500">
-          ปุ่ม &ldquo;บันทึกรับ&rdquo; อยู่ที่งวดเก่าสุดที่ยังค้าง · รับหลายงวดพร้อมกันใช้ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; มุมขวาบน ·
+          ปุ่ม &ldquo;บันทึกรับ&rdquo; อยู่ที่งวดเก่าสุดที่ยังค้าง · รับหลายงวดพร้อมกันใช้ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตาราง ·
           ลบการรับชำระที่บันทึกผิดได้ที่ประวัติด้านล่าง (ตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "ตั้ง / แก้ตารางผ่อน"}&rdquo; ·
           สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
           ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น

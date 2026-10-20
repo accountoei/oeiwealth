@@ -108,8 +108,8 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
             </div>
             {c.credit_limit ? <div className="mt-1 text-xs text-slate-500">ใช้ไป {((current * 100) / Number(c.credit_limit)).toFixed(1)}% ของวงเงิน {money(c.credit_limit, undefined, 0)}</div> : null}
           </div>
-          <div className="flex-1">
-            <EntityDocuments entityType="CREDIT_CARD" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
+          <div className="flex flex-1 flex-col">
+            <EntityDocuments category="CARD" entityType="CREDIT_CARD" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">

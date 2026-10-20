@@ -232,6 +232,42 @@ export const DOC_TYPES: Record<string, string[]> = {
   CARD_MEMBERSHIP: ["บัตรสมาชิก", "สัญญาสมาชิก", "อื่น ๆ"],
   SYSTEM: ["รายงานรายเดือน", "อื่น ๆ"],
 };
+/** หมวดเอกสาร = หน้าที่แนบ (ตั้งอัตโนมัติจากรายการที่ผูก) · ประเภทเลือกจากรายการของหมวด + "อื่น ๆ" พิมพ์เอง */
+export const DOC_CATEGORY_LABEL: Record<string, string> = {
+  BANK: "บัญชีธนาคาร", LOAN: "เงินให้กู้", BUSINESS: "กิจการ", LIABILITY: "หนี้สิน", CARD: "บัตรเครดิต", INVESTMENT: "การลงทุน",
+  PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น", INSURANCE: "ประกัน", PERSON: "สมาชิก", OTHER: "อื่น ๆ / ยังไม่ผูก",
+};
+export const DOC_TYPES_BY_CATEGORY: Record<string, string[]> = {
+  BANK: ["Statement", "สมุดบัญชี", "เอกสารเปิด / ปิดบัญชี", "ใบฝากประจำ"],
+  LOAN: ["สัญญากู้ยืม", "หลักฐานการโอนเงิน", "หลักประกัน", "หนังสือรับสภาพหนี้"],
+  BUSINESS: ["หนังสือรับรองบริษัท", "ใบหุ้น / บัญชีผู้ถือหุ้น", "งบการเงิน", "รายงานประชุม / มติ"],
+  LIABILITY: ["สัญญาเงินกู้", "ตารางผ่อน", "Statement หนี้", "หนังสือปลดหนี้"],
+  CARD: ["Statement บัตร", "ใบสมัคร / เงื่อนไขบัตร"],
+  INVESTMENT: ["Statement พอร์ต", "ใบยืนยันการซื้อขาย", "Term Sheet", "สัญญาเปิดบัญชี"],
+  PROPERTY: ["โฉนด / หนังสือกรรมสิทธิ์", "สัญญาซื้อขาย", "สัญญาเช่า", "ใบประเมินราคา", "ใบเสร็จภาษีที่ดิน", "แบบบ้าน / ใบอนุญาตก่อสร้าง"],
+  ALTERNATIVE: ["ใบเสร็จ / ใบกำกับภาษี", "ใบรับประกัน", "ใบรับรอง (Certificate)", "รูปถ่าย"],
+  INSURANCE: ["กรมธรรม์", "ใบเสร็จเบี้ยประกัน", "เอกสารเคลม", "สลักหลังกรมธรรม์"],
+  PERSON: ["บัตรประชาชน", "ทะเบียนบ้าน", "สูติบัตร", "ทะเบียนสมรส", "หนังสือเดินทาง", "พินัยกรรม", "หนังสือมอบอำนาจ"],
+  OTHER: [],
+};
+/** หมวดของเอกสารจากรายการที่ผูก (entity_type + ประเภทสินทรัพย์) · ไม่ผูก = ตามหมวดเดิม (module) */
+export function docCategory(entityType: string | null | undefined, assetType?: string | null, assetGroup?: string | null, module?: string | null): string {
+  if (entityType === "LIABILITY") return "LIABILITY";
+  if (entityType === "CREDIT_CARD") return "CARD";
+  if (entityType === "INSURANCE_POLICY") return "INSURANCE";
+  if (entityType === "PERSON") return "PERSON";
+  if (entityType === "ASSET") {
+    if (assetType === "BANK_ACCOUNT") return "BANK";
+    if (assetType === "LOAN_RECEIVABLE") return "LOAN";
+    if (assetType === "PRIVATE_BUSINESS") return "BUSINESS";
+    if (assetType === "INSURANCE_CASH_VALUE") return "INSURANCE";
+    if (assetGroup === "INVESTMENT") return "INVESTMENT";
+    if (assetGroup === "PROPERTY") return "PROPERTY";
+    if (assetGroup === "ALTERNATIVE") return "ALTERNATIVE";
+  }
+  return ({ FAMILY: "PERSON", INSURANCE: "INSURANCE", PROPERTY: "PROPERTY", ALTERNATIVE: "ALTERNATIVE", INVESTMENT: "INVESTMENT",
+    CARD_MEMBERSHIP: "CARD", HEALTH: "PERSON" } as Record<string, string>)[module ?? ""] ?? "OTHER";
+}
 export const ENTITY_MODULE: Record<string, string> = {
   FINANCIAL: "FINANCIAL", INVESTMENT: "INVESTMENT", PROPERTY: "PROPERTY", ALTERNATIVE: "ALTERNATIVE",
   LIABILITY: "FINANCIAL", INSURANCE_POLICY: "INSURANCE", PERSON: "FAMILY", CREDIT_CARD: "CARD_MEMBERSHIP",
