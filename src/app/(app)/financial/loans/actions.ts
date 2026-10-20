@@ -86,7 +86,7 @@ export async function restructureSchedule(_: ActionState, form: FormData): Promi
   return done(id, `ปรับตารางแล้ว · งวดใหม่ ${data} งวด`);
 }
 
-/** แก้รายละเอียดเงินให้กู้: ชื่อรายการ (assets.name) + ผู้กู้ / ดอกเบี้ย / ครบกำหนด / หมายเหตุ (loan_details) · RLS คุมสิทธิ์ */
+/** แก้รายละเอียดเงินให้กู้: ชื่อรายการ (assets.name) + ผู้กู้ / เบอร์ติดต่อ / เลขที่สัญญา / วัตถุประสงค์ / ดอกเบี้ย / ครบกำหนด / หมายเหตุ (loan_details) · RLS คุมสิทธิ์ */
 export async function updateLoanInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const assetId = String(form.get("asset_id"));
@@ -101,6 +101,9 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
     interest_rate: num(form.get("interest_rate")),
     due_date: str(form.get("due_date")),
     notes: str(form.get("notes")),
+    borrower_phone: str(form.get("borrower_phone")),
+    contract_no: str(form.get("contract_no")),
+    purpose: str(form.get("purpose")),
   }).eq("asset_id", assetId);
   if (e2) return { error: friendlyError(e2.message) };
   return done(assetId, "บันทึกรายละเอียดแล้ว");
