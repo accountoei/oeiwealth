@@ -4,16 +4,16 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
-import MovesView, { type MoveRow, type StmtRow } from "../../../income-expenses/MovesView";
+import MovesView, { type StmtRow } from "../../../income-expenses/MovesView";
 import { moveMeta, stripPending } from "@/lib/ledger";
-import TransferEditor from "../../../income-expenses/TransferEditor";
+import { MOVE_SELECT, makeEntryKit, type Move } from "../../../income-expenses/entry-kit";
+import { loadKitCtx } from "../../../income-expenses/entry-kit-load";
 import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } from "./forms";
-import EditToggle from "@/components/EditToggle";
+import EditButton from "@/components/EditButton";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
-import { DetailItem as Item } from "@/components/Boxes";
 
 const SOURCE_LABEL: Record<string, string> = {
   OPENING: "ยอดตั้งต้น", ACCOUNT_SETUP: "เปิดบัญชีในระบบ", BALANCE_UPDATE: "อัปเดตยอด",
@@ -43,7 +43,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,base_amount,fee,counter_amount,counter_currency,description,is_derived,source_entity_type,source_entity_id,movement_group_id,created_at")
+    supabase.from("cash_movements").select(`${MOVE_SELECT},created_at`)
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null)
       .gte("movement_date", start).lte("movement_date", end)
       .order("movement_date", { ascending: true }).order("created_at", { ascending: true }),
@@ -108,7 +108,6 @@ export default async function AccountDetailPage({ params, searchParams }: {
     if (g) byGroup.set(g, r);
   });
   const partLabel = (m: Mv) => (m.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "เงินต้น" : m.movement_type === "INCOME" ? "ดอกเบี้ย" : MOVE_LABEL[m.movement_type] ?? m.movement_type);
-  const loanOf = (r: Row) => (r.parts ?? [r]).find((x) => x.movement_type === "LOAN_PRINCIPAL_RECEIPT")?.from_asset_id;
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
 
   // เรียงตามเวลา: รายการของวัน → ยอดตาม Statement ของวันนั้น (เป็นยอดสิ้นวัน · ใช้เป็นจุดตั้งต้นใหม่)
@@ -157,90 +156,68 @@ export default async function AccountDetailPage({ params, searchParams }: {
   const monthHist = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end);
   const lastVal = (vals ?? []).find((v) => v.valuation_date <= end);
   const months = monthOptions(family?.go_live_date, today, 0, ym);
-  const sameCcyBanks = (banksAll ?? []).filter((b) => b.currency === acc.currency && b.status === "ACTIVE")
-    .map((b) => ({ asset_id: b.asset_id as string, name: b.name as string }));
-  // ตารางแบบเดียวกับแท็บเงินเข้า–ออก (MovesView) · rows ส่งแบบใหม่ → เก่า
+  // ตารางแบบเดียวกับกล่องเงินเข้า–ออกในหน้า Income & Expenses (ชุดคำสั่งกลาง entry-kit) · rows ส่งแบบใหม่ → เก่า
   const ledgerStmts: StmtRow[] = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end)
     .map((v) => ({ key: `v${v.id}`, date: v.valuation_date, value: Number(v.value), label: SOURCE_LABEL[v.source] ?? v.source }));
-  const ledgerRows: MoveRow[] = lines.filter((l) => l.kind === "move").reverse().map((l) => {
-    const m = (l as Extract<Line, { kind: "move" }>).row;
-    const e = m.source_entity_type === "EXPENSE" && m.source_entity_id ? expBy.get(m.source_entity_id) : undefined;
-    const inc = m.source_entity_type === "INCOME" && m.source_entity_id ? incBy.get(m.source_entity_id) : undefined;
-    const isIn = m.to_asset_id === id;
-    const pfLink = ["INVESTMENT_OUT", "INVESTMENT_IN"].includes(m.movement_type) && m.counter_currency
-      ? (m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id) : null;
-    const bankPair = m.movement_type === "TRANSFER" && m.from_asset_id && m.to_asset_id && bankBy.has(m.from_asset_id) && bankBy.has(m.to_asset_id) && !m.counter_currency;
-    const actions = m.parts && loanOf(m) ? <Link href={`/financial/loans/${loanOf(m)}`} className="text-xs text-slate-500 underline">แก้ที่หน้าเงินให้กู้</Link>
-      : pfLink ? <Link href={`/investments/${pfLink}`} className="text-xs text-slate-500 underline">แก้ที่หน้าพอร์ต</Link>
-      : m.is_derived ? <span className="text-xs text-slate-400">แก้ที่ต้นทาง</span>
-      : !canWrite || ["INCOME", "EXPENSE", "REIMBURSEMENT_IN", "SECURITY_DEPOSIT_OUT", "LOAN_PRINCIPAL_RECEIPT"].includes(m.movement_type) ? null
-      : <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete}
-          editor={bankPair ? <TransferEditor id={m.id} banks={sameCcyBanks}
-            values={{ from: m.from_asset_id as string, to: m.to_asset_id as string, date: m.movement_date, amount: Number(m.amount),
-              fee: m.fee == null ? null : Number(m.fee), description: m.description }} /> : undefined}
-          fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date },
-            { name: "amount", label: "จำนวน", type: "number", value: m.amount },
-            { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />;
-    const ll = l as Extract<Line, { kind: "move" }>;
-    return {
-      key: m.id, date: m.movement_date, type: m.movement_type, fromLabel: "", toLabel: "",
-      fromBank: isIn ? null : id, toBank: isIn ? id : null,
-      fromAmount: Number(m.amount), fromCcy: acc.currency, toAmount: ll.inAmt ?? 0, toCcy: acc.currency, fee: Number(m.fee ?? 0),
-      thb: m.base_amount == null ? null : Number(m.base_amount),
-      detail: ll.detail, sub: ll.sub ? <div className="text-xs text-slate-400">{ll.sub}</div> : undefined,
-      extra: Number(m.fee ?? 0) > 0 ? <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(m.fee)}</div> : undefined,
-      actions, kind: m.movement_type, merged: !!m.parts,
-      pendingHref: inc?.pending_split ? `/income-expenses?tab=income&it=split&m=${m.movement_date.slice(0, 7)}`
-        : e?.pending_split ? `/income-expenses?tab=expense&et=split&m=${m.movement_date.slice(0, 7)}` : undefined,
-      metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
-        expenseCategory: e?.expense_category ?? null, pending: !!(e?.pending_split || inc?.pending_split) },
-    };
-  });
+  const kit = makeEntryKit(await loadKitCtx(supabase, (moves ?? []) as Move[], { ym, personId: "", canWrite, canDelete, paths }));
+  const ledgerRows = kit.buildMoveRows([...((moves ?? []) as Move[])].reverse(), canWrite);
+  // บรรทัดใต้ชื่อบัญชี: ข้อมูลทั้งหมด (แก้ที่ปุ่ม "แก้ไขข้อมูล")
+  const soon = new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 86400000).toISOString().slice(0, 10);
+  const info = [
+    bankLabel(acc.bank_name), ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type, acc.currency, acc.account_no_masked,
+    acc.branch && `สาขา ${acc.branch}`, acc.account_name && `ชื่อบัญชี ${acc.account_name}`,
+  ].filter(Boolean).join(" · ");
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Cash &amp; Bank Accounts</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{acc.name}</h1>
-        <p className="text-sm text-slate-500">
-          {bankLabel(acc.bank_name)} · {ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type} · {acc.currency}
-          {acc.account_no_masked && ` · ${acc.account_no_masked}`}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Cash &amp; Bank Accounts</Link>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900">{acc.name}</h1>
+          <p className="text-sm text-slate-500">{info}</p>
+          <p className="text-sm text-slate-500">
+            เจ้าของ: {activeOwners.length === 0 ? "-" : activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ")}
+            {ownerTotal < 100 && <span className="text-amber-700"> (ยังไม่ระบุ {100 - ownerTotal}%)</span>}
+            {acc.interest_rate != null && ` · ดอกเบี้ย ${Number(acc.interest_rate).toFixed(2)}% ต่อปี`}
+            {acc.maturity_date && <> · ครบกำหนด <span className={acc.maturity_date < today ? "font-medium text-red-700" : acc.maturity_date <= soon ? "font-medium text-amber-700" : ""}>
+              {thDate(acc.maturity_date)}{acc.maturity_date < today ? " (เลยกำหนด)" : acc.maturity_date <= soon ? " (ใกล้ครบ)" : ""}</span></>}
+            {" · "}{acc.status === "CLOSED" ? <span className="text-slate-500">ปิดบัญชีแล้ว</span> : <span className="text-emerald-700">ใช้งาน</span>}
+          </p>
+          {acc.notes && <p className="whitespace-pre-line text-xs text-slate-400">{acc.notes}</p>}
+        </div>
+        {canWrite && (
+          <EditButton title="แก้ไขข้อมูลบัญชี">
+            <div className="space-y-5">
+              <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลบัญชี ไม่กระทบยอดเงิน</p>
+              <EditInfoForm acc={acc} />
+              <div className="border-t border-slate-100 pt-4">
+                <h3 className="mb-2 text-sm font-medium text-slate-800">เลขบัญชี</h3>
+                <AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked} canReveal={canEdit} canSet={canWrite} />
+              </div>
+              <div className="border-t border-slate-100 pt-4">
+                <h3 className="mb-2 text-sm font-medium text-slate-800">เจ้าของบัญชี</h3>
+                <ul className="mb-2 space-y-0.5 text-sm">
+                  {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
+                </ul>
+                <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                  current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
+              </div>
+              <div className="border-t border-slate-100 pt-4">
+                <StatusSelect table="assets" id={id} value={acc.status} paths={paths}
+                  options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี"
+                  remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/cash", paths: ["/financial/cash"], label: "ลบบัญชีนี้",
+                    hint: "ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น \"ปิดบัญชีแล้ว\"" } : undefined} />
+              </div>
+            </div>
+          </EditButton>
+        )}
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium text-slate-900">รายการเงินเข้า–ออก {thMonth(start)}</h2>
+          <h2 className="font-medium text-slate-900">บันทึกยอดคงเหลือตาม Statement · {thMonth(start)}</h2>
           <MonthPicker months={months} value={ym} />
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">+{money(sumIn)}</b></span>
-          <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
-          <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className={`tabular-nums ${Number(closing ?? 0) < -0.005 ? "text-red-700" : ""}`}>{closing == null ? "-" : money(closing, acc.currency)}</b></span>
-        </div>
-        {/* เตือนเฉพาะเมื่อมีเรื่องต้องทำ */}
-        {st?.lump != null && Math.abs(Number(st.lump)) >= 0.005 && (
-          <div className="mt-2 text-xs font-medium text-amber-700">
-            <Link href={`/income-expenses?tab=${Number(st.lump) > 0 ? "expense&et" : "income&it"}=recorded&m=${(st.lump_date ?? st.latest_date).slice(0, 7)}`}
-              className="hover:underline">
-              มี{Number(st.lump) > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยกรายละเอียด {thMonth(`${(st.lump_date ?? st.latest_date).slice(0, 7)}-01`)} {money(Math.abs(Number(st.lump)), acc.currency)} → ไปแยก
-            </Link>
-          </div>
-        )}
-        {st && Math.abs(Number(st.difference)) >= 0.005 && (
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700">
-            <span>ยอดล่าสุด ({thDate(st.latest_date)}) ไม่ตรงกับรายการที่บันทึก {money(st.difference, acc.currency)}</span>
-            {canWrite && <SettleLatestButton assetId={id} />}
-          </div>
-        )}
-        <div className="mt-3">
-          <MovesView rows={ledgerRows} banks={[]} showActions={canWrite} fixedAcct={id}
-            openings={{ [id]: opening == null ? null : Number(opening) }} statements={{ [id]: ledgerStmts }} monthStart={start} />
-        </div>
-      </section>
-
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">ยอดคงเหลือตาม Statement · {thMonth(start)}</h2>
         {canWrite && <UpdateBalanceForm assetId={id} currency={acc.currency} today={today} minDate={family?.go_live_date ?? ""} />}
         {monthHist.length === 0 ? (
           <p className="text-sm text-slate-500">ยังไม่มียอดเดือนนี้{lastVal ? <> · ยอดล่าสุด {thDate(lastVal.valuation_date)} = <span className="tabular-nums">{money(lastVal.value, acc.currency)}</span></> : ""}</p>
@@ -276,50 +253,35 @@ export default async function AccountDetailPage({ params, searchParams }: {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <EditToggle title="รายละเอียดบัญชี" canEdit={canWrite}
-          view={
-            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <Item label="ชื่อที่ใช้เรียกบัญชี">{acc.name}</Item>
-              <Item label="ธนาคาร">{bankLabel(acc.bank_name)}</Item>
-              <Item label="ประเภทบัญชี">{ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type} · {acc.currency}</Item>
-              <Item label="ชื่อบัญชี (ตามสมุด)">{acc.account_name || "-"}</Item>
-              <Item label="สาขา">{acc.branch || "-"}</Item>
-              <Item label="เลขบัญชี"><AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked} canReveal={canEdit} canSet={false} /></Item>
-              {acc.interest_rate != null && <Item label="อัตราดอกเบี้ย">{Number(acc.interest_rate)}% ต่อปี</Item>}
-              {acc.maturity_date && <Item label="วันครบกำหนด">{thDate(acc.maturity_date)}</Item>}
-              <Item label="สถานะ">{acc.status === "CLOSED" ? <span className="text-slate-500">ปิดบัญชีแล้ว</span> : "ใช้งาน"}</Item>
-              <Item label="เจ้าของบัญชี">
-                {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
-                {ownerTotal < 100 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}
-              </Item>
-              {acc.notes && <Item label="หมายเหตุ" wide>{acc.notes}</Item>}
-            </dl>
-          }
-          edit={
-            <div className="space-y-5">
-              <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลบัญชี ไม่กระทบยอดเงิน</p>
-              <EditInfoForm acc={acc} />
-              <div className="border-t border-slate-100 pt-4">
-                <h3 className="mb-2 text-sm font-medium text-slate-800">เลขบัญชี</h3>
-                <AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked} canReveal={canEdit} canSet={canWrite} />
-              </div>
-              <div className="border-t border-slate-100 pt-4">
-                <h3 className="mb-2 text-sm font-medium text-slate-800">เจ้าของบัญชี</h3>
-                <ul className="mb-2 space-y-0.5 text-sm">
-                  {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
-                </ul>
-                <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
-                  current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
-              </div>
-              <div className="border-t border-slate-100 pt-4">
-                <StatusSelect table="assets" id={id} value={acc.status} paths={paths}
-                  options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี"
-                  remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/cash", paths: ["/financial/cash"], label: "ลบบัญชีนี้",
-                    hint: "ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น \"ปิดบัญชีแล้ว\"" } : undefined} />
-              </div>
-            </div>
-          } />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-medium text-slate-900">รายการเงินเข้า–ออก {thMonth(start)}</h2>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">+{money(sumIn)}</b></span>
+          <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
+          <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className={`tabular-nums ${Number(closing ?? 0) < -0.005 ? "text-red-700" : ""}`}>{closing == null ? "-" : money(closing, acc.currency)}</b></span>
+        </div>
+        {/* เตือนเฉพาะเมื่อมีเรื่องต้องทำ */}
+        {st?.lump != null && Math.abs(Number(st.lump)) >= 0.005 && (
+          <div className="mt-2 text-xs font-medium text-amber-700">
+            <Link href={`/income-expenses?tab=${Number(st.lump) > 0 ? "expense&et" : "income&it"}=split&m=${(st.lump_date ?? st.latest_date).slice(0, 7)}`}
+              className="hover:underline">
+              มี{Number(st.lump) > 0 ? "ค่าใช้จ่าย" : "รายได้"}รอแยกรายละเอียด {thMonth(`${(st.lump_date ?? st.latest_date).slice(0, 7)}-01`)} {money(Math.abs(Number(st.lump)), acc.currency)} → ไปแยก
+            </Link>
+          </div>
+        )}
+        {st && Math.abs(Number(st.difference)) >= 0.005 && (
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-700">
+            <span>ยอดล่าสุด ({thDate(st.latest_date)}) ไม่ตรงกับรายการที่บันทึก {money(st.difference, acc.currency)}</span>
+            {canWrite && <SettleLatestButton assetId={id} />}
+          </div>
+        )}
+        <div className="mt-3">
+          <MovesView rows={ledgerRows} banks={[]} showActions={canWrite} fixedAcct={id}
+            openings={{ [id]: opening == null ? null : Number(opening) }} statements={{ [id]: ledgerStmts }} monthStart={start} />
+        </div>
       </section>
+
     </div>
   );
 }

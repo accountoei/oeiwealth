@@ -193,7 +193,10 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                     : <span className="text-indigo-700">{meta.category}</span>}</td>
                   <td className="pr-2">
                     <div className="text-slate-800">{r.detail}</div>
-                    {r.sub ?? (!fixedAcct && <div className="text-xs text-slate-400">{r.fromLabel} → {r.toLabel}</div>)}
+                    {r.sub ?? (!fixedAcct ? <div className="text-xs text-slate-400">{r.fromLabel} → {r.toLabel}</div>
+                      // หน้าบัญชี: บอกเฉพาะอีกฝั่ง (โอนไป / รับจาก) · เงินเข้า–ออกกับภายนอกไม่ต้องบอก
+                      : (() => { const other = d === "in" ? r.fromLabel : r.toLabel; return other && other !== "ภายนอก"
+                        ? <div className="text-xs text-slate-400">{d === "in" ? "จาก" : d === "out" ? "ไป" : "↔"} {other}</div> : null; })())}
                   </td>
                   {d === "move" ? (
                     <td colSpan={2} className="whitespace-nowrap pl-4 text-right tabular-nums text-slate-500" title="โอนระหว่างบัญชีของครอบครัว (ไม่นับเป็นเงินเข้า / ออก)">

@@ -13,12 +13,14 @@ import AccountsTable, { type AccountRow } from "./AccountsTable";
 import BatchUpdate, { type BatchRow } from "./BatchUpdate";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
-  account_no_masked: string | null; status: string };
+  account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null };
 type Sum = { asset_id: string; balance: number | null; prev_balance: number | null; inflow: number; outflow: number;
   internal_in: number; internal_out: number; n_in: number; n_out: number };
 type At = { asset_id: string; calculated: number | null; last_date: string | null; last_value: number | null };
 
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["accounts", "บัญชีทั้งหมด"], ["update", "อัปเดตยอดคงเหลือ"]];
+// บัญชีทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=accounts → ภาพรวม)
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"]];
+const TYPE_COLORS = ["#2563eb", "#059669", "#f59e0b", "#94a3b8"];
 const BANK_COLORS = ["#2563eb", "#f59e0b", "#059669", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#ea580c", "#475569"];
 const PERSON_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#84cc16"];
 const CCY_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899"];
@@ -44,7 +46,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
 
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
     { data: lumpE }, { data: lumpI }, { data: family }, sortMap] = await Promise.all([
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     supabase.rpc("bank_month_summary", { p_month: start }),
@@ -94,6 +96,12 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     value: active.reduce((t, a) => t + thb(Number(sum.get(a.asset_id)?.balance ?? 0), a.currency)
       * ownRows.filter((o) => o.asset_id === a.asset_id && o.person_id === p.id).reduce((s, o) => s + Number(o.ownership_percent), 0) / 100, 0),
   }));
+  // ตามประเภทบัญชี (ออมทรัพย์ / ฝากประจำ / เงินตราต่างประเทศ / อื่น ๆ)
+  const typeRows: BarRow[] = ["SAVING", "FIXED", "FOREIGN_CURRENCY", "OTHER"].map((t, i) => ({
+    key: t, label: ACCOUNT_TYPE_LABEL[t] ?? t, color: TYPE_COLORS[i],
+    value: active.filter((a) => (["SAVING", "FIXED", "FOREIGN_CURRENCY"].includes(a.account_type) ? a.account_type : "OTHER") === t)
+      .reduce((v, a) => v + thb(Number(sum.get(a.asset_id)?.balance ?? 0), a.currency) * share(a.asset_id), 0),
+  }));
   const ownGap = active.filter((a) => a.status === "ACTIVE"
     && Math.abs(ownRows.filter((o) => o.asset_id === a.asset_id).reduce((s, o) => s + Number(o.ownership_percent), 0) - 100) > 0.01);
 
@@ -108,6 +116,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       masked: a.account_no_masked, owners: ownersOf(a.asset_id), currency: a.currency, status: a.status,
       balance: bal, thb: thb(bal, a.currency), pct: pv.assetPct(a.asset_id), full,
       lastDate, calculated: !!lastDate && lastDate < asOf,
+      rate: a.interest_rate == null ? null : Number(a.interest_rate), maturity: a.maturity_date,
       move: ordering ? <MoveButtons table="assets" id={a.asset_id} paths={paths} {...neighbors(all, i, (x) => x.asset_id)} /> : undefined,
     };
   });
@@ -188,18 +197,18 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
           </div>
         </section>
         <p className="-mt-3 text-xs text-slate-500">เงินเข้า–ออกไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง · ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</p>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 lg:grid-cols-2">
           <ShareBars title="เงินฝากตามธนาคาร" rows={bankRows} />
+          <div className="flex flex-col gap-4">
           {pv.personId
             ? <ShareBars title="เงินฝากตามสมาชิกครอบครัว" rows={personRows.filter((r) => r.key === pv.personId)} note={`แสดงเฉพาะ ${pv.personName} · เลือก "ทั้งครอบครัว" เพื่อดูทุกคน`} />
             : <ShareBars title="เงินฝากตามสมาชิกครอบครัว" rows={personRows}
                 footer={ownGap.length > 0 && <p className="mt-3 text-xs text-amber-700">ระบุเจ้าของยังไม่ครบ 100%: {ownGap.map((a) => a.name).join(", ")}</p>} />}
+          <ShareBars title="เงินฝากตามประเภทบัญชี" head="ประเภทบัญชี" rows={typeRows} />
+          </div>
         </div>
-      </TabPanel>
-
-      <TabPanel id="accounts">
-        <AccountsTable rows={accountRows} empty={pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"}
-          toggle={canOrder && all.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/financial/cash", { p: sp.p, m: sp.m, tab: "accounts" })} /> : null} />
+        <AccountsTable rows={accountRows} today={today} empty={pv.personId ? `ไม่มีบัญชีของ ${pv.personName}` : "ยังไม่มีบัญชี"}
+          toggle={canOrder && all.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/financial/cash", { p: sp.p, m: sp.m })} /> : null} />
       </TabPanel>
 
       <TabPanel id="update">
