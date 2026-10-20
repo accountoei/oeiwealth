@@ -94,7 +94,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
 
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">มูลค่าตลาด ({h.currency})</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">{money(h.current_value)}</div>
           <div className={`mt-1 text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>{h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}</div>
@@ -152,13 +152,13 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           </div>
           {fcn && (
             <dl className="grid gap-x-6 gap-y-2 text-sm md:grid-cols-4">
-              <Item k="ผู้ออก" v={fcn.issuer} /><Item k="เงินต้น" v={money(fcn.principal, h.currency)} />
+              <Item k="ผู้ออก" v={fcn.issuer} /><Item num k="เงินต้น" v={money(fcn.principal, h.currency)} />
               <Item k="วันที่ซื้อ / ออก" v={`${thDate(fcn.trade_date)} / ${thDate(fcn.issue_date)}`} />
               <Item k="ครบกำหนด" v={thDate(h.maturity_date)} />
               <Item k="Coupon" v={`${pct(fcn.coupon_rate)} ต่อปี${fcn.coupon_frequency ? ` · ${COUPON_FREQ_LABEL[fcn.coupon_frequency] ?? fcn.coupon_frequency}` : ""}`} />
               <Item k="Strike" v={pct(fcn.strike_level)} /><Item k="Knock-in / Barrier" v={pct(fcn.barrier_level)} />
               <Item k="Autocall" v={`${pct(fcn.autocall_level)}${fcn.observation_frequency ? ` · สังเกต ${fcn.observation_frequency}` : ""}`} />
-              {fcn.coupon_rate != null && <Item k="Coupon ต่องวด (ประมาณ)" v={money(Number(fcn.principal) * Number(fcn.coupon_rate) / 100 /
+              {fcn.coupon_rate != null && <Item num k="Coupon ต่องวด (ประมาณ)" v={money(Number(fcn.principal) * Number(fcn.coupon_rate) / 100 /
                 ({ MONTHLY: 12, QUARTERLY: 4, SEMI_ANNUAL: 2, ANNUAL: 1 }[fcn.coupon_frequency ?? ""] ?? 1), h.currency)} />}
             </dl>
           )}
@@ -259,6 +259,6 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function Item({ k, v }: { k: string; v: string }) {
-  return <div><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>;
+function Item({ k, v, num }: { k: string; v: string; num?: boolean }) {
+  return <div className={num ? "num-item tabular-nums" : ""}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div>;
 }

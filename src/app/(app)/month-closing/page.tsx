@@ -158,7 +158,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
 
       {/* ---------------------------------------------------------- สรุป */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
             Net Worth {p?.confirmed ? `ณ ${thDate(p?.as_of)}` : "ณ วันนี้ (ประมาณการ)"}
             {isFinal
@@ -171,13 +171,13 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
             <div className="mt-1 text-xs text-amber-700">ยอดจากข้อมูลล่าสุด {money(p?.net_worth, undefined, 0)} ต่างจาก Snapshot ที่ปิดไว้</div>
           )}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ความพร้อม (Checklist)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{ready} <span className="text-sm font-normal text-slate-500">/ {checks.length} หมวด</span></div>
           <div className={`mt-1 text-xs ${blocked.length ? "text-red-700" : warnings ? "text-amber-700" : "text-emerald-700"}`}>
             {blocked.length ? `BLOCKED ${blocked.length} หมวด` : warnings ? `คำเตือน ${warnings} รายการ (ปิดได้)` : "พร้อมปิดเดือน"}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">บัญชีธนาคารอัปเดตยอดสิ้นเดือน</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{banksDone} <span className="text-sm font-normal text-slate-500">/ {bankRows.length} บัญชี</span></div>
           <div className="mt-1 text-xs text-slate-500">ไม่อัปเดต = ใช้ยอดตามระบบ</div>

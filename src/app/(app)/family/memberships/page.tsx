@@ -135,7 +135,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
 
 function Box({ label, value, unit, sub, warn }: { label: string; value: number; unit: string; sub?: string; warn?: boolean }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value} <span className="text-sm font-normal text-slate-500">{unit}</span></div>
       {sub && <div className={`mt-1 text-xs ${warn ? "text-amber-700" : "text-slate-500"}`}>{sub}</div>}

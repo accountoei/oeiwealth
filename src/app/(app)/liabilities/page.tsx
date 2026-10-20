@@ -97,23 +97,23 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้สินรวม"}</div>
           {[...totals.entries()].length === 0 ? <div className="mt-1 text-xl font-semibold tabular-nums">{money(0, "THB")}</div>
             : [...totals.entries()].map(([ccy, v]) => <div key={ccy} className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(v, ccy)}</div>)}
           <div className="text-xs text-slate-500">เงินกู้ + บัตรเครดิต + เงินประกันการเช่า</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เงินกู้ ({loans.length} รายการ)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(loanTotal, "THB")}</div>
           {monthly > 0 && <div className="text-xs text-slate-500">ค่างวดรวม {money(monthly)}/เดือน</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">บัตรเครดิต ({openCards.length} ใบ)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(cardTotal, "THB")}</div>
           {cardLimit > 0 && <div className="text-xs text-slate-500">ใช้ไป {((cardTotal * 100) / cardLimit).toFixed(1)}% ของวงเงิน {money(cardLimit, undefined, 0)}</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เงินประกันการเช่า ({depRows.length} สัญญา)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(depTotal, "THB")}</div>
           <div className="text-xs text-slate-500">ต้องคืนผู้เช่าเมื่อหมดสัญญา</div>

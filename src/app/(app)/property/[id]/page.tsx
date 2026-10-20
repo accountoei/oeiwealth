@@ -156,7 +156,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">มูลค่าล่าสุด</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
@@ -181,7 +181,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   {(pd.deed_book || pd.deed_page) && <span className="block text-xs text-slate-500">{[pd.deed_book && `เล่ม ${pd.deed_book}`, pd.deed_page && `หน้า ${pd.deed_page}`].filter(Boolean).join(" · ")}</span>}</Item>
                 <Item label="เลขที่ดิน / ระวาง / หน้าสำรวจ">{[pd.land_no, pd.map_sheet && `ระวาง ${pd.map_sheet}`, pd.survey_page && `หน้าสำรวจ ${pd.survey_page}`].filter(Boolean).join(" · ") || "-"}</Item>
                 <Item label="ตำบล / อำเภอ / จังหวัด">{[pd.subdistrict, pd.district, pd.province].filter(Boolean).join(" · ") || "-"}</Item>
-                <Item label="วันที่ได้มา / ราคาที่ได้มา">{a.acquisition_date ? thDate(a.acquisition_date) : "-"} · {money(a.acquisition_cost, undefined, 0)}</Item>
+                <Item label="วันที่ได้มา">{a.acquisition_date ? thDate(a.acquisition_date) : "-"}</Item>
+                <Item label="ราคาที่ได้มา" num>{money(a.acquisition_cost, undefined, 0)}</Item>
                 <Item label="สถานะ">{ASSET_STATUS_LABEL[a.status] ?? a.status}</Item>
                 <Item label="เจ้าของ">
                   {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
@@ -573,9 +574,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
 const ASSET_STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย", CLOSED: "ปิดแล้ว" };
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>

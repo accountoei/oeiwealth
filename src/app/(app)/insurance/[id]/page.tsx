@@ -119,7 +119,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่าเวนคืน + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">มูลค่าเวนคืน</div>
             {cvAsset ? (
               <>
@@ -158,8 +158,8 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                 <Item label="ผู้จ่ายเบี้ย">{payerId ? allName.get(payerId) ?? "-" : "-"}</Item>
                 {insured && <Item label="ทรัพย์สินที่คุ้มครอง">{insured.name}</Item>}
                 <Item label="ระยะเวลา">{thDate(p.start_date)} – {thDate(p.end_date)}</Item>
-                <Item label="ทุนประกัน">{money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</Item>
-                <Item label="เบี้ยต่อปี">{money(p.premium, p.premium_currency ?? undefined, 0)}</Item>
+                <Item label="ทุนประกัน" num>{money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</Item>
+                <Item label="เบี้ยต่อปี" num>{money(p.premium, p.premium_currency ?? undefined, 0)}</Item>
                 <Item label="ผู้รับผลประโยชน์">
                   {(bens ?? []).length === 0 ? "-" : (bens ?? []).map((b) => <div key={b.id}>{benName(b)} · {Number(b.percentage)}%</div>)}
                   {benTotal > 0 && benTotal < 100 && <div className="text-xs text-amber-700">รวม {benTotal}% (ยังไม่ครบ 100%)</div>}
@@ -431,9 +431,9 @@ function ScheduleTable({ lines, canWrite, canDelete, paths, action, benefit = fa
   );
 }
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>

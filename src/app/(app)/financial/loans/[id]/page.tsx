@@ -119,7 +119,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: สรุปเงินต้น + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">เงินต้นคงเหลือ</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(l.status === "WRITTEN_OFF" ? 0 : l.outstanding_principal, l.currency)}</div>
             <div className="mt-1 text-xs text-slate-500">เงินต้น {money(l.principal)} · รับคืนแล้ว {money(repaid)} · ดอกเบี้ยรับแล้ว {money(interest)}</div>
@@ -138,7 +138,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 <Item label="ดอกเบี้ย">{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</Item>
                 <Item label="วันที่ให้กู้">{thDate(l.loan_date)}</Item>
                 <Item label="ครบกำหนดสัญญา">{thDate(l.due_date)}</Item>
-                <Item label="ยอดตั้งต้น">{money(l.opening_outstanding_principal, l.currency)} ณ {thDate(l.opening_date)}</Item>
+                <Item label="ยอดตั้งต้น" num>{money(l.opening_outstanding_principal, l.currency)}<span className="block text-xs text-slate-500">ณ {thDate(l.opening_date)}</span></Item>
                 <Item label="สถานะ">{LOAN_STATUS_LABEL[l.status] ?? l.status}</Item>
                 <Item label="ผู้ให้กู้ (เจ้าของ)">
                   {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
@@ -311,9 +311,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
 const LOAN_STATUS_OPTIONS: [string, string][] = [["ACTIVE", "ปกติ"], ["AT_RISK", "มีความเสี่ยงไม่ได้คืน"], ["CLOSED", "ปิดแล้ว (ได้คืนครบ)"], ["WRITTEN_OFF", "ตัดหนี้สูญ (มูลค่าเป็น 0)"]];
 const LOAN_STATUS_LABEL: Record<string, string> = Object.fromEntries(LOAN_STATUS_OPTIONS);
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 
 const TOAST_EVENT = "fwv-toast";
 const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: Esc ปิดเฉพาะบนสุด
@@ -9,12 +10,15 @@ const stack: object[] = [];                                 // หน้าต�
 /**
  * หน้าต่าง pop up ของฟอร์มที่เปิดจากปุ่ม (ใช้ผ่าน useActionSlot ใน ActionBar.tsx)
  *   ปิด: ปุ่ม ✕ · ปุ่ม ปิด / ยกเลิก ของฟอร์ม · กด Esc — คลิกนอกหน้าต่างไม่ปิด (กันข้อมูลที่กรอกหาย)
- *   บันทึกสำเร็จ (ฟอร์มขึ้นข้อความสีเขียวใหม่หลังกดบันทึก) → ปิดเอง + แจ้งข้อความมุมจอ
+ *   บันทึกสำเร็จ (ฟอร์มขึ้นข้อความสีเขียวใหม่หลังกดบันทึก) → ปิดเอง + แจ้งข้อความมุมจอ + รีเฟรชหน้า
  *   ไม่ต้องการให้ปิดเอง (เช่น ถามต่อหลังบันทึก) → ใส่ data-keep-open ในเนื้อหา
  */
 export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: "md" | "lg"; title?: string }) {
   const [mounted, setMounted] = useState(false);
   const body = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const close = useRef(onClose);
   close.current = onClose;
 
@@ -55,6 +59,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
       armed = null;
       window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: fresh ?? g[0] }));
       close.current();
+      routerRef.current.refresh();                             // ดึงข้อมูลหน้านี้ใหม่ทันที (ไม่ต้องกดรีเฟรชเอง) + ล้างหน้าที่จำไว้
     });
     obs.observe(el, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["disabled"] });
     return () => { el.removeEventListener("submit", onSubmit, true); obs.disconnect(); };

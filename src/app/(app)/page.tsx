@@ -497,7 +497,7 @@ function Big({ label, value, base, baseLabel, inverse }: { label: string; value:
   const diff = base == null ? null : Number(value) - base;
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{money(value, "THB", 0)}</div>
       {diff != null && (

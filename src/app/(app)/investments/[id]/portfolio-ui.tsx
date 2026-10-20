@@ -1,5 +1,7 @@
 "use client";
 
+import Modal from "@/components/Modal";
+
 import { useActionState, useState } from "react";
 import { updateRecord, type RecState } from "@/lib/records";
 import { updatePortfolio, type ActionState } from "../actions";
@@ -64,13 +66,14 @@ export function CashNameEdit({ id, name, purpose, interestRate, paths, canEdit, 
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
   if (!canEdit) return <span className="font-medium text-slate-900">{name}{children}</span>;
-  if (!open) return (
+  const trigger = (
     <button type="button" onClick={() => setOpen(true)} className="text-left font-medium text-slate-900 hover:underline" title="กดเพื่อแก้ไข">
       {name}{children}
     </button>
   );
-  return (
-    <form action={action} className="space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
+  if (!open) return trigger;
+  return (<>{trigger}<Modal title="แก้ไขบัญชีเงินฝากในพอร์ต" onClose={() => setOpen(false)}>
+    <form action={action} className="space-y-3 text-sm">
       <input type="hidden" name="table" value="investment_holdings" />
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="paths" value={paths.join(",")} />
@@ -86,5 +89,5 @@ export function CashNameEdit({ id, name, purpose, interestRate, paths, canEdit, 
         {state.ok && <span className="text-xs text-emerald-700">บันทึกแล้ว</span>}
       </div>
     </form>
-  );
+  </Modal></>);
 }

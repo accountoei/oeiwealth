@@ -58,6 +58,12 @@ h2 { color: #0b1220; }
 table thead th { font-weight: 600; color: #334155; }
 table tbody tr:hover { background: #f8faff; }
 
+/* กล่องตัวเลข (มาตรฐานทุกหน้า): หัวข้อชิดซ้าย · ตัวเลขและบรรทัดใต้ตัวเลขชิดขวา
+   ใส่ class "num-box" ที่กล่อง → ทุก <div> ยกเว้นตัวแรก (หัวข้อ) ชิดขวา · <dl> / <p> / ตาราง ไม่เปลี่ยน */
+.num-box > div:not(:first-child) { text-align: right; }
+/* ช่องจำนวนเงินในกล่องรายละเอียด (Item num) */
+.num-item { text-align: right; }
+
 /* ตัวเลข: ความกว้างเท่ากันทุกหลัก ให้คอลัมน์ตรงกัน */
 .tabular-nums, td.text-right { font-variant-numeric: tabular-nums; }
 

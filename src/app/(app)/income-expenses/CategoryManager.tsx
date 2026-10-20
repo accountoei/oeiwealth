@@ -1,5 +1,7 @@
 "use client";
 
+import Modal from "@/components/Modal";
+
 import { useActionState, useState } from "react";
 import { addCategory, moveCategory, renameCategory, toggleCategory, type ActionState } from "./actions";
 
@@ -51,21 +53,23 @@ function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boo
   return (
     <tr className={`align-top ${c.active ? "" : "text-slate-400"}`}>
       <td className="py-1.5 pr-2">
-        {editing ? (
-          <form action={renameAction} className="flex flex-wrap items-center gap-2">
-            <input type="hidden" name="id" value={c.id} />
-            <input name="name" defaultValue={c.name} required autoFocus className={`w-48 ${small}`} />
-            <button disabled={renaming} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">{renaming ? "…" : "บันทึก"}</button>
-            <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500">ยกเลิก</button>
-            {c.used > 0 && <span className="w-full text-xs text-slate-500">รายการเดิม {c.used} รายการจะเปลี่ยนชื่อตาม (ยอดเงินไม่เปลี่ยน)</span>}
-          </form>
-        ) : (
-          <>
-            {c.name}
-            {locked && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">ระบบใช้อัตโนมัติ</span>}
-          </>
+        {c.name}
+        {locked && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">ระบบใช้อัตโนมัติ</span>}
+        {editing && (
+          <Modal title="เปลี่ยนชื่อหมวด" onClose={() => setEditing(false)}>
+            <form action={renameAction} className="space-y-3">
+              <input type="hidden" name="id" value={c.id} />
+              <input name="name" defaultValue={c.name} required autoFocus className={`w-full ${small} py-2`} />
+              {c.used > 0 && <p className="text-xs text-slate-500">รายการเดิม {c.used} รายการจะเปลี่ยนชื่อตาม (ยอดเงินไม่เปลี่ยน)</p>}
+              <div className="flex items-center gap-3">
+                <button disabled={renaming} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{renaming ? "กำลังบันทึก…" : "บันทึก"}</button>
+                <button type="button" onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
+                {rs.error && <span className="text-sm text-red-600">{rs.error}</span>}
+                {rs.ok && <span className="text-sm text-emerald-700">{rs.ok}</span>}
+              </div>
+            </form>
+          </Modal>
         )}
-        {rs.ok && !editing && <div className="text-xs text-emerald-700">{rs.ok}</div>}
         {err && <div className="text-xs text-red-600">{err}</div>}
       </td>
       <td className="px-2 text-right tabular-nums">{c.used || "–"}</td>
@@ -80,7 +84,7 @@ function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boo
                 <button name="dir" value="1" disabled={last || moving} title="เลื่อนลง" className={btn}>↓</button>
               </form>
             ) : <>
-            {!editing && !locked && <button type="button" onClick={() => setEditing(true)} className={btn}>เปลี่ยนชื่อ</button>}
+            {!locked && <button type="button" onClick={() => setEditing(true)} className={btn}>เปลี่ยนชื่อ</button>}
             <form action={toggleAction} className="inline">
               <input type="hidden" name="id" value={c.id} />
               <input type="hidden" name="active" value={String(!c.active)} />

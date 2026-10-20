@@ -221,13 +221,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         <section className="grid gap-4 xl:grid-cols-[1fr_1fr_17rem]">
           <div className={card}>
             <h2 className="font-medium text-slate-900">มูลค่ารวม</h2>
-            <div className="mt-1 text-xl font-semibold tabular-nums">{money(totalValue, "THB")}</div>
-            <p className="text-xs text-slate-500">รวม {active.length} รายการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</p>
+            <div className="mt-1 text-right text-xl font-semibold tabular-nums">{money(totalValue, "THB")}</div>
+            <p className="text-right text-xs text-slate-500">รวม {active.length} รายการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</p>
             <ShareRows label="ประเภท" rows={typeRows} total={totalValue} />
           </div>
           <div className={card}>
             <h2 className="font-medium text-slate-900">มูลค่าตามการใช้งาน</h2>
-            <p className="text-xs text-slate-500">รวม {money(totalValue, "THB")}</p>
+            <p className="text-right text-xs text-slate-500">รวม {money(totalValue, "THB")}</p>
             {totalValue > 0 && (
               <div className="mt-3 flex h-6 overflow-hidden rounded-md text-[11px] font-medium text-white">
                 {usageRows.filter((r) => r.value > 0).map((r) => {
@@ -239,17 +239,17 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
             <ShareRows label="การใช้งาน" rows={usageRows} total={totalValue} />
           </div>
           <div className="grid gap-3">
-            <div className={card}>
+            <div className={`${card} num-box`}>
               <div className="text-xs text-slate-500">รายได้จากทรัพย์สิน{mLabel}</div>
               <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">+{money(incTotal, "THB")}</div>
               <div className="text-xs text-slate-500">{incMonth.length} รายการ</div>
             </div>
-            <div className={card}>
+            <div className={`${card} num-box`}>
               <div className="text-xs text-slate-500">ค่าใช้จ่ายทรัพย์สิน{mLabel}</div>
               <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">−{money(expTotal, "THB")}</div>
               <div className="text-xs text-slate-500">{expRows.length} รายการ</div>
             </div>
-            <div className={card}>
+            <div className={`${card} num-box`}>
               <div className="text-xs text-slate-500">รายได้สุทธิ{mLabel}</div>
               <div className={`mt-1 text-xl font-semibold tabular-nums ${incTotal - expTotal >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 {incTotal - expTotal >= 0 ? "+" : "−"}{money(Math.abs(incTotal - expTotal), "THB")}</div>

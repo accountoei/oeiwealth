@@ -92,21 +92,21 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">กรมธรรม์ที่มีผล</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{act.length} <span className="text-sm font-normal text-slate-500">ฉบับ</span></div>
           <div className="text-xs text-slate-500">ทั้งหมด {mineRows.length} ฉบับ</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ทุนประกันรวม (THB)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(insuredTotal, "THB", 0)}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เบี้ยรวมต่อปี (THB)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(premiumTotal, "THB", 0)}</div>
           {overdueTotal > 0 && <div className="text-xs text-red-600">เบี้ยเลยกำหนด {overdueTotal} งวด</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(cvTotal, "THB", 0)}</div>
           <div className="text-xs text-slate-500">นับเป็นสินทรัพย์หมวดการเงิน</div>

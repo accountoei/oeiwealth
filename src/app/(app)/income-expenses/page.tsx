@@ -1115,7 +1115,7 @@ const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PA
 
 function Kpi({ label, value, sub, cls, flag }: { label: string; value: string; sub?: React.ReactNode; cls?: string; flag?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className={`mt-1 text-xs ${cls ?? "text-slate-500"}`}>{sub}</div>}

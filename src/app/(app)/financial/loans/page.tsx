@@ -65,21 +65,21 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เงินต้นคงเหลือรวม (THB)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(outTotal, "THB")}</div>
           {principalTotal > 0 && <div className="text-xs text-slate-500">รับคืนแล้ว {(((principalTotal - outTotal) * 100) / principalTotal).toFixed(1)}% ของเงินต้น {money(principalTotal, undefined, 0)}</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">สัญญาที่ยังไม่ปิด</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{open.length} <span className="text-sm font-normal text-slate-500">สัญญา</span></div>
           {atRisk > 0 && <div className="text-xs text-amber-700">มีความเสี่ยง {atRisk} สัญญา</div>}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ครบกำหนดรับเดือนนี้ (THB)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">{money(dueThisMonth, "THB")}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ค้างรับ (เลยกำหนด)</div>
           <div className={`mt-1 text-xl font-semibold tabular-nums ${overdueN > 0 ? "text-red-700" : ""}`}>{money(overdueAmt, "THB")}</div>
           <div className="text-xs text-slate-500">{overdueN} งวด</div>

@@ -104,7 +104,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: ยอดคงค้าง + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดคงค้างล่าสุด</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(l.outstanding_amount, l.currency)}</div>
             <div className="mt-1 text-xs text-slate-500">ณ {thDate(l.balance_date)}
@@ -126,9 +126,9 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                 <Item label="ผู้ให้กู้">{l.lender || "-"}</Item>
                 <Item label="สถานะ">{STATUS_LABEL[l.status] ?? l.status}</Item>
                 <Item label="อัตราดอกเบี้ย">{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</Item>
-                <Item label="ค่างวด">{l.monthly_payment ? `${money(l.monthly_payment)}/เดือน` : "-"}{l.payment_due_day ? <span className="block text-xs text-slate-500">ทุกวันที่ {l.payment_due_day}</span> : null}</Item>
+                <Item label="ค่างวด" num>{l.monthly_payment ? `${money(l.monthly_payment)}/เดือน` : "-"}{l.payment_due_day ? <span className="block text-xs text-slate-500">ทุกวันที่ {l.payment_due_day}</span> : null}</Item>
                 <Item label="ระยะสัญญา">{thDate(l.start_date)} – {thDate(l.due_date)}</Item>
-                <Item label="วงเงินกู้">{money(l.original_amount, l.currency)}</Item>
+                <Item label="วงเงินกู้" num>{money(l.original_amount, l.currency)}</Item>
                 {linked && <Item label="ผูกกับทรัพย์สิน">{linked.name}</Item>}
                 <Item label="ผู้รับผิดชอบหนี้">
                   {ownerRows.length === 0 ? "-" : ownerRows.map((o) => <div key={o.id}>{o.name} · {o.pct}%</div>)}
@@ -227,9 +227,9 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   );
 }
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>

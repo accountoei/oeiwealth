@@ -68,7 +68,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">มูลค่าปัจจุบัน</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}</div>
@@ -91,7 +91,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
                 <Item label="Serial / เลขใบรับรอง">{d.serial_no || "-"}</Item>
                 <Item label="ที่เก็บ">{d.storage_location || "-"}</Item>
                 <Item label="สภาพ">{d.condition || "-"}</Item>
-                <Item label="ราคาทุน">{money(a.acquisition_cost, undefined, 0)}
+                <Item label="ราคาทุน" num>{money(a.acquisition_cost, undefined, 0)}
                   {perUnit(a.acquisition_cost) != null && <span className="block text-xs text-slate-500">{unit ?? "หน่วย"}ละ {money(perUnit(a.acquisition_cost))}</span>}</Item>
                 <Item label="วันที่ได้มา">{a.acquisition_date ? thDate(a.acquisition_date) : "-"}</Item>
                 <Item label="สถานะ">{ASSET_STATUS[a.status] ?? a.status}</Item>
@@ -158,9 +158,9 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
   );
 }
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>

@@ -201,7 +201,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
