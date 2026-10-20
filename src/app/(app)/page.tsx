@@ -122,8 +122,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         <div className="flex flex-col gap-4">
-          {/* ------------------------------------------------ เปลี่ยนเพราะอะไร (กด → pop up) */}
-          <DetailBox kind="change" start={start} personId={personId} ym={ym}
+          {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
+          <DetailBox start={start} personId={personId} ym={ym}
             title={<>ความมั่งคั่งเปลี่ยนเพราะอะไร {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> · {personName}</span> : null}</>}
             popupTitle={`ความมั่งคั่งเปลี่ยนเพราะอะไร ${thMonth(start)}${personName ? ` · ${personName}` : ""}`}
             bridge={<Suspense fallback={<Lines n={6} />}><ChangeBody start={start} isCurrent={isCurrent} personId={personId} /></Suspense>}>
@@ -132,21 +132,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </Suspense>
           </DetailBox>
 
-          {/* ------------------------------------------------ รายได้ / ค่าใช้จ่าย (กด → pop up) */}
-          <DetailBox kind="flows" start={start} personId={personId} ym={ym}
-            title={<>รายได้ &amp; ค่าใช้จ่าย {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> · {personName}</span> : null}</>}
-            popupTitle={`รายได้ & ค่าใช้จ่าย ${thMonth(start)}${personName ? ` · ${personName}` : ""}`}>
-            <Suspense fallback={<Lines n={4} />}>
-              <IncomeBody start={start} personId={personId} />
-            </Suspense>
-          </DetailBox>
         </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์{personName ? ` · ${personName}` : ""}</h2>
+          <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์ตามหมวด{personName ? ` · ${personName}` : ""}</h2>
           <p className="mb-3 text-xs text-slate-500">กดที่หมวดเพื่อดูรายการ</p>
           <Suspense fallback={<Lines n={7} />}>
             <AllocationBody start={start} personId={personId} />
@@ -155,7 +147,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
         {/* ------------------------------------------------ รายบุคคล: Net Worth + % */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-medium text-slate-900">รายบุคคล</h2>
+          <h2 className="font-medium text-slate-900">สัดส่วนรายบุคคล (Net Worth)</h2>
           <p className="mb-3 text-xs text-slate-500">Net Worth ตามสัดส่วนเจ้าของ · % ของ Net Worth ครอบครัว · กดชื่อเพื่อดูของคนนั้น</p>
           <Suspense fallback={<Lines n={4} />}>
             <PersonsBody start={start} ym={ym} personId={personId} />
@@ -361,6 +353,14 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
           </details>
         );
       })}
+      {/* ยอดรวมสินทรัพย์ (ตรงกับกล่อง "สินทรัพย์รวม" ด้านบน) */}
+      <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 border-t-2 border-slate-200 py-2.5 font-medium sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
+        <span>รวมสินทรัพย์</span>
+        <span className="hidden sm:block" />
+        <span className="hidden text-right tabular-nums sm:block">100.0%</span>
+        <span className="text-right tabular-nums">{money(total, undefined, 0)}</span>
+        <span className="hidden sm:block" />
+      </div>
       {liabs.length > 0 && (
         <details className="group py-2.5">
           <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
@@ -409,61 +409,31 @@ function ItemList({ items, showShare, negative }: { items: Item[]; showShare: bo
 }
 
 async function ChangeBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
-  if (personId) {
-    const [dm, p] = await Promise.all([getMonth(start), getPersonDash(start, personId)]);
-    if (p?.prev_net_worth == null) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
-    const cur = Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0);
-    const other = cur - Number(p.prev_net_worth) - Number(p.income) - Number(p.investment_income) + (Number(p.expenses) - Number(p.reimbursements));
-    return (
-      <>
-        <table className="w-full text-sm">
-          <tbody className="divide-y divide-slate-100">
-            <BRow label={p.prev_label ?? "ยอดงวดก่อน"} v={p.prev_net_worth} bold />
-            <BRow label="+ รายได้ (หลังภาษี)" v={p.income} />
-            <BRow label="− ค่าใช้จ่ายที่ระบุชื่อ" v={-(p.expenses - p.reimbursements)} />
-            <BRow label="+ รายได้ลงทุน (ตามสัดส่วนถือ)" v={p.investment_income} />
-            <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={other} />
-            <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
-          </tbody>
-        </table>
-        <p className="mt-2 text-xs text-slate-500">ค่าใช้จ่ายส่วนกลาง (ไม่ได้จ่ายจากบัญชี / บัตรของใคร และไม่ได้ระบุคน) รวมอยู่ใน &ldquo;อื่น ๆ&rdquo;</p>
-      </>
-    );
-  }
-  const [dm, p] = await Promise.all([getMonth(start), getPreview(start)]);
+  // รวมกล่อง "รายได้ & ค่าใช้จ่าย": เงินคงเหลือสุทธิ (ยอดย่อย) = รายได้สุทธิหลังภาษี + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ — ยอดเดียวกับหน้ารายได้ / ค่าใช้จ่าย
+  const [dm, p, track] = await Promise.all([getMonth(start), personId ? getPersonDash(start, personId) : getPreview(start), getTrack(start)]);
   if (p?.prev_net_worth == null) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
-  const otherChange = dm
-    ? Number(dm.net_worth) - Number(p.prev_net_worth) - Number(p.income) - Number(p.investment_income) + (Number(p.expenses) - Number(p.reimbursements))
-    : null;
+  const cur = personId ? Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0) : Number(dm?.net_worth ?? 0);
+  const expense = Number(p.expenses) - Number(p.reimbursements);
+  const net = Number(p.income) + Number(p.investment_income) - expense;
+  const other = cur - Number(p.prev_net_worth) - net;
   return (
-    <table className="w-full text-sm">
-      <tbody className="divide-y divide-slate-100">
-        <BRow label={p.prev_label ?? "ยอดงวดก่อน"} v={p.prev_net_worth} bold />
-        <BRow label="+ รายได้ (หลังภาษี)" v={p.income} />
-        <BRow label="− ค่าใช้จ่ายสุทธิ" v={-(p.expenses - p.reimbursements)} />
-        <BRow label="+ รายได้ลงทุน" v={p.investment_income} />
-        <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={otherChange ?? 0} />
-        <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={dm?.net_worth ?? 0} bold />
-      </tbody>
-    </table>
-  );
-}
-
-async function IncomeBody({ start, personId }: { start: string; personId: string }) {
-  // ยอดเดียวกับหน้ารายได้ / ค่าใช้จ่าย: เงินคงเหลือสุทธิ = รายได้หลังภาษี (รวมรายได้ลงทุน) − (ค่าใช้จ่าย − เงินคืน)
-  const [p, track] = await Promise.all([personId ? getPersonDash(start, personId) : getPreview(start), getTrack(start)]);
-  const income = Number(p?.income ?? 0) + Number(p?.investment_income ?? 0);
-  const expense = Number(p?.expenses ?? 0) - Number(p?.reimbursements ?? 0);
-  const net = income - expense;
-  return (
-    <dl className="space-y-1.5 text-sm">
-      <div className="flex justify-between"><dt>รายได้ (หลังภาษี)</dt><dd className="tabular-nums">{money(income, undefined, 0)}</dd></div>
-      <div className="flex justify-between text-xs text-slate-500"><dt>รวมรายได้ลงทุน</dt><dd className="tabular-nums">{money(p?.investment_income ?? 0, undefined, 0)}</dd></div>
-      <div className="flex justify-between"><dt>ค่าใช้จ่ายสุทธิ</dt>
-        <dd className="tabular-nums">{track === "NOT_TRACKED" && !expense ? <span className="text-slate-500">ยังไม่ได้บันทึกค่าใช้จ่าย</span> : money(expense, undefined, 0)}</dd></div>
-      <div className="flex justify-between border-t border-slate-100 pt-1.5 font-medium"><dt>เงินคงเหลือสุทธิ</dt>
-        <dd className={`tabular-nums ${net < 0 ? "text-red-700" : net > 0 ? "text-emerald-700" : ""}`}>{money(net, undefined, 0)}</dd></div>
-    </dl>
+    <>
+      <table className="w-full text-sm">
+        <tbody className="divide-y divide-slate-100">
+          <BRow label={p.prev_label ?? "ยอดงวดก่อน"} v={p.prev_net_worth} bold />
+          <BRow label="+ รายได้สุทธิ (หลังภาษี)" v={p.income} />
+          <BRow label={personId ? "+ รายได้ลงทุน (ตามสัดส่วนถือ)" : "+ รายได้ลงทุน"} v={p.investment_income} />
+          {track === "NOT_TRACKED" && !expense
+            ? <tr><td className="py-1.5 pr-2">− ค่าใช้จ่ายสุทธิ</td><td className="text-right text-xs text-slate-500">ยังไม่ได้บันทึก</td></tr>
+            : <BRow label={personId ? "− ค่าใช้จ่ายสุทธิ (ที่ระบุชื่อ)" : "− ค่าใช้จ่ายสุทธิ"} v={-expense} />}
+          <BRow label="= เงินคงเหลือสุทธิ" v={net} sub />
+          <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={dm ? other : 0} />
+          <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-slate-500">&ldquo;เงินคงเหลือสุทธิ&rdquo; เป็นยอดย่อยของ 3 บรรทัดบน (ไม่บวกซ้ำ)
+        {personId ? " · ค่าใช้จ่ายส่วนกลาง (ไม่ได้จ่ายจากบัญชี / บัตรของใคร และไม่ได้ระบุคน) รวมอยู่ใน “อื่น ๆ”" : ""}</p>
+    </>
   );
 }
 
@@ -549,11 +519,12 @@ function Big({ label, value, base, baseLabel, inverse }: { label: string; value:
   );
 }
 
-function BRow({ label, v, bold }: { label: string; v: number; bold?: boolean }) {
+function BRow({ label, v, bold, sub }: { label: string; v: number; bold?: boolean; sub?: boolean }) {
+  // sub = ยอดย่อย (ตัวเอียง พื้นเทา) ไม่ใช่บรรทัดที่บวกเพิ่ม
   return (
-    <tr className={bold ? "font-medium" : ""}>
-      <td className="py-1.5 pr-2">{label}</td>
-      <td className={`text-right tabular-nums ${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{money(v, undefined, 0)}</td>
+    <tr className={bold ? "font-medium" : sub ? "bg-slate-50 italic" : ""}>
+      <td className={`py-1.5 pr-2 ${sub ? "pl-2 font-medium text-slate-700" : ""}`}>{label}</td>
+      <td className={`text-right tabular-nums ${sub ? "pr-2 font-medium " : ""}${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{money(v, undefined, 0)}</td>
     </tr>
   );
 }
@@ -561,7 +532,8 @@ function BRow({ label, v, bold }: { label: string; v: number; bold?: boolean }) 
 /** กราฟเส้นเดียว (SVG) — จุดทึบ = ยอดยืนยันแล้ว, จุดกลวง = ประมาณการ · hover แสดงค่า */
 function TrendChart({ points, selected }: { points: { label: string; date: string; v: number; solid: boolean }[]; selected: number }) {
   if (points.length < 2) return <p className="text-sm text-slate-500">ข้อมูลยังไม่พอแสดงกราฟ</p>;
-  const W = 640, H = 220, L = 70, R = 16, T = 12, B = 28;
+  // แกนตัวเลขทั้งซ้ายและขวา (ชุดเดียวกัน) → อ่านค่าจุดล่าสุดด้านขวาได้ง่าย
+  const W = 640, H = 220, L = 70, R = 70, T = 12, B = 28;
   const vs = points.map((x) => x.v);
   let lo = Math.min(...vs), hi = Math.max(...vs);
   const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
@@ -589,6 +561,7 @@ function TrendChart({ points, selected }: { points: { label: string; date: strin
         <g key={i}>
           <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e6ecf7" strokeWidth={1} strokeDasharray="3 4" />
           <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#64748b">{fmt(t)}</text>
+          <text x={W - R + 8} y={y(t) + 4} textAnchor="start" fontSize={11} fill="#64748b">{fmt(t)}</text>
         </g>
       ))}
       <path d={`${path} L${x(points.length - 1).toFixed(1)},${H - B} L${x(0).toFixed(1)},${H - B} Z`} fill="url(#nwFill)" stroke="none" />

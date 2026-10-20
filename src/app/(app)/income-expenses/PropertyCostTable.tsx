@@ -9,10 +9,14 @@ import { useOnMainTab } from "./tabs";
 export type PropCostRow = {
   id: string; assetId: string; assetName: string; ptype: string; item: string;
   amount: number; currency: string; freq: string; schedule: string; perYear: number;
+  /** บรรทัดเล็กใต้รายการ (เช่น หมดสัญญา) · warn = สีส้ม */
+  note?: string; warn?: boolean;
 };
 
-/** ตารางค่าใช้จ่ายประจำของทรัพย์สิน + ตัวกรองประเภททรัพย์สิน / ความถี่ในการจ่าย */
-export default function PropertyCostTable({ rows }: { rows: PropCostRow[] }) {
+/** ตารางค่าใช้จ่ายประจำ / ค่าเช่าของทรัพย์สิน (ดูอย่างเดียว) + ตัวกรองประเภททรัพย์สิน / ความถี่ */
+export default function PropertyCostTable({ rows, itemHead = "รายการ", freqLabel = "ความถี่ในการจ่าย", whenHead = "จ่ายเมื่อ" }: {
+  rows: PropCostRow[]; itemHead?: string; freqLabel?: string; whenHead?: string;
+}) {
   const [pt, setPt] = useState("");
   const [fq, setFq] = useState("");
   useOnMainTab(() => { setPt(""); setFq(""); });
@@ -37,7 +41,7 @@ export default function PropertyCostTable({ rows }: { rows: PropCostRow[] }) {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="w-24 text-xs text-slate-500">ความถี่ในการจ่าย</span>
+        <span className="w-24 text-xs text-slate-500">{freqLabel}</span>
         <button type="button" onClick={() => setFq("")} className={chip(!fq)}>ทั้งหมด ({nF("")})</button>
         {freqs.map((f) => (
           <button key={f} type="button" onClick={() => setFq(fq === f ? "" : f)} className={chip(fq === f)}>{FREQ_LABEL[f] ?? f} ({nF(f)})</button>
@@ -46,8 +50,8 @@ export default function PropertyCostTable({ rows }: { rows: PropCostRow[] }) {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[36rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
-            <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">ทรัพย์สิน</th><th className="px-2">รายการ</th>
-              <th className="px-2 text-right">ยอดปกติ</th><th className="px-2">จ่ายเมื่อ</th><th className="px-2 text-right">ต่อปี (ประมาณ)</th><th></th></tr>
+            <tr className="border-b border-slate-100"><th className="py-1.5 pr-2">ทรัพย์สิน</th><th className="px-2">{itemHead}</th>
+              <th className="px-2 text-right">ยอดปกติ</th><th className="px-2">{whenHead}</th><th className="px-2 text-right">ต่อปี (ประมาณ)</th><th></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {shown.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-slate-500">ไม่มีรายการตามตัวกรอง</td></tr>}
@@ -57,7 +61,8 @@ export default function PropertyCostTable({ rows }: { rows: PropCostRow[] }) {
                   <Link href={`/property/${r.assetId}`} title="ไปแก้ที่หน้าทรัพย์สิน" className="underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400">{r.assetName}</Link>
                   <div className="text-xs text-slate-500">{PROPERTY_TYPE_LABEL[r.ptype] ?? r.ptype}</div>
                 </td>
-                <td className="px-2 py-2">{r.item}</td>
+                <td className="px-2 py-2">{r.item}
+                  {r.note && <div className={`text-xs ${r.warn ? "text-amber-700" : "text-slate-500"}`}>{r.note}</div>}</td>
                 <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{money(r.amount, r.currency)}</td>
                 <td className="px-2 py-2">{r.schedule}</td>
                 <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-slate-500">{money(r.perYear, r.currency === "THB" ? undefined : r.currency, 0)}</td>

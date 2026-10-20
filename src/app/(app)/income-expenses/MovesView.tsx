@@ -34,17 +34,20 @@ function Approx({ ccy, thb }: { ccy: string; thb?: number | null }) {
  *   ทุกบัญชี: โอนระหว่างบัญชีของครอบครัว = ⇄ (ไม่นับเป็นเข้า / ออก)
  *   ทีละบัญชี: แถว "ยอดยกมา" (วันที่ 1) อยู่ต้นรายการเสมอ · ยอดตาม Statement เป็นจุดตั้งต้นใหม่ · ยอดคงเหลือไม่เปลี่ยนตามตัวกรองประเภท / หมวด
  */
-export default function MovesView({ rows, banks, showActions = false, openings = {}, statements = {}, monthStart, fixedAcct }: {
+export default function MovesView({ rows, banks, showActions = false, openings = {}, statements = {}, monthStart, fixedAcct, limit }: {
   rows: MoveRow[]; banks: { id: string; name: string }[]; showActions?: boolean;
   openings?: Record<string, number | null>; statements?: Record<string, StmtRow[]>; monthStart?: string;
   /** หน้าบัญชี: ล็อกไว้ที่บัญชีนี้ (ไม่มีตัวกรองบัญชี / ปุ่มไปหน้าบัญชี) */
   fixedAcct?: string;
+  /** ทุกบัญชี: แสดงเฉพาะ n รายการล่าสุดก่อน (ปุ่ม "แสดงทั้งหมด") · เลือกบัญชีแล้วแสดงทั้งหมดเสมอ (ยอดคงเหลือต่อเนื่อง) */
+  limit?: number;
 }) {
   const [acctSel, setAcct] = useState("");
   const [type, setType] = useState("");
   const [cat, setCat] = useState("");
   const [asc, setAsc] = useState(true);
-  useOnMainTab(() => { setAcct(""); setType(""); setCat(""); });
+  const [all, setAll] = useState(false);
+  useOnMainTab(() => { setAcct(""); setType(""); setCat(""); setAll(false); });
   const acct = fixedAcct ?? acctSel;
   const used = banks.filter((b) => rows.some((r) => r.fromBank === b.id || r.toBank === b.id));
   // ทิศทางของเงิน (เทียบกับบัญชีที่เลือก หรือทั้งครอบครัว)
@@ -91,6 +94,10 @@ export default function MovesView({ rows, banks, showActions = false, openings =
   let lines: Line[] = acct
     ? timeline.filter((l) => (l.k === "move" ? keep.has(l.r.key) : !filtered))
     : [...shown].reverse().map((r) => ({ k: "move" as const, r, bal: null }));
+  // จำกัดเฉพาะรายการล่าสุด (lines ตอนนี้เรียง เก่า → ใหม่)
+  const total = lines.length;
+  const cut = !!limit && !acct && !all && total > limit;
+  if (cut) lines = lines.slice(total - limit!);
   if (!asc) lines = [...lines].reverse();
 
   const totals = new Map<string, { inn: number; out: number }>();
@@ -145,6 +152,12 @@ export default function MovesView({ rows, banks, showActions = false, openings =
           <Link href={`/financial/cash/${acctSel}`} className="rounded-md border border-blue-600 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">ไปหน้าบัญชี →</Link>
         )}
       </div>
+      {cut && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <span>แสดง {limit} รายการล่าสุด จากทั้งหมด {total} รายการ (เลือกบัญชีเพื่อดูทั้งหมดพร้อมยอดคงเหลือ)</span>
+          <button type="button" onClick={() => setAll(true)} className="rounded-md border border-blue-600 px-2 py-1 text-blue-700 hover:bg-blue-50">แสดงทั้งหมด ({total} รายการ)</button>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[52rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
