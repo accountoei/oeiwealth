@@ -40,6 +40,7 @@ function fixLink(i: Issue, ym: string): string | null {
     case "PENDING_INCOME": return `/income-expenses?tab=income&it=split&m=${ym}`;
   }
   if (i.code === "NOT_LIVE") return "/settings/opening";
+  if (i.code === "NEGATIVE_BALANCE" && i.entity_id) return `/financial/cash/${i.entity_id}?m=${ym}`;
   if (i.code === "BALANCE_NOT_UPDATED" || i.code?.startsWith("RECON")) return "#cash-update";
   if (i.code === "IN_TRANSIT" && i.entity_id) return `/investments/${i.entity_id}`;
   if (i.entity_type === "ASSET" && i.entity_id) return `/a/${i.entity_id}`;
