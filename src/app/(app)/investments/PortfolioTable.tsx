@@ -111,7 +111,7 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
 
 function Item({ label, value, cls = "", note }: { label: string; value: string; cls?: string; note?: string }) {
   return (
-    <div>
+    <div className="text-right">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className={`tabular-nums ${cls}`}>{value}</dd>
       {note && <dd className="text-xs text-slate-400">{note}</dd>}

@@ -98,7 +98,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: ยอดค้าง + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดค้างปัจจุบัน</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(current, c.currency)}</div>
             <div className="mt-1 text-xs text-slate-500">
@@ -118,9 +118,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                 <Item label="ผู้ออกบัตร / ชื่อบัตร">{c.issuer}{c.card_name && <span className="block text-xs text-slate-500">{c.card_name}</span>}</Item>
                 <Item label="เลขท้าย">{c.card_last4 ? `•••• ${c.card_last4}` : "-"}</Item>
                 <Item label="ผู้ถือบัตร">{holder}</Item>
-                <Item label="วงเงิน">{c.credit_limit ? money(c.credit_limit) : "-"}</Item>
+                <Item label="วงเงิน" num>{c.credit_limit ? money(c.credit_limit) : "-"}</Item>
                 <Item label="รอบบิล">ตัดรอบวันที่ {c.statement_day ?? "-"}<span className="block text-xs text-slate-500">ชำระภายในวันที่ {c.due_day ?? "-"}</span></Item>
-                <Item label="ค่าธรรมเนียมรายปี">{c.annual_fee ? money(c.annual_fee) : "-"}</Item>
+                <Item label="ค่าธรรมเนียมรายปี" num>{c.annual_fee ? money(c.annual_fee) : "-"}</Item>
                 <Item label="บัตรหมดอายุ">{c.expiry_date ? thDate(c.expiry_date) : "-"}</Item>
                 <Item label="ตัดบัญชีอัตโนมัติ">{c.autopay_asset_id
                   ? <span className="text-emerald-700">{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {bankName.get(c.autopay_asset_id) ?? "บัญชี"}</span>
@@ -212,9 +212,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   );
 }
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>

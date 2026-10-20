@@ -167,7 +167,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ใน Net Worth)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (

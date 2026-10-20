@@ -147,7 +147,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
 
       <TabPanel id="overview">
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดเงินฝากรวม (THB Equivalent){asOf < end ? " · ถึงวันนี้" : ""}</div>
             <div className="mt-1 text-xl font-semibold tabular-nums">{money(totalNow, "THB")}</div>
             <div className="mt-1 text-xs"><Delta v={pct(totalNow, totalPrev)} /> {Math.abs(totalPrev) > 0.005 && <span className="text-slate-400">({money(totalPrev, undefined, 0)})</span>}</div>
@@ -162,21 +162,21 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
               </ul>
             )}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">เงินเข้าบัญชีเดือนนี้</div>
             <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">+{money(inNow, "THB")}</div>
             <div className="mt-1 text-xs text-slate-500">{cnt((s) => Number(s.n_in))} รายการ</div>
             <div className="mt-1 text-xs"><Delta v={pct(inNow, inPrev)} /></div>
             <Link href={movesHref} className="mt-2 inline-block text-xs text-blue-700 hover:underline">ดูรายการเงินเข้า–ออก →</Link>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">เงินออกจากบัญชีเดือนนี้</div>
             <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">−{money(outNow, "THB")}</div>
             <div className="mt-1 text-xs text-slate-500">{cnt((s) => Number(s.n_out))} รายการ</div>
             <div className="mt-1 text-xs"><Delta v={pct(outNow, outPrev)} good="down" /></div>
             <Link href={movesHref} className="mt-2 inline-block text-xs text-blue-700 hover:underline">ดูรายการเงินเข้า–ออก →</Link>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">เงินเคลื่อนไหวสุทธิ</div>
             <div className={`mt-1 text-xl font-semibold tabular-nums ${inNow - outNow >= 0 ? "text-emerald-700" : "text-red-700"}`}>
               {inNow - outNow >= 0 ? "+" : "−"}{money(Math.abs(inNow - outNow), "THB")}</div>

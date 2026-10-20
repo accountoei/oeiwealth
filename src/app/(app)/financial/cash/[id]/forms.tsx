@@ -1,5 +1,7 @@
 "use client";
 
+import Modal from "@/components/Modal";
+
 import { useActionState, useEffect, useState } from "react";
 import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
@@ -73,15 +75,21 @@ export function AccountNoPanel({ assetId, bankAccountId, masked, canReveal, canS
       {shown && <p className="text-xs text-slate-500">ซ่อนอัตโนมัติใน 30 วินาที · การดูถูกบันทึกใน Audit Log</p>}
       {revealState.error && <p className="text-sm text-red-600">{revealState.error}</p>}
       {editing && (
-        <form action={setAction} className="flex flex-wrap items-center gap-2">
-          <input type="hidden" name="bank_account_id" value={bankAccountId} />
-          <input type="hidden" name="asset_id" value={assetId} />
-          <input name="account_no" required inputMode="numeric" autoComplete="off" placeholder="เลขบัญชีเต็ม" className={input} />
-          <button disabled={setting} className={btn}>บันทึก</button>
-          <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500">ยกเลิก</button>
-        </form>
+        <Modal title={masked ? "เปลี่ยนเลขบัญชี" : "บันทึกเลขบัญชี"} onClose={() => setEditing(false)}>
+          <form action={setAction} className="space-y-3">
+            <input type="hidden" name="bank_account_id" value={bankAccountId} />
+            <input type="hidden" name="asset_id" value={assetId} />
+            <input name="account_no" required inputMode="numeric" autoComplete="off" placeholder="เลขบัญชีเต็ม" className={input} data-plain />
+            <p className="text-xs text-slate-500">เก็บแบบเข้ารหัส · แสดงเฉพาะ 4 ตัวท้าย</p>
+            <div className="flex items-center gap-3">
+              <button disabled={setting} className={btn}>{setting ? "กำลังบันทึก…" : "บันทึก"}</button>
+              <button type="button" onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
+            </div>
+            <Msg s={setState} />
+          </form>
+        </Modal>
       )}
-      <Msg s={setState} />
+      {!editing && <Msg s={setState} />}
     </div>
   );
 }

@@ -59,7 +59,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
           <div className="mt-1 truncate text-xl font-semibold">{family?.name || "-"}</div>
           <div className="mt-1 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">สมาชิก</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{active.length} <span className="text-sm font-normal text-slate-500">คน</span></div>
           <div className="mt-1 text-xs text-slate-500">{archivedCount > 0 ? `Archived ${archivedCount} คน` : "ไม่มี Archived"}

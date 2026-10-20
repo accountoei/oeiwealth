@@ -84,7 +84,7 @@ export default async function OpeningSetupPage() {
       ) : (
         <section className="grid gap-3 sm:grid-cols-3">
           {(["MISSING", "WARN", "READY"] as const).map((s) => (
-            <div key={s} className={`rounded-xl border p-4 ${BADGE[s]}`}>
+            <div key={s} className={`num-box rounded-xl border p-4 ${BADGE[s]}`}>
               <div className="text-xs">{STATUS_LABEL[s]}</div>
               <div className="text-2xl font-semibold">{count(s)}</div>
             </div>

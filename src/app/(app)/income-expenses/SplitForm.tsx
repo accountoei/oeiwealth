@@ -1,5 +1,7 @@
 "use client";
 
+import Modal from "@/components/Modal";
+
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { splitPending, type ActionState } from "./actions";
@@ -30,18 +32,8 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   const router = useRouter();
   // บันทึกแล้ว → โหลดข้อมูลหน้าใหม่ทันที (ยอดที่ยังรอแยกอัปเดต · กดแยกต่อได้เลย)
   useEffect(() => { if (state.ok) router.refresh(); }, [state, router]);
-  // กดที่อื่น / Esc / สลับแท็บ → ปิดเอง (ถ้ายังไม่ได้กรอกอะไร · กรอกแล้วเปิดค้างไว้กันข้อมูลหาย)
   const box = useRef<HTMLFormElement>(null);
-  const touched = lines.some((l) => l.description.trim() || l.amount.trim() || l.cat || l.person_id || l.move);
-  useEffect(() => {
-    if (!open || touched) return;
-    const onDown = (e: PointerEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey); };
-  }, [open, touched]);
-  if (state.ok) return <p className="text-xs text-emerald-700">{state.ok}</p>;
+  if (state.ok && !open) return <p className="text-xs text-emerald-700">{state.ok}</p>;
   if (!open) return <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50">{label}</button>;
   const sum = lines.reduce((t, l) => t + n(l.amount), 0);
   const left = Math.round((amount - sum) * 100) / 100;
@@ -50,7 +42,8 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   const moveOf = (l: Line) => moves.find((m) => m.value === l.move);
   const set = (i: number, patch: Partial<Line>) => setLines(lines.map((l, k) => (k === i ? { ...l, ...patch } : l)));
   return (
-    <form ref={box} action={action} className="mt-2 space-y-2 rounded-lg border-l-4 border-blue-500 bg-blue-50/40 p-3 text-left" data-no-row-click>
+    <Modal title={label} size="lg" onClose={() => setOpen(false)}>
+    <form ref={box} action={action} className="space-y-2 text-left" data-no-row-click>
       {!income && hints.length > 0 && <datalist id={`split-hints-${id}`}>{hints.slice(0, 300).map((h) => <option key={h.d} value={h.d} />)}</datalist>}
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
@@ -114,5 +107,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
       <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)
         {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่แท็บเงินเข้า–ออก · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
     </form>
+    {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+    </Modal>
   );
 }

@@ -115,7 +115,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: Net Worth + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">Net Worth (ตามสัดส่วน)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(nw?.net_worth ?? 0, "THB", 0)}</div>
             <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">

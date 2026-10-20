@@ -59,23 +59,23 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ตรวจล่าสุด</div>
           <div className="mt-1 text-xl font-semibold">{last ? thDate(last.checkup_date) : "-"}</div>
           <div className={`mt-1 text-xs ${last && last.checkup_date < yearAgo ? "text-amber-700" : "text-slate-500"}`}>
             {!last ? "ยังไม่มีผลตรวจ" : last.checkup_date < yearAgo ? "เกิน 1 ปีแล้ว ควรตรวจประจำปี" : last.hospital || "ภายใน 1 ปี"}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด</div>
           <div className={`mt-1 text-xl font-semibold tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length} <span className="text-sm font-normal text-slate-500">รายการ</span></div>
           <div className="mt-1 truncate text-xs text-slate-500">{lastAbn.length ? lastAbn.slice(0, 3).map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ") : "ปกติทั้งหมด"}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">จำนวนครั้งที่บันทึก</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{(checkups ?? []).length} <span className="text-sm font-normal text-slate-500">ครั้ง</span></div>
           <div className="mt-1 text-xs text-slate-500">{metrics.length} รายการตรวจ</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด</div>
           <div className="mt-1 text-xl font-semibold tabular-nums">{money(costYear, "THB", 0)}</div>
           <div className="mt-1 text-xs text-slate-500">ตามที่บันทึกในแต่ละครั้ง</div>

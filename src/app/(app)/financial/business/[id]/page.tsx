@@ -95,7 +95,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">มูลค่าส่วนของครอบครัว</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
@@ -113,10 +113,10 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                 <Item label="ประเภทกิจการ">{d.business_type || "-"}</Item>
                 <Item label="การถือหุ้น">ถือ {fmtPct(companyPct)} ของบริษัท</Item>
                 <Item label="หุ้นที่ถือ / หุ้นทั้งหมด">{qty(d.shares_owned)} / {qty(d.total_shares)}</Item>
-                <Item label="ทุนจดทะเบียน">{d.par_value != null && d.total_shares != null ? money(Number(d.par_value) * Number(d.total_shares), a.currency) : "-"}
+                <Item label="ทุนจดทะเบียน" num>{d.par_value != null && d.total_shares != null ? money(Number(d.par_value) * Number(d.total_shares), a.currency) : "-"}
                   <span className="block text-xs text-slate-500">{d.par_value != null ? `หุ้นละ ${money(d.par_value, undefined, 4)} (par)` : "ยังไม่ได้ใส่มูลค่าหุ้นที่ตราไว้"}</span></Item>
-                <Item label="เงินลงทุน">{money(d.investment_cost, undefined, 0)}{avgCost != null && <span className="block text-xs text-slate-500">เฉลี่ยหุ้นละ {money(avgCost, undefined, 4)}</span>}</Item>
-                <Item label="ราคาหุ้นตามการประเมิน">{perShareNow != null ? money(perShareNow, a.currency, 4) : "-"}<span className="block text-xs text-slate-500">มูลค่า ÷ หุ้นที่ครอบครัวถือ</span></Item>
+                <Item label="เงินลงทุน" num>{money(d.investment_cost, undefined, 0)}{avgCost != null && <span className="block text-xs text-slate-500">เฉลี่ยหุ้นละ {money(avgCost, undefined, 4)}</span>}</Item>
+                <Item label="ราคาหุ้นตามการประเมิน" num>{perShareNow != null ? money(perShareNow, a.currency, 4) : "-"}<span className="block text-xs text-slate-500">มูลค่า ÷ หุ้นที่ครอบครัวถือ</span></Item>
                 <Item label="สถานะกิจการ">{label(STATUS, d.status)}</Item>
                 <Item label="นับเป็นทรัพย์สิน">{label(ASSET_STATUS, a.status)}</Item>
                 <Item label="สมาชิกที่เป็นเจ้าของ">
@@ -246,9 +246,9 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   );
 }
 
-function Item({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Item({ label, children, wide, num }: { label: string; children: React.ReactNode; wide?: boolean; num?: boolean }) {
   return (
-    <div className={wide ? "sm:col-span-2 lg:col-span-3" : ""}>
+    <div className={`${wide ? "sm:col-span-2 lg:col-span-3" : ""} ${num ? "num-item tabular-nums" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-slate-800">{children}</dd>
     </div>
