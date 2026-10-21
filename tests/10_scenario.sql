@@ -2432,6 +2432,53 @@ SELECT t.fails($$UPDATE public.property_details SET longitude = NULL WHERE latit
 SELECT t.fails($$UPDATE public.property_details SET map_url = 'javascript:alert(1)' WHERE latitude IS NOT NULL$$, 'pd_map_location', 'อสังหาฯ: ลิงก์ต้องขึ้นต้นด้วย https://');
 RESET ROLE;
 
+\echo '== 13zz5. วิธีนับ: หน่วย / มูลค่าก้อนเดียว · กันราคาอัตโนมัติ · แปลงยอดตั้งต้นเป็นจำนวนหน่วย (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.reopen_month('2026-07-01', 'ทดสอบวิธีนับ') IS NOT NULL AS reopened_for_units;
+SELECT public.add_holding(t.a('Brokerage USD'), 'BOND', 'หุ้นกู้ก้อนเดียว', NULL, 'THB', NULL,
+  jsonb_build_object('valuation_mode', 'LUMP_SUM', 'price', 500000, 'market_value', 510000, 'notes', 'ทดสอบ'), NULL) AS lump \gset
+SELECT t.ok((SELECT valuation_mode = 'LUMP_SUM' AND quantity = 1 AND current_value = 510000 FROM public.investment_holdings WHERE id = :'lump'),
+            'มูลค่าก้อนเดียว: เก็บเป็น 1 × มูลค่า · มูลค่าปัจจุบัน = มูลค่าตั้งต้น 510,000');
+SELECT t.ok((SELECT price IS NULL AND quantity = 1 AND market_value = 510000 FROM public.investment_valuations WHERE holding_id = :'lump'),
+            'มูลค่าก้อนเดียว: ประวัติราคาเก็บแค่มูลค่า (ราคาว่าง)');
+SELECT t.fails(format($$UPDATE public.investment_holdings SET auto_price = true WHERE id = %L$$, :'lump'), 'นับเป็นหน่วย',
+               'มูลค่าก้อนเดียวเปิดราคาอัตโนมัติไม่ได้');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+VALUES (:'lump', current_date, 999, 1, 520000, 'STATEMENT');
+SELECT t.ok((SELECT price IS NULL AND market_value = 520000 FROM public.investment_valuations WHERE holding_id = :'lump' AND valuation_date = current_date)
+            AND (SELECT current_value = 520000 FROM public.investment_holdings WHERE id = :'lump'),
+            'มูลค่าก้อนเดียว: Statement ใหม่ใช้มูลค่า 520,000 (ไม่สนราคาที่ส่งมา)');
+SELECT (public.restate_opening_units(:'lump', 50000, 'รู้จำนวนหน่วยแล้ว') ->> 'valuations')::int AS lump_vals \gset
+SELECT t.ok(:lump_vals = 2 AND (SELECT valuation_mode = 'UNITS' AND quantity = 50000 AND current_value = 520000 FROM public.investment_holdings WHERE id = :'lump'),
+            'แปลงมูลค่าก้อนเดียว → 50,000 หน่วย: วิธีนับเป็นหน่วย · มูลค่าปัจจุบันเท่าเดิม');
+SELECT t.ok((SELECT round(amount) = 500000 AND cost_base_currency = 500000 AND quantity = 50000 AND price = 10
+               FROM public.investment_transactions WHERE holding_id = :'lump' AND transaction_type = 'OPENING_BALANCE'),
+            'แปลงแล้ว: ต้นทุนรวมเท่าเดิม 500,000 · ต้นทุนต่อหน่วย 10');
+SELECT t.ok((SELECT bool_and(quantity = 50000) AND min(price) = 10.2 AND max(price) = 10.4 FROM public.investment_valuations WHERE holding_id = :'lump' AND deleted_at IS NULL),
+            'แปลงแล้ว: ประวัติราคาเป็นราคาต่อหน่วย (510,000 → 10.2 · 520,000 → 10.4)');
+
+-- กองทุนที่ใส่ 1 หน่วยแทนมูลค่ารวม → เปิดราคาอัตโนมัติไม่ได้จนกว่าจะแปลง
+SELECT public.add_holding(t.a('Brokerage USD'), 'FUND', 'กองทุน 1 หน่วย', 'TEST-A', 'THB', NULL,
+  jsonb_build_object('quantity', 1, 'price', 300000, 'market_price', 300000, 'notes', 'ทดสอบ'), NULL) AS f1 \gset
+SELECT t.fails(format($$UPDATE public.investment_holdings SET auto_price = true WHERE id = %L$$, :'f1'), '1 หน่วย',
+               'กองทุน 1 หน่วยเปิดราคาอัตโนมัติไม่ได้ (กันใส่มูลค่ารวมแทนจำนวน)');
+SELECT t.fails(format($$SELECT public.restate_opening_units(%L, 0)$$, :'f1'), 'มากกว่า 0', 'แปลงเป็น 0 หน่วยไม่ได้');
+SELECT public.restate_opening_units(:'f1', 25000.1234, NULL) IS NOT NULL AS f1_restated;
+UPDATE public.investment_holdings SET auto_price = true WHERE id = :'f1';
+SELECT t.ok((SELECT auto_price AND quantity = 25000.1234 AND current_value = 300000 FROM public.investment_holdings WHERE id = :'f1'),
+            'แปลงกองทุนเป็น 25,000.1234 หน่วยแล้ว → เปิดราคาอัตโนมัติได้ · มูลค่าเท่าเดิม');
+SELECT t.fails(format($$UPDATE public.investment_holdings SET valuation_mode = 'LUMP_SUM' WHERE id = %L$$, :'f1'), 'มีจำนวนหน่วยแล้ว',
+               'รายการที่มีจำนวนหน่วยจริงเปลี่ยนเป็นมูลค่าก้อนเดียวไม่ได้');
+SELECT public.add_holding(t.a('Brokerage USD'), 'EQUITY', 'หุ้น 1 หุ้นจริง', 'ONE', 'THB', NULL,
+  jsonb_build_object('quantity', 1, 'price', 2000, 'notes', 'ทดสอบ'), NULL) AS e1 \gset
+UPDATE public.investment_holdings SET auto_price = true WHERE id = :'e1';
+SELECT t.ok((SELECT auto_price FROM public.investment_holdings WHERE id = :'e1'), 'หุ้น 1 หุ้นจริงเปิดราคาอัตโนมัติได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails(format($$SELECT public.restate_opening_units(%L, 10)$$, :'e1'), 'PERMISSION_DENIED', 'CONTRIBUTOR แปลงยอดตั้งต้นไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

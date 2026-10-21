@@ -2,9 +2,10 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addUnderlying, recordTx, saveFcn, type ActionState } from "../../../actions";
+import { addUnderlying, recordTx, restateUnits, saveFcn, type ActionState } from "../../../actions";
 import { updateRecord, type RecState } from "@/lib/records";
-import { COUPON_FREQ_LABEL } from "@/lib/format";
+import { COUPON_FREQ_LABEL, money, thDate } from "@/lib/format";
+import SecNavPicker from "@/components/SecNavPicker";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
 
@@ -136,10 +137,12 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, i
 }
 
 /** แก้ไขข้อมูลหลักทรัพย์ (ใช้ใน pop up "แก้ไขข้อมูล") */
-export function HoldingInfoForm({ id, paths, v, autoKind }: {
+export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked }: {
   id: string; paths: string[]; v: { name: string; symbol: string | null; maturity_date: string | null; notes: string | null; auto_price?: boolean; price_ref?: string | null };
   /** EQUITY / FUND = ดึงราคาอัตโนมัติได้ */
   autoKind?: "EQUITY" | "FUND" | null;
+  /** เหตุผลที่ยังเปิดราคาอัตโนมัติไม่ได้ (มูลค่าก้อนเดียว / กองทุน 1 หน่วย) — ฐานข้อมูลกันซ้ำ */
+  autoBlocked?: string | null;
 }) {
   const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
   const [auto, setAuto] = useState(!!v.auto_price);
@@ -158,12 +161,13 @@ export function HoldingInfoForm({ id, paths, v, autoKind }: {
         <div className="space-y-2 rounded-lg bg-slate-50 p-3">
           <input type="hidden" name="f_auto_price" value={auto ? "on" : "off"} />
           <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="mt-1" />
+            <input type="checkbox" checked={auto} disabled={!!autoBlocked && !auto} onChange={(e) => setAuto(e.target.checked)} className="mt-1" />
             <span>ดึงราคาอัตโนมัติทุกวันทำการ (18:45)
               <span className="block text-xs text-slate-500">{autoKind === "FUND"
                 ? "ราคา NAV จาก ก.ล.ต. · ใส่ชื่อย่อกองทุนในช่อง \"สัญลักษณ์ / รหัส\" (เช่น K-FIXED) · กองทุนที่มีหลายชนิดหน่วยให้ใส่ชื่อชนิดหน่วยที่ถือ (เช่น K-FIXED-A) ระบบหารหัสกองทุนให้เอง"
                 : "ราคาจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่สัญลักษณ์ เช่น PTT · หุ้นต่างประเทศ เช่น AAPL"}
-                {" "}· ราคาที่ต่างจากราคาก่อนหน้าเกิน 20% ไม่บันทึก · ไม่ทับราคาจาก Statement</span></span>
+                {" "}· ราคาที่ต่างจากราคาก่อนหน้าเกิน 20% ไม่บันทึก · ไม่ทับราคาจาก Statement</span>
+              {autoBlocked && !auto && <span className="block text-xs text-amber-700">{autoBlocked}</span>}</span>
           </label>
           {auto && (
             <label className="block text-xs text-slate-600">รหัสสำหรับดึงราคา (ไม่บังคับ — เว้นว่าง = ใช้สัญลักษณ์ด้านบน)
@@ -178,5 +182,64 @@ export function HoldingInfoForm({ id, paths, v, autoKind }: {
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
+  );
+}
+
+/**
+ * แปลงยอดตั้งต้นเป็นจำนวนหน่วยจริง — รายการที่เป็นมูลค่าก้อนเดียว หรือใส่ 1 หน่วยแทนมูลค่ารวม (มีแค่ยอดตั้งต้น)
+ * กองทุน: ดึง NAV ณ วันตั้งต้นจาก ก.ล.ต. → จำนวนหน่วย = มูลค่าตั้งต้น ÷ NAV (แก้ได้) · มูลค่าทุกวัน / ต้นทุนรวมเท่าเดิม
+ */
+export function ConvertUnitsForm({ assetId, holdingId, isFund, lump, symbol, openingDate, openingValue, currency, paths }: {
+  assetId: string; holdingId: string; isFund: boolean; lump: boolean; symbol: string;
+  openingDate: string; openingValue: number; currency: string; paths: string[];
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(restateUnits, {});
+  const [lumpState, lumpAction, lumpPending] = useActionState<RecState, FormData>(updateRecord, {});
+  const [units, setUnits] = useState("");
+  const [nav, setNav] = useState<number | null>(null);
+  if (state.ok || lumpState.ok) return <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{state.ok ?? lumpState.ok}</div>;
+  const u = Number(units.replace(/,/g, "")) || 0;
+  // กองทุน 1 หน่วย = มักใส่มูลค่ารวมแทนจำนวน → แสดงเด่น · อย่างอื่น (มูลค่าก้อนเดียว / 1 หน่วยจริง) = ลิงก์เล็กกดเปิด
+  const prominent = isFund && !lump;
+  return (
+    <details open={prominent} className={prominent ? "" : "text-sm"}>
+    <summary className={prominent ? "hidden" : "cursor-pointer text-xs text-blue-700 hover:underline"}>{lump ? "รู้จำนวนหน่วยแล้ว? แปลงมูลค่าก้อนเดียวเป็นจำนวนหน่วย" : "ยอดตั้งต้นเป็น 1 หน่วย — แปลงเป็นจำนวนหน่วย / มูลค่าก้อนเดียว"}</summary>
+    <div className="mt-2 space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
+      <div>
+        <div className="font-medium text-amber-900">{lump ? "มูลค่าก้อนเดียว — แปลงเป็นจำนวนหน่วยได้" : "ยอดตั้งต้นเป็น 1 หน่วย — ใส่มูลค่ารวมแทนจำนวนหน่วยหรือไม่?"}</div>
+        <p className="text-xs text-amber-800">มูลค่าตั้งต้น ณ {thDate(openingDate)} = {money(openingValue, currency)} · แปลงแล้วมูลค่าทุกวันและต้นทุนรวมเท่าเดิม แค่แยกเป็นจำนวนหน่วย × ราคาต่อหน่วย (จึงดึงราคาอัตโนมัติได้)</p>
+      </div>
+      {isFund && (
+        <SecNavPicker date={openingDate} initialQuery={symbol}
+          onNav={(r) => { setNav(r.nav); setUnits(String(Math.round((openingValue / r.nav) * 10000) / 10000)); }} />
+      )}
+      <form action={action} className="flex flex-wrap items-end gap-3">
+        <input type="hidden" name="asset_id" value={assetId} />
+        <input type="hidden" name="holding_id" value={holdingId} />
+        <label className="block text-sm text-slate-700">จำนวนหน่วย ณ {thDate(openingDate)} *
+          <input name="units" required inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value)} className={`${small} mt-1 block w-44`} /></label>
+        <label className="block text-sm text-slate-700">เหตุผล
+          <input name="notes" placeholder="เช่น จำนวนหน่วยจาก Statement" className={`${small} mt-1 block w-64`} /></label>
+        <button disabled={pending || u <= 0} className={btn}>{pending ? "กำลังแปลง…" : "แปลงเป็นจำนวนหน่วย"}</button>
+        <Msg s={state} />
+      </form>
+      {u > 0 && (
+        <p className="text-xs text-slate-600">ราคาต่อหน่วย ณ วันตั้งต้น = {money(openingValue / u, currency, 4)}
+          {nav != null && Math.abs(openingValue / u - nav) / nav > 0.001 && <span className="text-amber-700"> · ต่างจาก NAV {nav} (ตรวจจำนวนหน่วย)</span>}</p>
+      )}
+      {!lump && (
+        <form action={lumpAction} className="flex flex-wrap items-center gap-3 border-t border-amber-200 pt-3">
+          <input type="hidden" name="table" value="investment_holdings" />
+          <input type="hidden" name="id" value={holdingId} />
+          <input type="hidden" name="paths" value={paths.join(",")} />
+          <input type="hidden" name="f_valuation_mode" value="LUMP_SUM" />
+          <span className="text-xs text-slate-600">ไม่นับเป็นหน่วย (เช่น รู้แค่มูลค่าจาก Statement)?</span>
+          <button disabled={lumpPending} className={obtn}>ตั้งเป็นมูลค่าก้อนเดียว</button>
+          {lumpState.error && <span className="text-sm text-red-600">{lumpState.error}</span>}
+        </form>
+      )}
+      {!lump && <p className="text-xs text-slate-500">ถ้าถือ 1 หน่วยจริง ไม่ต้องทำอะไร</p>}
+    </div>
+    </details>
   );
 }

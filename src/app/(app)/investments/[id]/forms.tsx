@@ -10,6 +10,7 @@ import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
+import SecNavPicker from "@/components/SecNavPicker";
 import { PfCardPayBody, PfExpenseBody, type PfPayCtx } from "./pf-pay-forms";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -19,7 +20,9 @@ const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hove
 const lbl = "block text-sm text-slate-700";
 
 export type Holding = { id: string; name: string; symbol: string | null; holding_type: string; currency: string;
-  quantity: number; current_price: number | null; status: string };
+  quantity: number; current_price: number | null; status: string;
+  /** LUMP_SUM = มูลค่าก้อนเดียว (ไม่มีราคาต่อหน่วย) */
+  valuation_mode?: string };
 export type Bank = { asset_id: string; name: string; currency: string };
 /** บัญชีเงินฝากในพอร์ต (CASH holding) */
 export type CashAcct = { id: string; name: string; currency: string; is_default_cash: boolean };
@@ -55,27 +58,97 @@ function OpeningBody({ assetId, currency, openingDate, isSetup, onClose }:
   const [state, action, pending] = useActionState<ActionState, FormData>(addHolding, {});
   const [ccy, setCcy] = useState(currency);
   const [type, setType] = useState("EQUITY");
+  const [symbol, setSymbol] = useState("");
+  const [mode, setMode] = useState<"UNITS" | "LUMP_SUM">("UNITS");
+  const [how, setHow] = useState<"units" | "value">("units");
+  // แบบ "รู้แค่มูลค่า": มูลค่า ÷ ราคาต่อหน่วย = จำนวนหน่วย (แก้ได้)
+  const [value, setValue] = useState(""); const [unitPrice, setUnitPrice] = useState(""); const [units, setUnits] = useState("");
+  const [costTotal, setCostTotal] = useState(""); const [qtyKnown, setQtyKnown] = useState("");
+  const calcUnits = (v: string, p: string) => { const u = n(v) / n(p); setUnits(n(v) > 0 && n(p) > 0 ? String(Math.round(u * 10000) / 10000) : ""); };
+  const qtyNow = mode === "LUMP_SUM" ? 0 : how === "units" ? n(qtyKnown) : n(units);
+  const unitsFromValue = n(units) > 0 ? n(units) : 0;
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="valuation_mode" value={mode} />
       <div>
         <h3 className="font-medium text-slate-900">หลักทรัพย์ที่ถืออยู่ก่อน Go-live</h3>
-        <p className="text-xs text-slate-500">ยอด ณ สิ้นวัน {thDate(openingDate)} · ต้นทุนเฉลี่ยใช้คำนวณกำไร/ขาดทุน · ราคาตลาด ณ วันนั้นใช้เป็นมูลค่าตั้งต้น</p>
+        <p className="text-xs text-slate-500">ยอด ณ สิ้นวัน {thDate(openingDate)} · ต้นทุนใช้คำนวณกำไร/ขาดทุน · ราคาตลาด ณ วันนั้นใช้เป็นมูลค่าตั้งต้น</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className={lbl}>ประเภท
-          <select name="holding_type" value={type} onChange={(e) => setType(e.target.value)} className={input}>
+          <select name="holding_type" value={type} onChange={(e) => { setType(e.target.value); setMode(e.target.value === "OTHER" ? "LUMP_SUM" : "UNITS"); }} className={input}>
             {Object.entries(HOLDING_TYPE_LABEL).filter(([v]) => v !== "CASH").map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
         <label className={lbl}>ชื่อ *<input name="name" required placeholder="เช่น ปตท. / K-FIXED" className={input} /></label>
-        <label className={lbl}>สัญลักษณ์<input name="symbol" placeholder="เช่น PTT" className={input} /></label>
+        <label className={lbl}>สัญลักษณ์ / รหัส<input name="symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder={type === "FUND" ? "เช่น K-FIXED-A" : "เช่น PTT"} className={input} data-plain /></label>
         <label className={lbl}>สกุลเงิน
           <CurrencySelect name="currency" value={ccy} onChange={setCcy} className={input} />
         </label>
-        <label className={lbl}>จำนวนหน่วย *<input name="quantity" required inputMode="decimal" className={input} /></label>
-        <label className={lbl}>ต้นทุนเฉลี่ยต่อหน่วย ({ccy}) *<input name="price" required inputMode="decimal" className={input} /></label>
-        <label className={lbl}>ราคาตลาด ณ {thDate(openingDate)}<input name="market_price" inputMode="decimal" placeholder="ไม่ใส่ = ใช้ราคาทุน" className={input} /></label>
+        <label className={`${lbl} md:col-span-2`}>วิธีนับมูลค่า
+          <select value={mode} onChange={(e) => setMode(e.target.value as "UNITS" | "LUMP_SUM")} className={input}>
+            <option value="UNITS">นับเป็นหน่วย (จำนวนหน่วย × ราคาต่อหน่วย)</option>
+            <option value="LUMP_SUM">มูลค่าก้อนเดียว (ไม่นับหน่วย · ดึงราคาอัตโนมัติไม่ได้)</option>
+          </select>
+        </label>
+      </div>
+
+      {mode === "UNITS" && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-2"><input type="radio" checked={how === "units"} onChange={() => setHow("units")} /> รู้จำนวนหน่วย</label>
+            <label className="flex items-center gap-2"><input type="radio" checked={how === "value"} onChange={() => setHow("value")} /> รู้แค่มูลค่า (ระบบคำนวณจำนวนหน่วยให้)</label>
+          </div>
+          {how === "units" ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className={lbl}>จำนวนหน่วย *<input name="quantity" required inputMode="decimal" value={qtyKnown} onChange={(e) => setQtyKnown(e.target.value)} className={input} /></label>
+              <label className={lbl}>ต้นทุนเฉลี่ยต่อหน่วย ({ccy}) *<input name="price" required inputMode="decimal" data-money="off" className={input} /></label>
+              <label className={lbl}>ราคาตลาด ณ {thDate(openingDate)}<input name="market_price" inputMode="decimal" data-money="off" placeholder="ไม่ใส่ = ใช้ราคาทุน" className={input} /></label>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {type === "FUND" && (
+                <SecNavPicker date={openingDate} initialQuery={symbol}
+                  onNav={(r) => { setUnitPrice(String(r.nav)); calcUnits(value, String(r.nav)); if (!symbol) setSymbol(r.class ?? ""); }} />
+              )}
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className={lbl}>มูลค่า ณ {thDate(openingDate)} ({ccy}) *
+                  <input required inputMode="decimal" value={value} onChange={(e) => { setValue(e.target.value); calcUnits(e.target.value, unitPrice); }} className={input} /></label>
+                <label className={lbl}>ราคาต่อหน่วย ณ วันนั้น *{type === "FUND" && <span className="text-xs text-slate-500"> (NAV)</span>}
+                  <input name="market_price" required inputMode="decimal" data-money="off" value={unitPrice}
+                    onChange={(e) => { setUnitPrice(e.target.value); calcUnits(value, e.target.value); }} className={input} /></label>
+                <label className={lbl}>จำนวนหน่วย (คำนวณให้ · แก้ได้) *
+                  <input name="quantity" required inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value)} className={input} /></label>
+                <label className={lbl}>ต้นทุนรวม ({ccy})
+                  <input inputMode="decimal" value={costTotal} onChange={(e) => setCostTotal(e.target.value)} placeholder="ไม่ใส่ = ใช้มูลค่าเป็นต้นทุน" className={input} /></label>
+              </div>
+              <input type="hidden" name="price" value={unitsFromValue > 0 ? String((n(costTotal) > 0 ? n(costTotal) : n(value)) / unitsFromValue) : ""} />
+              {unitsFromValue > 0 && n(unitPrice) > 0 && (
+                <p className="text-xs text-slate-500">ตรวจสอบ: {qty(unitsFromValue)} หน่วย × {n(unitPrice)} = {money(unitsFromValue * n(unitPrice), ccy)}
+                  {Math.abs(unitsFromValue * n(unitPrice) - n(value)) >= 0.005 && <> · ต่างจากมูลค่าที่ใส่ {money(unitsFromValue * n(unitPrice) - n(value), ccy)} (ปัดเศษหน่วย)</>}</p>
+              )}
+            </div>
+          )}
+          {qtyNow === 1 && (
+            <label className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+              <input type="checkbox" required className="mt-1" />
+              <span>ยืนยันว่าถือ <b>1 หน่วยจริง</b> (ไม่ใช่ใส่ 1 แทนมูลค่ารวม) — ถ้ารู้แค่มูลค่า ให้เลือก &quot;รู้แค่มูลค่า&quot; หรือ &quot;มูลค่าก้อนเดียว&quot;</span>
+            </label>
+          )}
+        </div>
+      )}
+
+      {mode === "LUMP_SUM" && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <input type="hidden" name="quantity" value="1" />
+          <label className={lbl}>ต้นทุนรวม ({ccy}) *<input name="price" required inputMode="decimal" value={costTotal} onChange={(e) => setCostTotal(e.target.value)} className={input} /></label>
+          <label className={lbl}>มูลค่า ณ {thDate(openingDate)} ({ccy})<input name="market_value" inputMode="decimal" placeholder="ไม่ใส่ = เท่าต้นทุน" className={input} /></label>
+          <p className="text-xs text-slate-500 md:col-span-3">ไม่เก็บจำนวนหน่วย · อัปเดตมูลค่าด้วย &quot;อัปเดตราคา / Statement&quot; · รู้จำนวนหน่วยทีหลังแปลงได้ที่หน้ารายการนี้</p>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-3">
         {(type === "BOND" || type === "FCN" || type === "STRUCTURED_PRODUCT") && (
           <label className={lbl}>วันครบกำหนด<input name="maturity_date" type="date" className={input} /></label>
         )}
@@ -477,9 +550,9 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
                 <input type="hidden" name={`qty_${h.id}`} value={String(h.quantity)} />
                 {h.holding_type === "CASH" && <input type="hidden" name={`cash_${h.id}`} value="1" />}
               </td>
-              <td className="text-right tabular-nums">{h.holding_type === "CASH" ? "-" : qty(h.quantity)}</td>
+              <td className="text-right tabular-nums">{h.holding_type === "CASH" ? "-" : h.valuation_mode === "LUMP_SUM" ? <span className="text-xs text-slate-400">ก้อนเดียว</span> : qty(h.quantity)}</td>
               <td className="pl-3">
-                {h.holding_type === "CASH" ? <span className="text-xs text-slate-400">—</span> :
+                {h.holding_type === "CASH" || h.valuation_mode === "LUMP_SUM" ? <span className="text-xs text-slate-400">—</span> :
                   <input name={`price_${h.id}`} inputMode="decimal" placeholder={h.current_price ? String(Number(h.current_price)) : ""} className={`w-28 ${small}`} />}
               </td>
               <td className="pl-3">

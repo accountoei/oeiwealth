@@ -3,7 +3,7 @@
 > **อัปเดตไฟล์นี้ทุกครั้งที่มีการปรับปรุงระบบ** (ทุก Pull Request) — ใครหรือ AI ตัวไหนมาทำต่อ ให้อ่านไฟล์นี้ก่อน
 > ⚠️ repo นี้เป็น **Public** · ห้ามใส่ข้อมูลจริงของครอบครัวในไฟล์นี้ (ชื่อ ที่อยู่ เลขโฉนด เลขบัญชี จำนวนเงิน)
 
-อัปเดตล่าสุด: 21 ต.ค. 2026 (PR #145 · การใช้งาน API ธนาคารกรุงเทพ)
+อัปเดตล่าสุด: 21 ต.ค. 2026 (PR #146 · วิธีนับหน่วย / มูลค่าก้อนเดียว + ดึง NAV ก.ล.ต. ในฟอร์ม)
 
 ---
 
@@ -71,22 +71,23 @@
 | เงินในพอร์ต (ตกลง 20–21 ต.ค.) | บัญชีเงินฝากในพอร์ต (CASH holding) ทำงานแบบบัญชีธนาคาร: หน้าบัญชีของตัวเอง · ยอด = Statement ล่าสุด / ยอดตั้งต้น + รายการหลังจากนั้น · เงินโอนธนาคาร ↔ พอร์ตที่รู้ยอดแล้วเข้าบัญชีทันที (เงินระหว่างทาง = รอใส่ยอดเท่านั้น) · จ่ายค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ตได้ (บัตรต่างประเทศผูกได้เฉพาะสกุลเดียวกัน) | เหมือนบัญชีธนาคาร เข้าใจง่าย |
 | Property (ตกลง 21 ต.ค.) | ตำแหน่ง: ลิงก์ Google Maps และ/หรือ พิกัด (ช่องเดียว "lat, lng" เก็บแยก 2 คอลัมน์) · ภาพรวม: กล่องบน 4 ใบ (+ ประมาณรายได้ค่าเช่าทั้งปี) + ตารางทรัพย์สิน · ภาษีที่ดิน: dropdown ปี (เริ่ม 2569) · ปุ่มแก้ไข (ลบอยู่ใน pop up) · คัดลอกจากปีก่อนทุกรายการ | ตามที่เจ้าของขอ |
 | อัตราแลกเปลี่ยน (ตกลง 21 ต.ค.) | แหล่งปัจจุบัน **ธนาคารกรุงเทพ อัตรากลาง** = (โอนเงินรับซื้อ TT + ตั๋วแลกเงิน-ดราฟ-โอนเงินขาย Bill_DD_TT) ÷ 2 · ไม่มีอัตราโอน → ธนบัตรถ้าส่วนต่าง ≤ 6% (BND) · INR / PHP ไม่บันทึก · JPY ÷100 · IDR/VND/LAK ÷1,000 · เก็บเฉพาะ 19 สกุลเดิม · **ใช้อัตราของวันเดียวกัน** (`rate_date <= D`) · ดึง 3 รอบ 09:30 / 14:30 / 19:30 + ปุ่ม "อัปเดตอัตราตอนนี้" (ADMIN · ห่าง 5 นาที) · อัตราในงวดที่ปิดแก้ไม่ได้ | ปิดเดือนตรงกับ Statement สิ้นเดือน · กันตัวเลขผิดหน่วย |
+| วิธีนับมูลค่าหลักทรัพย์ (ตกลง 21 ต.ค.) | ทุกรายการระบุวิธีนับ (`investment_holdings.valuation_mode`): **นับเป็นหน่วย** (จำนวน × ราคาต่อหน่วย · 1 หน่วยจริงได้แต่ฟอร์มให้ติ๊กยืนยัน) หรือ **มูลค่าก้อนเดียว** (ไม่แสดงจำนวน / ราคา · เก็บภายในเป็น 1 × มูลค่า · ราคาในประวัติว่าง · ดึงราคาอัตโนมัติไม่ได้) · ค่าเริ่มต้น: อื่น ๆ = ก้อนเดียว · อย่างอื่น = หน่วย · ยอดตั้งต้นแบบ "รู้แค่มูลค่า": กองทุนกดดึง NAV ณ วันตั้งต้นจาก ก.ล.ต. (Edge Function `sec-nav` · แสดงชื่อเต็ม + ชนิดหน่วย + วันที่ NAV ให้ตรวจ) → จำนวนหน่วย = มูลค่า ÷ NAV (ปัด 4 ตำแหน่ง · แก้ได้) · ต้นทุน = มูลค่า (ถ้าไม่ใส่ต้นทุนรวม) · แปลงทีหลังด้วย `restate_opening_units` (มีแค่ยอดตั้งต้น · มูลค่าทุกวัน / ต้นทุนรวมเท่าเดิม) · กองทุน 1 หน่วยเปิดราคาอัตโนมัติไม่ได้ · ประวัติราคา: จำนวน = จำนวนที่ถือ ณ วันนั้นจากรายการ · มูลค่า = ราคา × จำนวน · แก้ได้แค่ราคา (หรือมูลค่าถ้าไม่มีราคา) | ข้อมูลเดิมใส่ 1 หน่วยแทนมูลค่ารวม → ราคาอัตโนมัติ / ประวัติราคาไม่ตรง |
 
 ### โครงสร้างปัจจุบัน
 - **เว็บ** Next.js 15 (App Router) บน Vercel (team `oeiwealth`, region sin1) · หน้าอยู่ `src/app/(app)/…`
   - Dashboard (`page.tsx` · แจ้งเตือนราคารอยืนยัน) · `income-expenses` · `financial/cash` · `financial/loans` · `financial/business` · `investments` (+ `[id]/cash/[hid]` บัญชีเงินฝากในพอร์ต · `[id]/holding/[hid]`) · `property` (แท็บ ภาพรวม / ภาษีที่ดิน ฯลฯ) · `alternative` (ทองคำ: ใส่ราคาต่อบาท) · `insurance` · `liabilities` (+ `cards/[id]`) · `family` · `documents` · `month-closing` · `settings` (opening / system: แหล่งอัตรา · ปุ่มอัปเดตอัตรา · FX Override · ราคาอัตโนมัติ · ประวัติ Job / family-users)
   - ส่วนกลาง: `src/lib/format.ts` · `src/lib/records.ts` (whitelist) · `src/lib/person-view.ts` · `src/lib/pf-cash.ts` · `src/lib/pending-price-actions.ts` · `investments/[id]/cash-ledger.ts` (ยอดบัญชีในพอร์ตฝั่งหน้าเว็บ · ตรงกับ `private.holding_value_at`)
   - Component: `Boxes` (`StatBox` / `DetailItem`) · `Modal` · `ActionBar` · `EditToggle` · `ConfirmDialog` · `StatusSelect` · `OwnershipEditor` · `EntityDocuments` · `PendingPrice` (กล่องราคารอยืนยัน)
-- **ฐานข้อมูล** Supabase (project `ljrziisxheunfgdmebvp` · แผน Free) · migration 94 ไฟล์ **รันครบแล้วถึง `20261021000600_gold_assoc_baseline90.sql`** · 62 ตาราง · 29 View · RLS ทุกตาราง
+- **ฐานข้อมูล** Supabase (project `ljrziisxheunfgdmebvp` · แผน Free) · migration 95 ไฟล์ (รันครบถึง `20261021000600_gold_assoc_baseline90.sql` · PR #146 เพิ่ม `20261021000700_holding_valuation_mode.sql`) · 62 ตาราง · 29 View · RLS ทุกตาราง
   - แกนเงิน: `cash_movements` (derived แก้ตรงไม่ได้) · `income_transactions` · `expense_items` · Net Worth จาก `private.net_worth_items(...)` · เดือน FINAL อ่านจาก Snapshot
   - FX: `private.fx_rate_row` (อัตราล่าสุด **ถึง** วันที่) · `fx_rates` + trigger `t20_period_lock` · `families.fx_source / fx_bbl_rate / fx_source_since` · `server_upsert_fx_rates` (ข้าม PERIOD_LOCKED · NOT_CURRENT_SOURCE · BBL ต่างเกิน 5%)
   - ราคาอัตโนมัติ: `investment_holdings.auto_price / price_ref / price_pending` · `alternative_asset_details.auto_price / gold_form / deduct_per_baht / price_pending` · `server_price_targets` · `server_upsert_prices` (ราคาครั้งก่อน 90 วัน · ครั้งแรก / ต่างเกิน 20% → `price_pending`) · `confirm_pending_price` / `dismiss_pending_price` · `private.gold_value` (สูตรทองสูตรเดียว) · `add_gold_valuation`
   - พอร์ต: `private.pf_transfers` · `private.holding_value_at` · `private.portfolio_in_transit` · investment type `PAYMENT` · `expense_items.paid_from_cash_holding_id` · `credit_cards.autopay_cash_holding_id`
   - Property: `property_details.map_url / latitude / longitude` · `property_tax_lines` · `copy_property_tax_year`
-- **Edge Functions** `invite-user` · `drive` · `fx-refresh` (ทั้งหมด Verify JWT off · ตรวจผู้เรียกเอง) · Secrets: `GOOGLE_*` · `GITHUB_DISPATCH_TOKEN` (fine-grained · repo นี้ · Actions read/write)
+- **Edge Functions** `invite-user` · `drive` · `fx-refresh` · `sec-nav` (PR #146 · ดึง NAV ก.ล.ต. ตามวัน · อ่านอย่างเดียว) (ทั้งหมด Verify JWT off · ตรวจผู้เรียกเอง) · Secrets: `GOOGLE_*` · `GITHUB_DISPATCH_TOKEN` (fine-grained · repo นี้ · Actions read/write) · `SEC_API_KEY` (ตัวเดียวกับ GitHub Secret)
 - **GitHub Actions** `fx-rates.yml` (09:30 / 14:30 / 19:30 · BBL ย้อน 3 วัน / ธปท. 10 วัน) · `prices.yml` (จ.–ศ. 18:45) · `db-backup.yml` (รายสัปดาห์) · `supabase-keepalive.yml` · GitHub Secrets: `SUPABASE_URL` · `SUPABASE_SECRET_KEY` · `BOT_API_TOKEN` · `BBL_API_KEY` · `SEC_API_KEY` (ตั้งแล้วทั้งคู่)
 - **สคริปต์** `scripts/fx-fetch.mjs` (ธปท. / ธนาคารกรุงเทพ · dry run พิมพ์ข้อมูลดิบ RAW) · `scripts/price-fetch.mjs` (Yahoo · ก.ล.ต. · สมาคมค้าทองคำ `classic.goldtraders.or.th` สำรอง `api.chnwt.dev/thai-gold-api` · เทียบราคาโลก 3%)
-- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (**550 checks**) · `node scripts/fx-fetch.test.mjs` · `node scripts/price-fetch.test.mjs` · Edge Function: `deno check` (ติดตั้ง deno ผ่าน npm ในโฟลเดอร์ชั่วคราว)
+- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (**563 checks**) · `node scripts/fx-fetch.test.mjs` · `node scripts/price-fetch.test.mjs` · Edge Function: `deno check` (ติดตั้ง deno ผ่าน npm ในโฟลเดอร์ชั่วคราว)
 
 ### เสร็จแล้ว (20–21 ต.ค. · PR #121–#138 Merge แล้ว · migration รันครบ)
 - หน้าจอ: ตัวเลขชิดขวา · pop up แก้ / ลบในแถว · Dashboard ใหม่ · Income & Expenses ตารางเดียว · Cash / Loans / เอกสาร จัดใหม่ (#121–#130)
@@ -96,7 +97,7 @@
 - ราคาอัตโนมัติ: ราคาฐานรอยืนยัน + กัน 20% เทียบราคาตลาดครั้งก่อน 90 วัน · ทองคำราคาสมาคมค้าทองคำ (dry run อ่านได้จริง 21 ต.ค. · ครั้งที่ 17 · ต่างราคาโลก 0.5%) · ทองรูปพรรณหักต่อบาททองคำ · ใส่ราคาต่อบาทเอง (#137–#138)
 
 ### งานถัดไป
-1. เจ้าของรอรอบราคาอัตโนมัติ 18:45 (หรือรันเองไม่ติ๊ก dry run) → ตรวจว่าทองคำ 1 รายการที่เปิดดึงราคาได้มูลค่าใหม่ (มีมูลค่าตั้งต้น 30 ก.ย. ภายใน 90 วัน → บันทึกเลย ไม่ขึ้นกล่องเหลือง)
+1. **PR #146 (วิธีนับ + ดึง NAV):** รัน migration `20261021000700_holding_valuation_mode.sql` → Merge → ใส่ `SEC_API_KEY` ใน Supabase Edge Function Secrets + Deploy `sec-nav` (Verify JWT ปิด) → ทดสอบฟอร์มยอดตั้งต้นแบบ "รู้แค่มูลค่า" กับกองทุน + การ์ดแปลงเป็นจำนวนหน่วย · ข้อมูลทดสอบตอนนี้: กองทุน 9 / หุ้นกู้ 1 / อื่น ๆ 1 รายการเป็น 1 หน่วย (แปลงได้ที่หน้ารายการ หรือรอนำเข้าใหม่ — ตอนนำเข้า AI คำนวณจำนวนหน่วยจาก NAV ให้)
 2. **NAV กองทุน ✅ ดึงได้แล้ว** (dry run 21 ต.ค. หลัง PR #142) · รันจริงแล้วขึ้นกล่องเหลือง แต่ปุ่ม "ยืนยันเป็นราคาฐาน" ขึ้น "ข้อมูลไม่ครบ" → แก้ใน PR #144 · เหลือ: Merge → กดยืนยันอีกครั้ง → ตรวจว่ารอบถัดไปบันทึกเอง (จำรหัส `proj_id|ชนิดหน่วย` ไว้)
 3. เจ้าของทดสอบหน้าที่ปรับใน PR #121–#138 บนข้อมูลจริง แล้วแจ้งจุดที่ต้องปรับ
 4. ส่วน B / C / D ของ "ต้องทำก่อนใช้งานจริง" (MFA ADMIN คนที่ 2 · เจ้าของบัญชีระบบ · อัปเกรด Pro · วัน Go-live · ล้างข้อมูล · นำเข้าข้อมูลจริง)
@@ -461,3 +462,4 @@
 | #143 | 21 ต.ค. | เอกสารอย่างเดียว: NAV กองทุนดึงได้แล้ว (dry run ผ่าน) · ขั้นตอนที่เหลือ |
 | #144 | 21 ต.ค. | แก้ปุ่ม "ยืนยันเป็นราคาฐาน" / "ไม่ใช้ราคานี้" ในกล่องราคาอัตโนมัติรอยืนยัน (หลักทรัพย์ + ทองคำ) ที่ขึ้น "ข้อมูลไม่ครบ" ทุกครั้ง: ค่า name/value ของปุ่มไม่ถูกส่งมากับ server action → แยกปุ่มละฟอร์ม + `op` เป็น hidden input · ทดสอบด้วยหน้าจำลอง + Playwright · ไม่มี migration |
 | #145 | 21 ต.ค. | เอกสารอย่างเดียว: บันทึกการใช้งาน API ธนาคารกรุงเทพจากเมนู Reports (21 ครั้ง · Blocked 0) และวิธีสังเกตว่าเกิน quota |
+| #146 | 21 ต.ค. | วิธีนับมูลค่าหลักทรัพย์: นับเป็นหน่วย / มูลค่าก้อนเดียว (`valuation_mode`) · ฟอร์มยอดตั้งต้นแบบ "รู้แค่มูลค่า" + ปุ่มดึง NAV ณ วันตั้งต้นจาก ก.ล.ต. (Edge Function ใหม่ `sec-nav`) → คำนวณจำนวนหน่วย · ยืนยัน 1 หน่วยจริง · การ์ดแปลงยอดตั้งต้นเป็นจำนวนหน่วย (`restate_opening_units`) · กันราคาอัตโนมัติ (ก้อนเดียว / กองทุน 1 หน่วย) · ประวัติราคา: จำนวนที่ถือ ณ วันนั้นจากรายการ + มูลค่า = ราคา × จำนวน · migration `20261021000700_holding_valuation_mode.sql` · ทดสอบ 563 checks |
