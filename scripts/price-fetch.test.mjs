@@ -1,6 +1,6 @@
 // node scripts/price-fetch.test.mjs — ทดสอบการแปลงข้อมูลราคา (ไม่ต่อเน็ต · ตัวเลขสมมติ)
 import assert from "node:assert/strict";
-import { yahooSymbol, parseYahooChart, goldBahtPrice, parseSecNav, firstArray, isSecProjId, parseGoldtraders, parseThaiGoldApi, goldQuote } from "./price-fetch.mjs";
+import { yahooSymbol, parseYahooChart, goldBahtPrice, parseSecNav, firstArray, isSecProjId, parseGoldtraders, parseThaiGoldApi, goldQuote, pickSecFund, secUrl, secItems } from "./price-fetch.mjs";
 
 assert.equal(yahooSymbol({ symbol: "ptt", currency: "THB" }), "PTT.BK");
 assert.equal(yahooSymbol({ symbol: "AAPL", currency: "USD" }), "AAPL");
@@ -28,6 +28,33 @@ assert.deepEqual(firstArray({ a: { b: [1, 2] } }), [1, 2]);
 assert.equal(isSecProjId("M0001_2550"), true);
 assert.equal(isSecProjId("M0001_2550|K-ABC-A"), true);
 assert.equal(isSecProjId("K-FIXED-A"), false);
+
+// ก.ล.ต. API v2 (ชื่อกองทุน / ตัวเลขสมมติ)
+assert.equal(secUrl("/general-info/profiles", { project_info: "K-ABC", next_cursor: "" }),
+  "https://api.sec.or.th/v2/fund/general-info/profiles?page_size=100&project_info=K-ABC");
+assert.equal(secUrl("/daily-info/nav", { proj_id: "M0001_2550", start_nav_date: "2026-10-11", end_nav_date: "2026-10-21", fund_class_name: undefined }),
+  "https://api.sec.or.th/v2/fund/daily-info/nav?page_size=100&proj_id=M0001_2550&start_nav_date=2026-10-11&end_nav_date=2026-10-21");
+const navV2 = { message: "success", page_size: 100, next_cursor: null, items: [
+  { proj_id: "M0002_2560", nav_date: "2026-10-16", fund_class_name: "", last_val: 12.5 },
+  { proj_id: "M0002_2560", nav_date: "2026-10-17", fund_class_name: "", last_val: 12.75 },
+] };
+assert.deepEqual(parseSecNav(navV2), { price: 12.75, date: "2026-10-17" });
+assert.deepEqual(secItems(navV2).length, 2);
+assert.equal(parseSecNav({ items: [                                       // หลายชนิดหน่วย ไม่ระบุ → ไม่เดา
+  { nav_date: "2026-10-17", fund_class_name: "K-ABC-A", last_val: 10 },
+  { nav_date: "2026-10-17", fund_class_name: "K-ABC-SSF", last_val: 11 }] }), null);
+const prof = [
+  { proj_id: "M0001_2550", proj_abbr_name: "K-ABC", fund_class_name: "K-ABC-A", fund_status: "Registered" },
+  { proj_id: "M0001_2550", proj_abbr_name: "K-ABC", fund_class_name: "K-ABC-SSF", fund_status: "Registered" },
+  { proj_id: "M0002_2560", proj_abbr_name: "K-ONE", fund_class_name: "", fund_status: "Registered" },
+  { proj_id: "M0003_2561", proj_abbr_name: "K-SOLO", fund_class_name: "K-SOLO-A", fund_status: "Registered" },
+  { proj_id: "M0009_2540", proj_abbr_name: "K-ONE", fund_class_name: "", fund_status: "Liquidated" },
+];
+assert.deepEqual(pickSecFund(prof, "k-abc-ssf"), { ref: "M0001_2550|K-ABC-SSF" });
+assert.deepEqual(pickSecFund(prof, "K-ONE"), { ref: "M0002_2560" });          // ข้ามกองที่เลิกแล้ว
+assert.deepEqual(pickSecFund(prof, "K-SOLO"), { ref: "M0003_2561|K-SOLO-A" }); // ชนิดหน่วยเดียว
+assert.match(pickSecFund(prof, "K-ABC").error, /หลายชนิดหน่วย.*K-ABC-A, K-ABC-SSF/);
+assert.match(pickSecFund(prof, "K-NONE").error, /ไม่พบ/);
 // สมาคมค้าทองคำ (โครงสร้างหน้า classic.goldtraders.or.th · ตัวเลขสมมติ)
 const html = `<td><span id="DetailPlace_uc_goldprices1_lblBLSell"><b><font color="Red">41,150.00</font></b></span></td>
 <span id="DetailPlace_uc_goldprices1_lblBLBuy"><b><font>41,050.00</font></b></span>
