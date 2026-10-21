@@ -6,7 +6,7 @@ import { useOnMainTab } from "../income-expenses/tabs";
 import { money, thDate } from "@/lib/format";
 
 export type PropRow = {
-  id: string; assetId: string; name: string; sub: string; type: string; typeLabel: string; usage: string; usageLabel: string;
+  id: string; assetId: string; name: string; sub: string; loc: string | null; type: string; typeLabel: string; usage: string; usageLabel: string;
   status: string; cost: number | null; costDate: string | null; value: number | null; valueDate: string | null; stale: boolean;
   rent: number; ytd: number; leases: { id: string; badge: string; cls: string; text: string }[]; noLease: boolean; move?: ReactNode;
 };
@@ -14,18 +14,21 @@ export type PropRow = {
 const STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย", CLOSED: "ปิดแล้ว" };
 const small = "ml-2 rounded-md border border-slate-300 px-2 py-1 text-sm";
 
-/** ทรัพย์สินทั้งหมด + ตัวกรอง ประเภท / การใช้งาน / สถานะ (ตั้งต้น = ถืออยู่) · ยอดรวมตามตัวกรองด้านบน */
+/** ทรัพย์สินทั้งหมด + ตัวกรอง ประเภท / การใช้งาน / กลุ่มทำเล / สถานะ (ตั้งต้น = ถืออยู่) · ยอดรวมตามตัวกรองด้านบน */
 export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]; empty: string; toggle?: ReactNode }) {
   const [type, setType] = useState("");
   const [usage, setUsage] = useState("");
+  const [loc, setLoc] = useState("");
   const [status, setStatus] = useState("ACTIVE");
-  useOnMainTab(() => { setType(""); setUsage(""); setStatus("ACTIVE"); });
+  useOnMainTab(() => { setType(""); setUsage(""); setLoc(""); setStatus("ACTIVE"); });
   const types = useMemo(() => [...new Map(rows.map((r) => [r.type, r.typeLabel]))], [rows]);
   const usages = useMemo(() => [...new Map(rows.map((r) => [r.usage, r.usageLabel]))], [rows]);
+  const locs = useMemo(() => [...new Set(rows.map((r) => r.loc ?? ""))].sort((a, b) => (a ? a.localeCompare(b, "th") : 1)), [rows]);
   const statuses = useMemo(() => [...new Set(["ACTIVE", ...rows.map((r) => r.status)])], [rows]);
-  const shown = rows.filter((r) => (!type || r.type === type) && (!usage || r.usage === usage) && (!status || r.status === status));
+  const shown = rows.filter((r) => (!type || r.type === type) && (!usage || r.usage === usage)
+    && (!loc || (loc === "__none" ? !r.loc : r.loc === loc)) && (!status || r.status === status));
   const sum = (f: (r: PropRow) => number | null) => shown.reduce((t, r) => t + (f(r) ?? 0), 0);
-  const filtered = !!(type || usage || status !== "ACTIVE");
+  const filtered = !!(type || usage || loc || status !== "ACTIVE");
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-4 px-4 pt-4 text-xs text-slate-600">
@@ -39,6 +42,14 @@ export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]
             <option value="">ทั้งหมด</option>{usages.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </label>
+        {locs.length > 1 && (
+          <label>กลุ่มทำเล
+            <select value={loc} onChange={(e) => setLoc(e.target.value)} className={small}>
+              <option value="">ทั้งหมด</option>
+              {locs.map((g) => <option key={g || "__none"} value={g || "__none"}>{g || "(ไม่ระบุ)"}</option>)}
+            </select>
+          </label>
+        )}
         <label>สถานะ
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={small}>
             <option value="">ทั้งหมด</option>{statuses.map((s) => <option key={s} value={s}>{STATUS[s] ?? s}</option>)}
@@ -47,7 +58,6 @@ export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]
         {shown.length > 0 && (
           <span className="ml-auto text-right text-sm text-slate-700">
             รวม{filtered ? "ตามตัวกรอง" : ""} {shown.length} รายการ · มูลค่าล่าสุด <b className="tabular-nums">{money(sum((r) => r.value), "THB")}</b>
-            <span className="ml-2 text-xs text-slate-500">ซื้อ {money(sum((r) => r.cost))} · ค่าเช่า {money(sum((r) => r.rent))}/เดือน</span>
           </span>
         )}
         {toggle && <span className={shown.length > 0 ? "" : "ml-auto"}>{toggle}</span>}

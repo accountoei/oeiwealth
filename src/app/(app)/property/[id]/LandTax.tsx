@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
 import { landParts, landTaxCalc, money } from "@/lib/format";
 import { useActionSlot } from "@/components/ActionBar";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
@@ -24,8 +25,10 @@ function Msg({ st }: { st: ActionState }) {
 }
 
 /** เพิ่ม / แก้รายการภาษีที่ดิน 1 รายการ (pop up) · เห็นผลคำนวณทันทีขณะกรอก */
-export function TaxLineForm({ assetId, year, line, defaults, label, primary = false }: {
+export function TaxLineForm({ assetId, year, line, defaults, label, primary = false, canDelete = false }: {
   assetId: string; year: number; line?: TaxLine; label: string; primary?: boolean;
+  /** แก้ไข: ปุ่ม "ลบรายการนี้" อยู่ในหน้าต่าง (ADMIN / EDITOR) */
+  canDelete?: boolean;
   defaults?: { rate_pct: number; land_sq_wa: number | null; sort_order: number };
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
@@ -43,10 +46,10 @@ export function TaxLineForm({ assetId, year, line, defaults, label, primary = fa
     building_price_per_sqm: n(v.building_price_per_sqm), depreciation_pct: n(v.depreciation_pct), exemption: n(v.exemption),
     rate_pct: n(v.rate_pct), discount_pct: n(v.discount_pct) });
   const trigger = <button type="button" onClick={() => setOpen(!open)}
-    className={activeCls(primary ? "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" : "text-xs text-blue-700 hover:underline")}>{label}</button>;
+    className={activeCls(primary ? "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" : "rounded-md bg-blue-600 px-2.5 py-1 text-xs text-white hover:bg-blue-700")}>{label}</button>;
   if (!open) return trigger;
   const f = `mt-1 block w-full ${input}`;
-  return present(trigger, (
+  return present(trigger, (<>
     <form action={action} className="space-y-4">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="tax_year" value={year} />
@@ -105,7 +108,12 @@ export function TaxLineForm({ assetId, year, line, defaults, label, primary = fa
         <Msg st={state} />
       </div>
     </form>
-  ));
+    {line && canDelete && (
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <DeleteTaxLine assetId={assetId} year={year} id={line.id} label={line.description || "รายการ"} />
+      </div>
+    )}
+  </>));
 }
 
 export function DeleteTaxLine({ assetId, year, id, label }: { assetId: string; year: number; id: string; label: string }) {
@@ -116,7 +124,7 @@ export function DeleteTaxLine({ assetId, year, id, label }: { assetId: string; y
       {cf.dialog}
       <form action={action} onSubmit={cf.guard(`ลบรายการภาษี "${label}"?`, { danger: true, okLabel: "ลบ" })} className="inline">
         <input type="hidden" name="asset_id" value={assetId} /><input type="hidden" name="tax_year" value={year} /><input type="hidden" name="id" value={id} />
-        <button disabled={pending} className="text-xs text-slate-500 hover:text-red-700">ลบ</button>
+        <button disabled={pending} className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">{pending ? "กำลังลบ…" : "ลบรายการนี้"}</button>
         {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
       </form>
     </>
@@ -132,5 +140,18 @@ export function CopyTaxYear({ assetId, from, to }: { assetId: string; from: numb
         {pending ? "กำลังคัดลอก…" : `คัดลอกจากปี ${from + 543}`}</button>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
+  );
+}
+
+/** เลือกปีภาษี (dropdown) · ✓ = มีข้อมูลแล้ว */
+export function TaxYearSelect({ years, value, withData, hrefOf }: { years: number[]; value: number; withData: number[]; hrefOf: string }) {
+  const router = useRouter();
+  return (
+    <label className="flex items-center gap-2 text-sm text-slate-600">ปีภาษี
+      <select value={value} onChange={(e) => router.push(hrefOf.replace("__Y__", e.target.value), { scroll: false })}
+        className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+        {years.map((y) => <option key={y} value={y}>{y + 543}{withData.includes(y) ? " ✓" : ""}</option>)}
+      </select>
+    </label>
   );
 }

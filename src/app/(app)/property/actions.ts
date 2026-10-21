@@ -76,9 +76,24 @@ export async function addValuation(_: ActionState, form: FormData): Promise<Acti
   return { ok: "บันทึกมูลค่าแล้ว" };
 }
 
+/** พิกัด "ละติจูด, ลองจิจูด" (ช่องเดียว) → 2 ค่า · ว่าง = ลบ · ไม่มีพิกัดแต่ลิงก์มี @lat,lng → ใช้จากลิงก์ */
+function parseCoords(raw: string | null, url: string | null): { lat: number | null; lng: number | null } | { error: string } {
+  const src = raw ?? url?.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/)?.slice(1, 3).join(",") ?? null;
+  if (!src) return { lat: null, lng: null };
+  const m = src.trim().match(/^\(?\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*\)?$/);
+  if (!m) return { error: "พิกัดไม่ถูกต้อง — ใส่แบบ 13.7563, 100.5018 (ละติจูด, ลองจิจูด)" };
+  const lat = Number(m[1]), lng = Number(m[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return { error: "พิกัดเกินช่วง (ละติจูด ±90 · ลองจิจูด ±180) — ตรวจว่าไม่ได้สลับกัน" };
+  return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+}
+
 export async function updatePropertyInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
+  const mapUrl = str(form.get("map_url"));
+  if (mapUrl && !/^https:\/\//i.test(mapUrl)) return { error: "ลิงก์ Google Maps ต้องขึ้นต้นด้วย https://" };
+  const xy = parseCoords(str(form.get("coords")), mapUrl);
+  if ("error" in xy) return { error: xy.error };
   const { data: a, error: e1 } = await supabase.from("assets").update({
     name: str(form.get("name")), notes: str(form.get("notes")),
     acquisition_date: str(form.get("acquisition_date")), acquisition_cost: num(form.get("acquisition_cost")),
@@ -93,6 +108,7 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
     deed_book: str(form.get("deed_book")), deed_page: str(form.get("deed_page")), map_sheet: str(form.get("map_sheet")),
     survey_page: str(form.get("survey_page")), subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
     province: str(form.get("province")),
+    ...(form.has("coords") ? { map_url: mapUrl, latitude: xy.lat, longitude: xy.lng } : {}),
   }).eq("asset_id", id);
   if (e2) return { error: friendlyError(e2.message) };
   revalidateProperty(id);
@@ -309,4 +325,32 @@ export async function copyTaxYear(_: ActionState, form: FormData): Promise<Actio
   await syncLandTax(supabase, assetId, to);
   revalidateProperty(assetId);
   return { ok: `คัดลอกจากปี ${from + 543} แล้ว ${data} รายการ` };
+}
+
+/** คัดลอกภาษีที่ดินจากปีก่อน ทุกทรัพย์สิน: เฉพาะที่ปีก่อนมีข้อมูล และปีนี้ยังไม่มี (ไม่ทับรายการที่กรอกแล้ว) */
+export async function copyTaxYearAll(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const from = Number(form.get("from_year")), to = Number(form.get("to_year"));
+  const ids = String(form.get("asset_ids") ?? "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return { error: "ปีไม่ถูกต้อง" };
+  if (!ids.length) return { error: "ไม่มีทรัพย์สินให้คัดลอก" };
+  const { data: rows, error } = await supabase.from("property_tax_lines").select("asset_id,tax_year")
+    .in("asset_id", ids).in("tax_year", [from, to]).is("deleted_at", null);
+  if (error) return { error: friendlyError(error.message) };
+  const has = (y: number) => new Set((rows ?? []).filter((r) => r.tax_year === y).map((r) => r.asset_id as string));
+  const src = has(from), dst = has(to);
+  let done = 0, lines = 0;
+  const failed: string[] = [];
+  for (const id of ids) {
+    if (!src.has(id) || dst.has(id)) continue;
+    const { data: n, error: e } = await supabase.rpc("copy_property_tax_year", { p_asset_id: id, p_from_year: from, p_to_year: to });
+    if (e) { failed.push(friendlyError(e.message)); continue; }
+    await syncLandTax(supabase, id, to);
+    done += 1; lines += Number(n ?? 0);
+  }
+  revalidateProperty();
+  const skipHas = ids.filter((id) => dst.has(id)).length, skipNone = ids.filter((id) => !src.has(id) && !dst.has(id)).length;
+  const msg = `คัดลอกจากปี ${from + 543} แล้ว ${done} ทรัพย์สิน (${lines} รายการ)`
+    + (skipHas ? ` · ข้าม ${skipHas} (มีข้อมูลปี ${to + 543} แล้ว)` : "") + (skipNone ? ` · ข้าม ${skipNone} (ปี ${from + 543} ไม่มีข้อมูล)` : "");
+  return failed.length ? { error: `${msg} · ไม่สำเร็จ ${failed.length}: ${failed[0]}` } : { ok: msg };
 }
