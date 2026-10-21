@@ -21,7 +21,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 - **Never** put the Supabase service_role / secret key (`sb_secret_…`), the Google client secret, or any other secret in: code, `NEXT_PUBLIC_*` variables, Vercel, commits, or chat.
   - The FX job (`fx-rates.yml`) and price job (`prices.yml`) read `SUPABASE_SECRET_KEY` (+ `BOT_API_TOKEN` / `BBL_API_KEY` / `SEC_API_KEY`) from **GitHub Secrets** only.
-  - Edge Functions use the keys Supabase injects automatically (`SUPABASE_SECRET_KEYS` / `SUPABASE_SERVICE_ROLE_KEY`) and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` from Supabase Edge Function Secrets, plus `GITHUB_DISPATCH_TOKEN` (fine-grained, this repo only, Actions read/write — used by `fx-refresh`).
+  - Edge Functions use the keys Supabase injects automatically (`SUPABASE_SECRET_KEYS` / `SUPABASE_SERVICE_ROLE_KEY`) and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` from Supabase Edge Function Secrets, plus `GITHUB_DISPATCH_TOKEN` (fine-grained, this repo only, Actions read/write — used by `fx-refresh`) and `SEC_API_KEY` (same key as the GitHub Secret — used by `sec-nav`).
   - The publishable/anon key is public by design; security comes from RLS.
 - **Never ask for, print, rotate, or touch the Vault key `fwv_bank_account_key`.** It encrypts bank account numbers; changing it after real data exists destroys that data. The Google refresh token (`fwv_drive_refresh_token`) also lives in Vault — only the `drive` Edge Function reads it.
 - **Never disable RLS, add permissive policies, grant tables to `anon`, or bypass role checks.** Roles: `ADMIN`, `EDITOR`, `CONTRIBUTOR` (insert; edit own rows < 24 h), `VIEWER` (read-only). Delete = soft delete (`deleted_at`), ADMIN/EDITOR only; restore = ADMIN only.
@@ -51,7 +51,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ```bash
 service postgresql start
-DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (550 checks)
+DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (563 checks)
 node scripts/fx-fetch.test.mjs && node scripts/price-fetch.test.mjs
 ```
 
@@ -82,6 +82,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 - `drive` — Google Drive connect (OAuth, scope `drive.file` only), upload, view/download with audit log, duplicate (SHA-256) check.
   Also `backup` / `backup_log` actions: accept **only** a Supabase secret key (checked by calling a service-role-only RPC); used by `.github/workflows/db-backup.yml` to store the encrypted weekly backup in Drive folder "10 สำรองข้อมูล (เข้ารหัส)". Never accept an unencrypted file there. See `docs/BACKUP_RESTORE.md`.
 - `fx-refresh` — ADMIN button "อัปเดตอัตราตอนนี้": checks the caller is an ACTIVE ADMIN, throttles to once per 5 min (audit_logs `fx_refresh_request`), then dispatches `fx-rates.yml` on `main` via the GitHub API with `GITHUB_DISPATCH_TOKEN`. Stores the token expiry (from GitHub's response header) so Settings can warn 30 days ahead.
+- `sec-nav` — read-only NAV lookup from the SEC Open API v2 for the opening / convert-to-units forms (caller must be an ACTIVE ADMIN / EDITOR / CONTRIBUTOR). Returns fund name + unit class + NAV of a date (or the previous business day); asks to pick a class when the fund has several. Saves nothing.
 - Deployed by the owner via Supabase dashboard (Edge Functions → function → Code → paste → Deploy). After changing a function, tell the owner exactly which function to redeploy and to keep **Verify JWT off**.
 
 ## 5. Handing work back to the owner

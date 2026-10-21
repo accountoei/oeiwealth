@@ -82,7 +82,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       .eq("is_derived", false).is("deleted_at", null)
       .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
       .order("movement_date", { ascending: false }).limit(2000),
-    supabase.from("investment_holdings").select("id").eq("portfolio_id", pf.id).eq("auto_price", true).is("deleted_at", null),
+    supabase.from("investment_holdings").select("id,auto_price,valuation_mode").eq("portfolio_id", pf.id).is("deleted_at", null),
   ]);
 
   const canWrite = me.role !== "VIEWER";
@@ -92,8 +92,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const goLive = family?.go_live_date ?? "";
   const isSetup = family?.system_status === "SETUP";
   const openingDate = goLive ? addDays(goLive, -1) : today;
-  const holdings = (hs as H[] | null) ?? [];
-  const autoIds = new Set((autoRows ?? []).map((x) => x.id as string));
+  const lumpIds = new Set((autoRows ?? []).filter((x) => x.valuation_mode === "LUMP_SUM").map((x) => x.id as string));
+  // มูลค่าก้อนเดียว: ไม่แสดงจำนวน / ราคาต่อหน่วย (เก็บภายในเป็น 1 × มูลค่า)
+  const holdings = ((hs as H[] | null) ?? []).map((h) => ({ ...h, valuation_mode: lumpIds.has(h.id) ? "LUMP_SUM" : "UNITS" }));
+  const autoIds = new Set((autoRows ?? []).filter((x) => x.auto_price).map((x) => x.id as string));
   const byId = new Map(holdings.map((h) => [h.id, h]));
   // มูลค่าเป็นบาทรายตัว = ชุดเดียวกับ Net Worth (มูลค่าสกุลเดิม × อัตรา ณ วันนี้ จากฐานข้อมูล)
   const thbOf = (h: H) => (h.value_thb == null ? null : Number(h.value_thb));
@@ -385,9 +387,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                         {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
                       </div>
                     </td>
-                    <td className="px-3 text-right tabular-nums">{qty(h.quantity)}</td>
-                    <td className="px-3 text-right tabular-nums">{money(h.average_cost, undefined, 4)}</td>
-                    <td className="px-3 text-right tabular-nums">{money(h.current_price, undefined, 4)}</td>
+                    <td className="px-3 text-right tabular-nums">{lumpIds.has(h.id) ? <span className="text-xs text-slate-400">มูลค่าก้อนเดียว</span> : qty(h.quantity)}</td>
+                    <td className="px-3 text-right tabular-nums">{lumpIds.has(h.id) ? "—" : money(h.average_cost, undefined, 4)}</td>
+                    <td className="px-3 text-right tabular-nums">{lumpIds.has(h.id) ? "—" : money(h.current_price, undefined, 4)}</td>
                     <td className="whitespace-nowrap px-3 text-right">
                       <div className="tabular-nums">{money(h.current_value)}</div>
                       <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>

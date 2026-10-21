@@ -48,13 +48,47 @@ export async function addHolding(_: ActionState, form: FormData): Promise<Action
     p_opening: {
       quantity: clean(form.get("quantity")), price: clean(form.get("price")),
       cost_base_thb: clean(form.get("cost_base_thb")), fx_rate: clean(form.get("fx_rate")),
-      market_price: clean(form.get("market_price")), notes: str(form.get("notes")),
+      market_price: clean(form.get("market_price")), market_value: clean(form.get("market_value")),
+      notes: str(form.get("notes")), valuation_mode: str(form.get("valuation_mode")) ?? "UNITS",
     },
     p_notes: null,
   });
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
   return { ok: "เพิ่มยอดตั้งต้นแล้ว" };
+}
+
+/** NAV จาก ก.ล.ต. (Edge Function sec-nav · Key อยู่ใน Supabase Secrets) — อ่านอย่างเดียว ไม่บันทึก */
+export type SecNav = { ref: string; proj_id: string; class: string | null; name_th: string | null; name_en: string | null; nav: number; nav_date: string };
+export type SecNavResult = { nav?: SecNav; error?: string; classes?: string[]; name_th?: string | null };
+
+export async function fetchSecNav(query: string, date: string): Promise<SecNavResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.functions.invoke("sec-nav", { body: { query, date } });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    let body: { error?: string; classes?: string[]; name_th?: string | null } | null = null;
+    if (ctx && typeof ctx.json === "function") {
+      try { body = await ctx.json(); } catch { /* ไม่ใช่ JSON */ }
+    }
+    if (body?.error) return { error: body.error, classes: body.classes, name_th: body.name_th };
+    return { error: /Failed to send a request|not found|404/i.test(error.message) ? "ยังไม่ได้ติดตั้ง Edge Function sec-nav ใน Supabase" : error.message };
+  }
+  return { nav: data as SecNav };
+}
+
+/** แปลงยอดตั้งต้นเป็นจำนวนหน่วยจริง (มูลค่าทุกวันเท่าเดิม · ต้นทุนรวมเท่าเดิม) */
+export async function restateUnits(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const units = num(form.get("units"));
+  if (units === null || Number.isNaN(units) || units <= 0) return { error: "ใส่จำนวนหน่วยที่มากกว่า 0" };
+  const { error } = await supabase.rpc("restate_opening_units", {
+    p_holding_id: String(form.get("holding_id")), p_units: units, p_notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  return { ok: "แปลงเป็นจำนวนหน่วยแล้ว" };
 }
 
 export async function recordTx(_: ActionState, form: FormData): Promise<ActionState> {

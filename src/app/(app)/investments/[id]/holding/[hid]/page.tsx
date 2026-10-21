@@ -7,7 +7,7 @@ import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
 import { MaturityForm, type CashAcct, type Holding } from "../../forms";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
-import { FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
+import { ConvertUnitsForm, FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
@@ -43,7 +43,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
     supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending").eq("id", hid).maybeSingle(),
+    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode").eq("id", hid).maybeSingle(),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
@@ -70,6 +70,35 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const couponSum = coupons.reduce((s, t) => s + Number(t.amount) - Number(t.tax ?? 0), 0);
   const canMature = h.status === "ACTIVE" && ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
   const pct = (v: number | null) => (v == null ? "-" : `${Number(v)}%`);
+  // วิธีนับ: มูลค่าก้อนเดียว = ไม่แสดงจำนวน / ราคาต่อหน่วย (เก็บภายในเป็น 1 × มูลค่า)
+  const lump = autoRow?.valuation_mode === "LUMP_SUM";
+  // จำนวนหน่วยที่ถือ ณ วันที่ — สูตรเดียวกับฐานข้อมูล (private.holding_value_at)
+  const txAsc = [...txList].reverse();
+  const qtyAt = (d: string) => {
+    let q = 0;
+    for (const t of txAsc) {
+      if (t.transaction_date > d) break;
+      const tq = Number(t.quantity ?? 0);
+      if (t.transaction_type === "OPENING_BALANCE") q = tq;
+      else if (t.transaction_type === "BUY") q += tq;
+      else if (t.transaction_type === "SELL" || t.transaction_type === "REDEMPTION") q = Math.max(q - (t.quantity == null ? q : tq), 0);
+      else if (t.transaction_type === "MATURITY") q = 0;
+      else if (t.transaction_type === "ADJUSTMENT" && t.quantity != null) q = Math.max(q + (t.direction === "IN" ? tq : -tq), 0);
+    }
+    return q;
+  };
+  type V = { id: string; valuation_date: string; price: number | null; quantity: number; market_value: number; source: string };
+  const valRows = ((vals as V[] | null) ?? []).map((v) => {
+    const q = lump ? 1 : qtyAt(v.valuation_date);
+    const value = v.price != null ? Number(v.price) * q : Number(v.quantity) > 0 ? Number(v.market_value) * q / Number(v.quantity) : Number(v.market_value);
+    return { ...v, q, value };
+  });
+  // แปลงเป็นจำนวนหน่วย: มีแค่ยอดตั้งต้น · มูลค่าก้อนเดียว หรือ 1 หน่วย
+  const opening = txList.find((t) => t.transaction_type === "OPENING_BALANCE");
+  const onlyOpening = !!opening && txList.every((t) => t.transaction_type === "OPENING_BALANCE");
+  const canConvert = canDelete && h.status === "ACTIVE" && onlyOpening && (lump || Number(h.quantity) === 1);
+  const openingVal = opening ? valRows.find((v) => v.valuation_date === opening.transaction_date) : undefined;
+  const openingValue = openingVal ? openingVal.value : opening ? Number(opening.amount) : 0;
 
   return (
     <div className="space-y-6">
@@ -98,6 +127,11 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         <PendingPrice kind="holding" id={hid} pending={autoRow.price_pending as Pending} currency={h.currency} canResolve={canDelete} paths={paths} />
       )}
 
+      {canConvert && opening && (
+        <ConvertUnitsForm assetId={id} holdingId={hid} isFund={h.holding_type === "FUND"} lump={lump} symbol={h.symbol ?? ""}
+          openingDate={opening.transaction_date} openingValue={openingValue} currency={h.currency} paths={paths} />
+      )}
+
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
@@ -107,8 +141,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           {(() => { const g = cost && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null; return g == null ? null : (
             <div className={`mt-1 text-xs ${g >= 0 ? "text-emerald-700" : "text-red-700"}`}>กำไร / ขาดทุนยังไม่รับรู้ {money(g)} ({((g / (cost as number)) * 100).toFixed(2)}%)</div>); })()}
           <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">จำนวนที่ถือ</dt><dd className="tabular-nums">{qty(h.quantity)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนเฉลี่ย</dt><dd className="tabular-nums">{money(h.average_cost, undefined, 4)}</dd></div>
+            {lump ? <div className="flex justify-between gap-3"><dt className="text-slate-500">วิธีนับ</dt><dd>มูลค่าก้อนเดียว</dd></div> : <>
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">จำนวนที่ถือ</dt><dd className="tabular-nums">{qty(h.quantity)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนเฉลี่ย</dt><dd className="tabular-nums">{money(h.average_cost, undefined, 4)}</dd></div>
+            </>}
             <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนที่ยังถือ</dt><dd className="tabular-nums">{money(cost)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">{isStructured ? "Coupon ที่ได้รับ (สุทธิภาษี)" : "ปันผล / ดอกเบี้ย (สุทธิภาษี)"}</dt>
               <dd className="tabular-nums">{money(couponSum, h.currency)} · {coupons.length} ครั้ง</dd></div>
@@ -124,6 +160,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                 <Item label="สกุลเงิน">{h.currency}</Item>
                 <Item label="ครบกำหนด">{h.maturity_date ? thDate(h.maturity_date) : "-"}</Item>
                 <Item label="สถานะ">{STATUS_LABEL[h.status] ?? h.status}</Item>
+                <Item label="วิธีนับมูลค่า">{lump ? "มูลค่าก้อนเดียว" : "นับเป็นหน่วย"}</Item>
                 {(h.holding_type === "EQUITY" || h.holding_type === "FUND") && <Item label="ราคาอัตโนมัติ">{h.auto_price ? `เปิด · ${h.holding_type === "FUND" ? "NAV จาก ก.ล.ต." : "Yahoo Finance"}${h.price_ref ? ` (${h.price_ref})` : ""}` : "ปิด"}</Item>}
                 {h.notes && <Item label="หมายเหตุ" wide>{h.notes}</Item>}
               </dl>
@@ -131,6 +168,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
             edit={
               <div className="space-y-5">
                 <HoldingInfoForm id={hid} paths={paths} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
+                  autoBlocked={lump ? "มูลค่าก้อนเดียวดึงราคาอัตโนมัติไม่ได้ — แปลงเป็นจำนวนหน่วยก่อน" : h.holding_type === "FUND" && Number(h.quantity) === 1 && !h.auto_price ? "กองทุนนี้มีจำนวน 1 หน่วย (มักเป็นมูลค่ารวมที่ใส่แทนจำนวน) — แปลงเป็นจำนวนหน่วยก่อน" : null}
                   v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }} />
                 {isStructured && ["MATURED", "AUTOCALLED"].includes(h.status) && (
                   <div className="border-t border-slate-100 pt-4"><StatusSelect table="investment_holdings" id={hid} value={h.status} paths={paths} label="ปิดแบบ"
@@ -241,18 +279,19 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         <h2 className="mb-3 font-medium text-slate-900">ประวัติราคา / มูลค่า</h2>
         {(vals ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีราคาจาก Statement (ใช้ราคาทุน)</p> : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">ราคา</th><th className="text-right">จำนวน</th><th className="text-right">มูลค่า</th><th className="pl-4">ที่มา</th><th></th></tr></thead>
+            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">ราคา</th><th className="text-right">จำนวนที่ถือ ณ วันนั้น</th><th className="text-right">มูลค่า</th><th className="pl-4">ที่มา</th><th></th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {(vals ?? []).map((v) => (
+              {valRows.map((v) => (
                 <tr key={v.id}>
                   <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                  <td className="text-right tabular-nums">{money(v.price, undefined, 4)}</td>
-                  <td className="text-right tabular-nums">{qty(v.quantity)}</td>
-                  <td className="text-right tabular-nums">{money(v.market_value)}</td>
+                  <td className="text-right tabular-nums">{lump || v.price == null ? <span className="text-slate-400">—</span> : money(v.price, undefined, 4)}</td>
+                  <td className="text-right tabular-nums">{lump ? <span className="text-slate-400">—</span> : qty(v.q)}</td>
+                  <td className="text-right tabular-nums">{money(v.value)}</td>
                   <td className="pl-4 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.source === "STATEMENT" ? "Statement" : v.source === "MARKET" ? "ราคาตลาด (อัตโนมัติ)" : v.source === "USER" ? "ผู้ใช้" : v.source}</td>
                   <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete}
-                    fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "price", label: "ราคา", type: "number", value: v.price },
-                      { name: "market_value", label: "มูลค่า", type: "number", value: v.market_value }]} />}</td>
+                    fields={!lump && v.price != null
+                      ? [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "price", label: "ราคาต่อหน่วย (มูลค่า = ราคา × จำนวนหน่วยที่ถือ)", type: "number", value: v.price }]
+                      : [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "market_value", label: "มูลค่า", type: "number", value: v.market_value }]} />}</td>
                 </tr>
               ))}
             </tbody>
