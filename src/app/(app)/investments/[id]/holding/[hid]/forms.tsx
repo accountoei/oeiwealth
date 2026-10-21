@@ -161,7 +161,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind }: {
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="mt-1" />
             <span>ดึงราคาอัตโนมัติทุกวันทำการ (18:45)
               <span className="block text-xs text-slate-500">{autoKind === "FUND"
-                ? "ราคา NAV จาก ก.ล.ต. · ใส่ชื่อย่อกองทุนในช่อง \"สัญลักษณ์ / รหัส\" (เช่น K-FIXED-A) ระบบหารหัสกองทุนให้เอง"
+                ? "ราคา NAV จาก ก.ล.ต. · ใส่ชื่อย่อกองทุนในช่อง \"สัญลักษณ์ / รหัส\" (เช่น K-FIXED) · กองทุนที่มีหลายชนิดหน่วยให้ใส่ชื่อชนิดหน่วยที่ถือ (เช่น K-FIXED-A) ระบบหารหัสกองทุนให้เอง"
                 : "ราคาจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่สัญลักษณ์ เช่น PTT · หุ้นต่างประเทศ เช่น AAPL"}
                 {" "}· ราคาที่ต่างจากราคาก่อนหน้าเกิน 20% ไม่บันทึก · ไม่ทับราคาจาก Statement</span></span>
           </label>

@@ -1,7 +1,9 @@
 // =====================================================================
 // Price Job — ดึงราคาล่าสุดของรายการที่เปิด "ดึงราคาอัตโนมัติ" แล้วบันทึกผ่าน server_upsert_prices
 //   หุ้นไทย / ต่างประเทศ: Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่ PTT → ใช้ PTT.BK ให้
-//   กองทุนไทย: ก.ล.ต. SEC Open API (ต้องมี SEC_API_KEY) · ใส่ชื่อย่อกองทุน → ระบบหา proj_id ให้ครั้งแรกแล้วจำไว้
+//   กองทุนไทย: ก.ล.ต. SEC Open API v2 (ต้องมี SEC_API_KEY) · ใส่ชื่อย่อกองทุน หรือชื่อชนิดหน่วย → ระบบหา proj_id ให้ครั้งแรกแล้วจำไว้
+//             profiles?project_info=… (ค้นหา) · daily-info/nav?proj_id=…&start_nav_date=…&end_nav_date=…&fund_class_name=…
+//             แบ่งหน้าด้วย page_size / next_cursor · ผลลัพธ์อยู่ใน items
 //   ทองคำ: ราคารับซื้อของสมาคมค้าทองคำ (classic.goldtraders.or.th · สำรอง thai-gold-api) — ทองคำแท่ง / ทองรูปพรรณ ตามชนิด
 //          เทียบกับราคาโลก (GC=F × USD/THB → บาท ต่อ 1 บาททองคำ 96.5%) · ต่างเกิน 3% = ไม่บันทึก (อาจอ่านผิด)
 //   ฐานข้อมูล: ราคาครั้งแรก / ต่างจากราคาครั้งก่อน (30 วัน) เกิน 20% → ยังไม่บันทึก เก็บเป็นราคารอยืนยัน (price_pending) · ไม่ทับราคาจาก Statement
@@ -78,12 +80,40 @@ export function firstArray(json) {
   return null;
 }
 
-/** NAV ล่าสุดจากผลลัพธ์ daily-info/nav · cls = ชื่อชนิดหน่วย (ถ้ากองทุนมีหลายชนิด) */
+/** แถวข้อมูลจากผลลัพธ์ ก.ล.ต. v2 (ห่อแบบ { message, page_size, next_cursor, items }) */
+export const secItems = (json) => (Array.isArray(json?.items) ? json.items : firstArray(json) ?? []);
+
+/** NAV ล่าสุดจากผลลัพธ์ daily-info/nav · cls = ชื่อชนิดหน่วย (ถ้ากองทุนมีหลายชนิด)
+ *  ไม่ระบุชนิดหน่วย แต่ผลลัพธ์มีหลายชนิด = null (ไม่เดาว่าเป็นชนิดไหน) */
 export function parseSecNav(json, cls) {
-  const rows = (firstArray(json) ?? []).filter((r) => num(r?.last_val) !== null && r?.nav_date);
-  const pick = cls ? rows.filter((r) => [r.class_abbr_name, r.fund_class_name].some((x) => String(x ?? "").toUpperCase() === cls.toUpperCase())) : rows;
+  const rows = secItems(json).filter((r) => num(r?.last_val) !== null && r?.nav_date);
+  const clsOf = (r) => String(r.fund_class_name ?? r.class_abbr_name ?? "").trim().toUpperCase();
+  let pick = rows;
+  if (cls) pick = rows.filter((r) => [r.class_abbr_name, r.fund_class_name].some((x) => String(x ?? "").trim().toUpperCase() === cls.toUpperCase()));
+  else if (new Set(rows.map(clsOf).filter(Boolean)).size > 1) return null;
   const best = pick.sort((a, b) => (String(a.nav_date) < String(b.nav_date) ? 1 : -1))[0];
   return best ? { price: num(best.last_val), date: String(best.nav_date).slice(0, 10) } : null;
+}
+
+const STATUS_RANK = { REGISTERED: 0, IPO: 1, EXPIRED: 2 };
+
+/** เลือกกองทุนจากผลลัพธ์ general-info/profiles (1 แถว = 1 ชนิดหน่วย)
+ *  → { ref: "proj_id" | "proj_id|ชนิดหน่วย" } หรือ { error } (ไม่พบ / มีหลายชนิดหน่วย ต้องระบุ) */
+export function pickSecFund(rows, abbr) {
+  const want = String(abbr ?? "").trim().toUpperCase();
+  const up = (v) => String(v ?? "").trim().toUpperCase();
+  const live = rows.filter((r) => r?.proj_id && (STATUS_RANK[up(r.fund_status)] ?? 9) < 9)
+    .sort((a, b) => (STATUS_RANK[up(a.fund_status)] ?? 9) - (STATUS_RANK[up(b.fund_status)] ?? 9));
+  // 1) ตรงกับชื่อชนิดหน่วย (เช่น K-ABC-A) → ใช้ชนิดนั้น
+  const byClass = live.find((r) => up(r.fund_class_name) === want);
+  if (byClass) return { ref: `${byClass.proj_id}|${up(byClass.fund_class_name)}` };
+  // 2) ตรงกับชื่อย่อกองทุน → ถ้ามีชนิดหน่วยเดียว ใช้ได้เลย · หลายชนิด → ให้ผู้ใช้ระบุ
+  const byAbbr = live.filter((r) => up(r.proj_abbr_name) === want);
+  if (!byAbbr.length) return { error: `ไม่พบชื่อย่อกองทุน ${want} ใน ก.ล.ต.` };
+  const proj = byAbbr[0].proj_id;
+  const classes = [...new Set(byAbbr.filter((r) => r.proj_id === proj).map((r) => up(r.fund_class_name)).filter(Boolean))];
+  if (classes.length > 1) return { error: `กองทุน ${want} มีหลายชนิดหน่วย (${classes.join(", ")}) — ใส่ชื่อชนิดหน่วยที่ถือแทน` };
+  return { ref: classes.length === 1 && classes[0] !== want ? `${proj}|${classes[0]}` : String(proj) };
 }
 
 const UA = { "User-Agent": "Mozilla/5.0 (FamilyWealthVault price job)", accept: "application/json" };
@@ -95,29 +125,47 @@ async function yahoo(symbol) {
   return parseYahooChart(await res.json());
 }
 
-async function sec(path, key) {
-  const res = await fetch(`${SEC}${path}`, { headers: { "Ocp-Apim-Subscription-Key": key, accept: "application/json" } });
+/** URL ของ SEC Open API v2 · ใส่เฉพาะพารามิเตอร์ที่มีค่า · page_size 100 เสมอ (ตามเอกสาร API v2) */
+export function secUrl(path, params = {}) {
+  const q = new URLSearchParams({ page_size: "100" });
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  return `${SEC}${path}?${q}`;
+}
+
+async function sec(path, params, key) {
+  const res = await fetch(secUrl(path, params), { headers: { "Ocp-Apim-Subscription-Key": key, accept: "application/json" } });
   if (res.status === 401 || res.status === 403) throw new Error("ก.ล.ต. ปฏิเสธ Key (401/403) — ตรวจ SEC_API_KEY");
   if (res.status === 404 || res.status === 204) return null;
-  if (!res.ok) throw new Error(`SEC ${path.split("?")[0]} ${res.status}`);
+  if (res.status === 421 || res.status === 429) throw new Error(`ก.ล.ต. จำกัดจำนวนครั้ง (${res.status}) — รอบหน้าจะลองใหม่`);
+  if (!res.ok) {
+    const body = (await res.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 120);
+    throw new Error(`SEC ${path} ${res.status}${body ? `: ${body}` : ""}`);
+  }
   return res.json();
 }
 
-/** หา proj_id จากชื่อย่อกองทุน (ไล่หน้า profiles · จำกัด 60 หน้า) → "proj_id" หรือ "proj_id|ชนิดหน่วย" */
+/** หา proj_id จากชื่อย่อกองทุน / ชื่อชนิดหน่วย ด้วยตัวกรอง project_info ของ API v2 (ไม่ต้องไล่ทุกหน้า) */
 async function findFund(abbr, key) {
-  const want = abbr.trim().toUpperCase();
+  const want = String(abbr ?? "").trim();
+  if (!want) return { error: "ยังไม่ได้ใส่ชื่อย่อกองทุน" };
+  const rows = [];
   let cursor = "";
-  for (let page = 0; page < 60; page++) {
-    const json = await sec(`/general-info/profiles${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, key);
-    const rows = firstArray(json) ?? [];
-    for (const r of rows) {
-      if (String(r.proj_abbr_name ?? "").toUpperCase() === want) return String(r.proj_id);
-      if (String(r.fund_class_name ?? r.class_abbr_name ?? "").toUpperCase() === want && r.proj_id) return `${r.proj_id}|${want}`;
-    }
-    cursor = json?.next_cursor ?? json?.cursor?.next ?? json?.meta?.next_cursor ?? "";
-    if (!cursor || !rows.length) break;
+  for (let page = 0; page < 5; page++) {
+    const json = await sec("/general-info/profiles", { project_info: want, next_cursor: cursor }, key);
+    const items = secItems(json);
+    rows.push(...items);
+    cursor = json?.next_cursor ?? "";
+    if (!cursor || !items.length) break;
   }
-  return null;
+  let hit = pickSecFund(rows, want);
+  // ค้นด้วยชื่อชนิดหน่วย (เช่น K-ABC-A) อาจไม่ตรงกับ project_info → ลองค้นด้วยชื่อกองทุนหลัก (ตัดส่วนท้ายหลัง - ตัวสุดท้าย)
+  if (hit.error && !rows.length && want.includes("-")) {
+    const base = want.slice(0, want.lastIndexOf("-"));
+    const json = await sec("/general-info/profiles", { project_info: base }, key);
+    const alt = pickSecFund(secItems(json), want);
+    if (alt.ref) hit = alt;
+  }
+  return hit;
 }
 
 function addDays(iso, n) { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
@@ -145,11 +193,18 @@ async function main() {
       if (h.holding_type === "FUND") {
         if (!SEC_API_KEY) { miss(h, "ไม่มี SEC_API_KEY"); continue; }
         let ref = isSecProjId(h.price_ref) ? h.price_ref : null;
-        if (!ref) ref = await findFund(h.price_ref || h.symbol || h.name, SEC_API_KEY);
-        if (!ref) { miss(h, "ไม่พบชื่อย่อกองทุนใน ก.ล.ต."); continue; }
+        if (!ref) {
+          const f = await findFund(h.price_ref || h.symbol || h.name, SEC_API_KEY);
+          if (!f.ref) { miss(h, f.error); continue; }
+          ref = f.ref;
+          if (dry) console.log(`  ก.ล.ต.: ${h.price_ref || h.symbol || h.name} → ${ref}`);
+        }
         const [proj, cls] = ref.split("|");
-        const nav = parseSecNav(await sec(`/daily-info/nav?proj_id=${encodeURIComponent(proj)}&start_nav_date=${addDays(today, -10)}&end_nav_date=${today}`, SEC_API_KEY), cls);
-        if (!nav) { miss(h, "ยังไม่มี NAV 10 วันล่าสุด"); continue; }
+        const navJson = await sec("/daily-info/nav", { proj_id: proj, start_nav_date: addDays(today, -10), end_nav_date: today, fund_class_name: cls }, SEC_API_KEY);
+        let nav = parseSecNav(navJson, cls);
+        // บางกองทุนส่ง fund_class_name เป็นค่าว่าง → ถ้ากรองตามชนิดหน่วยแล้วไม่มีแถวเลย ลองอ่านแบบไม่กรอง (ใช้ได้เฉพาะเมื่อมีชนิดเดียว)
+        if (!nav && cls && !secItems(navJson).length) nav = parseSecNav(await sec("/daily-info/nav", { proj_id: proj, start_nav_date: addDays(today, -10), end_nav_date: today }, SEC_API_KEY));
+        if (!nav) { miss(h, secItems(navJson).length && !cls ? "กองทุนมีหลายชนิดหน่วย — ใส่ชื่อชนิดหน่วยที่ถือ" : "ยังไม่มี NAV 10 วันล่าสุด"); continue; }
         out.push({ kind: "HOLDING", id: h.id, date: nav.date, price: nav.price, price_ref: ref, source_reference: `SEC NAV ${proj}${cls ? ` ${cls}` : ""}` });
       } else {
         const sym = yahooSymbol(h);
