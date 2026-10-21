@@ -201,7 +201,8 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   property_type: string; usage_type: string; location_group: string | null; address: string | null;
   land_area_sq_wa: number | null; title_type: string | null; title_deed_no: string | null; land_no: string | null;
   deed_book: string | null; deed_page: string | null; map_sheet: string | null; survey_page: string | null;
-  subdistrict: string | null; district: string | null; province: string | null };
+  subdistrict: string | null; district: string | null; province: string | null;
+  map_url?: string | null; latitude?: number | null; longitude?: number | null };
 
 export function EditPropertyForm({ p }: { p: Info }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
@@ -223,6 +224,13 @@ export function EditPropertyForm({ p }: { p: Info }) {
       </label>
       <label className="text-sm">กลุ่มทำเล<input name="location_group" defaultValue={p.location_group ?? ""} className={f} /></label>
       <label className="text-sm md:col-span-2">ที่อยู่<input name="address" defaultValue={p.address ?? ""} className={f} /></label>
+      <label className="text-sm">ลิงก์ Google Maps
+        <input name="map_url" type="url" defaultValue={p.map_url ?? ""} placeholder="https://maps.app.goo.gl/…" className={f} />
+        <span className="text-xs text-slate-500">Google Maps → แชร์ → คัดลอกลิงก์</span></label>
+      <label className="text-sm">พิกัด (ละติจูด, ลองจิจูด)
+        <input name="coords" data-plain defaultValue={p.latitude != null && p.longitude != null ? `${Number(p.latitude)}, ${Number(p.longitude)}` : ""}
+          placeholder="เช่น 13.7563, 100.5018" className={f} />
+        <span className="text-xs text-slate-500">คลิกขวาที่จุดใน Google Maps → กดตัวเลขบรรทัดบน (คัดลอกพิกัด) · มีพิกัดจะแสดงแผนที่เล็ก</span></label>
       <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
         <label className="text-sm">ตำบล / แขวง<input name="subdistrict" defaultValue={p.subdistrict ?? ""} className={f} /></label>
         <label className="text-sm">อำเภอ / เขต<input name="district" defaultValue={p.district ?? ""} className={f} /></label>

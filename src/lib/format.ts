@@ -369,6 +369,14 @@ export function bankLabel(raw: string | null | undefined): string {
 }
 
 /** อัตราภาษีที่ดินและสิ่งปลูกสร้างที่ระบบเสนอ (% ของฐานภาษี · ขั้นแรก) ตามการใช้งาน — ใช้เมื่อยังไม่มีรายการปีก่อน · แก้ได้ทุกครั้ง */
+/** ปีภาษีที่ดินปีแรกที่เลือกได้ (ค.ศ.) — ปีก่อนหน้าไม่มีข้อมูล · ถึงปีหน้า */
+export const LAND_TAX_FIRST_YEAR = 2026;
+export function landTaxYears(today: string, withData: number[] = []): number[] {
+  const cur = Number(today.slice(0, 4));
+  const ys = new Set<number>(withData);
+  for (let y = LAND_TAX_FIRST_YEAR; y <= cur + 1; y++) ys.add(y);
+  return [...ys].sort((a, b) => b - a);
+}
 export const LAND_TAX_RATE_BY_USAGE: Record<string, number> = {
   OWNER_OCCUPIED: 0.02, PERSONAL_USE: 0.02, RENTAL: 0.3, BUSINESS_USE: 0.3, VACANT: 0.3, OTHER: 0.3,
 };

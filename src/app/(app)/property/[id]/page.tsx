@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  COST_STATUS, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
   UTIL_LABEL, addDays, landText, money, scheduleText, thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import {
@@ -15,7 +15,7 @@ import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
-import { CopyTaxYear, DeleteTaxLine, TaxLineForm, type TaxLine } from "./LandTax";
+import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import StatusSelect from "@/components/StatusSelect";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
@@ -121,7 +121,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     taxable_value: number; tax_full: number; tax_amount: number };
   const taxAll = (taxRaw ?? []) as TaxRow[];
   const curYear = Number(today.slice(0, 4));
-  const taxYears = [...new Set([curYear + 1, curYear, ...taxAll.map((t) => Number(t.tax_year))])].sort((x, y) => y - x);
+  const taxDataYears = [...new Set(taxAll.map((t) => Number(t.tax_year)))];
+  const taxYears = landTaxYears(today, taxDataYears);
   const ty = taxYears.includes(Number(sp.ty)) ? Number(sp.ty) : curYear;
   const taxLines = taxAll.filter((t) => Number(t.tax_year) === ty);
   const prevTaxYear = taxYears.filter((y) => y < ty && taxAll.some((t) => Number(t.tax_year) === y))[0];
@@ -190,6 +191,20 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   {ownerTotal < 99.99999 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {Math.round((100 - ownerTotal) * 10000) / 10000}%</div>}
                 </Item>
                 {pd.address && <Item label="ที่อยู่" wide>{pd.address}</Item>}
+                {(pd.map_url || pd.latitude != null) && (
+                  <Item label="ตำแหน่ง" wide>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <a href={pd.map_url || `https://www.google.com/maps?q=${Number(pd.latitude)},${Number(pd.longitude)}`} target="_blank" rel="noopener noreferrer"
+                        className="rounded-md border border-blue-600 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50">เปิดใน Google Maps ↗</a>
+                      {pd.latitude != null && <span className="text-xs tabular-nums text-slate-500">{Number(pd.latitude)}, {Number(pd.longitude)}</span>}
+                    </div>
+                    {pd.latitude != null && (
+                      <iframe title="แผนที่" loading="lazy" referrerPolicy="no-referrer-when-downgrade"
+                        src={`https://maps.google.com/maps?q=${Number(pd.latitude)},${Number(pd.longitude)}&z=16&output=embed`}
+                        className="mt-2 h-56 w-full rounded-lg border border-slate-200" />
+                    )}
+                  </Item>
+                )}
                 {a.notes && <Item label="หมายเหตุ" wide>{a.notes}</Item>}
               </dl>
             }
@@ -400,12 +415,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <p className="text-xs text-slate-500">ที่ดิน + สิ่งปลูกสร้าง (หักค่าเสื่อม) − ยกเว้น = ฐานภาษี × อัตรา − ส่วนลด · ปีปัจจุบันตั้งเป็นยอดประมาณ &ldquo;ภาษีที่ดิน&rdquo; ในค่าใช้จ่ายประจำให้</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex overflow-hidden rounded-md border border-slate-300 text-sm">
-              {taxYears.map((y) => (
-                <Link key={y} href={`/property/${id}?ty=${y}`} scroll={false}
-                  className={`px-3 py-1.5 ${y === ty ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}>{y + 543}</Link>
-              ))}
-            </div>
+            <TaxYearSelect years={taxYears} value={ty} withData={taxDataYears} hrefOf={`/property/${id}?ty=__Y__`} />
             {canWrite && taxLines.length === 0 && prevTaxYear != null && <CopyTaxYear assetId={id} from={prevTaxYear} to={ty} />}
             {canWrite && <TaxLineForm assetId={id} year={ty} label="+ เพิ่มรายการ" primary
               defaults={{ rate_pct: Number(suggestRate), land_sq_wa: taxLines.some((t) => t.land_sq_wa != null) ? null : pd.land_area_sq_wa,
@@ -440,8 +450,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                       {Number(t.discount_pct) > 0 && <div className="text-xs text-slate-500">ลด {Number(t.discount_pct)}%</div>}</td>
                     <td className="px-2 py-2 text-right font-medium tabular-nums">{money(t.tax_amount)}</td>
                     <td className="whitespace-nowrap px-2 py-2 text-right">
-                      {canWrite && <TaxLineForm assetId={id} year={ty} line={t} label="แก้ไข" />}
-                      {canDelete && <span className="ml-3"><DeleteTaxLine assetId={id} year={ty} id={t.id} label={t.description || "รายการ"} /></span>}
+                      {canWrite && <TaxLineForm assetId={id} year={ty} line={t} label="แก้ไข" canDelete={canDelete} />}
                     </td>
                   </tr>
                 ))}

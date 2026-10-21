@@ -2333,6 +2333,17 @@ SELECT t.fails($$SELECT public.pay_credit_card(jsonb_build_object('card_id', (SE
   'cash_holding_id', t.h('เงินฝาก THB'), 'date', current_date, 'amount', 1))$$, 'PERMISSION|สิทธิ์|role', 'VIEWER จ่ายบัตรจากพอร์ตไม่ได้');
 RESET ROLE;
 
+\echo '== 13zz4. อสังหาฯ: ตำแหน่ง (ลิงก์ Google Maps / พิกัด)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.property_details SET map_url = 'https://maps.app.goo.gl/example', latitude = 13.7563, longitude = 100.5018
+ WHERE asset_id = (SELECT asset_id FROM public.property_details ORDER BY created_at LIMIT 1);
+SELECT t.ok((SELECT count(*) FROM public.property_details WHERE latitude = 13.7563 AND longitude = 100.5018 AND map_url LIKE 'https://%') = 1,
+            'อสังหาฯ: บันทึกลิงก์ Google Maps + พิกัดได้');
+SELECT t.fails($$UPDATE public.property_details SET latitude = 95, longitude = 100 WHERE latitude IS NOT NULL$$, 'pd_map_location', 'อสังหาฯ: ละติจูดเกิน ±90 ไม่ได้');
+SELECT t.fails($$UPDATE public.property_details SET longitude = NULL WHERE latitude IS NOT NULL$$, 'pd_map_location', 'อสังหาฯ: ใส่พิกัดต้องครบทั้งละติจูดและลองจิจูด');
+SELECT t.fails($$UPDATE public.property_details SET map_url = 'javascript:alert(1)' WHERE latitude IS NOT NULL$$, 'pd_map_location', 'อสังหาฯ: ลิงก์ต้องขึ้นต้นด้วย https://');
+RESET ROLE;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
