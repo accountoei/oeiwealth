@@ -2205,6 +2205,54 @@ SELECT t.ok((SELECT count(*) FROM public.investment_valuations WHERE holding_id 
             'ราคา: ดึงซ้ำวันเดียวกัน = แก้ราคาเดิม · ราคาผิดปกติ (เกิน 20%) ไม่บันทึก');
 RESET ROLE;
 SELECT t.ok(NOT has_function_privilege('authenticated', 'public.server_upsert_prices(jsonb, text)', 'EXECUTE'), 'ราคา: authenticated ไม่มีสิทธิ์ server_upsert_prices');
+-- ราคาฐาน: ครั้งแรก / ต่างเกิน 20% → รอยืนยัน (ไม่เทียบราคาทุน)
+SELECT t.ok((SELECT price_pending ->> 'reason' = 'DEVIATION_OVER_20PCT' AND (price_pending ->> 'previous')::numeric = 5000
+               FROM public.alternative_asset_details WHERE asset_id = t.a('สร้อยทดสอบ')), 'ราคา: ทองต่างจากมูลค่าครั้งก่อนเกิน 20% → รอยืนยัน');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.investment_holdings SET auto_price = true, price_ref = 'MSFT' WHERE id = t.h('MSFT');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('MSFT'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 500, 'source_reference', 'TEST'))) AS msft_first;
+SELECT t.ok((SELECT price_pending ->> 'reason' = 'NEEDS_BASELINE' AND (price_pending ->> 'price')::numeric = 500 FROM public.investment_holdings WHERE id = t.h('MSFT'))
+            AND NOT EXISTS (SELECT 1 FROM public.investment_valuations WHERE holding_id = t.h('MSFT') AND source = 'MARKET'),
+            'ราคา: ครั้งแรก (ไม่มีราคาครั้งก่อน · ไม่เทียบราคาทุน 402.50) → ไม่บันทึก รอยืนยันราคาฐาน');
+RESET ROLE;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.confirm_pending_price(t.h('MSFT'))$$, 'PERMISSION_DENIED', 'ราคา: VIEWER ยืนยันราคาฐานไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$UPDATE public.investment_holdings SET price_pending = '{"price": 1}' WHERE id = t.h('MSFT')$$, 'PERMISSION_DENIED', 'ราคา: ผู้ใช้แก้ราคารอยืนยันตรงไม่ได้');
+SELECT t.ok((public.confirm_pending_price(t.h('MSFT')) ->> 'confirmed')::boolean, 'ราคา: EDITOR ยืนยันราคาฐาน');
+SELECT t.ok((SELECT current_price = 500 AND price_pending IS NULL FROM public.investment_holdings WHERE id = t.h('MSFT'))
+            AND EXISTS (SELECT 1 FROM public.investment_valuations WHERE holding_id = t.h('MSFT') AND source = 'MARKET' AND price = 500 AND deleted_at IS NULL),
+            'ราคา: ยืนยันแล้ว → บันทึกเป็นราคาตลาด 500 · ล้างรายการรอยืนยัน');
+SELECT public.dismiss_pending_price(NULL, t.a('สร้อยทดสอบ'));
+SELECT t.ok((SELECT price_pending IS NULL FROM public.alternative_asset_details WHERE asset_id = t.a('สร้อยทดสอบ'))
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('สร้อยทดสอบ')) = 5000, 'ราคา: ไม่ใช้ราคานี้ → ล้าง · มูลค่าเดิม');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('MSFT'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 560, 'source_reference', 'TEST'))) AS msft_next;
+SELECT t.ok((SELECT current_price FROM public.investment_holdings WHERE id = t.h('MSFT')) = 560,
+            'ราคา: หลังมีราคาฐาน ราคาที่ต่างไม่เกิน 20% บันทึกเอง');
+RESET ROLE;
+-- อัตราแลกเปลี่ยนในงวดที่ปิดแล้ว: ADMIN Override ไม่ได้ · Job ข้าม (ไม่ล้มทั้งชุด)
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.fails($$INSERT INTO public.fx_rates(rate_date, currency, rate_to_thb, source, is_override, override_reason)
+                 VALUES (private.locked_through(private.default_family_id()), 'USD', 30, 'ADMIN_OVERRIDE', true, 'ทดสอบ')$$,
+               'PERIOD_LOCKED', 'FX: Override อัตราในงวดที่ปิดแล้วไม่ได้');
+SELECT t.fails($$UPDATE public.fx_rates SET rate_to_thb = 30, source = 'ADMIN_OVERRIDE', is_override = true, override_reason = 'ทดสอบ'
+                 WHERE currency = 'USD' AND rate_date = private.locked_through(private.default_family_id()) AND deleted_at IS NULL$$,
+               'PERIOD_LOCKED', 'FX: แก้อัตราเดิมในงวดที่ปิดแล้วไม่ได้');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_fx_rates(jsonb_build_array(
+  jsonb_build_object('rate_date', private.locked_through(private.default_family_id()), 'currency', 'USD', 'rate_to_thb', 99, 'source_reference', 'LOCK TEST'),
+  jsonb_build_object('rate_date', private.locked_through(private.default_family_id()), 'currency', 'JPY', 'rate_to_thb', 0.5, 'source_reference', 'LOCK TEST'))) AS fx_locked;
+RESET ROLE;
+SELECT t.ok((SELECT details -> 'skipped' @> '[{"reason": "PERIOD_LOCKED", "currency": "USD"}]' FROM public.system_job_runs ORDER BY id DESC LIMIT 1)
+            AND NOT EXISTS (SELECT 1 FROM public.fx_rates WHERE source_reference = 'LOCK TEST'),
+            'FX: Job ข้ามวันที่อยู่ในงวดที่ปิด (PERIOD_LOCKED) ไม่บันทึก ไม่ล้ม');
 
 \echo '== 13zz. ปิดเดือนไม่ได้ถ้าบัญชีติดลบ · แยกก้อน: เงินโอนเกินยอดก้อนได้'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');

@@ -104,7 +104,7 @@ export default async function SystemPage() {
         <p className="mt-1 text-xs text-slate-500">
           ดึงทุกวันจันทร์–ศุกร์ 18:45 · หุ้นไทย / ต่างประเทศจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · กองทุนไทยจาก ก.ล.ต. (ต้องตั้ง SEC_API_KEY) ·
           ทองคำประมาณจากราคาตลาดโลก × อัตราแลกเปลี่ยน · เปิดทีละรายการที่หน้าหลักทรัพย์ / หน้าทองคำ → แก้ไขข้อมูล ·
-          ราคาที่ต่างจากก่อนหน้าเกิน 20% ไม่บันทึก และไม่ทับราคาจาก Statement
+          ราคาครั้งแรก (หรือเว้นไปเกิน 30 วัน) และราคาที่ต่างจากราคาครั้งก่อนเกิน 20% ยังไม่บันทึก — รอ ADMIN / EDITOR กดยืนยันที่หน้ารายการ (แจ้งในหน้าแรก) · ไม่ทับราคาจาก Statement
         </p>
       </section>
 
@@ -112,7 +112,7 @@ export default async function SystemPage() {
         <>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">FX Override (ADMIN)</h2>
-            <p className="mb-3 text-xs text-slate-500">ใช้เฉพาะเมื่อแหล่งอัตราไม่มีข้อมูลหรือระบบดึงไม่สำเร็จ · ระบบดึงอัตโนมัติจะไม่เขียนทับค่าที่ Override · บันทึกใน Audit Log</p>
+            <p className="mb-3 text-xs text-slate-500">ใช้เฉพาะเมื่อแหล่งอัตราไม่มีข้อมูลหรือระบบดึงไม่สำเร็จ · ระบบดึงอัตโนมัติจะไม่เขียนทับค่าที่ Override · บันทึกใน Audit Log · วันที่อยู่ในเดือนที่ปิดงวดแล้วแก้ไม่ได้ (ต้อง Reopen ก่อน)</p>
             <OverrideForm today={todayBangkok()} />
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
