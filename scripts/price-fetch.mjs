@@ -2,7 +2,8 @@
 // Price Job — ดึงราคาล่าสุดของรายการที่เปิด "ดึงราคาอัตโนมัติ" แล้วบันทึกผ่าน server_upsert_prices
 //   หุ้นไทย / ต่างประเทศ: Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่ PTT → ใช้ PTT.BK ให้
 //   กองทุนไทย: ก.ล.ต. SEC Open API (ต้องมี SEC_API_KEY) · ใส่ชื่อย่อกองทุน → ระบบหา proj_id ให้ครั้งแรกแล้วจำไว้
-//   ทองคำ: ประมาณจากราคาทองตลาดโลก (GC=F, USD ต่อทรอยออนซ์) × USD/THB → บาท ต่อ 1 บาททองคำ 96.5%
+//   ทองคำ: ราคารับซื้อของสมาคมค้าทองคำ (classic.goldtraders.or.th · สำรอง thai-gold-api) — ทองคำแท่ง / ทองรูปพรรณ ตามชนิด
+//          เทียบกับราคาโลก (GC=F × USD/THB → บาท ต่อ 1 บาททองคำ 96.5%) · ต่างเกิน 3% = ไม่บันทึก (อาจอ่านผิด)
 //   ฐานข้อมูล: ราคาครั้งแรก / ต่างจากราคาครั้งก่อน (30 วัน) เกิน 20% → ยังไม่บันทึก เก็บเป็นราคารอยืนยัน (price_pending) · ไม่ทับราคาจาก Statement
 //
 // ENV: SUPABASE_URL, SUPABASE_SECRET_KEY · SEC_API_KEY (ไม่บังคับ — ไม่มี = ข้ามกองทุน) · DRY_RUN=true = แสดงอย่างเดียว
@@ -11,6 +12,9 @@
 
 const YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart";
 const SEC = "https://api.sec.or.th/v2/fund";
+const GTA_URL = "https://classic.goldtraders.or.th/default.aspx";
+const GTA_FALLBACK = "https://api.chnwt.dev/thai-gold-api/latest";
+export const GOLD_MAX_GAP = 0.03;
 export const GRAMS_PER_BAHT = 15.244;
 export const GRAMS_PER_TROY_OZ = 31.1034768;
 
@@ -36,6 +40,32 @@ export function parseYahooChart(json) {
 /** ราคาทอง บาท ต่อ 1 บาททองคำ 96.5% จากราคาโลก (USD/ozt) × USD/THB */
 export function goldBahtPrice(usdPerOz, thbPerUsd) {
   return Math.round((usdPerOz * thbPerUsd * GRAMS_PER_BAHT / GRAMS_PER_TROY_OZ) * 0.965 * 100) / 100;
+}
+
+/** หน้าเว็บสมาคมค้าทองคำ → { bar_buy, bar_sell, orn_buy, orn_sell, as_of } (บาท ต่อ 1 บาททองคำ 96.5%) · อ่านไม่ได้ = null */
+export function parseGoldtraders(html) {
+  const pick = (id) => {
+    const m = String(html ?? "").match(new RegExp(`id="DetailPlace_uc_goldprices1_${id}"[^>]*>([\\s\\S]*?)</span>`));
+    return m ? m[1].replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim() : null;
+  };
+  const r = { bar_buy: num(pick("lblBLBuy")), bar_sell: num(pick("lblBLSell")), orn_buy: num(pick("lblOMBuy")), orn_sell: num(pick("lblOMSell")), as_of: pick("lblAsTime") ?? "" };
+  return r.bar_buy && r.orn_buy ? r : null;
+}
+
+/** thai-gold-api (อ่านจากเว็บสมาคมฯ อีกทาง) → รูปแบบเดียวกับ parseGoldtraders */
+export function parseThaiGoldApi(json) {
+  const p = json?.response?.price;
+  const r = { bar_buy: num(p?.gold_bar?.buy), bar_sell: num(p?.gold_bar?.sell), orn_buy: num(p?.gold?.buy), orn_sell: num(p?.gold?.sell),
+    as_of: [json?.response?.update_date, json?.response?.update_time].filter(Boolean).join(" ") };
+  return r.bar_buy && r.orn_buy ? r : null;
+}
+
+/** ราคาต่อบาททองคำของทองแต่ละรายการ: ราคาสมาคมฯ ตามชนิด · ไม่มี / ต่างจากราคาโลกเกิน 3% → price null + เหตุผล */
+export function goldQuote(assoc, world, form) {
+  if (!assoc) return { price: null, reason: "NO_ASSOC_PRICE: อ่านราคาสมาคมค้าทองคำไม่ได้" };
+  if (world && Math.abs(assoc.bar_buy / world - 1) > GOLD_MAX_GAP)
+    return { price: null, reason: `SOURCE_MISMATCH: สมาคมฯ ${assoc.bar_buy} ต่างจากราคาโลก ${world} เกิน 3%` };
+  return { price: form === "ORNAMENT" ? assoc.orn_buy : assoc.bar_buy };
 }
 
 /** proj_id ของ ก.ล.ต. รูปแบบ M0123_2556 (ต่อท้าย |ชนิดหน่วย ได้) — อย่างอื่นถือเป็นชื่อย่อกองทุน */
@@ -133,13 +163,29 @@ async function main() {
   }
 
   if ((t.gold ?? []).length) {
+    let world = null, worldNote = "";
     try {
       const [g, fx] = await Promise.all([yahoo("GC=F"), yahoo("THB=X")]);
-      if (!g || !fx) throw new Error("ไม่พบราคาทองโลก / USD-THB");
-      const p = goldBahtPrice(g.price, fx.price);
-      for (const a of t.gold) out.push({ kind: "GOLD", asset_id: a.asset_id, date: today, price_per_baht_965: p,
-        source_reference: `ประมาณจากราคาโลก ${g.price} USD/ozt × ${fx.price} = ${p} บาท/บาททองคำ 96.5%` });
-    } catch (e) { console.log(`::warning::ทองคำ: ${e.message}`); }
+      if (g && fx) { world = goldBahtPrice(g.price, fx.price); worldNote = `โลก ${g.price} USD/ozt × ${fx.price} ≈ ${world}`; }
+    } catch (e) { console.log(`::warning::ราคาทองโลก: ${e.message}`); }
+    let assoc = null, from = "";
+    try {
+      const res = await fetch(GTA_URL, { headers: { "User-Agent": UA["User-Agent"], accept: "text/html" } });
+      if (res.ok) { assoc = parseGoldtraders(await res.text()); from = "สมาคมค้าทองคำ"; }
+      else console.log(`::warning::เว็บสมาคมค้าทองคำ ${res.status}`);
+    } catch (e) { console.log(`::warning::เว็บสมาคมค้าทองคำ: ${e.message}`); }
+    if (!assoc) {
+      try {
+        const res = await fetch(GTA_FALLBACK, { headers: UA });
+        if (res.ok) { assoc = parseThaiGoldApi(await res.json()); from = "สมาคมค้าทองคำ (ผ่าน thai-gold-api)"; }
+      } catch (e) { console.log(`::warning::thai-gold-api: ${e.message}`); }
+    }
+    console.log(`ทองคำ: ${assoc ? `${from} ${assoc.as_of} · แท่ง รับซื้อ ${assoc.bar_buy} / ขาย ${assoc.bar_sell} · รูปพรรณ รับซื้อ ${assoc.orn_buy} / ขาย ${assoc.orn_sell}` : "อ่านราคาสมาคมฯ ไม่ได้"} · ${worldNote || "ไม่มีราคาโลก"}`);
+    for (const a of t.gold) {
+      const q = goldQuote(assoc, world, a.gold_form);
+      out.push({ kind: "GOLD", asset_id: a.asset_id, date: today, price_per_baht_965: q.price, world_per_baht_965: world, reason: q.reason,
+        source_reference: q.price ? `${from} ${assoc.as_of} · ${a.gold_form === "ORNAMENT" ? "ทองรูปพรรณ" : "ทองคำแท่ง"} รับซื้อ ${q.price}/บาททองคำ${worldNote ? ` · ${worldNote}` : ""}` : "" });
+    }
   }
 
   out.forEach((x) => console.log(`  ${x.date} ${x.kind} ${x.id ?? x.asset_id} ${x.price ?? x.price_per_baht_965 ?? "-"} ${x.reason ?? x.source_reference}`));

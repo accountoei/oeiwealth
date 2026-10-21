@@ -4,17 +4,19 @@ import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, thDate, todayBangkok } from "@/lib/
 import FxSourceForm from "./FxSourceForm";
 import { ActionBar } from "@/components/ActionBar";
 import OverrideForm from "./OverrideForm";
+import FxRefreshButton from "./FxRefreshButton";
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
 const JOB_LABEL: Record<string, string> = { FX_FETCH: "อัตราแลกเปลี่ยน", FX_BACKFILL: "อัตราแลกเปลี่ยน (ย้อนหลัง)", BACKUP: "สำรองข้อมูล", PRICE_FETCH: "ราคาอัตโนมัติ" };
 const SKIP_REASON: Record<string, string> = { DEVIATION_OVER_5PCT: "ต่างจากก่อนหน้าเกิน 5%", NOT_CURRENT_SOURCE: "ไม่ใช่แหล่งปัจจุบัน", DEVIATION_OVER_20PCT: "ต่างจากก่อนหน้าเกิน 20%",
-  NO_HOLDING: "ไม่พบหลักทรัพย์ / ปิดดึงราคาแล้ว", NOT_FOUND: "ไม่พบราคา", HAS_STATEMENT: "มีราคาจาก Statement วันนั้นแล้ว", BAD_DATE: "วันที่ไม่ถูกต้อง", UNIT: "หน่วยไม่ใช่ บาททองคำ / กรัม" };
+  NO_HOLDING: "ไม่พบหลักทรัพย์ / ปิดดึงราคาแล้ว", NOT_FOUND: "ไม่พบราคา", HAS_STATEMENT: "มีราคาจาก Statement วันนั้นแล้ว", BAD_DATE: "วันที่ไม่ถูกต้อง", UNIT: "หน่วยไม่ใช่ บาททองคำ / กรัม", PERIOD_LOCKED: "อยู่ในงวดที่ปิดแล้ว",
+  NEEDS_BASELINE: "รอยืนยันราคาฐาน", NO_ASSOC_PRICE: "อ่านราคาสมาคมค้าทองคำไม่ได้", SOURCE_MISMATCH: "ราคาสมาคมฯ ต่างจากราคาโลกเกิน 3%" };
 
 export default async function SystemPage() {
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
-  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { count: autoHold }, { count: autoGold }, { data: lastPrice }] = await Promise.all([
+  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { count: autoHold }, { count: autoGold }, { data: lastPrice }, { data: lastRefresh }] = await Promise.all([
     supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since").maybeSingle(),
     supabase.from("v_fx_status").select("currency,latest_rate_date,rate_to_thb,source,is_override,age_days,is_stale").order("currency"),
     isAdmin
@@ -25,7 +27,14 @@ export default async function SystemPage() {
     supabase.from("investment_holdings").select("id", { count: "exact", head: true }).eq("auto_price", true).eq("status", "ACTIVE").is("deleted_at", null),
     supabase.from("alternative_asset_details").select("id", { count: "exact", head: true }).eq("auto_price", true).is("deleted_at", null),
     supabase.from("investment_valuations").select("valuation_date").eq("source", "MARKET").is("deleted_at", null).order("valuation_date", { ascending: false }).limit(1),
+    // ปุ่มอัปเดตอัตรา: ครั้งล่าสุด + วันหมดอายุของ GitHub token (เตือนก่อน 30 วัน)
+    isAdmin
+      ? supabase.from("audit_logs").select("event_at,metadata").eq("entity_type", "fx_rates").eq("field_name", "fx_refresh_request")
+          .order("event_at", { ascending: false }).limit(1)
+      : Promise.resolve({ data: [] as { event_at: string; metadata: unknown }[] }),
   ]);
+  const tokenExp = ((lastRefresh?.[0]?.metadata as { token_expires?: string | null } | null)?.token_expires ?? "").slice(0, 10);
+  const tokenDays = tokenExp ? Math.round((Date.parse(tokenExp) - Date.parse(todayBangkok())) / 86400000) : null;
 
   const fxSource = family?.fx_source === "BBL" ? "BBL" : "BOT";
 
@@ -48,11 +57,17 @@ export default async function SystemPage() {
               {family?.fx_source_since && <span className="text-slate-500"> · ตั้งแต่ {thDate(family.fx_source_since)}</span>}
             </p>
           </div>
-          {isAdmin && <ActionBar><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /></ActionBar>}
+          {isAdmin && <ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /></ActionBar>}
         </div>
         <p className="mb-3 mt-1 text-xs text-slate-500">
           ดึงอัตราทุกวัน 09:30 · 14:30 · 19:30 · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
         </p>
+        {isAdmin && lastRefresh?.[0] && (
+          <p className={`mb-3 text-xs ${tokenDays != null && tokenDays <= 30 ? "text-amber-700" : "text-slate-500"}`}>
+            กดอัปเดตครั้งล่าสุด {thDate(lastRefresh[0].event_at.slice(0, 10))}
+            {tokenExp && <> · GitHub token หมดอายุ {thDate(tokenExp)}{tokenDays != null && tokenDays <= 30 && ` (อีก ${tokenDays} วัน — สร้าง token ใหม่แล้วใส่ใน Supabase Secrets)`}</>}
+          </p>
+        )}
         {(fx ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">ยังไม่มีทรัพย์สินที่เป็นเงินต่างประเทศ</p>
         ) : (

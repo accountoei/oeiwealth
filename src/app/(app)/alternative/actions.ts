@@ -56,9 +56,29 @@ export async function updateAlternativeInfo(_: ActionState, form: FormData): Pro
     quantity: num(form.get("quantity")), unit: str(form.get("unit")), purity_pct: purity,
     storage_location: str(form.get("storage_location")), condition: str(form.get("condition")), details: str(form.get("details")),
     ...(form.has("auto_price_shown") ? { auto_price: form.get("auto_price") === "on" } : {}),
+    ...(form.has("gold_form") ? {
+      gold_form: form.get("gold_form") === "ORNAMENT" ? "ORNAMENT" : "BAR",
+      deduct_per_baht: form.get("gold_form") === "ORNAMENT" ? num(form.get("deduct_per_baht")) : null,
+    } : {}),
   }).eq("asset_id", id);
   if (e2) return { error: friendlyError(e2.message) };
   revalidatePath("/alternative");
   revalidatePath(`/alternative/${id}`);
   return { ok: "บันทึกข้อมูลแล้ว" };
+}
+
+/** ทองคำ: ใส่ราคาต่อ 1 บาททองคำ (96.5%) → ฐานข้อมูลคำนวณมูลค่า (จำนวน × ราคา × ความบริสุทธิ์ ÷ 96.5 − ค่าหักรูปพรรณ) */
+export async function addGoldValuation(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const price = num(form.get("price_per_baht"));
+  if (price === null || Number.isNaN(price) || price <= 0) return { error: "กรุณาใส่ราคาต่อบาททองคำ" };
+  const { data, error } = await supabase.rpc("add_gold_valuation", {
+    p_asset_id: id, p_date: str(form.get("valuation_date")), p_price_per_baht: price,
+    p_method: str(form.get("valuation_method")) ?? "LATEST_TRANSACTION", p_notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/alternative");
+  revalidatePath(`/alternative/${id}`);
+  return { ok: `บันทึกมูลค่า ${Number(data).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาทแล้ว` };
 }

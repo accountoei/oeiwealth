@@ -2253,6 +2253,39 @@ RESET ROLE;
 SELECT t.ok((SELECT details -> 'skipped' @> '[{"reason": "PERIOD_LOCKED", "currency": "USD"}]' FROM public.system_job_runs ORDER BY id DESC LIMIT 1)
             AND NOT EXISTS (SELECT 1 FROM public.fx_rates WHERE source_reference = 'LOCK TEST'),
             'FX: Job ข้ามวันที่อยู่ในงวดที่ปิด (PERIOD_LOCKED) ไม่บันทึก ไม่ล้ม');
+-- ทองคำ: ชนิดทอง · หักต่อบาททองคำ (รูปพรรณ) · ใส่ราคาต่อบาทเอง · ราคาครั้งก่อน 90 วัน
+SELECT t.ok(private.gold_value(t.a('ทองแท่งทดสอบ'), 41000) = 102500, 'ทอง: ทองแท่ง 2.5 บาททองคำ × 41,000 = 102,500 (สูตรเดียวกับ Job)');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$UPDATE public.alternative_asset_details SET gold_form = 'COIN' WHERE asset_id = t.a('สร้อยทดสอบ')$$, 'aad_gold_form_ck', 'ทอง: ชนิดทองต้องเป็น แท่ง / รูปพรรณ');
+SELECT t.fails($$UPDATE public.alternative_asset_details SET deduct_per_baht = -1 WHERE asset_id = t.a('สร้อยทดสอบ')$$, 'aad_deduct_per_baht_ck', 'ทอง: ค่าหักติดลบไม่ได้');
+RESET ROLE;
+CREATE TEMP TABLE x_gold AS SELECT private.gold_value(t.a('สร้อยทดสอบ'), 41000) AS v0;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.alternative_asset_details SET gold_form = 'ORNAMENT', deduct_per_baht = 500 WHERE asset_id = t.a('สร้อยทดสอบ');
+RESET ROLE;
+SELECT t.ok(abs(private.gold_value(t.a('สร้อยทดสอบ'), 41000) - ((SELECT v0 FROM x_gold) - 3 / 15.244 * 500)) < 0.011,
+            'ทอง: รูปพรรณหัก 500 บาท/บาททองคำ × จำนวน (3 กรัม = 0.1968 บาททองคำ)');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.add_gold_valuation(t.a('สร้อยทดสอบ'), (now() AT TIME ZONE 'Asia/Bangkok')::date, 41000)$$, 'row-level security|PERMISSION', 'ทอง: VIEWER ใส่ราคาไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$SELECT public.add_gold_valuation(t.a('สร้อยทดสอบ'), (now() AT TIME ZONE 'Asia/Bangkok')::date, 0)$$, 'มากกว่า 0', 'ทอง: ราคาต้องมากกว่า 0');
+SELECT t.ok(public.add_gold_valuation(t.a('สร้อยทดสอบ'), (now() AT TIME ZONE 'Asia/Bangkok')::date, 41000, 'LATEST_TRANSACTION', 'ร้านทดสอบ')
+              = private.gold_value(t.a('สร้อยทดสอบ'), 41000), 'ทอง: ใส่ราคาต่อบาท → มูลค่าตามสูตร');
+SELECT t.ok((SELECT current_value = private.gold_value(t.a('สร้อยทดสอบ'), 41000) FROM public.assets WHERE id = t.a('สร้อยทดสอบ'))
+            AND EXISTS (SELECT 1 FROM public.asset_valuations WHERE asset_id = t.a('สร้อยทดสอบ') AND deleted_at IS NULL
+                          AND notes LIKE 'ราคาทอง 41,000.00 บาท/บาททองคำ (96.5%) · หัก 500.00/บาททองคำ · ร้านทดสอบ'),
+            'ทอง: มูลค่าปัจจุบันเปลี่ยน · หมายเหตุจดราคาต่อบาท + ค่าหัก');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'GOLD', 'asset_id', t.a('ทองแท่งทดสอบ'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price_per_baht_965', NULL,
+                     'reason', 'SOURCE_MISMATCH', 'source_reference', 'TEST'))) AS gold_mismatch;
+SELECT t.ok((SELECT details -> 'skipped' @> '[{"reason": "SOURCE_MISMATCH"}]' FROM public.system_job_runs ORDER BY id DESC LIMIT 1),
+            'ทอง: ไม่มีราคา (สมาคมฯ ต่างจากราคาโลก) → ข้ามพร้อมเหตุผล');
+RESET ROLE;
+SELECT t.ok((SELECT position('v_date - 90' IN prosrc) > 0 AND position('v_date - 30' IN prosrc) = 0 FROM pg_proc WHERE proname = 'server_upsert_prices'),
+            'ราคา: ราคาครั้งก่อนเทียบได้ภายใน 90 วัน');
+SELECT t.ok((SELECT (x ->> 'gold_form') IS NOT NULL FROM jsonb_array_elements(public.server_price_targets() -> 'gold') x LIMIT 1), 'ราคา: Job ได้ชนิดทอง / ค่าหัก');
 
 \echo '== 13zz. ปิดเดือนไม่ได้ถ้าบัญชีติดลบ · แยกก้อน: เงินโอนเกินยอดก้อนได้'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
