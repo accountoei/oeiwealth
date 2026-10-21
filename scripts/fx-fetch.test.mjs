@@ -1,6 +1,6 @@
 // node scripts/fx-fetch.test.mjs — ทดสอบการแปลงข้อมูล ธปท. (ไม่ต่อเน็ต)
 import assert from "node:assert/strict";
-import { parseBotResponse, parseBblResponse, addDays } from "./fx-fetch.mjs";
+import { parseBotResponse, parseBblResponse, bblRawLines, addDays } from "./fx-fetch.mjs";
 
 const sample = { result: { data: { data_detail: [
   { period: "2026-09-29", currency_id: "USD", currency_name_eng: "USA : DOLLAR (USD)", buying_transfer: "32.10", selling: "32.50", mid_rate: "32.3050" },
@@ -35,4 +35,20 @@ assert.equal(parseBblResponse(bbl, "2026-10-16", "BUYING_TT").find((x) => x.curr
 assert.equal(parseBblResponse(bbl, "2026-10-16", "SELLING").find((x) => x.currency === "USD").rate_to_thb, 33.2);
 assert.equal(m[0].rate_date, "2026-10-16");
 assert.deepEqual(parseBblResponse(null, "2026-10-16"), []);
+// หน่วยตามที่ธนาคารกรุงเทพประกาศจริง · แถวธนบัตรใบย่อย (ซื้อถูกกว่า) ไม่ใช้ · สกุลนอกรายการไม่บันทึก
+const bbl2 = [
+  { Family: "USD", Description: "USD 1-2", TT: "32.10", SellingRates: "33.40" },
+  { Family: "USD", Description: "USD 50-100", TT: "33.20", SellingRates: "33.40" },
+  { Family: "JPY", Description: "JAPAN YEN", TT: "21.20", SellingRates: "21.64" },
+  { Family: "IDR", Description: "INDONESIA RUPIAH", TT: "1.80", SellingRates: "1.98" },
+  { Family: "VND", Description: "VIETNAM DONG", TT: "1.20", SellingRates: "1.50" },
+  { Family: "KRW", Description: "KOREA WON", TT: "0.022", SellingRates: "0.025" },
+];
+const m2 = parseBblResponse(bbl2, "2026-10-21");
+assert.deepEqual(m2.map((x) => x.currency).sort(), ["IDR", "JPY", "USD"]);
+assert.equal(m2.find((x) => x.currency === "USD").rate_to_thb, 33.3);
+assert.equal(m2.find((x) => x.currency === "JPY").rate_to_thb, 0.2142);
+assert.equal(m2.find((x) => x.currency === "IDR").rate_to_thb, 0.00189);
+assert.match(m2.find((x) => x.currency === "IDR").source_reference, /\/1000/);
+assert.equal(bblRawLines(bbl2.slice(0, 1))[0], "  RAW Family=USD | Description=USD 1-2 | TT=32.10 | SellingRates=33.40");
 console.log("fx-fetch tests passed");

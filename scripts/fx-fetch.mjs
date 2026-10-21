@@ -62,33 +62,53 @@ export function parseBotResponse(json) {
   return out;
 }
 
+/** สกุลที่ระบบใช้ (ชุดเดียวกับ ธปท.) — สกุลอื่นจากธนาคารกรุงเทพไม่บันทึก (ไม่มีอัตราเดิมให้เทียบ 5%) */
+export const FX_CURRENCIES = ["USD", "GBP", "EUR", "JPY", "HKD", "MYR", "SGD", "BND", "PHP", "IDR", "INR", "CHF", "AUD", "NZD", "CAD", "SEK", "DKK", "NOK", "CNY"];
+/** ธนาคารกรุงเทพประกาศบางสกุลเป็นราคาต่อ 100 / 1,000 หน่วย (ตรวจจาก API จริง 21 ต.ค. 2569: JPY 21.42 · IDR 1.89 · VND 1.35 · LAK 1.22) */
+export const BBL_UNITS = { JPY: 100, IDR: 1000, VND: 1000, LAK: 1000, KHR: 1000, MMK: 1000 };
+
 /**
  * ธนาคารกรุงเทพ: แปลงผลลัพธ์ Getfxrates → [{rate_date, currency, rate_to_thb, source_reference}]
  *   rateKind: MID = (ซื้อ TT + ขาย) ÷ 2 · BUYING_TT · SELLING
- *   รหัสสกุล = ตัวอักษร 3 ตัวแรกที่เจอใน Family / ID / Description · หลายแถวต่อสกุล (ธนบัตรหลายราคา) ใช้แถวแรกที่มีตัวเลขครบ
- *   หน่วย: ถ้าคำอธิบายระบุต่อ 100 หน่วย (เช่น "JPY 100") หาร 100 · อัตราที่ต่างจากอัตราก่อนหน้าเกิน 5% ฐานข้อมูลไม่รับอยู่แล้ว
+ *   รหัสสกุล = ตัวอักษร 3 ตัวแรกที่เจอใน Family / ID / Description · เก็บเฉพาะ FX_CURRENCIES
+ *   หลายแถวต่อสกุล (ธนบัตรหลายราคา เช่น USD 1-2 · USD 50-100) → ใช้แถวที่ราคาซื้อสูงสุด (TT / ธนบัตรใบใหญ่ — ใบย่อยรับซื้อถูกกว่า)
+ *   หน่วย: ตาม BBL_UNITS หรือคำอธิบายระบุต่อ 100 หน่วย (เช่น "JPY 100") → แปลงเป็นต่อ 1 หน่วย
+ *   อัตราที่ต่างจากอัตราก่อนหน้าเกิน 5% ฐานข้อมูลไม่รับอยู่แล้ว
  */
 export function parseBblResponse(rows, rateDate, rateKind = "MID") {
-  const out = new Map();
+  const best = new Map();
   for (const r of Array.isArray(rows) ? rows : []) {
     const text = [r.Family, r.ID, r.Description, r.FamilyLong].map((x) => String(x ?? "")).join(" ");
     const ccy = (text.match(/\b([A-Z]{3})\b/) ?? [])[1];
-    if (!ccy || ccy === "THB" || out.has(ccy)) continue;
+    if (!ccy || !FX_CURRENCIES.includes(ccy)) continue;
     const buy = toNum(r.TT) ?? toNum(r.Bill_DD_TT) ?? toNum(r.BuyingRates);
     const sell = toNum(r.SellingRates);
     const rate = rateKind === "BUYING_TT" ? buy : rateKind === "SELLING" ? sell : buy !== null && sell !== null ? (buy + sell) / 2 : null;
     if (rate === null) continue;
+    const prev = best.get(ccy);
+    if (prev && (prev.buy ?? 0) >= (buy ?? 0)) continue;
+    best.set(ccy, { r, rate, buy });
+  }
+  const out = [];
+  for (const [ccy, { r, rate }] of best) {
     // ต่อ 100 หน่วย: "JPY 100" / "(100 YEN)" / "per 100" — ไม่ใช่ช่วงธนบัตร เช่น "USD 50-100"
     const per100 = [r.Description, r.FamilyLong].some((x) => /^\s*[A-Z]{3}\s*100\s*$|\(100\b|\bper 100\b/i.test(String(x ?? "")));
-    const unit = per100 ? 100 : 1;
-    out.set(ccy, {
+    const unit = BBL_UNITS[ccy] ?? (per100 ? 100 : 1);
+    out.push({
       rate_date: rateDate,
       currency: ccy,
       rate_to_thb: Number((rate / unit).toFixed(10)),
-      source_reference: `BBL Getfxrates ${rateKind}${unit !== 1 ? " /100" : ""}${r.Update ? ` รอบ ${r.Update}` : ""}`,
+      source_reference: `BBL Getfxrates ${rateKind}${unit !== 1 ? ` /${unit}` : ""}${r.Description ? ` ${String(r.Description).trim().slice(0, 30)}` : ""}${r.Update ? ` รอบ ${r.Update}` : ""}`,
     });
   }
-  return [...out.values()];
+  return out;
+}
+
+/** DRY RUN: แสดงข้อมูลดิบจากธนาคาร (ไม่มี Key / ข้อมูลส่วนตัว) เพื่อตรวจแถวและหน่วย */
+export function bblRawLines(rows) {
+  const keys = ["ID", "Family", "Description", "FamilyLong", "BuyingRates", "SightBill", "Bill_DD_TT", "TT", "SellingRates", "Update"];
+  return (Array.isArray(rows) ? rows : []).map((r) => "  RAW " + keys.filter((k) => r[k] !== undefined && String(r[k]).trim() !== "")
+    .map((k) => `${k}=${String(r[k]).trim().slice(0, 40)}`).join(" | "));
 }
 
 async function fetchBot(token, start, end) {
@@ -155,8 +175,15 @@ async function main() {
 
   if (source === "BBL") {
     if (!process.env.BBL_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า BBL_API_KEY (GitHub → Settings → Secrets) — หรือเปลี่ยนแหล่งกลับเป็น ธปท. ที่ Settings → System");
+    let rawShown = false;
     for (let d = start; d <= end; d = addDays(d, 1)) {
-      await save(parseBblResponse(await fetchBbl(process.env.BBL_API_KEY, d), d, settings.bbl_rate ?? "MID"), d);
+      const rows = await fetchBbl(process.env.BBL_API_KEY, d);
+      if (dry && !rawShown && rows.length) {
+        console.log(`ข้อมูลดิบจากธนาคาร ${d} (${rows.length} แถว):`);
+        bblRawLines(rows).forEach((l) => console.log(l));
+        rawShown = true;
+      }
+      await save(parseBblResponse(rows, d, settings.bbl_rate ?? "MID"), d);
     }
   } else {
     if (!process.env.BOT_API_TOKEN) throw new Error("ยังไม่ได้ตั้งค่า BOT_API_TOKEN");
