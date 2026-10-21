@@ -26,12 +26,15 @@ const bbl = [
   { ID: "3", Family: "USD50", Description: "USD: 50-100", BuyingRates: "33.00", SellingRates: "34.00", SightBill: "33.20", TT: "33.40", Bill_DD_TT: "33.80", Update: "1" },
   { ID: "4", Family: "JPY", Description: "Japan (:100)", BuyingRates: "20.00", SellingRates: "22.00", SightBill: "20.90", TT: "21.00", Bill_DD_TT: "21.60" },
   { ID: "5", Family: "IDR", Description: "Indonesia (:1000)", BuyingRates: "1.50", SellingRates: "2.00", TT: "1.80", Bill_DD_TT: "1.96" },
-  { ID: "6", Family: "BND", Description: "Brunei", BuyingRates: "25.00", SellingRates: "26.50", TT: "-", Bill_DD_TT: "-" },
+  { ID: "6", Family: "BND", Description: "Brunei", BuyingRates: "25.10", SellingRates: "26.40", TT: "-", Bill_DD_TT: "-" },
   { ID: "7", Family: "KRW", Description: "Korea", TT: "0.022", Bill_DD_TT: "0.025" },
   { ID: "8", Family: "XYZ", Description: "no data" },
 ];
-const m = parseBblResponse(bbl, "2026-10-21");
+bbl.push({ ID: "9", Family: "INR", Description: "India: 50-500", BuyingRates: "0.16", SellingRates: "0.34", Bill_DD_TT: "0.37", TT: "-" });
+const skipped = [];
+const m = parseBblResponse(bbl, "2026-10-21", "MID", skipped);
 assert.deepEqual(m.map((x) => x.currency).sort(), ["BND", "IDR", "JPY", "USD"]);   // KRW ไม่อยู่ในรายการ
+assert.deepEqual(skipped, ["INR"]);                                              // ไม่มี TT · ธนบัตรส่วนต่างกว้าง
 assert.equal(m.find((x) => x.currency === "USD").rate_to_thb, 33.6);              // แถว 50-100 · (TT 33.40 + ขาย 33.80) ÷ 2
 assert.equal(m.find((x) => x.currency === "JPY").rate_to_thb, 0.213);             // (21.00 + 21.60) ÷ 2 ÷ 100
 assert.equal(m.find((x) => x.currency === "IDR").rate_to_thb, 0.00188);           // (1.80 + 1.96) ÷ 2 ÷ 1000

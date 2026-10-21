@@ -73,13 +73,15 @@ export const BBL_UNITS = { JPY: 100, IDR: 1000, VND: 1000, LAK: 1000, KHR: 1000,
  *     BuyingRates = ธนบัตร ราคารับซื้อ · SellingRates = ธนบัตร ราคาขาย
  *     SightBill = ตั๋วแลกเงิน / ดราฟ ราคารับซื้อ · TT = โอนเงิน ราคารับซื้อ · Bill_DD_TT = ตั๋วแลกเงิน-ดราฟ-โอนเงิน ราคาขาย
  *   rateKind: MID = (TT + Bill_DD_TT) ÷ 2 · BUYING_TT = TT · SELLING = Bill_DD_TT
- *     สกุลที่ไม่มีอัตราโอน (เช่น BND) ใช้อัตราธนบัตรแทน (ระบุ "ธนบัตร" ในที่มา)
+ *     สกุลที่ไม่มีอัตราโอนครบคู่ (เช่น BND) ใช้อัตราธนบัตรแทน (ระบุ "ธนบัตร" ในที่มา) เฉพาะเมื่อส่วนต่างซื้อ-ขาย ≤ 6%
+ *     ส่วนต่างกว้างกว่านั้น (เช่น INR 0.16 / 0.34 · PHP 0.44 / 0.54) ไม่บันทึก — อัตรากลางจะเพี้ยนจากอัตราจริงมาก · ใส่ชื่อสกุลใน skipped
  *   หลายแถวต่อสกุล (USD 1-2 · 5-20 · 50-100) → ใช้แถวที่มีอัตราโอน · ถ้าไม่มีเลย ใช้แถวราคาซื้อสูงสุด (ธนบัตรใบใหญ่)
  *   รหัสสกุล = ตัวอักษร 3 ตัวแรกที่เจอใน Family / ID / Description · เก็บเฉพาะ FX_CURRENCIES
  *   หน่วย: "(:100)" / "(:1000)" ในคำอธิบาย หรือ BBL_UNITS → แปลงเป็นต่อ 1 หน่วย
  *   อัตราที่ต่างจากอัตราก่อนหน้าเกิน 5% ฐานข้อมูลไม่รับอยู่แล้ว
  */
-export function parseBblResponse(rows, rateDate, rateKind = "MID") {
+export const BBL_NOTE_MAX_SPREAD = 0.06;
+export function parseBblResponse(rows, rateDate, rateKind = "MID", skipped = []) {
   const pick = (buy, sell) => rateKind === "BUYING_TT" ? buy : rateKind === "SELLING" ? sell
     : buy !== null && sell !== null ? (buy + sell) / 2 : null;
   const best = new Map();
@@ -88,14 +90,17 @@ export function parseBblResponse(rows, rateDate, rateKind = "MID") {
     const ccy = (text.match(/\b([A-Z]{3})(?=\b|\d)/) ?? [])[1];
     if (!ccy || !FX_CURRENCIES.includes(ccy)) continue;
     const tt = pick(toNum(r.TT), toNum(r.Bill_DD_TT));
-    const note = pick(toNum(r.BuyingRates), toNum(r.SellingRates));
+    const nb = toNum(r.BuyingRates), ns = toNum(r.SellingRates);
+    const noteOk = nb !== null && ns !== null && (ns - nb) / ((ns + nb) / 2) <= BBL_NOTE_MAX_SPREAD;
+    const note = noteOk ? pick(nb, ns) : null;
     const rate = tt ?? note;
-    if (rate === null) continue;
+    if (rate === null) { if (!skipped.includes(ccy)) skipped.push(ccy); continue; }
     const cand = { r, rate, transfer: tt !== null, buy: toNum(r.TT) ?? toNum(r.BuyingRates) ?? 0 };
     const prev = best.get(ccy);
     if (prev && (prev.transfer > cand.transfer || (prev.transfer === cand.transfer && prev.buy >= cand.buy))) continue;
     best.set(ccy, cand);
   }
+  for (const c of best.keys()) { const i = skipped.indexOf(c); if (i >= 0) skipped.splice(i, 1); }
   const out = [];
   for (const [ccy, { r, rate, transfer }] of best) {
     const desc = [r.Description, r.FamilyLong].map((x) => String(x ?? "")).join(" ");
@@ -190,7 +195,9 @@ async function main() {
         bblRawLines(rows).forEach((l) => console.log(l));
         rawShown = true;
       }
-      await save(parseBblResponse(rows, d, settings.bbl_rate ?? "MID"), d);
+      const skipped = [];
+      await save(parseBblResponse(rows, d, settings.bbl_rate ?? "MID", skipped), d);
+      if (skipped.length) console.log(`  ไม่บันทึก (ไม่มีอัตราโอน · ธนบัตรส่วนต่างกว้าง): ${skipped.join(", ")} — ใช้อัตราล่าสุดที่มีอยู่`);
     }
   } else {
     if (!process.env.BOT_API_TOKEN) throw new Error("ยังไม่ได้ตั้งค่า BOT_API_TOKEN");
