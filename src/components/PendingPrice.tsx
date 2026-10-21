@@ -38,16 +38,23 @@ export default function PendingPrice({ kind, id, pending, currency, canResolve, 
       </dl>
       <p className="text-xs text-amber-800">{REASON[pending.reason] ?? pending.reason} · ระบบยังไม่ใช้ราคานี้คำนวณมูลค่า</p>
       {canResolve ? (
-        <form action={action} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="kind" value={kind} />
-          <input type="hidden" name="id" value={id} />
-          <input type="hidden" name="paths" value={paths.join(",")} />
-          <button name="op" value="confirm" disabled={busy} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {busy ? "กำลังบันทึก…" : "ยืนยันเป็นราคาฐาน"}</button>
-          <button name="op" value="dismiss" disabled={busy} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">ไม่ใช้ราคานี้</button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* ปุ่มละฟอร์ม + op เป็น hidden input — ค่า name/value ของปุ่มที่กดไม่ถูกส่งมากับ server action เสมอไป */}
+          {(["confirm", "dismiss"] as const).map((op) => (
+            <form key={op} action={action}>
+              <input type="hidden" name="kind" value={kind} />
+              <input type="hidden" name="id" value={id} />
+              <input type="hidden" name="op" value={op} />
+              <input type="hidden" name="paths" value={paths.join(",")} />
+              {op === "confirm"
+                ? <button type="submit" disabled={busy} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+                    {busy ? "กำลังบันทึก…" : "ยืนยันเป็นราคาฐาน"}</button>
+                : <button type="submit" disabled={busy} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">ไม่ใช้ราคานี้</button>}
+            </form>
+          ))}
           <span className="text-xs text-slate-500">หรือบันทึกราคาจาก Statement เอง แล้วระบบจะใช้เป็นราคาฐาน</span>
           {state.error && <span className="w-full text-sm text-red-600">{state.error}</span>}
-        </form>
+        </div>
       ) : <p className="text-xs text-slate-500">ADMIN / EDITOR เป็นผู้ยืนยัน</p>}
     </div>
   );
