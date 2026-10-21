@@ -14,6 +14,7 @@ import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { AltInfoForm } from "./forms";
 import { DetailItem as Item } from "@/components/Boxes";
+import PendingPrice, { type Pending } from "@/components/PendingPrice";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาดโลก (อัตโนมัติ)" };
 const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
@@ -65,6 +66,10 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
           )}
         </div>
       </div>
+
+      {d.price_pending && (
+        <PendingPrice kind="gold" id={id} pending={d.price_pending as Pending} currency={a.currency} canResolve={canDelete} paths={paths} />
+      )}
 
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร */}

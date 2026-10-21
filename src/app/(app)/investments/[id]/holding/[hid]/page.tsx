@@ -11,6 +11,7 @@ import { FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "
 import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
+import PendingPrice, { type Pending } from "@/components/PendingPrice";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
@@ -42,7 +43,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
     supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-    supabase.from("investment_holdings").select("auto_price,price_ref").eq("id", hid).maybeSingle(),
+    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending").eq("id", hid).maybeSingle(),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
@@ -92,6 +93,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
+
+      {autoRow?.price_pending && (
+        <PendingPrice kind="holding" id={hid} pending={autoRow.price_pending as Pending} currency={h.currency} canResolve={canDelete} paths={paths} />
+      )}
 
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า */}
