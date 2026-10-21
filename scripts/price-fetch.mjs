@@ -158,12 +158,14 @@ async function findFund(abbr, key) {
     if (!cursor || !items.length) break;
   }
   let hit = pickSecFund(rows, want);
-  // ค้นด้วยชื่อชนิดหน่วย (เช่น K-ABC-A) อาจไม่ตรงกับ project_info → ลองค้นด้วยชื่อกองทุนหลัก (ตัดส่วนท้ายหลัง - ตัวสุดท้าย)
-  if (hit.error && !rows.length && want.includes("-")) {
-    const base = want.slice(0, want.lastIndexOf("-"));
-    const json = await sec("/general-info/profiles", { project_info: base }, key);
-    const alt = pickSecFund(secItems(json), want);
-    if (alt.ref) hit = alt;
+  if (hit.ref) return hit;
+  // project_info ค้นเฉพาะรหัส / ชื่อ / ชื่อย่อกองทุน ไม่ค้นชื่อชนิดหน่วย (เช่น SCBXXXA, K-ABC-A)
+  // → ลองตัวกรอง fund_class_name (ชื่อชนิดหน่วยตรงตัว) แล้วค่อยลองชื่อกองทุนหลัก (ตัดส่วนท้ายหลัง - ตัวสุดท้าย)
+  const alts = [{ fund_class_name: want }];
+  if (want.includes("-")) alts.push({ project_info: want.slice(0, want.lastIndexOf("-")) });
+  for (const params of alts) {
+    const alt = pickSecFund(secItems(await sec("/general-info/profiles", params, key)), want);
+    if (alt.ref) return alt;
   }
   return hit;
 }
