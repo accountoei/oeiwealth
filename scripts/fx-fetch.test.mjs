@@ -1,6 +1,6 @@
 // node scripts/fx-fetch.test.mjs — ทดสอบการแปลงข้อมูล ธปท. (ไม่ต่อเน็ต)
 import assert from "node:assert/strict";
-import { parseBotResponse, parseBblResponse, addDays } from "./fx-fetch.mjs";
+import { parseBotResponse, parseBblResponse, bblRawLines, addDays } from "./fx-fetch.mjs";
 
 const sample = { result: { data: { data_detail: [
   { period: "2026-09-29", currency_id: "USD", currency_name_eng: "USA : DOLLAR (USD)", buying_transfer: "32.10", selling: "32.50", mid_rate: "32.3050" },
@@ -18,21 +18,32 @@ assert.equal(r.find((x) => x.currency === "EUR").rate_to_thb, 37.3);           /
 assert.match(r.find((x) => x.currency === "EUR").source_reference, /avg/);
 assert.deepEqual(parseBotResponse({}), []);
 assert.equal(addDays("2026-09-30", 1), "2026-10-01");
-// ธนาคารกรุงเทพ (โครงสร้างตามเอกสาร API · ตัวเลขสมมติ)
+// ธนาคารกรุงเทพ (ช่องตามตารางบนเว็บธนาคาร · ตัวเลขสมมติ)
+//   BuyingRates / SellingRates = ธนบัตร · SightBill = ดราฟรับซื้อ · TT = โอนรับซื้อ · Bill_DD_TT = ดราฟ-โอน ขาย
 const bbl = [
-  { ID: "1", Family: "USD", Description: "USD 50-100", BuyingRates: "", SellingRates: "33.20", SightBill: "32.70", Bill_DD_TT: "32.75", TT: "32.80", Update: "3" },
-  { ID: "2", Family: "USD", Description: "USD 1", BuyingRates: "", SellingRates: "33.20", SightBill: "", Bill_DD_TT: "", TT: "32.80" },
-  { ID: "3", Family: "JPY", Description: "JPY 100", SellingRates: "22.40", TT: "21.60" },
-  { ID: "4", Family: "EUR", Description: "EURO", SellingRates: "38.10", TT: "" , Bill_DD_TT: "37.50" },
-  { ID: "5", Family: "XYZ", Description: "no data", SellingRates: "", TT: "" },
+  { ID: "1", Family: "USD1", Description: "USD: 1-2", BuyingRates: "32.00", SellingRates: "34.00", Update: "1" },
+  { ID: "2", Family: "USD5", Description: "USD: 5-20", BuyingRates: "32.50", SellingRates: "34.00", Update: "1" },
+  { ID: "3", Family: "USD50", Description: "USD: 50-100", BuyingRates: "33.00", SellingRates: "34.00", SightBill: "33.20", TT: "33.40", Bill_DD_TT: "33.80", Update: "1" },
+  { ID: "4", Family: "JPY", Description: "Japan (:100)", BuyingRates: "20.00", SellingRates: "22.00", SightBill: "20.90", TT: "21.00", Bill_DD_TT: "21.60" },
+  { ID: "5", Family: "IDR", Description: "Indonesia (:1000)", BuyingRates: "1.50", SellingRates: "2.00", TT: "1.80", Bill_DD_TT: "1.96" },
+  { ID: "6", Family: "BND", Description: "Brunei", BuyingRates: "25.10", SellingRates: "26.40", TT: "-", Bill_DD_TT: "-" },
+  { ID: "7", Family: "KRW", Description: "Korea", TT: "0.022", Bill_DD_TT: "0.025" },
+  { ID: "8", Family: "XYZ", Description: "no data" },
 ];
-const m = parseBblResponse(bbl, "2026-10-16");
-assert.equal(m.length, 3);
-assert.equal(m.find((x) => x.currency === "USD").rate_to_thb, 33);              // (32.80 + 33.20) ÷ 2 · แถวแรกของสกุล
-assert.equal(m.find((x) => x.currency === "JPY").rate_to_thb, 0.22);            // ต่อ 1 เยน
-assert.equal(m.find((x) => x.currency === "EUR").rate_to_thb, 37.8);            // ไม่มี TT → Bill DD/TT
-assert.equal(parseBblResponse(bbl, "2026-10-16", "BUYING_TT").find((x) => x.currency === "USD").rate_to_thb, 32.8);
-assert.equal(parseBblResponse(bbl, "2026-10-16", "SELLING").find((x) => x.currency === "USD").rate_to_thb, 33.2);
-assert.equal(m[0].rate_date, "2026-10-16");
-assert.deepEqual(parseBblResponse(null, "2026-10-16"), []);
+bbl.push({ ID: "9", Family: "INR", Description: "India: 50-500", BuyingRates: "0.16", SellingRates: "0.34", Bill_DD_TT: "0.37", TT: "-" });
+const skipped = [];
+const m = parseBblResponse(bbl, "2026-10-21", "MID", skipped);
+assert.deepEqual(m.map((x) => x.currency).sort(), ["BND", "IDR", "JPY", "USD"]);   // KRW ไม่อยู่ในรายการ
+assert.deepEqual(skipped, ["INR"]);                                              // ไม่มี TT · ธนบัตรส่วนต่างกว้าง
+assert.equal(m.find((x) => x.currency === "USD").rate_to_thb, 33.6);              // แถว 50-100 · (TT 33.40 + ขาย 33.80) ÷ 2
+assert.equal(m.find((x) => x.currency === "JPY").rate_to_thb, 0.213);             // (21.00 + 21.60) ÷ 2 ÷ 100
+assert.equal(m.find((x) => x.currency === "IDR").rate_to_thb, 0.00188);           // (1.80 + 1.96) ÷ 2 ÷ 1000
+assert.equal(m.find((x) => x.currency === "BND").rate_to_thb, 25.75);             // ไม่มีอัตราโอน → ธนบัตร
+assert.match(m.find((x) => x.currency === "BND").source_reference, /ธนบัตร/);
+assert.match(m.find((x) => x.currency === "IDR").source_reference, /\/1000/);
+assert.equal(parseBblResponse(bbl, "2026-10-21", "BUYING_TT").find((x) => x.currency === "USD").rate_to_thb, 33.4);
+assert.equal(parseBblResponse(bbl, "2026-10-21", "SELLING").find((x) => x.currency === "USD").rate_to_thb, 33.8);
+assert.equal(m[0].rate_date, "2026-10-21");
+assert.deepEqual(parseBblResponse(null, "2026-10-21"), []);
+assert.equal(bblRawLines(bbl.slice(0, 1))[0], "  RAW ID=1 | Family=USD1 | Description=USD: 1-2 | BuyingRates=32.00 | SellingRates=34.00 | Update=1");
 console.log("fx-fetch tests passed");
