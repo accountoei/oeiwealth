@@ -161,7 +161,7 @@ AFTER:   a50_sync (สร้าง/Sync Derived + Cache) → a60_fill → z90_au
 | **Unsettled** | Trade ที่ชำระผ่านบัญชีธนาคาร และ วัน Trade ≤ D < วัน Settlement → รอรับ (+) / รอจ่าย (−) |
 | **Portfolio THB** | SUM `base_value` ของแต่ละ Holding (FX ของ Statement นั้น) · **Display Value** = แปลงทีละ Holding เป็นสกุลพอร์ตแล้วรวม |
 | **Bank Calculated** | Confirmed ล่าสุด + Movement หลังวันนั้น (ฝั่งออก = `amount + fee`) |
-| **FX** | Previous Available Rate: `rate_date < D` · ไม่มี Rate → `base_amount` ว่าง → ปิดเดือน **BLOCKED** → ADMIN Override แล้วระบบเติมให้เอง |
+| **FX** | อัตราล่าสุด ณ วันที่ D: `rate_date <= D` (เดิม `< D` · เปลี่ยน 21 ต.ค. 2569) · ไม่มี Rate → `base_amount` ว่าง → ปิดเดือน **BLOCKED** → ADMIN Override แล้วระบบเติมให้เอง |
 | **Net Worth Engine** `private.net_worth_items(family, D, confirmed)` | Function เดียวใช้ทั้ง Dashboard (ยอดบัญชีแบบ Calculated) และ Month Closing (ยอด Confirmed จากการกระทบยอด) · 1 แถว = 1 รายการ × 1 เจ้าของ + แถว Unallocated เมื่อสัดส่วนไม่ครบ 100% |
 
 ---

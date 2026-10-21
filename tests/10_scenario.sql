@@ -2161,6 +2161,13 @@ SELECT t.ok((SELECT source = 'BBL_API' AND rate_to_thb = 44 FROM public.fx_rates
 RESET ROLE;
 SELECT t.ok((SELECT count(*) FROM public.audit_logs WHERE metadata ->> 'kind' = 'FX_SOURCE') = 2, 'FX: บันทึก Audit ทุกครั้งที่เปลี่ยนแหล่ง');
 UPDATE public.fx_rates SET deleted_at = now() WHERE source_reference IN ('BBL TEST', 'BOT TEST') OR (currency = 'EUR' AND source_reference = 'TEST');
+-- อัตราของวันเดียวกัน (rate_date <= วันที่) · ไม่มีของวันนั้น → อัตราล่าสุดก่อนหน้า
+INSERT INTO public.fx_rates(rate_date, currency, rate_to_thb, source, source_reference) VALUES
+  ('2026-09-10', 'CHF', 40, 'BOT_API', 'SAME DAY TEST'), ('2026-09-12', 'CHF', 41, 'BOT_API', 'SAME DAY TEST');
+SELECT t.ok(private.fx_rate('CHF', '2026-09-10') = 40 AND private.fx_rate('CHF', '2026-09-12') = 41, 'FX: ใช้อัตราของวันเดียวกัน');
+SELECT t.ok(private.fx_rate('CHF', '2026-09-11') = 40 AND private.fx_rate('CHF', '2026-09-09') IS NULL, 'FX: วันที่ยังไม่มีอัตรา → อัตราล่าสุดก่อนหน้า · ไม่มีเลย = ว่าง');
+SELECT t.ok((SELECT position('ไม่มี FX ถึงวันตั้งต้น' IN prosrc) > 0 FROM pg_proc WHERE proname = 'go_live_readiness'), 'FX: ข้อความความพร้อม Go-live = ถึงวันตั้งต้น');
+UPDATE public.fx_rates SET deleted_at = now() WHERE source_reference = 'SAME DAY TEST';
 
 \echo '== 13zd. ราคาอัตโนมัติ (หุ้น / กองทุน / ทองคำ)'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');

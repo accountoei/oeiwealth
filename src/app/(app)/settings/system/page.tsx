@@ -51,7 +51,7 @@ export default async function SystemPage() {
           {isAdmin && <ActionBar><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /></ActionBar>}
         </div>
         <p className="mb-3 mt-1 text-xs text-slate-500">
-          ดึงอัตราทุกวัน 19:30 · การคำนวณใช้ Rate ล่าสุด <b>ก่อน</b> วันที่ของรายการ · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
+          ดึงอัตราทุกวัน 09:30 · 14:30 · 19:30 · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
         </p>
         {(fx ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">ยังไม่มีทรัพย์สินที่เป็นเงินต่างประเทศ</p>

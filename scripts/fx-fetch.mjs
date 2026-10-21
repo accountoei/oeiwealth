@@ -134,10 +134,11 @@ async function fetchBot(token, start, end) {
   throw new Error("BOT API ปฏิเสธ Token (401/403) — ตรวจ BOT_API_TOKEN และว่าได้ Subscribe Exchange Rates แล้ว");
 }
 
-/** อัตราของวันนั้น: ลองรอบล่าสุดก่อน (3 → 1) · วันหยุด / ยังไม่ประกาศ = [] */
+/** ธนาคารกรุงเทพประกาศหลายรอบต่อวัน — ลองรอบล่าสุดก่อน (BBL_MAX_ROUND → 1) · วันหยุด / ยังไม่ประกาศ = [] */
+const BBL_MAX_ROUND = 6;
 async function fetchBbl(key, iso) {
   const [y, m, d] = iso.split("-");
-  for (const round of [3, 2, 1]) {
+  for (let round = BBL_MAX_ROUND; round >= 1; round--) {
     const res = await fetch(`${BBL_URL}/${d}/${m}/${y}/${round}/en`, { headers: { "Ocp-Apim-Subscription-Key": key, accept: "application/json" } });
     if (res.status === 401 || res.status === 403) throw new Error("ธนาคารกรุงเทพปฏิเสธ Key (401/403) — ตรวจ BBL_API_KEY และว่าได้ Subscribe Exchange Rate Service แล้ว");
     if (res.status === 404) continue;
@@ -168,7 +169,8 @@ async function main() {
   const settings = (await rpc(SUPABASE_URL, SUPABASE_SECRET_KEY, "server_fx_settings", {})) ?? {};
   const source = settings.source === "BBL" ? "BBL" : "BOT";
   const end = process.env.END_DATE || todayBangkok();
-  let start = process.env.START_DATE || addDays(end, -10);
+  // รอบประจำวัน: ธปท. ย้อน 10 วัน (ประกาศช้า / วันหยุด) · ธนาคารกรุงเทพ ย้อน 3 วัน (เรียก API ทีละวัน · รันวันละ 3 รอบ)
+  let start = process.env.START_DATE || addDays(end, source === "BBL" ? -3 : -10);
   // รอบประจำวัน: ไม่ย้อนไปก่อนวันที่เปลี่ยนแหล่ง (อัตราเดิมไม่เปลี่ยน)
   if (!process.env.START_DATE && settings.since && start < settings.since) start = settings.since;
   const jobType = process.env.START_DATE ? "FX_BACKFILL" : "FX_FETCH";
