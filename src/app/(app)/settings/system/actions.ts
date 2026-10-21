@@ -41,3 +41,21 @@ export async function setFxSource(_: FxState, form: FormData): Promise<FxState> 
   if (!d?.changed) return { ok: "ไม่มีอะไรเปลี่ยน" };
   return { ok: `เปลี่ยนแหล่งเป็น ${source === "BBL" ? "ธนาคารกรุงเทพ" : "ธปท."} แล้ว · มีผลตั้งแต่อัตราของวันที่ ${d.since}` };
 }
+
+/** ปุ่ม "อัปเดตอัตราตอนนี้" (ADMIN) → Edge Function fx-refresh สั่ง GitHub Actions รันงาน FX rates ทันที */
+export async function refreshFxNow(): Promise<FxState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.functions.invoke("fx-refresh", { body: {} });
+  if (error) {
+    let msg = error.message;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === "function") {
+      try { msg = (await ctx.json()).error ?? msg; } catch { /* ไม่ใช่ JSON */ }
+    }
+    if (/Failed to send a request|not found|404/i.test(msg)) msg = "ยังไม่ได้ติดตั้ง Edge Function fx-refresh ใน Supabase";
+    return { error: msg };
+  }
+  revalidatePath("/settings/system");
+  const exp = (data as { token_expires?: string | null } | null)?.token_expires;
+  return { ok: `สั่งอัปเดตแล้ว · ใช้เวลาราว 1–2 นาที แล้วกดรีเฟรชหน้านี้ (ดูผลที่ประวัติงานอัตโนมัติ)${exp ? ` · token หมดอายุ ${exp.slice(0, 10)}` : ""}` };
+}

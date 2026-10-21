@@ -12,11 +12,11 @@ import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
-import { AltInfoForm } from "./forms";
+import { AltInfoForm, GoldValuationForm } from "./forms";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
 
-const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาดโลก (อัตโนมัติ)" };
+const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาด (อัตโนมัติ)" };
 const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
 type Cat = { category_name: string; category_code: string; default_unit: string | null };
 
@@ -45,6 +45,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
   const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
   const qty = d.quantity == null ? null : Number(d.quantity);
   const unit = d.unit ?? cat?.default_unit ?? null;
+  // จำนวนเป็นบาททองคำ (สูตรเดียวกับ private.gold_value — ใช้แสดงตัวอย่างเท่านั้น)
+  const goldBaht = qty == null ? null : unit === "กรัม" ? qty / 15.244 : unit === "บาททองคำ" ? qty : null;
   const perUnit = (v: number | null | undefined) => (v == null || !qty ? null : Number(v) / qty);
   const vsCost = a.current_value != null && a.acquisition_cost ? ((Number(a.current_value) - Number(a.acquisition_cost)) * 100) / Number(a.acquisition_cost) : null;
   const pctText = (v: number) => `${v >= 0 ? "+" : ""}${v.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
@@ -92,7 +94,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
                 <Item label="หมวด">{cat?.category_name ?? "-"}</Item>
                 <Item label="จำนวน">{qtyUnit(qty, unit)}</Item>
                 {d.purity_pct != null && <Item label="ความบริสุทธิ์">{Number(d.purity_pct)}%</Item>}
-                {cat?.category_code === "GOLD" && <Item label="ประเมินมูลค่าอัตโนมัติ">{d.auto_price ? "เปิด (ราคาตลาดโลก ทุกวันทำการ)" : "ปิด"}</Item>}
+                {cat?.category_code === "GOLD" && <Item label="ชนิดทอง">{d.gold_form === "ORNAMENT" ? `ทองรูปพรรณ${d.deduct_per_baht ? ` · หัก ${money(d.deduct_per_baht)}/บาททองคำ` : ""}` : "ทองคำแท่ง"}</Item>}
+                {cat?.category_code === "GOLD" && <Item label="ประเมินมูลค่าอัตโนมัติ">{d.auto_price ? "เปิด (ราคารับซื้อสมาคมค้าทองคำ ทุกวันทำการ)" : "ปิด"}</Item>}
                 <Item label="ยี่ห้อ / รุ่น">{[d.brand, d.model].filter(Boolean).join(" · ") || "-"}</Item>
                 <Item label="Serial / เลขใบรับรอง">{d.serial_no || "-"}</Item>
                 <Item label="ที่เก็บ">{d.storage_location || "-"}</Item>
@@ -114,7 +117,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
                 <AltInfoForm assetId={id} code={cat?.category_code ?? ""} defaultUnit={cat?.default_unit ?? null} v={{
                   name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
                   brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
-                  storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price }} />
+                  storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price,
+                  gold_form: d.gold_form, deduct_per_baht: d.deduct_per_baht }} />
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
@@ -138,7 +142,10 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
           <h2 className="font-medium text-slate-900">มูลค่า</h2>
           <p className="text-xs text-slate-500">แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (ทอง / คริปโต ตามราคาตลาด)</p>
         </div>
-        {canWrite && a.status === "ACTIVE" && <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />}
+        {canWrite && a.status === "ACTIVE" && (cat?.category_code === "GOLD" && a.currency === "THB"
+          ? <GoldValuationForm assetId={id} today={today} minDate={goLive} paths={paths} qtyBaht={goldBaht}
+              purity={d.purity_pct != null ? Number(d.purity_pct) : null} ornament={d.gold_form === "ORNAMENT"} deduct={d.deduct_per_baht != null ? Number(d.deduct_per_baht) : null} />
+          : <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />)}
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th>
             {qty ? <th className="text-right">ต่อ{unit ?? "หน่วย"}</th> : null}<th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th><th></th></tr></thead>

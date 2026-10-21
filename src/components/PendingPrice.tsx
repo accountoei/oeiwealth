@@ -6,7 +6,7 @@ import { money, thDate } from "@/lib/format";
 
 /** ราคาอัตโนมัติที่ระบบยังไม่บันทึก (เก็บใน price_pending โดย Job ราคา) */
 export type Pending = {
-  date: string; price?: number; value?: number; price_per_baht_965?: number; previous?: number | null; previous_date?: string | null;
+  date: string; price?: number; value?: number; price_per_baht_965?: number; world_per_baht_965?: number | null; previous?: number | null; previous_date?: string | null;
   reason: string; source_reference?: string | null;
 };
 
@@ -29,7 +29,8 @@ export default function PendingPrice({ kind, id, pending, currency, canResolve, 
         <div><dt className="text-xs text-amber-800">{kind === "holding" ? "ราคาที่ดึงได้" : "มูลค่าที่คำนวณได้"}</dt>
           <dd className="tabular-nums font-medium">{money(main, currency, kind === "holding" ? 4 : 2)} · {thDate(pending.date)}</dd></div>
         {kind === "gold" && pending.price_per_baht_965 != null && (
-          <div><dt className="text-xs text-amber-800">ราคาทองต่อบาททองคำ (96.5%)</dt><dd className="tabular-nums">{money(pending.price_per_baht_965)}</dd></div>)}
+          <div><dt className="text-xs text-amber-800">ราคารับซื้อต่อบาททองคำ (96.5%)</dt><dd className="tabular-nums">{money(pending.price_per_baht_965)}
+            {pending.world_per_baht_965 ? <span className="block text-xs text-slate-500">ราคาโลก × USD/THB ≈ {money(pending.world_per_baht_965)}</span> : null}</dd></div>)}
         <div><dt className="text-xs text-amber-800">ครั้งก่อน</dt>
           <dd className="tabular-nums">{pending.previous != null ? `${money(pending.previous, currency, kind === "holding" ? 4 : 2)} · ${thDate(pending.previous_date ?? "")}` : "ไม่มี"}
             {chg != null && <span className={chg >= 0 ? " text-emerald-700" : " text-red-700"}> ({chg >= 0 ? "+" : ""}{chg.toFixed(2)}%)</span>}</dd></div>

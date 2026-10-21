@@ -1,6 +1,6 @@
 // node scripts/price-fetch.test.mjs — ทดสอบการแปลงข้อมูลราคา (ไม่ต่อเน็ต · ตัวเลขสมมติ)
 import assert from "node:assert/strict";
-import { yahooSymbol, parseYahooChart, goldBahtPrice, parseSecNav, firstArray, isSecProjId } from "./price-fetch.mjs";
+import { yahooSymbol, parseYahooChart, goldBahtPrice, parseSecNav, firstArray, isSecProjId, parseGoldtraders, parseThaiGoldApi, goldQuote } from "./price-fetch.mjs";
 
 assert.equal(yahooSymbol({ symbol: "ptt", currency: "THB" }), "PTT.BK");
 assert.equal(yahooSymbol({ symbol: "AAPL", currency: "USD" }), "AAPL");
@@ -28,4 +28,22 @@ assert.deepEqual(firstArray({ a: { b: [1, 2] } }), [1, 2]);
 assert.equal(isSecProjId("M0001_2550"), true);
 assert.equal(isSecProjId("M0001_2550|K-ABC-A"), true);
 assert.equal(isSecProjId("K-FIXED-A"), false);
+// สมาคมค้าทองคำ (โครงสร้างหน้า classic.goldtraders.or.th · ตัวเลขสมมติ)
+const html = `<td><span id="DetailPlace_uc_goldprices1_lblBLSell"><b><font color="Red">41,150.00</font></b></span></td>
+<span id="DetailPlace_uc_goldprices1_lblBLBuy"><b><font>41,050.00</font></b></span>
+<span id="DetailPlace_uc_goldprices1_lblOMSell"><b><font>41,650.00</font></b></span>
+<span id="DetailPlace_uc_goldprices1_lblOMBuy"><b><font>40,225.32</font></b></span>
+<span id="DetailPlace_uc_goldprices1_lblAsTime"><b><font>21/10/2569 09:25 ครั้งที่ 1</font></b></span>`;
+const g = parseGoldtraders(html);
+assert.deepEqual(g, { bar_buy: 41050, bar_sell: 41150, orn_buy: 40225.32, orn_sell: 41650, as_of: "21/10/2569 09:25 ครั้งที่ 1" });
+assert.equal(parseGoldtraders("<html>maintenance</html>"), null);
+const api = parseThaiGoldApi({ status: "success", response: { update_date: "21 ต.ค. 2569", update_time: "09:25", price: { gold: { buy: "40,225.32", sell: "41,650.00" }, gold_bar: { buy: "41,050.00", sell: "41,150.00" } } } });
+assert.equal(api.bar_buy, 41050);
+assert.equal(api.orn_buy, 40225.32);
+assert.equal(goldQuote(g, 41100, "BAR").price, 41050);
+assert.equal(goldQuote(g, 41100, "ORNAMENT").price, 40225.32);
+assert.equal(goldQuote(g, null, "BAR").price, 41050);                   // ไม่มีราคาโลก → ใช้ราคาสมาคมฯ
+assert.equal(goldQuote(g, 45000, "BAR").price, null);                   // ต่างเกิน 3% → ไม่ใช้
+assert.match(goldQuote(g, 45000, "BAR").reason, /SOURCE_MISMATCH/);
+assert.match(goldQuote(null, 41100, "BAR").reason, /NO_ASSOC_PRICE/);
 console.log("price-fetch tests passed");
