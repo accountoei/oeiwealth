@@ -69,36 +69,43 @@ export const BBL_UNITS = { JPY: 100, IDR: 1000, VND: 1000, LAK: 1000, KHR: 1000,
 
 /**
  * ธนาคารกรุงเทพ: แปลงผลลัพธ์ Getfxrates → [{rate_date, currency, rate_to_thb, source_reference}]
- *   rateKind: MID = (ซื้อ TT + ขาย) ÷ 2 · BUYING_TT · SELLING
+ *   ช่องของ API เทียบกับตารางบนเว็บธนาคาร (ตรวจ 21 ต.ค. 2569):
+ *     BuyingRates = ธนบัตร ราคารับซื้อ · SellingRates = ธนบัตร ราคาขาย
+ *     SightBill = ตั๋วแลกเงิน / ดราฟ ราคารับซื้อ · TT = โอนเงิน ราคารับซื้อ · Bill_DD_TT = ตั๋วแลกเงิน-ดราฟ-โอนเงิน ราคาขาย
+ *   rateKind: MID = (TT + Bill_DD_TT) ÷ 2 · BUYING_TT = TT · SELLING = Bill_DD_TT
+ *     สกุลที่ไม่มีอัตราโอน (เช่น BND) ใช้อัตราธนบัตรแทน (ระบุ "ธนบัตร" ในที่มา)
+ *   หลายแถวต่อสกุล (USD 1-2 · 5-20 · 50-100) → ใช้แถวที่มีอัตราโอน · ถ้าไม่มีเลย ใช้แถวราคาซื้อสูงสุด (ธนบัตรใบใหญ่)
  *   รหัสสกุล = ตัวอักษร 3 ตัวแรกที่เจอใน Family / ID / Description · เก็บเฉพาะ FX_CURRENCIES
- *   หลายแถวต่อสกุล (ธนบัตรหลายราคา เช่น USD 1-2 · USD 50-100) → ใช้แถวที่ราคาซื้อสูงสุด (TT / ธนบัตรใบใหญ่ — ใบย่อยรับซื้อถูกกว่า)
- *   หน่วย: ตาม BBL_UNITS หรือคำอธิบายระบุต่อ 100 หน่วย (เช่น "JPY 100") → แปลงเป็นต่อ 1 หน่วย
+ *   หน่วย: "(:100)" / "(:1000)" ในคำอธิบาย หรือ BBL_UNITS → แปลงเป็นต่อ 1 หน่วย
  *   อัตราที่ต่างจากอัตราก่อนหน้าเกิน 5% ฐานข้อมูลไม่รับอยู่แล้ว
  */
 export function parseBblResponse(rows, rateDate, rateKind = "MID") {
+  const pick = (buy, sell) => rateKind === "BUYING_TT" ? buy : rateKind === "SELLING" ? sell
+    : buy !== null && sell !== null ? (buy + sell) / 2 : null;
   const best = new Map();
   for (const r of Array.isArray(rows) ? rows : []) {
     const text = [r.Family, r.ID, r.Description, r.FamilyLong].map((x) => String(x ?? "")).join(" ");
-    const ccy = (text.match(/\b([A-Z]{3})\b/) ?? [])[1];
+    const ccy = (text.match(/\b([A-Z]{3})(?=\b|\d)/) ?? [])[1];
     if (!ccy || !FX_CURRENCIES.includes(ccy)) continue;
-    const buy = toNum(r.TT) ?? toNum(r.Bill_DD_TT) ?? toNum(r.BuyingRates);
-    const sell = toNum(r.SellingRates);
-    const rate = rateKind === "BUYING_TT" ? buy : rateKind === "SELLING" ? sell : buy !== null && sell !== null ? (buy + sell) / 2 : null;
+    const tt = pick(toNum(r.TT), toNum(r.Bill_DD_TT));
+    const note = pick(toNum(r.BuyingRates), toNum(r.SellingRates));
+    const rate = tt ?? note;
     if (rate === null) continue;
+    const cand = { r, rate, transfer: tt !== null, buy: toNum(r.TT) ?? toNum(r.BuyingRates) ?? 0 };
     const prev = best.get(ccy);
-    if (prev && (prev.buy ?? 0) >= (buy ?? 0)) continue;
-    best.set(ccy, { r, rate, buy });
+    if (prev && (prev.transfer > cand.transfer || (prev.transfer === cand.transfer && prev.buy >= cand.buy))) continue;
+    best.set(ccy, cand);
   }
   const out = [];
-  for (const [ccy, { r, rate }] of best) {
-    // ต่อ 100 หน่วย: "JPY 100" / "(100 YEN)" / "per 100" — ไม่ใช่ช่วงธนบัตร เช่น "USD 50-100"
-    const per100 = [r.Description, r.FamilyLong].some((x) => /^\s*[A-Z]{3}\s*100\s*$|\(100\b|\bper 100\b/i.test(String(x ?? "")));
-    const unit = BBL_UNITS[ccy] ?? (per100 ? 100 : 1);
+  for (const [ccy, { r, rate, transfer }] of best) {
+    const desc = [r.Description, r.FamilyLong].map((x) => String(x ?? "")).join(" ");
+    const m = desc.match(/\(\s*:?\s*(\d[\d,]*)\s*(?:[A-Z]+\s*)?\)/i) ?? desc.match(/^\s*[A-Z]{3}\s*(100|1000)\s*$|\bper (100|1000)\b/i);
+    const unit = m ? Number(String(m[1] ?? m[2] ?? m[3]).replace(/,/g, "")) : (BBL_UNITS[ccy] ?? 1);
     out.push({
       rate_date: rateDate,
       currency: ccy,
       rate_to_thb: Number((rate / unit).toFixed(10)),
-      source_reference: `BBL Getfxrates ${rateKind}${unit !== 1 ? ` /${unit}` : ""}${r.Description ? ` ${String(r.Description).trim().slice(0, 30)}` : ""}${r.Update ? ` รอบ ${r.Update}` : ""}`,
+      source_reference: `BBL Getfxrates ${rateKind}${transfer ? "" : " ธนบัตร"}${unit !== 1 ? ` /${unit}` : ""}${r.Update ? ` รอบ ${r.Update}` : ""}`,
     });
   }
   return out;
