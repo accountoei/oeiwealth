@@ -2724,6 +2724,12 @@ SELECT t.ok((SELECT status = 'BLOCKED' AND issues::text LIKE '%บัญชี O
 UPDATE public.bank_accounts SET overdraft_limit = NULL WHERE asset_id = t.a('บัญชี OD ทดสอบ');
 SELECT t.ok((SELECT issues::text LIKE '%ใส่วงเงิน O/D%' FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'),
             'O/D: บัญชีติดลบที่ไม่มีวงเงิน → ปิดไม่ได้ + แนะนำให้ใส่วงเงิน O/D');
+-- FX_STALE ตรวจเฉพาะเดือนที่สิ้นสุดแล้ว (ระหว่างเดือนเหลือแค่ "เดือนนี้ยังไม่สิ้นสุด")
+SELECT t.ok((SELECT issues::text LIKE '%MONTH_NOT_ENDED%' AND issues::text NOT LIKE '%FX_STALE%'
+               FROM public.month_closing_checks(date_trunc('month', current_date)::date) WHERE category = 'FX_SYSTEM'),
+            'FX: เดือนปัจจุบัน → ขึ้นแค่เดือนยังไม่สิ้นสุด ไม่ขึ้น FX เก่า (เทียบกับวันสิ้นเดือนในอนาคต)');
+SELECT t.ok(position('WHERE d < current_date AND (r.id IS NULL OR d - r.rate_date > 5)' IN pg_get_functiondef('private.month_closing_issues(uuid, date)'::regprocedure)) > 0,
+            'FX: เงื่อนไข FX_STALE ใหม่อยู่ใน month_closing_issues');
 RESET ROLE;
 ROLLBACK;
 

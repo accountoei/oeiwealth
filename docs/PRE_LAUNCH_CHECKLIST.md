@@ -3,7 +3,7 @@
 > **อัปเดตไฟล์นี้ทุกครั้งที่มีการปรับปรุงระบบ** (ทุก Pull Request) — ใครหรือ AI ตัวไหนมาทำต่อ ให้อ่านไฟล์นี้ก่อน
 > ⚠️ repo นี้เป็น **Public** · ห้ามใส่ข้อมูลจริงของครอบครัวในไฟล์นี้ (ชื่อ ที่อยู่ เลขโฉนด เลขบัญชี จำนวนเงิน)
 
-อัปเดตล่าสุด: 22 ต.ค. 2026 (PR #161 · กล่องสรุปแท็บรอรับ บรรทัดละสกุลเงิน)
+อัปเดตล่าสุด: 22 ต.ค. 2026 (PR #169 · ตรวจ FX เก่าเฉพาะเดือนที่สิ้นสุดแล้ว)
 
 ---
 
@@ -30,7 +30,7 @@
   - PR ที่ต่อจาก PR ที่ยังไม่ Merge: แตก branch จาก branch นั้น แล้วบอกเจ้าของลำดับ Merge (กัน conflict ในไฟล์นี้)
 - migration ใหม่ = ไฟล์ใหม่เสมอ (ห้ามแก้ไฟล์ที่รันแล้ว) · **เจ้าของรันเองใน Supabase SQL Editor** จากลิงก์ `raw.githubusercontent.com/accountoei/oeiwealth/<branch>/supabase/migrations/<file>` → AI ตรวจด้วย SELECT ผ่าน connector (`execute_sql`): คอลัมน์ / ตาราง / ฟังก์ชัน `md5(replace(prosrc, E'\r', ''))` เทียบกับ DB ทดสอบในเครื่อง · RLS · สิทธิ์ anon · `get_advisors` → เจ้าของกด Merge · **รัน SQL ก่อนกด Merge เสมอ**
   - AI ห้ามเรียก `apply_migration` (ถูกยกเลิกทุกครั้ง) · migration ที่ลบ / เปลี่ยนชื่อ / แก้ข้อมูลเดิม ต้องถามเจ้าของก่อน
-- ก่อน push: `service postgresql start; DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **624 checks** · นับจาก `grep -c "NOTICE:  PASS"`) + `npx tsc --noEmit && npx eslint src` + `next build` (env ปลอม) · ลบ `.next/types` หลัง build
+- ก่อน push: `service postgresql start; DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **626 checks** · นับจาก `grep -c "NOTICE:  PASS"`) + `npx tsc --noEmit && npx eslint src` + `next build` (env ปลอม) · ลบ `.next/types` หลัง build
 - ดูหน้าจอโดยไม่ต้องมีฐานข้อมูล: หน้าชั่วคราว `src/app/login/zz-preview/page.tsx` (ข้อมูลสมมติ) + `next dev -p 3123` + Playwright (`/opt/npm-tools/node_modules/playwright/index.mjs`, `executablePath: /opt/pw-browsers/chromium`) แล้ว**ลบหน้าชั่วคราวก่อน commit**
 - ทุก PR อัปเดตไฟล์นี้ (แถวการตัดสินใจ / รายการงาน / ประวัติ PR) และจำนวน checks ใน `AGENTS.md`
 - ปิดงานด้วยภาษาไทย 3 ส่วน: เปลี่ยนอะไร · ต้องทำอะไร (SQL → Merge) · เช็กลิสต์ทดสอบด้วยข้อมูลสมมติ
@@ -96,7 +96,7 @@
 - **Edge Functions** `invite-user` · `drive` · `fx-refresh` · `sec-nav` (PR #146 · ดึง NAV ก.ล.ต. ตามวัน · อ่านอย่างเดียว) (ทั้งหมด Verify JWT off · ตรวจผู้เรียกเอง) · Secrets: `GOOGLE_*` · `GITHUB_DISPATCH_TOKEN` (fine-grained · repo นี้ · Actions read/write) · `SEC_API_KEY` (ตัวเดียวกับ GitHub Secret)
 - **GitHub Actions** `fx-rates.yml` (09:30 / 14:30 / 19:30 · BBL ย้อน 3 วัน / ธปท. 10 วัน) · `prices.yml` (จ.–ศ. 18:45) · `db-backup.yml` (รายสัปดาห์) · `supabase-keepalive.yml` · GitHub Secrets: `SUPABASE_URL` · `SUPABASE_SECRET_KEY` · `BOT_API_TOKEN` · `BBL_API_KEY` · `SEC_API_KEY` (ตั้งแล้วทั้งคู่)
 - **สคริปต์** `scripts/fx-fetch.mjs` (ธปท. / ธนาคารกรุงเทพ · dry run พิมพ์ข้อมูลดิบ RAW) · `scripts/price-fetch.mjs` (Yahoo · ก.ล.ต. · สมาคมค้าทองคำ `classic.goldtraders.or.th` สำรอง `api.chnwt.dev/thai-gold-api` · เทียบราคาโลก 3%)
-- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (**624 checks**) · `node scripts/fx-fetch.test.mjs` · `node scripts/price-fetch.test.mjs` · Edge Function: `deno check` (ติดตั้ง deno ผ่าน npm ในโฟลเดอร์ชั่วคราว)
+- **ทดสอบ** `tests/run.sh` + `tests/10_scenario.sql` (**626 checks**) · `node scripts/fx-fetch.test.mjs` · `node scripts/price-fetch.test.mjs` · Edge Function: `deno check` (ติดตั้ง deno ผ่าน npm ในโฟลเดอร์ชั่วคราว)
 
 ### เสร็จแล้ว (20–21 ต.ค. · PR #121–#138 Merge แล้ว · migration รันครบ)
 - หน้าจอ: ตัวเลขชิดขวา · pop up แก้ / ลบในแถว · Dashboard ใหม่ · Income & Expenses ตารางเดียว · Cash / Loans / เอกสาร จัดใหม่ (#121–#130)
@@ -496,3 +496,4 @@
 | #165 | 22 ต.ค. | เงินเบิกเกินบัญชี O/D: บัญชีกระแสรายวันติดลบได้ไม่เกินวงเงิน · ยอดติดลบเป็นหนี้สินใน Net Worth · ตาราง O/D ในหน้า Liabilities · migration `20261022000600_bank_overdraft.sql` (รัน SQL ก่อน Merge · ต่อจาก #164) · tests 612 |
 | #167 | 22 ต.ค. | Insurance: ตาราง "เบี้ยที่ต้องจ่าย" และ "ผลประโยชน์ที่จะได้รับ" ทั้งปี (เลือกปีได้ · กรมธรรม์ละแถว ยอดรวมทั้งปี · รายเดือนกดดูเดือนไหน / จ่ายแล้วหรือยัง) · งวดสุดท้าย "จ่ายถึงปี … เหลือ … งวด" / "รับถึงปี …" (หน้ารายการ + หน้ากรมธรรม์) · ตารางมูลค่าเวนคืนตามสัญญา + ลงมูลค่าเวนคืนอัตโนมัติ · หลังบันทึกจ่ายเบี้ยถามอัปเดตมูลค่าเวนคืน (เติมตัวเลขตามสัญญา) · migration `20261022001500_insurance_cash_value_table.sql` (ตารางใหม่ 1 ตาราง + ฟังก์ชัน · ไม่แก้ข้อมูลเดิม) · ทดสอบ 624 checks |
 | #168 | 22 ต.ค. | กดตัวกรอง / แท็บ / ค้นหา / เปลี่ยนเดือน-หน้า แล้วหน้าจออยู่ที่เดิมทุกหน้า: `scroll={false}` ที่ Members, Loans (ดูทั้งหมด), Audit Log (ตัวกรอง + หน้าถัดไป), Month Closing (‹ ›), Dashboard (เลือกสมาชิก), สุขภาพ (เลือกคน), ช่องค้นหา Members / Documents (`next/form`) · `KeepHeight` ใน layout: ระหว่างอยู่หน้าเดิม เนื้อหาไม่หดต่ำกว่าความสูงเดิม (ผลกรองน้อยลง → ไม่ดึงหน้าจอขึ้น) · ไม่มี SQL |
+| #169 | 22 ต.ค. | ปิดเดือน: ตรวจ FX เก่ากว่า 5 วัน (FX_STALE) เฉพาะเดือนที่สิ้นสุดแล้ว · ระหว่างเดือนขึ้นแค่ "เดือนนี้ยังไม่สิ้นสุด" (เดิมเทียบ Rate กับวันสิ้นเดือนในอนาคต ขึ้น "เก่ากว่า 5 วัน" ทั้งที่เป็น Rate วันนี้) · migration `20261022000700_fx_stale_ended_month.sql` (รัน SQL ก่อน Merge) · tests 626 |
