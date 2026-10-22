@@ -363,10 +363,10 @@ export function genderOf(p: KinPerson, people: KinPerson[], viaSpouse = true): "
 }
 
 /** ชื่อเรียกตามเพศ เทียบกับหัวหน้าครอบครัว (บิดา / มารดา · บุตรชาย / บุตรสาว · ปู่ / ย่า / ตา / ยาย ฯลฯ) */
-/** ลำดับบุตร (คนที่ 1, 2, …) ในพ่อแม่เดียวกัน นับทุกเพศ · เรียงวันเกิด (ไม่มีวันเกิด → ต่อท้าย ตามลำดับในรายชื่อ) · ลูกคนเดียว / ไม่ได้ผูกพ่อแม่ → null */
+/** ลำดับพี่น้อง (คนที่ 1, 2, …) ในพ่อแม่เดียวกัน ใช้กับบุตร / หลาน · นับทุกเพศ · เรียงวันเกิด (ไม่มีวันเกิด → ต่อท้าย ตามลำดับในรายชื่อ) · ลูกคนเดียว / ไม่ได้ผูกพ่อแม่ → null */
 export function childOrdinal(p: KinPerson, people: KinPerson[]): number | null {
   if (!p.father_id && !p.mother_id) return null;
-  const sibs = people.filter((x) => x.relationship === "CHILD" && x.father_id === p.father_id && x.mother_id === p.mother_id);
+  const sibs = people.filter((x) => x.relationship === p.relationship && x.father_id === p.father_id && x.mother_id === p.mother_id);
   if (sibs.length < 2) return null;
   const idx = new Map(sibs.map((x, i) => [x.id, i]));
   const key = (x: KinPerson) => x.birth_date ?? "9999";
@@ -389,7 +389,10 @@ export function kinLabel(p: KinPerson, people: KinPerson[], headId: string | nul
       return pick("บุตรชาย", "บุตรสาว") + (n ? ` คนที่ ${n}` : "");
     }
     case "CHILD_IN_LAW": return pick("ลูกเขย", "ลูกสะใภ้");
-    case "GRANDCHILD": return pick("หลานชาย", "หลานสาว");
+    case "GRANDCHILD": {
+      const n = ordinal ? childOrdinal(p, people) : null;
+      return pick("หลานชาย", "หลานสาว") + (n ? ` คนที่ ${n}` : "");
+    }
     case "GRANDPARENT": {
       const parentOf = (pid: string | null) => people.find((x) => x.id === pid);
       const isParentOf = (x: KinPerson | undefined) => !!x && (x.father_id === p.id || x.mother_id === p.id);
