@@ -2640,6 +2640,40 @@ SELECT t.fails($$SELECT public.batch_record_business_values(jsonb_build_array(
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz8. เงินเบิกเกินบัญชี (O/D): บัญชีกระแสรายวันติดลบได้ไม่เกินวงเงิน · ยอดติดลบเป็นหนี้สิน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชี OD ทดสอบ', 'ทดสอบ', 'THB', 100, '2026-08-31', false, 'CURRENT', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS od0;
+SELECT t.fails($$UPDATE public.bank_accounts SET account_type = 'XYZ' WHERE asset_id = t.a('บัญชี OD ทดสอบ')$$, 'bank_accounts_account_type_check', 'O/D: ประเภทบัญชีต้องอยู่ในรายการ');
+SELECT t.fails($$UPDATE public.bank_accounts SET overdraft_limit = 0 WHERE asset_id = t.a('บัญชี OD ทดสอบ')$$, 'bank_accounts_overdraft_ck', 'O/D: วงเงินต้องมากกว่า 0');
+UPDATE public.bank_accounts SET overdraft_limit = 1000, overdraft_rate = 7.5 WHERE asset_id = t.a('บัญชี OD ทดสอบ');
+SELECT t.ok((SELECT account_type = 'CURRENT' AND overdraft_limit = 1000 AND overdraft_rate = 7.5 FROM public.v_bank_accounts_safe WHERE asset_id = t.a('บัญชี OD ทดสอบ')),
+            'O/D: บัญชีกระแสรายวัน วงเงิน 1,000 · ดอกเบี้ย 7.5% (เห็นใน v_bank_accounts_safe)');
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, amount, currency, description)
+  SELECT id, '2026-09-15', 'OTHER_OUT', t.a('บัญชี OD ทดสอบ'), 500, 'THB', 'เงินออก OD ทดสอบ 1' FROM public.families;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                        WHERE e->>'code' = 'NEGATIVE_BALANCE' AND e->>'entity_id' = t.a('บัญชี OD ทดสอบ')::text),
+            'O/D: ติดลบ −400 ไม่เกินวงเงิน 1,000 → ปิดเดือนได้ (ไม่มีเงื่อนไขติดลบ)');
+SELECT t.ok((SELECT count(*) FROM public.v_net_worth_items_current WHERE asset_id = t.a('บัญชี OD ทดสอบ')) = 1
+            AND (SELECT item_type = 'LIABILITY' AND item_group = 'LIABILITY_LOAN' AND item_subtype = 'OVERDRAFT' AND value = 400 AND base_value = 400
+                   FROM public.v_net_worth_items_current WHERE asset_id = t.a('บัญชี OD ทดสอบ')),
+            'O/D: Net Worth ยอดติดลบ 400 เป็นหนี้สิน (เงินกู้ · OVERDRAFT · ยอดบวก) ไม่ใช่สินทรัพย์ติดลบ');
+SELECT t.ok((SELECT coalesce(sum(base_value) FILTER (WHERE item_type = 'ASSET'), 0) = (d->>'total_assets')::numeric
+                AND coalesce(sum(base_value) FILTER (WHERE item_type = 'LIABILITY'), 0) = (d->>'total_liabilities')::numeric
+               FROM public.month_family_items(current_date), (SELECT public.dashboard_month(current_date) AS d) x GROUP BY d),
+            'O/D: Dashboard ยอดสินทรัพย์ / หนี้สินรวมตรงกับรายการ (O/D อยู่ฝั่งหนี้สิน)');
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, amount, currency, description)
+  SELECT id, '2026-09-16', 'OTHER_OUT', t.a('บัญชี OD ทดสอบ'), 1000, 'THB', 'เงินออก OD ทดสอบ 2' FROM public.families;
+SELECT t.ok((SELECT status = 'BLOCKED' AND issues::text LIKE '%บัญชี OD ทดสอบ%' AND issues::text LIKE '%เกินวงเงิน O/D%'
+               FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'),
+            'O/D: ติดลบ −1,400 เกินวงเงิน 1,000 → ปิดเดือนไม่ได้ (บอกว่าเกินวงเงิน)');
+UPDATE public.bank_accounts SET overdraft_limit = NULL WHERE asset_id = t.a('บัญชี OD ทดสอบ');
+SELECT t.ok((SELECT issues::text LIKE '%ใส่วงเงิน O/D%' FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'),
+            'O/D: บัญชีติดลบที่ไม่มีวงเงิน → ปิดไม่ได้ + แนะนำให้ใส่วงเงิน O/D');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

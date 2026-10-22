@@ -278,6 +278,13 @@ export default async function AccountDetailPage({ params, searchParams }: {
             <Item label="ชื่อบัญชี" dash>{acc.account_name}</Item>
             <Item label="สาขา" dash>{acc.branch}</Item>
             <Item label="อัตราดอกเบี้ย" dash>{acc.interest_rate != null ? `${Number(acc.interest_rate).toFixed(2)}% ต่อปี` : null}</Item>
+            {acc.overdraft_limit != null && (
+              <Item label="วงเงิน O/D">{money(Number(acc.overdraft_limit), acc.currency)}
+                {acc.overdraft_rate != null && <span className="text-xs text-slate-500"> · ดอกเบี้ย {Number(acc.overdraft_rate).toFixed(2)}% ต่อปี</span>}
+                {balNow != null && <div className={`text-xs ${balNow < 0 ? "text-red-700" : "text-slate-500"}`}>
+                  {balNow < 0 ? `ใช้ไป ${money(-balNow)} · คงเหลือ ${money(Number(acc.overdraft_limit) + balNow)}` : "ยังไม่ได้ใช้วงเงิน"}</div>}
+              </Item>
+            )}
             <Item label="วันครบกำหนด" dash>{acc.maturity_date ? <span className={acc.maturity_date < today ? "font-medium text-red-700" : acc.maturity_date <= soon ? "font-medium text-amber-700" : ""}>
               {thDate(acc.maturity_date)}{acc.maturity_date < today ? " (เลยกำหนด)" : acc.maturity_date <= soon ? " (ใกล้ครบ)" : ""}</span> : null}</Item>
             <Item label="สถานะ">{acc.status === "CLOSED" ? <span className="text-slate-500">ปิดบัญชีแล้ว</span> : <span className="text-emerald-700">ใช้งาน</span>}</Item>

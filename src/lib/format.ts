@@ -45,7 +45,7 @@ export const FX_BBL_RATE_LABEL: Record<string, string> = { MID: "อัตรา
 export const CURRENCIES = ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "HKD", "SGD", "AUD", "CHF"];
 
 export const ACCOUNT_TYPE_LABEL: Record<string, string> = {
-  SAVING: "ออมทรัพย์", FIXED: "ฝากประจำ", FOREIGN_CURRENCY: "เงินฝากเงินตราต่างประเทศ", OTHER: "อื่น ๆ",
+  SAVING: "ออมทรัพย์", CURRENT: "กระแสรายวัน", FIXED: "ฝากประจำ", FOREIGN_CURRENCY: "เงินฝากเงินตราต่างประเทศ", OTHER: "อื่น ๆ",
 };
 
 export const LIABILITY_TYPE_LABEL: Record<string, string> = {
