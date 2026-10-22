@@ -140,7 +140,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Suspense>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
           {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
           <DetailBox start={start} personId={personId} ym={ym}
             title={<>ความมั่งคั่งเปลี่ยนเพราะอะไร {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> · {personName}</span> : null}</>}
