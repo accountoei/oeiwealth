@@ -722,6 +722,18 @@ SELECT t.fails($$UPDATE public.persons SET national_id = '123-45' WHERE name = '
   'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก');
 SELECT t.fails($$UPDATE public.persons SET photo = 'javascript:alert(1)' WHERE name = 'หลานทดสอบ'$$, 'persons_photo_format',
   'รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพเท่านั้น');
+-- เพศ + การศึกษา / การทำงาน
+SELECT t.ok((SELECT gender = 'M' FROM public.persons WHERE name = 'หลานทดสอบ'), 'คำนำหน้า "เด็กชาย" → เพศชายให้เอง');
+UPDATE public.persons SET gender = 'F' WHERE name = 'หลานทดสอบ';
+UPDATE public.persons SET title_prefix = 'นาย' WHERE name = 'หลานทดสอบ';
+SELECT t.ok((SELECT gender = 'F' FROM public.persons WHERE name = 'หลานทดสอบ'), 'เลือกเพศเองแล้ว → คำนำหน้าไม่ทับค่าที่เลือก');
+UPDATE public.persons SET gender = NULL, title_prefix = 'เด็กชาย' WHERE name = 'หลานทดสอบ';
+SELECT t.fails($$UPDATE public.persons SET gender = 'X' WHERE name = 'หลานทดสอบ'$$, 'persons_gender_ck', 'เพศต้องเป็นชาย / หญิง / ไม่ระบุ');
+UPDATE public.persons SET education_level = 'BACHELOR', education_institution = 'มหาวิทยาลัยทดสอบ', occupation = 'พนักงานบริษัท',
+  job_title = 'ผู้จัดการ', social_positions = 'กรรมการสมาคมทดสอบ' WHERE name = 'หลานทดสอบ';
+SELECT t.ok((SELECT education_level = 'BACHELOR' AND job_title = 'ผู้จัดการ' AND social_positions IS NOT NULL FROM public.persons WHERE name = 'หลานทดสอบ'),
+            'บันทึกการศึกษา / การทำงาน / ตำแหน่งทางสังคมได้');
+SELECT t.fails($$UPDATE public.persons SET education_level = 'PHD' WHERE name = 'หลานทดสอบ'$$, 'persons_education_level_ck', 'วุฒิการศึกษาต้องเลือกจากรายการ');
 -- ผังครอบครัว / หัวหน้าครอบครัว
 SELECT t.login('00000000-0000-0000-0000-00000000000a');
 SELECT t.ok((SELECT head_person_id = t.p('คุณพ่อ') FROM public.families), 'หัวหน้าครอบครัวตั้งต้น = สมาชิก "ตัวเอง" ตอนตั้งระบบ');

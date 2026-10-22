@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { updatePersonDetails, type ActionState } from "../actions";
-import { PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
+import { EDUCATION_LEVEL_LABEL, GENDER_LABEL, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -15,6 +15,8 @@ export type PersonDetails = {
   birth_date: string | null; photo: string | null; phone: string | null; email: string | null; address: string | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null; national_id: string | null;
   passport_no: string | null; passport_expiry: string | null; house_registration_no: string | null; notes: string | null;
+  gender: string | null; education_level: string | null; education_institution: string | null; education_major: string | null;
+  occupation: string | null; workplace: string | null; job_title: string | null; social_positions: string | null;
 };
 
 /** ย่อรูปเป็นสี่เหลี่ยมจัตุรัส 256 px (JPEG) ในเบราว์เซอร์ → data URL เล็ก ๆ */
@@ -114,6 +116,30 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
         <label className={label}>ชื่อเล่น<input name="nickname" defaultValue={p.nickname ?? ""} className={input} /></label>
         <label className={`${label} md:col-span-2`}>ชื่อ-นามสกุล (อังกฤษ)<input name="full_name_en" defaultValue={p.full_name_en ?? ""} className={input} /></label>
         <label className={label}>วันเกิด<input type="date" name="birth_date" defaultValue={p.birth_date ?? ""} className={input} /></label>
+        <label className={label}>เพศ
+          <select name="gender" defaultValue={p.gender ?? ""} className={input}>
+            <option value="">ไม่ระบุ (ดูจากคำนำหน้า)</option>
+            {Object.entries(GENDER_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset className="grid gap-4 md:grid-cols-3">
+        <legend className="mb-2 text-sm font-medium text-slate-900">การศึกษาและการงาน (ปัจจุบัน)</legend>
+        <label className={label}>วุฒิการศึกษาสูงสุด
+          <select name="education_level" defaultValue={p.education_level ?? ""} className={input}>
+            <option value="">— ไม่ระบุ —</option>
+            {Object.entries(EDUCATION_LEVEL_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label className={label}>สถาบัน<input name="education_institution" defaultValue={p.education_institution ?? ""} className={input} /></label>
+        <label className={label}>สาขา / คณะ<input name="education_major" defaultValue={p.education_major ?? ""} className={input} /></label>
+        <label className={label}>อาชีพ<input name="occupation" defaultValue={p.occupation ?? ""} placeholder="เช่น ธุรกิจส่วนตัว · นักเรียน" className={input} /></label>
+        <label className={label}>ที่ทำงาน / สถานศึกษา<input name="workplace" defaultValue={p.workplace ?? ""} className={input} /></label>
+        <label className={label}>ตำแหน่งงาน<input name="job_title" defaultValue={p.job_title ?? ""} className={input} /></label>
+        <label className={`${label} md:col-span-3`}>ตำแหน่งทางสังคม (บรรทัดละ 1 ตำแหน่ง)
+          <textarea name="social_positions" rows={3} defaultValue={p.social_positions ?? ""} placeholder="เช่น กรรมการมูลนิธิ · นายกสมาคม · ยศ / เครื่องราชอิสริยาภรณ์" className={input} />
+        </label>
       </fieldset>
 
       <fieldset className="grid gap-4 md:grid-cols-3">
