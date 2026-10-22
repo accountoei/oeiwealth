@@ -38,6 +38,10 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
   const gens = [...new Set(gen.values())].sort((a, b) => a - b);
   const unlinked = people.filter((p) => !gen.has(p.id));
 
+  /** คนในหน่วยที่มีพ่อ / แม่ในระบบ (ใช้จัดกลุ่ม "ลูกของ …") */
+  const bloodOf = (u: TreePerson[]) => u.find((x) => x.father_id || x.mother_id) ?? u[0];
+  const keyOf = (p: TreePerson) => (p.father_id || p.mother_id ? `${p.father_id ?? ""}|${p.mother_id ?? ""}` : "");
+
   // หน่วยครอบครัว (คน + คู่สมรสในรุ่นเดียวกัน) · จัดกลุ่มตามพ่อแม่
   function rows(g: number) {
     const members = people.filter((p) => gen.get(p.id) === g);
@@ -51,8 +55,8 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
     }
     const groups = new Map<string, { label: string; units: TreePerson[][] }>();
     for (const u of units) {
-      const blood = u.find((x) => x.father_id || x.mother_id) ?? u[0];
-      const key = blood.father_id || blood.mother_id ? `${blood.father_id ?? ""}|${blood.mother_id ?? ""}` : "";
+      const blood = bloodOf(u);
+      const key = keyOf(blood);
       const label = key ? `ลูกของ ${[blood.father_id, blood.mother_id].map((x) => (x ? byId.get(x)?.name : null)).filter(Boolean).join(" & ")}` : "";
       if (!groups.has(key)) groups.set(key, { label, units: [] });
       groups.get(key)!.units.push(u);
@@ -83,10 +87,9 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
           {gi > 0 && <div className="mx-auto mb-2 h-4 w-px bg-slate-300" />}
           <div className="mb-2 text-center text-xs font-medium text-slate-500">{GEN_LABEL[g] ?? `รุ่นที่ ${g}`}</div>
           <div className="flex flex-wrap justify-center gap-4">
-            {rows(g).map((grp, i) => (
-              <div key={i} className={grp.label ? "rounded-xl border border-dashed border-slate-300 p-2" : ""}>
-                {grp.label && <div className="mb-1 text-center text-[11px] text-slate-500">{grp.label}</div>}
-                <div className="flex flex-wrap justify-center gap-3">
+            {rows(g).map((grp, i) => {
+              if (!grp.label) return (
+                <div key={i} className="flex flex-wrap justify-center gap-3">
                   {grp.units.map((u) => (
                     <div key={u[0].id} className="flex items-center gap-1">
                       <Card p={u[0]} />
@@ -94,8 +97,34 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
                     </div>
                   ))}
                 </div>
-              </div>
-            ))}
+              );
+              // กรอบ "ลูกของ …" ล้อมเฉพาะลูก · คู่สมรสที่มาจากครอบครัวอื่นอยู่นอกกรอบ (คนที่มีคู่สมรสอยู่ท้ายกรอบ ติดกับคู่)
+              const split = grp.units.map((u) => {
+                const b = bloodOf(u);
+                const o = u.find((x) => x !== b);
+                return { b, o: o && keyOf(o) !== keyOf(b) ? o : undefined, sib: o && keyOf(o) === keyOf(b) ? o : undefined };
+              }).sort((x, y) => Number(!!x.o) - Number(!!y.o));
+              return (
+                <div key={i} className="flex items-end gap-1">
+                  <div className="rounded-xl border border-dashed border-slate-300 p-2">
+                    <div className="mb-1 text-center text-[11px] text-slate-500">{grp.label}</div>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      {split.map((x) => (
+                        <div key={x.b.id} className="flex items-center gap-1">
+                          <Card p={x.b} />
+                          {x.sib && <><span className="text-slate-300" title="คู่สมรส">—</span><Card p={x.sib} /></>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {split.filter((x) => x.o).map((x) => (
+                    <div key={x.o!.id} className="flex items-center gap-1 pb-2">
+                      <span className="text-slate-300" title={`คู่สมรสของ ${x.b.name}`}>—</span><Card p={x.o!} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}
