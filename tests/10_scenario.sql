@@ -2634,6 +2634,96 @@ SELECT t.ok((SELECT (r->>'added')::int = 0 FROM public.sync_insurance_cash_value
             'CONTRIBUTOR เรียกอัปเดตตามตารางได้ (หลังบันทึกจ่ายเบี้ย)');
 SELECT t.fails($$SELECT public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'), '[]')$$,
   'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางมูลค่าเวนคืนไม่ได้');
+\echo '== 13zz7. Private Business: ปันผลแยกตามผู้ถือหุ้น + มูลค่าหลายกิจการ (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_private_business(jsonb_build_object(
+  'name','บริษัทปันผลกลุ่ม','company_name','บริษัท ปันผลกลุ่ม จำกัด','total_shares',1000,'investment_cost',1000000,
+  'value',1000000,'value_date',current_date - 5,'is_opening',false,'acquisition_date',current_date - 5,'valuation_method','BOOK_VALUE',
+  'owners', jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',600), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',400)))) IS NOT NULL AS bizd;
+SELECT public.create_bank_account('บัญชีปันผลพ่อ', 'ทดสอบ', 'THB', 1000, current_date - 5, false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS bd_f;
+SELECT public.create_bank_account('บัญชีปันผลแม่', 'ทดสอบ', 'THB', 1000, current_date - 5, false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณแม่'), 'percent', 100)), NULL, NULL) IS NOT NULL AS bd_m;
+SELECT t.fails($$SELECT public.batch_record_business_dividends(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'person_id', t.p('คุณพ่อ'), 'date', current_date, 'amount', 6000, 'bank_asset_id', t.a('บัญชีปันผลพ่อ')),
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'person_id', t.p('คุณแม่'), 'date', current_date - 10, 'amount', 4000, 'bank_asset_id', t.a('บัญชีปันผลแม่'))))$$,
+  'บริษัทปันผลกลุ่ม · คุณแม่ · ไม่ได้ถือหุ้น', 'ปันผลกลุ่ม: วันที่ก่อนถือหุ้น → ผิด (บอกชื่อกิจการ + ผู้ถือหุ้น)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE asset_id = t.a('บริษัทปันผลกลุ่ม') AND income_type = 'BUSINESS_DIVIDEND' AND deleted_at IS NULL),
+            'ปันผลกลุ่ม: แถวเดียวผิด → ไม่บันทึกเลยทั้งชุด');
+SELECT t.fails($$SELECT public.batch_record_business_dividends(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'person_id', t.p('คุณพ่อ'), 'date', current_date, 'amount', 6000, 'tax', 6000)))$$,
+  'ภาษีต้องน้อยกว่าปันผล', 'ปันผลกลุ่ม: ภาษีเท่ากับ / เกินปันผลไม่ได้');
+SELECT t.fails($$SELECT public.batch_record_business_dividends(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('KBank ออมทรัพย์'), 'person_id', t.p('คุณพ่อ'), 'date', current_date, 'amount', 6000)))$$,
+  'ไม่พบกิจการ', 'ปันผลกลุ่ม: ต้องเป็นกิจการ');
+SELECT t.ok(public.batch_record_business_dividends(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'person_id', t.p('คุณพ่อ'), 'date', current_date, 'amount', '6000', 'tax', '600', 'bank_asset_id', t.a('บัญชีปันผลพ่อ')),
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'person_id', t.p('คุณแม่'), 'date', current_date, 'amount', '4000', 'tax', '400', 'bank_asset_id', t.a('บัญชีปันผลแม่')))) = 2,
+  'ปันผลกลุ่ม: บันทึก 2 ผู้ถือหุ้นในคำสั่งเดียว');
+SELECT t.ok((SELECT count(*) FROM public.cash_movements WHERE movement_type = 'INCOME' AND deleted_at IS NULL
+               AND ((to_asset_id = t.a('บัญชีปันผลพ่อ') AND amount = 5400) OR (to_asset_id = t.a('บัญชีปันผลแม่') AND amount = 3600))) = 2,
+            'ปันผลกลุ่ม: เงินเข้าบัญชีของแต่ละคน = สุทธิหลังภาษี (พ่อ 5,400 · แม่ 3,600)');
+SELECT t.ok((SELECT sum(amount_share) FROM public.v_income_by_person v JOIN public.income_transactions i ON i.id = v.income_id
+               WHERE i.asset_id = t.a('บริษัทปันผลกลุ่ม') AND v.person_id = t.p('คุณพ่อ')) = 6000
+            AND (SELECT sum(amount_share) FROM public.v_income_by_person v JOIN public.income_transactions i ON i.id = v.income_id
+               WHERE i.asset_id = t.a('บริษัทปันผลกลุ่ม') AND v.person_id = t.p('คุณแม่')) = 4000,
+            'ปันผลกลุ่ม: รายได้รายคนตามแถวที่บันทึก (พ่อ 6,000 · แม่ 4,000) ไม่แบ่งซ้ำตามสัดส่วนหุ้น');
+-- มูลค่าหลายกิจการ
+SELECT t.fails($$SELECT public.batch_record_business_values(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'date', current_date, 'value', 1200000),
+  jsonb_build_object('asset_id', t.a('บริษัทขายหุ้น'), 'date', current_date + 1, 'value', 900000)))$$,
+  'บริษัทขายหุ้น · วันที่ประเมินเป็นวันในอนาคต', 'มูลค่ากลุ่ม: วันในอนาคต → ผิดทั้งชุด');
+SELECT t.ok((SELECT current_value FROM public.assets WHERE id = t.a('บริษัทปันผลกลุ่ม')) = 1000000, 'มูลค่ากลุ่ม: แถวผิด → มูลค่าเดิม');
+SELECT t.fails($$SELECT public.batch_record_business_values(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'date', current_date, 'value', 1200000, 'method', 'STATEMENT')))$$,
+  'วิธีประเมินไม่ถูกต้อง', 'มูลค่ากลุ่ม: วิธีประเมินต้องอยู่ในรายการ');
+SELECT t.ok(public.batch_record_business_values(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'date', current_date, 'value', '1200000', 'method', 'APPRAISAL'),
+  jsonb_build_object('asset_id', t.a('บริษัทขายหุ้น'), 'date', current_date, 'value', '900000'))) = 2,
+  'มูลค่ากลุ่ม: บันทึก 2 กิจการในคำสั่งเดียว');
+SELECT t.ok((SELECT current_value FROM public.assets WHERE id = t.a('บริษัทปันผลกลุ่ม')) = 1200000
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('บริษัทขายหุ้น')) = 900000
+            AND (SELECT source FROM public.asset_valuations WHERE asset_id = t.a('บริษัทปันผลกลุ่ม') AND valuation_date = current_date AND deleted_at IS NULL) = 'APPRAISAL',
+            'มูลค่ากลุ่ม: มูลค่าปัจจุบันอัปเดต (1,200,000 · 900,000) · ผู้ประเมิน = APPRAISAL');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.batch_record_business_values(jsonb_build_array(
+  jsonb_build_object('asset_id', t.a('บริษัทปันผลกลุ่ม'), 'date', current_date, 'value', 1)))$$,
+  'row-level security|PERMISSION_DENIED|permission', 'VIEWER บันทึกมูลค่าไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
+\echo '== 13zz8. เงินเบิกเกินบัญชี (O/D): บัญชีกระแสรายวันติดลบได้ไม่เกินวงเงิน · ยอดติดลบเป็นหนี้สิน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชี OD ทดสอบ', 'ทดสอบ', 'THB', 100, '2026-08-31', false, 'CURRENT', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS od0;
+SELECT t.fails($$UPDATE public.bank_accounts SET account_type = 'XYZ' WHERE asset_id = t.a('บัญชี OD ทดสอบ')$$, 'bank_accounts_account_type_check', 'O/D: ประเภทบัญชีต้องอยู่ในรายการ');
+SELECT t.fails($$UPDATE public.bank_accounts SET overdraft_limit = 0 WHERE asset_id = t.a('บัญชี OD ทดสอบ')$$, 'bank_accounts_overdraft_ck', 'O/D: วงเงินต้องมากกว่า 0');
+UPDATE public.bank_accounts SET overdraft_limit = 1000, overdraft_rate = 7.5 WHERE asset_id = t.a('บัญชี OD ทดสอบ');
+SELECT t.ok((SELECT account_type = 'CURRENT' AND overdraft_limit = 1000 AND overdraft_rate = 7.5 FROM public.v_bank_accounts_safe WHERE asset_id = t.a('บัญชี OD ทดสอบ')),
+            'O/D: บัญชีกระแสรายวัน วงเงิน 1,000 · ดอกเบี้ย 7.5% (เห็นใน v_bank_accounts_safe)');
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, amount, currency, description)
+  SELECT id, '2026-09-15', 'OTHER_OUT', t.a('บัญชี OD ทดสอบ'), 500, 'THB', 'เงินออก OD ทดสอบ 1' FROM public.families;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                        WHERE e->>'code' = 'NEGATIVE_BALANCE' AND e->>'entity_id' = t.a('บัญชี OD ทดสอบ')::text),
+            'O/D: ติดลบ −400 ไม่เกินวงเงิน 1,000 → ปิดเดือนได้ (ไม่มีเงื่อนไขติดลบ)');
+SELECT t.ok((SELECT count(*) FROM public.v_net_worth_items_current WHERE asset_id = t.a('บัญชี OD ทดสอบ')) = 1
+            AND (SELECT item_type = 'LIABILITY' AND item_group = 'LIABILITY_LOAN' AND item_subtype = 'OVERDRAFT' AND value = 400 AND base_value = 400
+                   FROM public.v_net_worth_items_current WHERE asset_id = t.a('บัญชี OD ทดสอบ')),
+            'O/D: Net Worth ยอดติดลบ 400 เป็นหนี้สิน (เงินกู้ · OVERDRAFT · ยอดบวก) ไม่ใช่สินทรัพย์ติดลบ');
+SELECT t.ok((SELECT coalesce(sum(base_value) FILTER (WHERE item_type = 'ASSET'), 0) = (d->>'total_assets')::numeric
+                AND coalesce(sum(base_value) FILTER (WHERE item_type = 'LIABILITY'), 0) = (d->>'total_liabilities')::numeric
+               FROM public.month_family_items(current_date), (SELECT public.dashboard_month(current_date) AS d) x GROUP BY d),
+            'O/D: Dashboard ยอดสินทรัพย์ / หนี้สินรวมตรงกับรายการ (O/D อยู่ฝั่งหนี้สิน)');
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, amount, currency, description)
+  SELECT id, '2026-09-16', 'OTHER_OUT', t.a('บัญชี OD ทดสอบ'), 1000, 'THB', 'เงินออก OD ทดสอบ 2' FROM public.families;
+SELECT t.ok((SELECT status = 'BLOCKED' AND issues::text LIKE '%บัญชี OD ทดสอบ%' AND issues::text LIKE '%เกินวงเงิน O/D%'
+               FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'),
+            'O/D: ติดลบ −1,400 เกินวงเงิน 1,000 → ปิดเดือนไม่ได้ (บอกว่าเกินวงเงิน)');
+UPDATE public.bank_accounts SET overdraft_limit = NULL WHERE asset_id = t.a('บัญชี OD ทดสอบ');
+SELECT t.ok((SELECT issues::text LIKE '%ใส่วงเงิน O/D%' FROM public.month_closing_checks('2026-09-01') WHERE category = 'CASH'),
+            'O/D: บัญชีติดลบที่ไม่มีวงเงิน → ปิดไม่ได้ + แนะนำให้ใส่วงเงิน O/D');
 RESET ROLE;
 ROLLBACK;
 
