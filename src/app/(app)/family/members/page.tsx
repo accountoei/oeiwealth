@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -147,11 +148,11 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
             <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs">
-              <Link href={url({ archived: sp.archived === "1" })} className={`px-2.5 py-1 ${!tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
-              <Link href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-2.5 py-1 ${tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
+              <Link scroll={false} href={url({ archived: sp.archived === "1" })} className={`px-2.5 py-1 ${!tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
+              <Link scroll={false} href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-2.5 py-1 ${tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
             </div>
             {archivedCount > 0 && !ordering && (
-              <Link href={url({ view: tree ? "tree" : undefined, archived: sp.archived !== "1" })}
+              <Link scroll={false} href={url({ view: tree ? "tree" : undefined, archived: sp.archived !== "1" })}
                 className={`rounded-full border px-2.5 py-0.5 text-xs ${sp.archived === "1" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
                 Archived ({archivedCount})
               </Link>
@@ -167,7 +168,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         </p>
         {!tree && !ordering && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <form method="get" action="/family/members" className="flex items-center gap-1">
+            <Form action="/family/members" scroll={false} className="flex items-center gap-1">
               {cur.archived && <input type="hidden" name="archived" value="1" />}
               {fGen && <input type="hidden" name="gen" value={fGen} />}
               {fG && <input type="hidden" name="g" value={fG} />}
@@ -175,24 +176,24 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
               <input name="q" defaultValue={q} placeholder="ค้นหาชื่อ / ชื่อเล่น" data-plain
                 className="w-44 rounded-md border border-slate-300 px-2.5 py-1 text-sm" aria-label="ค้นหาสมาชิก" />
               <button className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">ค้นหา</button>
-            </form>
+            </Form>
             <span className="mx-1 h-4 w-px bg-slate-200" />
-            <Link href={url({ ...cur, gen: "" })} className={chip(!fGen)}>ทุกรุ่น</Link>
+            <Link scroll={false} href={url({ ...cur, gen: "" })} className={chip(!fGen)}>ทุกรุ่น</Link>
             {Object.entries(GEN_FILTER_LABEL).filter(([k]) => genCount(k) > 0).map(([k, l]) => (
-              <Link key={k} href={url({ ...cur, gen: fGen === k ? "" : k })} className={chip(fGen === k)}>{l} ({genCount(k)})</Link>))}
+              <Link scroll={false} key={k} href={url({ ...cur, gen: fGen === k ? "" : k })} className={chip(fGen === k)}>{l} ({genCount(k)})</Link>))}
             <span className="mx-1 h-4 w-px bg-slate-200" />
             {Object.entries(GENDER_LABEL).map(([k, l]) => (
-              <Link key={k} href={url({ ...cur, g: fG === k ? "" : k })} className={chip(fG === k)}>{l}</Link>))}
+              <Link scroll={false} key={k} href={url({ ...cur, g: fG === k ? "" : k })} className={chip(fG === k)}>{l}</Link>))}
             <span className="mx-1 h-4 w-px bg-slate-200" />
-            <Link href={url({ ...cur, missing: !fMissing })} className={fMissing || missingCount === 0 ? chip(fMissing) : "rounded-full border border-amber-300 px-2.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50"}>
+            <Link scroll={false} href={url({ ...cur, missing: !fMissing })} className={fMissing || missingCount === 0 ? chip(fMissing) : "rounded-full border border-amber-300 px-2.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50"}>
               ข้อมูลยังไม่ครบ ({missingCount})
             </Link>
-            {filtering && <Link href={url({ archived: cur.archived })} className="text-xs text-slate-500 underline">ล้างตัวกรอง</Link>}
+            {filtering && <Link scroll={false} href={url({ archived: cur.archived })} className="text-xs text-slate-500 underline">ล้างตัวกรอง</Link>}
           </div>
         )}
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         {tree ? <div className="mt-4"><FamilyTree people={list} kin={all} headId={headId} /></div> : (
-        <div className="divide-y divide-slate-100">
+        <div className={`divide-y divide-slate-100 ${filtering ? "min-h-screen" : ""}`}>
           {list.length > 0 && !ordering && (
             <div className="hidden items-center gap-3 pb-1.5 text-sm text-slate-500 sm:flex">
               <span className="w-6" />
