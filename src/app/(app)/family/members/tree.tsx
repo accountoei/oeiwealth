@@ -78,7 +78,7 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
     </Link>
   );
 
-  if (!headId) return <p className="text-sm text-slate-500">ยังไม่ได้ตั้งหัวหน้าครอบครัว — ADMIN ตั้งได้ในหน้าข้อมูลของสมาชิก</p>;
+  if (!headId) return <p className="text-sm text-slate-500">ยังไม่ได้ตั้งหัวหน้าครอบครัว — ADMIN ตั้งได้ที่ปุ่ม แก้ไข ในกล่องชื่อครอบครัว</p>;
 
   return (
     <div className="space-y-6 overflow-x-auto pb-2">
