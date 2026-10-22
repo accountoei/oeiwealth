@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError } from "@/lib/format";
+import { BAD_ROWS_ERROR, TAX_ERROR, isPositive, isValidTax, notSaved, readRows } from "@/lib/batch-entry";
 
 export type ActionState = { error?: string; ok?: string; value?: string };
 
@@ -145,14 +146,14 @@ export type BatchState = { error?: string; ok?: string; results?: BatchResult[] 
 export async function batchUpdate(_: BatchState, form: FormData): Promise<BatchState> {
   const supabase = await createClient();
   const date = str(form.get("date"));
-  let rows: { asset_id: string; value: string }[] = [];
-  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const rows = readRows<{ asset_id: string; value: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
   const clean = rows.map((r) => ({ asset_id: r.asset_id, value: num(r.value) }));
   if (!date) return { error: "กรุณาเลือกวันที่" };
   if (!clean.length) return { error: "กรุณาเลือกบัญชีและกรอกยอดอย่างน้อย 1 บัญชี" };
   if (clean.some((r) => r.value === null || Number.isNaN(r.value))) return { error: "ยอดที่กรอกต้องเป็นตัวเลขทุกบัญชีที่เลือก" };
   const { data, error } = await supabase.rpc("batch_update_bank_statements", { p_date: date, p_rows: clean });
-  if (error) return { error: `ยังไม่ได้บันทึก (ทุกบัญชี) · ${friendlyError(error.message)}` };
+  if (error) return { error: notSaved("ทุกบัญชี", friendlyError(error.message)) };
   revalidatePath("/financial/cash", "layout");
   revalidatePath("/income-expenses");
   revalidatePath("/month-closing");
@@ -165,15 +166,15 @@ export async function batchUpdate(_: BatchState, form: FormData): Promise<BatchS
 export async function batchInterest(_: BatchState, form: FormData): Promise<BatchState> {
   const supabase = await createClient();
   const date = str(form.get("date"));
-  let rows: { asset_id: string; amount: string; tax: string }[] = [];
-  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const rows = readRows<{ asset_id: string; amount: string; tax: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
   const clean = rows.map((r) => ({ bank_asset_id: r.asset_id, date, amount: num(r.amount), tax: num(r.tax) }));
   if (!date) return { error: "กรุณาเลือกวันที่รับ" };
   if (!clean.length) return { error: "กรุณากรอกดอกเบี้ยอย่างน้อย 1 บัญชี" };
-  if (clean.some((r) => r.amount == null || Number.isNaN(r.amount) || r.amount <= 0)) return { error: "ดอกเบี้ยต้องเป็นตัวเลขมากกว่า 0 ทุกบัญชีที่กรอก" };
-  if (clean.some((r) => r.tax != null && (Number.isNaN(r.tax) || r.tax < 0))) return { error: "ภาษีต้องเป็นตัวเลข (ไม่ติดลบ)" };
+  if (!clean.every((r) => isPositive(r.amount))) return { error: "ดอกเบี้ยต้องเป็นตัวเลขมากกว่า 0 ทุกบัญชีที่กรอก" };
+  if (!clean.every((r) => isValidTax(r.tax))) return { error: TAX_ERROR };
   const { data, error } = await supabase.rpc("batch_record_bank_interest", { p_rows: clean });
-  if (error) return { error: `ยังไม่ได้บันทึก (ทุกบัญชี) · ${friendlyError(error.message)}` };
+  if (error) return { error: notSaved("ทุกบัญชี", friendlyError(error.message)) };
   revalidatePath("/financial/cash", "layout");
   revalidatePath("/income-expenses");
   revalidatePath("/");

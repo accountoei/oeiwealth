@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -356,20 +357,19 @@ export type BatchIncomeRow = {
 };
 export async function batchInvestmentIncome(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
-  let rows: BatchIncomeRow[] = [];
-  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const rows = readRows<BatchIncomeRow>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
   if (!rows.length) return { error: "กรุณากรอกยอดที่ได้รับอย่างน้อย 1 รายการ" };
-  const amt = (s: string) => (s ?? "").replace(/,/g, "").trim();
-  if (rows.some((r) => !amt(r.amount) || Number.isNaN(Number(amt(r.amount))) || Number(amt(r.amount)) <= 0)) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
-  if (rows.some((r) => amt(r.tax) && (Number.isNaN(Number(amt(r.tax))) || Number(amt(r.tax)) < 0))) return { error: "ภาษีต้องเป็นตัวเลข (ไม่ติดลบ)" };
+  if (!rows.every((r) => isPositive(amountOrNull(r.amount)))) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  if (!rows.every((r) => isValidTax(amountOrNull(r.tax)))) return { error: TAX_ERROR };
   if (rows.some((r) => !r.date)) return { error: "กรุณาใส่วันที่รับทุกแถวที่กรอก" };
   const p_rows = rows.map((r) => ({
     portfolio_asset_id: r.portfolio_asset_id,
-    tx: { type: r.type, date: r.date, holding_id: r.holding_id, amount: amt(r.amount), tax: amt(r.tax) || null,
+    tx: { type: r.type, date: r.date, holding_id: r.holding_id, amount: plainNumber(r.amount), tax: plainNumber(r.tax) || null,
       settle_bank_asset_id: r.bank_asset_id || null, cash_holding_id: r.bank_asset_id ? null : r.cash_holding_id || null, notes: r.notes || null },
   }));
   const { data, error } = await supabase.rpc("batch_record_investment_income", { p_rows });
-  if (error) return { error: `ยังไม่ได้บันทึก (ทุกรายการ) · ${friendlyError(error.message)}` };
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   revalidate();
   new Set(rows.map((r) => r.portfolio_asset_id)).forEach((id) => revalidatePath(`/investments/${id}`, "layout"));
   revalidatePath("/financial/cash");
