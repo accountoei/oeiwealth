@@ -186,13 +186,13 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         {tree ? <div className="mt-4"><FamilyTree people={list} kin={all} headId={headId} /></div> : (
         <div className="divide-y divide-slate-100">
           {list.length > 0 && !ordering && (
-            <div className="hidden items-center gap-3 pb-1.5 text-xs text-slate-500 sm:flex">
+            <div className="hidden items-end gap-3 pb-1.5 text-sm text-slate-500 sm:flex">
               <span className="w-6" />
               <div className="flex flex-1 items-center gap-3 px-2">
                 <span className="w-11 shrink-0" />
                 <span className="flex-1">สมาชิก</span>
                 <span className="hidden md:block">สิ่งที่ต้องดู</span>
-                <span className="w-40 shrink-0 text-right">Net Worth (% ของครอบครัว)</span>
+                <span className="w-48 shrink-0 text-right leading-tight">Net Worth<span className="block text-xs">% ของครอบครัว</span></span>
                 <span className="invisible shrink-0">›</span>
               </div>
             </div>
@@ -235,7 +235,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                   })()}
                   {fMissing && <div className="truncate text-xs text-amber-700">ยังไม่ได้กรอก: {missingOf(p).join(", ")}</div>}
                 </div>
-                <div className="hidden max-w-[45%] flex-wrap justify-end gap-1 md:flex">
+                <div className="hidden max-w-[45%] flex-col items-end gap-1 md:flex">
                   {p.status !== "ACTIVE" && (
                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${p.status === "DECEASED" ? "bg-slate-200 text-slate-700" : "bg-amber-50 text-amber-700"}`}>
                       {PERSON_STATUS_LABEL[p.status]}
@@ -247,7 +247,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                   const nw = nwOf.get(p.id);
                   const pct = nw && familyNw > 0 ? (Number(nw.net_worth) / familyNw) * 100 : null;
                   return (
-                    <div className="hidden w-40 shrink-0 text-right tabular-nums sm:block">
+                    <div className="hidden w-48 shrink-0 text-right tabular-nums sm:block">
                       {nw && <div className="text-sm font-medium text-slate-900">{money(nw.net_worth, "THB", 0)}</div>}
                       {pct != null && <div className="text-[11px] text-slate-500">{pct.toFixed(1)}%</div>}
                     </div>
