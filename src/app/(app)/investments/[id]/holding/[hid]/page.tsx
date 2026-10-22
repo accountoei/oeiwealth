@@ -5,7 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
-import { MaturityForm, type CashAcct, type Holding } from "../../forms";
+import { type CashAcct, type Holding } from "../../forms";
 import { scheduleOf } from "@/lib/coupon-schedule";
 import { ScheduleBox } from "../../../due";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
@@ -122,7 +122,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           </div>
           {canWrite && h.status === "ACTIVE" && (
             <ActionBar>
-              <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} currency={h.currency} isFcn={isStructured} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} holdingName={h.name} currency={h.currency} isFcn={isStructured} canMature={canMature} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
               <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
             </ActionBar>
           )}
@@ -177,24 +177,17 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                   coupon_frequency: autoRow?.coupon_frequency ?? null, currency: h.currency } : null} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
                   autoBlocked={lump ? "มูลค่าก้อนเดียวดึงราคาอัตโนมัติไม่ได้ — แปลงเป็นจำนวนหน่วยก่อน" : h.holding_type === "FUND" && Number(h.quantity) === 1 && !h.auto_price ? "กองทุนนี้มีจำนวน 1 หน่วย (มักเป็นมูลค่ารวมที่ใส่แทนจำนวน) — แปลงเป็นจำนวนหน่วยก่อน" : null}
                   v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }} />
-                {canWrite && canMature && (
-                  <div className="space-y-2 border-t border-slate-100 pt-4">
-                    <h3 className="text-sm font-medium text-slate-900">บันทึกรับเงินต้น (ครบกำหนด{isStructured ? " / Autocall" : ""})</h3>
-                    <p className="text-xs text-slate-500">กดเมื่อได้รับเงินต้นคืนแล้ว · ใส่วันที่เงินเข้าจริง · ก่อนบันทึก มูลค่ายังอยู่ที่หลักทรัพย์นี้ (แม้เลยวันครบกำหนดแล้ว)</p>
-                    <MaturityForm inline assetId={id} portfolioName={a.name} holding={h} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-                  </div>
-                )}
                 {isStructured && ["MATURED", "AUTOCALLED"].includes(h.status) && (
                   <div className="border-t border-slate-100 pt-4"><StatusSelect table="investment_holdings" id={hid} value={h.status} paths={paths} label="ปิดแบบ"
                     options={[["MATURED", "ครบกำหนดตามปกติ"], ["AUTOCALLED", "Autocall (ถูกเรียกคืนก่อนกำหนด)"]]} /></div>
                 )}
                 {isStructured && h.status === "ACTIVE" && (
-                  <p className="text-xs text-slate-500">ถูก Autocall: กด &ldquo;บันทึกรับเงินต้น&rdquo; ด้านบน (ใส่วันที่ถูกเรียกคืน) แล้วกลับมาเลือก &ldquo;ปิดแบบ Autocall&rdquo; ที่นี่</p>
+                  <p className="text-xs text-slate-500">ถูก Autocall: กด &ldquo;+ รับ Coupon&rdquo; → ประเภท &ldquo;คืนเงินต้น&rdquo; (ใส่วันที่ถูกเรียกคืน) แล้วกลับมาเลือก &ldquo;ปิดแบบ Autocall&rdquo; ที่นี่</p>
                 )}
               </div>
             } />
           {h.maturity_date && h.status === "ACTIVE" && h.maturity_date < addDays(today, 0) && (
-            <p className="mt-3 text-xs text-amber-700">เลยวันครบกำหนดแล้ว — กด &ldquo;แก้ไข&rdquo; → &ldquo;บันทึกรับเงินต้น&rdquo; เมื่อได้รับเงินต้นคืน</p>
+            <p className="mt-3 text-xs text-amber-700">เลยวันครบกำหนดแล้ว — กด &ldquo;{isStructured ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}&rdquo; → ประเภท &ldquo;คืนเงินต้น&rdquo; เมื่อได้รับเงินต้นคืน</p>
           )}
         </div>
       </section>

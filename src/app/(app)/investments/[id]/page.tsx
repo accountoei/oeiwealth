@@ -416,7 +416,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
             มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
             · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
-            · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / บันทึกรับเงินต้น
+            · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / รับปันผล · ดอกเบี้ย · คืนเงินต้น
           </p>
         </TabPanel>
 
