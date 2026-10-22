@@ -131,15 +131,17 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
       {[...groups.entries()].map(([pf, g]) => (
         <section key={pf} className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <h2 className="px-4 pt-4 font-medium text-slate-900"><Link href={`/investments/${pf}`} className="hover:underline">{g.name}</Link></h2>
-          <table className="mt-2 w-full min-w-[46rem] text-sm">
+          {/* ความกว้างคอลัมน์คงที่ → ทุกพอร์ตตรงกัน */}
+          <table className="mt-2 w-full min-w-[52rem] table-fixed text-sm">
+            <colgroup><col /><col className="w-44" /><col className="w-36" /><col className="w-48" /><col className="w-56" /><col className="w-28" /></colgroup>
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-3 py-2">หลักทรัพย์</th><th className="px-3">รายการ</th><th className="px-3">วันรับ</th>
+              <tr><th className="px-3 py-2">หลักทรัพย์</th><th className="px-3">รายการ</th><th className="px-3">วันครบกำหนด</th>
                 <th className="px-3 text-right">ยอดคาดว่าจะได้รับ</th><th className="px-3">สถานะ</th><th className="px-3" /></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {g.rows.map(({ r, h }) => (
                 <tr key={r.key} className={`align-top ${r.received ? "text-slate-500" : ""}`}>
-                  <td className="px-3 py-2.5"><Link href={`/investments/${pf}/holding/${h.id}`} className="font-medium text-slate-900 hover:underline">{h.name}</Link>
+                  <td className="break-words px-3 py-2.5"><Link href={`/investments/${pf}/holding/${h.id}`} className="font-medium text-slate-900 hover:underline">{h.name}</Link>
                     <div className="text-xs text-slate-400">{HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency}</div></td>
                   <td className="px-3 py-2.5">{label(r)}</td>
                   <td className="px-3 py-2.5">{thDate(r.due)}</td>
