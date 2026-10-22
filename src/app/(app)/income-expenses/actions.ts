@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
+import { bankId, cardId, endpointFromForm, endpointValue, missingEndpoint, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -142,17 +143,14 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
   const supabase = await createClient();
   const amount = num(form.get("amount"));
   if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
-  const via = String(form.get("pay_via") ?? "bank");
+  const pay = endpointFromForm(form);
   const reimb = form.get("is_reimbursable") === "on";
-  const expAccs: LumpAcc[] = [{ kind: "BANK", id: via === "bank" ? str(form.get("bank_asset_id")) : null },
-    { kind: "CARD", id: via === "card" ? str(form.get("card_id")) : null }];
+  const expAccs: LumpAcc[] = [{ kind: "BANK", id: bankId(pay) }, { kind: "CARD", id: cardId(pay) }];
   const expBefore = await lumpSnap(supabase, expAccs, str(form.get("date")));
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
-    paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
-    paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
-    paid_from_cash_holding_id: via === "portfolio" ? str(form.get("pf_cash_id")) : null,
+    ...paidFromColumns(pay),
     person_id: str(form.get("person_id")),
     is_reimbursable: reimb, expected_reimbursement_amount: reimb ? num(form.get("expected_reimbursement_amount")) : null,
     notes: str(form.get("notes")),
@@ -175,11 +173,11 @@ export async function addReimbursement(_: ActionState, form: FormData): Promise<
   const supabase = await createClient();
   const amount = num(form.get("amount"));
   if (bad(amount)) return { error: "กรุณาใส่ยอดเงินคืน" };
-  const via = String(form.get("to_via") ?? "bank");
+  const to = endpointFromForm(form, "to_via");
   const { error } = await supabase.rpc("record_reimbursement", {
     p_expense_item_id: String(form.get("expense_item_id")), p_received_date: str(form.get("received_date")),
-    p_amount: amount, p_received_to_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
-    p_received_to_credit_card_id: via === "card" ? str(form.get("card_id")) : null, p_notes: str(form.get("notes")),
+    p_amount: amount, p_received_to_asset_id: bankId(to),
+    p_received_to_credit_card_id: cardId(to), p_notes: str(form.get("notes")),
     p_insurance_claim_id: str(form.get("insurance_claim_id")),
   });
   if (error) return { error: friendlyError(error.message) };
@@ -321,23 +319,13 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   if (kind === "INCOME" && fields.tax != null && fields.amount != null && Number(fields.tax) > Number(fields.amount)) {
     return { error: "ภาษีต้องไม่เกินยอดรายได้" };
   }
-  // บัญชี: ส่งเฉพาะเมื่อฟอร์มมีช่องบัญชี · bank → a:<id> · card → c:<id> · cash → ไม่ผ่านบัญชี
+  // บัญชี: ส่งเฉพาะเมื่อฟอร์มมีช่องบัญชี · a:<id> / c:<id> / h:<id> · "" = ไม่ผ่านบัญชี
   let account: string | null = null;
   if (form.has("pay_via")) {
-    const via = String(form.get("pay_via"));
-    if (via === "bank") {
-      const b = str(form.get("bank_asset_id"));
-      if (!b) return { error: "กรุณาเลือกบัญชี" };
-      account = `a:${b}`;
-    } else if (via === "card") {
-      const c = str(form.get("card_id"));
-      if (!c) return { error: "กรุณาเลือกบัตร" };
-      account = `c:${c}`;
-    } else if (via === "portfolio") {
-      const h = str(form.get("pf_cash_id"));
-      if (!h) return { error: "กรุณาเลือกบัญชีเงินฝากในพอร์ต" };
-      account = `h:${h}`;
-    } else account = "";
+    const pay = endpointFromForm(form);
+    const missing = missingEndpoint(pay);
+    if (missing) return { error: missing };
+    account = endpointValue(pay);
   }
   const supabase = await createClient();
   const id = String(form.get("id"));
@@ -348,7 +336,7 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   const newDate = (fields.date as string | null) ?? old.date ?? null;
   const accs: LumpAcc[] = [
     { kind: "BANK", id: old.received_to_asset_id ?? old.paid_from_asset_id }, { kind: "CARD", id: old.paid_from_credit_card_id },
-    { kind: "BANK", id: account?.startsWith("a:") ? account.slice(2) : null }, { kind: "CARD", id: account?.startsWith("c:") ? account.slice(2) : null }];
+    { kind: "BANK", id: bankId(parseEndpoint(account)) }, { kind: "CARD", id: cardId(parseEndpoint(account)) }];
   const before = await lumpSnap(supabase, accs, newDate);
   const { data, error } = await supabase.rpc("update_entry", {
     p_kind: kind, p_id: id, p_fields: fields, p_account: account,
@@ -407,15 +395,13 @@ export async function payRecurringExpense(_: ActionState, form: FormData): Promi
   const supabase = await createClient();
   const amount = num(form.get("amount"));
   if (bad(amount)) return { error: "กรุณาใส่จำนวนเงิน" };
-  const via = String(form.get("pay_via") ?? "bank");
-  const accs: LumpAcc[] = [{ kind: "BANK", id: via === "bank" ? str(form.get("bank_asset_id")) : null },
-    { kind: "CARD", id: via === "card" ? str(form.get("card_id")) : null }];
+  const pay = endpointFromForm(form);
+  const accs: LumpAcc[] = [{ kind: "BANK", id: bankId(pay) }, { kind: "CARD", id: cardId(pay) }];
   const before = await lumpSnap(supabase, accs, str(form.get("date")));
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
-    paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
-    paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
+    ...paidFromColumns(pay),
     person_id: str(form.get("person_id")),
     recurring_expense_id: str(form.get("template_id")), cost_period: str(form.get("cost_period")),
     notes: str(form.get("notes")),

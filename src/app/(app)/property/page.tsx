@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, landText, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
+import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
@@ -199,9 +200,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const leaseCount = props.reduce((t, p) => t + (byProp.get(p.asset_id) ?? []).filter((l) => l.lease_status !== "UPCOMING" && PER_MONTHS[l.payment_frequency]).length, 0);
   const annualRent = props.reduce((t, p) => t + monthlyRent(p.asset_id), 0) * 12;
   const pays: PayOpt[] = [
-    ...banks.map((b) => ({ value: `b:${b.id}`, label: `บัญชี ${b.name}`, currency: b.currency })),
+    ...banks.map((b) => ({ value: endpointValue({ kind: "bank", id: b.id }), label: `บัญชี ${b.name}`, currency: b.currency })),
     ...((cardRows ?? []) as { id: string; issuer: string | null; card_name: string | null; card_last4: string | null; currency: string }[])
-      .map((c) => ({ value: `c:${c.id}`, label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency })),
+      .map((c) => ({ value: endpointValue({ kind: "card", id: c.id }), label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency })),
   ];
 
   return (

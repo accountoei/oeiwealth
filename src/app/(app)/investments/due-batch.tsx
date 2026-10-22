@@ -5,6 +5,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { bankId, endpointValue, holdingId, parseEndpoint } from "@/lib/money-endpoint";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import { MaturityForm, type Bank, type CashAcct } from "./[id]/forms";
 
@@ -48,8 +49,8 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
 
   // ปลายทาง: บัญชีเงินฝากในพอร์ต (สกุลเดียวกัน · บัญชีหลักก่อน) หรือบัญชีธนาคาร
   const pfCash = (pf: string, ccy: string) => cash.filter((c) => c.pf === pf && c.currency === ccy).sort((a, b) => Number(b.is_default_cash) - Number(a.is_default_cash));
-  const destOf = (pf: string, it: DueItem) => dest[it.key] ?? (pfCash(pf, it.holding.currency)[0] ? `c:${pfCash(pf, it.holding.currency)[0].id}`
-    : banks.find((b) => b.currency === it.holding.currency) ? `b:${banks.find((b) => b.currency === it.holding.currency)!.asset_id}` : "");
+  const destOf = (pf: string, it: DueItem) => dest[it.key] ?? (pfCash(pf, it.holding.currency)[0] ? endpointValue({ kind: "portfolio", id: pfCash(pf, it.holding.currency)[0].id })
+    : banks.find((b) => b.currency === it.holding.currency) ? endpointValue({ kind: "bank", id: banks.find((b) => b.currency === it.holding.currency)!.asset_id }) : "");
 
   type Line = BatchIncomeRow & { title: string };
   const lines: Line[] = [];
@@ -57,7 +58,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
     if (it.kind !== "INTEREST" || it.received || !(vals[it.key] ?? "").trim()) return;
     const d = destOf(g.pf, it);
     lines.push({ portfolio_asset_id: g.pf, type: "COUPON", holding_id: it.holding.id, date: dates[it.key] ?? it.defaultDate,
-      amount: vals[it.key], tax: tax[it.key] ?? "", cash_holding_id: d.startsWith("c:") ? d.slice(2) : null, bank_asset_id: d.startsWith("b:") ? d.slice(2) : null,
+      amount: vals[it.key], tax: tax[it.key] ?? "", cash_holding_id: holdingId(parseEndpoint(d)), bank_asset_id: bankId(parseEndpoint(d)),
       notes: `${it.label} (ครบ ${thDate(it.due)})`, title: `${it.holding.name} · ${it.label}` });
   }));
   cash.forEach((c) => {
@@ -120,8 +121,8 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
                       {inputs(it.key, h.currency, it.defaultDate, it.expected)}
                       <td className="px-2">
                         <select value={d} onChange={(e) => setDest({ ...dest, [it.key]: e.target.value })} className={`max-w-[13rem] ${small}`} aria-label="เข้าบัญชี">
-                          {pfCash(g.pf, h.currency).map((c) => <option key={c.id} value={`c:${c.id}`}>ในพอร์ต · {c.name}</option>)}
-                          {banks.filter((b) => b.currency === h.currency).map((b) => <option key={b.asset_id} value={`b:${b.asset_id}`}>ธนาคาร · {b.name}</option>)}
+                          {pfCash(g.pf, h.currency).map((c) => <option key={c.id} value={endpointValue({ kind: "portfolio", id: c.id })}>ในพอร์ต · {c.name}</option>)}
+                          {banks.filter((b) => b.currency === h.currency).map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>ธนาคาร · {b.name}</option>)}
                         </select>
                       </td>
                     </> : (
