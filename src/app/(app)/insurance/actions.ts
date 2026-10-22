@@ -6,6 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
 
 export type ActionState = { error?: string; ok?: string };
+/** ผลลงมูลค่าเวนคืนตามตารางในสัญญา (sync_insurance_cash_value) */
+export type CvSync = { added: number; created: boolean; value?: number; date?: string; policy_year?: number };
+export type PayState = ActionState & { cv?: CvSync };
 
 function bens(form: FormData) {
   try { return JSON.parse(String(form.get("beneficiaries") ?? "[]")); } catch { return []; }
@@ -77,7 +80,7 @@ export async function saveInsSchedule(_: ActionState, form: FormData): Promise<A
 }
 
 /** จ่ายเบี้ยตามงวด → ค่าใช้จ่ายหมวด "ประกัน" ผูกงวด */
-export async function payPremium(_: ActionState, form: FormData): Promise<ActionState> {
+export async function payPremium(_: PayState, form: FormData): Promise<PayState> {
   const supabase = await createClient();
   const id = String(form.get("policy_id"));
   const amount = num(form.get("amount"));
@@ -92,8 +95,39 @@ export async function payPremium(_: ActionState, form: FormData): Promise<Action
     insurance_schedule_line_id: str(form.get("line_id")), notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
+  // ลงมูลค่าเวนคืนตามตารางในสัญญาต่อ (ถ้ามี) · ไม่สำเร็จก็ไม่กระทบการจ่ายเบี้ย
+  const { data: cv } = await supabase.rpc("sync_insurance_cash_value", { p_policy_id: id });
   refresh(id);
-  return { ok: "บันทึกจ่ายเบี้ยแล้ว" };
+  return { ok: "บันทึกจ่ายเบี้ยแล้ว", cv: (cv as CvSync | null) ?? undefined };
+}
+
+const cvMsg = (r: CvSync | null | undefined) => r && r.added > 0
+  ? ` · ${r.created ? "สร้าง" : "อัปเดต"}มูลค่าเวนคืนตามสัญญา ${Number(r.value).toLocaleString("en-US", { minimumFractionDigits: 2 })} (สิ้นปีกรมธรรม์ที่ ${r.policy_year})`
+  : "";
+
+/** ตั้ง / แทนตารางมูลค่าเวนคืนตามสัญญา แล้วลงมูลค่าเวนคืนตามตารางต่อทันที */
+export async function saveCashValueTable(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("policy_id"));
+  let lines: unknown;
+  try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "อ่านตารางไม่ได้" }; }
+  if (!Array.isArray(lines)) return { error: "อ่านตารางไม่ได้" };
+  const { data, error } = await supabase.rpc("set_insurance_cash_value_table", { p_policy_id: id, p_lines: lines });
+  if (error) return { error: friendlyError(error.message) };
+  refresh(id);
+  const r = data as { count: number; sync: CvSync } | null;
+  return { ok: lines.length === 0 ? "ล้างตารางแล้ว" : `บันทึกตาราง ${r?.count ?? lines.length} ปีแล้ว${cvMsg(r?.sync)}` };
+}
+
+/** ปุ่ม "ลงมูลค่าตามตาราง" (ปีที่ถึงวันแล้ว แต่ยังไม่ได้ลง เช่น จ่ายเบี้ยครบแล้ว) */
+export async function syncCashValue(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("policy_id"));
+  const { data, error } = await supabase.rpc("sync_insurance_cash_value", { p_policy_id: id });
+  if (error) return { error: friendlyError(error.message) };
+  refresh(id);
+  const r = data as CvSync | null;
+  return r && r.added > 0 ? { ok: `ลงแล้ว ${r.added} ปี${cvMsg(r)}` } : { ok: "ไม่มีปีที่ต้องลงเพิ่ม (ยังไม่ถึงวัน · เบี้ยก่อนหน้ายังค้าง · หรือมียอดที่ใหม่กว่าแล้ว)" };
 }
 
 /** รับผลประโยชน์ / ครบสัญญา / เวนคืน / สินไหม — ถอนจากมูลค่าเวนคืนก่อน ส่วนเกินเป็นรายได้ */

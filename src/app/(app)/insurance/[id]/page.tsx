@@ -6,7 +6,7 @@ import {
   BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, money, thDate, todayBangkok,
 } from "@/lib/format";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { AddCashValueForm, BenefitForm, CoverageForm, InsScheduleEditor, PayPremiumForm, PolicyInfoForm } from "./ins-forms";
+import { AddCashValueForm, BenefitForm, CashValueTableEditor, CoverageForm, InsScheduleEditor, PayPremiumForm, PolicyInfoForm, SyncCashValueButton } from "./ins-forms";
 import EditToggle from "@/components/EditToggle";
 import BeneficiaryEditor from "../Beneficiaries";
 import ClaimForm from "./ClaimForm";
@@ -42,7 +42,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     cvId ? supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId) : Promise.resolve({ data: null }),
     p.asset_id ? supabase.from("assets").select("name").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
-  const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }] = await Promise.all([
+  const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
     supabase.from("v_insurance_schedule_status").select("id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status")
       .eq("policy_id", id).order("due_date").order("installment_no"),
     supabase.from("insurance_coverages").select("id,coverage_type,limit_amount,currency,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
@@ -50,6 +50,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order"),
+    supabase.from("insurance_cash_value_table").select("policy_year,value_date,value").eq("policy_id", id).is("deleted_at", null).order("policy_year"),
   ]);
   const lines = (linesRaw as Line[] | null) ?? [];
   const premiums = lines.filter((x) => x.kind === "PREMIUM");
@@ -89,6 +90,16 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
   const premOverdue = premOpen.filter((x) => x.status === "OVERDUE");
   const benReceived = benefits.reduce((s2, x) => s2 + Number(x.paid_amount), 0);
   const lastDue = (xs: Line[]) => xs.at(-1)?.due_date;
+  // งวดสุดท้าย: ปี (พ.ศ.) + จำนวนงวดที่ยังเหลือ
+  const lastYear = (xs: Line[]) => { const d = lastDue(xs); return d ? Number(d.slice(0, 4)) + 543 : null; };
+  const leftCount = (xs: Line[]) => xs.filter((x) => ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status)).length;
+  // ตารางมูลค่าเวนคืนตามสัญญา · ค่าที่แนะนำ = ปีล่าสุดที่ถึงวันแล้ว
+  const cvRows = (cvTable ?? []).map((r) => ({ policy_year: Number(r.policy_year), value: Number(r.value), value_date: r.value_date as string }));
+  const cvDue = cvRows.filter((r) => r.value_date <= today).at(-1) ?? null;
+  const cvPending = !!cvDue && policyActive && (!cvAsset || !cvAsset.current_value_date || cvDue.value_date > cvAsset.current_value_date);
+  const cvCtx = cvAsset ? { assetId: cvAsset.id, currency: cvAsset.currency, current: cvAsset.current_value == null ? null : Number(cvAsset.current_value),
+    minDate: family?.go_live_date ?? "", paths, suggest: cvDue ? { value: cvDue.value, year: cvDue.policy_year, date: cvDue.value_date } : null } : null;
+  const startIso: string | null = p.start_date ?? null;
   const policyLabel = `เบี้ยประกัน ${p.insurer}${p.policy_no ? ` ${p.policy_no}` : ""}`;
   const activeOwners = (owners ?? []).filter((o: { end_date: string | null }) => !o.end_date) as { person_id: string; person_name: string; ownership_percent: number }[];
   const benName = (b: { person_id: string | null; beneficiary_name: string | null; persons: unknown }) =>
@@ -242,7 +253,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
           <div>
             <h2 className="font-medium text-slate-900">ตารางเบี้ย</h2>
             {premiums.length > 0 ? (
-              <p className="text-sm text-slate-600">{premiums.length} งวด · จ่ายแล้ว {money(premPaid, ccy)}
+              <p className="text-sm text-slate-600">{premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด · จ่ายแล้ว {money(premPaid, ccy)}
                 {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
                 {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
                 {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
@@ -252,7 +263,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
         {premiums.length > 0 && <ScheduleTable lines={premiums} canWrite={canWrite} canDelete={canDelete} paths={paths} action={(x) =>
           canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
             label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
-            defaultPerson={payerId} today={today} /> : null} />}
+            defaultPerson={payerId} today={today} cashValue={cvCtx} /> : null} />}
         {(premPays ?? []).length > 0 && (
           <div>
             <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่ายเบี้ย</h3>
@@ -289,7 +300,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             <div>
               <h2 className="font-medium text-slate-900">ผลประโยชน์ที่จะได้รับ</h2>
               <p className="text-sm text-slate-600">
-                {benefits.length > 0 ? <>{benefits.length} งวด · รับแล้ว {money(benReceived, ccy)}</> : "รายงวด (เงินคืน / บำนาญ) ตั้งเป็นตาราง · ก้อนเดียว (ครบสัญญา / เวนคืน / สินไหม) กดปุ่มรับเงินก้อนได้เลย"}
+                {benefits.length > 0 ? <>{benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด · รับแล้ว {money(benReceived, ccy)}</> : "รายงวด (เงินคืน / บำนาญ) ตั้งเป็นตาราง · ก้อนเดียว (ครบสัญญา / เวนคืน / สินไหม) กดปุ่มรับเงินก้อนได้เลย"}
               </p>
               {cvAsset && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
             </div>
@@ -366,13 +377,37 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
         <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
       </section>
 
-      {cvAsset && (
+      {(cvAsset || cvRows.length > 0 || p.has_cash_value || p.insurance_type === "LIFE") && (
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <div>
-            <h2 className="font-medium text-slate-900">มูลค่าเวนคืน</h2>
-            <p className="text-xs text-slate-500">อัปเดตตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง)</p>
-          </div>
-          {canWrite && <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
+          <ActionBar right={canDelete ? <CashValueTableEditor policyId={id} startDate={startIso}
+              current={cvRows.map((r) => ({ ...r, value_date: startIso && addMonthsKeepDay(startIso, r.policy_year * 12) === r.value_date ? null : r.value_date }))} /> : undefined}>
+            <div>
+              <h2 className="font-medium text-slate-900">มูลค่าเวนคืน</h2>
+              <p className="text-xs text-slate-500">อัปเดตตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง) · หรือใส่ตารางมูลค่าเวนคืนตามสัญญา แล้วระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
+            </div>
+          </ActionBar>
+          {cvRows.length > 0 && (
+            <details className="rounded-lg border border-slate-200 p-3 text-sm" open={cvPending}>
+              <summary className="cursor-pointer text-slate-700">ตารางมูลค่าเวนคืนตามสัญญา {cvRows.length} ปี
+                {cvDue && <> · ล่าสุดที่ถึงวัน: ปีที่ {cvDue.policy_year} = {money(cvDue.value, ccy)}</>}
+                {cvPending && <span className="text-amber-700"> · ยังไม่ได้ลง</span>}</summary>
+              {cvPending && canWrite && <div className="mt-2"><SyncCashValueButton policyId={id} /></div>}
+              <div className="mt-2 max-h-64 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white text-left text-xs text-slate-500"><tr><th className="py-1">ปีที่</th><th>สิ้นปีกรมธรรม์</th><th className="text-right">มูลค่าเวนคืน</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {cvRows.map((r) => (
+                      <tr key={r.policy_year} className={r.value_date <= today ? "" : "text-slate-400"}>
+                        <td className="py-1">{r.policy_year}</td><td>{thDate(r.value_date)}</td><td className="text-right tabular-nums">{money(r.value, ccy)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+          {!cvAsset && <p className="text-sm text-slate-500">ยังไม่มีมูลค่าเวนคืน — ระบบสร้างให้เองเมื่อมีปีในตารางที่ถึงวันแล้ว หรือกด &ldquo;+ เพิ่มมูลค่าเวนคืน&rdquo; ด้านบน</p>}
+          {cvAsset && canWrite && <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
             methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />}
           <table className="w-full text-sm">
             <tbody className="divide-y divide-slate-100">
