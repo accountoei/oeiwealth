@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addUnderlying, recordTx, restateUnits, saveFcn, type ActionState } from "../../../actions";
+import { addUnderlying, recordMaturity, recordTx, restateUnits, saveFcn, type ActionState } from "../../../actions";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { updateRecord, type RecState } from "@/lib/records";
 import { COUPON_FREQ_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
@@ -89,31 +90,43 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
   ));
 }
 
-/** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ */
-export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, isFcn, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultNotes }: {
-  assetId: string; portfolioName?: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
+/** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ · ประเภท "คืนเงินต้น" = บันทึกครบกำหนด / Autocall (หลักทรัพย์ปิด) */
+export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultNotes }: {
+  assetId: string; portfolioName?: string; holdingId: string; holdingName?: string; currency: string; isFcn: boolean;
+  /** หุ้นกู้ / FCN / Structured / อื่น ๆ ที่ยังถืออยู่ → มีประเภท "คืนเงินต้น" */ canMature?: boolean;
+  banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
   /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
   label?: string; title?: string; defaultAmount?: number | null; defaultNotes?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
-  const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
+  const [txState, txAction, txPending] = useActionState<ActionState, FormData>(recordTx, {});
+  const [matState, matAction, matPending] = useActionState<ActionState, FormData>(recordMaturity, {});
+  const [type, setType] = useState(isFcn ? "COUPON" : "DIVIDEND");
+  const cf = useConfirmSubmit();
+  const mat = type === "MATURITY";
+  const [state, action, pending] = mat ? [matState, matAction, matPending] : [txState, txAction, txPending];
   const list = banks.filter((b) => b.currency === currency);
   const trigger = <button onClick={() => setOpen(!open)} className={label ? ROW_BTN : activeCls(obtn)}>{label ?? (isFcn ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย")}</button>;
   if (!open) return trigger;
+  const types: [string, string][] = [...(isFcn ? [] : [["DIVIDEND", "ปันผล"]] as [string, string][]),
+    ["COUPON", isFcn ? "Coupon" : "Coupon / ดอกเบี้ยพันธบัตร"], ...(canMature ? [["MATURITY", "คืนเงินต้น (ครบกำหนด / Autocall)"]] as [string, string][] : [])];
   return present(trigger, (
-    <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+    <form action={action} onSubmit={mat ? cf.guard(`บันทึกรับเงินต้นของ ${holdingName || "หลักทรัพย์นี้"}? หลักทรัพย์นี้จะปิดเป็น "ครบกำหนด"`) : undefined}
+      className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">{cf.dialog}
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holdingId} />
       <h3 className="font-medium text-slate-900">{title ?? (isFcn ? "รับ Coupon" : "รับปันผล / ดอกเบี้ย")}</h3>
       <div className="grid gap-3 md:grid-cols-4">
-        {isFcn || label ? <input type="hidden" name="type" value="COUPON" /> : (
+        {label || types.length < 2 ? <input type="hidden" name="type" value="COUPON" /> : (
           <label className="text-sm">ประเภท
-            <select name="type" defaultValue="DIVIDEND" className={input}><option value="DIVIDEND">ปันผล</option><option value="COUPON">Coupon / ดอกเบี้ยพันธบัตร</option></select>
+            <select name="type" value={type} onChange={(e) => setType(e.target.value)} className={input}>
+              {types.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
           </label>
         )}
-        <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">ยอดก่อนหักภาษี ({currency}) *<input name="amount" required inputMode="decimal"
+        <label className="text-sm">{mat ? "วันที่รับเงิน *" : "วันที่ *"}<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">{mat ? "เงินต้นที่ได้คืน" : "ยอดก่อนหักภาษี"} ({currency}) *<input name="amount" required inputMode="decimal"
           defaultValue={defaultAmount != null ? String(defaultAmount) : undefined} className={input} /></label>
         <label className="text-sm">ภาษีหัก ณ ที่จ่าย<input name="tax" inputMode="decimal" className={input} /></label>
         <label className="text-sm">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={input} /></label>
@@ -126,13 +139,14 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, i
             <select name="bank_asset_id" required className={small}>
               <option value="">— บัญชี ({currency}) —</option>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
             </select>
-            <label className="text-xs">วันเงินเข้าจริง<input name="settlement_date" type="date" className={`ml-1 ${small}`} /></label>
+            {!mat && <label className="text-xs">วันเงินเข้าจริง<input name="settlement_date" type="date" className={`ml-1 ${small}`} /></label>}
           </>
         )}
       </div>
+      {mat && <p className="text-xs text-slate-500">ใส่วันที่เงินเข้าบัญชีจริง · บันทึกแล้วหลักทรัพย์นี้ปิดเป็น &ldquo;ครบกำหนด&rdquo; (ลบรายการได้ที่ตารางรายการของพอร์ต ถ้างวดยังไม่ปิด) · เงินต้นไม่ใช่รายได้ · ดอกเบี้ย / Coupon งวดสุดท้ายบันทึกแยกอีกรายการ</p>}
       <label className="block text-sm">หมายเหตุ<input name="notes" defaultValue={defaultNotes} placeholder={isFcn ? "เช่น งวดที่ 3" : ""} className={input} /></label>
       <div className="flex items-center gap-3">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : mat ? "บันทึกรับเงินต้น" : "บันทึก"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>

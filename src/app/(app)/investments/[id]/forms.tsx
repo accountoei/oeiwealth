@@ -574,11 +574,10 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
 
 /* ------------------------------------------------------------------ บันทึกรับเงินต้น (ครบกำหนด / Autocall)
    วันที่เดียว = วันที่เงินเข้าจริง (ไม่มีเงินระหว่างทาง) · ก่อนกดบันทึก มูลค่ายังอยู่ที่หลักทรัพย์ตัวนี้ */
-export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, inline = false, label, defaultAmount }:
+export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, label, defaultAmount }:
   { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string;
-    /** true = แสดงช่องกรอกในหน้าเลย (ในหน้าต่างแก้ไขข้อมูล) ไม่ต้องกดปุ่มเปิด */ inline?: boolean;
     /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม (ปุ่มแถวตาราง) · ยอดเงินต้นที่คาดว่าจะได้รับ */ label?: string; defaultAmount?: number | null }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(inline, { modal: !inline });
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const cf = useConfirmSubmit();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
@@ -589,7 +588,7 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
   return present(trigger, (
     <form action={action} onSubmit={cf.guard(`บันทึกรับเงินต้นของ ${holding.name}? หลักทรัพย์นี้จะปิดเป็น "ครบกำหนด"`)}
       className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-left">{cf.dialog}
-      {!inline && <h2 className="font-medium text-slate-900">บันทึกรับเงินต้น · {holding.name}</h2>}
+      <h2 className="font-medium text-slate-900">บันทึกรับเงินต้น · {holding.name}</h2>
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holding.id} />
       <div className="flex flex-wrap items-end gap-2">
@@ -614,7 +613,7 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
       <p className="text-xs text-slate-500">ใส่วันที่เงินเข้าบัญชีจริง · บันทึกแล้วหลักทรัพย์นี้ปิดเป็น &ldquo;ครบกำหนด&rdquo; (ลบรายการได้ที่ตารางรายการของพอร์ต ถ้างวดยังไม่ปิด) · เงินต้นไม่ใช่รายได้ · ดอกเบี้ย / Coupon งวดสุดท้ายบันทึกแยกด้วยปุ่มรับปันผล / ดอกเบี้ย / Coupon</p>
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึกรับเงินต้น</button>
-        {!inline && <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>}
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
     </form>
