@@ -1,0 +1,135 @@
+"use client";
+
+import Link from "next/link";
+import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { money, thDate } from "@/lib/format";
+import { batchInterest, type BatchState } from "./actions";
+import { useOnMainTab } from "../../income-expenses/tabs";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
+
+export type InterestRow = {
+  id: string; name: string; bank: string; currency: string; type: string;
+  rate: number | null; maturity: string | null; received: number;
+};
+
+const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
+const n = (s: string) => Number(s.replace(/,/g, ""));
+const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const TAX_RATE = 0.15;
+
+/**
+ * รับดอกเบี้ยหลายบัญชีพร้อมกัน: เลือกวันที่รับ → กรอกดอกเบี้ยก่อนภาษี (+ ภาษีหัก ณ ที่จ่าย) เฉพาะบัญชีที่ได้ → บันทึกครั้งเดียว
+ *   ช่องว่าง = ไม่บันทึก · บัญชีไหนผิด = ไม่บันทึกเลยสักบัญชี · บัญชีที่อัปเดตยอดไปแล้ว ก้อนรอแยกลดลงเอง (ไม่นับซ้ำ)
+ */
+export default function InterestBatch({ rows, defaultDate, today, minDate, monthLabel, canWrite }: {
+  rows: InterestRow[]; defaultDate: string; today: string; minDate: string; monthLabel: string; canWrite: boolean;
+}) {
+  const router = useRouter();
+  const [date, setDate] = useState(defaultDate);
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [tax, setTax] = useState<Record<string, string>>({});
+  const [bank, setBank] = useState("");
+  useOnMainTab(() => setBank(""));
+  const bankList = [...new Set(rows.map((r) => r.bank))].sort((a, b) => a.localeCompare(b, "th"));
+  const shown = bank ? rows.filter((r) => r.bank === bank) : rows;
+  const [state, action, pending] = useActionState<BatchState, FormData>(batchInterest, {});
+  const cf = useConfirmSubmit();
+  useEffect(() => { if (state.ok) { setVals({}); setTax({}); router.refresh(); } }, [state, router]);
+
+  const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
+  const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
+  const net = (r: InterestRow) => n(vals[r.id] ?? "") - (tax[r.id]?.trim() ? n(tax[r.id]) : 0);
+  const payload = chosen.map((r) => ({ asset_id: r.id, amount: vals[r.id], tax: tax[r.id] ?? "" }));
+  const onSubmit = cf.guard(`บันทึกรับดอกเบี้ย ${chosen.length} บัญชี วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""}`).join("\n")}`,
+    { okLabel: "ยืนยันบันทึก" });
+  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(chosen.filter((r) => !Number.isNaN(n(vals[r.id]))).map((r) => [r.id, fmt(Math.round(n(vals[r.id]) * TAX_RATE * 100) / 100)])) });
+
+  return (
+    <>
+    {cf.dialog}
+    <form action={action} onSubmit={onSubmit} className="space-y-3">
+      <input type="hidden" name="date" value={date} />
+      <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+      <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2">วันที่รับ
+            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            {canWrite && chosen.length > 0 && (
+              <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>
+            )}
+            {bankList.length > 1 && (
+              <label className="flex items-center gap-2">ธนาคาร
+                <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
+                  <option value="">ทุกธนาคาร</option>
+                  {bankList.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · เงินเข้าบัญชี = ยอดสุทธิ
+          · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</p>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[52rem] text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2">บัญชี</th><th className="px-3 text-right">อัตรา</th>
+              <th className="px-3 text-right">รับแล้ว {monthLabel}</th>
+              <th className="px-3 text-right">ดอกเบี้ยก่อนภาษี</th><th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="px-3 text-right">สุทธิเข้าบัญชี</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {shown.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีบัญชีที่ใช้งานอยู่</td></tr>}
+            {shown.map((r) => {
+              const v = vals[r.id] ?? "";
+              const has = v.trim() !== "" && !Number.isNaN(n(v));
+              const dueSoon = r.maturity && r.maturity.slice(0, 7) === date.slice(0, 7);
+              return (
+                <tr key={r.id} className={has ? "bg-blue-50/40" : ""}>
+                  <td className="px-3 py-2">
+                    <Link href={`/financial/cash/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
+                    <div className="text-xs text-slate-500">{r.bank} · {r.type} · {r.currency}
+                      {r.maturity && <span className={dueSoon ? "text-amber-700" : ""}> · ครบกำหนด {thDate(r.maturity)}</span>}</div>
+                  </td>
+                  <td className="px-3 text-right tabular-nums">{r.rate != null ? `${r.rate.toFixed(2)}%` : <span className="text-slate-400">-</span>}</td>
+                  <td className="px-3 text-right tabular-nums">{r.received > 0 ? <span className="text-emerald-700">{money(r.received, r.currency)}</span> : <span className="text-slate-400">-</span>}</td>
+                  <td className="px-3 text-right">
+                    <input inputMode="decimal" value={v} disabled={!canWrite} placeholder={r.currency} aria-label={`ดอกเบี้ย ${r.name}`}
+                      onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} />
+                  </td>
+                  <td className="px-3 text-right">
+                    <input inputMode="decimal" value={tax[r.id] ?? ""} disabled={!canWrite || !has} aria-label={`ภาษี ${r.name}`}
+                      onChange={(e) => setTax({ ...tax, [r.id]: e.target.value })} className={`w-28 text-right ${small}`} />
+                  </td>
+                  <td className={`px-3 text-right tabular-nums ${has && net(r) <= 0 ? "text-red-700" : ""}`}>{has && !Number.isNaN(net(r)) ? money(net(r), r.currency) : <span className="text-slate-400">-</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {canWrite && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+            {pending ? "กำลังบันทึก…" : `บันทึกรับดอกเบี้ย ${chosen.length} บัญชี`}
+          </button>
+          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} บัญชีที่กรอกไว้ในธนาคารอื่น</span>}
+          {chosen.length > 0 && !pending && (
+            <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
+          )}
+          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
+          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        </div>
+      )}
+      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses
+        · ดอกเบี้ยบัญชีเงินฝากในพอร์ตลงทุน บันทึกที่หน้า Investments → แท็บ &ldquo;รอรับเดือนนี้&rdquo;</p>
+    </form>
+    </>
+  );
+}

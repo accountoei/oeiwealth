@@ -348,3 +348,31 @@ export async function moveHolding(form: FormData): Promise<void> {
   await supabase.rpc("move_holding", { p_holding_id: String(form.get("holding_id")), p_direction: dir === -1 ? -1 : 1 });
   revalidate(String(form.get("asset_id")));
 }
+
+/** แท็บ "รอรับเดือนนี้": ดอกเบี้ย / Coupon หลายรายการ + ดอกเบี้ยเงินฝากในพอร์ต — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
+export type BatchIncomeRow = {
+  portfolio_asset_id: string; type: "COUPON" | "INTEREST"; holding_id: string; date: string; amount: string; tax: string;
+  cash_holding_id: string | null; bank_asset_id: string | null; notes: string;
+};
+export async function batchInvestmentIncome(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  let rows: BatchIncomeRow[] = [];
+  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  if (!rows.length) return { error: "กรุณากรอกยอดที่ได้รับอย่างน้อย 1 รายการ" };
+  const amt = (s: string) => (s ?? "").replace(/,/g, "").trim();
+  if (rows.some((r) => !amt(r.amount) || Number.isNaN(Number(amt(r.amount))) || Number(amt(r.amount)) <= 0)) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  if (rows.some((r) => amt(r.tax) && (Number.isNaN(Number(amt(r.tax))) || Number(amt(r.tax)) < 0))) return { error: "ภาษีต้องเป็นตัวเลข (ไม่ติดลบ)" };
+  if (rows.some((r) => !r.date)) return { error: "กรุณาใส่วันที่รับทุกแถวที่กรอก" };
+  const p_rows = rows.map((r) => ({
+    portfolio_asset_id: r.portfolio_asset_id,
+    tx: { type: r.type, date: r.date, holding_id: r.holding_id, amount: amt(r.amount), tax: amt(r.tax) || null,
+      settle_bank_asset_id: r.bank_asset_id || null, cash_holding_id: r.bank_asset_id ? null : r.cash_holding_id || null, notes: r.notes || null },
+  }));
+  const { data, error } = await supabase.rpc("batch_record_investment_income", { p_rows });
+  if (error) return { error: `ยังไม่ได้บันทึก (ทุกรายการ) · ${friendlyError(error.message)}` };
+  revalidate();
+  new Set(rows.map((r) => r.portfolio_asset_id)).forEach((id) => revalidatePath(`/investments/${id}`, "layout"));
+  revalidatePath("/financial/cash");
+  revalidatePath("/income-expenses");
+  return { ok: `บันทึกรับแล้ว ${data} รายการ` };
+}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, todayBangkok } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -11,6 +11,7 @@ import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import ShareBars, { type BarRow } from "./ShareBars";
 import AccountsTable, { type AccountRow } from "./AccountsTable";
 import BatchUpdate, { type BatchRow } from "./BatchUpdate";
+import InterestBatch, { type InterestRow } from "./InterestBatch";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
   account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null };
@@ -19,7 +20,7 @@ type Sum = { asset_id: string; balance: number | null; prev_balance: number | nu
 type At = { asset_id: string; calculated: number | null; last_date: string | null; last_value: number | null };
 
 // บัญชีทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=accounts → ภาพรวม)
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["interest", "รับดอกเบี้ย"]];
 const TYPE_COLORS = ["#2563eb", "#059669", "#f59e0b", "#94a3b8"];
 const BANK_COLORS = ["#2563eb", "#f59e0b", "#059669", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#ea580c", "#475569"];
 const PERSON_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#84cc16"];
@@ -45,7 +46,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const paths = ["/financial/cash"];
 
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
-    { data: lumpE }, { data: lumpI }, { data: family }, sortMap] = await Promise.all([
+    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
@@ -56,6 +57,12 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     supabase.from("income_transactions").select("received_to_asset_id,date").eq("pending_split", true).not("received_to_asset_id", "is", null).is("deleted_at", null),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     loadSortMap("assets"),
+    supabase.from("income_transactions").select("received_to_asset_id,amount,tax").eq("income_type", "INTEREST").eq("pending_split", false)
+      .gte("date", start).lte("date", end).not("received_to_asset_id", "is", null).is("deleted_at", null),
+    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,due_day,autopay_asset_id,autopay_mode")
+      .eq("status", "ACTIVE").not("autopay_asset_id", "is", null).not("due_day", "is", null).is("deleted_at", null),
+    supabase.from("cash_movements").select("to_credit_card_id").eq("movement_type", "CARD_PAYMENT")
+      .gte("movement_date", `${today.slice(0, 7)}-01`).lte("movement_date", today).is("deleted_at", null),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
@@ -135,6 +142,24 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   );
   const movesHref = `/income-expenses?tab=moves&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`;
 
+  // ---------------------------------------------------------------- รับดอกเบี้ย (บัญชีที่ใช้งานอยู่ · รับแล้วในเดือนที่เลือก = สุทธิหลังภาษี)
+  const interestIn = new Map<string, number>();
+  (interestRaw ?? []).forEach((i) => interestIn.set(i.received_to_asset_id as string,
+    (interestIn.get(i.received_to_asset_id as string) ?? 0) + Number(i.amount) - Number(i.tax ?? 0)));
+  const interestRows: InterestRow[] = all.filter((a) => a.status === "ACTIVE").map((a) => ({
+    id: a.asset_id, name: a.name, bank: a.bank_name, currency: a.currency, type: ACCOUNT_TYPE_LABEL[a.account_type] ?? a.account_type,
+    rate: a.interest_rate == null ? null : Number(a.interest_rate), maturity: a.maturity_date, received: interestIn.get(a.asset_id) ?? 0,
+  }));
+
+  // บัตรเครดิตตัดบัญชีอัตโนมัติที่ถึงวันตัดเดือนนี้แต่ยังไม่กดยืนยัน → เตือนก่อนอัปเดตยอด (ไม่งั้นเงินที่ถูกตัดไปลงก้อนรอแยก + ยอดบัตรไม่ลด)
+  const paidCards = new Set((cardPays ?? []).map((m) => m.to_credit_card_id as string));
+  const lastDay = Number(monthRange(today.slice(0, 7)).end.slice(8, 10));
+  const accName = new Map(all.map((a) => [a.asset_id, a.name]));
+  const cardWaiting = (cardsRaw ?? [])
+    .map((c) => ({ ...c, due: `${today.slice(0, 8)}${String(Math.min(Number(c.due_day), lastDay)).padStart(2, "0")}` }))
+    .filter((c) => accName.has(c.autopay_asset_id as string) && c.due <= today && c.due >= minDate && !paidCards.has(c.id as string)
+      && (c.autopay_mode === "MINIMUM" || Number(c.outstanding_balance) > 0));
+
   return (
     <TabsProvider initial={tab}>
     <div className="space-y-6">
@@ -212,7 +237,24 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       </TabPanel>
 
       <TabPanel id="update">
+        {cardWaiting.length > 0 && (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="font-medium">บัตรเครดิตตัดบัญชีอัตโนมัติรอยืนยัน {cardWaiting.length} ใบ — กดยืนยันก่อนอัปเดตยอด</div>
+            <ul className="mt-1 list-disc pl-5 text-xs">
+              {cardWaiting.map((c) => (
+                <li key={c.id as string}>{[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}
+                  {" "}ตัดจาก {accName.get(c.autopay_asset_id as string)} · ครบ {thDate(c.due)}</li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs">ถ้าอัปเดตยอดก่อน เงินที่ถูกตัดจะไปอยู่ก้อน &ldquo;รอแยกรายละเอียด&rdquo; และยอดบัตรไม่ลด ·{" "}
+              <Link href="/income-expenses?tab=moves" className="underline">ไปยืนยันที่ Income &amp; Expenses →</Link></p>
+          </div>
+        )}
         <BatchUpdate key={upDate} date={upDate} today={today} minDate={minDate} rows={batchRows} canWrite={canWrite} ym={upDate.slice(0, 7)} />
+      </TabPanel>
+
+      <TabPanel id="interest">
+        <InterestBatch key={ym} rows={interestRows} defaultDate={asOf} today={today} minDate={minDate} monthLabel={thMonth(start)} canWrite={canWrite} />
       </TabPanel>
     </div>
     </TabsProvider>

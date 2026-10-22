@@ -2511,6 +2511,76 @@ SELECT t.fails(format($$SELECT public.restate_opening_units(%L, 10)$$, :'e1'), '
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz6. รับดอกเบี้ยหลายรายการพร้อมกัน: บัญชีธนาคาร · พอร์ตลงทุน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีดอกเบี้ย A', 'ทดสอบ', 'THB', 50000, '2026-09-30', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS int_a;
+SELECT public.create_bank_account('บัญชีดอกเบี้ย B', 'ทดสอบ', 'THB', 20000, '2026-09-30', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS int_b;
+-- อัปเดตยอด A ก่อน (เงินเกิน 100 → ก้อนรอแยก) แล้วค่อยบันทึกดอกเบี้ยย้อนหลัง
+SELECT jsonb_array_length(public.batch_update_bank_statements('2026-10-10',
+  jsonb_build_array(jsonb_build_object('asset_id', t.a('บัญชีดอกเบี้ย A'), 'value', 50100)))) AS int_stmt;
+SELECT t.ok((SELECT sum(amount) FROM public.income_transactions WHERE pending_split AND received_to_asset_id = t.a('บัญชีดอกเบี้ย A') AND deleted_at IS NULL) = 100,
+            'ดอกเบี้ยกลุ่ม: ก่อนบันทึก A มีรายได้ก้อนรอแยก 100');
+SELECT t.fails($$SELECT public.batch_record_bank_interest(jsonb_build_array(
+  jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย A'), 'date', '2026-10-05', 'amount', 100),
+  jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย B'), 'date', current_date + 1, 'amount', 50)))$$,
+  'บัญชีดอกเบี้ย B · วันที่รับเป็นวันในอนาคต', 'ดอกเบี้ยกลุ่ม: แถวผิด (วันในอนาคต) บอกชื่อบัญชี');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE income_type = 'INTEREST' AND NOT pending_split
+              AND received_to_asset_id IN (t.a('บัญชีดอกเบี้ย A'), t.a('บัญชีดอกเบี้ย B')) AND deleted_at IS NULL),
+            'ดอกเบี้ยกลุ่ม: แถวเดียวผิด → ไม่บันทึกเลยทั้งชุด');
+SELECT t.fails($$SELECT public.batch_record_bank_interest(jsonb_build_array(
+  jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย A'), 'date', '2026-10-05', 'amount', 100, 'tax', 100)))$$,
+  'ภาษีต้องน้อยกว่าดอกเบี้ย', 'ดอกเบี้ยกลุ่ม: ภาษีเท่ากับ / เกินดอกเบี้ยไม่ได้');
+SELECT t.fails($$SELECT public.batch_record_bank_interest(jsonb_build_array(
+  jsonb_build_object('bank_asset_id', t.a('Brokerage USD'), 'date', '2026-10-05', 'amount', 100)))$$,
+  'ไม่พบบัญชีธนาคาร', 'ดอกเบี้ยกลุ่ม: ต้องเป็นบัญชีธนาคาร');
+SELECT t.ok(public.batch_record_bank_interest(jsonb_build_array(
+  jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย A'), 'date', '2026-10-05', 'amount', '100', 'tax', '15', 'notes', 'ดอกเบี้ย ต.ค.'),
+  jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย B'), 'date', '2026-10-05', 'amount', '50'))) = 2,
+  'ดอกเบี้ยกลุ่ม: บันทึก 2 บัญชีในคำสั่งเดียว');
+SELECT t.ok((SELECT count(*) FROM public.income_transactions WHERE income_type = 'INTEREST' AND NOT pending_split AND deleted_at IS NULL
+               AND ((received_to_asset_id = t.a('บัญชีดอกเบี้ย A') AND amount = 100 AND tax = 15 AND currency = 'THB')
+                 OR (received_to_asset_id = t.a('บัญชีดอกเบี้ย B') AND amount = 50 AND tax IS NULL))) = 2
+            AND (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'INCOME' AND deleted_at IS NULL
+                   AND ((to_asset_id = t.a('บัญชีดอกเบี้ย A') AND amount = 85) OR (to_asset_id = t.a('บัญชีดอกเบี้ย B') AND amount = 50))) = 2,
+            'ดอกเบี้ยกลุ่ม: รายได้ดอกเบี้ย (ก่อนภาษี + ภาษี) · เงินเข้าบัญชี = สุทธิหลังภาษี');
+SELECT t.ok((SELECT coalesce(sum(amount), 0) FROM public.income_transactions WHERE pending_split AND received_to_asset_id = t.a('บัญชีดอกเบี้ย A') AND deleted_at IS NULL) = 15,
+            'ดอกเบี้ยกลุ่ม: ก้อนรอแยกของ A ลดเหลือ 15 (100 − ดอกเบี้ยสุทธิ 85) · ไม่นับซ้ำ');
+SELECT t.ok((SELECT calculated FROM public.bank_balances_at(current_date) WHERE asset_id = t.a('บัญชีดอกเบี้ย A')) = 50100
+            AND (SELECT calculated FROM public.bank_balances_at(current_date) WHERE asset_id = t.a('บัญชีดอกเบี้ย B')) = 20050,
+            'ดอกเบี้ยกลุ่ม: ยอด A ยังเท่ายอดที่อัปเดต 50,100 · B เพิ่มเป็น 20,050');
+-- พอร์ตลงทุน: ดอกเบี้ยเงินฝากในพอร์ต + Coupon หุ้นกู้ เข้าบัญชีที่เลือก
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตรับกลุ่ม', 'THB' FROM public.families;
+INSERT INTO public.investment_portfolios(asset_id, institution) VALUES (t.a('พอร์ตรับกลุ่ม'), 'ทดสอบ');
+SELECT public.add_holding(t.a('พอร์ตรับกลุ่ม'), 'CASH', 'เงินฝากพอร์ตรับกลุ่ม', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS g_cash;
+SELECT public.add_holding(t.a('พอร์ตรับกลุ่ม'), 'BOND', 'หุ้นกู้พอร์ตรับกลุ่ม', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS g_bond;
+SELECT coalesce((SELECT current_value FROM public.investment_holdings WHERE id = t.h('เงินฝากพอร์ตรับกลุ่ม')), 0) AS ia0 \gset
+SELECT t.fails($$SELECT public.batch_record_investment_income(jsonb_build_array(
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','INTEREST','date',current_date,'holding_id',t.h('เงินฝากพอร์ตรับกลุ่ม'),'amount',10)),
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('หุ้นกู้พอร์ตรับกลุ่ม'),'amount',20))))$$,
+  'หุ้นกู้พอร์ตรับกลุ่ม · รับได้เฉพาะ', 'รับในพอร์ตกลุ่ม: รับเฉพาะดอกเบี้ย / Coupon / ปันผล');
+SELECT t.fails($$SELECT public.batch_record_investment_income(jsonb_build_array(
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','COUPON','date',current_date,'holding_id',t.h('เงินฝากพอร์ตรับกลุ่ม'),'amount',20))))$$,
+  'เงินฝากพอร์ตรับกลุ่ม · เงินฝากในพอร์ตใช้ได้กับดอกเบี้ย', 'รับในพอร์ตกลุ่ม: ข้อความผิดของรายการเดิมบอกชื่อหลักทรัพย์');
+SELECT t.ok((SELECT coalesce(current_value, 0) FROM public.investment_holdings WHERE id = t.h('เงินฝากพอร์ตรับกลุ่ม')) = :ia0,
+            'รับในพอร์ตกลุ่ม: แถวผิด → ไม่บันทึกเลยทั้งชุด');
+SELECT t.ok(public.batch_record_investment_income(jsonb_build_array(
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','INTEREST','date',current_date,'holding_id',t.h('เงินฝากพอร์ตรับกลุ่ม'),'amount','10','tax','1')),
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','COUPON','date',current_date,'holding_id',t.h('หุ้นกู้พอร์ตรับกลุ่ม'),'amount','20',
+    'cash_holding_id',t.h('เงินฝากพอร์ตรับกลุ่ม'))))) = 2,
+  'รับในพอร์ตกลุ่ม: ดอกเบี้ยเงินฝาก + Coupon ในคำสั่งเดียว');
+SELECT t.ok((SELECT coalesce(current_value, 0) FROM public.investment_holdings WHERE id = t.h('เงินฝากพอร์ตรับกลุ่ม')) = :ia0 + 9 + 20,
+            'รับในพอร์ตกลุ่ม: บัญชี A เพิ่ม 29 (ดอกเบี้ยสุทธิ 9 + Coupon 20)');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.batch_record_bank_interest(jsonb_build_array(
+  jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย B'), 'date', '2026-10-05', 'amount', 50)))$$,
+  'row-level security|PERMISSION_DENIED|permission', 'VIEWER บันทึกดอกเบี้ยไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
