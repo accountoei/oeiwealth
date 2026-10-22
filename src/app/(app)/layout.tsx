@@ -4,6 +4,7 @@ import { CurrencyProvider } from "@/components/CurrencyContext";
 import { getCurrencyLists } from "@/lib/currencies";
 import { createClient } from "@/lib/supabase/server";
 import { Toaster } from "@/components/Modal";
+import KeepHeight from "@/components/KeepHeight";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
@@ -20,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <button className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900">ออกจากระบบ</button>
           </form>
         </header>
-        <main className="mx-auto max-w-7xl p-4 md:p-8"><CurrencyProvider used={ccy.used} others={ccy.others}>{children}</CurrencyProvider></main>
+        <main className="mx-auto max-w-7xl p-4 md:p-8"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>{children}</CurrencyProvider></KeepHeight></main>
         <Toaster />
       </div>
     </div>

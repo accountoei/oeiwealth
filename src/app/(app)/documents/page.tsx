@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -165,13 +166,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                   <Link key={k} href={href({ c: k, m: undefined })} scroll={false} className={chip(sp.c === k)}>{v} ({catCount.get(k) ?? 0})</Link>)}
               </div>
             </div>
-            <form className="flex flex-wrap items-center gap-2 text-sm" action="/documents">
+            <Form className="flex flex-wrap items-center gap-2 text-sm" action="/documents" scroll={false}>
               {sp.c && <input type="hidden" name="c" value={sp.c} />}
               {sp.m && <input type="hidden" name="m" value={sp.m} />}
               <input name="q" defaultValue={sp.q ?? ""} placeholder="ค้นหาชื่อ / ประเภท" className="w-48 rounded-md border border-slate-300 px-2.5 py-1" />
               <label className="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" name="all" value="1" defaultChecked={!!sp.all} /> รวมฉบับเก่า</label>
               <button className="rounded-md border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50">ค้นหา</button>
-            </form>
+            </Form>
           </div>
           <table className="mt-2 w-full min-w-[44rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">

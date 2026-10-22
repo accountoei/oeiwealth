@@ -193,7 +193,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         )}
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         {tree ? <div className="mt-4"><FamilyTree people={list} kin={all} headId={headId} /></div> : (
-        <div className={`divide-y divide-slate-100 ${filtering ? "min-h-screen" : ""}`}>
+        <div className="divide-y divide-slate-100">
           {list.length > 0 && !ordering && (
             <div className="hidden items-center gap-3 pb-1.5 text-sm text-slate-500 sm:flex">
               <span className="w-6" />
