@@ -91,12 +91,13 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ · ประเภท "คืนเงินต้น" = บันทึกครบกำหนด / Autocall (หลักทรัพย์ปิด) */
-export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultNotes }: {
+export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultDate, defaultNotes }: {
   assetId: string; portfolioName?: string; holdingId: string; holdingName?: string; currency: string; isFcn: boolean;
   /** หุ้นกู้ / FCN / Structured / อื่น ๆ ที่ยังถืออยู่ → มีประเภท "คืนเงินต้น" */ canMature?: boolean;
   banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
   /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
   label?: string; title?: string; defaultAmount?: number | null; defaultNotes?: string;
+  /** วันที่ตั้งต้น (แท็บรอรับ: วันรับตามตาราง · แก้ได้) */ defaultDate?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
@@ -125,7 +126,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
             </select>
           </label>
         )}
-        <label className="text-sm">{mat ? "วันที่รับเงิน *" : "วันที่ *"}<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">{mat ? "วันที่รับเงิน *" : "วันที่ *"}<input name="date" type="date" required defaultValue={defaultDate ?? today} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">{mat ? "เงินต้นที่ได้คืน" : "ยอดก่อนหักภาษี"} ({currency}) *<input name="amount" required inputMode="decimal"
           defaultValue={defaultAmount != null ? String(defaultAmount) : undefined} className={input} /></label>
         <label className="text-sm">ภาษีหัก ณ ที่จ่าย<input name="tax" inputMode="decimal" className={input} /></label>

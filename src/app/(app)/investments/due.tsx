@@ -63,6 +63,8 @@ type Tx = { holding_id: string; transaction_type: string; transaction_date: stri
 export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
   month: string; today: string; goLive: string; showAsset: (assetId: string) => boolean; canWrite: boolean;
 }) {
+  // วันที่ตั้งต้นของฟอร์มบันทึกรับ = วันรับตามตาราง (ยังไม่ถึง → วันนี้ · ก่อน Go-live → วัน Go-live) · แก้ได้ในฟอร์ม
+  const dueDefault = (due: string) => (due > today ? today : due < goLive ? goLive : due);
   const supabase = await createClient();
   const { data: hs } = await supabase.from("investment_holdings")
     .select("id,name,holding_type,currency,status,maturity_date,current_value,face_value,interest_rate,coupon_frequency,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
@@ -147,10 +149,10 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
                     {canWrite && !r.received && (r.kind === "INTEREST"
                       ? <IncomeForm assetId={pf} portfolioName={g.name} holdingId={h.id} currency={h.currency} isFcn={h.holding_type !== "BOND" && h.holding_type !== "OTHER"}
                           banks={(banks as Bank[] | null) ?? []} cashAccounts={cashOf(pf)} today={today} minDate={goLive}
-                          label="บันทึกรับ" title={`บันทึกรับดอกเบี้ย · ${h.name}`} defaultAmount={r.expected} defaultNotes={`${label(r)} (ครบ ${thDate(r.due)})`} />
+                          label="บันทึกรับ" title={`บันทึกรับดอกเบี้ย · ${h.name}`} defaultAmount={r.expected} defaultDate={dueDefault(r.due)} defaultNotes={`${label(r)} (ครบ ${thDate(r.due)})`} />
                       : h.status === "ACTIVE" && <MaturityForm assetId={pf} portfolioName={g.name} banks={(banks as Bank[] | null) ?? []} cashAccounts={cashOf(pf)}
                           holding={{ id: h.id, name: h.name, symbol: null, holding_type: h.holding_type, currency: h.currency, quantity: 0, current_price: null, status: h.status }}
-                          today={today} minDate={goLive} label="บันทึกรับ" defaultAmount={r.expected} />)}
+                          today={today} minDate={goLive} label="บันทึกรับ" defaultAmount={r.expected} defaultDate={dueDefault(r.due)} />)}
                   </td>
                 </tr>
               ))}
