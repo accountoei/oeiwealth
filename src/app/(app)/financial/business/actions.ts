@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -115,16 +116,15 @@ export async function buyShares(_: ActionState, form: FormData): Promise<ActionS
 export async function batchDividends(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const date = str(form.get("date"));
-  let rows: { asset_id: string; person_id: string; amount: string; tax: string; bank_asset_id: string }[] = [];
-  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
-  const n = (s: string) => { const t = (s ?? "").replace(/,/g, "").trim(); return t === "" ? null : Number(t); };
-  const clean = rows.map((r) => ({ asset_id: r.asset_id, person_id: r.person_id, date, amount: n(r.amount), tax: n(r.tax), bank_asset_id: r.bank_asset_id || null }));
+  const rows = readRows<{ asset_id: string; person_id: string; amount: string; tax: string; bank_asset_id: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  const clean = rows.map((r) => ({ asset_id: r.asset_id, person_id: r.person_id, date, amount: amountOrNull(r.amount), tax: amountOrNull(r.tax), bank_asset_id: r.bank_asset_id || null }));
   if (!date) return { error: "กรุณาเลือกวันที่รับ" };
   if (!clean.length) return { error: "กรุณากรอกปันผลอย่างน้อย 1 รายการ" };
-  if (clean.some((r) => r.amount == null || Number.isNaN(r.amount) || r.amount <= 0)) return { error: "ปันผลต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
-  if (clean.some((r) => r.tax != null && (Number.isNaN(r.tax) || r.tax < 0))) return { error: "ภาษีต้องเป็นตัวเลข (ไม่ติดลบ)" };
+  if (!clean.every((r) => isPositive(r.amount))) return { error: "ปันผลต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  if (!clean.every((r) => isValidTax(r.tax))) return { error: TAX_ERROR };
   const { data, error } = await supabase.rpc("batch_record_business_dividends", { p_rows: clean });
-  if (error) return { error: `ยังไม่ได้บันทึก (ทุกรายการ) · ${friendlyError(error.message)}` };
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   new Set(clean.map((r) => r.asset_id)).forEach((id) => revalidatePath(`/financial/business/${id}`));
   return done("", `บันทึกปันผลแล้ว ${data} รายการ`);
 }
@@ -134,14 +134,14 @@ export async function batchValues(_: ActionState, form: FormData): Promise<Actio
   const supabase = await createClient();
   const date = str(form.get("date"));
   const method = str(form.get("method")) ?? "USER_ESTIMATE";
-  let rows: { asset_id: string; value: string }[] = [];
-  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
-  const clean = rows.map((r) => ({ asset_id: r.asset_id, date, method, value: Number((r.value ?? "").replace(/,/g, "").trim()) }));
+  const rows = readRows<{ asset_id: string; value: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  const clean = rows.map((r) => ({ asset_id: r.asset_id, date, method, value: Number(plainNumber(r.value)) }));
   if (!date) return { error: "กรุณาเลือกวันที่ประเมิน" };
   if (!clean.length) return { error: "กรุณากรอกมูลค่าอย่างน้อย 1 กิจการ" };
   if (clean.some((r) => Number.isNaN(r.value) || r.value < 0)) return { error: "มูลค่าต้องเป็นตัวเลข (ไม่ติดลบ) ทุกแถวที่กรอก" };
   const { data, error } = await supabase.rpc("batch_record_business_values", { p_rows: clean });
-  if (error) return { error: `ยังไม่ได้บันทึก (ทุกกิจการ) · ${friendlyError(error.message)}` };
+  if (error) return { error: notSaved("ทุกกิจการ", friendlyError(error.message)) };
   new Set(clean.map((r) => r.asset_id)).forEach((id) => revalidatePath(`/financial/business/${id}`));
   return done("", `บันทึกมูลค่าแล้ว ${data} กิจการ`);
 }
