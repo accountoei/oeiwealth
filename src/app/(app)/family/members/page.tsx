@@ -63,7 +63,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const missingOf = (p: (typeof all)[number]) => [
     !p.full_name_th && "ชื่อ-นามสกุลจริง", !genderOf(p, all) && "เพศ", !p.birth_date && "วันเกิด", !p.national_id && "เลขบัตรประชาชน",
   ].filter((x): x is string => !!x);
-  /** ป้ายด้านขวาของแถว: เรื่องที่ต้องดู (พาสปอร์ต · วันเกิด) + กรมธรรม์ + ข้อมูลยังไม่ครบ */
+  /** ป้ายด้านขวาของแถว: เรื่องที่ต้องดู (พาสปอร์ต · วันเกิด) + ข้อมูลยังไม่ครบ */
   const badgesOf = (p: (typeof all)[number]) => {
     const b: { text: string; cls: string; title?: string }[] = [];
     if (p.status !== "DECEASED") {
@@ -76,8 +76,6 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       if (d === 0) b.push({ text: "วันเกิดวันนี้", cls: "bg-emerald-50 text-emerald-700" });
       else if (d != null && d <= 30) b.push({ text: `วันเกิดอีก ${d} วัน`, cls: "bg-sky-50 text-sky-700" });
     }
-    const pol = policiesOf.get(p.id) ?? 0;
-    if (pol > 0) b.push({ text: `กรมธรรม์ ${pol}`, cls: "bg-slate-100 text-slate-600" });
     const miss = missingOf(p);
     if (miss.length > 0) b.push({ text: `ขาด ${miss.length} ช่อง`, cls: "bg-amber-50 text-amber-700", title: `ยังไม่ได้กรอก: ${miss.join(", ")}` });
     return b;
@@ -186,13 +184,14 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         {tree ? <div className="mt-4"><FamilyTree people={list} kin={all} headId={headId} /></div> : (
         <div className="divide-y divide-slate-100">
           {list.length > 0 && !ordering && (
-            <div className="hidden items-end gap-3 pb-1.5 text-sm text-slate-500 sm:flex">
+            <div className="hidden items-center gap-3 pb-1.5 text-sm text-slate-500 sm:flex">
               <span className="w-6" />
               <div className="flex flex-1 items-center gap-3 px-2">
                 <span className="w-11 shrink-0" />
                 <span className="flex-1">สมาชิก</span>
-                <span className="hidden md:block">สิ่งที่ต้องดู</span>
-                <span className="w-48 shrink-0 text-right leading-tight">Net Worth<span className="block text-xs">% ของครอบครัว</span></span>
+                <span className="hidden w-20 shrink-0 text-right md:block">กรมธรรม์</span>
+                <span className="hidden w-40 shrink-0 text-right md:block">สิ่งที่ต้องดู</span>
+                <span className="w-48 shrink-0 text-right">Net Worth</span>
                 <span className="invisible shrink-0">›</span>
               </div>
             </div>
@@ -214,7 +213,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                 </div>
               )}
               <Link href={`/family/members/${p.id}`}
-                className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50 ${p.status === "DECEASED" ? "opacity-60" : ""}`}>
+                className={`flex min-w-0 flex-1 items-start gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50 ${p.status === "DECEASED" ? "opacity-60" : ""}`}>
                 {p.photo
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={p.photo} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
@@ -235,7 +234,10 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                   })()}
                   {fMissing && <div className="truncate text-xs text-amber-700">ยังไม่ได้กรอก: {missingOf(p).join(", ")}</div>}
                 </div>
-                <div className="hidden max-w-[45%] flex-col items-end gap-1 md:flex">
+                <div className="hidden w-20 shrink-0 text-right text-sm tabular-nums text-slate-700 md:block">
+                  {policiesOf.get(p.id) ? `${policiesOf.get(p.id)} ฉบับ` : <span className="text-slate-300">-</span>}
+                </div>
+                <div className="hidden w-40 shrink-0 flex-col items-end gap-1 md:flex">
                   {p.status !== "ACTIVE" && (
                     <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${p.status === "DECEASED" ? "bg-slate-200 text-slate-700" : "bg-amber-50 text-amber-700"}`}>
                       {PERSON_STATUS_LABEL[p.status]}
@@ -253,7 +255,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                     </div>
                   );
                 })()}
-                <span className="shrink-0 text-slate-300">›</span>
+                <span className="shrink-0 self-center text-slate-300">›</span>
               </Link>
             </div>
           ))}
