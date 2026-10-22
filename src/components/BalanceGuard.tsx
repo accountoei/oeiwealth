@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useConfirm } from "./ConfirmDialog";
 import { checkBankOutflow } from "@/lib/bank-check";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, numOrZero as num } from "@/lib/format";
 
-const num = (v: FormDataEntryValue | null) => Number(String(v ?? "").replace(/,/g, "")) || 0;
 const todayTh = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Bangkok" });
 
 /**

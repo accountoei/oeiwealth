@@ -3,19 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError } from "@/lib/format";
+import { friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, TAX_ERROR, isPositive, isValidTax, notSaved, readRows } from "@/lib/batch-entry";
 
-export type ActionState = { error?: string; ok?: string; value?: string };
-
-const num = (v: FormDataEntryValue | null) => {
-  const s = String(v ?? "").replace(/,/g, "").trim();
-  return s === "" ? null : Number(s);
-};
-const str = (v: FormDataEntryValue | null) => {
-  const s = String(v ?? "").trim();
-  return s === "" ? null : s;
-};
+export type ActionState = FormState & { value?: string };
 
 export async function createBankAccount(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();

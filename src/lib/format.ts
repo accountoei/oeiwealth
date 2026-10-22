@@ -76,6 +76,10 @@ export const strOrNull = (v: FormDataEntryValue | null) => {
   const s = String(v ?? "").trim();
   return s === "" ? null : s;
 };
+/** ตัวเลขในช่องกรอก (ฝั่งหน้าจอ ใช้คิดยอดรวมระหว่างพิมพ์) → ตัดจุลภาค · ว่าง / ไม่ใช่ตัวเลข = 0 */
+export const numOrZero = (v: FormDataEntryValue | string | null | undefined) => Number(String(v ?? "").replace(/,/g, "")) || 0;
+/** ผลของ server action ที่ฟอร์มแสดง (useActionState) · แต่ละหน้าเพิ่มช่องของตัวเองได้ */
+export type FormState = { error?: string; ok?: string };
 
 export const PROPERTY_TYPE_LABEL: Record<string, string> = {
   HOUSE: "บ้าน", CONDO: "คอนโด / ห้องชุด", LAND: "ที่ดิน", OTHER: "อื่น ๆ",

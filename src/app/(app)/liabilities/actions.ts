@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 
 /** ยอดตาม Statement ต่ำกว่าที่คำนวณ → ถามต่อว่าเป็นการจ่ายหรือไม่ (n = เลขครั้ง ให้กล่องถามแสดงใหม่ทุกครั้งที่บันทึก) */
 export type Drop = { kind: "CARD" | "LIABILITY"; id: string; date: string; amount: number; n: number };
-export type ActionState = { error?: string; ok?: string; drop?: Drop };
+export type ActionState = FormState & { drop?: Drop };
 
 export async function createLiability(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();

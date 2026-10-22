@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { endpointFromForm, paidFromColumns } from "@/lib/money-endpoint";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 /** ผลลงมูลค่าเวนคืนตามตารางในสัญญา (sync_insurance_cash_value) */
 export type CvSync = { added: number; created: boolean; value?: number; date?: string; policy_year?: number };
 export type PayState = ActionState & { cv?: CvSync };

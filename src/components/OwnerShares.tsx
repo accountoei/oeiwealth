@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { numOrZero as num } from "@/lib/format";
 
 /**
  * ช่องกรอกส่วนของสมาชิก
@@ -13,7 +14,6 @@ export default function OwnerShares({ persons, title, hint, unit = "percent", to
   const [shares, setShares] = useState<Record<string, string>>(
     persons.length === 1 && unit === "percent" ? { [persons[0].id]: "100" } : {},
   );
-  const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
   const total = Object.values(shares).reduce((s, v) => s + num(v), 0);
   const set = (id: string, v: string) => {
     const next = { ...shares, [id]: v };

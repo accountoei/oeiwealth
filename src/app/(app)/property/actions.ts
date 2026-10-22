@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 
 /** อ่านช่องสัญญาเช่า (prefix lease_) → jsonb สำหรับ create_lease */
 function leaseFromForm(form: FormData) {

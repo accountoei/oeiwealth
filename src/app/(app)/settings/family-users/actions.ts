@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 
-import { friendlyError as friendly } from "@/lib/format";
+import { friendlyError as friendly, type FormState } from "@/lib/format";
 
 export async function setUserRole(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();

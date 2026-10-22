@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
-import { ROW_BTN } from "@/lib/format";
+import { ROW_BTN, numOrZero as num } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -19,7 +19,6 @@ function Msg({ s }: { s: ActionState }) {
 }
 
 const amt = (v?: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
-const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
 
 /**
  * บันทึกรับชำระ · ใช้จากตารางผ่อนได้ (เติมเงินต้น / ดอกเบี้ยของงวดให้ แก้ได้ถ้ารับจริงไม่เท่า)

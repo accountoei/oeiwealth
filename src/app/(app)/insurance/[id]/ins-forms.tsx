@@ -6,7 +6,7 @@ import { addCashValue, addCoverage, payPremium, receiveBenefit, saveCashValueTab
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { parseCashValueText, type CvLine } from "@/lib/insurance-schedule";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
-import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
+import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate, numOrZero as num } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
 
@@ -15,7 +15,6 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
 const sbtn = "rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50";
-const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
 
 type Bank = { asset_id: string; name: string; currency: string };
 type Card = { id: string; label: string; currency: string };

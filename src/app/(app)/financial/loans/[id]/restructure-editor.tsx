@@ -5,14 +5,13 @@ import { useActionSlot } from "@/components/ActionBar";
 import { usePathname, useRouter } from "next/navigation";
 import { restructureSchedule, type ActionState } from "../actions";
 import { generateSchedule, PAYMENT_LABEL, SCHED_METHOD_LABEL, type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, numOrZero as num } from "@/lib/format";
 import { DayCountFields } from "./day-count";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
-const num = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
 const fmt2 = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export type OldSummary = { count: number; firstTotal: number; interest: number; lastDue: string | null };

@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { EDUCATION_LEVEL_LABEL, friendlyError as friendly, RELATIONSHIP_LABEL } from "@/lib/format";
+import { EDUCATION_LEVEL_LABEL, friendlyError as friendly, RELATIONSHIP_LABEL, type FormState } from "@/lib/format";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 
 /** หน้าที่แสดงรายชื่อสมาชิก / ชื่อครอบครัว — ลำดับใหม่ต้องเห็นทุกหน้า */
 function refresh() {
