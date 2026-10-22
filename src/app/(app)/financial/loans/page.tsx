@@ -173,8 +173,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h2 className="font-medium text-slate-900">รายการที่ต้องติดตาม</h2>
             {follow.length > 5 && (showAllFollow
-              ? <Link href={keep({})} className="text-sm text-blue-700 hover:underline">แสดง 5 รายการแรก</Link>
-              : <Link href={keep({ follow: "all" })} className="text-sm text-blue-700 hover:underline">ดูทั้งหมด ({follow.length}) →</Link>)}
+              ? <Link href={keep({})} scroll={false} className="text-sm text-blue-700 hover:underline">แสดง 5 รายการแรก</Link>
+              : <Link href={keep({ follow: "all" })} scroll={false} className="text-sm text-blue-700 hover:underline">ดูทั้งหมด ({follow.length}) →</Link>)}
           </div>
           {follow.length === 0 ? <p className="rounded-lg bg-emerald-50 px-4 py-6 text-center text-sm text-emerald-700">✓ ไม่มีรายการที่ต้องติดตาม</p> : (
             <table className="w-full text-sm">

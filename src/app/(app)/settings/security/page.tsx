@@ -78,8 +78,8 @@ export default async function SecurityPage({ searchParams }: { searchParams: Sp 
             </table>
           </div>
           {shown && <div className="flex gap-3 text-sm">
-            {page > 0 && <Link href={qs({ page: page - 1 })} className="underline">← ใหม่กว่า</Link>}
-            {logs.length === PAGE && <Link href={qs({ page: page + 1 })} className="underline">เก่ากว่า →</Link>}
+            {page > 0 && <Link href={qs({ page: page - 1 })} scroll={false} className="underline">← ใหม่กว่า</Link>}
+            {logs.length === PAGE && <Link href={qs({ page: page + 1 })} scroll={false} className="underline">เก่ากว่า →</Link>}
           </div>}
         </section>
       )}
