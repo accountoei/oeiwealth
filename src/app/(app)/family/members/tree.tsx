@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { kinLabel } from "@/lib/format";
+import { childOrdinal, kinLabel } from "@/lib/format";
 
 export type TreePerson = {
   id: string; name: string; nickname: string | null; photo: string | null; relationship: string | null; status: string;
@@ -98,15 +98,15 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
                   ))}
                 </div>
               );
-              // กรอบ "ลูกของ …" ล้อมเฉพาะลูก · คู่สมรสที่มาจากครอบครัวอื่นอยู่นอกกรอบ (คนที่มีคู่สมรสอยู่ท้ายกรอบ ติดกับคู่)
+              // ป้าย "ลูกของ …" อยู่เหนือเฉพาะลูก · คู่สมรสที่มาจากครอบครัวอื่นอยู่ถัดออกไป (คนที่มีคู่สมรสอยู่ท้ายกรอบ ติดกับคู่)
               const split = grp.units.map((u) => {
                 const b = bloodOf(u);
                 const o = u.find((x) => x !== b);
                 return { b, o: o && keyOf(o) !== keyOf(b) ? o : undefined, sib: o && keyOf(o) === keyOf(b) ? o : undefined };
-              }).sort((x, y) => Number(!!x.o) - Number(!!y.o));
+              }).sort((x, y) => Number(!!x.o) - Number(!!y.o) || (childOrdinal(x.b, kin) ?? 0) - (childOrdinal(y.b, kin) ?? 0));
               return (
                 <div key={i} className="flex items-end gap-1">
-                  <div className="rounded-xl border border-dashed border-slate-300 p-2">
+                  <div>
                     <div className="mb-1 text-center text-[11px] text-slate-500">{grp.label}</div>
                     <div className="flex flex-wrap justify-center gap-3">
                       {split.map((x) => (
@@ -118,7 +118,7 @@ export function FamilyTree({ people, headId, kin = people }: { people: TreePerso
                     </div>
                   </div>
                   {split.filter((x) => x.o).map((x) => (
-                    <div key={x.o!.id} className="flex items-center gap-1 pb-2">
+                    <div key={x.o!.id} className="flex items-center gap-1">
                       <span className="text-slate-300" title={`คู่สมรสของ ${x.b.name}`}>—</span><Card p={x.o!} />
                     </div>
                   ))}
