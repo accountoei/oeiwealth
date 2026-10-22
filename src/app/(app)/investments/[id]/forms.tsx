@@ -574,9 +574,10 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
 
 /* ------------------------------------------------------------------ บันทึกรับเงินต้น (ครบกำหนด / Autocall)
    วันที่เดียว = วันที่เงินเข้าจริง (ไม่มีเงินระหว่างทาง) · ก่อนกดบันทึก มูลค่ายังอยู่ที่หลักทรัพย์ตัวนี้ */
-export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, label, defaultAmount }:
+export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, label, defaultAmount, defaultDate }:
   { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string;
-    /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม (ปุ่มแถวตาราง) · ยอดเงินต้นที่คาดว่าจะได้รับ */ label?: string; defaultAmount?: number | null }) {
+    /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม (ปุ่มแถวตาราง) · ยอดเงินต้นที่คาดว่าจะได้รับ */ label?: string; defaultAmount?: number | null;
+    /** วันที่ตั้งต้น (แท็บรอรับ: วันรับตามตาราง · แก้ได้) */ defaultDate?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const cf = useConfirmSubmit();
   const [mode, setMode] = useState("cash");
@@ -592,7 +593,7 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holding.id} />
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs">วันที่รับเงิน<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${small}`} /></label>
+        <label className="text-xs">วันที่รับเงิน<input name="date" type="date" required defaultValue={defaultDate ?? today} min={minDate} max={today} className={`mt-1 block ${small}`} /></label>
         <label className="text-xs">เงินต้นที่ได้คืน ({holding.currency})<input name="amount" required inputMode="decimal"
           defaultValue={defaultAmount != null ? String(defaultAmount) : undefined} className={`mt-1 block w-32 ${small}`} /></label>
         <label className="text-xs">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
