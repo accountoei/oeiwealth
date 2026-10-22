@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
+import BusinessBadge from "../badge";
 import { BusinessInfoForm, BuySharesForm, DividendForm, ShareSaleForm, UndoShareSale } from "./forms";
 import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
@@ -77,7 +78,10 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         <Link href="/financial/business" className="text-sm text-slate-500 hover:underline">← Private Business</Link>
         <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">{a.name}</h1>
+            <div className="flex items-center gap-3">
+              {d.logo_data && <BusinessBadge logo={d.logo_data} name={a.name} color="#94a3b8" className="h-10 w-12" />}
+              <h1 className="text-2xl font-semibold text-slate-900">{a.name}</h1>
+            </div>
             <p className="text-sm text-slate-500">{d.company_name}{d.registration_no && ` · ${d.registration_no}`}{d.business_type && ` · ${d.business_type}`}</p>
           </div>
           {canWrite && a.status === "ACTIVE" && (
@@ -133,7 +137,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             }
             edit={
               <div className="space-y-5">
-                <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, company_name: d.company_name, registration_no: d.registration_no,
+                <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, logo_data: d.logo_data ?? null, company_name: d.company_name, registration_no: d.registration_no,
                   business_type: d.business_type, total_shares: d.total_shares, par_value: d.par_value, shares_owned: d.shares_owned,
                   company_ownership_percent: d.company_ownership_percent, investment_cost: d.investment_cost, notes: d.notes }} />
                 <div className="border-t border-slate-100 pt-4">

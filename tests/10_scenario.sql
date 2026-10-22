@@ -1087,6 +1087,16 @@ UPDATE public.private_business_details SET par_value = 100 WHERE company_name = 
 SELECT t.ok((SELECT total_shares * par_value FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด') = 1000000,
             'มูลค่าหุ้นที่ตราไว้ (par) → ทุนจดทะเบียน = หุ้นทั้งหมด × par');
 SELECT t.fails($$UPDATE public.private_business_details SET par_value = 0 WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด'$$, 'pbd_par_value_ck', 'par ต้องมากกว่า 0');
+-- โลโก้บริษัท (data URL รูปเล็ก)
+UPDATE public.private_business_details SET logo_data = 'data:image/png;base64,iVBORw0KGgo=' WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด';
+SELECT t.ok((SELECT logo_data LIKE 'data:image/png;base64,%' FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด'),
+            'โลโก้: บันทึกรูป PNG (data URL) ได้');
+SELECT t.fails($$UPDATE public.private_business_details SET logo_data = 'https://example.com/logo.png' WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด'$$,
+               'pbd_logo_data_ck', 'โลโก้: ลิงก์ภายนอก / ไม่ใช่รูป base64 ไม่รับ');
+SELECT t.fails(format($$UPDATE public.private_business_details SET logo_data = %L WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด'$$,
+                      'data:image/png;base64,' || repeat('A', 60000)), 'pbd_logo_data_ck', 'โลโก้: ใหญ่เกิน 60,000 ตัวอักษรไม่รับ');
+UPDATE public.private_business_details SET logo_data = NULL WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด';
+SELECT t.ok((SELECT logo_data IS NULL FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด'), 'โลโก้: ลบได้ (กลับเป็นตัวย่อ)');
 -- หุ้นหารไม่ลงตัว (3 คน × 3,000 หุ้น → 33.33…% × 3 = 99.99999…%) → หน้า Opening ต้องไม่เตือน "ระบุเจ้าของไม่ครบ"
 SELECT public.set_asset_ownership(t.a('บริษัทหุ้นทดสอบ'),
   jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'shares',3000), jsonb_build_object('person_id',t.p('คุณแม่'),'shares',3000),

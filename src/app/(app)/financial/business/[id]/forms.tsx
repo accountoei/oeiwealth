@@ -6,6 +6,7 @@ import { buyShares, recordDividend, sellShares, undoShareSale, updateBusinessInf
 import { money, qty } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
+import BusinessBadge from "../badge";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -54,7 +55,7 @@ export function DividendForm({ assetId, banks, today, minDate }: { assetId: stri
 /** แก้รายละเอียดธุรกิจ (ชื่อรายการ · ข้อมูลบริษัท · หุ้น · เงินลงทุน · หมายเหตุ) */
 export function BusinessInfoForm({ assetId, byShares, v }: {
   assetId: string; byShares: boolean;
-  v: { name: string; company_name: string; registration_no: string | null; business_type: string | null; total_shares: number | null; par_value: number | null;
+  v: { name: string; logo_data: string | null; company_name: string; registration_no: string | null; business_type: string | null; total_shares: number | null; par_value: number | null;
     shares_owned: number | null; company_ownership_percent: number | null; investment_cost: number | null; notes: string | null };
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateBusinessInfo, {});
@@ -78,12 +79,63 @@ export function BusinessInfoForm({ assetId, byShares, v }: {
         </>
       )}
       <label className="text-sm md:col-span-3">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
+      <LogoPicker name={v.name} current={v.logo_data} />
       <div className="flex items-center gap-3 md:col-span-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
     </form>
+  );
+}
+
+/* ---------------------------------------------------------------- โลโก้บริษัท
+   ย่อรูปในเบราว์เซอร์เป็น 128×128 (คงสัดส่วน · พื้นโปร่งใส) → data URL · ส่งไปบันทึกเฉพาะเมื่อเปลี่ยน / ลบ
+   ฐานข้อมูลรับ png / jpeg / webp ไม่เกิน 60,000 ตัวอักษร (pbd_logo_data_ck) */
+const LOGO_PX = 128;
+const LOGO_MAX = 60000;
+
+async function shrinkLogo(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, bad) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("อ่านรูปไม่ได้")); i.src = url;
+    });
+    const scale = Math.min(LOGO_PX / img.width, LOGO_PX / img.height, 1);
+    const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d")!.drawImage(img, 0, 0, w, h);
+    for (const [type, q] of [["image/webp", 0.9], ["image/png", undefined], ["image/webp", 0.7], ["image/jpeg", 0.8]] as const) {
+      const d = c.toDataURL(type, q);
+      if (d.startsWith(`data:${type};base64,`) && d.length <= LOGO_MAX) return d;
+    }
+    throw new Error("รูปใหญ่เกินไป — ลองใช้รูปที่เรียบง่ายกว่านี้");
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function LogoPicker({ name, current }: { name: string; current: string | null }) {
+  const [logo, setLogo] = useState<string | null>(current);
+  const [err, setErr] = useState("");
+  const changed = logo !== current;
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-sm md:col-span-3">
+      <span className="text-slate-700">โลโก้บริษัท</span>
+      <BusinessBadge logo={logo} name={name} color="#94a3b8" className="h-12 w-14" />
+      <label className="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">
+        {logo ? "เปลี่ยนรูป" : "เลือกรูป"}
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" className="hidden"
+          onChange={async (e) => {
+            const f = e.target.files?.[0]; e.target.value = "";
+            if (!f) return;
+            setErr("");
+            try { setLogo(await shrinkLogo(f)); } catch (x) { setErr(x instanceof Error ? x.message : "อ่านรูปไม่ได้"); }
+          }} />
+      </label>
+      {logo && <button type="button" onClick={() => setLogo(null)} className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-red-700 hover:bg-red-50">ลบโลโก้</button>}
+      {changed && <input type="hidden" name="logo_data" value={logo ?? ""} />}
+      <span className="text-xs text-slate-500">{changed ? "ยังไม่บันทึก — กด “บันทึกรายละเอียด”" : "ไม่ใส่ = แสดงตัวย่อสีเหมือนเดิม · ระบบย่อรูปให้เอง"}</span>
+      {err && <span className="w-full text-xs text-red-600">{err}</span>}
+    </div>
   );
 }
 

@@ -6,18 +6,14 @@ import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
+import BusinessBadge from "./badge";
 
-type Row = { id: string; asset_id: string; company_name: string; business_type: string | null; company_ownership_percent: number | null;
+type Row = { id: string; asset_id: string; company_name: string; logo_data: string | null; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null; par_value: number | null; investment_cost: number | null;
   status: string; assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null } };
 type Own = { asset_id: string; person_id: string; ownership_percent: number; shares: number | null; cost_per_share: number | null; start_date: string; end_date: string | null };
 
 const COLORS = ["#2563eb", "#7c3aed", "#f43f5e", "#f59e0b", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899", "#14b8a6", "#64748b"];
-/** ตัวย่อบนป้าย: ตัวอักษรภาษาอังกฤษ / ตัวเลข 4 ตัวแรกของชื่อรายการ (ไม่มี = 2 ตัวแรก) */
-const initials = (name: string) => {
-  const latin = name.replace(/[^A-Za-z0-9]/g, "");
-  return (latin || name).slice(0, latin ? 4 : 2).toUpperCase();
-};
 
 export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
   const sp = await searchParams;
@@ -31,7 +27,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const today = todayBangkok();
   const yearStart = `${today.slice(0, 4)}-01-01`;
   const { data, error } = await supabase.from("private_business_details")
-    .select("id,asset_id,company_name,business_type,company_ownership_percent,total_shares,shares_owned,par_value,investment_cost,status,assets!inner(name,currency,current_value,current_value_date,deleted_at)")
+    .select("id,asset_id,company_name,logo_data,business_type,company_ownership_percent,total_shares,shares_owned,par_value,investment_cost,status,assets!inner(name,currency,current_value,current_value_date,deleted_at)")
     .is("deleted_at", null).is("assets.deleted_at", null).order("created_at");
   const all = (data as unknown as Row[] | null) ?? [];
   const ids = all.map((r) => r.asset_id);
@@ -170,8 +166,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                   <td className="px-3 py-3 align-top">
                     <div className="flex items-start gap-3">
                       {ordering && <MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (x) => x.asset_id)} />}
-                      <span className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-white"
-                        style={{ background: color.get(r.asset_id) }}>{initials(r.assets.name)}</span>
+                      <BusinessBadge logo={r.logo_data} name={r.assets.name} color={color.get(r.asset_id) ?? COLORS[0]} />
                       <div className="min-w-0">
                         <Link href={`/financial/business/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
                         <div className="truncate text-xs text-slate-500">{r.company_name}</div>

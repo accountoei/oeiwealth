@@ -69,6 +69,8 @@ export async function updateBusinessInfo(_: ActionState, form: FormData): Promis
   // เจ้าของเป็น % (แบบเดิม): หุ้นที่ถือ / % ของบริษัท แก้เองได้ · เป็นจำนวนหุ้น: ระบบคำนวณให้
   if (form.has("shares_owned")) patch.shares_owned = num(form.get("shares_owned"));
   if (form.has("company_ownership_percent")) patch.company_ownership_percent = num(form.get("company_ownership_percent"));
+  // โลโก้: ส่งมาเฉพาะเมื่อเปลี่ยน / ลบ (ว่าง = ลบ)
+  if (form.has("logo_data")) patch.logo_data = str(form.get("logo_data"));
   const { error: e2 } = await supabase.from("private_business_details").update(patch).eq("asset_id", assetId);
   if (e2) return { error: friendlyError(e2.message) };
   return done(assetId, "บันทึกรายละเอียดแล้ว");
