@@ -49,6 +49,8 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
     supabase.from("insurance_policies").select("person_id").eq("status", "ACTIVE").is("deleted_at", null),
   ]);
   const nwOf = new Map((nwRows ?? []).map((r) => [r.person_id as string, r]));
+  // Net Worth ทั้งครอบครัว (รวมรายการที่ไม่ได้ระบุเจ้าของ) → % ของแต่ละคน
+  const familyNw = (nwRows ?? []).reduce((t, r) => t + Number(r.net_worth ?? 0), 0);
   const policiesOf = new Map<string, number>();
   (policyRows ?? []).forEach((r) => { if (r.person_id) policiesOf.set(r.person_id, (policiesOf.get(r.person_id) ?? 0) + 1); });
   const all = persons ?? [];
@@ -183,6 +185,18 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
         {tree ? <div className="mt-4"><FamilyTree people={list} kin={all} headId={headId} /></div> : (
         <div className="divide-y divide-slate-100">
+          {list.length > 0 && !ordering && (
+            <div className="hidden items-center gap-3 pb-1.5 text-xs text-slate-500 sm:flex">
+              <span className="w-6" />
+              <div className="flex flex-1 items-center gap-3 px-2">
+                <span className="w-11 shrink-0" />
+                <span className="flex-1">สมาชิก</span>
+                <span className="hidden md:block">สิ่งที่ต้องดู</span>
+                <span className="w-40 shrink-0 text-right">Net Worth (% ของครอบครัว)</span>
+                <span className="invisible shrink-0">›</span>
+              </div>
+            </div>
+          )}
           {list.length === 0 && <p className="py-2 text-sm text-slate-500">{filtering ? "ไม่พบสมาชิกตามตัวกรอง" : "ยังไม่มีสมาชิก"}</p>}
           {list.map((p, i) => (
             <div key={p.id} className="flex flex-wrap items-center gap-3 py-2">
@@ -231,9 +245,12 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                 </div>
                 {(() => {
                   const nw = nwOf.get(p.id);
-                  if (!nw) return null;
+                  const pct = nw && familyNw > 0 ? (Number(nw.net_worth) / familyNw) * 100 : null;
                   return (
-                    <div className="hidden w-40 shrink-0 text-right text-sm font-medium tabular-nums text-slate-900 sm:block">{money(nw.net_worth, "THB", 0)}</div>
+                    <div className="hidden w-40 shrink-0 text-right tabular-nums sm:block">
+                      {nw && <div className="text-sm font-medium text-slate-900">{money(nw.net_worth, "THB", 0)}</div>}
+                      {pct != null && <div className="text-[11px] text-slate-500">{pct.toFixed(1)}%</div>}
+                    </div>
                   );
                 })()}
                 <span className="shrink-0 text-slate-300">›</span>
