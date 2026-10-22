@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 
 function done(id: string, msg: string): ActionState {
   ["/financial/business", `/financial/business/${id}`, "/income-expenses", "/"].forEach((p) => revalidatePath(p));

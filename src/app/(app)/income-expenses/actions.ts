@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, endpointValue, missingEndpoint, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 
 function done(msg: string, extra: string[] = []): ActionState {
   revalidatePath("/income-expenses");

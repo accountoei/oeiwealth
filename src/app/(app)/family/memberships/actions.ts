@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
 
-export type ActionState = { error?: string; ok?: string };
+export type ActionState = FormState;
 
 export async function addMembership(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();

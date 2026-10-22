@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 
-export type ActionState = { error?: string; ok?: string; id?: string; name?: string; unit?: string };
+export type ActionState = FormState & { id?: string; name?: string; unit?: string };
 
 export async function createAlternative(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
