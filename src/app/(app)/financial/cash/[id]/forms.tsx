@@ -95,7 +95,8 @@ export function AccountNoPanel({ assetId, bankAccountId, masked, canReveal, canS
 }
 
 type Acc = { asset_id: string; name: string; bank_name: string; account_name: string | null; account_type: string;
-  branch: string | null; interest_rate: number | null; maturity_date: string | null; notes: string | null };
+  branch: string | null; interest_rate: number | null; maturity_date: string | null; notes: string | null;
+  overdraft_limit: number | null; overdraft_rate: number | null };
 
 export function EditInfoForm({ acc }: { acc: Acc }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateAccountInfo, {});
@@ -114,6 +115,9 @@ export function EditInfoForm({ acc }: { acc: Acc }) {
       <label className="text-sm">สาขา<input name="branch" defaultValue={acc.branch ?? ""} className={field} /></label>
       <label className="text-sm">อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={acc.interest_rate ?? ""} className={field} /></label>
       <label className="text-sm">วันครบกำหนด<input name="maturity_date" type="date" defaultValue={acc.maturity_date ?? ""} className={field} /></label>
+      <label className="text-sm">วงเงินเบิกเกินบัญชี O/D<input name="overdraft_limit" inputMode="decimal" defaultValue={acc.overdraft_limit ?? ""} placeholder="ว่าง = ไม่มี O/D" className={field} /></label>
+      <label className="text-sm">ดอกเบี้ย O/D (% ต่อปี)<input name="overdraft_rate" inputMode="decimal" defaultValue={acc.overdraft_rate ?? ""} className={field} /></label>
+      <p className="text-xs text-slate-500 md:col-span-2">มีวงเงิน O/D → ยอดติดลบได้ไม่เกินวงเงิน · ส่วนที่ติดลบนับเป็นหนี้สิน (ขึ้นที่ Liabilities) · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo;</p>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={acc.notes ?? ""} className={field} /></label>
       <div className="md:col-span-2 flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูลบัญชี"}</button>

@@ -34,7 +34,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder ? sp.order ?? "" : "";        // "1" = เงินกู้ · "cards" = บัตร
   const paths = ["/liabilities"];
-  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: persons }, { data: family }, { data: banksRaw }] = await Promise.all([
+  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: persons }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }] = await Promise.all([
     loadPersonView(sp.p, { liabilities: true }),
     supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
     loadSortMap("liabilities"),
@@ -44,6 +44,8 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,status"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,status,overdraft_limit,overdraft_rate").not("overdraft_limit", "is", null).order("name"),
+    supabase.rpc("bank_balances_at", { p_date: todayBangkok() }),
   ]);
   // มุมมองรายบุคคล: เฉพาะหนี้ที่คนนั้นมีส่วน · ยอด × สัดส่วน (เงินกู้ตามผู้รับผิดชอบ · บัตรตามเจ้าของบัตร · เงินประกันตามเจ้าของทรัพย์)
   const all = ((data as Row[] | null) ?? []).filter((r) => pv.showLiability(r.source_id))
@@ -51,6 +53,17 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       amount: r.amount == null ? null : Number(r.amount) * pv.liabilityShare(r.source_id) }));
   const totals = new Map<string, number>();
   all.forEach((r) => totals.set(r.currency, (totals.get(r.currency) ?? 0) + Number(r.amount ?? 0)));
+  // เงินเบิกเกินบัญชี (O/D): บัญชีกระแสรายวันที่มีวงเงิน · ใช้ไป = ยอดติดลบ (ส่วนของสมาชิกที่เลือก = ตามเจ้าของบัญชี)
+  const calc = new Map(((balRaw as { asset_id: string; calculated: number | null }[] | null) ?? []).map((r) => [r.asset_id, r.calculated == null ? null : Number(r.calculated)]));
+  const ods = ((odRaw as { asset_id: string; name: string; currency: string; bank_name: string; status: string; overdraft_limit: number; overdraft_rate: number | null }[] | null) ?? [])
+    .filter((o) => pv.showAsset(o.asset_id) && (o.status === "ACTIVE" || (calc.get(o.asset_id) ?? 0) < 0))
+    .map((o) => {
+      const bal = calc.get(o.asset_id) ?? null, share = pv.assetShare(o.asset_id);
+      return { ...o, bal, limit: Number(o.overdraft_limit) * share, used: Math.max(-(bal ?? 0), 0) * share };
+    });
+  ods.forEach((o) => { if (o.used > 0) totals.set(o.currency, (totals.get(o.currency) ?? 0) + o.used); });
+  const odUsed = ods.reduce((t, o) => t + (o.currency === "THB" ? o.used : 0), 0);
+  const odLimit = ods.reduce((t, o) => t + (o.currency === "THB" ? o.limit : 0), 0);
   // เงินกู้ (ตามลำดับที่ตั้งไว้) → เงินประกันการเช่า
   const rows = all.filter((r) => r.liability_source !== "CREDIT_CARD").map((r, i) => ({ r, i }))
     .sort((a, b) => (a.r.liability_source === "LOAN" ? 0 : 1) - (b.r.liability_source === "LOAN" ? 0 : 1)
@@ -83,7 +96,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Liabilities</h1>
-          <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า</p>
+          <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า · เงินเบิกเกินบัญชี (O/D)</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <PersonFilter persons={pv.persons} value={pv.personId} />
@@ -102,7 +115,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
           <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้สินรวม"}</div>
           {[...totals.entries()].length === 0 ? <div className="mt-1 text-xl font-semibold tabular-nums">{money(0, "THB")}</div>
             : [...totals.entries()].map(([ccy, v]) => <div key={ccy} className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(v, ccy)}</div>)}
-          <div className="text-xs text-slate-500">เงินกู้ + บัตรเครดิต + เงินประกันการเช่า</div>
+          <div className="text-xs text-slate-500">เงินกู้ + บัตรเครดิต + เงินประกันการเช่า{ods.length > 0 ? " + O/D" : ""}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เงินกู้ ({loans.length} รายการ)</div>
@@ -116,6 +129,35 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         </div>
         <StatBox label={<>เงินประกันการเช่า ({depRows.length} สัญญา)</>} value={money(depTotal, "THB")} valueClass="text-red-700" sub="ต้องคืนผู้เช่าเมื่อหมดสัญญา" />
       </section>
+
+      {ods.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="flex flex-wrap items-baseline justify-between gap-3 px-4 pt-4">
+            <h2 className="font-medium text-slate-900">เงินเบิกเกินบัญชี (O/D)</h2>
+            <span className="text-xs text-slate-500">ใช้ไป {money(odUsed, "THB")} จากวงเงิน {money(odLimit, "THB")} · ยอดมาจากบัญชีกระแสรายวัน (อัปเดตยอดที่หน้า Cash &amp; Bank)</span>
+          </div>
+          <table className="mt-2 w-full min-w-[44rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-4 py-2">บัญชี</th><th className="px-4 text-right">วงเงิน</th><th className="px-4 text-right">ใช้ไป</th>
+                <th className="px-4 text-right">วงเงินคงเหลือ</th><th className="px-4 text-right">ดอกเบี้ย O/D</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {ods.map((o) => (
+                <tr key={o.asset_id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2"><Link href={`/financial/cash/${o.asset_id}`} className="font-medium text-slate-900 hover:underline">{o.name}</Link>
+                    <div className="text-xs text-slate-500">{o.bank_name} · {o.currency}</div></td>
+                  <td className="px-4 text-right tabular-nums">{money(o.limit, o.currency)}</td>
+                  <td className={`px-4 text-right tabular-nums ${o.used > 0 ? "font-medium text-red-700" : "text-slate-400"}`}>{o.used > 0 ? money(o.used, o.currency) : "ยังไม่ใช้"}</td>
+                  <td className={`px-4 text-right tabular-nums ${o.limit - o.used < 0 ? "text-red-700" : ""}`}>{money(o.limit - o.used, o.currency)}
+                    {o.limit - o.used < 0 && <div className="text-xs">เกินวงเงิน</div>}</td>
+                  <td className="px-4 text-right tabular-nums">{o.overdraft_rate != null ? `${Number(o.overdraft_rate).toFixed(2)}%` : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">ยอดติดลบของบัญชีนับเป็นหนี้สินใน Net Worth อัตโนมัติ · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; จากบัญชีนั้น · ตั้งวงเงินที่หน้าบัญชี → แก้ไขข้อมูล</p>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
