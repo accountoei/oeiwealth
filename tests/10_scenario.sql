@@ -2581,6 +2581,59 @@ SELECT t.fails($$SELECT public.batch_record_bank_interest(jsonb_build_array(
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz7. ประกัน: ตารางมูลค่าเวนคืนตามสัญญา → ลงมูลค่าเวนคืนให้เอง (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE tcv(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tcv TO authenticated;
+INSERT INTO tcv SELECT 'pol', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'สะสมทรัพย์ทดสอบ', 'currency', 'THB', 'premium', 30000,
+  'start_date', (current_date - interval '2 years' - interval '10 days')::date));
+SELECT public.set_insurance_schedule((SELECT id FROM tcv WHERE k = 'pol'), 'PREMIUM',
+  jsonb_build_array(jsonb_build_object('due_date', current_date - 20, 'amount', 30000)));
+-- ปีที่ 1 เข้าเงื่อนไข · ปีที่ 2 ยังค้างเบี้ยก่อนวันนั้น · ปีที่ 3 ยังไม่ถึง
+SELECT t.ok((SELECT (r->>'count')::int = 3 AND (r->'sync'->>'created')::boolean AND (r->'sync'->>'policy_year')::int = 1
+               FROM public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'), jsonb_build_array(
+                 jsonb_build_object('policy_year', 1, 'value', 10000, 'value_date', current_date - 30),
+                 jsonb_build_object('policy_year', 2, 'value', 25000, 'value_date', current_date - 10),
+                 jsonb_build_object('policy_year', 3, 'value', 40000))) r),
+            'ตั้งตารางมูลค่าเวนคืน 3 ปี → สร้างมูลค่าเวนคืนจากปีที่ 1 ให้เอง');
+SELECT t.ok((SELECT a.current_value = 10000 AND v.source = 'STATEMENT' FROM public.insurance_policies i
+               JOIN public.assets a ON a.id = i.cash_value_asset_id JOIN public.asset_valuations v ON v.asset_id = a.id
+              WHERE i.id = (SELECT id FROM tcv WHERE k = 'pol')),
+            'มูลค่าเวนคืน 10,000 ตามตารางปีที่ 1');
+SELECT t.ok((SELECT value_date = (current_date - interval '2 years' - interval '10 days' + interval '3 years')::date FROM public.insurance_cash_value_table
+              WHERE policy_id = (SELECT id FROM tcv WHERE k = 'pol') AND policy_year = 3 AND deleted_at IS NULL),
+            'ไม่ใส่วันที่ → วันครบปีกรมธรรม์ (วันเริ่ม + N ปี)');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'เบี้ยสะสมทรัพย์ทดสอบ', 'amount', 30000,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurance_schedule_line_id', (SELECT id FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM tcv WHERE k = 'pol') AND deleted_at IS NULL)));
+SELECT t.ok((SELECT (r->>'added')::int = 1 AND (r->>'value')::numeric = 25000 FROM public.sync_insurance_cash_value((SELECT id FROM tcv WHERE k = 'pol')) r),
+            'จ่ายเบี้ยครบ → ลงมูลค่าเวนคืนปีที่ 2 ให้เอง');
+SELECT t.ok((SELECT a.current_value = 25000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+                  WHERE i.id = (SELECT id FROM tcv WHERE k = 'pol')),
+            'มูลค่าเวนคืนปัจจุบัน = 25,000 ตามตารางปีที่ 2');
+SELECT t.ok((SELECT (r->>'added')::int = 0 FROM public.sync_insurance_cash_value((SELECT id FROM tcv WHERE k = 'pol')) r),
+            'เรียกซ้ำ → ไม่ลงซ้ำ');
+SELECT t.ok((SELECT (r->'sync'->>'added')::int = 0 FROM public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'), jsonb_build_array(
+               jsonb_build_object('policy_year', 1, 'value', 10000, 'value_date', current_date - 30),
+               jsonb_build_object('policy_year', 2, 'value', 26000, 'value_date', current_date - 10))) r),
+            'แก้ตาราง → ไม่ลงซ้ำ');
+SELECT t.ok((SELECT a.current_value = 25000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+                  WHERE i.id = (SELECT id FROM tcv WHERE k = 'pol'))
+            AND (SELECT count(*) = 2 FROM public.insurance_cash_value_table WHERE policy_id = (SELECT id FROM tcv WHERE k = 'pol') AND deleted_at IS NULL),
+            'แก้ตาราง → แทนทั้งตาราง · ไม่ทับมูลค่าเวนคืนที่ลงแล้ว');
+SELECT t.fails($$SELECT public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'),
+  '[{"policy_year":1,"value":1},{"policy_year":1,"value":2}]')$$, 'ปีกรมธรรม์ซ้ำ', 'ปีกรมธรรม์ซ้ำไม่ได้');
+INSERT INTO tcv SELECT 'nostart', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ไม่มีวันเริ่ม', 'currency', 'THB'));
+SELECT t.fails($$SELECT public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'nostart'), '[{"policy_year":1,"value":1}]')$$,
+  'ยังไม่มีวันเริ่มสัญญา', 'ไม่มีวันเริ่มสัญญา → ต้องใส่วันที่เอง');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.ok((SELECT (r->>'added')::int = 0 FROM public.sync_insurance_cash_value((SELECT id FROM tcv WHERE k = 'pol')) r),
+            'CONTRIBUTOR เรียกอัปเดตตามตารางได้ (หลังบันทึกจ่ายเบี้ย)');
+SELECT t.fails($$SELECT public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'), '[]')$$,
+  'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางมูลค่าเวนคืนไม่ได้');
 \echo '== 13zz7. Private Business: ปันผลแยกตามผู้ถือหุ้น + มูลค่าหลายกิจการ (ROLLBACK ท้ายหัวข้อ)'
 BEGIN;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');

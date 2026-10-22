@@ -12,7 +12,7 @@ export default function DashboardFilters({ persons, months, person, month }: {
     const q = new URLSearchParams();
     if (p) q.set("p", p);
     if (m) q.set("m", m);
-    router.push(q.size ? `/?${q}` : "/");
+    router.push(q.size ? `/?${q}` : "/", { scroll: false });
   };
   const sel = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm";
   return (
