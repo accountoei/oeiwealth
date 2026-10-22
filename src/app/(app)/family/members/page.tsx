@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ageFrom, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
+import { ageFrom, daysToBirthday, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
 import { movePerson } from "./actions";
 import { AddPersonForm, FamilyNameForm } from "./forms";
 import { FamilyTree } from "./tree";
@@ -42,10 +42,15 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   };
   const cur = { archived: sp.archived === "1", q, gen: fGen, g: fG, missing: fMissing };
 
-  const [{ data: family }, { data: persons, error }] = await Promise.all([
+  const [{ data: family }, { data: persons, error }, { data: nwRows }, { data: policyRows }] = await Promise.all([
     supabase.from("families").select("name,head_person_id").maybeSingle(),
-    supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,full_name_en,title_prefix,gender,national_id,education_level,occupation,workplace,job_title,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,full_name_en,title_prefix,gender,national_id,education_level,occupation,workplace,job_title,passport_expiry,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("v_net_worth_by_person").select("person_id,total_assets,total_liabilities,net_worth"),
+    supabase.from("insurance_policies").select("person_id").eq("status", "ACTIVE").is("deleted_at", null),
   ]);
+  const nwOf = new Map((nwRows ?? []).map((r) => [r.person_id as string, r]));
+  const policiesOf = new Map<string, number>();
+  (policyRows ?? []).forEach((r) => { if (r.person_id) policiesOf.set(r.person_id, (policiesOf.get(r.person_id) ?? 0) + 1); });
   const all = persons ?? [];
   const archivedCount = all.filter((p) => p.status === "DECEASED").length;
   const shown = showArchived ? all : all.filter((p) => p.status !== "DECEASED");
@@ -56,6 +61,25 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const missingOf = (p: (typeof all)[number]) => [
     !p.full_name_th && "ชื่อ-นามสกุลจริง", !genderOf(p, all) && "เพศ", !p.birth_date && "วันเกิด", !p.national_id && "เลขบัตรประชาชน",
   ].filter((x): x is string => !!x);
+  /** ป้ายด้านขวาของแถว: เรื่องที่ต้องดู (พาสปอร์ต · วันเกิด) + กรมธรรม์ + ข้อมูลยังไม่ครบ */
+  const badgesOf = (p: (typeof all)[number]) => {
+    const b: { text: string; cls: string; title?: string }[] = [];
+    if (p.status !== "DECEASED") {
+      if (p.passport_expiry) {
+        const months = (Date.parse(p.passport_expiry) - Date.parse(today)) / (30.44 * 86400000);
+        if (months < 0) b.push({ text: "พาสปอร์ตหมดอายุแล้ว", cls: "bg-red-50 text-red-700" });
+        else if (months <= 6) b.push({ text: months < 1 ? "พาสปอร์ตหมดอายุใน 1 เดือน" : `พาสปอร์ตหมดอายุใน ${Math.ceil(months)} เดือน`, cls: "bg-amber-50 text-amber-700" });
+      }
+      const d = daysToBirthday(p.birth_date, today);
+      if (d === 0) b.push({ text: "วันเกิดวันนี้", cls: "bg-emerald-50 text-emerald-700" });
+      else if (d != null && d <= 30) b.push({ text: `วันเกิดอีก ${d} วัน`, cls: "bg-sky-50 text-sky-700" });
+    }
+    const pol = policiesOf.get(p.id) ?? 0;
+    if (pol > 0) b.push({ text: `กรมธรรม์ ${pol}`, cls: "bg-slate-100 text-slate-600" });
+    const miss = missingOf(p);
+    if (miss.length > 0) b.push({ text: `ขาด ${miss.length} ช่อง`, cls: "bg-amber-50 text-amber-700", title: `ยังไม่ได้กรอก: ${miss.join(", ")}` });
+    return b;
+  };
   const needle = q.toLowerCase();
   const list = !filtering ? shown : shown.filter((p) =>
     (!needle || [p.name, p.nickname, p.full_name_th, p.full_name_en].some((x) => x?.toLowerCase().includes(needle)))
@@ -181,7 +205,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={p.photo} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
                   : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-base text-slate-500">{p.name.slice(0, 1)}</span>}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-slate-900">
                     {p.name}{p.nickname && <span className="font-normal text-slate-500"> ({p.nickname})</span>}
                   </div>
@@ -197,11 +221,26 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                   })()}
                   {fMissing && <div className="truncate text-xs text-amber-700">ยังไม่ได้กรอก: {missingOf(p).join(", ")}</div>}
                 </div>
-                {p.status !== "ACTIVE" && (
-                  <span className={`ml-auto shrink-0 rounded px-2 py-0.5 text-xs ${p.status === "DECEASED" ? "bg-slate-200 text-slate-700" : "bg-amber-50 text-amber-700"}`}>
-                    {PERSON_STATUS_LABEL[p.status]}
-                  </span>
-                )}
+                <div className="hidden max-w-[45%] flex-wrap justify-end gap-1 md:flex">
+                  {p.status !== "ACTIVE" && (
+                    <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${p.status === "DECEASED" ? "bg-slate-200 text-slate-700" : "bg-amber-50 text-amber-700"}`}>
+                      {PERSON_STATUS_LABEL[p.status]}
+                    </span>
+                  )}
+                  {badgesOf(p).map((x) => <span key={x.text} title={x.title} className={`shrink-0 rounded px-2 py-0.5 text-xs ${x.cls}`}>{x.text}</span>)}
+                </div>
+                {(() => {
+                  const nw = nwOf.get(p.id);
+                  if (!nw) return null;
+                  return (
+                    <div className="hidden w-40 shrink-0 text-right sm:block">
+                      <div className="text-sm font-medium tabular-nums text-slate-900">{money(nw.net_worth, "THB", 0)}</div>
+                      <div className="truncate text-[11px] tabular-nums text-slate-500">
+                        สินทรัพย์ {money(nw.total_assets, undefined, 0)}{Number(nw.total_liabilities) > 0 && ` · หนี้ ${money(nw.total_liabilities, undefined, 0)}`}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <span className="shrink-0 text-slate-300">›</span>
               </Link>
             </div>

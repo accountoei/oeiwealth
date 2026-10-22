@@ -398,6 +398,17 @@ export function kinLabel(p: KinPerson, people: KinPerson[], headId: string | nul
   }
 }
 
+/** อีกกี่วันถึงวันเกิดครั้งถัดไป (0 = วันนี้) · ว่าง → null · เกิด 29 ก.พ. ปีที่ไม่มี → 1 มี.ค. */
+export function daysToBirthday(birth: string | null | undefined, today: string): number | null {
+  if (!birth) return null;
+  const [, bm, bd] = birth.slice(0, 10).split("-").map(Number);
+  const [ty, tm, td] = today.slice(0, 10).split("-").map(Number);
+  const t = Date.UTC(ty, tm - 1, td);
+  let next = Date.UTC(ty, bm - 1, bd);
+  if (next < t) next = Date.UTC(ty + 1, bm - 1, bd);
+  return Math.round((next - t) / 86400000);
+}
+
 /** อายุ (ปีเต็ม) จากวันเกิด YYYY-MM-DD · วันเกิดในอนาคต / ว่าง → null */
 export function ageFrom(birth: string | null | undefined, today: string): number | null {
   if (!birth || birth > today) return null;
