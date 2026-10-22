@@ -6,6 +6,8 @@ import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, 
 import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
 import { MaturityForm, type CashAcct, type Holding } from "../../forms";
+import { scheduleOf } from "@/lib/coupon-schedule";
+import { ScheduleBox } from "../../../due";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
 import { ConvertUnitsForm, FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 import EditToggle from "@/components/EditToggle";
@@ -43,7 +45,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
     supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode").eq("id", hid).maybeSingle(),
+    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode,face_value,interest_rate,coupon_frequency").eq("id", hid).maybeSingle(),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
@@ -69,6 +71,11 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const coupons = txList.filter((t) => ["COUPON", "INTEREST", "DIVIDEND"].includes(t.transaction_type));
   const couponSum = coupons.reduce((s, t) => s + Number(t.amount) - Number(t.tax ?? 0), 0);
   const canMature = h.status === "ACTIVE" && ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
+  // ตารางรับดอกเบี้ย / เงินต้น (หุ้นกู้: ข้อมูลในแก้ไขข้อมูล · FCN: รายละเอียด FCN)
+  const hasCoupon = ["BOND", "OTHER"].includes(h.holding_type);
+  const sched = ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type)
+    ? scheduleOf({ ...h, face_value: autoRow?.face_value, interest_rate: autoRow?.interest_rate, coupon_frequency: autoRow?.coupon_frequency }, fcn, txList)
+    : [];
   const pct = (v: number | null) => (v == null ? "-" : `${Number(v)}%`);
   // วิธีนับ: มูลค่าก้อนเดียว = ไม่แสดงจำนวน / ราคาต่อหน่วย (เก็บภายในเป็น 1 × มูลค่า)
   const lump = autoRow?.valuation_mode === "LUMP_SUM";
@@ -166,7 +173,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
             }
             edit={
               <div className="space-y-5">
-                <HoldingInfoForm id={hid} paths={paths} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
+                <HoldingInfoForm id={hid} paths={paths} coupon={hasCoupon ? { face_value: autoRow?.face_value ?? null, interest_rate: autoRow?.interest_rate ?? null,
+                  coupon_frequency: autoRow?.coupon_frequency ?? null, currency: h.currency } : null} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
                   autoBlocked={lump ? "มูลค่าก้อนเดียวดึงราคาอัตโนมัติไม่ได้ — แปลงเป็นจำนวนหน่วยก่อน" : h.holding_type === "FUND" && Number(h.quantity) === 1 && !h.auto_price ? "กองทุนนี้มีจำนวน 1 หน่วย (มักเป็นมูลค่ารวมที่ใส่แทนจำนวน) — แปลงเป็นจำนวนหน่วยก่อน" : null}
                   v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }} />
                 {canWrite && canMature && (
@@ -190,6 +198,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </section>
+
+      {sched.length > 0 && <ScheduleBox rows={sched} currency={h.currency} today={today} />}
 
       {ret.length > 0 && <ReturnsTable rows={ret} local={retLocal} portfolioCurrency={a.currency} rates={fxRates} title="ผลตอบแทนของหลักทรัพย์นี้" />}
 

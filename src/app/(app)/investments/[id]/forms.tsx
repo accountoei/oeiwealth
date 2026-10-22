@@ -6,7 +6,7 @@ import { useRowPanel } from "@/components/RowPanel";
 import {
   addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
 } from "../actions";
-import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, ROW_BTN, money, qty, thDate } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -574,15 +574,16 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
 
 /* ------------------------------------------------------------------ บันทึกรับเงินต้น (ครบกำหนด / Autocall)
    วันที่เดียว = วันที่เงินเข้าจริง (ไม่มีเงินระหว่างทาง) · ก่อนกดบันทึก มูลค่ายังอยู่ที่หลักทรัพย์ตัวนี้ */
-export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, inline = false }:
+export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, inline = false, label, defaultAmount }:
   { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string;
-    /** true = แสดงช่องกรอกในหน้าเลย (ในหน้าต่างแก้ไขข้อมูล) ไม่ต้องกดปุ่มเปิด */ inline?: boolean }) {
+    /** true = แสดงช่องกรอกในหน้าเลย (ในหน้าต่างแก้ไขข้อมูล) ไม่ต้องกดปุ่มเปิด */ inline?: boolean;
+    /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม (ปุ่มแถวตาราง) · ยอดเงินต้นที่คาดว่าจะได้รับ */ label?: string; defaultAmount?: number | null }) {
   const { open, setOpen, present, activeCls } = useActionSlot(inline, { modal: !inline });
   const cf = useConfirmSubmit();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>บันทึกรับเงินต้น</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={label ? ROW_BTN : activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>{label ?? "บันทึกรับเงินต้น"}</button>;
   if (!open) return trigger;
   const list = banks.filter((b) => b.currency === holding.currency);
   return present(trigger, (
@@ -593,7 +594,8 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
       <input type="hidden" name="holding_id" value={holding.id} />
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-xs">วันที่รับเงิน<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${small}`} /></label>
-        <label className="text-xs">เงินต้นที่ได้คืน ({holding.currency})<input name="amount" required inputMode="decimal" className={`mt-1 block w-32 ${small}`} /></label>
+        <label className="text-xs">เงินต้นที่ได้คืน ({holding.currency})<input name="amount" required inputMode="decimal"
+          defaultValue={defaultAmount != null ? String(defaultAmount) : undefined} className={`mt-1 block w-32 ${small}`} /></label>
         <label className="text-xs">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
         <label className="text-xs">ภาษี<input name="tax" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
       </div>

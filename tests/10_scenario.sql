@@ -2484,6 +2484,16 @@ SELECT public.add_holding(t.a('Brokerage USD'), 'EQUITY', 'หุ้น 1 หุ
   jsonb_build_object('quantity', 1, 'price', 2000, 'notes', 'ทดสอบ'), NULL) AS e1 \gset
 UPDATE public.investment_holdings SET auto_price = true WHERE id = :'e1';
 SELECT t.ok((SELECT auto_price FROM public.investment_holdings WHERE id = :'e1'), 'หุ้น 1 หุ้นจริงเปิดราคาอัตโนมัติได้');
+-- ข้อมูลตารางรับดอกเบี้ย (หุ้นกู้): เงินต้น · อัตรา · ความถี่
+SELECT public.add_holding(t.a('Brokerage USD'), 'BOND', 'หุ้นกู้ทดสอบตารางรับ', 'TB-1', 'THB', '2027-03-15',
+  jsonb_build_object('quantity', 1000, 'price', 1000, 'notes', 'ทดสอบ'), NULL) AS b1 \gset
+UPDATE public.investment_holdings SET face_value = 1000000, interest_rate = 4.5, coupon_frequency = 'SEMI_ANNUAL' WHERE id = :'b1';
+SELECT t.ok((SELECT face_value = 1000000 AND interest_rate = 4.5 AND coupon_frequency = 'SEMI_ANNUAL' FROM public.investment_holdings WHERE id = :'b1'),
+            'หุ้นกู้: บันทึกเงินต้น / อัตรา / จ่ายทุก 6 เดือนได้');
+SELECT t.fails(format($$UPDATE public.investment_holdings SET coupon_frequency = 'WEEKLY' WHERE id = %L$$, :'b1'), 'ih_coupon_frequency_ck',
+               'หุ้นกู้: ความถี่ต้องเป็น 1 / 3 / 6 / 12 เดือน หรือตอนครบกำหนด');
+SELECT t.fails(format($$UPDATE public.investment_holdings SET face_value = 0 WHERE id = %L$$, :'b1'), 'ih_face_value_ck', 'หุ้นกู้: เงินต้นต้องมากกว่า 0');
+SELECT t.fails(format($$UPDATE public.investment_holdings SET interest_rate = -1 WHERE id = %L$$, :'b1'), 'ih_interest_rate_ck', 'หุ้นกู้: อัตราติดลบไม่ได้');
 SELECT t.login('00000000-0000-0000-0000-00000000000c');
 SELECT t.fails(format($$SELECT public.restate_opening_units(%L, 10)$$, :'e1'), 'PERMISSION_DENIED', 'CONTRIBUTOR แปลงยอดตั้งต้นไม่ได้');
 RESET ROLE;
