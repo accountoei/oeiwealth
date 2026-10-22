@@ -99,10 +99,13 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
     const g = groups.get(pf.asset_id) ?? { name: pf.assets?.name ?? "พอร์ต", rows: [] };
     g.rows.push(x); groups.set(pf.asset_id, g);
   });
+  // กล่องสรุป: บรรทัดละ 1 สกุลเงิน · ทั้งสองกล่องใช้ลำดับสกุลเดียวกัน (บรรทัดตรงกัน · THB ก่อน)
+  const ccys = [...new Set(items.map(({ h }) => h.currency))].sort((a, b) => Number(b === "THB") - Number(a === "THB") || a.localeCompare(b));
   const sumBy = (rows: typeof items, pick: (x: (typeof items)[number]) => boolean) => {
     const m = new Map<string, number>();
     rows.filter(pick).forEach(({ r, h }) => m.set(h.currency, (m.get(h.currency) ?? 0) + Number(r.received ? r.received.amount : r.expected ?? 0)));
-    return [...m.entries()].map(([c, v]) => money(v, c)).join(" · ") || "-";
+    if (!ccys.length) return <div>-</div>;
+    return ccys.map((c) => <div key={c}>{m.has(c) ? money(m.get(c)!, c) : <span className="text-slate-400">- {c}</span>}</div>);
   };
   const months = monthOptions(goLive, today, 12, month);
   const open = items.filter(({ r }) => !r.received);
