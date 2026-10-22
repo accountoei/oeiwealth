@@ -11,6 +11,9 @@ import { ActionBar } from "@/components/ActionBar";
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`;
 
+/** ลำดับแสดงในกล่องสมาชิก: รุ่นบน → รุ่นล่าง */
+const REL_RANK = ["GRANDPARENT", "PARENT", "PARENT_IN_LAW", "SELF", "SPOUSE", "SIBLING", "CHILD", "CHILD_IN_LAW", "GRANDCHILD", "RELATIVE", "OTHER"];
+
 type Sp = { view?: string; archived?: string; order?: string; q?: string; gen?: string; g?: string; missing?: string };
 
 export default async function MembersPage({ searchParams }: { searchParams: Promise<Sp> }) {
@@ -92,8 +95,15 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const active = all.filter((p) => p.status === "ACTIVE");
   const ages = active.map((p) => ageFrom(p.birth_date, today)).filter((a): a is number => a != null);
   const head = all.find((p) => p.id === family?.head_person_id);
-  const byRel = new Map<string, number>();
-  active.forEach((p) => { const k = kinLabel(p, all, headId); byRel.set(k, (byRel.get(k) ?? 0) + 1); });
+  // นับทุกความสัมพันธ์ (ไม่ตัดแถว) · เรียงจากรุ่นบนลงล่าง · ผลรวม = จำนวนสมาชิก Active
+  const byRel = new Map<string, { n: number; rank: number }>();
+  active.forEach((p) => {
+    const k = p.id === headId ? "หัวหน้าครอบครัว" : kinLabel(p, all, headId);
+    const r = REL_RANK.indexOf(p.id === headId ? "SELF" : p.relationship ?? "");
+    const rank = r < 0 ? REL_RANK.length : r;
+    const cur = byRel.get(k);
+    byRel.set(k, { n: (cur?.n ?? 0) + 1, rank: Math.min(cur?.rank ?? rank, rank) });
+  });
 
   return (
     <div className="space-y-6">
@@ -105,29 +115,30 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         {me.role !== "VIEWER" && <ActionBar><AddPersonForm /></ActionBar>}
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว {isAdmin && <ActionBar><FamilyNameForm name={family?.name ?? ""} /></ActionBar>}</div>
           <div className="mt-1 truncate text-xl font-semibold">{family?.name || "-"}</div>
           <div className="mt-1 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">สมาชิก</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{active.length} <span className="text-sm font-normal text-slate-500">คน</span></div>
-          <div className="mt-1 text-xs text-slate-500">{archivedCount > 0 ? `Archived ${archivedCount} คน` : "ไม่มี Archived"}
-            {all.length - active.length - archivedCount > 0 && ` · สถานะอื่น ${all.length - active.length - archivedCount} คน`}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="text-xs text-slate-500">หัวหน้าครอบครัว</div>
           <div className="mt-1 truncate text-xl font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">{head.name}</Link> : "-"}</div>
           <div className="mt-1 text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">ตามความสัมพันธ์</div>
-          <div className="mt-1 space-y-0.5 text-xs">
-            {[...byRel.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-2"><span className="text-slate-600">{k}</span><span className="tabular-nums">{v}</span></div>))}
-            {ages.length > 0 && <div className="pt-1 text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:col-span-2 xl:col-span-1">
+          <div className="text-xs text-slate-500">สมาชิก (ตามความสัมพันธ์)</div>
+          <div className="mt-1 space-y-0.5 text-sm">
+            {[...byRel.entries()].sort((x, y) => x[1].rank - y[1].rank).map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-2"><span className="text-slate-600">{k}</span><span className="tabular-nums">{v.n}</span></div>))}
+          </div>
+          <div className="mt-2 flex justify-between gap-2 border-t border-slate-100 pt-2 text-sm font-semibold">
+            <span>รวม</span><span className="tabular-nums">{active.length} คน</span>
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {archivedCount > 0 ? `Archived ${archivedCount} คน` : "ไม่มี Archived"}
+            {all.length - active.length - archivedCount > 0 && ` · สถานะอื่น ${all.length - active.length - archivedCount} คน`}
+            {ages.length > 0 && ` · อายุ ${Math.min(...ages)}–${Math.max(...ages)} ปี`}
           </div>
         </div>
       </section>
