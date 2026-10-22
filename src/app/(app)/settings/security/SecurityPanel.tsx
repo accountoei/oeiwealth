@@ -8,6 +8,9 @@ type Factor = { id: string; friendly_name?: string; status: string; created_at: 
 const box = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
+// ปุ่มในกล่อง MFA: รูปแบบ / ขนาดเดียวกัน (ลบ / ออกจากระบบ = สีแดง)
+const obtn = "inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50";
+const rbtn = "inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50";
 
 export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
   const supabase = createClient();
@@ -84,15 +87,18 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
         {factors.length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ตั้ง MFA{isAdmin ? "" : " (ไม่บังคับสำหรับสิทธิ์นี้ แต่แนะนำ)"}</p> : (
           <ul className="space-y-1 text-sm">
             {factors.map((f) => (
-              <li key={f.id} className="flex items-center justify-between gap-2">
+              <li key={f.id} className="flex items-center justify-between gap-2 py-1">
                 <span>{f.friendly_name ?? "Authenticator"} <span className="text-xs text-slate-500">ตั้งเมื่อ {new Date(f.created_at).toLocaleDateString("th-TH")}</span></span>
-                <button onClick={() => remove(f.id)} className="text-xs text-red-600 underline">ลบ</button>
+                <button onClick={() => remove(f.id)} className={rbtn}>ลบอุปกรณ์</button>
               </li>
             ))}
           </ul>
         )}
         {!enroll ? (
-          <button onClick={startEnroll} className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">+ เพิ่มอุปกรณ์ (เช่น เปลี่ยนมือถือ)</button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={startEnroll} className={obtn}>+ เพิ่มอุปกรณ์</button>
+            <button onClick={signOutAll} className={rbtn}>ออกจากระบบทุกอุปกรณ์</button>
+          </div>
         ) : (
           <form onSubmit={verifyEnroll} className="space-y-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -107,13 +113,7 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
         )}
         {mfaMsg.error && <p className="text-sm text-red-600">{mfaMsg.error}</p>}
         {mfaMsg.ok && <p className="text-sm text-emerald-700">{mfaMsg.ok}</p>}
-        <p className="text-xs text-slate-500">เปลี่ยนมือถือ: เพิ่มอุปกรณ์ใหม่ก่อน แล้วค่อยลบอันเก่า · ทำมือถือหาย: ให้ผู้ดูแลระบบกด &ldquo;รีเซ็ต MFA&rdquo; ที่หน้า Family &amp; Users</p>
-      </div>
-
-      <div className={box}>
-        <h2 className="font-medium text-slate-900">อุปกรณ์ที่เข้าระบบ</h2>
-        <p className="text-sm text-slate-600">ถ้าสงสัยว่ามีคนอื่นใช้บัญชี ให้เปลี่ยนรหัสผ่าน แล้วออกจากระบบทุกอุปกรณ์</p>
-        <button onClick={signOutAll} className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 hover:bg-red-50">ออกจากระบบทุกอุปกรณ์</button>
+        <p className="text-xs text-slate-500">เปลี่ยนมือถือ: เพิ่มอุปกรณ์ใหม่ก่อน แล้วค่อยลบอันเก่า · ทำมือถือหาย: ให้ผู้ดูแลระบบกด &ldquo;รีเซ็ต MFA&rdquo; ที่หน้า Users<br />สงสัยว่ามีคนอื่นใช้บัญชี: เปลี่ยนรหัสผ่าน แล้วกด &ldquo;ออกจากระบบทุกอุปกรณ์&rdquo;</p>
       </div>
     </div>
   );

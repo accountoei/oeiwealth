@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { FX_BBL_RATE_LABEL } from "@/lib/format";
 import { setFxSource, type FxState } from "./actions";
+import { FX_BTN } from "./FxRefreshButton";
 
 /** ADMIN เลือกแหล่งอัตราแลกเปลี่ยน — มีผลตั้งแต่วันนี้ · อัตราที่บันทึกไว้แล้วไม่เปลี่ยน */
 export default function FxSourceForm({ source, bblRate }: { source: string; bblRate: string }) {
@@ -11,7 +12,7 @@ export default function FxSourceForm({ source, bblRate }: { source: string; bblR
   const [state, action, pending] = useActionState<FxState, FormData>(setFxSource, {});
   const [src, setSrc] = useState(source);
   const trigger = <button type="button" onClick={() => setOpen(!open)}
-    className={activeCls("rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50")}>เปลี่ยนแหล่งอัตรา</button>;
+    className={activeCls(FX_BTN)}>เปลี่ยนแหล่งอัตรา</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3">

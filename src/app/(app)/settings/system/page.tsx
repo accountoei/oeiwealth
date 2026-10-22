@@ -5,6 +5,10 @@ import FxSourceForm from "./FxSourceForm";
 import { ActionBar } from "@/components/ActionBar";
 import OverrideForm from "./OverrideForm";
 import FxRefreshButton from "./FxRefreshButton";
+import OpeningSetup from "../opening/OpeningSetup";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+
+const TABS = [["fx", "FX & Prices"], ["opening", "Opening Setup"]] as const;
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
 const JOB_LABEL: Record<string, string> = { FX_FETCH: "อัตราแลกเปลี่ยน", FX_BACKFILL: "อัตราแลกเปลี่ยน (ย้อนหลัง)", BACKUP: "สำรองข้อมูล", PRICE_FETCH: "ราคาอัตโนมัติ" };
@@ -12,7 +16,8 @@ const SKIP_REASON: Record<string, string> = { DEVIATION_OVER_5PCT: "ต่าง
   NO_HOLDING: "ไม่พบหลักทรัพย์ / ปิดดึงราคาแล้ว", NOT_FOUND: "ไม่พบราคา", HAS_STATEMENT: "มีราคาจาก Statement วันนั้นแล้ว", BAD_DATE: "วันที่ไม่ถูกต้อง", UNIT: "หน่วยไม่ใช่ บาททองคำ / กรัม", PERIOD_LOCKED: "อยู่ในงวดที่ปิดแล้ว",
   NEEDS_BASELINE: "รอยืนยันราคาฐาน", NO_ASSOC_PRICE: "อ่านราคาสมาคมค้าทองคำไม่ได้", SOURCE_MISMATCH: "ราคาสมาคมฯ ต่างจากราคาโลกเกิน 3%" };
 
-export default async function SystemPage() {
+export default async function SystemPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams).tab === "opening" ? "opening" : "fx";
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
@@ -39,6 +44,7 @@ export default async function SystemPage() {
   const fxSource = family?.fx_source === "BBL" ? "BBL" : "BOT";
 
   return (
+    <TabsProvider initial={tab} defaultKey="fx">
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">System</h1>
@@ -46,6 +52,9 @@ export default async function SystemPage() {
           สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}
         </p>
       </div>
+      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
+
+      <TabPanel id="fx" className="space-y-6">
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -57,7 +66,7 @@ export default async function SystemPage() {
               {family?.fx_source_since && <span className="text-slate-500"> · ตั้งแต่ {thDate(family.fx_source_since)}</span>}
             </p>
           </div>
-          {isAdmin && <ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /></ActionBar>}
+          {isAdmin && <ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /><OverrideForm today={todayBangkok()} /></ActionBar>}
         </div>
         <p className="mb-3 mt-1 text-xs text-slate-500">
           ดึงอัตราทุกวัน 09:30 · 14:30 · 19:30 · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
@@ -124,12 +133,6 @@ export default async function SystemPage() {
       </section>
 
       {isAdmin && (
-        <>
-          <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">FX Override (ADMIN)</h2>
-            <p className="mb-3 text-xs text-slate-500">ใช้เฉพาะเมื่อแหล่งอัตราไม่มีข้อมูลหรือระบบดึงไม่สำเร็จ · ระบบดึงอัตโนมัติจะไม่เขียนทับค่าที่ Override · บันทึกใน Audit Log · วันที่อยู่ในเดือนที่ปิดงวดแล้วแก้ไม่ได้ (ต้อง Reopen ก่อน)</p>
-            <OverrideForm today={todayBangkok()} />
-          </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-3 font-medium text-slate-900">ประวัติงานอัตโนมัติ (ล่าสุด 10 ครั้ง)</h2>
             {(jobs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
@@ -157,8 +160,13 @@ export default async function SystemPage() {
               </table>
             )}
           </section>
-        </>
       )}
+      </TabPanel>
+
+      <TabPanel id="opening" className="space-y-6">
+        <OpeningSetup />
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }

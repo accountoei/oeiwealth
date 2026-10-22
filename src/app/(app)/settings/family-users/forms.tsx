@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
+import Modal from "@/components/Modal";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import {
   inviteUser, resendInvite, resetMfa, resetPasswordLink, setUserRole, setUserStatus, type ActionState, type InviteState,
@@ -55,7 +56,8 @@ function LinkBox({ s }: { s: InviteState }) {
     ? `ลิงก์ตั้งรหัสผ่านใหม่ Family Wealth Vault (${s.email})\nเปิดลิงก์แล้วกด "ยืนยันและตั้งรหัสผ่าน":\n${s.link}\n(ลิงก์ใช้ได้ครั้งเดียวและมีอายุจำกัด)`
     : `เชิญเข้าใช้ Family Wealth Vault (${s.email})\nเปิดลิงก์แล้วกด "ยืนยันและตั้งรหัสผ่าน":\n${s.link}\n(ลิงก์ใช้ได้ครั้งเดียวและมีอายุจำกัด)`;
   return (
-    <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+    // data-keep-open: หน้าต่างไม่ปิดเอง (ต้องคัดลอกลิงก์ก่อน)
+    <div data-keep-open className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
       <div className="font-medium text-emerald-900">ลิงก์สำหรับ {s.email}</div>
       <textarea readOnly value={text} rows={4} className="w-full rounded-md border border-emerald-200 bg-white p-2 font-mono text-xs" />
       <div className="flex flex-wrap items-center gap-3">
@@ -100,8 +102,8 @@ export function ResendInviteForm({ id }: { id: string }) {
     <div>
       <form action={action} className="inline">
         <input type="hidden" name="id" value={id} />
-        <button disabled={pending} className="text-xs text-slate-700 underline disabled:opacity-50">
-          {pending ? "…" : "สร้างลิงก์ใหม่"}
+        <button disabled={pending} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          {pending ? "…" : "สร้างลิงก์เชิญใหม่"}
         </button>
         {!state.link && <Msg s={state} />}
       </form>
@@ -117,18 +119,74 @@ export function UserRecovery({ id }: { id: string }) {
   const cf = useConfirmSubmit();
   return (
     <div className="space-y-1">
-      <div className="flex flex-wrap gap-3 text-xs">
+      <div className="flex flex-wrap gap-2">
         <form action={pwAction}><input type="hidden" name="id" value={id} />
-          <button disabled={pwPending} className="text-slate-700 underline disabled:opacity-50">{pwPending ? "…" : "ลิงก์ตั้งรหัสผ่านใหม่"}</button>
+          <button disabled={pwPending} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">{pwPending ? "…" : "ลิงก์ตั้งรหัสผ่านใหม่"}</button>
         </form>
         <form action={mfaAction} onSubmit={cf.guard("ลบ MFA ของผู้ใช้นี้? (ใช้เมื่อทำมือถือหาย) ผู้ใช้ต้องสแกน QR ใหม่ตอนเข้าระบบครั้งถัดไป", {danger: true})}>{cf.dialog}
           <input type="hidden" name="id" value={id} />
-          <button disabled={mfaPending} className="text-slate-700 underline disabled:opacity-50">{mfaPending ? "…" : "รีเซ็ต MFA"}</button>
+          <button disabled={mfaPending} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">{mfaPending ? "…" : "รีเซ็ต MFA"}</button>
         </form>
       </div>
       {!ps.link && ps.error && <p className="text-xs text-red-600">{ps.error}</p>}
       <LinkBox s={ps} />
       <Msg s={ms} />
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- ปุ่มเปิด pop up */
+function PopupButton({ label, title, className, children }: { label: string; title: string; className: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={className}>{label}</button>
+      {open && <Modal title={title} onClose={() => setOpen(false)}>{children}</Modal>}
+    </>
+  );
+}
+
+/** ปุ่ม "+ เชิญผู้ใช้ใหม่" (มุมขวาบนของกล่องผู้ใช้ระบบ) */
+export function InviteButton({ persons }: { persons: { id: string; name: string }[] }) {
+  return (
+    <PopupButton label="+ เชิญผู้ใช้ใหม่" title="เชิญผู้ใช้ใหม่" className={`${btn} px-4 py-2`}>
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          ระบบสร้างลิงก์ให้คัดลอกไปส่งเอง · ผู้รับเปิดลิงก์ ตั้งรหัสผ่าน แล้วเข้าใช้ได้ทันที · ผู้ใช้ที่ไม่ใช่สมาชิกครอบครัว (เช่น ผู้ดูแลระบบภายนอก) ไม่ต้องเลือกสมาชิก
+        </p>
+        <InviteForm persons={persons} />
+      </div>
+    </PopupButton>
+  );
+}
+
+/** ปุ่ม "จัดการ" ท้ายแถวผู้ใช้ → pop up รวม เปลี่ยนสิทธิ์ · เปิด / ปิดการใช้งาน · ลิงก์เชิญใหม่ · ลิงก์ตั้งรหัสผ่านใหม่ · รีเซ็ต MFA */
+export function UserManage({ id, email, role, status, statusLabel }: { id: string; email: string; role: string; status: string; statusLabel: string }) {
+  const sec = "space-y-2 border-t border-slate-100 pt-3";
+  return (
+    <PopupButton label="จัดการ" title={`จัดการผู้ใช้ · ${email}`} className={btn}>
+      <div className="space-y-4 text-sm">
+        <div className="space-y-2">
+          <h3 className="text-xs font-medium text-slate-500">สิทธิ์</h3>
+          <UserRoleForm id={id} role={role} />
+        </div>
+        <div className={sec}>
+          <h3 className="text-xs font-medium text-slate-500">สถานะ: <span className="text-slate-800">{statusLabel}</span></h3>
+          <UserStatusForm id={id} status={status} />
+        </div>
+        {status === "INVITED" && (
+          <div className={sec}>
+            <h3 className="text-xs font-medium text-slate-500">ลิงก์เชิญ (ผู้ใช้ยังไม่ได้เข้าใช้ครั้งแรก)</h3>
+            <ResendInviteForm id={id} />
+          </div>
+        )}
+        {status === "ACTIVE" && (
+          <div className={sec}>
+            <h3 className="text-xs font-medium text-slate-500">ลืมรหัสผ่าน / ทำมือถือหาย</h3>
+            <UserRecovery id={id} />
+          </div>
+        )}
+      </div>
+    </PopupButton>
   );
 }

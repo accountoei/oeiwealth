@@ -284,7 +284,7 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
   const attention: { text: string; href: string; tone: "red" | "amber" | "slate" }[] = [];
   if (isSetup) {
     const missing = (readiness ?? []).filter((r: { status: string }) => r.status === "MISSING").length;
-    attention.push({ text: `ระบบยังอยู่ช่วงตั้งค่า · ยังขาดยอดตั้งต้น ${missing} รายการ ก่อน Confirm Go-live`, href: "/settings/opening", tone: "amber" });
+    attention.push({ text: `ระบบยังอยู่ช่วงตั้งค่า · ยังขาดยอดตั้งต้น ${missing} รายการ ก่อน Confirm Go-live`, href: "/settings/system?tab=opening", tone: "amber" });
   } else if (family) {
     const lastFinal = finals.length ? finals[finals.length - 1].month.slice(0, 7) : null;
     const toClose = lastFinal ? monthRange(lastFinal).next : family.go_live_date.slice(0, 7);

@@ -11,6 +11,7 @@ import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
 import SecNavPicker from "@/components/SecNavPicker";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { PfCardPayBody, PfExpenseBody, type PfPayCtx } from "./pf-pay-forms";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -571,22 +572,27 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
   ));
 }
 
-/* ------------------------------------------------------------------ ครบกำหนด */
-export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate }:
-  { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+/* ------------------------------------------------------------------ บันทึกรับเงินต้น (ครบกำหนด / Autocall)
+   วันที่เดียว = วันที่เงินเข้าจริง (ไม่มีเงินระหว่างทาง) · ก่อนกดบันทึก มูลค่ายังอยู่ที่หลักทรัพย์ตัวนี้ */
+export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, inline = false }:
+  { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string;
+    /** true = แสดงช่องกรอกในหน้าเลย (ในหน้าต่างแก้ไขข้อมูล) ไม่ต้องกดปุ่มเปิด */ inline?: boolean }) {
+  const { open, setOpen, present, activeCls } = useActionSlot(inline, { modal: !inline });
+  const cf = useConfirmSubmit();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>ครบกำหนด</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>บันทึกรับเงินต้น</button>;
   if (!open) return trigger;
   const list = banks.filter((b) => b.currency === holding.currency);
   return present(trigger, (
-    <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-left">
+    <form action={action} onSubmit={cf.guard(`บันทึกรับเงินต้นของ ${holding.name}? หลักทรัพย์นี้จะปิดเป็น "ครบกำหนด"`)}
+      className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-left">{cf.dialog}
+      {!inline && <h2 className="font-medium text-slate-900">บันทึกรับเงินต้น · {holding.name}</h2>}
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holding.id} />
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-xs">วันครบกำหนด<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${small}`} /></label>
+        <label className="text-xs">วันที่รับเงิน<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${small}`} /></label>
         <label className="text-xs">เงินต้นที่ได้คืน ({holding.currency})<input name="amount" required inputMode="decimal" className={`mt-1 block w-32 ${small}`} /></label>
         <label className="text-xs">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
         <label className="text-xs">ภาษี<input name="tax" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
@@ -600,14 +606,13 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
               <option value="">— บัญชี —</option>
               {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
             </select>
-            <label>วันเงินเข้าจริง<input name="settlement_date" type="date" className={`ml-1 ${small}`} /></label>
           </>
         )}
       </div>
-      <p className="text-xs text-slate-500">เงินต้นไม่ใช่รายได้ · Coupon งวดสุดท้ายให้บันทึกแยกเป็นรายการ Coupon</p>
+      <p className="text-xs text-slate-500">ใส่วันที่เงินเข้าบัญชีจริง · บันทึกแล้วหลักทรัพย์นี้ปิดเป็น &ldquo;ครบกำหนด&rdquo; (ลบรายการได้ที่ตารางรายการของพอร์ต ถ้างวดยังไม่ปิด) · เงินต้นไม่ใช่รายได้ · ดอกเบี้ย / Coupon งวดสุดท้ายบันทึกแยกด้วยปุ่มรับปันผล / ดอกเบี้ย / Coupon</p>
       <div className="flex items-center gap-2">
-        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึกรับเงินต้น</button>
+        {!inline && <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>}
       </div>
       <Msg s={state} />
     </form>

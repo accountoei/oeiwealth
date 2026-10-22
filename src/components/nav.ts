@@ -28,7 +28,6 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Users", href: "/settings/family-users", ready: true },
       { label: "System", href: "/settings/system", ready: true },
-      { label: "Opening Setup", href: "/settings/opening", ready: true },
       { label: "Security", href: "/settings/security", ready: true },
     ],
   },
