@@ -7,6 +7,10 @@ import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import BusinessBadge from "./badge";
+import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
+import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
+
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["record", "บันทึกปันผล / มูลค่า"]];
 
 type Row = { id: string; asset_id: string; company_name: string; logo_data: string | null; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null; par_value: number | null; investment_cost: number | null;
@@ -15,7 +19,7 @@ type Own = { asset_id: string; person_id: string; ownership_percent: number; sha
 
 const COLORS = ["#2563eb", "#7c3aed", "#f43f5e", "#f59e0b", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899", "#14b8a6", "#64748b"];
 
-export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -32,11 +36,17 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const all = (data as unknown as Row[] | null) ?? [];
   const ids = all.map((r) => r.asset_id);
   const none = Promise.resolve({ data: [] as never[] });
-  const [{ data: owners }, { data: divs }, { data: divShares }] = await Promise.all([
+  const canWrite = me.role !== "VIEWER";
+  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
+  const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }] = await Promise.all([
     ids.length ? supabase.from("asset_ownerships").select("asset_id,person_id,ownership_percent,shares,cost_per_share,start_date,end_date").in("asset_id", ids).is("deleted_at", null) : none,
     ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
       .gte("date", yearStart).lte("date", today).is("deleted_at", null) : none,
     pv.personId ? supabase.from("v_income_by_person").select("income_id,base_amount_share").eq("person_id", pv.personId).eq("income_type", "BUSINESS_DIVIDEND").gte("date", yearStart) : none,
+    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
+    canWrite ? supabase.from("v_asset_ownerships_active").select("asset_id,person_id,end_date") : none,
+    supabase.from("families").select("go_live_date,system_status").maybeSingle(),
+    supabase.from("persons").select("id,name").is("deleted_at", null),
   ]);
   const rowsBase = bySort(all.filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   const color = new Map(all.map((r, i) => [r.asset_id, COLORS[i % COLORS.length]]));
@@ -108,7 +118,25 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   };
   const who = pv.personId ? pv.personName : "ครอบครัว";
 
+  // ---------------------------------------------------------------- แท็บ "บันทึกปันผล / มูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
+  const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name]));
+  const batchRows: BizRow[] = rows.filter((r) => r.status === "ACTIVE").map((r) => {
+    const os = nowOwn.filter((o) => o.asset_id === r.asset_id);
+    const bySh = os.length > 0 && os.every((o) => o.shares != null);
+    const tot = os.reduce((t, o) => t + Number(bySh ? o.shares : o.ownership_percent), 0);
+    return { id: r.asset_id, name: r.assets.name, currency: r.assets.currency,
+      value: r.assets.current_value == null ? null : Number(r.assets.current_value), valueDate: r.assets.current_value_date,
+      holders: os.map((o) => ({ personId: o.person_id, name: nameOf.get(o.person_id) ?? "สมาชิก", shares: o.shares == null ? null : Number(o.shares),
+        pct: bySh ? (tot > 0 ? (Number(o.shares) * 100) / tot : 0) : Number(o.ownership_percent) })) };
+  });
+  const bizBanks: BizBank[] = ((bankAccs ?? []) as { asset_id: string; name: string; currency: string }[]).map((b) => ({
+    id: b.asset_id, name: b.name, currency: b.currency,
+    owners: ((bankOwners ?? []) as { asset_id: string; person_id: string; end_date: string | null }[]).filter((o) => o.asset_id === b.asset_id && !o.end_date).map((o) => o.person_id),
+  }));
+  const minDate = family?.system_status === "SETUP" ? "" : family?.go_live_date ?? "";
+
   return (
+    <TabsProvider initial={tab}>
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -121,7 +149,9 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <TabNav tabs={TABS} />
 
+      <TabPanel id="overview">
       {totalFam > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -203,7 +233,13 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           )}
         </table>
       </div>
+      </TabPanel>
+
+      <TabPanel id="record">
+        <BusinessBatch rows={batchRows} banks={bizBanks} today={today} minDate={minDate} canWrite={canWrite} />
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }
 
