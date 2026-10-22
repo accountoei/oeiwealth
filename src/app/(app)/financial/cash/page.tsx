@@ -14,14 +14,14 @@ import BatchUpdate, { type BatchRow } from "./BatchUpdate";
 import InterestBatch, { type InterestRow } from "./InterestBatch";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
-  account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null };
+  account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null; overdraft_limit: number | null };
 type Sum = { asset_id: string; balance: number | null; prev_balance: number | null; inflow: number; outflow: number;
   internal_in: number; internal_out: number; n_in: number; n_out: number };
 type At = { asset_id: string; calculated: number | null; last_date: string | null; last_value: number | null };
 
 // บัญชีทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=accounts → ภาพรวม)
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["interest", "รับดอกเบี้ย"]];
-const TYPE_COLORS = ["#2563eb", "#059669", "#f59e0b", "#94a3b8"];
+const TYPE_COLORS = ["#2563eb", "#7c3aed", "#059669", "#f59e0b", "#94a3b8"];
 const BANK_COLORS = ["#2563eb", "#f59e0b", "#059669", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#ea580c", "#475569"];
 const PERSON_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#84cc16"];
 const CCY_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899"];
@@ -47,7 +47,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
 
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
     { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }] = await Promise.all([
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date,overdraft_limit").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     supabase.rpc("bank_month_summary", { p_month: start }),
@@ -85,30 +85,32 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const tot = (m: Map<string, Sum>, f: (s: Sum) => number) => active.reduce((t, a) => {
     const s = m.get(a.asset_id); return t + (s ? thb(f(s), a.currency) * share(a.asset_id) : 0);
   }, 0);
-  const totalNow = tot(sum, (s) => Number(s.balance ?? 0));
-  const totalPrev = tot(prevSum, (s) => Number(s.balance ?? 0));
+  // ยอดเงินฝาก: บัญชีที่ติดลบ (O/D) นับเป็น 0 — ส่วนที่ติดลบเป็นหนี้สิน (หน้า Liabilities)
+  const pos = (v: number | string | null | undefined) => Math.max(Number(v ?? 0), 0);
+  const totalNow = tot(sum, (s) => pos(s.balance));
+  const totalPrev = tot(prevSum, (s) => pos(s.balance));
   const inNow = tot(sum, (s) => Number(s.inflow) - Number(s.internal_in));
   const outNow = tot(sum, (s) => Number(s.outflow) - Number(s.internal_out));
   const inPrev = tot(prevSum, (s) => Number(s.inflow) - Number(s.internal_in));
   const outPrev = tot(prevSum, (s) => Number(s.outflow) - Number(s.internal_out));
   const cnt = (f: (s: Sum) => number) => active.reduce((t, a) => t + (sum.get(a.asset_id) ? f(sum.get(a.asset_id)!) : 0), 0);
   const pct = (a: number, b: number) => (Math.abs(b) < 0.005 ? null : ((a - b) / Math.abs(b)) * 100);
-  const byCcy = [...active.reduce((m, a) => m.set(a.currency, (m.get(a.currency) ?? 0) + Number(sum.get(a.asset_id)?.balance ?? 0) * share(a.asset_id)),
+  const byCcy = [...active.reduce((m, a) => m.set(a.currency, (m.get(a.currency) ?? 0) + pos(sum.get(a.asset_id)?.balance) * share(a.asset_id)),
     new Map<string, number>())].filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => thb(b[1], b[0]) - thb(a[1], a[0]));
 
-  const bankRows: BarRow[] = [...active.reduce((m, a) => m.set(a.bank_name, (m.get(a.bank_name) ?? 0) + thb(Number(sum.get(a.asset_id)?.balance ?? 0), a.currency) * share(a.asset_id)),
+  const bankRows: BarRow[] = [...active.reduce((m, a) => m.set(a.bank_name, (m.get(a.bank_name) ?? 0) + thb(pos(sum.get(a.asset_id)?.balance), a.currency) * share(a.asset_id)),
     new Map<string, number>())].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, label: k, value: v, color: BANK_COLORS[i % BANK_COLORS.length] }));
   const personRows: BarRow[] = pv.persons.map((p, i) => ({
     key: p.id, label: p.name, color: PERSON_COLORS[i % PERSON_COLORS.length],
-    value: active.reduce((t, a) => t + thb(Number(sum.get(a.asset_id)?.balance ?? 0), a.currency)
+    value: active.reduce((t, a) => t + thb(pos(sum.get(a.asset_id)?.balance), a.currency)
       * ownRows.filter((o) => o.asset_id === a.asset_id && o.person_id === p.id).reduce((s, o) => s + Number(o.ownership_percent), 0) / 100, 0),
   }));
-  // ตามประเภทบัญชี (ออมทรัพย์ / ฝากประจำ / เงินตราต่างประเทศ / อื่น ๆ)
-  const typeRows: BarRow[] = ["SAVING", "FIXED", "FOREIGN_CURRENCY", "OTHER"].map((t, i) => ({
+  // ตามประเภทบัญชี (ออมทรัพย์ / กระแสรายวัน / ฝากประจำ / เงินตราต่างประเทศ / อื่น ๆ)
+  const typeRows: BarRow[] = ["SAVING", "CURRENT", "FIXED", "FOREIGN_CURRENCY", "OTHER"].map((t, i) => ({
     key: t, label: ACCOUNT_TYPE_LABEL[t] ?? t, color: TYPE_COLORS[i],
-    value: active.filter((a) => (["SAVING", "FIXED", "FOREIGN_CURRENCY"].includes(a.account_type) ? a.account_type : "OTHER") === t)
-      .reduce((v, a) => v + thb(Number(sum.get(a.asset_id)?.balance ?? 0), a.currency) * share(a.asset_id), 0),
-  }));
+    value: active.filter((a) => (["SAVING", "CURRENT", "FIXED", "FOREIGN_CURRENCY"].includes(a.account_type) ? a.account_type : "OTHER") === t)
+      .reduce((v, a) => v + thb(pos(sum.get(a.asset_id)?.balance), a.currency) * share(a.asset_id), 0),
+  })).filter((r) => r.key !== "CURRENT" || r.value > 0);
   const ownGap = active.filter((a) => a.status === "ACTIVE"
     && Math.abs(ownRows.filter((o) => o.asset_id === a.asset_id).reduce((s, o) => s + Number(o.ownership_percent), 0) - 100) > 0.01);
 
@@ -124,6 +126,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       balance: bal, thb: thb(bal, a.currency), pct: pv.assetPct(a.asset_id), full,
       lastDate, calculated: !!lastDate && lastDate < asOf,
       rate: a.interest_rate == null ? null : Number(a.interest_rate), maturity: a.maturity_date,
+      od: a.overdraft_limit == null ? null : Number(a.overdraft_limit),
       move: ordering ? <MoveButtons table="assets" id={a.asset_id} paths={paths} {...neighbors(all, i, (x) => x.asset_id)} /> : undefined,
     };
   });

@@ -42,6 +42,12 @@ export async function createBankAccount(_: ActionState, form: FormData): Promise
     p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
+  // วงเงิน O/D (บัญชีกระแสรายวัน) — create_bank_account ไม่มีช่องนี้ → อัปเดตต่อ
+  const odLimit = num(form.get("overdraft_limit")), odRate = num(form.get("overdraft_rate"));
+  if (odLimit != null || odRate != null) {
+    const { error: e2 } = await supabase.from("bank_accounts").update({ overdraft_limit: odLimit || null, overdraft_rate: odRate }).eq("asset_id", String(data));
+    if (e2) return { error: `สร้างบัญชีแล้ว แต่บันทึกวงเงิน O/D ไม่สำเร็จ (แก้ได้ที่หน้าบัญชี) · ${friendlyError(e2.message)}` };
+  }
   revalidatePath("/financial/cash");
   redirect(`/financial/cash/${data}`);
 }
@@ -60,8 +66,11 @@ export async function updateAccountInfo(_: ActionState, form: FormData): Promise
     branch: str(form.get("branch")),
     interest_rate: num(form.get("interest_rate")),
     maturity_date: str(form.get("maturity_date")),
+    overdraft_limit: num(form.get("overdraft_limit")) || null,
+    overdraft_rate: num(form.get("overdraft_rate")),
     notes: str(form.get("notes")),
   }).eq("asset_id", assetId);
+  revalidatePath("/liabilities");
   if (e2) return { error: friendlyError(e2.message) };
   revalidatePath(`/financial/cash/${assetId}`);
   return { ok: "บันทึกข้อมูลบัญชีแล้ว" };

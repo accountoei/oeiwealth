@@ -7,11 +7,12 @@ import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
+import YearTable, { OPEN, type YLine } from "./YearTable";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
 
-export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string }> }) {
+export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
@@ -20,7 +21,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const sortMap = await loadSortMap("insurance_policies");
   const supabase = await createClient();
   const year = todayBangkok().slice(0, 4);
-  const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }] = await Promise.all([
+  const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines }] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status")
       .order("status").order("insurer"),
@@ -33,6 +34,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       .in("status", ["PENDING", "OVERDUE", "PARTIAL"]).order("due_date"),
     supabase.from("insurance_followups").select("id,person_id,policy_id,role,action,status").is("deleted_at", null)
       .in("status", ["OPEN", "IN_PROGRESS"]).order("created_at"),
+    supabase.from("v_insurance_schedule_status").select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,paid_amount,remaining,status")
+      .order("due_date").order("installment_no"),
   ]);
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
@@ -77,6 +80,19 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const insuredTotal = sumThb((r) => r.insured_amount, (r) => r.insured_amount_currency);
   const premiumTotal = sumThb((r) => r.premium, (r) => r.premium_currency);
   const overdueTotal = mineRows.reduce((t, r) => t + (overduePremium.get(r.id) ?? 0), 0);
+  // งวดสุดท้าย (ปี พ.ศ.) + งวดที่เหลือ ต่อกรมธรรม์ · ตารางทั้งปี (?y=)
+  const lineList = (allLines ?? []) as YLine[];
+  const lastOf = (pid: string, kind: string) => {
+    const xs = lineList.filter((l) => l.policy_id === pid && l.kind === kind);
+    const d = xs.at(-1)?.due_date;
+    return d ? { year: Number(d.slice(0, 4)) + 543, left: xs.filter((l) => OPEN.includes(l.status)).length } : null;
+  };
+  const shown = new Set(rows.map((r) => r.id));
+  const yNow = Number(year);
+  const yr = /^\d{4}$/.test(sp.y ?? "") ? Number(sp.y) : yNow;
+  const yearLines = lineList.filter((l) => shown.has(l.policy_id) && l.due_date.startsWith(`${yr}-`));
+  const yHref = (y: number) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (tFilter) q.set("t", tFilter); if (y !== yNow) q.set("y", String(y)); const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`; };
+  const groupsOf = (kind: string) => rows.map((r) => ({ r, lines: yearLines.filter((l) => l.policy_id === r.id && l.kind === kind) })).filter((g) => g.lines.length > 0);
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
   return (
@@ -160,7 +176,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
         </div>
         <table className="mt-2 w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-4 py-2">กรมธรรม์</th><th className="px-4">ผู้เอาประกัน</th><th className="px-4 text-right">ทุน / เบี้ย</th><th className="px-4 text-right">มูลค่าเวนคืน</th><th className="px-4">เบี้ยงวดถัดไป</th><th className="px-4">สถานะ</th></tr>
+            <tr><th className="px-4 py-2">กรมธรรม์</th><th className="px-4">ผู้เอาประกัน</th><th className="px-4 text-right">ทุน / เบี้ย</th><th className="px-4 text-right">มูลค่าเวนคืน</th><th className="px-4">เบี้ยงวดถัดไป / งวดสุดท้าย</th><th className="px-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกรมธรรม์ของ ${pv.personName}` : "ยังไม่มีกรมธรรม์"}</td></tr>}
@@ -186,6 +202,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
                   <td className="px-4 text-xs">
                     {nextPremium.get(r.id) ? <>{thDate(nextPremium.get(r.id)?.due_date)}<div className="tabular-nums text-slate-500">{money(nextPremium.get(r.id)?.remaining)}</div></> : <span className="text-slate-400">-</span>}
                     {overduePremium.get(r.id) && <div className="text-red-600">เลยกำหนด {overduePremium.get(r.id)} งวด</div>}
+                    {lastOf(r.id, "PREMIUM") && <div className="text-slate-500">จ่ายถึงปี {lastOf(r.id, "PREMIUM")?.year} · เหลือ {lastOf(r.id, "PREMIUM")?.left} งวด</div>}
+                    {lastOf(r.id, "BENEFIT") && <div className="text-slate-500">รับถึงปี {lastOf(r.id, "BENEFIT")?.year}</div>}
                   </td>
                   <td className="px-4 text-xs">{STATUS[r.status] ?? r.status}
                     {r.derived_status === "EXPIRING_SOON" && <div className="text-amber-700">ใกล้ครบ</div>}
@@ -205,6 +223,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           )}
         </table>
       </div>
+      <YearTable kind="PREMIUM" year={yr} groups={groupsOf("PREMIUM")} pname={pname} prevHref={yHref(yr - 1)} nextHref={yHref(yr + 1)} thisHref={yr !== yNow ? yHref(yNow) : undefined} />
+      <YearTable kind="BENEFIT" year={yr} groups={groupsOf("BENEFIT")} pname={pname} prevHref={yHref(yr - 1)} nextHref={yHref(yr + 1)} thisHref={yr !== yNow ? yHref(yNow) : undefined} />
     </div>
   );
 }

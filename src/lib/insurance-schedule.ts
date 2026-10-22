@@ -64,3 +64,30 @@ export function parseAmountText(text: string) {
 export function amountScheduleToText(lines: AmountLine[]) {
   return lines.map((l) => [l.due_date, l.amount.toFixed(2), l.notes ?? ""].join("\t").trimEnd()).join("\n");
 }
+
+export type CvLine = { policy_year: number; value: number; value_date: string | null };
+
+/**
+ * ตารางมูลค่าเวนคืนตามสัญญา: 1 บรรทัด = ปีกรมธรรม์ · มูลค่า · [วันที่]
+ * ไม่ใส่วันที่ = วันเริ่มสัญญา + N ปี (ฐานข้อมูลคำนวณแบบเดียวกัน) · ข้ามหัวตาราง / บรรทัดว่าง
+ */
+export function parseCashValueText(text: string, startDate: string | null) {
+  const lines: (CvLine & { explicitDate: boolean })[] = []; const errors: string[] = [];
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const cells = (raw.includes("\t") ? raw.split("\t") : raw.trim().split(/\s+/)).map((c) => c.trim()).filter(Boolean);
+    if (cells.length === 0) return;
+    const year = Number(cells[0].replace(/^ปี(ที่)?/, ""));
+    if (!Number.isInteger(year)) { if (/[ก-๙a-zA-Z]/.test(cells[0]) && i === 0) return; errors.push(`บรรทัด ${i + 1}: ปีกรมธรรม์ต้องเป็นตัวเลข`); return; }
+    if (year < 1 || year > 120) { errors.push(`บรรทัด ${i + 1}: ปีกรมธรรม์ 1–120`); return; }
+    const value = cells[1] == null ? NaN : toNum(cells[1]);
+    if (Number.isNaN(value) || value < 0) { errors.push(`บรรทัด ${i + 1}: มูลค่าต้องเป็นตัวเลขไม่ติดลบ`); return; }
+    const d = cells[2] ? toIsoDate(cells[2]) : null;
+    if (cells[2] && !d) { errors.push(`บรรทัด ${i + 1}: วันที่อ่านไม่ได้`); return; }
+    if (lines.some((l) => l.policy_year === year)) { errors.push(`บรรทัด ${i + 1}: ปีที่ ${year} ซ้ำ`); return; }
+    const date = d ?? (startDate ? addMonthsKeepDay(startDate, year * 12) : null);
+    if (!date) { errors.push(`บรรทัด ${i + 1}: ใส่วันที่ (กรมธรรม์ยังไม่มีวันเริ่มสัญญา)`); return; }
+    lines.push({ policy_year: year, value: r2(value), value_date: date, explicitDate: !!d });
+  });
+  lines.sort((a, b) => a.policy_year - b.policy_year);
+  return { lines, errors };
+}

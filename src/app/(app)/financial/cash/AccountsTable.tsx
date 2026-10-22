@@ -8,6 +8,7 @@ import { money, thDate } from "@/lib/format";
 export type AccountRow = {
   id: string; name: string; bank: string; type: string; masked: string | null; owners: string; currency: string;
   status: string; balance: number | null; thb: number; pct: number | null; full: number | null;
+  /** วงเงิน O/D (บัญชีกระแสรายวัน) · ยอดติดลบ = ใช้วงเงิน */ od?: number | null;
   lastDate: string | null; calculated: boolean; move?: ReactNode;
   /** อัตราดอกเบี้ย (% ต่อปี) · วันครบกำหนด (ฝากประจำ) */
   rate: number | null; maturity: string | null;
@@ -82,7 +83,7 @@ export default function AccountsTable({ rows, empty, toggle, today }: { rows: Ac
               <td className="px-4 text-slate-600">{a.owners || <span className="text-amber-700">ยังไม่ระบุเจ้าของ</span>}</td>
               <td className={`px-4 text-right tabular-nums ${Number(a.balance) < -0.005 ? "font-medium text-red-700" : ""}`}>
                 {money(a.balance, a.currency)}
-                {Number(a.balance) < -0.005 && <div className="text-xs font-normal">ติดลบ</div>}
+                {Number(a.balance) < -0.005 && <div className="text-xs font-normal">{a.od ? `ใช้ O/D · วงเงิน ${money(a.od, undefined, 0)}` : "ติดลบ"}</div>}
                 {a.pct != null && <div className="text-xs text-slate-400">{a.pct}% ของ {money(a.full, a.currency)}</div>}
                 {a.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(a.thb, "THB")}</div>}
                 <div className="text-xs font-normal text-slate-400">{a.lastDate ? `อัปเดตล่าสุด ${thDate(a.lastDate)}` : "ยังไม่มียอด"}</div>

@@ -56,6 +56,12 @@ export default function NewAccountForm(props: {
         <label className={label}>วันครบกำหนด (ฝากประจำ)
           <input name="maturity_date" type="date" className={input} />
         </label>
+        <label className={label}>วงเงินเบิกเกินบัญชี O/D (ถ้ามี)
+          <input name="overdraft_limit" inputMode="decimal" placeholder="ว่าง = ไม่มี O/D" className={input} />
+        </label>
+        <label className={label}>ดอกเบี้ย O/D (% ต่อปี)
+          <input name="overdraft_rate" inputMode="decimal" className={input} />
+        </label>
         <label className={`${label} md:col-span-2`}>เลขบัญชีเต็ม (ไม่บังคับ · ระบบเข้ารหัสเก็บ และแสดงเฉพาะ 4 ตัวท้าย)
           <input name="account_no" inputMode="numeric" autoComplete="off" placeholder="เช่น 123-4-56789-0" className={input} />
         </label>
