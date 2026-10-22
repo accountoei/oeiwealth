@@ -67,6 +67,7 @@ DECLARE d text;
       is_carried_forward := v_carry; fx_rate := v_fx;
       base_value := round(CASE WHEN item_type = ''LIABILITY'' THEN -v_val ELSE v_val END * v_fx * s.pct / 100, 4);';
 BEGIN
+  old_txt := replace(old_txt, E'\r', ''); new_txt := replace(new_txt, E'\r', '');   -- วาง SQL จาก Windows (CRLF)
   d := replace(pg_get_functiondef('private.net_worth_items(uuid, date, boolean)'::regprocedure), E'\r', '');
   IF position('OVERDRAFT' IN d) > 0 THEN RETURN; END IF;                         -- รันซ้ำ
   IF (length(d) - length(replace(d, old_txt, ''))) / length(old_txt) <> 1 THEN
@@ -95,6 +96,7 @@ DECLARE d text;
     CROSS JOIN LATERAL (SELECT private.bank_calculated_balance(a.id, d) AS v) nb
    WHERE a.family_id = p_family AND a.deleted_at IS NULL AND nb.v < -coalesce(b.overdraft_limit, 0) - 0.005;';
 BEGIN
+  old_txt := replace(old_txt, E'\r', ''); new_txt := replace(new_txt, E'\r', '');   -- วาง SQL จาก Windows (CRLF)
   d := replace(pg_get_functiondef('private.month_closing_issues(uuid, date)'::regprocedure), E'\r', '');
   IF position('เกินวงเงิน O/D' IN d) > 0 THEN RETURN; END IF;                     -- รันซ้ำ
   IF (length(d) - length(replace(d, old_txt, ''))) / length(old_txt) <> 1 THEN
