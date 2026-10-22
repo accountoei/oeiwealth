@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addUnderlying, recordTx, restateUnits, saveFcn, type ActionState } from "../../../actions";
 import { updateRecord, type RecState } from "@/lib/records";
-import { COUPON_FREQ_LABEL, money, thDate } from "@/lib/format";
+import { COUPON_FREQ_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
+import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
 import SecNavPicker from "@/components/SecNavPicker";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
@@ -89,28 +90,31 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ */
-export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, isFcn, banks, cashAccounts, today, minDate }: {
+export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, isFcn, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultNotes }: {
   assetId: string; portfolioName?: string; holdingId: string; currency: string; isFcn: boolean; banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
+  /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
+  label?: string; title?: string; defaultAmount?: number | null; defaultNotes?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordTx, {});
   const list = banks.filter((b) => b.currency === currency);
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>{isFcn ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={label ? ROW_BTN : activeCls(obtn)}>{label ?? (isFcn ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย")}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="w-full space-y-3 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holdingId} />
-      <h3 className="font-medium text-slate-900">{isFcn ? "รับ Coupon" : "รับปันผล / ดอกเบี้ย"}</h3>
+      <h3 className="font-medium text-slate-900">{title ?? (isFcn ? "รับ Coupon" : "รับปันผล / ดอกเบี้ย")}</h3>
       <div className="grid gap-3 md:grid-cols-4">
-        {isFcn ? <input type="hidden" name="type" value="COUPON" /> : (
+        {isFcn || label ? <input type="hidden" name="type" value="COUPON" /> : (
           <label className="text-sm">ประเภท
             <select name="type" defaultValue="DIVIDEND" className={input}><option value="DIVIDEND">ปันผล</option><option value="COUPON">Coupon / ดอกเบี้ยพันธบัตร</option></select>
           </label>
         )}
         <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">ยอดก่อนหักภาษี ({currency}) *<input name="amount" required inputMode="decimal" className={input} /></label>
+        <label className="text-sm">ยอดก่อนหักภาษี ({currency}) *<input name="amount" required inputMode="decimal"
+          defaultValue={defaultAmount != null ? String(defaultAmount) : undefined} className={input} /></label>
         <label className="text-sm">ภาษีหัก ณ ที่จ่าย<input name="tax" inputMode="decimal" className={input} /></label>
         <label className="text-sm">ค่าธรรมเนียม<input name="fee" inputMode="decimal" className={input} /></label>
       </div>
@@ -126,7 +130,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, i
           </>
         )}
       </div>
-      <label className="block text-sm">หมายเหตุ<input name="notes" placeholder={isFcn ? "เช่น งวดที่ 3" : ""} className={input} /></label>
+      <label className="block text-sm">หมายเหตุ<input name="notes" defaultValue={defaultNotes} placeholder={isFcn ? "เช่น งวดที่ 3" : ""} className={input} /></label>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
@@ -137,8 +141,10 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, currency, i
 }
 
 /** แก้ไขข้อมูลหลักทรัพย์ (ใช้ใน pop up "แก้ไขข้อมูล") */
-export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked }: {
+export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon }: {
   id: string; paths: string[]; v: { name: string; symbol: string | null; maturity_date: string | null; notes: string | null; auto_price?: boolean; price_ref?: string | null };
+  /** หุ้นกู้ / อื่น ๆ: ข้อมูลตารางรับดอกเบี้ย (เงินต้น · อัตรา · ความถี่) — FCN / Structured ใช้ "แก้รายละเอียด" ของ FCN */
+  coupon?: { face_value: number | null; interest_rate: number | null; coupon_frequency: string | null; currency: string } | null;
   /** EQUITY / FUND = ดึงราคาอัตโนมัติได้ */
   autoKind?: "EQUITY" | "FUND" | null;
   /** เหตุผลที่ยังเปิดราคาอัตโนมัติไม่ได้ (มูลค่าก้อนเดียว / กองทุน 1 หน่วย) — ฐานข้อมูลกันซ้ำ */
@@ -157,6 +163,22 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked }: {
         <label className="block text-sm text-slate-700">วันครบกำหนด<input type="date" name="f_maturity_date" defaultValue={v.maturity_date ?? ""} className={input} /></label>
         <label className="block text-sm text-slate-700 md:col-span-2">หมายเหตุ<input name="f_notes" defaultValue={v.notes ?? ""} className={input} /></label>
       </div>
+      {coupon && (
+        <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+          <div className="text-sm font-medium text-slate-800">ดอกเบี้ย / ตารางรับ</div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="block text-sm text-slate-700">เงินต้น / มูลค่าหน้าตั๋ว ({coupon.currency})
+              <input name="f_face_value" inputMode="decimal" defaultValue={coupon.face_value != null ? String(Number(coupon.face_value)) : ""} className={input} /></label>
+            <label className="block text-sm text-slate-700">อัตราผลตอบแทน (% ต่อปี)
+              <input name="f_interest_rate" inputMode="decimal" data-money="off" defaultValue={coupon.interest_rate != null ? String(Number(coupon.interest_rate)) : ""} className={input} /></label>
+            <label className="block text-sm text-slate-700">จ่ายดอกเบี้ย
+              <select name="f_coupon_frequency" defaultValue={coupon.coupon_frequency ?? ""} className={input}>
+                <option value="">— ไม่ระบุ —</option>{COUPON_FREQ_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select></label>
+          </div>
+          <p className="text-xs text-slate-500">ใส่ครบ (และมีวันครบกำหนด) → ขึ้นในแท็บ &ldquo;รอรับเดือนนี้&rdquo; หน้า Investments · วันรับนับย้อนจากวันครบกำหนด · ยอดต่องวด = เงินต้น × อัตรา × เดือน ÷ 12</p>
+        </div>
+      )}
       {autoKind && (
         <div className="space-y-2 rounded-lg bg-slate-50 p-3">
           <input type="hidden" name="f_auto_price" value={auto ? "on" : "off"} />

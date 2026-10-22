@@ -9,6 +9,10 @@ import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import { DueTab } from "./due";
+
+const TABS = [["overview", "ภาพรวม"], ["due", "รอรับเดือนนี้"]] as const;
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null;
@@ -17,8 +21,9 @@ type H = { id: string; portfolio_asset_id: string; holding_type: string; currenc
   status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
   value_thb: number | null };
 
-export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string }> }) {
+export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
+  const tab = sp.tab === "due" ? "due" : "overview";
   const me = await requireAppUser();
   const supabase = await createClient();
   const pv = await loadPersonView(sp.p);
@@ -108,6 +113,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, name: label(k), value: v, color: SHARE_COLORS[(i + offset) % SHARE_COLORS.length] }));
 
   return (
+    <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -122,6 +128,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
+
+      <TabPanel id="overview" className="space-y-6">
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
@@ -184,6 +193,13 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           )}
         </div>
       </section>
+      </TabPanel>
+
+      <TabPanel id="due">
+        <DueTab month={/^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : todayBangkok().slice(0, 7)} today={todayBangkok()} goLive={goLive}
+          showAsset={(x) => pv.showAsset(x)} canWrite={me.role !== "VIEWER"} />
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }
