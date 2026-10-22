@@ -65,7 +65,7 @@ const getTrack = cache(async (start: string) => {
   return (data?.tracking_status ?? "NOT_TRACKED") as string;
 });
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ p?: string; m?: string }> }) {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ p?: string; m?: string; r?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -87,6 +87,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .filter((x) => x.status !== "DECEASED" || x.id === sp.p);   // ตัวกรองไม่แสดง Archived (ยกเว้นคนที่เลือกอยู่)
   const personId = persons.some((x) => x.id === sp.p) ? (sp.p as string) : "";
   const personName = persons.find((x) => x.id === personId)?.name ?? "";
+  const range = RANGES.some(([v]) => v === sp.r) ? (sp.r as string) : "all";
+  // ลิงก์ปุ่มช่วงเวลา: คงคน / เดือนที่เลือกไว้ · ค่าเริ่มต้น (ตั้งแต่ Go-live) ไม่ต้องใส่ใน URL
+  const rangeHref = (r: string) => {
+    const q = new URLSearchParams();
+    if (personId) q.set("p", personId);
+    if (sp.m === ym) q.set("m", ym);
+    if (r !== "all") q.set("r", r);
+    return q.size ? `/?${q}` : "/";
+  };
 
   // เริ่มคำนวณส่วนที่ช้าทันที (ไม่รอ) — การ์ดด้านล่างจะรับผลจากคำขอเดียวกันนี้
   void getMonth(start); void getPreview(start); void getHistory(); void getTrack(start);
@@ -114,10 +123,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ กราฟ */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="font-medium text-slate-900">Net Worth {personName || "ครอบครัว"}</h2>
-          <p className="mb-3 text-xs text-slate-500">● ทึบ = ยอดตั้งต้น / ปิดเดือนแล้ว · ○ กลวง = ยังไม่ปิด (ประมาณการ)</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-medium text-slate-900">Net Worth {personName || "ครอบครัว"}</h2>
+            <nav className="flex flex-wrap gap-1" aria-label="ช่วงเวลากราฟ">
+              {RANGES.map(([v, label]) => (
+                <Link key={v} href={rangeHref(v)} scroll={false} aria-current={v === range ? "true" : undefined}
+                  className={`rounded-md px-2 py-0.5 text-xs ${v === range ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+          <p className="mb-3 mt-1 text-xs text-slate-500">● ทึบ = ยอดตั้งต้น / ปิดเดือนแล้ว · ○ กลวง = ยังไม่ปิด (ประมาณการ)</p>
           <Suspense fallback={<div className="h-48 animate-pulse rounded-lg bg-slate-100" />}>
-            <ChartBody start={start} isCurrent={isCurrent} personId={personId} />
+            <ChartBody start={start} isCurrent={isCurrent} personId={personId} from={rangeStart(range, today)} />
           </Suspense>
         </div>
 
@@ -238,25 +257,30 @@ async function TopCards({ start, personId, personName }: { start: string; person
   );
 }
 
-async function ChartBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
+async function ChartBody({ start, isCurrent, personId, from }: { start: string; isCurrent: boolean; personId: string; from: string | null }) {
+  let points: { label: string; date: string; v: number; solid: boolean }[];
+  let asOf: string | undefined;
   if (personId) {
     const [dm, h] = await Promise.all([getMonth(start), getPersonDash(start, personId)]);
     const cur = Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0);
-    const points = [
+    points = [
       ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
       ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
       ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: cur, solid: false }] : []),
     ];
-    return <TrendChart points={points} selected={points.findIndex((pt) => pt.date === dm?.as_of)} />;
+    asOf = dm?.as_of;
+  } else {
+    const [dm, h] = await Promise.all([getMonth(start), getHistory()]);
+    // จุดบนกราฟ: ยอดตั้งต้น + Snapshot (ทึบ) + ยอดวันนี้ (กลวง)
+    points = [
+      ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
+      ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
+      ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: Number(dm.net_worth), solid: false }] : []),
+    ];
+    asOf = dm?.as_of;
   }
-  const [dm, h] = await Promise.all([getMonth(start), getHistory()]);
-  // จุดบนกราฟ: ยอดตั้งต้น + Snapshot (ทึบ) + ยอดวันนี้ (กลวง)
-  const points = [
-    ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
-    ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
-    ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: Number(dm.net_worth), solid: false }] : []),
-  ];
-  return <TrendChart points={points} selected={points.findIndex((pt) => pt.date === dm?.as_of)} />;
+  points = clipRange(points, from);
+  return <TrendChart points={points} selected={points.findIndex((pt) => pt.date === asOf)} />;
 }
 
 async function AttentionBody({ family, isSetup, today }: { family: Family | null; isSetup: boolean; today: string }) {
@@ -535,6 +559,24 @@ function BRow({ label, v, bold, sub }: { label: string; v: number; bold?: boolea
       <td className={`text-right tabular-nums ${sub ? "pr-2 font-medium " : ""}${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{money(v, undefined, 0)}</td>
     </tr>
   );
+}
+
+/** ช่วงเวลาของกราฟ (?r=) · ไม่มี 1W เพราะข้อมูลเป็นยอดปิดรายเดือน + วันนี้ */
+const RANGES: [string, string][] = [["1m", "1M"], ["3m", "3M"], ["6m", "6M"], ["ytd", "YTD"], ["1y", "1Y"], ["all", "ตั้งแต่ Go-live"]];
+
+/** วันเริ่มช่วง = สิ้นเดือนย้อนหลัง N เดือน (ตรงกับวัน Snapshot) เช่น 1M ณ 22 ต.ค. → 30 ก.ย. · YTD → 31 ธ.ค. ปีก่อน · null = ทั้งหมด */
+function rangeStart(range: string, today: string): string | null {
+  const [y, m] = today.split("-").map(Number);
+  const back = ({ "1m": 1, "3m": 3, "6m": 6, "1y": 12, ytd: m } as Record<string, number>)[range];
+  return back ? new Date(Date.UTC(y, m - back, 0)).toISOString().slice(0, 10) : null;
+}
+
+/** ตัดจุดก่อนวันเริ่มช่วง · ถ้าไม่มีจุดตรงวันเริ่ม ให้เก็บจุดสุดท้ายก่อนหน้าไว้เป็นจุดเริ่ม (เห็นว่าเปลี่ยนไปเท่าไรในช่วงนั้น) */
+function clipRange<T extends { date: string }>(points: T[], from: string | null): T[] {
+  if (!from) return points;
+  const i = points.findIndex((pt) => pt.date >= from);
+  if (i < 0) return points.slice(-1);
+  return points.slice(points[i].date === from ? i : Math.max(0, i - 1));
 }
 
 /** กราฟเส้นเดียว (SVG) — จุดทึบ = ยอดยืนยันแล้ว, จุดกลวง = ประมาณการ · hover แสดงค่า */
