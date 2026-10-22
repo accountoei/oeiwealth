@@ -5,8 +5,6 @@ import { requireAppUser } from "@/lib/auth";
 import { ageFrom, EDUCATION_LEVEL_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, thDate, todayBangkok } from "@/lib/format";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
-import SetHeadButton from "./SetHeadButton";
-import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
@@ -70,7 +68,6 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
   const education = [p.education_level ? EDUCATION_LEVEL_LABEL[p.education_level] : null, p.education_major, p.education_institution].filter(Boolean).join(" · ");
 
   const headLabel = nameOf.get(family?.head_person_id ?? "");
-  const canSetHead = me.role === "ADMIN" && !isHead && p.status === "ACTIVE";
 
   return (
     <div className="space-y-6">
@@ -91,11 +88,6 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
               </p>
             </div>
           </div>
-          {canSetHead && (
-            <ActionBar>
-              <SetHeadButton id={id} name={p.name} />
-            </ActionBar>
-          )}
         </div>
       </div>
 

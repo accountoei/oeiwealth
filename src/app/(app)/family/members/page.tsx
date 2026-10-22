@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ageFrom, daysToBirthday, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
 import { movePerson } from "./actions";
-import { AddPersonForm, FamilyNameForm } from "./forms";
+import { AddPersonForm, FamilyForm } from "./forms";
 import { FamilyTree } from "./tree";
 import { SortToggle } from "@/components/SortControls";
 import { ActionBar } from "@/components/ActionBar";
@@ -115,18 +115,19 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
         {me.role !== "VIEWER" && <ActionBar><AddPersonForm /></ActionBar>}
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว {isAdmin && <ActionBar><FamilyNameForm name={family?.name ?? ""} /></ActionBar>}</div>
+          <div className="flex items-center justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว
+            {isAdmin && <ActionBar><FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null}
+              candidates={active.map((p) => ({ id: p.id, name: p.name }))} /></ActionBar>}
+          </div>
           <div className="mt-1 truncate text-xl font-semibold">{family?.name || "-"}</div>
-          <div className="mt-1 text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard</div>
+          <div className="text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard</div>
+          <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">หัวหน้าครอบครัว</div>
+          <div className="mt-1 truncate text-lg font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">★ {head.name}</Link> : "-"}</div>
+          <div className="text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">หัวหน้าครอบครัว</div>
-          <div className="mt-1 truncate text-xl font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">{head.name}</Link> : "-"}</div>
-          <div className="mt-1 text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:col-span-2 xl:col-span-1">
           <div className="text-xs text-slate-500">สมาชิก (ตามความสัมพันธ์)</div>
           <div className="mt-1 space-y-0.5 text-sm">
             {[...byRel.entries()].sort((x, y) => x[1].rank - y[1].rank).map(([k, v]) => (

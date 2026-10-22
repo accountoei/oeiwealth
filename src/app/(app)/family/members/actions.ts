@@ -35,19 +35,27 @@ export async function movePerson(form: FormData): Promise<void> {
   refresh();
 }
 
-/** ชื่อครอบครัว (ADMIN เท่านั้น — ฐานข้อมูลบังคับสิทธิ์) */
-export async function updateFamilyName(_: ActionState, form: FormData): Promise<ActionState> {
+/** ชื่อครอบครัว + หัวหน้าครอบครัว (ADMIN เท่านั้น — ฐานข้อมูลบังคับสิทธิ์) */
+export async function updateFamily(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const name = String(form.get("name") ?? "").trim();
+  const head = String(form.get("head_person_id") ?? "");
   if (!name) return { error: "กรุณาใส่ชื่อครอบครัว" };
   if (name.length > 120) return { error: "ชื่อยาวเกินไป" };
-  const { data: family } = await supabase.from("families").select("id").maybeSingle();
+  const { data: family } = await supabase.from("families").select("id,name,head_person_id").maybeSingle();
   if (!family) return { error: "ไม่พบข้อมูลครอบครัว" };
-  const { data, error } = await supabase.from("families").update({ name }).eq("id", family.id).select("id");
-  if (error) return { error: friendly(error.message) };
-  if (!data?.length) return { error: "เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ชื่อครอบครัวได้" };
+  if (name !== family.name) {
+    const { data, error } = await supabase.from("families").update({ name }).eq("id", family.id).select("id");
+    if (error) return { error: friendly(error.message) };
+    if (!data?.length) return { error: "เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ข้อมูลครอบครัวได้" };
+  }
+  const headChanged = !!head && head !== family.head_person_id;
+  if (headChanged) {
+    const { error } = await supabase.rpc("set_family_head", { p_person_id: head });
+    if (error) return { error: friendly(error.message) };
+  }
   refresh();
-  return { ok: "บันทึกชื่อครอบครัวแล้ว" };
+  return { ok: headChanged ? "บันทึกแล้ว · เปลี่ยนหัวหน้าครอบครัวแล้ว" : "บันทึกแล้ว" };
 }
 
 const TEXT_FIELDS = ["title_prefix", "full_name_th", "full_name_en", "nickname", "phone", "email", "address",
@@ -104,9 +112,3 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
   return { ok: newHead && status !== "ACTIVE" ? "บันทึกแล้ว · โอนหัวหน้าครอบครัวแล้ว" : "บันทึกข้อมูลแล้ว" };
 }
 
-/** ตั้ง / โอนหัวหน้าครอบครัว (ADMIN) → ความสัมพันธ์ของทุกคนคำนวณใหม่ */
-export async function setFamilyHead(form: FormData): Promise<void> {
-  const supabase = await createClient();
-  await supabase.rpc("set_family_head", { p_person_id: String(form.get("id")) });
-  refresh();
-}
