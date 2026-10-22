@@ -2,7 +2,9 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addCashValue, addCoverage, payPremium, receiveBenefit, saveInsSchedule, updatePolicyInfo, type ActionState } from "../actions";
+import { addCashValue, addCoverage, payPremium, receiveBenefit, saveCashValueTable, saveInsSchedule, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
+import AssetValuationForm from "@/components/AssetValuationForm";
+import { parseCashValueText, type CvLine } from "@/lib/insurance-schedule";
 import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
@@ -167,14 +169,38 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
 }
 
 /** บันทึกจ่ายเบี้ยของงวด → ค่าใช้จ่ายหมวด "ประกัน" (บัญชี / บัตร / เงินสด) */
-export function PayPremiumForm({ policyId, lineId, label, amount, currency, banks, cards, persons, defaultPerson, today }: {
+/** มูลค่าเวนคืนของกรมธรรม์ (ใช้ถามต่อหลังบันทึกจ่ายเบี้ย) · suggest = ตามตารางในสัญญา ปีล่าสุดที่ถึงวันแล้ว */
+export type CashValueCtx = { assetId: string; currency: string; current: number | null; minDate: string; paths: string[];
+  suggest: { value: number; year: number; date: string } | null };
+
+export function PayPremiumForm({ policyId, lineId, label, amount, currency, banks, cards, persons, defaultPerson, today, cashValue }: {
   policyId: string; lineId: string; label: string; amount: number; currency: string;
-  banks: Bank[]; cards: Card[]; persons: Person[]; defaultPerson?: string | null; today: string;
+  banks: Bank[]; cards: Card[]; persons: Person[]; defaultPerson?: string | null; today: string; cashValue?: CashValueCtx | null;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
-  const [state, action, pending] = useActionState<ActionState, FormData>(payPremium, {});
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  const [state, action, pending] = useActionState<PayState, FormData>(payPremium, {});
+  if (state.ok) {
+    const done = <span className="text-xs text-emerald-700">{state.ok}</span>;
+    // ลงตามตารางในสัญญาให้แล้ว หรือไม่มีมูลค่าเวนคืน → จบ · ไม่งั้นถามอัปเดตมูลค่าเวนคืนต่อ (กดข้ามได้)
+    if (state.cv && state.cv.added > 0) return <span className="text-xs text-emerald-700">{state.ok} · มูลค่าเวนคืนตามสัญญา {money(state.cv.value)} (ปีที่ {state.cv.policy_year})</span>;
+    if (!cashValue || !open) return done;
+    const sug = cashValue.suggest;
+    return present(done, (
+      <div className="space-y-3 text-left">
+        <div>
+          <h3 className="font-medium text-slate-900">{state.ok} · อัปเดตมูลค่าเวนคืนด้วยไหม?</h3>
+          <p className="text-xs text-slate-500">ตอนนี้ {money(cashValue.current, cashValue.currency)}
+            {sug ? <> · ตามตารางในสัญญา สิ้นปีกรมธรรม์ที่ {sug.year} ({thDate(sug.date)}) = {money(sug.value, cashValue.currency)}</>
+              : " · ยังไม่มีตารางมูลค่าเวนคืนตามสัญญา (ใส่ได้ที่ส่วน \"มูลค่าเวนคืน\" ด้านล่าง)"}</p>
+        </div>
+        <AssetValuationForm assetId={cashValue.assetId} currency={cashValue.currency} today={today} minDate={cashValue.minDate} paths={cashValue.paths}
+          defaultValue={sug?.value ?? cashValue.current ?? undefined} defaultNotes={sug ? `ตามตารางในสัญญา ปีที่ ${sug.year}` : undefined}
+          methods={[["STATEMENT", "ตามหนังสือแจ้ง / ตารางในสัญญา"], ["USER_ESTIMATE", "ประมาณเอง"]]} />
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ข้าม / ปิด</button>
+      </div>
+    ));
+  }
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
   if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);
@@ -359,6 +385,64 @@ export function PolicyInfoForm({ policyId, persons, showInsured, v }: {
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
         <Msg s={state} />
       </div>
+    </form>
+  );
+}
+
+/**
+ * ตารางมูลค่าเวนคืนตามสัญญา (ในเล่มกรมธรรม์ · มูลค่า ณ สิ้นปีกรมธรรม์ที่ N)
+ * วางจาก Excel ได้: "ปีที่ · มูลค่า" หรือ "วันที่ · มูลค่า" · ไม่ใส่วันที่ = วันเริ่มสัญญา + N ปี
+ * บันทึกแล้วระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวัน และจ่ายเบี้ยก่อนวันนั้นครบ
+ */
+export function CashValueTableEditor({ policyId, startDate, current }: { policyId: string; startDate: string | null; current: CvLine[] }) {
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const [text, setText] = useState(() => current.map((l) => [l.policy_year, l.value.toFixed(2), l.value_date ?? ""].join("\t").trimEnd()).join("\n"));
+  const [state, action, pending] = useActionState<ActionState, FormData>(saveCashValueTable, {});
+  const parsed = useMemo(() => parseCashValueText(text, startDate), [text, startDate]);
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(current.length ? obtn : btn)}>
+    {current.length ? "แก้ตารางมูลค่าเวนคืนตามสัญญา" : "+ ตารางมูลค่าเวนคืนตามสัญญา"}</button>;
+  if (!open) return trigger;
+  return present(trigger, (
+    <form action={action} className="space-y-3 text-left">
+      <input type="hidden" name="policy_id" value={policyId} />
+      <input type="hidden" name="lines" value={JSON.stringify(parsed.lines.map((l) => ({ policy_year: l.policy_year, value: l.value, value_date: l.explicitDate ? l.value_date : undefined })))} />
+      <div>
+        <h3 className="font-medium text-slate-900">ตารางมูลค่าเวนคืนตามสัญญา</h3>
+        <p className="text-xs text-slate-500">1 บรรทัด = 1 ปี: <b>ปีกรมธรรม์</b> แล้ว <b>มูลค่าเวนคืน</b> (วางจาก Excel ได้) · ใส่วันที่ต่อท้ายได้ถ้าไม่ใช่วันครบรอบสัญญา
+          {startDate ? <> · วันครบรอบนับจากวันเริ่มสัญญา {thDate(startDate)}</> : <span className="text-amber-700"> · กรมธรรม์ยังไม่มีวันเริ่มสัญญา ต้องใส่วันที่ทุกบรรทัด</span>}</p>
+        <p className="text-xs text-slate-500">บันทึกแล้ว ระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปี และจ่ายเบี้ยก่อนหน้านั้นครบแล้ว (ไม่ทับยอดที่ลงไว้ใหม่กว่า)</p>
+      </div>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder={"1\t12,000\n2\t28,500\n3\t45,000"} className={`${input} font-mono`} />
+      {parsed.errors.length > 0 && <ul className="text-xs text-red-600">{parsed.errors.slice(0, 5).map((e) => <li key={e}>{e}</li>)}</ul>}
+      {parsed.lines.length > 0 && (
+        <div className="max-h-56 overflow-y-auto rounded-md border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-2 py-1">ปีที่</th><th>สิ้นปีกรมธรรม์</th><th className="px-2 text-right">มูลค่าเวนคืน</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {parsed.lines.map((l) => <tr key={l.policy_year}><td className="px-2 py-1">{l.policy_year}</td><td>{l.value_date ? thDate(l.value_date) : "-"}</td>
+                <td className="px-2 text-right tabular-nums">{money(l.value)}</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={pending || parsed.errors.length > 0 || (parsed.lines.length === 0 && current.length === 0)} className={btn}>
+          {pending ? "กำลังบันทึก…" : parsed.lines.length === 0 ? "ล้างตาราง" : `บันทึก ${parsed.lines.length} ปี`}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  ));
+}
+
+/** ลงมูลค่าเวนคืนตามตาราง (ปีที่ถึงวันแล้วแต่ยังไม่ได้ลง) */
+export function SyncCashValueButton({ policyId }: { policyId: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(syncCashValue, {});
+  return (
+    <form action={action} className="inline-flex flex-wrap items-center gap-2">
+      <input type="hidden" name="policy_id" value={policyId} />
+      <button disabled={pending} className={sbtn}>{pending ? "กำลังลง…" : "ลงมูลค่าตามตาราง"}</button>
+      <Msg s={state} />
     </form>
   );
 }
