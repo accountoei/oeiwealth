@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str } from "@/lib/format";
+import { endpointFromForm, paidFromColumns } from "@/lib/money-endpoint";
 
 export type ActionState = { error?: string; ok?: string };
 /** ผลลงมูลค่าเวนคืนตามตารางในสัญญา (sync_insurance_cash_value) */
@@ -85,13 +86,12 @@ export async function payPremium(_: PayState, form: FormData): Promise<PayState>
   const id = String(form.get("policy_id"));
   const amount = num(form.get("amount"));
   if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const via = String(form.get("pay_via") ?? "bank");
+  const pay = endpointFromForm(form);
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount, currency: str(form.get("currency")),
     expense_category: "ประกัน",
-    paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
-    paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
-    person_id: via === "cash" ? str(form.get("person_id")) : null,
+    ...paidFromColumns(pay),
+    person_id: pay.kind === "cash" ? str(form.get("person_id")) : null,
     insurance_schedule_line_id: str(form.get("line_id")), notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };

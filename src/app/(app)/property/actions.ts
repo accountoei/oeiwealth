@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str } from "@/lib/format";
+import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -215,13 +216,12 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
   const assetId = str(form.get("asset_id"));
   const amount = num(form.get("amount"));
   if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const via = String(form.get("pay_via") ?? "bank");
+  const pay = endpointFromForm(form);
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
-    paid_from_asset_id: via === "bank" ? str(form.get("bank_asset_id")) : null,
-    paid_from_credit_card_id: via === "card" ? str(form.get("card_id")) : null,
-    person_id: via === "cash" ? str(form.get("person_id")) : null,
+    ...paidFromColumns(pay),
+    person_id: pay.kind === "cash" ? str(form.get("person_id")) : null,
     property_utility_id: str(form.get("utility_id")), cost_period: str(form.get("cost_period")),
     notes: str(form.get("notes")),
   } });
@@ -257,8 +257,8 @@ export async function batchPropertyExpenses(_: BatchState, form: FormData): Prom
   if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 รายการ" };
   const clean = rows.map(({ pay, amount, ...r }) => ({
     ...r, description: String(r.description ?? ""), amount: num(amount),
-    paid_from_asset_id: pay?.startsWith("b:") ? pay.slice(2) : null,
-    paid_from_credit_card_id: pay?.startsWith("c:") ? pay.slice(2) : null,
+    paid_from_asset_id: bankId(parseEndpoint(pay)),
+    paid_from_credit_card_id: cardId(parseEndpoint(pay)),
   }));
   if (clean.some((r) => r.amount == null || Number.isNaN(r.amount) || r.amount <= 0)) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
   if (clean.some((r) => !r.description.trim())) return { error: "กรุณาใส่รายการ (รายละเอียด) ทุกแถว" };
