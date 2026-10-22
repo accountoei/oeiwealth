@@ -151,3 +151,22 @@ export async function batchUpdate(_: BatchState, form: FormData): Promise<BatchS
     .map((r) => ({ asset_id: r.asset_id, lump: r.lump == null ? null : Number(r.lump), history_only: r.history_only }));
   return { ok: `บันทึกยอดแล้ว ${results.length} บัญชี`, results };
 }
+
+/** รับดอกเบี้ยหลายบัญชีพร้อมกัน (แท็บ รับดอกเบี้ย) · ผิดแถวเดียว = ไม่บันทึกเลย */
+export async function batchInterest(_: BatchState, form: FormData): Promise<BatchState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  let rows: { asset_id: string; amount: string; tax: string }[] = [];
+  try { rows = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const clean = rows.map((r) => ({ bank_asset_id: r.asset_id, date, amount: num(r.amount), tax: num(r.tax) }));
+  if (!date) return { error: "กรุณาเลือกวันที่รับ" };
+  if (!clean.length) return { error: "กรุณากรอกดอกเบี้ยอย่างน้อย 1 บัญชี" };
+  if (clean.some((r) => r.amount == null || Number.isNaN(r.amount) || r.amount <= 0)) return { error: "ดอกเบี้ยต้องเป็นตัวเลขมากกว่า 0 ทุกบัญชีที่กรอก" };
+  if (clean.some((r) => r.tax != null && (Number.isNaN(r.tax) || r.tax < 0))) return { error: "ภาษีต้องเป็นตัวเลข (ไม่ติดลบ)" };
+  const { data, error } = await supabase.rpc("batch_record_bank_interest", { p_rows: clean });
+  if (error) return { error: `ยังไม่ได้บันทึก (ทุกบัญชี) · ${friendlyError(error.message)}` };
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/income-expenses");
+  revalidatePath("/");
+  return { ok: `บันทึกรับดอกเบี้ยแล้ว ${data} บัญชี` };
+}

@@ -1,26 +1,15 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { HOLDING_TYPE_LABEL, money, monthOptions, monthRange, thDate } from "@/lib/format";
+import { money, monthOptions, monthRange, thDate } from "@/lib/format";
 import { scheduleOf, type DueRow } from "@/lib/coupon-schedule";
 import MonthPicker from "@/components/MonthPicker";
-import { MaturityForm, type Bank, type CashAcct } from "./[id]/forms";
-import { IncomeForm } from "./[id]/holding/[hid]/forms";
+import type { Bank } from "./[id]/forms";
+import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
 
 // แท็บ "รอรับเดือนนี้" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
 //   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก แยกตามพอร์ต · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
-//   ตารางคำนวณจากข้อมูลหลักทุกครั้ง (src/lib/coupon-schedule.ts)
+//   ตารางคำนวณจากข้อมูลหลักทุกครั้ง (src/lib/coupon-schedule.ts) · ช่องกรอก / บันทึกหลายรายการพร้อมกันอยู่ใน due-batch.tsx
 
 const label = (r: DueRow) => (r.kind === "PRINCIPAL" ? "เงินต้นครบกำหนด" : r.total > 1 ? `ดอกเบี้ย งวด ${r.no}/${r.total}` : "ดอกเบี้ย (ตอนครบกำหนด)");
-
-function Status({ r, today }: { r: DueRow; today: string }) {
-  if (r.received) return <span className="text-emerald-700">รับแล้ว {thDate(r.received.date)}</span>;
-  if (r.due < today) {
-    const d = Math.round((Date.parse(today) - Date.parse(r.due)) / 86400000);
-    return <span className="text-red-700">ค้างรับ · เลยกำหนด {d} วัน</span>;
-  }
-  if (r.due === today) return <span className="text-amber-700">ถึงกำหนดวันนี้</span>;
-  return <span className="text-slate-500">รอรับ (ยังไม่ถึงกำหนด)</span>;
-}
 
 /** หน้าหลักทรัพย์: ตารางรับทั้งหมด (งวดที่ยังไม่รับก่อน) */
 export function ScheduleBox({ rows, currency, today }: { rows: DueRow[]; currency: string; today: string }) {
@@ -44,7 +33,7 @@ export function ScheduleBox({ rows, currency, today }: { rows: DueRow[]; currenc
                 <td className="pr-3">{label(r)}</td>
                 <td className="pr-3 text-right tabular-nums">{r.expected != null ? money(r.expected) : "-"}</td>
                 <td className="pr-3 text-right tabular-nums">{r.received ? money(r.received.amount) : ""}</td>
-                <td><Status r={r} today={today} /></td>
+                <td><DueStatus due={r.due} received={r.received} today={today} /></td>
               </tr>
             ))}
           </tbody>
@@ -79,12 +68,15 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
     ids.length ? supabase.from("investment_transactions").select("holding_id,transaction_type,transaction_date,amount").in("holding_id", ids)
       .in("transaction_type", ["OPENING_BALANCE", "BUY", "COUPON", "INTEREST", "MATURITY"]).is("deleted_at", null) : none,
     canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
-    canWrite ? supabase.from("v_holdings_active").select("id,name,currency,is_default_cash,portfolio_asset_id").eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at") : none,
+    supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
+      .eq("holding_type", "CASH").eq("status", "ACTIVE").is("deleted_at", null).is("investment_portfolios.deleted_at", null).order("created_at"),
   ]);
   const fcnOf = new Map(((fcns as Fcn[] | null) ?? []).map((f) => [f.holding_id, f]));
   const txOf = new Map<string, Tx[]>();
   ((txs as Tx[] | null) ?? []).forEach((t) => txOf.set(t.holding_id, [...(txOf.get(t.holding_id) ?? []), t]));
-  const cashOf = (pf: string) => ((cash as (CashAcct & { portfolio_asset_id: string })[] | null) ?? []).filter((c) => c.portfolio_asset_id === pf);
+  type CRow = { id: string; name: string; currency: string; is_default_cash: boolean; interest_rate: number | null;
+    investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
+  const cashRows = ((cash as unknown as CRow[] | null) ?? []).filter((c) => c.investment_portfolios && showAsset(c.investment_portfolios.asset_id));
 
   const { start, end } = monthRange(month);
   const curMonth = today.slice(0, 7);
@@ -108,6 +100,19 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
     return ccys.map((c) => <div key={c}>{m.has(c) ? money(m.get(c)!, c) : <span className="text-slate-400">- {c}</span>}</div>);
   };
   const months = monthOptions(goLive, today, 12, month);
+  const dueGroups: DueGroup[] = [...groups.entries()].map(([pf, g]) => ({ pf, name: g.name, rows: g.rows.map(({ r, h }) => ({
+    key: r.key, kind: r.kind, label: label(r), due: r.due, expected: r.expected, received: r.received, defaultDate: dueDefault(r.due),
+    holding: { id: h.id, name: h.name, holding_type: h.holding_type, currency: h.currency, status: h.status } })) }));
+  // ดอกเบี้ยเงินฝากในพอร์ต: รับแล้วในเดือนที่เลือก (สุทธิหลังภาษี)
+  const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("holding_id,amount,tax,fee")
+    .in("holding_id", cashRows.map((c) => c.id)).eq("transaction_type", "INTEREST").gte("transaction_date", start).lte("transaction_date", end).is("deleted_at", null)
+    : { data: [] as { holding_id: string; amount: number; tax: number | null; fee: number | null }[] };
+  const gotOf = new Map<string, number>();
+  (cashInt ?? []).forEach((t) => gotOf.set(t.holding_id, (gotOf.get(t.holding_id) ?? 0) + Number(t.amount ?? 0) - Number(t.tax ?? 0) - Number(t.fee ?? 0)));
+  const pfCash: PfCash[] = cashRows.map((c) => ({ id: c.id, name: c.name, currency: c.currency, is_default_cash: c.is_default_cash,
+    pf: c.investment_portfolios!.asset_id, pfName: c.investment_portfolios!.assets?.name ?? "พอร์ต",
+    rate: c.interest_rate == null ? null : Number(c.interest_rate), received: gotOf.get(c.id) ?? 0 }))
+    .sort((a, b) => a.pfName.localeCompare(b.pfName, "th"));
   const open = items.filter(({ r }) => !r.received);
 
   return (
@@ -131,41 +136,8 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
           ไม่มีรายการที่ต้องรับในเดือนนี้ · หุ้นกู้จะขึ้นที่นี่เมื่อใส่วันครบกำหนด + เงินต้น + อัตรา + จ่ายทุก ในหน้าแก้ไขข้อมูลของหลักทรัพย์
         </p>
       )}
-      {[...groups.entries()].map(([pf, g]) => (
-        <section key={pf} className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900"><Link href={`/investments/${pf}`} className="hover:underline">{g.name}</Link></h2>
-          {/* ความกว้างคอลัมน์คงที่ → ทุกพอร์ตตรงกัน */}
-          <table className="mt-2 w-full min-w-[52rem] table-fixed text-sm">
-            <colgroup><col /><col className="w-44" /><col className="w-36" /><col className="w-48" /><col className="w-56" /><col className="w-28" /></colgroup>
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-3 py-2">หลักทรัพย์</th><th className="px-3">รายการ</th><th className="px-3">วันครบกำหนด</th>
-                <th className="px-3 text-right">ยอดคาดว่าจะได้รับ</th><th className="px-3">สถานะ</th><th className="px-3" /></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {g.rows.map(({ r, h }) => (
-                <tr key={r.key} className={`align-top ${r.received ? "text-slate-500" : ""}`}>
-                  <td className="break-words px-3 py-2.5"><Link href={`/investments/${pf}/holding/${h.id}`} className="font-medium text-slate-900 hover:underline">{h.name}</Link>
-                    <div className="text-xs text-slate-400">{HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency}</div></td>
-                  <td className="px-3 py-2.5">{label(r)}</td>
-                  <td className="px-3 py-2.5">{thDate(r.due)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{r.expected != null ? money(r.expected, h.currency) : "-"}
-                    {r.received && <div className="text-xs text-emerald-700">ได้รับ {money(r.received.amount, h.currency)}</div>}</td>
-                  <td className="px-3 py-2.5"><Status r={r} today={today} /></td>
-                  <td className="px-3 py-2 text-right">
-                    {canWrite && !r.received && (r.kind === "INTEREST"
-                      ? <IncomeForm assetId={pf} portfolioName={g.name} holdingId={h.id} currency={h.currency} isFcn={h.holding_type !== "BOND" && h.holding_type !== "OTHER"}
-                          banks={(banks as Bank[] | null) ?? []} cashAccounts={cashOf(pf)} today={today} minDate={goLive}
-                          label="บันทึกรับ" title={`บันทึกรับดอกเบี้ย · ${h.name}`} defaultAmount={r.expected} defaultDate={dueDefault(r.due)} defaultNotes={`${label(r)} (ครบ ${thDate(r.due)})`} />
-                      : h.status === "ACTIVE" && <MaturityForm assetId={pf} portfolioName={g.name} banks={(banks as Bank[] | null) ?? []} cashAccounts={cashOf(pf)}
-                          holding={{ id: h.id, name: h.name, symbol: null, holding_type: h.holding_type, currency: h.currency, quantity: 0, current_price: null, status: h.status }}
-                          today={today} minDate={goLive} label="บันทึกรับ" defaultAmount={r.expected} defaultDate={dueDefault(r.due)} />)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ))}
+      <DueBatch groups={dueGroups} cash={pfCash} banks={(banks as Bank[] | null) ?? []} today={today} minDate={goLive}
+        defaultDate={end < today ? end : today} canWrite={canWrite} />
     </div>
   );
 }
