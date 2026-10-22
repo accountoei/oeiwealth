@@ -7,7 +7,7 @@ import { MaturityForm, type Bank, type CashAcct } from "./[id]/forms";
 import { IncomeForm } from "./[id]/holding/[hid]/forms";
 
 // แท็บ "รอรับเดือนนี้" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
-//   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก แยกตามพอร์ต · งวดที่เลยกำหนดแล้วยังไม่บันทึกขึ้นก่อน
+//   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก แยกตามพอร์ต · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
 //   ตารางคำนวณจากข้อมูลหลักทุกครั้ง (src/lib/coupon-schedule.ts)
 
 const label = (r: DueRow) => (r.kind === "PRINCIPAL" ? "เงินต้นครบกำหนด" : r.total > 1 ? `ดอกเบี้ย งวด ${r.no}/${r.total}` : "ดอกเบี้ย (ตอนครบกำหนด)");
@@ -16,9 +16,10 @@ function Status({ r, today }: { r: DueRow; today: string }) {
   if (r.received) return <span className="text-emerald-700">รับแล้ว {thDate(r.received.date)}</span>;
   if (r.due < today) {
     const d = Math.round((Date.parse(today) - Date.parse(r.due)) / 86400000);
-    return <span className="text-red-700">เลยกำหนด {d} วัน</span>;
+    return <span className="text-red-700">ค้างรับ · เลยกำหนด {d} วัน</span>;
   }
-  return <span className="text-slate-500">รอรับ</span>;
+  if (r.due === today) return <span className="text-amber-700">ถึงกำหนดวันนี้</span>;
+  return <span className="text-slate-500">รอรับ (ยังไม่ถึงกำหนด)</span>;
 }
 
 /** หน้าหลักทรัพย์: ตารางรับทั้งหมด (งวดที่ยังไม่รับก่อน) */
@@ -115,7 +116,7 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">ยังไม่บันทึกรับ</div>
           <div className="text-2xl font-semibold">{open.length} รายการ</div>
-          <div className="text-xs text-red-700">{open.filter(({ r }) => late(r)).length ? `เลยกำหนด ${open.filter(({ r }) => late(r)).length} รายการ` : ""}</div></div>
+          <div className="text-xs text-red-700">{open.filter(({ r }) => late(r)).length ? `ค้างรับ (เลยกำหนด) ${open.filter(({ r }) => late(r)).length} รายการ` : ""}</div></div>
         <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">ยอดที่รอรับ (คาดการณ์ก่อนภาษี)</div>
           <div className="text-lg font-semibold tabular-nums">{sumBy(items, ({ r }) => !r.received)}</div></div>
         <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">รับแล้วในเดือนนี้</div>
