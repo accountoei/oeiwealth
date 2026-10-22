@@ -45,7 +45,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const [{ data: family }, { data: persons, error }, { data: nwRows }, { data: policyRows }] = await Promise.all([
     supabase.from("families").select("name,head_person_id").maybeSingle(),
     supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,full_name_en,title_prefix,gender,national_id,education_level,occupation,workplace,job_title,passport_expiry,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
-    supabase.from("v_net_worth_by_person").select("person_id,total_assets,total_liabilities,net_worth"),
+    supabase.from("v_net_worth_by_person").select("person_id,net_worth"),
     supabase.from("insurance_policies").select("person_id").eq("status", "ACTIVE").is("deleted_at", null),
   ]);
   const nwOf = new Map((nwRows ?? []).map((r) => [r.person_id as string, r]));
@@ -233,12 +233,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                   const nw = nwOf.get(p.id);
                   if (!nw) return null;
                   return (
-                    <div className="hidden w-40 shrink-0 text-right sm:block">
-                      <div className="text-sm font-medium tabular-nums text-slate-900">{money(nw.net_worth, "THB", 0)}</div>
-                      <div className="truncate text-[11px] tabular-nums text-slate-500">
-                        สินทรัพย์ {money(nw.total_assets, undefined, 0)}{Number(nw.total_liabilities) > 0 && ` · หนี้ ${money(nw.total_liabilities, undefined, 0)}`}
-                      </div>
-                    </div>
+                    <div className="hidden w-40 shrink-0 text-right text-sm font-medium tabular-nums text-slate-900 sm:block">{money(nw.net_worth, "THB", 0)}</div>
                   );
                 })()}
                 <span className="shrink-0 text-slate-300">›</span>
