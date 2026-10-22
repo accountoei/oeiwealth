@@ -363,7 +363,19 @@ export function genderOf(p: KinPerson, people: KinPerson[], viaSpouse = true): "
 }
 
 /** ชื่อเรียกตามเพศ เทียบกับหัวหน้าครอบครัว (บิดา / มารดา · บุตรชาย / บุตรสาว · ปู่ / ย่า / ตา / ยาย ฯลฯ) */
-export function kinLabel(p: KinPerson, people: KinPerson[], headId: string | null | undefined): string {
+/** ลำดับบุตร (คนที่ 1, 2, …) ในพ่อแม่เดียวกัน นับทุกเพศ · เรียงวันเกิด (ไม่มีวันเกิด → ต่อท้าย ตามลำดับในรายชื่อ) · ลูกคนเดียว / ไม่ได้ผูกพ่อแม่ → null */
+export function childOrdinal(p: KinPerson, people: KinPerson[]): number | null {
+  if (!p.father_id && !p.mother_id) return null;
+  const sibs = people.filter((x) => x.relationship === "CHILD" && x.father_id === p.father_id && x.mother_id === p.mother_id);
+  if (sibs.length < 2) return null;
+  const idx = new Map(sibs.map((x, i) => [x.id, i]));
+  const key = (x: KinPerson) => x.birth_date ?? "9999";
+  sibs.sort((a, b) => (key(a) !== key(b) ? (key(a) < key(b) ? -1 : 1) : idx.get(a.id)! - idx.get(b.id)!));
+  const n = sibs.findIndex((x) => x.id === p.id);
+  return n < 0 ? null : n + 1;
+}
+
+export function kinLabel(p: KinPerson, people: KinPerson[], headId: string | null | undefined, ordinal = true): string {
   const rel = p.relationship ?? "";
   const base = RELATIONSHIP_LABEL[rel] ?? "-";
   const g = genderOf(p, people);
@@ -372,7 +384,10 @@ export function kinLabel(p: KinPerson, people: KinPerson[], headId: string | nul
   switch (rel) {
     case "SPOUSE": return pick("สามี", "ภรรยา");
     case "PARENT": return pick("บิดา", "มารดา");
-    case "CHILD": return pick("บุตรชาย", "บุตรสาว");
+    case "CHILD": {
+      const n = ordinal ? childOrdinal(p, people) : null;
+      return pick("บุตรชาย", "บุตรสาว") + (n ? ` คนที่ ${n}` : "");
+    }
     case "CHILD_IN_LAW": return pick("ลูกเขย", "ลูกสะใภ้");
     case "GRANDCHILD": return pick("หลานชาย", "หลานสาว");
     case "GRANDPARENT": {

@@ -98,7 +98,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   // นับทุกความสัมพันธ์ (ไม่ตัดแถว) · เรียงจากรุ่นบนลงล่าง · ผลรวม = จำนวนสมาชิก Active
   const byRel = new Map<string, { n: number; rank: number }>();
   active.forEach((p) => {
-    const k = p.id === headId ? "หัวหน้าครอบครัว" : kinLabel(p, all, headId);
+    const k = p.id === headId ? "หัวหน้าครอบครัว" : kinLabel(p, all, headId, false);
     const r = REL_RANK.indexOf(p.id === headId ? "SELF" : p.relationship ?? "");
     const rank = r < 0 ? REL_RANK.length : r;
     const cur = byRel.get(k);
@@ -122,25 +122,23 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
               candidates={active.map((p) => ({ id: p.id, name: p.name }))} /></ActionBar>}
           </div>
           <div className="mt-1 truncate text-xl font-semibold">{family?.name || "-"}</div>
-          <div className="text-xs text-slate-500">แสดงเป็นหัวข้อหน้า Dashboard</div>
+          {ages.length > 0 && <div className="text-xs text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">หัวหน้าครอบครัว</div>
           <div className="mt-1 truncate text-lg font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">★ {head.name}</Link> : "-"}</div>
           <div className="text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="text-xs text-slate-500">สมาชิก (ตามความสัมพันธ์)</div>
+          <div className="flex justify-between gap-2 text-xs text-slate-500">สมาชิก (ตามความสัมพันธ์)<span className="text-sm font-semibold text-slate-900">รวม {active.length} คน</span></div>
           <div className="mt-1 space-y-0.5 text-sm">
             {[...byRel.entries()].sort((x, y) => x[1].rank - y[1].rank).map(([k, v]) => (
               <div key={k} className="flex justify-between gap-2"><span className="text-slate-600">{k}</span><span className="tabular-nums">{v.n}</span></div>))}
           </div>
-          <div className="mt-2 flex justify-between gap-2 border-t border-slate-100 pt-2 text-sm font-semibold">
-            <span>รวม</span><span className="tabular-nums">{active.length} คน</span>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">
-            {archivedCount > 0 ? `Archived ${archivedCount} คน` : "ไม่มี Archived"}
-            {all.length - active.length - archivedCount > 0 && ` · สถานะอื่น ${all.length - active.length - archivedCount} คน`}
-            {ages.length > 0 && ` · อายุ ${Math.min(...ages)}–${Math.max(...ages)} ปี`}
-          </div>
+          {(archivedCount > 0 || all.length - active.length - archivedCount > 0) && (
+            <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
+              {[archivedCount > 0 && `Archived ${archivedCount} คน`,
+                all.length - active.length - archivedCount > 0 && `สถานะอื่น ${all.length - active.length - archivedCount} คน`].filter(Boolean).join(" · ")}
+            </div>
+          )}
         </div>
       </section>
 
