@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ageFrom, money, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, thDate, todayBangkok } from "@/lib/format";
+import { ageFrom, EDUCATION_LEVEL_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, thDate, todayBangkok } from "@/lib/format";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
 import SetHeadButton from "./SetHeadButton";
@@ -10,7 +10,8 @@ import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
-  "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id,death_date";
+  "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id,death_date," +
+  "gender,education_level,education_institution,education_major,occupation,workplace,job_title,social_positions";
 
 type Doc = { id: string; title: string; document_type: string; mime_type: string | null; version_status: string; deleted_at: string | null; created_at: string };
 
@@ -30,7 +31,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
       .eq("entity_type", "PERSON").eq("entity_id", id).is("deleted_at", null),
     supabase.rpc("drive_status"),
     supabase.from("insurance_policies").select("id", { count: "exact", head: true }).eq("person_id", id).eq("status", "ACTIVE").is("deleted_at", null),
-    supabase.from("persons").select("id,name,status,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,status,relationship,gender,title_prefix,birth_date,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("families").select("head_person_id").maybeSingle(),
   ]);
   // สมาชิก Archived: ทรัพย์สิน / หนี้ที่ยังมีชื่ออยู่ (ต้องโอนให้ทายาท / จัดการ)
@@ -65,6 +66,8 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
   };
   const passportExpired = p.passport_expiry && p.passport_expiry < today;
   const fullName = [p.title_prefix, p.full_name_th].filter(Boolean).join(" ");
+  const gender = genderOf(p, people);
+  const education = [p.education_level ? EDUCATION_LEVEL_LABEL[p.education_level] : null, p.education_major, p.education_institution].filter(Boolean).join(" · ");
 
   const headLabel = nameOf.get(family?.head_person_id ?? "");
   const canSetHead = me.role === "ADMIN" && !isHead && p.status === "ACTIVE";
@@ -82,7 +85,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold text-slate-900">{p.name}{p.nickname && <span className="ml-2 text-base font-normal text-slate-500">({p.nickname})</span>}</h1>
               <p className="text-sm text-slate-500">
-                {isHead ? <span className="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">★ หัวหน้าครอบครัว</span> : (RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-")}
+                {isHead ? <span className="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">★ หัวหน้าครอบครัว</span> : kinLabel(p, people, family?.head_person_id)}
                 {age != null && ` · อายุ ${age} ปี`}
                 {p.status !== "ACTIVE" && <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{PERSON_STATUS_LABEL[p.status]}</span>}
               </p>
@@ -131,8 +134,18 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
               <Item dash label="ชื่อ-นามสกุล (อังกฤษ)">{p.full_name_en}</Item>
               <Item dash label="ชื่อเล่น">{p.nickname}</Item>
               <Item dash label="วันเกิด">{p.birth_date ? `${thDate(p.birth_date)}${age != null ? ` (${age} ปี)` : ""}` : ""}</Item>
+              <Item dash label="เพศ">{gender ? `${GENDER_LABEL[gender]}${p.gender ? "" : " (ดูจากคำนำหน้า / ผัง)"}` : ""}</Item>
               {archived && <Item dash label="วันที่เสียชีวิต">{p.death_date ? thDate(p.death_date) : ""}</Item>}
               <Item dash wide label="หมายเหตุ">{p.notes}</Item>
+            </dl>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="mb-3 font-medium text-slate-900">การศึกษาและการงาน</h2>
+            <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Item dash label="การศึกษา">{education}</Item>
+              <Item dash label="อาชีพ">{p.occupation}</Item>
+              <Item dash label="ตำแหน่ง / ที่ทำงาน">{[p.job_title, p.workplace].filter(Boolean).join(" · ")}</Item>
+              <Item dash wide label="ตำแหน่งทางสังคม">{p.social_positions && <span className="whitespace-pre-line">{p.social_positions}</span>}</Item>
             </dl>
           </div>
           <div className="border-t border-slate-100 pt-4">

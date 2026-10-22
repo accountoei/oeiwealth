@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { RELATIONSHIP_LABEL } from "@/lib/format";
+import { kinLabel } from "@/lib/format";
 
 export type TreePerson = {
   id: string; name: string; nickname: string | null; photo: string | null; relationship: string | null; status: string;
   father_id: string | null; mother_id: string | null; spouse_id: string | null;
+  gender: string | null; title_prefix: string | null; birth_date: string | null;
 };
 
 const GEN_LABEL: Record<number, string> = { [-2]: "รุ่นปู่ย่าตายาย", [-1]: "รุ่นพ่อแม่", 0: "รุ่นหัวหน้าครอบครัว", 1: "รุ่นลูก", 2: "รุ่นหลาน", 3: "รุ่นเหลน" };
@@ -13,8 +14,9 @@ const GEN_LABEL: Record<number, string> = { [-2]: "รุ่นปู่ย่�
  * - รุ่นนับจากหัวหน้าครอบครัว: พ่อ/แม่ = รุ่นบน · ลูก = รุ่นล่าง · คู่สมรส = รุ่นเดียวกัน
  * - ในแต่ละรุ่น: คู่สมรสอยู่ด้วยกัน · รุ่นล่างจัดกลุ่มตามพ่อแม่ ("ลูกของ …")
  * - คนที่ยังไม่ได้ผูกพ่อ/แม่/คู่สมรส → แถว "ยังไม่ได้ผูกในผัง"
+ * - kin: สมาชิกทุกคน (รวม Archived) ใช้คิดชื่อเรียกตามเพศ เช่น ปู่ / ตา
  */
-export function FamilyTree({ people, headId }: { people: TreePerson[]; headId: string | null }) {
+export function FamilyTree({ people, headId, kin = people }: { people: TreePerson[]; headId: string | null; kin?: TreePerson[] }) {
   const byId = new Map(people.map((p) => [p.id, p]));
   const order = new Map(people.map((p, i) => [p.id, i]));
   const kidsOf = (id: string) => people.filter((p) => p.father_id === id || p.mother_id === id);
@@ -67,7 +69,7 @@ export function FamilyTree({ people, headId }: { people: TreePerson[]; headId: s
         : <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-500">{p.name.slice(0, 1)}</span>}
       <span className="mt-1 w-full truncate text-sm font-medium text-slate-900">{p.name}</span>
       <span className="w-full truncate text-[11px] text-slate-500">
-        {p.id === headId ? "★ หัวหน้าครอบครัว" : RELATIONSHIP_LABEL[p.relationship ?? ""] ?? ""}{p.status === "DECEASED" && " · Archived"}
+        {p.id === headId ? "★ หัวหน้าครอบครัว" : kinLabel(p, kin, headId)}{p.status === "DECEASED" && " · Archived"}
       </span>
     </Link>
   );

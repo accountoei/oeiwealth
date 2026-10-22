@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError as friendly, RELATIONSHIP_LABEL } from "@/lib/format";
+import { EDUCATION_LEVEL_LABEL, friendlyError as friendly, RELATIONSHIP_LABEL } from "@/lib/format";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -51,7 +51,8 @@ export async function updateFamilyName(_: ActionState, form: FormData): Promise<
 }
 
 const TEXT_FIELDS = ["title_prefix", "full_name_th", "full_name_en", "nickname", "phone", "email", "address",
-  "emergency_contact_name", "emergency_contact_phone", "passport_no", "house_registration_no", "notes"] as const;
+  "emergency_contact_name", "emergency_contact_phone", "passport_no", "house_registration_no", "notes",
+  "education_institution", "education_major", "occupation", "workplace", "job_title", "social_positions"] as const;
 
 /** ข้อมูลส่วนบุคคล (หน้ารายคน) */
 export async function updatePersonDetails(_: ActionState, form: FormData): Promise<ActionState> {
@@ -69,6 +70,11 @@ export async function updatePersonDetails(_: ActionState, form: FormData): Promi
   const nid = String(form.get("national_id") ?? "").replace(/\D/g, "");
   if (nid && nid.length !== 13) return { error: "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก" };
   row.national_id = nid || null;
+  // เพศว่าง → ฐานข้อมูลเติมจากคำนำหน้าให้เอง
+  row.gender = s("gender");
+  if (row.gender && !["M", "F"].includes(row.gender)) return { error: "เพศไม่ถูกต้อง" };
+  row.education_level = s("education_level");
+  if (row.education_level && !(row.education_level in EDUCATION_LEVEL_LABEL)) return { error: "วุฒิการศึกษาไม่ถูกต้อง" };
   for (const k of ["father_id", "mother_id", "spouse_id"] as const) {
     const v = s(k);
     if (v === id) return { error: "เลือกตัวเองเป็นพ่อ / แม่ / คู่สมรสไม่ได้" };

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ageFrom, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, todayBangkok } from "@/lib/format";
+import { ageFrom, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
 import { movePerson } from "./actions";
 import { AddPersonForm, FamilyNameForm } from "./forms";
 import { FamilyTree } from "./tree";
@@ -9,8 +9,11 @@ import { SortToggle } from "@/components/SortControls";
 import { ActionBar } from "@/components/ActionBar";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
+const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`;
 
-export default async function MembersPage({ searchParams }: { searchParams: Promise<{ view?: string; archived?: string; order?: string }> }) {
+type Sp = { view?: string; archived?: string; order?: string; q?: string; gen?: string; g?: string; missing?: string };
+
+export default async function MembersPage({ searchParams }: { searchParams: Promise<Sp> }) {
   const sp = await searchParams;
   const tree = sp.view === "tree";
   const me = await requireAppUser();
@@ -19,29 +22,54 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const isAdmin = me.role === "ADMIN";
   const ordering = canEdit && !tree && sp.order === "1";
   const showArchived = sp.archived === "1" || ordering;   // โหมดจัดลำดับ: แสดงทุกคน (ลำดับนับรวมคนที่ซ่อน)
-  const url = (q: { view?: string; archived?: boolean; order?: boolean }) => {
+  // ตัวกรองรายชื่อ (เฉพาะมุมมองรายชื่อ · ไม่ใช้ในโหมดจัดลำดับ)
+  const q = (sp.q ?? "").trim();
+  const fGen = sp.gen && sp.gen in GEN_FILTER_LABEL ? sp.gen : "";
+  const fG = sp.g === "M" || sp.g === "F" ? sp.g : "";
+  const fMissing = sp.missing === "1";
+  const filtering = !tree && !ordering && !!(q || fGen || fG || fMissing);
+  const url = (o: { view?: string; archived?: boolean; order?: boolean; q?: string; gen?: string; g?: string; missing?: boolean }) => {
     const u = new URLSearchParams();
-    if (q.view) u.set("view", q.view);
-    if (q.archived) u.set("archived", "1");
-    if (q.order) u.set("order", "1");
+    if (o.view) u.set("view", o.view);
+    if (o.archived) u.set("archived", "1");
+    if (o.order) u.set("order", "1");
+    if (o.q) u.set("q", o.q);
+    if (o.gen) u.set("gen", o.gen);
+    if (o.g) u.set("g", o.g);
+    if (o.missing) u.set("missing", "1");
     const t = u.toString();
     return `/family/members${t ? `?${t}` : ""}`;
   };
+  const cur = { archived: sp.archived === "1", q, gen: fGen, g: fG, missing: fMissing };
 
   const [{ data: family }, { data: persons, error }] = await Promise.all([
     supabase.from("families").select("name,head_person_id").maybeSingle(),
-    supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,title_prefix,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,full_name_en,title_prefix,gender,national_id,education_level,occupation,workplace,job_title,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   const all = persons ?? [];
   const archivedCount = all.filter((p) => p.status === "DECEASED").length;
-  const list = showArchived ? all : all.filter((p) => p.status !== "DECEASED");
+  const shown = showArchived ? all : all.filter((p) => p.status !== "DECEASED");
   const today = todayBangkok();
+  const headId = family?.head_person_id ?? null;
+  const genOf = (p: (typeof all)[number]) => (p.id === headId ? "mid" : RELATION_GEN[p.relationship ?? ""] ?? "other");
+  /** ข้อมูลหลักที่ยังไม่ได้กรอก (ใช้ตอนนำเข้าข้อมูลจริง) */
+  const missingOf = (p: (typeof all)[number]) => [
+    !p.full_name_th && "ชื่อ-นามสกุลจริง", !genderOf(p, all) && "เพศ", !p.birth_date && "วันเกิด", !p.national_id && "เลขบัตรประชาชน",
+  ].filter((x): x is string => !!x);
+  const needle = q.toLowerCase();
+  const list = !filtering ? shown : shown.filter((p) =>
+    (!needle || [p.name, p.nickname, p.full_name_th, p.full_name_en].some((x) => x?.toLowerCase().includes(needle)))
+    && (!fGen || genOf(p) === fGen)
+    && (!fG || genderOf(p, all) === fG)
+    && (!fMissing || missingOf(p).length > 0));
+  const genCount = (g: string) => shown.filter((p) => genOf(p) === g).length;
+  const missingCount = shown.filter((p) => missingOf(p).length > 0).length;
 
   const active = all.filter((p) => p.status === "ACTIVE");
   const ages = active.map((p) => ageFrom(p.birth_date, today)).filter((a): a is number => a != null);
   const head = all.find((p) => p.id === family?.head_person_id);
   const byRel = new Map<string, number>();
-  active.forEach((p) => { const k = RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "อื่น ๆ"; byRel.set(k, (byRel.get(k) ?? 0) + 1); });
+  active.forEach((p) => { const k = kinLabel(p, all, headId); byRel.set(k, (byRel.get(k) ?? 0) + 1); });
 
   return (
     <div className="space-y-6">
@@ -95,7 +123,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
               </Link>
             )}
           </div>
-          {canEdit && !tree && list.length > 1 && (
+          {canEdit && !tree && !filtering && list.length > 1 && (
             <SortToggle active={ordering} href={url({ archived: sp.archived === "1", order: true })} doneHref={url({ archived: sp.archived === "1" })} />
           )}
         </div>
@@ -103,10 +131,35 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
           รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
           · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{ordering && " · โหมดจัดลำดับ: กด ↑ ↓ (มีผลทันที) แล้วกด เสร็จ"}
         </p>
+        {!tree && !ordering && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <form method="get" action="/family/members" className="flex items-center gap-1">
+              {cur.archived && <input type="hidden" name="archived" value="1" />}
+              {fGen && <input type="hidden" name="gen" value={fGen} />}
+              {fG && <input type="hidden" name="g" value={fG} />}
+              {fMissing && <input type="hidden" name="missing" value="1" />}
+              <input name="q" defaultValue={q} placeholder="ค้นหาชื่อ / ชื่อเล่น" data-plain
+                className="w-44 rounded-md border border-slate-300 px-2.5 py-1 text-sm" aria-label="ค้นหาสมาชิก" />
+              <button className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50">ค้นหา</button>
+            </form>
+            <span className="mx-1 h-4 w-px bg-slate-200" />
+            <Link href={url({ ...cur, gen: "" })} className={chip(!fGen)}>ทุกรุ่น</Link>
+            {Object.entries(GEN_FILTER_LABEL).filter(([k]) => genCount(k) > 0).map(([k, l]) => (
+              <Link key={k} href={url({ ...cur, gen: fGen === k ? "" : k })} className={chip(fGen === k)}>{l} ({genCount(k)})</Link>))}
+            <span className="mx-1 h-4 w-px bg-slate-200" />
+            {Object.entries(GENDER_LABEL).map(([k, l]) => (
+              <Link key={k} href={url({ ...cur, g: fG === k ? "" : k })} className={chip(fG === k)}>{l}</Link>))}
+            <span className="mx-1 h-4 w-px bg-slate-200" />
+            <Link href={url({ ...cur, missing: !fMissing })} className={fMissing || missingCount === 0 ? chip(fMissing) : "rounded-full border border-amber-300 px-2.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50"}>
+              ข้อมูลยังไม่ครบ ({missingCount})
+            </Link>
+            {filtering && <Link href={url({ archived: cur.archived })} className="text-xs text-slate-500 underline">ล้างตัวกรอง</Link>}
+          </div>
+        )}
         {error && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อสมาชิกไม่สำเร็จ: {error.message}</p>}
-        {tree ? <div className="mt-4"><FamilyTree people={list} headId={family?.head_person_id ?? null} /></div> : (
+        {tree ? <div className="mt-4"><FamilyTree people={list} kin={all} headId={headId} /></div> : (
         <div className="divide-y divide-slate-100">
-          {list.length === 0 && <p className="py-2 text-sm text-slate-500">ยังไม่มีสมาชิก</p>}
+          {list.length === 0 && <p className="py-2 text-sm text-slate-500">{filtering ? "ไม่พบสมาชิกตามตัวกรอง" : "ยังไม่มีสมาชิก"}</p>}
           {list.map((p, i) => (
             <div key={p.id} className="flex flex-wrap items-center gap-3 py-2">
               <span className="w-6 text-right text-xs text-slate-400">{i + 1}</span>
@@ -133,10 +186,16 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                     {p.name}{p.nickname && <span className="font-normal text-slate-500"> ({p.nickname})</span>}
                   </div>
                   <div className="truncate text-xs text-slate-500">
-                    {p.id === family?.head_person_id ? "★ หัวหน้าครอบครัว" : RELATIONSHIP_LABEL[p.relationship ?? ""] ?? "-"}
+                    {p.id === headId ? "★ หัวหน้าครอบครัว" : kinLabel(p, all, headId)}
                     {(() => { const a = ageFrom(p.birth_date, today); return a != null ? ` · ${a} ปี` : ""; })()}
                     {p.full_name_th && ` · ${[p.title_prefix, p.full_name_th].filter(Boolean).join(" ")}`}
                   </div>
+                  {(() => {
+                    const work = [p.job_title, p.workplace].filter(Boolean).join(" · ") || p.occupation;
+                    const edu = p.education_level ? EDUCATION_LEVEL_LABEL[p.education_level] : null;
+                    return (work || edu) && <div className="truncate text-xs text-slate-500">{[work, edu].filter(Boolean).join(" · ")}</div>;
+                  })()}
+                  {fMissing && <div className="truncate text-xs text-amber-700">ยังไม่ได้กรอก: {missingOf(p).join(", ")}</div>}
                 </div>
                 {p.status !== "ACTIVE" && (
                   <span className={`ml-auto shrink-0 rounded px-2 py-0.5 text-xs ${p.status === "DECEASED" ? "bg-slate-200 text-slate-700" : "bg-amber-50 text-amber-700"}`}>
