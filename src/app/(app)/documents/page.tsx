@@ -117,7 +117,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
           {st.connected ? (
             <>
               <div className="mt-1 text-xl font-semibold text-emerald-700">เชื่อมแล้ว</div>
-              <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email} · ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
+              <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email}</div>
+              <div className="text-xs text-slate-500">ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
               {isAdmin && (
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   {st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
@@ -145,7 +146,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
           <div className={`mt-1 text-xl font-semibold tabular-nums ${exp.length ? "text-amber-700" : ""}`}>{exp.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
           <div className={`mt-1 text-xs ${expired ? "text-red-600" : "text-slate-500"}`}>{expired ? `หมดแล้ว ${expired} ไฟล์` : "ยังไม่มีไฟล์ที่หมดแล้ว"}</div>
         </div>
-        <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false} className={`block rounded-xl ${sp.u ? "ring-2 ring-blue-600" : "hover:ring-1 hover:ring-slate-300"}`}>
+        <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false} className={`block rounded-xl [&>div]:h-full ${sp.u ? "ring-2 ring-blue-600" : "hover:ring-1 hover:ring-slate-300"}`}>
           <StatBox label="ยังไม่ผูกกับรายการ" value={unlinked} unit="ไฟล์" valueClass={unlinked ? "text-amber-700" : ""}
             sub={unlinked ? (sp.u ? "กำลังแสดงเฉพาะที่ยังไม่ผูก · กดอีกครั้งเพื่อแสดงทั้งหมด" : "กดเพื่อดูเฉพาะที่ยังไม่ผูก แล้วกด \"ผูก\" ในคอลัมน์เอกสารของ") : "ผูกครบทุกไฟล์แล้ว"} />
         </Link>
@@ -220,7 +221,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                       })}
                       {canWrite && d.version_status === "CURRENT" && (
                         <div className={ls.length ? "mt-0.5" : "inline"}>{ls.length ? "" : " · "}
-                          <LinkDocument docId={d.id} title={d.title} options={options} linked={ls.map((l) => l.key)} label={ls.length ? "+ ผูกเพิ่ม" : "ผูก"} />
+                          <LinkDocument docId={d.id} title={d.title} options={options} canUnlink={canDelete}
+                            linked={ls.map((l) => ({ id: l.id, key: l.key, name: label.get(l.key)?.name ?? "(รายการถูกลบ)" }))} />
                         </div>
                       )}
                     </td>

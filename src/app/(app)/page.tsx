@@ -395,8 +395,7 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
       )}
       {/* บรรทัดสุดท้าย = สินทรัพย์ − หนี้สิน (ตรงกับกล่อง "ความมั่งคั่งสุทธิ" ด้านบน) */}
       <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 border-t-2 border-slate-200 py-2.5 font-medium sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
-        <span>ความมั่งคั่งสุทธิ (Net Worth)</span>
-        <span className="hidden sm:block" />
+        <span className="sm:col-span-2">ความมั่งคั่งสุทธิ (Net Worth)</span>
         <span className="hidden sm:block" />
         <span className={`text-right tabular-nums ${total - liabTotal < 0 ? "text-red-700" : ""}`}>{money(total - liabTotal, undefined, 0)}</span>
         <span className="hidden sm:block" />
