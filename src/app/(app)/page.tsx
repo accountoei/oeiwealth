@@ -158,7 +158,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์ตามหมวด{personName ? ` · ${personName}` : ""}</h2>
-          <p className="mb-3 text-xs text-slate-500">กดที่หมวดเพื่อดูรายการ</p>
+          <p className="mb-3 text-xs text-slate-500">% คิดจากสินทรัพย์รวม · กดที่หมวดเพื่อดูรายการ</p>
           <Suspense fallback={<Lines n={7} />}>
             <AllocationBody start={start} personId={personId} />
           </Suspense>
@@ -358,7 +358,7 @@ async function AllocationBody({ start, personId }: { start: string; personId: st
   return <Allocation items={items} showShare={!!personId} />;
 }
 
-/** สัดส่วน 7 หมวด แถวละหมวด · กดหมวดเพื่อกางรายการใต้แถว · หนี้สินอยู่แถวสุดท้าย (ใช้ทั้งภาพรวมครอบครัวและรายคน) */
+/** สัดส่วน 7 หมวด แถวละหมวด (% ของสินทรัพย์รวม) · กดหมวดเพื่อกางรายการใต้แถว · ต่อด้วยหนี้สิน แล้วปิดท้ายด้วย Net Worth (ใช้ทั้งภาพรวมครอบครัวและรายคน) */
 function Allocation({ items, showShare }: { items: Item[]; showShare: boolean }) {
   const assets = items.filter((i) => i.item_type === "ASSET").sort((a, b) => Number(b.base_value) - Number(a.base_value));
   const liabs = items.filter((i) => i.item_type === "LIABILITY").sort((a, b) => Number(b.base_value) - Number(a.base_value));
@@ -385,14 +385,6 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
           </details>
         );
       })}
-      {/* ยอดรวมสินทรัพย์ (ตรงกับกล่อง "สินทรัพย์รวม" ด้านบน) */}
-      <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 border-t-2 border-slate-200 py-2.5 font-medium sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
-        <span>รวมสินทรัพย์</span>
-        <span className="hidden sm:block" />
-        <span className="hidden text-right tabular-nums sm:block">100.0%</span>
-        <span className="text-right tabular-nums">{money(total, undefined, 0)}</span>
-        <span className="hidden sm:block" />
-      </div>
       {liabs.length > 0 && (
         <details className="group py-2.5">
           <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
@@ -401,6 +393,14 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
           <ItemList items={liabs} showShare={showShare} negative />
         </details>
       )}
+      {/* บรรทัดสุดท้าย = สินทรัพย์ − หนี้สิน (ตรงกับกล่อง "ความมั่งคั่งสุทธิ" ด้านบน) */}
+      <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 border-t-2 border-slate-200 py-2.5 font-medium sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
+        <span>ความมั่งคั่งสุทธิ (Net Worth)</span>
+        <span className="hidden sm:block" />
+        <span className="hidden sm:block" />
+        <span className={`text-right tabular-nums ${total - liabTotal < 0 ? "text-red-700" : ""}`}>{money(total - liabTotal, undefined, 0)}</span>
+        <span className="hidden sm:block" />
+      </div>
     </div>
   );
 }

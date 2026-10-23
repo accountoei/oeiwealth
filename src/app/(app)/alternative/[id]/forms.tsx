@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE } from "@/lib/format";
+import { useActionState, useRef, useState } from "react";
+import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, GRAM_PER_GOLD_BAHT } from "@/lib/format";
 import { addGoldValuation, updateAlternativeInfo, type ActionState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
 
@@ -15,23 +15,51 @@ export type AltInfo = {
   gold_form?: string | null; deduct_per_baht?: number | null;
 };
 
-/** แก้ข้อมูลสินทรัพย์ (ในหน้าต่าง "แก้ไขข้อมูล") */
-export function AltInfoForm({ assetId, code, defaultUnit, v }: { assetId: string; code: string; defaultUnit: string | null; v: AltInfo }) {
+/** บาททองคำ ↔ กรัม: ตัวคูณจากหน่วยเดิมไปหน่วยใหม่ (คู่อื่น = null ไม่แปลง) */
+const GOLD_FACTOR: Record<string, number> = { "บาททองคำ>กรัม": GRAM_PER_GOLD_BAHT, "กรัม>บาททองคำ": 1 / GRAM_PER_GOLD_BAHT };
+
+/** แก้ข้อมูลสินทรัพย์ (ในหน้าต่าง "แก้ไขข้อมูล") · หมวดเปลี่ยนไม่ได้ (เลือกตอนสร้างเท่านั้น) */
+export function AltInfoForm({ assetId, code, catName, defaultUnit, v }: { assetId: string; code: string; catName: string | null; defaultUnit: string | null; v: AltInfo }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateAlternativeInfo, {});
   const [form, setForm] = useState(v.gold_form === "ORNAMENT" ? "ORNAMENT" : "BAR");
   const units = [...new Set([defaultUnit, ...(ALT_UNITS_BY_CODE[code] ?? ALT_UNITS_ANY)].filter(Boolean) as string[])];
+  // สลับหน่วยระหว่างบาททองคำกับกรัม → ถามว่าจะแปลงจำนวนด้วยไหม (กัน 5 บาททองคำ กลายเป็น 5 กรัม)
+  const qtyRef = useRef<HTMLInputElement>(null);
+  const [qtyUnitNow, setQtyUnitNow] = useState(v.unit ?? defaultUnit ?? "");   // หน่วยที่ตัวเลขในช่องจำนวนใช้อยู่
+  const [unit, setUnit] = useState(v.unit ?? defaultUnit ?? "");
+  const factor = GOLD_FACTOR[`${qtyUnitNow}>${unit.trim()}`] ?? null;
+  const [qtyText, setQtyText] = useState(dv(v.quantity));
+  const qtyNow = Number(qtyText.replace(/,/g, ""));
+  const askConvert = factor != null && qtyNow > 0;
+  const converted = askConvert ? Number((qtyNow * (factor as number)).toFixed(4)) : null;
   return (
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="asset_id" value={assetId} />
       <label className="text-sm md:col-span-2">ชื่อ<input name="name" required defaultValue={v.name} className={input} /></label>
+      <p className="text-xs text-slate-500 md:col-span-2">หมวด: <span className="font-medium text-slate-700">{catName ?? "-"}</span>
+        {" · "}เปลี่ยนหมวดไม่ได้ (ข้อมูลเฉพาะหมวด เช่น ความบริสุทธิ์ / ราคาทองอัตโนมัติ ผูกกับหมวด) · ถ้าเลือกหมวดผิด ให้ลบรายการนี้แล้วสร้างใหม่</p>
       <label className="text-sm">ยี่ห้อ<input name="brand" defaultValue={dv(v.brand)} className={input} /></label>
       <label className="text-sm">รุ่น<input name="model" defaultValue={dv(v.model)} className={input} /></label>
       <label className="text-sm">Serial / เลขใบรับรอง<input name="serial_no" defaultValue={dv(v.serial_no)} className={input} data-plain /></label>
       <div className="grid grid-cols-[1fr_9rem] gap-2">
-        <label className="text-sm">จำนวน<input name="quantity" inputMode="decimal" data-money="off" defaultValue={dv(v.quantity)} className={input} /></label>
-        <label className="text-sm">หน่วย<input name="unit" list="alt-units-edit" defaultValue={v.unit ?? defaultUnit ?? ""} className={input} />
+        <label className="text-sm">จำนวน<input ref={qtyRef} name="quantity" inputMode="decimal" data-money="off" defaultValue={dv(v.quantity)}
+          onChange={(e) => setQtyText(e.target.value)} className={input} /></label>
+        <label className="text-sm">หน่วย<input name="unit" list="alt-units-edit" value={unit} onChange={(e) => setUnit(e.target.value)} className={input} />
           <datalist id="alt-units-edit">{units.map((u) => <option key={u} value={u} />)}</datalist></label>
       </div>
+      {askConvert && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 md:col-span-2">
+          เปลี่ยนหน่วยจาก {qtyUnitNow} เป็น {unit.trim()} แต่จำนวนยังเป็น {qtyNow.toLocaleString("en-US", { maximumFractionDigits: 8 })} เหมือนเดิม
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+              onClick={() => { if (qtyRef.current) qtyRef.current.value = String(converted); setQtyText(String(converted)); setQtyUnitNow(unit.trim()); }}>
+              แปลงจำนวนเป็น {converted?.toLocaleString("en-US", { maximumFractionDigits: 4 })} {unit.trim()}
+            </button>
+            <button type="button" className="rounded-md border border-amber-400 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+              onClick={() => setQtyUnitNow(unit.trim())}>ไม่ต้องแปลง (จำนวนถูกแล้ว)</button>
+          </div>
+        </div>
+      )}
       {(code === "GOLD" || v.purity_pct != null) && (
         <label className="text-sm">ความบริสุทธิ์ (%)<input name="purity_pct" inputMode="decimal" data-money="off" placeholder="เช่น 96.5" defaultValue={dv(v.purity_pct)} className={input} /></label>
       )}

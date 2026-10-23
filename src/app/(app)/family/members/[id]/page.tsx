@@ -132,12 +132,22 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             </dl>
           </div>
           <div className="border-t border-slate-100 pt-4">
-            <h2 className="mb-3 font-medium text-slate-900">การศึกษาและการงาน</h2>
+            <h2 className="mb-3 font-medium text-slate-900">การศึกษาสูงสุด</h2>
             <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Item dash label="การศึกษา">{education}</Item>
+              <Item dash wide label="วุฒิ / สาขา / สถาบัน">{education}</Item>
+            </dl>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="mb-3 font-medium text-slate-900">การทำงานหลักในปัจจุบัน</h2>
+            <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Item dash label="อาชีพ">{p.occupation}</Item>
               <Item dash label="ตำแหน่ง / ที่ทำงาน">{[p.job_title, p.workplace].filter(Boolean).join(" · ")}</Item>
-              <Item dash wide label="ตำแหน่งทางสังคม">{p.social_positions && <span className="whitespace-pre-line">{p.social_positions}</span>}</Item>
+            </dl>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h2 className="mb-3 font-medium text-slate-900">ตำแหน่งทางสังคม</h2>
+            <dl className="text-sm grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Item dash wide label="ตำแหน่ง / ยศ / เครื่องราชฯ">{p.social_positions && <span className="whitespace-pre-line">{p.social_positions}</span>}</Item>
             </dl>
           </div>
           <div className="border-t border-slate-100 pt-4">

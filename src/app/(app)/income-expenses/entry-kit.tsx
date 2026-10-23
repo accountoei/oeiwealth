@@ -144,6 +144,22 @@ export function makeEntryKit(c: KitCtx) {
   const groupPrincipal = new Map(c.moves.filter((m) => m.movement_type === "LIABILITY_PAYMENT" && m.movement_group_id)
     .map((m) => [m.movement_group_id as string, Number(m.amount)]));
 
+  // ผลของการลบรายการที่บันทึกที่หน้านี้ — บอกให้ชัดว่ายอดไหนถูกยกเลิก (แทนข้อความกลาง "ข้อมูลที่ระบบสร้างขึ้น…")
+  const pfName = new Map(c.pfCash.map((h) => [h.id, h.label]));
+  const incDeleteEffect = (i: IncRec) => [
+    i.received_to_asset_id ? `เงินเข้า ${placeOf(i.received_to_asset_id)} จะถูกยกเลิก (ยอดบัญชีกลับเป็นเหมือนก่อนบันทึก)`
+      : i.received_to_credit_card_id ? `เงินเข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""} จะถูกยกเลิก` : "",
+    i.recurring_template_id ? "รายการประจำงวดนี้จะกลับไปอยู่ใน \"ที่ต้องได้รับ\"" : "",
+    "รายการเดือนอื่นไม่ถูกลบ",
+  ].filter(Boolean).join("\n");
+  const expDeleteEffect = (i: ExpRec) => [
+    i.paid_from_asset_id ? `เงินออกจาก ${placeOf(i.paid_from_asset_id)} จะถูกยกเลิก (ยอดบัญชีกลับเป็นเหมือนก่อนบันทึก)`
+      : i.paid_from_credit_card_id ? `ยอดรูดบัตร ${name.get(i.paid_from_credit_card_id) ?? ""} จะถูกยกเลิก`
+      : i.paid_from_cash_holding_id ? `เงินออกจาก ${pfName.get(i.paid_from_cash_holding_id) ?? "บัญชีเงินฝากในพอร์ต"} จะถูกยกเลิก` : "",
+    i.recurring_expense_id ? "รายการประจำงวดนี้จะกลับไปอยู่ใน \"ที่ต้องจ่าย\"" : "",
+    "รายการเดือนอื่นไม่ถูกลบ",
+  ].filter(Boolean).join("\n");
+
   /** แก้ไข / ลบ รายได้ · button = ปุ่มเดียว (ช่องสถานะ) · ไม่ใส่ = กดที่แถว */
   const incEdit = (i: IncFull, button?: string): ReactNode => {
     if (!canWrite || i.pending_split) return null;
@@ -161,7 +177,7 @@ export function makeEntryKit(c: KitCtx) {
       );
     }
     return (
-      <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} button={button}
+      <RowActions table="income_transactions" id={i.id} paths={PATHS} canDelete={canDelete} button={button} deleteEffect={incDeleteEffect(i)}
         editor={<EntryEditor kind="INCOME" id={i.id} currency={i.currency} banks={banks} persons={persons} subtypes={incSubs}
           accountEditable={!i.received_to_credit_card_id && !i.received_to_liability_id}
           personFallback={i.asset_id ? "ตามเจ้าของทรัพย์สิน" : undefined}
@@ -186,7 +202,7 @@ export function makeEntryKit(c: KitCtx) {
       );
     }
     return (
-      <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} button={button}
+      <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} button={button} deleteEffect={expDeleteEffect(i)}
         editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} pfCash={c.pfCash} persons={persons}
           categories={expCats} reimbursable={!!i.is_reimbursable}
           values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category,

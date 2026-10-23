@@ -114,7 +114,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
             }
             edit={
               <div className="space-y-5">
-                <AltInfoForm assetId={id} code={cat?.category_code ?? ""} defaultUnit={cat?.default_unit ?? null} v={{
+                <AltInfoForm assetId={id} code={cat?.category_code ?? ""} catName={cat?.category_name ?? null} defaultUnit={cat?.default_unit ?? null} v={{
                   name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
                   brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
                   storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price,

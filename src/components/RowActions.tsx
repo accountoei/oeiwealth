@@ -19,8 +19,10 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
  *   อยู่ในแถวตาราง → กดที่แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ"
  *   บันทึกสำเร็จ → หน้าต่างปิดเอง + รีเฟรชหน้า
  */
-export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, extra, editor, button }: {
+export default function RowActions({ table, id, paths, fields = [], canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, editor, button }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
+  /** ผลของการลบที่บอกได้ชัด (เช่น "เงินออกจากบัญชี A จะถูกยกเลิก") — ใช้แทนบรรทัดกลางในวงเล็บ */
+  deleteEffect?: string;
   /** ปุ่มเพิ่มเติมในกล่องใต้แถว (เช่น ดาวน์โหลด / อัปโหลดฉบับใหม่) */
   extra?: React.ReactNode;
   /** ฟอร์มแก้ไขของหน้านั้นเอง (มีปุ่มบันทึกของตัวเอง) — ใช้แทนช่อง fields */
@@ -46,7 +48,7 @@ export default function RowActions({ table, id, paths, fields = [], canEdit = tr
       <input type="hidden" name="paths" value={paths.join(",")} />
     </>
   );
-  const confirmDelete = cf.guard(`ลบรายการนี้?${deleteNote ? `\n${deleteNote}` : ""}\n(รายการที่ระบบสร้างต่อจากรายการนี้จะถูกลบตามไปด้วย)`,
+  const confirmDelete = cf.guard(`ลบรายการนี้?${deleteNote ? `\n${deleteNote}` : ""}\n${deleteEffect ?? "(ข้อมูลที่ระบบสร้างขึ้นจากรายการนี้ เช่น เงินเข้า–ออกบัญชี จะถูกยกเลิกตามไปด้วย)"}`,
     { danger: true, okLabel: "ยืนยันลบ" });
   const fieldInputs = fields.map((f) => (
     <label key={f.name} className="text-sm text-slate-700">{f.label}
