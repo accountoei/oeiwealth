@@ -6,12 +6,13 @@ import { DOC_CATEGORY_LABEL, DOC_MODULE_LABEL, addDays, docCategory, fileSize, t
 import RowActions from "@/components/RowActions";
 import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpload";
 import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
+import LinkDocument from "@/components/docs/LinkDocument";
 import { ActionBar } from "@/components/ActionBar";
 import { StatBox } from "@/components/Boxes";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string; derived_status: string | null };
-type Sp = Promise<{ c?: string; m?: string; q?: string; all?: string; drive?: string; drive_error?: string }>;
+type Sp = Promise<{ c?: string; m?: string; q?: string; all?: string; u?: string; drive?: string; drive_error?: string }>;
 
 const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
 
@@ -69,7 +70,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   const cat = new Map(allDocs.map((d) => [d.id, catOf(d)]));
   const catCount = new Map<string, number>();
   allDocs.forEach((d) => catCount.set(cat.get(d.id)!, (catCount.get(cat.get(d.id)!) ?? 0) + 1));
-  const docs = sp.c && DOC_CATEGORY_LABEL[sp.c] ? allDocs.filter((d) => cat.get(d.id) === sp.c) : allDocs;
+  const isUnlinked = (d: Doc) => !(byDoc.get(d.id) ?? []).length;
+  const inCat = sp.c && DOC_CATEGORY_LABEL[sp.c] ? allDocs.filter((d) => cat.get(d.id) === sp.c) : allDocs;
+  // u = เฉพาะเอกสารที่ยังไม่ผูกกับรายการ (ใช้ร่วมกับหมวดได้)
+  const docs = sp.u ? inCat.filter(isUnlinked) : inCat;
 
   const options: EntityOption[] = [
     ...(assets ?? []).filter((a) => a.status === "ACTIVE").map((a) => ({ type: "ASSET", id: a.id, label: a.name, group: a.asset_group,
@@ -79,9 +83,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     ...(persons ?? []).map((p) => ({ type: "PERSON", id: p.id, label: p.name, group: "PERSON", category: "PERSON" })),
     ...(cards ?? []).map((c) => ({ type: "CREDIT_CARD", id: c.id, label: cardName(c), group: "CREDIT_CARD", category: "CARD" })),
   ];
-  const href = (patch: Partial<Record<"c" | "m" | "q" | "all", string | undefined>>) => {
+  const href = (patch: Partial<Record<"c" | "m" | "q" | "all" | "u", string | undefined>>) => {
     const p = new URLSearchParams();
-    const v = { c: sp.c, m: sp.m, q: sp.q, all: sp.all, ...patch };
+    const v = { c: sp.c, m: sp.m, q: sp.q, all: sp.all, u: sp.u, ...patch };
     Object.entries(v).forEach(([k, x]) => { if (x) p.set(k, x); });
     const s = p.toString();
     return s ? `/documents?${s}` : "/documents";
@@ -90,7 +94,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   const exp = (expiring ?? []) as { id: string; title: string; document_type: string; expiry_date: string | null; derived_status: string | null; mime_type: string | null }[];
   const expired = exp.filter((d) => d.derived_status === "EXPIRED").length;
   const totalSize = docs.reduce((t, d) => t + Number(d.file_size ?? 0), 0);
-  const unlinked = docs.filter((d) => !(byDoc.get(d.id) ?? []).length).length;
+  const unlinked = inCat.filter(isUnlinked).length;
+  const unlinkedAll = allDocs.filter(isUnlinked).length;
   const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 ${on ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`;
 
   return (
@@ -114,9 +119,11 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
               <div className="mt-1 text-xl font-semibold text-emerald-700">เชื่อมแล้ว</div>
               <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email} · ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
               {isAdmin && (
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                  {st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer" className="text-sky-700 underline">เปิดโฟลเดอร์</a>}
-                  <ConnectDrive label="เชื่อมใหม่" />
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  {st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
+                    className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">เปิดโฟลเดอร์</a>}
+                  <ConnectDrive link label="เปลี่ยนบัญชี"
+                    ask={"เปลี่ยนบัญชี / เชื่อม Google Drive ใหม่?\n\nระบบจะพาไปหน้า Google ให้เข้าสู่ระบบและกดอนุญาตอีกครั้ง\nใช้เมื่อต้องการเปลี่ยนบัญชีที่เก็บเอกสาร หรือเมื่อเปิด / อัปโหลดไฟล์แล้วแจ้งว่าการเชื่อมถูกยกเลิก\nถ้าใช้บัญชีอื่น เอกสารเดิมยังอยู่ในบัญชีเดิม"} />
                 </div>
               )}
             </>
@@ -138,7 +145,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
           <div className={`mt-1 text-xl font-semibold tabular-nums ${exp.length ? "text-amber-700" : ""}`}>{exp.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
           <div className={`mt-1 text-xs ${expired ? "text-red-600" : "text-slate-500"}`}>{expired ? `หมดแล้ว ${expired} ไฟล์` : "ยังไม่มีไฟล์ที่หมดแล้ว"}</div>
         </div>
-        <StatBox label="ยังไม่ผูกกับรายการ" value={unlinked} unit="ไฟล์" sub="ผูกได้ตอนอัปโหลดฉบับใหม่ หรือแนบจากหน้ารายการ" />
+        <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false} className={`block rounded-xl ${sp.u ? "ring-2 ring-blue-600" : "hover:ring-1 hover:ring-slate-300"}`}>
+          <StatBox label="ยังไม่ผูกกับรายการ" value={unlinked} unit="ไฟล์" valueClass={unlinked ? "text-amber-700" : ""}
+            sub={unlinked ? (sp.u ? "กำลังแสดงเฉพาะที่ยังไม่ผูก · กดอีกครั้งเพื่อแสดงทั้งหมด" : "กดเพื่อดูเฉพาะที่ยังไม่ผูก แล้วกด \"ผูก\" ในคอลัมน์เอกสารของ") : "ผูกครบทุกไฟล์แล้ว"} />
+        </Link>
       </section>
 
       {exp.length > 0 && (
@@ -161,14 +171,16 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="font-medium text-slate-900">เอกสารทั้งหมด</h2>
               <div className="flex flex-wrap gap-1 text-xs">
-                <Link href={href({ c: undefined, m: undefined })} scroll={false} className={chip(!sp.c && !sp.m)}>ทั้งหมด ({allDocs.length})</Link>
+                <Link href={href({ c: undefined, m: undefined, u: undefined })} scroll={false} className={chip(!sp.c && !sp.m && !sp.u)}>ทั้งหมด ({allDocs.length})</Link>
                 {Object.entries(DOC_CATEGORY_LABEL).filter(([k]) => catCount.get(k) || sp.c === k).map(([k, v]) =>
                   <Link key={k} href={href({ c: k, m: undefined })} scroll={false} className={chip(sp.c === k)}>{v} ({catCount.get(k) ?? 0})</Link>)}
+                {(unlinkedAll > 0 || sp.u) && <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false} className={chip(!!sp.u)}>ยังไม่ผูก ({unlinkedAll})</Link>}
               </div>
             </div>
             <Form className="flex flex-wrap items-center gap-2 text-sm" action="/documents" scroll={false}>
               {sp.c && <input type="hidden" name="c" value={sp.c} />}
               {sp.m && <input type="hidden" name="m" value={sp.m} />}
+              {sp.u && <input type="hidden" name="u" value={sp.u} />}
               <input name="q" defaultValue={sp.q ?? ""} placeholder="ค้นหาชื่อ / ประเภท" className="w-48 rounded-md border border-slate-300 px-2.5 py-1" />
               <label className="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" name="all" value="1" defaultChecked={!!sp.all} /> รวมฉบับเก่า</label>
               <button className="rounded-md border border-slate-300 bg-white px-3 py-1 hover:bg-slate-50">ค้นหา</button>
@@ -176,10 +188,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
           </div>
           <table className="mt-2 w-full min-w-[44rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">เอกสาร</th><th className="px-3">เป็นของ</th><th className="px-3">วันที่ออก / หมดอายุ</th><th className="px-3">อัปโหลด</th></tr>
+              <tr><th className="px-4 py-2">เอกสาร</th><th className="px-3">เอกสารของ</th><th className="px-3">วันที่ออก / หมดอายุ</th><th className="px-3">อัปโหลด</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {docs.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">ยังไม่มีเอกสาร</td></tr>}
+              {docs.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">{sp.u ? "ไม่มีเอกสารที่ยังไม่ผูก" : "ยังไม่มีเอกสาร"}</td></tr>}
               {docs.map((d) => {
                 const ls = byDoc.get(d.id) ?? [];
                 return (
@@ -202,10 +214,15 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                           { name: "notes", label: "หมายเหตุ", value: d.notes, width: "w-40" }]} />
                     </td>
                     <td className="px-3 py-2.5 text-xs">
-                      {ls.length === 0 ? <span className="text-slate-400">—</span> : ls.map((l) => {
+                      {ls.length === 0 ? <span className="text-amber-700">ยังไม่ผูก</span> : ls.map((l) => {
                         const x = label.get(l.key);
                         return <div key={l.id}>{x ? <Link href={x.href} className="text-slate-700 hover:underline">{x.name}</Link> : <span className="text-slate-400">(รายการถูกลบ)</span>}</div>;
                       })}
+                      {canWrite && d.version_status === "CURRENT" && (
+                        <div className={ls.length ? "mt-0.5" : "inline"}>{ls.length ? "" : " · "}
+                          <LinkDocument docId={d.id} title={d.title} options={options} linked={ls.map((l) => l.key)} label={ls.length ? "+ ผูกเพิ่ม" : "ผูก"} />
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600">
                       {d.issue_date ? thDate(d.issue_date) : "-"}

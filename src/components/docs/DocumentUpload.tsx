@@ -237,7 +237,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   </Modal></>);
 }
 
-const GROUP_LABEL: Record<string, string> = {
+export const GROUP_LABEL: Record<string, string> = {
   FINANCIAL: "การเงิน", INVESTMENT: "การลงทุน", PROPERTY: "อสังหาริมทรัพย์", ALTERNATIVE: "สินทรัพย์อื่น",
   LIABILITY: "หนี้สิน", INSURANCE_POLICY: "ประกัน", PERSON: "สมาชิกครอบครัว", CREDIT_CARD: "บัตรเครดิต",
 };
