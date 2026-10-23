@@ -24,7 +24,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banks }] = await Promise.all([
+  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banks }, { data: hasHistory }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_group", "ALTERNATIVE").is("deleted_at", null).maybeSingle(),
     supabase.from("alternative_asset_details").select("*, asset_categories(category_name,category_code,default_unit)").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
@@ -32,6 +32,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    // มีรายการแล้ว (ซื้อ / ขาย / ขายบางส่วน / มูลค่ามากกว่า 1 ครั้ง) → ล็อกหน่วยนับ + ลบไม่ได้
+    supabase.rpc("asset_has_history", { p_asset_id: id }),
   ]);
   if (!a || !d) notFound();
   const canWrite = me.role !== "VIEWER";
@@ -63,7 +65,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
               <PayAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
-              <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} />
+              <SellAssetForm assetId={id} currency={a.currency} banks={banks ?? []} today={today} minDate={goLive} paths={paths} quantity={qty} unit={unit} />
             </ActionBar>
           )}
         </div>
@@ -114,7 +116,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
             }
             edit={
               <div className="space-y-5">
-                <AltInfoForm assetId={id} code={cat?.category_code ?? ""} catName={cat?.category_name ?? null} defaultUnit={cat?.default_unit ?? null} v={{
+                <AltInfoForm assetId={id} code={cat?.category_code ?? ""} catName={cat?.category_name ?? null} unitLocked={!!hasHistory} defaultUnit={cat?.default_unit ?? null} v={{
                   name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
                   brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
                   storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price,
@@ -127,7 +129,8 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
                 <div className="border-t border-slate-100 pt-4">
                   <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะ"
                     options={Object.entries(ASSET_STATUS) as [string, string][]}
-                    remove={canDelete ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined} />
+                    remove={canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined} />
+                  {canDelete && hasHistory && <p className="mt-2 text-xs text-slate-500">มีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ · ถ้าไม่ได้ถือแล้ว ให้เปลี่ยนสถานะเป็น ขายแล้ว / ยกให้แล้ว / สูญหาย</p>}
                 </div>
               </div>
             } />

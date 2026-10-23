@@ -31,15 +31,27 @@ function Box({ title, label, children, action, pending, state, danger }: {
   ));
 }
 
-export function SellAssetForm({ assetId, currency, banks, today, minDate, paths, hasLease }: {
+export function SellAssetForm({ assetId, currency, banks, today, minDate, paths, hasLease, quantity, unit }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; hasLease?: boolean;
+  /** Alternative: จำนวนที่ถืออยู่ → ขายบางส่วนได้ (ไม่ส่ง = ขายทั้งรายการเท่านั้น) */
+  quantity?: number | null; unit?: string | null;
 }) {
   const [state, action, pending] = useActionState<TradeState, FormData>(sellAsset, {});
   const list = banks.filter((b) => b.currency === currency);
+  const qtyText = quantity ? quantity.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "";
   return (
     <Box title="บันทึกการขาย" label="ขายทรัพย์สินนี้" action={action} pending={pending} state={state} danger>
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="paths" value={paths.join(",")} />
+      {quantity ? (
+        <div className="grid gap-3 md:grid-cols-4">
+          <input type="hidden" name="total_quantity" value={String(quantity)} />
+          <label className="text-sm">จำนวนที่ขาย{unit ? ` (${unit})` : ""} *
+            <input name="quantity" required inputMode="decimal" data-money="off" defaultValue={String(quantity)} className={input} />
+          </label>
+          <p className="self-end pb-2 text-xs text-slate-500 md:col-span-3">ถืออยู่ {qtyText}{unit ? ` ${unit}` : ""} · ใส่น้อยกว่านี้ = ขายบางส่วน (ยังถืออยู่) · ใส่เท่ากัน = ขายทั้งรายการ</p>
+        </div>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">วันที่ขาย *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">ราคาขาย ({currency}) *<input name="price" required inputMode="decimal" className={input} /></label>
@@ -54,7 +66,8 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
       </div>
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
         <li>เงินเข้าบัญชี = ราคาขาย − ค่าใช้จ่าย · กำไร / ขาดทุน = เงินเข้าบัญชี − มูลค่าล่าสุด → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ขาดทุนไม่มีเงินออกจากบัญชี)</li>
-        <li>บันทึกมูลค่า ณ วันขาย = ราคาขาย แล้วเปลี่ยนสถานะเป็น &ldquo;ขายแล้ว&rdquo; (ไม่นับใน Net Worth หลังวันขาย)</li>
+        <li>{quantity ? "ขายทั้งรายการ: " : ""}บันทึกมูลค่า ณ วันขาย = ราคาขาย แล้วเปลี่ยนสถานะเป็น &ldquo;ขายแล้ว&rdquo; (ไม่นับใน Net Worth หลังวันขาย)</li>
+        {quantity ? <li>ขายบางส่วน: มูลค่าส่วนที่ขาย = มูลค่าล่าสุด × จำนวนที่ขาย ÷ {qtyText} · ขายตามสัดส่วนเจ้าของทุกคน · จำนวน / มูลค่า / ราคาทุนที่เหลือลดตามสัดส่วน</li> : null}
         {hasLease && <li className="text-amber-700">ถ้ายังมีสัญญาเช่าที่มีผลหลังวันขาย ต้องบันทึกเลิกสัญญา / คืนเงินประกันก่อน</li>}
       </ul>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่าขายแล้วจริง</label>
