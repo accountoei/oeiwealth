@@ -4,7 +4,7 @@
 > ระบบเก็บข้อมูลการเงินจริงของครอบครัว — ความถูกต้องและความปลอดภัยสำคัญกว่าความเร็ว
 
 **Family Wealth Vault** — a single-family net-worth app.
-Stack: Next.js 15 (App Router, server actions, Tailwind) on Vercel · Supabase (Postgres + RLS + Edge Functions + Vault) · Google Drive (documents).
+Stack: Next.js 16 (App Router, server actions, Tailwind) on Vercel · Supabase (Postgres + RLS + Edge Functions + Vault) · Google Drive (documents).
 The owner/operator is **not a programmer**: every change must be explained in plain Thai, with exact click-by-click steps for anything they must do by hand.
 
 ---
@@ -74,6 +74,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.
 - Every page calls `requireAppUser()` and hides write controls for `VIEWER`; the database still enforces permissions.
 - Large files (documents) go **browser → `drive` Edge Function** directly (Vercel has a 4.5 MB body limit). Do not route uploads through server actions.
+- Session refresh + redirect-to-login lives in `src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; the exported function is `proxy`).
 - Keep `supabase/functions` excluded from `tsconfig`; type-check Edge Functions with `deno check`.
 
 ## 4. Edge Functions
