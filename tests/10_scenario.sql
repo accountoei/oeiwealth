@@ -2142,6 +2142,82 @@ SELECT t.fails($$UPDATE public.alternative_asset_details SET purity_pct = 120 WH
 RESET ROLE;
 SELECT t.ok((SELECT count(*) FROM public.asset_categories WHERE deleted_at IS NULL AND default_unit IS NULL) = 0, 'Alternative: ทุกหมวดมีหน่วยตั้งต้น');
 
+\echo '== 13zbb. Alternative: ขายบางส่วน · ล็อกหน่วย / ห้ามลบ เมื่อมีรายการแล้ว (Alternative + Property)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.create_alternative_asset(jsonb_build_object('name','ทองขายบางส่วน','category_id',(SELECT id FROM public.asset_categories WHERE category_code = 'GOLD'),
+  'value',400000,'value_date',current_date - 3,'is_opening',false,'acquisition_date',current_date - 3,'acquisition_cost',300000,'quantity',10)) IS NOT NULL AS gold_part;
+SELECT public.set_asset_ownership(t.a('ทองขายบางส่วน'), jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'percent',50), jsonb_build_object('person_id',t.p('คุณแม่'),'percent',50)), 'CORRECT', NULL);
+SELECT t.ok(NOT public.asset_has_history(t.a('ทองขายบางส่วน')), 'มีรายการแล้ว: มูลค่าครั้งเดียว (ตอนสร้าง) = ยังไม่มี');
+UPDATE public.alternative_asset_details SET unit = 'กรัม' WHERE asset_id = t.a('ทองขายบางส่วน');
+UPDATE public.alternative_asset_details SET unit = 'บาททองคำ' WHERE asset_id = t.a('ทองขายบางส่วน');
+SELECT t.ok((SELECT unit = 'บาททองคำ' FROM public.alternative_asset_details WHERE asset_id = t.a('ทองขายบางส่วน')), 'ยังไม่มีรายการ → แก้หน่วยนับได้');
+-- มูลค่าครั้งที่ 2 (เช่น ราคาทองอัตโนมัติ คิดจาก 10 บาท) → มีรายการแล้ว
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES (t.a('ทองขายบางส่วน'), current_date - 1, 420000, 'USER_ESTIMATE', 'USER');
+SELECT t.ok(public.asset_has_history(t.a('ทองขายบางส่วน')), 'มีรายการแล้ว: มูลค่ามากกว่า 1 ครั้ง');
+SELECT t.fails($$UPDATE public.alternative_asset_details SET unit = 'กรัม' WHERE asset_id = t.a('ทองขายบางส่วน')$$, 'เปลี่ยนหน่วยนับไม่ได้', 'มีรายการแล้ว → แก้หน่วยนับไม่ได้');
+UPDATE public.alternative_asset_details SET storage_location = 'ตู้เซฟ' WHERE asset_id = t.a('ทองขายบางส่วน');
+SELECT t.ok((SELECT storage_location = 'ตู้เซฟ' FROM public.alternative_asset_details WHERE asset_id = t.a('ทองขายบางส่วน')), 'มีรายการแล้ว → ช่องอื่นยังแก้ได้');
+SELECT t.fails($$SELECT public.delete_asset(t.a('ทองขายบางส่วน'), 'ทดสอบลบ')$$, 'ลบไม่ได้', 'Alternative มีรายการแล้ว → ลบไม่ได้');
+SELECT t.ok((SELECT count(*) FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL) = 2, 'ลบไม่สำเร็จ → มูลค่ายังอยู่ครบ');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'PROPERTY', 'LAND', 'ที่ดินลบทดสอบ', 'THB' FROM public.families;
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES
+  (t.a('ที่ดินลบทดสอบ'), current_date - 2, 1000000, 'USER_ESTIMATE', 'USER'), (t.a('ที่ดินลบทดสอบ'), current_date - 1, 1100000, 'USER_ESTIMATE', 'USER');
+SELECT t.fails($$SELECT public.delete_asset(t.a('ที่ดินลบทดสอบ'), 'ทดสอบลบ')$$, 'ลบไม่ได้', 'Property มีรายการแล้ว → ลบไม่ได้');
+UPDATE public.asset_valuations SET deleted_at = now() WHERE asset_id = t.a('ที่ดินลบทดสอบ') AND valuation_date = current_date - 1;
+SELECT public.delete_asset(t.a('ที่ดินลบทดสอบ'), 'ทดสอบลบ');
+SELECT t.ok((SELECT deleted_at IS NOT NULL FROM public.assets WHERE name = 'ที่ดินลบทดสอบ'), 'Property มีมูลค่าครั้งเดียว → ลบได้ตามเดิม');
+-- ขายบางส่วน (กำไร): ขาย 4 จาก 10 วันที่ −2 · มูลค่าล่าสุด 400,000 → ส่วนที่ขาย 160,000 · ราคา 170,000 ค่าใช้จ่าย 2,000 → กำไร 8,000
+SELECT public.sell_alternative_part(t.a('ทองขายบางส่วน'), current_date - 2, 4, 170000, 2000, t.a('KBank ออมทรัพย์'), NULL) IS NOT NULL AS part1;
+SELECT t.ok((SELECT quantity FROM public.alternative_asset_details WHERE asset_id = t.a('ทองขายบางส่วน')) = 6
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date - 2 AND deleted_at IS NULL) = 240000
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date - 1 AND deleted_at IS NULL) = 252000
+            AND (SELECT acquisition_cost FROM public.assets WHERE id = t.a('ทองขายบางส่วน')) = 180000,
+            'ขายบางส่วน: จำนวน 10 → 6 · มูลค่าวันขาย 400,000 − 160,000 = 240,000 · มูลค่าหลังวันขาย 420,000 × 6/10 = 252,000 · ราคาทุน 300,000 → 180,000');
+SELECT t.ok((SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL) = 160000
+            AND (SELECT amount FROM public.income_transactions WHERE asset_id = t.a('ทองขายบางส่วน') AND income_subtype = 'กำไรจากการขายทรัพย์สิน' AND deleted_at IS NULL) = 8000
+            AND (SELECT sum(amount_share) FROM public.v_income_by_person v JOIN public.income_transactions i ON i.id = v.income_id
+                  WHERE i.asset_id = t.a('ทองขายบางส่วน') AND i.deleted_at IS NULL AND v.person_id = t.p('คุณพ่อ')) = 4000
+            AND (SELECT status FROM public.assets WHERE id = t.a('ทองขายบางส่วน')) = 'ACTIVE',
+            'ขายบางส่วน: เงินเข้าบัญชี ทุนคืน 160,000 + กำไร 8,000 (แบ่งตามเจ้าของ 50/50) · ยังถืออยู่');
+SELECT t.fails($$SELECT public.sell_alternative_part(t.a('ทองขายบางส่วน'), current_date, 6, 1, NULL, NULL, NULL)$$, 'ขายทั้งรายการ', 'ขายบางส่วน: ครบทั้งจำนวน → ให้ใช้ขายทั้งรายการ');
+SELECT t.fails($$SELECT public.sell_alternative_part(t.a('ทองขายบางส่วน'), current_date - 3, 1, 1, NULL, NULL, NULL)$$, 'เรียงตามวันที่', 'ขายบางส่วน: ย้อนก่อนครั้งที่แล้วไม่ได้');
+SELECT t.fails($$SELECT public.sell_alternative_part(t.a('ทองขายบางส่วน'), current_date, 1, 100, 200, NULL, NULL)$$, 'ค่าใช้จ่าย', 'ขายบางส่วน: ค่าใช้จ่ายเกินราคาขายไม่ได้');
+-- ขายบางส่วน (ขาดทุน · ไม่ผ่านบัญชี): ขาย 1 จาก 6 วันนี้ · มูลค่าล่าสุด 252,000 → ส่วนที่ขาย 42,000 · ราคา 30,000 → ขาดทุน 12,000
+SELECT public.sell_alternative_part(t.a('ทองขายบางส่วน'), current_date, 1, 30000, NULL, NULL, NULL) IS NOT NULL AS part2;
+SELECT t.ok((SELECT sum(amount) FROM public.expense_items WHERE related_asset_id = t.a('ทองขายบางส่วน') AND expense_category = 'ขาดทุนจากการขายทรัพย์สิน' AND deleted_at IS NULL) = 12000
+            AND (SELECT amount FROM public.expense_items WHERE related_asset_id = t.a('ทองขายบางส่วน') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL) = 6000
+            AND (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL) = 1
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date AND deleted_at IS NULL) = 210000
+            AND (SELECT quantity FROM public.alternative_asset_details WHERE asset_id = t.a('ทองขายบางส่วน')) = 5,
+            'ขายบางส่วนขาดทุน 12,000: ค่าใช้จ่ายรายคน (พ่อ 6,000) · ไม่ผ่านบัญชี = ไม่มีเงินเข้า · มูลค่าวันนี้ 210,000 · เหลือ 5');
+SELECT t.fails($$SELECT public.undo_alternative_part_sale((SELECT id FROM public.alternative_part_sales WHERE asset_id = t.a('ทองขายบางส่วน') AND sale_date = current_date - 2 AND deleted_at IS NULL))$$,
+  'เฉพาะรายการล่าสุด', 'ยกเลิกขายบางส่วน: ต้องยกเลิกครั้งล่าสุดก่อน');
+SELECT public.undo_alternative_part_sale((SELECT id FROM public.alternative_part_sales WHERE asset_id = t.a('ทองขายบางส่วน') AND sale_date = current_date AND deleted_at IS NULL));
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE related_asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date AND deleted_at IS NULL)
+            AND (SELECT quantity FROM public.alternative_asset_details WHERE asset_id = t.a('ทองขายบางส่วน')) = 6,
+            'ยกเลิกครั้งล่าสุด: ค่าใช้จ่ายขาดทุน / มูลค่าวันขาย ถูกลบ · จำนวนกลับเป็น 6');
+-- มูลค่าที่บันทึกหลังขาย (คิดจากจำนวนที่เหลือ) → ยกเลิกแล้วปรับกลับเป็นจำนวนเดิม
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES (t.a('ทองขายบางส่วน'), current_date, 270000, 'USER_ESTIMATE', 'USER');
+SELECT public.undo_alternative_part_sale((SELECT id FROM public.alternative_part_sales WHERE asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL));
+SELECT t.ok((SELECT quantity FROM public.alternative_asset_details WHERE asset_id = t.a('ทองขายบางส่วน')) = 10
+            AND NOT EXISTS (SELECT 1 FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date - 2 AND deleted_at IS NULL)
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date - 1 AND deleted_at IS NULL) = 420000
+            AND (SELECT value FROM public.asset_valuations WHERE asset_id = t.a('ทองขายบางส่วน') AND valuation_date = current_date AND deleted_at IS NULL) = 450000
+            AND (SELECT acquisition_cost FROM public.assets WHERE id = t.a('ทองขายบางส่วน')) = 300000
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE asset_id = t.a('ทองขายบางส่วน') AND deleted_at IS NULL),
+            'ยกเลิกครั้งแรก: จำนวน 10 · มูลค่าหลังวันขายกลับเป็น 420,000 · มูลค่าที่บันทึกทีหลัง 270,000 × 10/6 = 450,000 · ราคาทุน 300,000 · เงินเข้า / กำไรถูกลบ');
+SELECT t.ok(NOT has_function_privilege('authenticated', 'private.tg_asset_delete_history()', 'EXECUTE')
+            AND NOT has_function_privilege('authenticated', 'private.tg_alt_unit_lock()', 'EXECUTE')
+            AND NOT has_table_privilege('authenticated', 'public.alternative_part_sales', 'INSERT'),
+            'ขายบางส่วน: ผู้ใช้เขียนตารางตรง / เรียก trigger ไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.sell_alternative_part(t.a('ทองขายบางส่วน'), current_date, 1, 1, NULL, NULL, NULL)$$,
+  'PERMISSION|สิทธิ์|role', 'VIEWER ขายบางส่วนไม่ได้');
+RESET ROLE;
+
 \echo '== 13zc. แหล่งอัตราแลกเปลี่ยน ธปท. / ธนาคารกรุงเทพ (ไม่เปลี่ยนอัตราเดิม)'
 SET ROLE service_role; SELECT t.login(NULL);
 SELECT public.server_upsert_fx_rates(jsonb_build_array(jsonb_build_object('rate_date', current_date - 1, 'currency', 'EUR', 'rate_to_thb', 38, 'source_reference', 'TEST'))) AS eur_yesterday;

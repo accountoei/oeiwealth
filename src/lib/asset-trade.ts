@@ -12,7 +12,7 @@ function refresh(form: FormData) {
   revalidatePath("/financial/cash", "layout");
 }
 
-/** ขายทรัพย์สิน (อสังหาฯ / สินทรัพย์อื่น / ธุรกิจ) → เงินเข้าบัญชี + สถานะขายแล้ว */
+/** ขายทรัพย์สิน (อสังหาฯ / สินทรัพย์อื่น / ธุรกิจ) → เงินเข้าบัญชี + สถานะขายแล้ว · Alternative ขายบางส่วนได้ (จำนวนน้อยกว่าที่ถือ) */
 export async function sellAsset(_: TradeState, form: FormData): Promise<TradeState> {
   const price = num(form.get("price"));
   if (price === null || Number.isNaN(price) || price < 0) return { error: "กรุณาใส่ราคาขายเป็นตัวเลข" };
@@ -20,6 +20,22 @@ export async function sellAsset(_: TradeState, form: FormData): Promise<TradeSta
   if (fee !== null && (Number.isNaN(fee) || fee < 0 || fee > price)) return { error: "ค่าใช้จ่ายในการขายไม่ถูกต้อง" };
   if (form.get("confirm") !== "on") return { error: "กรุณาติ๊กยืนยันการขาย" };
   const supabase = await createClient();
+  // Alternative ที่มีจำนวน: ขายน้อยกว่าที่ถือ = ขายบางส่วน · เท่ากับที่ถือ = ขายทั้งรายการ
+  const total = num(form.get("total_quantity"));
+  if (total !== null && total > 0) {
+    const qty = num(form.get("quantity"));
+    if (qty === null || Number.isNaN(qty) || qty <= 0) return { error: "กรุณาใส่จำนวนที่ขาย" };
+    if (qty > total) return { error: "ขายเกินจำนวนที่ถืออยู่ไม่ได้" };
+    if (qty < total) {
+      const { error } = await supabase.rpc("sell_alternative_part", {
+        p_asset_id: String(form.get("asset_id")), p_date: str(form.get("date")), p_quantity: qty, p_price: price,
+        p_fee: fee, p_bank_asset_id: str(form.get("bank_asset_id")), p_notes: str(form.get("notes")),
+      });
+      if (error) return { error: friendlyError(error.message) };
+      refresh(form);
+      return { ok: "บันทึกการขายบางส่วนแล้ว" };
+    }
+  }
   const { error } = await supabase.rpc("sell_asset", {
     p_asset_id: String(form.get("asset_id")), p_date: str(form.get("date")), p_price: price,
     p_bank_asset_id: str(form.get("bank_asset_id")), p_fee: fee, p_notes: str(form.get("notes")),

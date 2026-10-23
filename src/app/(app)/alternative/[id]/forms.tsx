@@ -19,7 +19,11 @@ export type AltInfo = {
 const GOLD_FACTOR: Record<string, number> = { "บาททองคำ>กรัม": GRAM_PER_GOLD_BAHT, "กรัม>บาททองคำ": 1 / GRAM_PER_GOLD_BAHT };
 
 /** แก้ข้อมูลสินทรัพย์ (ในหน้าต่าง "แก้ไขข้อมูล") · หมวดเปลี่ยนไม่ได้ (เลือกตอนสร้างเท่านั้น) */
-export function AltInfoForm({ assetId, code, catName, defaultUnit, v }: { assetId: string; code: string; catName: string | null; defaultUnit: string | null; v: AltInfo }) {
+export function AltInfoForm({ assetId, code, catName, unitLocked = false, defaultUnit, v }: {
+  assetId: string; code: string; catName: string | null;
+  /** มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → แก้หน่วยนับไม่ได้ (ฐานข้อมูลบังคับด้วย) */
+  unitLocked?: boolean; defaultUnit: string | null; v: AltInfo;
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateAlternativeInfo, {});
   const [form, setForm] = useState(v.gold_form === "ORNAMENT" ? "ORNAMENT" : "BAR");
   const units = [...new Set([defaultUnit, ...(ALT_UNITS_BY_CODE[code] ?? ALT_UNITS_ANY)].filter(Boolean) as string[])];
@@ -44,9 +48,11 @@ export function AltInfoForm({ assetId, code, catName, defaultUnit, v }: { assetI
       <div className="grid grid-cols-[1fr_9rem] gap-2">
         <label className="text-sm">จำนวน<input ref={qtyRef} name="quantity" inputMode="decimal" data-money="off" defaultValue={dv(v.quantity)}
           onChange={(e) => setQtyText(e.target.value)} className={input} /></label>
-        <label className="text-sm">หน่วย<input name="unit" list="alt-units-edit" value={unit} onChange={(e) => setUnit(e.target.value)} className={input} />
+        <label className="text-sm">หน่วย<input name="unit" list="alt-units-edit" value={unit} onChange={(e) => setUnit(e.target.value)} readOnly={unitLocked}
+          className={`${input} ${unitLocked ? "bg-slate-50 text-slate-500" : ""}`} />
           <datalist id="alt-units-edit">{units.map((u) => <option key={u} value={u} />)}</datalist></label>
       </div>
+      {unitLocked && <p className="-mt-1 text-xs text-slate-500 md:col-span-2">หน่วยนับแก้ไม่ได้ เพราะมีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) · ขายบางส่วนใช้ปุ่ม &ldquo;ขายทรัพย์สินนี้&rdquo;</p>}
       {askConvert && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 md:col-span-2">
           เปลี่ยนหน่วยจาก {qtyUnitNow} เป็น {unit.trim()} แต่จำนวนยังเป็น {qtyNow.toLocaleString("en-US", { maximumFractionDigits: 8 })} เหมือนเดิม

@@ -6,7 +6,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 
 /** ปุ่ม "ยกเลิกทั้งก้อน" · ถามยืนยันก่อน · ฐานข้อมูลย้อนทุกส่วนพร้อมกัน */
 export default function UndoButton({ kind, id, paths = [], label = "ยกเลิกทั้งก้อน", confirmText }: {
-  kind: "BENEFIT" | "DEPOSIT" | "PAYMENT"; id: string; paths?: string[]; label?: string; confirmText: string;
+  kind: "BENEFIT" | "DEPOSIT" | "PAYMENT" | "ALT_PART_SALE"; id: string; paths?: string[]; label?: string; confirmText: string;
 }) {
   const [state, action, pending] = useActionState<UndoState, FormData>(undoWhole, {});
   const cf = useConfirmSubmit();
