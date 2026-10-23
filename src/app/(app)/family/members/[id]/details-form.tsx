@@ -125,7 +125,7 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
       </fieldset>
 
       <fieldset className="grid gap-4 md:grid-cols-3">
-        <legend className="mb-2 text-sm font-medium text-slate-900">การศึกษาและการงาน (ปัจจุบัน)</legend>
+        <legend className="mb-2 text-sm font-medium text-slate-900">การศึกษาสูงสุด</legend>
         <label className={label}>วุฒิการศึกษาสูงสุด
           <select name="education_level" defaultValue={p.education_level ?? ""} className={input}>
             <option value="">— ไม่ระบุ —</option>
@@ -134,10 +134,18 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
         </label>
         <label className={label}>สถาบัน<input name="education_institution" defaultValue={p.education_institution ?? ""} className={input} /></label>
         <label className={label}>สาขา / คณะ<input name="education_major" defaultValue={p.education_major ?? ""} className={input} /></label>
+      </fieldset>
+
+      <fieldset className="grid gap-4 md:grid-cols-3">
+        <legend className="mb-2 text-sm font-medium text-slate-900">การทำงานหลักในปัจจุบัน</legend>
         <label className={label}>อาชีพ<input name="occupation" defaultValue={p.occupation ?? ""} placeholder="เช่น ธุรกิจส่วนตัว · นักเรียน" className={input} /></label>
         <label className={label}>ที่ทำงาน / สถานศึกษา<input name="workplace" defaultValue={p.workplace ?? ""} className={input} /></label>
         <label className={label}>ตำแหน่งงาน<input name="job_title" defaultValue={p.job_title ?? ""} className={input} /></label>
-        <label className={`${label} md:col-span-3`}>ตำแหน่งทางสังคม (บรรทัดละ 1 ตำแหน่ง)
+      </fieldset>
+
+      <fieldset className="grid gap-4 md:grid-cols-3">
+        <legend className="mb-2 text-sm font-medium text-slate-900">ตำแหน่งทางสังคม</legend>
+        <label className={`${label} md:col-span-3`}>บรรทัดละ 1 ตำแหน่ง
           <textarea name="social_positions" rows={3} defaultValue={p.social_positions ?? ""} placeholder="เช่น กรรมการมูลนิธิ · นายกสมาคม · ยศ / เครื่องราชอิสริยาภรณ์" className={input} />
         </label>
       </fieldset>
