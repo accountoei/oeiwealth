@@ -53,7 +53,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   const trigger = (
     <span className="inline-flex items-center gap-2">
       <button type="button" onClick={() => { setOpen(true); setMsg({}); }}
-        className={supersedes ? "text-xs text-slate-600 underline" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
+        className={supersedes ? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-50" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
       {msg.ok && <span className="text-xs text-emerald-700">{msg.ok}</span>}
     </span>
   );
