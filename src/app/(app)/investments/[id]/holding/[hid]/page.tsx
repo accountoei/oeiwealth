@@ -14,9 +14,11 @@ import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
+import HoldingHistory from "./history";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
+const VAL_SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่า ณ วันตั้งต้น", STATEMENT: "ราคาตาม Statement", MARKET: "ราคาตลาด (อัตโนมัติ)", USER: "ราคา (ผู้ใช้ใส่)" };
 
 type H = Holding & { portfolio_asset_id: string; average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean; notes: string | null };
@@ -250,63 +252,51 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </section>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">รายการของหลักทรัพย์นี้</h2>
-        {txList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ประเภท</th><th className="text-right">จำนวน × ราคา</th><th className="text-right">ยอด</th><th className="pl-4">หมายเหตุ</th><th></th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {txList.map((t) => (
-                <tr key={t.id} className="align-top">
-                  <td className="py-1.5">{thDate(t.transaction_date)}</td>
-                  <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
-                  <td className="text-right tabular-nums text-slate-600">{t.quantity != null && t.price != null ? `${qty(t.quantity)} × ${money(t.price, undefined, 4)}` : t.quantity != null ? qty(t.quantity) : ""}</td>
-                  <td className="text-right tabular-nums">{money(t.amount)}
-                    {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && <div className="text-xs text-slate-500">
-                      {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}</div>}
-                  </td>
-                  <td className="pl-4 text-xs text-slate-500">{t.notes}{(t.settle_from_asset_id || t.settle_to_asset_id) && <div>ผ่านบัญชีธนาคาร</div>}</td>
-                  <td className="pl-2 text-right">
-                    {canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
-                      deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-                      fields={[
-                        ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
-                        ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
-                        ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-                        ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
-                        ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
-                        { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">ประวัติราคา / มูลค่า</h2>
-        {(vals ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีราคาจาก Statement (ใช้ราคาทุน)</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">ราคา</th><th className="text-right">จำนวนที่ถือ ณ วันนั้น</th><th className="text-right">มูลค่า</th><th className="pl-4">ที่มา</th><th></th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {valRows.map((v) => (
-                <tr key={v.id}>
-                  <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                  <td className="text-right tabular-nums">{lump || v.price == null ? <span className="text-slate-400">—</span> : money(v.price, undefined, 4)}</td>
-                  <td className="text-right tabular-nums">{lump ? <span className="text-slate-400">—</span> : qty(v.q)}</td>
-                  <td className="text-right tabular-nums">{money(v.value)}</td>
-                  <td className="pl-4 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.source === "STATEMENT" ? "Statement" : v.source === "MARKET" ? "ราคาตลาด (อัตโนมัติ)" : v.source === "USER" ? "ผู้ใช้" : v.source}</td>
-                  <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete}
-                    fields={!lump && v.price != null
-                      ? [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "price", label: "ราคาต่อหน่วย (มูลค่า = ราคา × จำนวนหน่วยที่ถือ)", type: "number", value: v.price }]
-                      : [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "market_value", label: "มูลค่า", type: "number", value: v.market_value }]} />}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <HoldingHistory head={
+        <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ประเภท</th><th className="text-right">จำนวน</th>
+          <th className="text-right">ราคา</th><th className="text-right">มูลค่า</th><th className="pl-4">หมายเหตุ</th><th></th></tr></thead>
+      } rows={[
+        ...txList.map((t) => ({ date: t.transaction_date, h: {
+          key: `t${t.id}`, auto: false, row: (
+            <tr className="align-top">
+              <td className="py-1.5">{thDate(t.transaction_date)}</td>
+              <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
+              <td className="text-right tabular-nums text-slate-600">{t.quantity != null ? qty(t.quantity) : ""}</td>
+              <td className="text-right tabular-nums text-slate-600">{t.price != null ? money(t.price, undefined, 4) : ""}</td>
+              <td className="text-right tabular-nums">{money(t.amount)}
+                {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && <div className="text-xs text-slate-500">
+                  {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}</div>}
+              </td>
+              <td className="pl-4 text-xs text-slate-500">{t.notes}{(t.settle_from_asset_id || t.settle_to_asset_id) && <div>ผ่านบัญชีธนาคาร</div>}</td>
+              <td className="pl-2 text-right">
+                {canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+                  deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
+                  fields={[
+                    ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
+                    ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
+                    ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
+                    ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
+                    ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
+                    { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />}
+              </td>
+            </tr>
+          ) } })),
+        ...valRows.map((v) => ({ date: v.valuation_date, h: {
+          key: `v${v.id}`, auto: v.source === "MARKET", row: (
+            <tr className="text-slate-600">
+              <td className="py-1.5">{thDate(v.valuation_date)}</td>
+              <td>{VAL_SOURCE_LABEL[v.source] ?? v.source}</td>
+              <td className="text-right tabular-nums" title="จำนวนที่ถือ ณ วันนั้น">{lump ? <span className="text-slate-400">—</span> : qty(v.q)}</td>
+              <td className="text-right tabular-nums">{lump || v.price == null ? <span className="text-slate-400">—</span> : money(v.price, undefined, 4)}</td>
+              <td className="text-right tabular-nums">{money(v.value)}</td>
+              <td className="pl-4 text-xs text-slate-500">{lump ? "" : "จำนวน = หน่วยที่ถือ ณ วันนั้น"}</td>
+              <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete}
+                fields={!lump && v.price != null
+                  ? [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "price", label: "ราคาต่อหน่วย (มูลค่า = ราคา × จำนวนหน่วยที่ถือ)", type: "number", value: v.price }]
+                  : [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "market_value", label: "มูลค่า", type: "number", value: v.market_value }]} />}</td>
+            </tr>
+          ) } })),
+      ].sort((x, y) => y.date.localeCompare(x.date)).map((x) => x.h)} />
 
     </div>
   );

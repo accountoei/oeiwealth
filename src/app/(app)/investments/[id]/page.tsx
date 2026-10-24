@@ -6,7 +6,7 @@ import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import {
-  AddCashAccountForm, MoveCashForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
+  AddCashAccountForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
   type CashAcct, type Holding,
 } from "./forms";
 import { moveHolding } from "../actions";
@@ -108,17 +108,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const cashHoldings = active.filter((h) => h.holding_type === "CASH");
   const securities = holdings.filter((h) => h.holding_type !== "CASH");
   const cashAccounts: CashAcct[] = cashHoldings.map((h) => ({ id: h.id, name: h.name, currency: h.currency, is_default_cash: h.is_default_cash }));
-  // เงินฝากรวมรายสกุล (หลายบัญชีต่อสกุลได้)
-  const cashByCcy = new Map<string, { value: number; count: number }>();
-  for (const c of cashHoldings) {
-    const x = cashByCcy.get(c.currency) ?? { value: 0, count: 0 };
-    cashByCcy.set(c.currency, { value: x.value + Number(c.current_value ?? 0), count: x.count + 1 });
-  }
-  const cashThb = cashHoldings.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const secThb = securities.filter((h) => h.status === "ACTIVE").reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const rateNote = (h: H) => h.currency === "THB" ? null
     : h.fx_rate == null ? "ไม่มีอัตรา" : `@ ${money(h.fx_rate, undefined, 4)}${h.fx_rate_date ? ` (${thDate(h.fx_rate_date)})` : ""}`;
-  const multiCash = [...cashByCcy.values()].some((x) => x.count > 1);
   const acctName = (hid: string | null) => (hid ? byId.get(hid)?.name ?? "" : "");
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
@@ -132,6 +124,20 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
   const waitingOf = (h: H) => waitingTransfers.filter((m) => ledger.moveHolding(m as LMove) === h.id).length;
+  // บัญชีเงินฝากที่ระบบสร้างให้แต่ยังไม่เคยใช้ (ยอด 0 · ไม่มีรายการ · ไม่ได้ใส่อัตราดอกเบี้ย / วัตถุประสงค์) → ไม่แสดงในตาราง
+  //   ยังเลือกเป็นปลายทางในฟอร์มได้ (บัญชีหลักของสกุลรับเงินของรายการที่ไม่ได้เลือกบัญชี) · มีเงินเข้าแล้วแสดงเอง
+  const unused = (h: H) => Math.abs(Number(h.current_value ?? 0)) < 0.005 && h.interest_rate == null && !h.purpose
+    && !txList.some((t) => t.holding_id === h.id || t.cash_holding_id === h.id || t.counter_cash_holding_id === h.id)
+    && ledger.events(h.id, h.currency).length === 0;
+  const shownCash = cashHoldings.filter((h) => !unused(h));
+  // เงินฝากรวมรายสกุล (หลายบัญชีต่อสกุลได้)
+  const cashByCcy = new Map<string, { value: number; count: number }>();
+  for (const c of shownCash) {
+    const x = cashByCcy.get(c.currency) ?? { value: 0, count: 0 };
+    cashByCcy.set(c.currency, { value: x.value + Number(c.current_value ?? 0), count: x.count + 1 });
+  }
+  const cashThb = shownCash.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
+  const multiCash = [...cashByCcy.values()].some((x) => x.count > 1);
   // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
   const [{ data: catRows }, { data: cardRows }, { data: cardBal }] = canWrite ? await Promise.all([
     supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
@@ -175,7 +181,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               <TxForm assetId={id} portfolioName={a.name} portfolioCurrency={a.currency} holdings={holdings} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive}
                 pay={pay} opening={isSetup || me.role === "ADMIN" ? { openingDate, isSetup } : undefined} />
               <TransferForm assetId={id} currency={a.currency} banks={bankList} cashAccounts={cashAccounts} today={today} minDate={goLive} />
-              <MoveCashForm assetId={id} cashAccounts={cashAccounts} today={today} minDate={goLive} />
               <ValuationsForm assetId={id} holdings={holdings} today={today} minDate={goLive} />
               <AddCashAccountForm assetId={id} currency={a.currency} isSetup={isSetup} openingDate={openingDate} />
             </ActionBar>
@@ -216,7 +221,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 <Item label="สกุลพอร์ต">{a.currency}</Item>
                 <Item label="จำนวนหลักทรัพย์">{securities.filter((h) => h.status === "ACTIVE").length} ตัว
                   {securities.some((h) => h.status !== "ACTIVE") && <span className="block text-xs text-slate-500">จบแล้ว {securities.filter((h) => h.status !== "ACTIVE").length} ตัว</span>}</Item>
-                <Item label="บัญชีเงินฝากในพอร์ต">{cashHoldings.length} บัญชี</Item>
+                <Item label="บัญชีเงินฝากในพอร์ต">{shownCash.length ? `${shownCash.length} บัญชี` : "ยังไม่มี"}</Item>
                 <Item label="สถานะ">{a.status === "CLOSED" ? "ปิดพอร์ตแล้ว" : "ใช้งาน"}</Item>
                 <Item label="เจ้าของ">
                   {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
@@ -270,7 +275,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
           <div className="flex items-baseline gap-3">
             <h2 className="font-medium text-slate-900">เงินฝากในพอร์ต</h2>
-            {canDelete && cashHoldings.length > 1 && <OrderToggle id={id} mode="cash" active={orderMode === "cash"} />}
+            {canDelete && shownCash.length > 1 && <OrderToggle id={id} mode="cash" active={orderMode === "cash"} />}
           </div>
           <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(cashThb, "THB", 0)}</span></span>
         </div>
@@ -280,10 +285,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               <th className="px-3 text-right">สัดส่วน</th><th className="px-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {cashHoldings.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีบัญชีเงินฝาก</td></tr>}
+            {shownCash.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีเงินฝากในพอร์ต · โอนเงินเข้าด้วยปุ่ม &ldquo;โอนเงิน&rdquo; แล้วบัญชีจะขึ้นที่นี่</td></tr>}
             {(orderMode === "cash" ? [""] : [...cashByCcy.keys()]).map((ccy) => {
               // โหมดจัดลำดับ: แสดงทุกบัญชีตามลำดับจริง (ไม่จัดกลุ่มตามสกุล)
-              const rows = orderMode === "cash" ? cashHoldings : cashHoldings.filter((h) => h.currency === ccy);
+              const rows = orderMode === "cash" ? shownCash : shownCash.filter((h) => h.currency === ccy);
               const sub = cashByCcy.get(ccy) ?? { value: 0, count: 0 };
               const subThb = rows.reduce((t, h) => t + (thbOf(h) ?? 0), 0);
               return [
