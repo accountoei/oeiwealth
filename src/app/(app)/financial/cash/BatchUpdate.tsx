@@ -56,9 +56,6 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
       <input type="hidden" name="rows" value={JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] })))} />
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2">ยอด ณ วันที่
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && pickDate(e.target.value)} className={small} />
-          </label>
           {bankList.length > 1 && (
             <label className="flex items-center gap-2">ธนาคาร
               <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
@@ -67,6 +64,9 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
               </select>
             </label>
           )}
+          <label className="ml-auto flex items-center gap-2">ยอด ณ วันที่
+            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && pickDate(e.target.value)} className={small} />
+          </label>
         </div>
         <p className="text-xs text-slate-500">กรอกยอดจริงจากแอปธนาคาร / Statement เฉพาะบัญชีที่ต้องการ (ช่องว่าง = ไม่บันทึก) · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ · สลับธนาคารได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</p>
       </div>
@@ -77,7 +77,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
             <tr>
               <th className="px-3 py-2">บัญชี</th>
               <th className="px-3 text-right">ยอดคงเหลือ ณ {thDate(date)}</th>
-              <th className="px-3 text-right">ยอดจริง</th><th className="px-3 text-right">ส่วนต่าง</th><th className="px-3">สถานะ</th>
+              <th className="px-3 text-right">ยอดจริง</th><th className="w-40 whitespace-nowrap px-3 text-right">ส่วนต่าง</th><th className="px-3">สถานะ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -104,7 +104,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })}
                       className={`w-36 text-right ${small}`} />
                   </td>
-                  <td className={`px-3 text-right tabular-nums ${diff == null ? "text-slate-400" : Math.abs(diff) < 0.005 ? "text-emerald-700" : "text-amber-700"}`}>
+                  <td className={`whitespace-nowrap px-3 text-right tabular-nums ${diff == null ? "text-slate-400" : Math.abs(diff) < 0.005 ? "text-emerald-700" : "text-amber-700"}`}>
                     {diff == null ? "-" : Math.abs(diff) < 0.005 ? "ตรง ✓" : `${diff > 0 ? "+" : ""}${money(diff, r.currency)}`}
                   </td>
                   <td className="px-3 text-xs">

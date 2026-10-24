@@ -53,24 +53,24 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2">วันที่รับ
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-          </label>
-          <div className="flex flex-wrap items-center gap-3">
+          {bankList.length > 1 && (
+            <label className="flex items-center gap-2">ธนาคาร
+              <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
+                <option value="">ทุกธนาคาร</option>
+                {bankList.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </label>
+          )}
+          <div className="ml-auto flex flex-wrap items-center gap-3">
             {canWrite && chosen.length > 0 && (
               <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>
             )}
-            {bankList.length > 1 && (
-              <label className="flex items-center gap-2">ธนาคาร
-                <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
-                  <option value="">ทุกธนาคาร</option>
-                  {bankList.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </label>
-            )}
+            <label className="flex items-center gap-2">วันที่รับ
+              <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
+            </label>
           </div>
         </div>
-        <p className="text-xs text-slate-500">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · เงินเข้าบัญชี = ยอดสุทธิ
+        <p className="text-xs text-slate-500">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
           · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</p>
       </div>
 
@@ -80,7 +80,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
             <tr>
               <th className="px-3 py-2">บัญชี</th><th className="px-3 text-right">อัตรา</th>
               <th className="px-3 text-right">รับแล้ว {monthLabel}</th>
-              <th className="px-3 text-right">ดอกเบี้ยก่อนภาษี</th><th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="px-3 text-right">สุทธิเข้าบัญชี</th>
+              <th className="px-3 text-right">ดอกเบี้ยก่อนภาษี</th><th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-40 whitespace-nowrap px-3 text-right">ยอดเข้าบัญชีสุทธิ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -106,7 +106,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
                     <input inputMode="decimal" value={tax[r.id] ?? ""} disabled={!canWrite || !has} aria-label={`ภาษี ${r.name}`}
                       onChange={(e) => setTax({ ...tax, [r.id]: e.target.value })} className={`w-28 text-right ${small}`} />
                   </td>
-                  <td className={`px-3 text-right tabular-nums ${has && net(r) <= 0 ? "text-red-700" : ""}`}>{has && !Number.isNaN(net(r)) ? money(net(r), r.currency) : <span className="text-slate-400">-</span>}</td>
+                  <td className={`whitespace-nowrap px-3 text-right tabular-nums ${has && net(r) <= 0 ? "text-red-700" : ""}`}>{has && !Number.isNaN(net(r)) ? money(net(r), r.currency) : <span className="text-slate-400">-</span>}</td>
                 </tr>
               );
             })}
