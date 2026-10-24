@@ -80,7 +80,6 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
                         <Item label="ส่วนจากค่าเงิน (FX)" value={amt(r.fx)} cls={sign(r.fx)} note="รวมอยู่ใน 2 ช่องก่อนหน้า" />
                         <Item label="ปันผล / ดอกเบี้ย สุทธิค่าธรรมเนียม" value={amt(r.income)} cls={sign(r.income)} />
                       </dl>
-                      <Link href={`/investments/${r.asset_id}`} className="mt-2 inline-block text-xs text-blue-700 hover:underline">เปิดพอร์ต →</Link>
                     </td>
                   </tr>
                 )}
