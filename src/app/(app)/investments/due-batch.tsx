@@ -82,8 +82,8 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
   const net = (k: string) => n(vals[k] ?? "") - ((tax[k] ?? "").trim() ? n(tax[k]) : 0);
 
   // ด้านบน: กรอกตามตาราง (แถวที่แสดง ยังว่าง มียอดคาดการณ์) · คิดภาษี 15% (ดอกเบี้ยที่กรอก ไม่รวมเงินต้น)
-  //   กรอกตามตารางเฉพาะงวดที่ถึงกำหนดแล้ว ณ วันที่รับ (งวดที่ยังไม่ถึงกรอกเองได้)
-  const fillable = shown.filter((r) => editable(r) && r.item?.expected != null && r.item.due <= date && !(vals[r.key] ?? "").trim());
+  //   ทุกแถวที่แสดงอยู่ (รวมงวดที่ยังไม่ถึงกำหนด — รับก่อนกำหนดได้ ระบบจับคู่งวดตั้งแต่ 20 วันก่อนวันรับ)
+  const fillable = shown.filter((r) => editable(r) && r.item?.expected != null && !(vals[r.key] ?? "").trim());
   const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.key, fmt(r.item!.expected!)])) });
   const taxable = shown.filter((r) => filled(r) && r.item?.kind !== "PRINCIPAL" && !Number.isNaN(n(vals[r.key])));
   const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
@@ -123,15 +123,15 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[76rem] text-sm">
+        <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-3 py-2">หลักทรัพย์ / บัญชี</th><th className="px-3">รายการ</th><th className="px-3">วันครบกำหนด</th>
-              <th className="px-3 text-right">ยอดคาดว่าจะได้รับ</th><th className="px-3">สถานะ</th>
+              <th className="px-3 text-right">ยอดคาดว่าจะได้รับ</th>
               {canWrite && <><th className="px-2 text-right">ยอดก่อนภาษี</th><th className="px-2 text-right">ภาษีหัก ณ ที่จ่าย</th>
                 <th className="w-36 whitespace-nowrap px-2 text-right">ยอดเข้าบัญชีสุทธิ</th><th className="px-2">เข้าบัญชี</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={canWrite ? 9 : 5} className="px-4 py-6 text-center text-slate-500">ไม่มีรายการของพอร์ตนี้</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={canWrite ? 8 : 4} className="px-4 py-6 text-center text-slate-500">ไม่มีรายการของพอร์ตนี้</td></tr>}
             {shown.map((r) => {
               const it = r.item, c = r.cash;
               const open = editable(r);
@@ -145,23 +145,24 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
                     <div className="text-xs text-slate-400">{r.pfName} · {it ? HOLDING_TYPE_LABEL[it.holding.holding_type] ?? it.holding.holding_type : "เงินฝากในพอร์ต"} · {r.currency}</div>
                   </td>
                   <td className="px-3 py-2.5">{it ? it.label : <>ดอกเบี้ยเงินฝาก{c!.rate != null && <div className="text-xs text-slate-400">อัตรา {c!.rate.toFixed(2)}%</div>}</>}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{it ? thDate(it.due) : <span className="text-slate-400">-</span>}</td>
+                  {/* สถานะเป็นบรรทัดเล็กใต้วันครบกำหนด (เลิกคอลัมน์สถานะ · ตกลง 24 ต.ค.) */}
+                  <td className="px-3 py-2.5"><div className="whitespace-nowrap">{it ? thDate(it.due) : <span className="text-slate-400">-</span>}</div>
+                    <div className="text-xs">{it ? <DueStatus due={it.due} received={it.received} today={today} />
+                      : c!.received > 0 ? <span className="text-emerald-700">รับแล้วเดือนนี้ {money(c!.received, r.currency)}</span> : null}</div></td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{it?.expected != null ? money(it.expected, r.currency) : <span className="text-slate-400">-</span>}
                     {it?.received && <div className="text-xs text-emerald-700">ได้รับ {money(it.received.amount, r.currency)}</div>}</td>
-                  <td className="px-3 py-2.5 text-xs">{it ? <DueStatus due={it.due} received={it.received} today={today} />
-                    : c!.received > 0 ? <span className="text-emerald-700">รับแล้วเดือนนี้ {money(c!.received, r.currency)}</span> : <span className="text-slate-400">-</span>}</td>
                   {canWrite && (!open ? <td colSpan={4} /> : <>
                     <td className="px-2 text-right">
                       <input inputMode="decimal" value={v} placeholder={r.currency} aria-label={it?.kind === "PRINCIPAL" ? "เงินต้นที่ได้คืน" : "ยอดก่อนภาษี"}
-                        onChange={(e) => setVals({ ...vals, [r.key]: e.target.value })} className={`w-32 text-right ${small}`} />
+                        onChange={(e) => setVals({ ...vals, [r.key]: e.target.value })} className={`w-28 text-right ${small}`} />
                     </td>
                     <td className="px-2 text-right"><input inputMode="decimal" value={tax[r.key] ?? ""} disabled={!v.trim()} aria-label="ภาษีหัก ณ ที่จ่าย"
-                      onChange={(e) => setTax({ ...tax, [r.key]: e.target.value })} className={`w-28 text-right ${small}`} /></td>
+                      onChange={(e) => setTax({ ...tax, [r.key]: e.target.value })} className={`w-24 text-right ${small}`} /></td>
                     <td className={`whitespace-nowrap px-2 text-right tabular-nums ${has && net(r.key) <= 0 ? "text-red-700" : ""}`}>
                       {has && !Number.isNaN(net(r.key)) ? money(net(r.key), r.currency) : <span className="text-slate-400">-</span>}</td>
                     <td className="px-2">
                       {c ? <span className="text-xs text-slate-500">บัญชีนี้</span> : (
-                        <select value={destOf(r)} onChange={(e) => setDest({ ...dest, [r.key]: e.target.value })} className={`max-w-[13rem] ${small}`} aria-label="เข้าบัญชี">
+                        <select value={destOf(r)} onChange={(e) => setDest({ ...dest, [r.key]: e.target.value })} className={`max-w-[11rem] ${small}`} aria-label="เข้าบัญชี">
                           {pfCash(r.pf, r.currency).map((x) => <option key={x.id} value={endpointValue({ kind: "portfolio", id: x.id })}>ในพอร์ต · {x.name}</option>)}
                           {banks.filter((b) => b.currency === r.currency).map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>ธนาคาร · {b.name}</option>)}
                         </select>
@@ -176,7 +177,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
       </div>
 
       {canWrite && rows.some(editable) && (
-        <form action={action} onSubmit={onSubmit} className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-slate-200 bg-white/95 py-3">
+        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="rows" value={JSON.stringify(lines.map((l) => ({ ...l, title: undefined })))} />
           <button disabled={pending || lines.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
             {pending ? "กำลังบันทึก…" : `บันทึกรับ ${lines.length} รายการ ณ ${thDate(date)}`}
