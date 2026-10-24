@@ -116,6 +116,10 @@ export async function recordTx(_: ActionState, form: FormData): Promise<ActionSt
   const isNew = holding === "__new__";
   const coupon = isNew ? couponInfo(form, "new_") : { info: null };
   if (coupon.error) return { error: coupon.error };
+  // หุ้นกู้ตัวใหม่ที่รู้แค่เงินต้น (ไม่ใส่จำนวนหน่วย / ราคา) → บันทึกเป็น 1 หน่วย × เงินต้น (แก้ทีหลังได้ที่แถว "ซื้อ")
+  let quantity = clean(form.get("quantity")), price = clean(form.get("price"));
+  const face = coupon.info?.face_value;
+  if (isNew && type === "BUY" && !quantity && !price && face != null && face > 0) { quantity = "1"; price = String(face); }
   const { data: txId, error } = await supabase.rpc("record_investment_tx", {
     p_portfolio_asset_id: id,
     p_tx: {
@@ -126,7 +130,7 @@ export async function recordTx(_: ActionState, form: FormData): Promise<ActionSt
         symbol: str(form.get("new_symbol")), currency: str(form.get("new_currency")),
         maturity_date: str(form.get("new_maturity_date")),
       } : null,
-      quantity: clean(form.get("quantity")), price: clean(form.get("price")), amount: clean(form.get("amount")),
+      quantity, price, amount: clean(form.get("amount")),
       fee: clean(form.get("fee")), tax: clean(form.get("tax")),
       settle_bank_asset_id: form.get("settle_mode") === "bank" ? str(form.get("bank_asset_id")) : null,
       direction: str(form.get("direction")), notes: str(form.get("notes")),

@@ -272,12 +272,15 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                 {canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
                   deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
                   fields={[
+                    // แบบเดียวกันทุกแถว: วันที่ · จำนวน · ราคา · มูลค่า (+ ภาษี) · หมายเหตุ
                     ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
                     ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
                     ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-                    ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
+                    ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type)
+                      ? [{ name: "value", label: "มูลค่า (= จำนวน × ราคา)", type: "number" as const, value: money(t.amount), readOnly: true }]
+                      : [{ name: "amount", label: "มูลค่า", type: "number" as const, value: t.amount }]),
                     ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
-                    { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />}
+                    { name: "notes", label: "หมายเหตุ", value: t.notes, wide: true }]} />}
               </td>
             </tr>
           ) } })),
@@ -291,9 +294,14 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               <td className="text-right tabular-nums">{money(v.value)}</td>
               <td className="pl-4 text-xs text-slate-500">{lump ? "" : "จำนวน = หน่วยที่ถือ ณ วันนั้น"}</td>
               <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete}
-                fields={!lump && v.price != null
-                  ? [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "price", label: "ราคาต่อหน่วย (มูลค่า = ราคา × จำนวนหน่วยที่ถือ)", type: "number", value: v.price }]
-                  : [{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "market_value", label: "มูลค่า", type: "number", value: v.market_value }]} />}</td>
+                fields={[
+                  { name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
+                  ...(lump ? [] : [{ name: "held", label: "จำนวน (หน่วยที่ถือ ณ วันนั้น)", type: "number" as const, value: qty(v.q), readOnly: true }]),
+                  ...(!lump && v.price != null
+                    ? [{ name: "price", label: "ราคา", type: "number" as const, value: v.price },
+                       { name: "value", label: "มูลค่า (= จำนวน × ราคา)", type: "number" as const, value: money(v.value), readOnly: true }]
+                    : [{ name: "market_value", label: "มูลค่า", type: "number" as const, value: v.market_value }]),
+                ]} />}</td>
             </tr>
           ) } })),
       ].sort((x, y) => y.date.localeCompare(x.date)).map((x) => x.h)} />
