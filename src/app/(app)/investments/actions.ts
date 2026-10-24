@@ -375,7 +375,7 @@ export async function moveHolding(form: FormData): Promise<void> {
 
 /** แท็บ "รอรับเดือนนี้": ดอกเบี้ย / Coupon หลายรายการ + ดอกเบี้ยเงินฝากในพอร์ต — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
 export type BatchIncomeRow = {
-  portfolio_asset_id: string; type: "COUPON" | "INTEREST"; holding_id: string; date: string; amount: string; tax: string;
+  portfolio_asset_id: string; type: "COUPON" | "INTEREST" | "MATURITY"; holding_id: string; date: string; amount: string; tax: string;
   cash_holding_id: string | null; bank_asset_id: string | null; notes: string;
 };
 export async function batchInvestmentIncome(_: ActionState, form: FormData): Promise<ActionState> {
