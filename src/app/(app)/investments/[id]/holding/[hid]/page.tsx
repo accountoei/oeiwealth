@@ -269,15 +269,18 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               </td>
               <td className="pl-4 text-xs text-slate-500">{t.notes}{(t.settle_from_asset_id || t.settle_to_asset_id) && <div>ผ่านบัญชีธนาคาร</div>}</td>
               <td className="pl-2 text-right">
-                {canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+                {canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={4}
                   deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
                   fields={[
-                    // แบบเดียวกันทุกแถว: วันที่ · จำนวน · ราคา · มูลค่า (+ ภาษี) · หมายเหตุ
-                    ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
+                    // แบบเดียวกันทุกกล่อง: วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว (+ ภาษี) · หมายเหตุ (ตกลง 24 ต.ค.)
+                    t.transaction_type === "OPENING_BALANCE"
+                      ? { name: "opening_date", label: "วันที่ (วันตั้งต้น)", value: thDate(t.transaction_date), readOnly: true }
+                      : { name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date },
                     ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
                     ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-                    ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type)
-                      ? [{ name: "value", label: "มูลค่า (= จำนวน × ราคา)", type: "number" as const, value: money(t.amount), readOnly: true }]
+                    ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) && t.quantity != null && t.price != null
+                      ? [{ name: "value", label: "มูลค่า (= จำนวน × ราคา)", type: "number" as const, value: money(t.amount), readOnly: true,
+                           calc: { op: "mul" as const, a: "quantity", b: "price" } }]
                       : [{ name: "amount", label: "มูลค่า", type: "number" as const, value: t.amount }]),
                     ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
                     { name: "notes", label: "หมายเหตุ", value: t.notes, wide: true }]} />}
@@ -293,14 +296,17 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               <td className="text-right tabular-nums">{lump || v.price == null ? <span className="text-slate-400">—</span> : money(v.price, undefined, 4)}</td>
               <td className="text-right tabular-nums">{money(v.value)}</td>
               <td className="pl-4 text-xs text-slate-500">{lump ? "" : "จำนวน = หน่วยที่ถือ ณ วันนั้น"}</td>
-              <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete}
+              <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete} cols={4}
                 fields={[
+                  // วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว · แก้ราคา → มูลค่าเปลี่ยนตาม · แก้มูลค่า → ราคา = มูลค่า ÷ จำนวน (ตกลง 24 ต.ค.)
                   { name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
-                  ...(lump ? [] : [{ name: "held", label: "จำนวน (หน่วยที่ถือ ณ วันนั้น)", type: "number" as const, value: qty(v.q), readOnly: true }]),
-                  ...(!lump && v.price != null
-                    ? [{ name: "price", label: "ราคา", type: "number" as const, value: v.price },
-                       { name: "value", label: "มูลค่า (= จำนวน × ราคา)", type: "number" as const, value: money(v.value), readOnly: true }]
-                    : [{ name: "market_value", label: "มูลค่า", type: "number" as const, value: v.market_value }]),
+                  ...(lump || !(v.q > 0)
+                    ? [{ name: "market_value", label: "มูลค่า", type: "number" as const, value: v.market_value }]
+                    : [{ name: "held", label: "จำนวนที่ถือ ณ วันนั้น", type: "number" as const, value: qty(v.q), readOnly: true },
+                       { name: "price", label: "ราคา", type: "number" as const, value: v.price ?? Number((v.value / v.q).toFixed(6)),
+                         calc: { op: "div" as const, a: "market_value", b: "held", digits: 6 } },
+                       { name: "market_value", label: "มูลค่า", type: "number" as const, value: Number(v.value.toFixed(2)),
+                         calc: { op: "mul" as const, a: "held", b: "price" } }]),
                 ]} />}</td>
             </tr>
           ) } })),

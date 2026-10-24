@@ -55,23 +55,24 @@ const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 
 /** หุ้นกู้ / อื่น ๆ ตัวใหม่: ข้อมูลตารางรับดอกเบี้ย ใส่ได้ตั้งแต่ตอนเพิ่ม (ไม่ใส่ = ตั้งทีหลังที่หน้าหลักทรัพย์ → แก้ไขข้อมูล) */
 const COUPON_TYPES = ["BOND", "OTHER"];
-/** face / onFace: ควบคุมช่องเงินต้นจากภายนอก (ฟอร์ม + รายการ: จำนวน × ราคา ขึ้นให้เอง) */
-function CouponFields({ prefix, currency, face, onFace, faceHint }: {
-  prefix: string; currency: string; face?: string; onFace?: (v: string) => void; faceHint?: string;
+/** face / onFace: ควบคุมช่องเงินต้นจากภายนอก (ฟอร์ม + รายการ: จำนวน · ราคา · เงินต้น คำนวณกันเอง) · faceHint: คำอธิบายเต็มความกว้างกล่อง */
+function CouponFields({ prefix, currency, face, onFace, faceHint, faceAuto }: {
+  prefix: string; currency: string; face?: string; onFace?: (v: string) => void; faceHint?: string; faceAuto?: boolean;
 }) {
   return (
     <div className="space-y-2 rounded-lg bg-slate-50 p-3 md:col-span-3">
       <div className="text-sm font-medium text-slate-800">ดอกเบี้ย / ตารางรับ (ถ้ามี)</div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className={lbl}>เงินต้น / มูลค่าหน้าตั๋ว ({currency})<input name={`${prefix}face_value`} inputMode="decimal" className={input}
-          {...(onFace ? { value: face ?? "", onChange: (e: { target: { value: string } }) => onFace(e.target.value) } : {})} />
-          {faceHint && <span className="text-xs font-normal text-slate-500">{faceHint}</span>}</label>
+          {...(faceAuto ? { "data-plain": "" } : {})}
+          {...(onFace ? { value: face ?? "", onChange: (e: { target: { value: string } }) => onFace(e.target.value) } : {})} /></label>
         <label className={lbl}>อัตราผลตอบแทน (% ต่อปี)<input name={`${prefix}interest_rate`} inputMode="decimal" data-money="off" className={input} /></label>
         <label className={lbl}>จ่ายดอกเบี้ย
           <select name={`${prefix}coupon_frequency`} defaultValue="" className={input}>
             <option value="">— ไม่ระบุ —</option>{COUPON_FREQ_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select></label>
       </div>
+      {faceHint && <p className="text-xs text-slate-500">{faceHint}</p>}
       <p className="text-xs text-slate-500">ใส่ครบ + วันครบกำหนด → ตารางรับดอกเบี้ย / เงินต้นขึ้นทันที และขึ้นในแท็บ &ldquo;รอรับเดือนนี้&rdquo; · ไม่ใส่ตอนนี้ แก้ทีหลังได้ที่หน้าหลักทรัพย์</p>
     </div>
   );
@@ -217,8 +218,9 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
   const [holdingId, setHoldingId] = useState("");
   const [newCcy, setNewCcy] = useState(portfolioCurrency);
   const [newType, setNewType] = useState("EQUITY");
-  const [q, setQ] = useState(""); const [p, setP] = useState(""); const [amt, setAmt] = useState("");
-  const [face, setFace] = useState(""); const [faceEdited, setFaceEdited] = useState(false);
+  // จำนวน · ราคา · เงินต้น: เก็บค่าที่ผู้ใช้พิมพ์เอง (typed) — หุ้นกู้ตัวใหม่ พิมพ์ 2 ช่อง → ช่องที่เหลือคำนวณให้
+  const [raw, setRaw] = useState({ q: "", p: "", f: "" });
+  const [amt, setAmt] = useState("");
   const [fee, setFee] = useState(""); const [tax, setTax] = useState("");
   const [mode, setMode] = useState("cash");
   const [dir, setDir] = useState("IN");
@@ -236,9 +238,18 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
   const hasFee = !["FEE", "TAX", "ADJUSTMENT"].includes(type);
   // หุ้นกู้ / อื่น ๆ ตัวใหม่: จำนวน × ราคา → ขึ้นในช่องเงินต้นให้ (แก้เองได้) · ใส่แค่เงินต้น → บันทึกเป็น 1 หน่วย × เงินต้น
   const couponNew = isNew && COUPON_TYPES.includes(newType);
-  const autoFace = couponNew && type === "BUY" && !faceEdited && n(q) > 0 && n(p) > 0;
-  const faceShown = autoFace ? (n(q) * n(p)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : face;
-  const faceOnly = couponNew && type === "BUY" && !q.trim() && !p.trim() && n(face) > 0;
+  //   พิมพ์ครบ 3 ช่องเอง = ไม่คำนวณ (เช่น ซื้อต่ำกว่าราคาหน้าตั๋ว) · พิมพ์แค่เงินต้น = บันทึกเป็น 1 หน่วย × เงินต้น
+  const tri = couponNew && type === "BUY";
+  const has = (k: "q" | "p" | "f") => raw[k].trim() !== "" && n(raw[k]) > 0;
+  const fmt = (v: number, d: number) => v.toLocaleString("en-US", { minimumFractionDigits: d === 2 ? 2 : 0, maximumFractionDigits: d });
+  const q = raw.q.trim() || !tri ? raw.q : has("p") && has("f") ? fmt(n(raw.f) / n(raw.p), 6) : "";
+  const p = raw.p.trim() || !tri ? raw.p : has("q") && has("f") ? fmt(n(raw.f) / n(raw.q), 6) : "";
+  const face = raw.f.trim() || !tri ? raw.f : has("q") && has("p") ? fmt(n(raw.q) * n(raw.p), 2) : "";
+  // ช่องที่คำนวณให้ (ไม่ได้พิมพ์เอง) → data-plain: ตัวจัดรูปตัวเลขกลางไม่แตะ (ไม่งั้นนับเป็นพิมพ์เอง)
+  const auto = (k: "q" | "p" | "f") => tri && !raw[k].trim() ? { "data-plain": "" } : {};
+  const setQ = (v: string) => setRaw((r) => ({ ...r, q: v }));
+  const setP = (v: string) => setRaw((r) => ({ ...r, p: v }));
+  const faceOnly = tri && !q.trim() && !p.trim() && n(face) > 0;
   const gross = faceOnly ? n(face) : qp ? n(q) * n(p) : n(amt);
   const net = type === "BUY" ? gross + n(fee) : ["FEE", "TAX"].includes(type) ? gross : gross - n(fee) - n(tax);
   const bankList = banks.filter((b) => b.currency === ccy);
@@ -314,9 +325,6 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
               <CurrencySelect name="new_currency" value={newCcy} onChange={setNewCcy} className={input} />
             </label>
             <label className={lbl}>วันครบกำหนด (ถ้ามี)<input name="new_maturity_date" type="date" className={input} /></label>
-            {couponNew && <CouponFields prefix="new_" currency={newCcy} face={faceShown}
-              onFace={(v) => { setFace(v); setFaceEdited(true); }}
-              faceHint={type === "BUY" ? "ใส่จำนวนหน่วย + ราคา → ขึ้นให้เอง · รู้แค่เงินต้น: ใส่ช่องนี้ช่องเดียว เว้นจำนวน / ราคาว่าง → บันทึกเป็น 1 หน่วย (แก้ทีหลังได้ที่แถว “ซื้อ”)" : undefined} />}
           </>
         )}
         <label className={lbl}>วันที่รายการ *
@@ -324,10 +332,10 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
         </label>
         {qp && (
           <>
-            <label className={lbl}>จำนวนหน่วย{faceOnly ? "" : " *"}<input name="quantity" required={!faceOnly} inputMode="decimal" value={q}
-              placeholder={faceOnly ? "1 (จากเงินต้น)" : undefined} onChange={(e) => { setQ(e.target.value); setFaceEdited(false); }} className={input} /></label>
-            <label className={lbl}>ราคาต่อหน่วย ({ccy}){faceOnly ? "" : " *"}<input name="price" required={!faceOnly} inputMode="decimal" value={p}
-              placeholder={faceOnly ? "= เงินต้น" : undefined} onChange={(e) => { setP(e.target.value); setFaceEdited(false); }} className={input} /></label>
+            <label className={lbl}>จำนวนหน่วย{faceOnly ? "" : " *"}<input name="quantity" required={!faceOnly} inputMode="decimal" value={q} {...auto("q")}
+              placeholder={faceOnly ? "1 (จากเงินต้น)" : undefined} onChange={(e) => setQ(e.target.value)} className={input} /></label>
+            <label className={lbl}>ราคาต่อหน่วย ({ccy}){faceOnly ? "" : " *"}<input name="price" required={!faceOnly} inputMode="decimal" value={p} {...auto("p")}
+              placeholder={faceOnly ? "= เงินต้น" : undefined} onChange={(e) => setP(e.target.value)} className={input} /></label>
           </>
         )}
         {type === "REDEMPTION" && (
@@ -354,6 +362,9 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
         {hasTax && (
           <label className={lbl}>ภาษีหัก ณ ที่จ่าย<input name="tax" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} className={input} /></label>
         )}
+        {couponNew && <CouponFields prefix="new_" currency={newCcy} face={face} faceAuto={tri && !raw.f.trim()}
+          onFace={(v) => setRaw((r) => ({ ...r, f: v }))}
+          faceHint={tri ? "จำนวนหน่วย · ราคา · เงินต้น ใส่ 2 ช่อง → ช่องที่เหลือขึ้นให้เอง (ใส่เองครบ 3 ช่อง = ไม่คำนวณ เช่น ซื้อต่ำกว่าหน้าตั๋ว) · รู้แค่เงินต้น: ใส่ช่องเงินต้นช่องเดียว → บันทึกเป็น 1 หน่วย (แก้ทีหลังได้ที่แถว “ซื้อ”)" : undefined} />}
         {canBank && (
           <div className={`${lbl} md:col-span-3`}>
             {type === "BUY" ? "จ่ายเงินจาก" : "รับเงินเข้า"}
