@@ -7,10 +7,12 @@ import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { bankId, endpointValue, holdingId, parseEndpoint } from "@/lib/money-endpoint";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
-import { MaturityForm, type Bank, type CashAcct } from "./[id]/forms";
+import type { Bank, CashAcct } from "./[id]/forms";
 
-// แท็บ "รอรับเดือนนี้" (ส่วนที่กรอกได้): ดอกเบี้ย / Coupon หลายรายการ + ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว
-//   เงินต้นครบกำหนดยังบันทึกทีละรายการ (ถามยืนยัน + ปิดหลักทรัพย์) · ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด
+// แท็บ "รอรับเดือนนี้" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
+//   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
+//   ด้านบน (แบบแท็บรับดอกเบี้ยของ Cash & Bank): ตัวกรองพอร์ต + กรอกตามตารางทุกแถว · คิดภาษี 15% + วันที่รับ (ใช้กับทุกแถว)
+//   เงินต้นไม่ใช่รายได้ · บันทึกแล้วหลักทรัพย์ปิดเป็น "ครบกำหนด" (batch_record_investment_income → record_holding_maturity)
 
 export type DueItem = {
   key: string; kind: "INTEREST" | "PRINCIPAL"; label: string; due: string; expected: number | null;
@@ -35,142 +37,151 @@ const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const TAX_RATE = 0.15;
 
+/** แถวในตาราง: รายการตามตาราง (ดอกเบี้ย / เงินต้น) หรือดอกเบี้ยบัญชีเงินฝากในพอร์ต */
+type Row = { key: string; pf: string; pfName: string; currency: string; item?: DueItem; cash?: PfCash };
+
 export default function DueBatch({ groups, cash, banks, today, minDate, defaultDate, canWrite }: {
   groups: DueGroup[]; cash: PfCash[]; banks: Bank[]; today: string; minDate: string; defaultDate: string; canWrite: boolean;
 }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
+  const [pf, setPf] = useState("");
+  const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
-  const [dates, setDates] = useState<Record<string, string>>({});
   const [dest, setDest] = useState<Record<string, string>>({});
   const [state, action, pending] = useActionState<ActionState, FormData>(batchInvestmentIncome, {});
   useEffect(() => { if (state.ok) { setVals({}); setTax({}); router.refresh(); } }, [state, router]);
 
-  // ปลายทาง: บัญชีเงินฝากในพอร์ต (สกุลเดียวกัน · บัญชีหลักก่อน) หรือบัญชีธนาคาร
-  const pfCash = (pf: string, ccy: string) => cash.filter((c) => c.pf === pf && c.currency === ccy).sort((a, b) => Number(b.is_default_cash) - Number(a.is_default_cash));
-  const destOf = (pf: string, it: DueItem) => dest[it.key] ?? (pfCash(pf, it.holding.currency)[0] ? endpointValue({ kind: "portfolio", id: pfCash(pf, it.holding.currency)[0].id })
-    : banks.find((b) => b.currency === it.holding.currency) ? endpointValue({ kind: "bank", id: banks.find((b) => b.currency === it.holding.currency)!.asset_id }) : "");
+  const rows: Row[] = [
+    ...groups.flatMap((g) => g.rows.map((it) => ({ key: it.key, pf: g.pf, pfName: g.name, currency: it.holding.currency, item: it }))),
+    ...cash.map((c) => ({ key: `cash:${c.id}`, pf: c.pf, pfName: c.pfName, currency: c.currency, cash: c })),
+  ];
+  const pfList = [...new Map(rows.map((r) => [r.pf, r.pfName])).entries()].sort((a, b) => a[1].localeCompare(b[1], "th"));
+  const shown = rows.filter((r) => !pf || r.pf === pf);
+  // แถวที่กรอกได้: รายการที่ยังไม่รับ (เงินต้น = หลักทรัพย์ยังถืออยู่) · ดอกเบี้ยเงินฝากกรอกได้ทุกเดือน
+  const editable = (r: Row) => canWrite && (r.cash ? true : !r.item!.received && (r.item!.kind === "INTEREST" || r.item!.holding.status === "ACTIVE"));
 
+  // ปลายทาง (ดอกเบี้ย / เงินต้นของหลักทรัพย์): บัญชีเงินฝากในพอร์ต (สกุลเดียวกัน · บัญชีหลักก่อน) หรือบัญชีธนาคาร
+  const pfCash = (p: string, ccy: string) => cash.filter((c) => c.pf === p && c.currency === ccy).sort((a, b) => Number(b.is_default_cash) - Number(a.is_default_cash));
+  const destOf = (r: Row) => dest[r.key] ?? (pfCash(r.pf, r.currency)[0] ? endpointValue({ kind: "portfolio", id: pfCash(r.pf, r.currency)[0].id })
+    : banks.find((b) => b.currency === r.currency) ? endpointValue({ kind: "bank", id: banks.find((b) => b.currency === r.currency)!.asset_id }) : "");
+
+  const filled = (r: Row) => editable(r) && (vals[r.key] ?? "").trim() !== "";
   type Line = BatchIncomeRow & { title: string };
-  const lines: Line[] = [];
-  groups.forEach((g) => g.rows.forEach((it) => {
-    if (it.kind !== "INTEREST" || it.received || !(vals[it.key] ?? "").trim()) return;
-    const d = destOf(g.pf, it);
-    lines.push({ portfolio_asset_id: g.pf, type: "COUPON", holding_id: it.holding.id, date: dates[it.key] ?? it.defaultDate,
-      amount: vals[it.key], tax: tax[it.key] ?? "", cash_holding_id: holdingId(parseEndpoint(d)), bank_asset_id: bankId(parseEndpoint(d)),
-      notes: `${it.label} (ครบ ${thDate(it.due)})`, title: `${it.holding.name} · ${it.label}` });
-  }));
-  cash.forEach((c) => {
-    const k = `cash:${c.id}`;
-    if (!(vals[k] ?? "").trim()) return;
-    lines.push({ portfolio_asset_id: c.pf, type: "INTEREST", holding_id: c.id, date: dates[k] ?? defaultDate, amount: vals[k], tax: tax[k] ?? "",
-      cash_holding_id: null, bank_asset_id: null, notes: "", title: `${c.pfName} · ${c.name} · ดอกเบี้ยเงินฝาก` });
+  const lines: Line[] = rows.filter(filled).map((r) => {
+    if (r.cash) return { portfolio_asset_id: r.pf, type: "INTEREST", holding_id: r.cash.id, date, amount: vals[r.key], tax: tax[r.key] ?? "",
+      cash_holding_id: null, bank_asset_id: null, notes: "", title: `${r.pfName} · ${r.cash.name} · ดอกเบี้ยเงินฝาก` };
+    const it = r.item!, d = parseEndpoint(destOf(r));
+    return { portfolio_asset_id: r.pf, type: it.kind === "PRINCIPAL" ? "MATURITY" : "COUPON", holding_id: it.holding.id, date,
+      amount: vals[r.key], tax: tax[r.key] ?? "", cash_holding_id: holdingId(d), bank_asset_id: bankId(d),
+      notes: `${it.label} (ครบ ${thDate(it.due)})`, title: `${it.holding.name} · ${it.label}` };
   });
-  const keysWithVals = Object.keys(vals).filter((k) => (vals[k] ?? "").trim() && !Number.isNaN(n(vals[k])));
-  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(keysWithVals.map((k) => [k, fmt(Math.round(n(vals[k]) * TAX_RATE * 100) / 100)])) });
-  const onSubmit = cf.guard(`บันทึกรับ ${lines.length} รายการ ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""} · ${thDate(l.date)}`).join("\n")}`,
-    { okLabel: "ยืนยันบันทึก" });
+  const hiddenChosen = rows.filter((r) => filled(r) && !shown.includes(r)).length;
+  const maturities = lines.filter((l) => l.type === "MATURITY").length;
+  const net = (k: string) => n(vals[k] ?? "") - ((tax[k] ?? "").trim() ? n(tax[k]) : 0);
 
-  const inputs = (k: string, ccy: string, date: string, expected: number | null) => {
-    const v = vals[k] ?? "";
-    return (<>
-      <td className="whitespace-nowrap px-2 py-2 text-right">
-        {expected != null && <button type="button" onClick={() => setVals({ ...vals, [k]: fmt(expected) })} className="mr-1 text-xs text-blue-700 hover:underline">ตามตาราง</button>}
-        <input inputMode="decimal" value={v} placeholder={ccy} aria-label="ยอดก่อนภาษี" onChange={(e) => setVals({ ...vals, [k]: e.target.value })} className={`w-28 text-right ${small}`} />
-      </td>
-      <td className="px-2"><input inputMode="decimal" value={tax[k] ?? ""} disabled={!v.trim()} aria-label="ภาษีหัก ณ ที่จ่าย"
-        onChange={(e) => setTax({ ...tax, [k]: e.target.value })} className={`w-24 text-right ${small}`} /></td>
-      <td className="px-2"><input type="date" value={dates[k] ?? date} min={minDate || undefined} max={today} aria-label="วันที่รับ"
-        onChange={(e) => e.target.value && setDates({ ...dates, [k]: e.target.value })} className={small} /></td>
-    </>);
-  };
-  const head = (
-    <thead className="bg-slate-50 text-left text-xs text-slate-500">
-      <tr><th className="px-3 py-2">หลักทรัพย์</th><th className="px-3">รายการ</th><th className="px-3">วันครบกำหนด</th>
-        <th className="px-3 text-right">ยอดคาดว่าจะได้รับ</th><th className="px-3">สถานะ</th>
-        {canWrite && <><th className="px-2 text-right">ยอดก่อนภาษี</th><th className="px-2">ภาษี</th><th className="px-2">วันที่รับ</th><th className="px-2">เข้าบัญชี</th></>}</tr>
-    </thead>
-  );
+  // ด้านบน: กรอกตามตาราง (แถวที่แสดง ยังว่าง มียอดคาดการณ์) · คิดภาษี 15% (ดอกเบี้ยที่กรอก ไม่รวมเงินต้น)
+  //   กรอกตามตารางเฉพาะงวดที่ถึงกำหนดแล้ว ณ วันที่รับ (งวดที่ยังไม่ถึงกรอกเองได้)
+  const fillable = shown.filter((r) => editable(r) && r.item?.expected != null && r.item.due <= date && !(vals[r.key] ?? "").trim());
+  const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.key, fmt(r.item!.expected!)])) });
+  const taxable = shown.filter((r) => filled(r) && r.item?.kind !== "PRINCIPAL" && !Number.isNaN(n(vals[r.key])));
+  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
 
+  const onSubmit = cf.guard(`บันทึกรับ ${lines.length} รายการ วันที่ ${thDate(date)} ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""}`).join("\n")}`
+    + (maturities ? `\n\nเงินต้นครบกำหนด ${maturities} รายการ: หลักทรัพย์จะปิดเป็น "ครบกำหนด" (เงินต้นไม่ใช่รายได้)` : ""), { okLabel: "ยืนยันบันทึก" });
+
+  if (rows.length === 0) return null;
   return (
     <>
     {cf.dialog}
-    {/* ช่องกรอกอยู่นอก <form> (เก็บใน state) → ฟอร์มเงินต้นครบกำหนดของแต่ละแถวไม่ซ้อนอยู่ในฟอร์มนี้ */}
-    <div className="space-y-4">
-      {groups.map((g) => (
-        <section key={g.pf} className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900"><Link href={`/investments/${g.pf}`} className="hover:underline">{g.name}</Link></h2>
-          <table className="mt-2 w-full min-w-[78rem] text-sm">
-            {head}
-            <tbody className="divide-y divide-slate-100">
-              {g.rows.map((it) => {
-                const h = it.holding;
-                const open = canWrite && !it.received;
-                const d = destOf(g.pf, it);
-                return (
-                  <tr key={it.key} className={`${it.received ? "text-slate-500" : ""} ${(vals[it.key] ?? "").trim() ? "bg-blue-50/40" : ""}`}>
-                    <td className="break-words px-3 py-2.5"><Link href={`/investments/${g.pf}/holding/${h.id}`} className="font-medium text-slate-900 hover:underline">{h.name}</Link>
-                      <div className="text-xs text-slate-400">{HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type} · {h.currency}</div></td>
-                    <td className="px-3 py-2.5">{it.label}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{thDate(it.due)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{it.expected != null ? money(it.expected, h.currency) : "-"}
-                      {it.received && <div className="text-xs text-emerald-700">ได้รับ {money(it.received.amount, h.currency)}</div>}</td>
-                    <td className="px-3 py-2.5 text-xs"><DueStatus due={it.due} received={it.received} today={today} /></td>
-                    {canWrite && (!open ? <td colSpan={4} /> : it.kind === "INTEREST" ? <>
-                      {inputs(it.key, h.currency, it.defaultDate, it.expected)}
-                      <td className="px-2">
-                        <select value={d} onChange={(e) => setDest({ ...dest, [it.key]: e.target.value })} className={`max-w-[13rem] ${small}`} aria-label="เข้าบัญชี">
-                          {pfCash(g.pf, h.currency).map((c) => <option key={c.id} value={endpointValue({ kind: "portfolio", id: c.id })}>ในพอร์ต · {c.name}</option>)}
-                          {banks.filter((b) => b.currency === h.currency).map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>ธนาคาร · {b.name}</option>)}
-                        </select>
-                      </td>
-                    </> : (
-                      <td colSpan={4} className="px-2 py-2 text-right">
-                        {h.status === "ACTIVE" && <MaturityForm assetId={g.pf} portfolioName={g.name} banks={banks} cashAccounts={cash.filter((c) => c.pf === g.pf)}
-                          holding={{ id: h.id, name: h.name, symbol: null, holding_type: h.holding_type, currency: h.currency, quantity: 0, current_price: null, status: h.status }}
-                          today={today} minDate={minDate} label="บันทึกรับเงินต้น" defaultAmount={it.expected} defaultDate={it.defaultDate} />}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      ))}
-
-      {cash.length > 0 && (
-        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900">ดอกเบี้ยบัญชีเงินฝากในพอร์ต</h2>
-          <p className="px-4 text-xs text-slate-500">ดอกเบี้ยเข้าบัญชีนั้นเอง · รับแล้ว = ดอกเบี้ยสุทธิที่บันทึกในเดือนที่เลือก</p>
-          <table className="mt-2 w-full min-w-[60rem] text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-3 py-2">พอร์ต / บัญชี</th><th className="px-3 text-right">อัตรา</th><th className="px-3 text-right">รับแล้ว</th>
-                {canWrite && <><th className="px-2 text-right">ยอดก่อนภาษี</th><th className="px-2">ภาษี</th><th className="px-2">วันที่รับ</th></>}</tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {cash.map((c) => (
-                <tr key={c.id} className={(vals[`cash:${c.id}`] ?? "").trim() ? "bg-blue-50/40" : ""}>
-                  <td className="px-3 py-2"><Link href={`/investments/${c.pf}/cash/${c.id}`} className="font-medium text-slate-900 hover:underline">{c.name}</Link>
-                    <div className="text-xs text-slate-400">{c.pfName} · {c.currency}{c.is_default_cash ? " · บัญชีหลัก" : ""}</div></td>
-                  <td className="px-3 text-right tabular-nums">{c.rate != null ? `${c.rate.toFixed(2)}%` : <span className="text-slate-400">-</span>}</td>
-                  <td className="px-3 text-right tabular-nums">{c.received > 0 ? <span className="text-emerald-700">{money(c.received, c.currency)}</span> : <span className="text-slate-400">-</span>}</td>
-                  {canWrite && inputs(`cash:${c.id}`, c.currency, defaultDate, null)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+    <div className="space-y-3">
+      {canWrite && (
+        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {pfList.length > 1 && (
+                <label className="flex items-center gap-2">พอร์ต
+                  <select value={pf} onChange={(e) => setPf(e.target.value)} className={small}>
+                    <option value="">ทุกพอร์ต</option>
+                    {pfList.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                  </select>
+                </label>
+              )}
+              {fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามตารางทุกแถว ({fillable.length})</button>}
+            </div>
+            <div className="ml-auto flex flex-wrap items-center gap-3">
+              {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>}
+              <label className="flex items-center gap-2">วันที่รับ
+                <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
+              </label>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
+            · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</p>
+        </div>
       )}
 
-      {canWrite && (groups.some((g) => g.rows.some((r) => r.kind === "INTEREST" && !r.received)) || cash.length > 0) && (
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[76rem] text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr><th className="px-3 py-2">หลักทรัพย์ / บัญชี</th><th className="px-3">รายการ</th><th className="px-3">วันครบกำหนด</th>
+              <th className="px-3 text-right">ยอดคาดว่าจะได้รับ</th><th className="px-3">สถานะ</th>
+              {canWrite && <><th className="px-2 text-right">ยอดก่อนภาษี</th><th className="px-2 text-right">ภาษีหัก ณ ที่จ่าย</th>
+                <th className="w-36 whitespace-nowrap px-2 text-right">ยอดเข้าบัญชีสุทธิ</th><th className="px-2">เข้าบัญชี</th></>}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {shown.length === 0 && <tr><td colSpan={canWrite ? 9 : 5} className="px-4 py-6 text-center text-slate-500">ไม่มีรายการของพอร์ตนี้</td></tr>}
+            {shown.map((r) => {
+              const it = r.item, c = r.cash;
+              const open = editable(r);
+              const v = vals[r.key] ?? "";
+              const has = v.trim() !== "" && !Number.isNaN(n(v));
+              return (
+                <tr key={r.key} className={`${it?.received ? "text-slate-500" : ""} ${open && v.trim() ? "bg-blue-50/40" : ""}`}>
+                  <td className="break-words px-3 py-2.5">
+                    {it ? <Link href={`/investments/${r.pf}/holding/${it.holding.id}`} className="font-medium text-slate-900 hover:underline">{it.holding.name}</Link>
+                      : <Link href={`/investments/${r.pf}/cash/${c!.id}`} className="font-medium text-slate-900 hover:underline">{c!.name}</Link>}
+                    <div className="text-xs text-slate-400">{r.pfName} · {it ? HOLDING_TYPE_LABEL[it.holding.holding_type] ?? it.holding.holding_type : "เงินฝากในพอร์ต"} · {r.currency}</div>
+                  </td>
+                  <td className="px-3 py-2.5">{it ? it.label : <>ดอกเบี้ยเงินฝาก{c!.rate != null && <div className="text-xs text-slate-400">อัตรา {c!.rate.toFixed(2)}%</div>}</>}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5">{it ? thDate(it.due) : <span className="text-slate-400">-</span>}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{it?.expected != null ? money(it.expected, r.currency) : <span className="text-slate-400">-</span>}
+                    {it?.received && <div className="text-xs text-emerald-700">ได้รับ {money(it.received.amount, r.currency)}</div>}</td>
+                  <td className="px-3 py-2.5 text-xs">{it ? <DueStatus due={it.due} received={it.received} today={today} />
+                    : c!.received > 0 ? <span className="text-emerald-700">รับแล้วเดือนนี้ {money(c!.received, r.currency)}</span> : <span className="text-slate-400">-</span>}</td>
+                  {canWrite && (!open ? <td colSpan={4} /> : <>
+                    <td className="px-2 text-right">
+                      <input inputMode="decimal" value={v} placeholder={r.currency} aria-label={it?.kind === "PRINCIPAL" ? "เงินต้นที่ได้คืน" : "ยอดก่อนภาษี"}
+                        onChange={(e) => setVals({ ...vals, [r.key]: e.target.value })} className={`w-32 text-right ${small}`} />
+                    </td>
+                    <td className="px-2 text-right"><input inputMode="decimal" value={tax[r.key] ?? ""} disabled={!v.trim()} aria-label="ภาษีหัก ณ ที่จ่าย"
+                      onChange={(e) => setTax({ ...tax, [r.key]: e.target.value })} className={`w-28 text-right ${small}`} /></td>
+                    <td className={`whitespace-nowrap px-2 text-right tabular-nums ${has && net(r.key) <= 0 ? "text-red-700" : ""}`}>
+                      {has && !Number.isNaN(net(r.key)) ? money(net(r.key), r.currency) : <span className="text-slate-400">-</span>}</td>
+                    <td className="px-2">
+                      {c ? <span className="text-xs text-slate-500">บัญชีนี้</span> : (
+                        <select value={destOf(r)} onChange={(e) => setDest({ ...dest, [r.key]: e.target.value })} className={`max-w-[13rem] ${small}`} aria-label="เข้าบัญชี">
+                          {pfCash(r.pf, r.currency).map((x) => <option key={x.id} value={endpointValue({ kind: "portfolio", id: x.id })}>ในพอร์ต · {x.name}</option>)}
+                          {banks.filter((b) => b.currency === r.currency).map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>ธนาคาร · {b.name}</option>)}
+                        </select>
+                      )}
+                    </td>
+                  </>)}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {canWrite && rows.some(editable) && (
         <form action={action} onSubmit={onSubmit} className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-slate-200 bg-white/95 py-3">
           <input type="hidden" name="rows" value={JSON.stringify(lines.map((l) => ({ ...l, title: undefined })))} />
           <button disabled={pending || lines.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกรับ ${lines.length} รายการ`}
+            {pending ? "กำลังบันทึก…" : `บันทึกรับ ${lines.length} รายการ ณ ${thDate(date)}`}
           </button>
-          {keysWithVals.length > 0 && !pending && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>}
+          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
           {lines.length > 0 && !pending && <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
           {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}

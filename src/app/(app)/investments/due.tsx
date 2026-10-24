@@ -6,7 +6,7 @@ import type { Bank } from "./[id]/forms";
 import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
 
 // แท็บ "รอรับเดือนนี้" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
-//   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก แยกตามพอร์ต · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
+//   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก (ทุกพอร์ตในตารางเดียว) · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
 //   ตารางคำนวณจากข้อมูลหลักทุกครั้ง (src/lib/coupon-schedule.ts) · ช่องกรอก / บันทึกหลายรายการพร้อมกันอยู่ใน due-batch.tsx
 
 const label = (r: DueRow) => (r.kind === "PRINCIPAL" ? "เงินต้นครบกำหนด" : r.total > 1 ? `ดอกเบี้ย งวด ${r.no}/${r.total}` : "ดอกเบี้ย (ตอนครบกำหนด)");
@@ -68,13 +68,13 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
     ids.length ? supabase.from("investment_transactions").select("holding_id,transaction_type,transaction_date,amount").in("holding_id", ids)
       .in("transaction_type", ["OPENING_BALANCE", "BUY", "COUPON", "INTEREST", "MATURITY"]).is("deleted_at", null) : none,
     canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
-    supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
+    supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,current_value,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
       .eq("holding_type", "CASH").eq("status", "ACTIVE").is("deleted_at", null).is("investment_portfolios.deleted_at", null).order("created_at"),
   ]);
   const fcnOf = new Map(((fcns as Fcn[] | null) ?? []).map((f) => [f.holding_id, f]));
   const txOf = new Map<string, Tx[]>();
   ((txs as Tx[] | null) ?? []).forEach((t) => txOf.set(t.holding_id, [...(txOf.get(t.holding_id) ?? []), t]));
-  type CRow = { id: string; name: string; currency: string; is_default_cash: boolean; interest_rate: number | null;
+  type CRow = { id: string; name: string; currency: string; is_default_cash: boolean; interest_rate: number | null; current_value: number | null;
     investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
   const cashRows = ((cash as unknown as CRow[] | null) ?? []).filter((c) => c.investment_portfolios && showAsset(c.investment_portfolios.asset_id));
 
@@ -112,13 +112,15 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
   const pfCash: PfCash[] = cashRows.map((c) => ({ id: c.id, name: c.name, currency: c.currency, is_default_cash: c.is_default_cash,
     pf: c.investment_portfolios!.asset_id, pfName: c.investment_portfolios!.assets?.name ?? "พอร์ต",
     rate: c.interest_rate == null ? null : Number(c.interest_rate), received: gotOf.get(c.id) ?? 0 }))
+    // บัญชีที่ระบบสร้างให้แต่ไม่มีเงิน ไม่มีอัตรา และไม่ได้รับดอกเบี้ยเดือนนี้ → ไม่แสดง (ไม่มีดอกเบี้ยให้รับ)
+    .filter((c) => c.rate != null || c.received !== 0 || Math.abs(Number(cashRows.find((x) => x.id === c.id)?.current_value ?? 0)) >= 0.005)
     .sort((a, b) => a.pfName.localeCompare(b.pfName, "th"));
   const open = items.filter(({ r }) => !r.received);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดรับ · แยกตามพอร์ต · ตั้งข้อมูลที่หลักทรัพย์ → แก้ไขข้อมูล (เงินต้น · อัตรา · จ่ายทุก)</p>
+        <p className="text-sm text-slate-600">ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยเงินฝากในพอร์ต · ทุกพอร์ตในตารางเดียว · ตั้งข้อมูลที่หลักทรัพย์ → แก้ไขข้อมูล (เงินต้น · อัตรา · จ่ายทุก)</p>
         <MonthPicker months={months} value={month} />
       </div>
       <section className="grid gap-4 sm:grid-cols-3">

@@ -2650,6 +2650,25 @@ SELECT t.ok(public.batch_record_investment_income(jsonb_build_array(
   'รับในพอร์ตกลุ่ม: ดอกเบี้ยเงินฝาก + Coupon ในคำสั่งเดียว');
 SELECT t.ok((SELECT coalesce(current_value, 0) FROM public.investment_holdings WHERE id = t.h('เงินฝากพอร์ตรับกลุ่ม')) = :ia0 + 9 + 20,
             'รับในพอร์ตกลุ่ม: บัญชี A เพิ่ม 29 (ดอกเบี้ยสุทธิ 9 + Coupon 20)');
+-- เงินต้นครบกำหนดในชุดเดียวกัน (20261024000100): ใส่เงินต้นก่อน Coupon ในรายการ ระบบยังบันทึก Coupon ก่อน · เงินต้นไม่ใช่รายได้
+SELECT t.fails($$SELECT public.batch_record_investment_income(jsonb_build_array(
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','MATURITY','date',current_date,'holding_id',t.h('หุ้นกู้พอร์ตรับกลุ่ม'),'amount','0'))))$$,
+  'หุ้นกู้พอร์ตรับกลุ่ม · กรุณาใส่ยอดเงินต้นที่ได้คืน', 'รับในพอร์ตกลุ่ม: เงินต้นครบกำหนดต้องมากกว่า 0');
+SELECT t.fails($$SELECT public.batch_record_investment_income(jsonb_build_array(
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','MATURITY','date',current_date + 1,'holding_id',t.h('หุ้นกู้พอร์ตรับกลุ่ม'),'amount','1000'))))$$,
+  'หุ้นกู้พอร์ตรับกลุ่ม · วันที่รับต้องไม่เกินวันนี้', 'รับในพอร์ตกลุ่ม: เงินต้นครบกำหนดวันในอนาคตไม่ได้');
+SELECT count(*) AS inc0 FROM public.income_transactions WHERE asset_id = t.a('พอร์ตรับกลุ่ม') AND deleted_at IS NULL \gset
+SELECT t.ok(public.batch_record_investment_income(jsonb_build_array(
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','MATURITY','date',current_date,'holding_id',t.h('หุ้นกู้พอร์ตรับกลุ่ม'),'amount','1000'
+    ,'cash_holding_id',t.h('เงินฝากพอร์ตรับกลุ่ม'))),
+  jsonb_build_object('portfolio_asset_id', t.a('พอร์ตรับกลุ่ม'), 'tx', jsonb_build_object('type','COUPON','date',current_date,'holding_id',t.h('หุ้นกู้พอร์ตรับกลุ่ม'),'amount','30',
+    'cash_holding_id',t.h('เงินฝากพอร์ตรับกลุ่ม'))))) = 2,
+  'รับในพอร์ตกลุ่ม: Coupon งวดสุดท้าย + เงินต้นครบกำหนดในคำสั่งเดียว');
+SELECT t.ok((SELECT status FROM public.investment_holdings WHERE id = t.h('หุ้นกู้พอร์ตรับกลุ่ม')) = 'MATURED'
+            AND (SELECT coalesce(current_value, 0) FROM public.investment_holdings WHERE id = t.h('เงินฝากพอร์ตรับกลุ่ม')) = :ia0 + 29 + 30 + 1000,
+            'รับในพอร์ตกลุ่ม: หลักทรัพย์ปิดเป็นครบกำหนด · บัญชีเพิ่ม Coupon 30 + เงินต้น 1,000');
+SELECT t.ok((SELECT count(*) FROM public.income_transactions WHERE asset_id = t.a('พอร์ตรับกลุ่ม') AND deleted_at IS NULL) = :inc0 + 1,
+            'รับในพอร์ตกลุ่ม: รายได้เพิ่มเฉพาะ Coupon (เงินต้นไม่ใช่รายได้)');
 SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.batch_record_bank_interest(jsonb_build_array(
   jsonb_build_object('bank_asset_id', t.a('บัญชีดอกเบี้ย B'), 'date', '2026-10-05', 'amount', 50)))$$,
