@@ -2828,6 +2828,39 @@ SELECT t.ok(position('WHERE d < current_date AND (r.id IS NULL OR d - r.rate_dat
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz9. บัญชีรับดอกเบี้ย / ปันผล ของหลักทรัพย์ (ค่าตั้งต้นของฟอร์มรับเงิน · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีรับคูปอง THB', 'ทดสอบ', 'THB', 1000, '2026-09-30', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS ia_bank;
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตบัญชีรับ', 'THB' FROM public.families;
+INSERT INTO public.investment_portfolios(asset_id, institution) VALUES (t.a('พอร์ตบัญชีรับ'), 'ทดสอบ');
+SELECT public.add_holding(t.a('พอร์ตบัญชีรับ'), 'CASH', 'เงินฝากพอร์ตบัญชีรับ', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS ia_cash;
+SELECT public.add_holding(t.a('พอร์ตบัญชีรับ'), 'CASH', 'เงินฝากพอร์ตบัญชีรับ USD', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS ia_cash_usd;
+SELECT public.add_holding(t.a('พอร์ตบัญชีรับ'), 'BOND', 'หุ้นกู้บัญชีรับ', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS ia_bond;
+UPDATE public.investment_holdings SET income_cash_holding_id = t.h('เงินฝากพอร์ตบัญชีรับ') WHERE id = t.h('หุ้นกู้บัญชีรับ');
+SELECT t.ok((SELECT income_cash_holding_id = t.h('เงินฝากพอร์ตบัญชีรับ') AND income_bank_asset_id IS NULL FROM public.investment_holdings WHERE id = t.h('หุ้นกู้บัญชีรับ')),
+            'บัญชีรับ: ผูกบัญชีเงินฝากในพอร์ตเดียวกันได้');
+UPDATE public.investment_holdings SET income_cash_holding_id = NULL, income_bank_asset_id = t.a('บัญชีรับคูปอง THB') WHERE id = t.h('หุ้นกู้บัญชีรับ');
+SELECT t.ok((SELECT income_bank_asset_id = t.a('บัญชีรับคูปอง THB') AND income_cash_holding_id IS NULL FROM public.investment_holdings WHERE id = t.h('หุ้นกู้บัญชีรับ')),
+            'บัญชีรับ: เปลี่ยนเป็นบัญชีธนาคารได้');
+SELECT t.fails($$UPDATE public.investment_holdings SET income_cash_holding_id = t.h('เงินฝากพอร์ตบัญชีรับ') WHERE id = t.h('หุ้นกู้บัญชีรับ')$$,
+  'ih_income_account_ck', 'บัญชีรับ: เลือกได้อย่างเดียว (ในพอร์ต หรือ ธนาคาร)');
+SELECT t.fails($$UPDATE public.investment_holdings SET income_bank_asset_id = NULL, income_cash_holding_id = t.h('เงินฝากพอร์ตบัญชีรับ USD') WHERE id = t.h('หุ้นกู้บัญชีรับ')$$,
+  'บัญชีเงินฝากในพอร์ตเดียวกัน', 'บัญชีรับ: บัญชีในพอร์ตต้องสกุลเดียวกับหลักทรัพย์');
+UPDATE public.investment_holdings SET income_bank_asset_id = NULL WHERE id = t.h('หุ้นกู้บัญชีรับ');
+SELECT t.fails($$UPDATE public.investment_holdings SET income_bank_asset_id = t.a('พอร์ตบัญชีรับ') WHERE id = t.h('หุ้นกู้บัญชีรับ')$$,
+  'บัญชีธนาคาร สกุลเงินเดียวกับ', 'บัญชีรับ: บัญชีที่ไม่ใช่บัญชีธนาคารไม่ได้');
+SELECT t.fails($$UPDATE public.investment_holdings SET income_cash_holding_id = t.h('เงินฝากพอร์ตบัญชีรับ') WHERE id = t.h('เงินฝากพอร์ตบัญชีรับ USD')$$,
+  'บัญชีเงินฝากในพอร์ตเดียวกัน', 'บัญชีรับ: บัญชีเงินฝากเองผูกบัญชีรับไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+UPDATE public.investment_holdings SET income_cash_holding_id = t.h('เงินฝากพอร์ตบัญชีรับ') WHERE id = t.h('หุ้นกู้บัญชีรับ');
+SELECT t.ok((SELECT income_cash_holding_id IS NULL FROM public.investment_holdings WHERE id = t.h('หุ้นกู้บัญชีรับ')),
+            'บัญชีรับ: VIEWER แก้ไม่ได้ (RLS)');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

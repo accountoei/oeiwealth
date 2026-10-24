@@ -14,6 +14,7 @@ import SecNavPicker from "@/components/SecNavPicker";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { PfCardPayBody, PfExpenseBody, type PfPayCtx } from "./pf-pay-forms";
 import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
+import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -30,12 +31,14 @@ export type Bank = { asset_id: string; name: string; currency: string };
 export type CashAcct = { id: string; name: string; currency: string; is_default_cash: boolean };
 
 /** เลือกบัญชีเงินฝากในพอร์ต — แสดงเฉพาะเมื่อสกุลนั้นมีมากกว่า 1 บัญชี (บัญชีเดียว = ใช้บัญชีนั้นอัตโนมัติ) */
-export function CashAccountSelect({ accounts, currency, name = "cash_holding_id", label, compact }: {
+export function CashAccountSelect({ accounts, currency, name = "cash_holding_id", label, compact, defaultId }: {
   accounts: CashAcct[]; currency: string; name?: string; label: string; compact?: boolean;
+  /** ค่าตั้งต้น (เช่น บัญชีรับเงินที่ผูกไว้กับหลักทรัพย์) · ไม่อยู่ในรายการ = บัญชีหลัก ★ */
+  defaultId?: string | null;
 }) {
   const list = accounts.filter((a) => a.currency === currency);
   if (list.length < 2) return null;
-  const def = list.find((a) => a.is_default_cash) ?? list[0];
+  const def = list.find((a) => a.id === defaultId) ?? list.find((a) => a.is_default_cash) ?? list[0];
   const sel = (
     <select key={`${name}-${currency}`} name={name} defaultValue={def.id} className={compact ? small : input}>
       {list.map((a) => <option key={a.id} value={a.id}>{a.name}{a.is_default_cash ? " ★" : ""}</option>)}
@@ -253,6 +256,7 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
   const gross = faceOnly ? n(face) : qp ? n(q) * n(p) : n(amt);
   const net = type === "BUY" ? gross + n(fee) : ["FEE", "TAX"].includes(type) ? gross : gross - n(fee) - n(tax);
   const bankList = banks.filter((b) => b.currency === ccy);
+  const incomeOpts = isNew ? incomeAccountOptions(cashAccounts, banks, ccy) : [];
   const holdingOptions = type === "BUY" ? securities : optionalHolding ? active : securities;
   const isCashAdj = type === "ADJUSTMENT" && (!h || h.holding_type === "CASH");
   // เลือกบัญชีเงินฝาก: รายการของหลักทรัพย์ที่เงินเข้า/ออกเงินฝากในพอร์ต (ถ้าเลือกบัญชีเงินฝากเป็น "หลักทรัพย์" อยู่แล้ว ไม่ต้องเลือกซ้ำ)
@@ -356,9 +360,22 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
             <input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={input} />
           </label>
         )}
-        {hasFee && type !== "ADJUSTMENT" && (
+        {hasFee && type !== "ADJUSTMENT" && (isNew && type === "BUY" ? (
+          // หลักทรัพย์ตัวใหม่: บัญชีรับดอกเบี้ย / ปันผล / เงินคืน อยู่แถวเดียวกับค่าธรรมเนียม (ค่าตั้งต้น = บัญชีหลักในพอร์ต ★)
+          <div className="grid gap-4 md:col-span-3 md:grid-cols-3">
+            <label className={lbl}>ค่าธรรมเนียม<input name="fee" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} className={input} /></label>
+            {incomeOpts.length > 0 && (
+              <label className={`${lbl} md:col-span-2`}>รับดอกเบี้ย / ปันผล / เงินคืน เข้าบัญชี
+                <select key={`inc-${ccy}`} name="income_account" defaultValue={defaultIncomeAccount(incomeOpts)} className={input}>
+                  {incomeOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <span className="mt-1 block text-xs text-slate-500">ใช้เป็นค่าตั้งต้นตอนรับเงิน (เปลี่ยนตอนรับได้) · แก้ทีหลังได้ที่หน้าหลักทรัพย์ → แก้ไขข้อมูล</span>
+              </label>
+            )}
+          </div>
+        ) : (
           <label className={lbl}>ค่าธรรมเนียม<input name="fee" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} className={input} /></label>
-        )}
+        ))}
         {hasTax && (
           <label className={lbl}>ภาษีหัก ณ ที่จ่าย<input name="tax" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} className={input} /></label>
         )}

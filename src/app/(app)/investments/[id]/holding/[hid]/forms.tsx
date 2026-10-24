@@ -10,6 +10,7 @@ import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
 import SecNavPicker from "@/components/SecNavPicker";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
+import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -91,16 +92,18 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ · ประเภท "คืนเงินต้น" = บันทึกครบกำหนด / Autocall (หลักทรัพย์ปิด) */
-export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultDate, defaultNotes }: {
+export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultDate, defaultNotes, incomeAccount }: {
   assetId: string; portfolioName?: string; holdingId: string; holdingName?: string; currency: string; isFcn: boolean;
   /** หุ้นกู้ / FCN / Structured / อื่น ๆ ที่ยังถืออยู่ → มีประเภท "คืนเงินต้น" */ canMature?: boolean;
   banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
   /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
   label?: string; title?: string; defaultAmount?: number | null; defaultNotes?: string;
   /** วันที่ตั้งต้น (แท็บรอรับ: วันรับตามตาราง · แก้ได้) */ defaultDate?: string;
+  /** บัญชีรับเงินที่ผูกไว้กับหลักทรัพย์ ("h:<id>" / "a:<id>") → ค่าตั้งต้นของการรับครั้งนี้ (เปลี่ยนได้ ไม่แก้ค่าที่ผูก) */
+  incomeAccount?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [mode, setMode] = useState("cash");
+  const [mode, setMode] = useState(incomeAccount?.startsWith("a:") ? "bank" : "cash");
   const [txState, txAction, txPending] = useActionState<ActionState, FormData>(recordTx, {});
   const [matState, matAction, matPending] = useActionState<ActionState, FormData>(recordMaturity, {});
   const [type, setType] = useState(isFcn ? "COUPON" : "DIVIDEND");
@@ -134,10 +137,11 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
       </div>
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <SettleModeRadios mode={mode} setMode={setMode} portfolioName={portfolioName} className="flex flex-wrap items-center gap-3" />
-        {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={currency} label="บัญชี" compact />}
+        {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={currency} label="บัญชี" compact
+          defaultId={incomeAccount?.startsWith("h:") ? incomeAccount.slice(2) : null} />}
         {mode === "bank" && (
           <>
-            <select name="bank_asset_id" required className={small}>
+            <select name="bank_asset_id" required defaultValue={incomeAccount?.startsWith("a:") ? incomeAccount.slice(2) : ""} className={small}>
               <option value="">— บัญชี ({currency}) —</option>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
             </select>
             {!mat && <label className="text-xs">วันเงินเข้าจริง<input name="settlement_date" type="date" className={`ml-1 ${small}`} /></label>}
@@ -156,7 +160,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
 }
 
 /** แก้ไขข้อมูลหลักทรัพย์ (ใช้ใน pop up "แก้ไขข้อมูล") */
-export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon }: {
+export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, income }: {
   id: string; paths: string[]; v: { name: string; symbol: string | null; maturity_date: string | null; notes: string | null; auto_price?: boolean; price_ref?: string | null };
   /** หุ้นกู้ / อื่น ๆ: ข้อมูลตารางรับดอกเบี้ย (เงินต้น · อัตรา · ความถี่) — FCN / Structured ใช้ "แก้รายละเอียด" ของ FCN */
   coupon?: { face_value: number | null; interest_rate: number | null; coupon_frequency: string | null; currency: string } | null;
@@ -164,9 +168,13 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon }:
   autoKind?: "EQUITY" | "FUND" | null;
   /** เหตุผลที่ยังเปิดราคาอัตโนมัติไม่ได้ (มูลค่าก้อนเดียว / กองทุน 1 หน่วย) — ฐานข้อมูลกันซ้ำ */
   autoBlocked?: string | null;
+  /** บัญชีรับดอกเบี้ย / ปันผล / เงินคืน (ค่าตั้งต้นของฟอร์มรับเงิน · แท็บรอรับเดือนนี้) */
+  income?: { currency: string; cashAccounts: CashAcct[]; banks: Bank[]; cashId: string | null; bankId: string | null };
 }) {
   const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
   const [auto, setAuto] = useState(!!v.auto_price);
+  const incomeOpts = income ? incomeAccountOptions(income.cashAccounts, income.banks, income.currency) : [];
+  const [inc, setInc] = useState(income ? defaultIncomeAccount(incomeOpts, income.cashId, income.bankId) : "");
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="table" value="investment_holdings" />
@@ -177,6 +185,16 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon }:
         <label className="block text-sm text-slate-700">สัญลักษณ์ / รหัส<input name="f_symbol" defaultValue={v.symbol ?? ""} className={input} /></label>
         <label className="block text-sm text-slate-700">วันครบกำหนด<input type="date" name="f_maturity_date" defaultValue={v.maturity_date ?? ""} className={input} /></label>
         <label className="block text-sm text-slate-700 md:col-span-2">หมายเหตุ<input name="f_notes" defaultValue={v.notes ?? ""} className={input} /></label>
+        {incomeOpts.length > 0 && (
+          <label className="block text-sm text-slate-700 md:col-span-3">รับดอกเบี้ย / ปันผล / เงินคืน เข้าบัญชี
+            <input type="hidden" name="f_income_cash_holding_id" value={inc.startsWith("h:") ? inc.slice(2) : ""} />
+            <input type="hidden" name="f_income_bank_asset_id" value={inc.startsWith("a:") ? inc.slice(2) : ""} />
+            <select value={inc} onChange={(e) => setInc(e.target.value)} className={input}>
+              {incomeOpts.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">ค่าตั้งต้นของปุ่มรับปันผล / ดอกเบี้ย และแท็บ &ldquo;รอรับเดือนนี้&rdquo; (เปลี่ยนตอนรับได้ เฉพาะครั้งนั้น)</span>
+          </label>
+        )}
       </div>
       {coupon && (
         <div className="space-y-2 rounded-lg bg-slate-50 p-3">

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { parseEndpoint } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
 export type ActionState = FormState;
@@ -43,10 +44,16 @@ function couponInfo(form: FormData, prefix: string) {
   if ([face, rate].some((v) => v != null && (Number.isNaN(v) || v < 0))) return { error: "เงินต้น / อัตราผลตอบแทนต้องเป็นตัวเลขไม่ติดลบ" };
   return { info: { face_value: face, interest_rate: rate, coupon_frequency: freq } };
 }
-async function saveCouponInfo(supabase: Awaited<ReturnType<typeof createClient>>, holdingId: string | null, info: ReturnType<typeof couponInfo>["info"]) {
+/** บัญชีรับดอกเบี้ย / ปันผล / เงินคืน ของหลักทรัพย์ตัวใหม่ ("h:<id>" ในพอร์ต · "a:<id>" ธนาคาร) — ไม่มีช่องนี้ = ไม่ตั้ง */
+function incomeAccount(form: FormData) {
+  if (!form.has("income_account")) return null;
+  const e = parseEndpoint(String(form.get("income_account")));
+  return { income_cash_holding_id: e.kind === "portfolio" ? e.id : null, income_bank_asset_id: e.kind === "bank" ? e.id : null };
+}
+async function saveCouponInfo(supabase: Awaited<ReturnType<typeof createClient>>, holdingId: string | null, info: Record<string, unknown> | null | undefined) {
   if (!info || !holdingId) return null;
   const { error } = await supabase.from("investment_holdings").update(info).eq("id", holdingId);
-  return error ? `บันทึกรายการแล้ว แต่ตั้งข้อมูลดอกเบี้ยไม่สำเร็จ (${friendlyError(error.message)}) — ใส่ได้ที่หน้าหลักทรัพย์ → แก้ไขข้อมูล` : null;
+  return error ? `บันทึกรายการแล้ว แต่ตั้งข้อมูลดอกเบี้ย / บัญชีรับเงินไม่สำเร็จ (${friendlyError(error.message)}) — ใส่ได้ที่หน้าหลักทรัพย์ → แก้ไขข้อมูล` : null;
 }
 
 export async function addHolding(_: ActionState, form: FormData): Promise<ActionState> {
@@ -139,9 +146,11 @@ export async function recordTx(_: ActionState, form: FormData): Promise<ActionSt
   });
   if (error) return { error: friendlyError(error.message) };
   let couponErr: string | null = null;
-  if (coupon.info && txId) {
+  const income = isNew ? incomeAccount(form) : null;
+  const patch = coupon.info || income ? { ...(coupon.info ?? {}), ...(income ?? {}) } : null;
+  if (patch && txId) {
     const { data: t } = await supabase.from("investment_transactions").select("holding_id").eq("id", txId as string).maybeSingle();
-    couponErr = await saveCouponInfo(supabase, t?.holding_id ?? null, coupon.info);
+    couponErr = await saveCouponInfo(supabase, t?.holding_id ?? null, patch);
   }
   revalidate(id);
   revalidatePath("/financial/cash");

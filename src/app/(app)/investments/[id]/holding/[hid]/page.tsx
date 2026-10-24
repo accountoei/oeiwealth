@@ -6,6 +6,7 @@ import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, 
 import RowActions from "@/components/RowActions";
 import StatusSelect from "@/components/StatusSelect";
 import { type CashAcct, type Holding } from "../../forms";
+import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
 import { scheduleOf } from "@/lib/coupon-schedule";
 import { ScheduleBox } from "../../../due";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
@@ -47,7 +48,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
     supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode,face_value,interest_rate,coupon_frequency").eq("id", hid).maybeSingle(),
+    supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode,face_value,interest_rate,coupon_frequency,income_cash_holding_id,income_bank_asset_id").eq("id", hid).maybeSingle(),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
@@ -124,7 +125,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           </div>
           {canWrite && h.status === "ACTIVE" && (
             <ActionBar>
-              <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} holdingName={h.name} currency={h.currency} isFcn={isStructured} canMature={canMature} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive} />
+              <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} holdingName={h.name} currency={h.currency} isFcn={isStructured} canMature={canMature} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive}
+                incomeAccount={defaultIncomeAccount(incomeAccountOptions(cashAccounts, banks ?? [], h.currency), autoRow?.income_cash_holding_id, autoRow?.income_bank_asset_id)} />
               <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
             </ActionBar>
           )}
@@ -178,7 +180,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                 <HoldingInfoForm id={hid} paths={paths} coupon={hasCoupon ? { face_value: autoRow?.face_value ?? null, interest_rate: autoRow?.interest_rate ?? null,
                   coupon_frequency: autoRow?.coupon_frequency ?? null, currency: h.currency } : null} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
                   autoBlocked={lump ? "มูลค่าก้อนเดียวดึงราคาอัตโนมัติไม่ได้ — แปลงเป็นจำนวนหน่วยก่อน" : h.holding_type === "FUND" && Number(h.quantity) === 1 && !h.auto_price ? "กองทุนนี้มีจำนวน 1 หน่วย (มักเป็นมูลค่ารวมที่ใส่แทนจำนวน) — แปลงเป็นจำนวนหน่วยก่อน" : null}
-                  v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }} />
+                  v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }}
+                  income={{ currency: h.currency, cashAccounts, banks: banks ?? [], cashId: autoRow?.income_cash_holding_id ?? null, bankId: autoRow?.income_bank_asset_id ?? null }} />
                 {isStructured && ["MATURED", "AUTOCALLED"].includes(h.status) && (
                   <div className="border-t border-slate-100 pt-4"><StatusSelect table="investment_holdings" id={hid} value={h.status} paths={paths} label="ปิดแบบ"
                     options={[["MATURED", "ครบกำหนดตามปกติ"], ["AUTOCALLED", "Autocall (ถูกเรียกคืนก่อนกำหนด)"]]} /></div>
