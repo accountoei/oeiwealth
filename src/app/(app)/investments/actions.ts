@@ -36,10 +36,25 @@ export async function createPortfolio(_: ActionState, form: FormData): Promise<A
   redirect(`/investments/${data}`);
 }
 
+/** หุ้นกู้ / อื่น ๆ ตัวใหม่: ข้อมูลตารางรับดอกเบี้ย (เงินต้น · อัตรา · จ่ายทุก) จากฟอร์มเพิ่ม · prefix = "" (ยอดตั้งต้น) | "new_" (+ รายการ) */
+function couponInfo(form: FormData, prefix: string) {
+  const face = num(form.get(`${prefix}face_value`)), rate = num(form.get(`${prefix}interest_rate`)), freq = str(form.get(`${prefix}coupon_frequency`));
+  if (face == null && rate == null && !freq) return { info: null };
+  if ([face, rate].some((v) => v != null && (Number.isNaN(v) || v < 0))) return { error: "เงินต้น / อัตราผลตอบแทนต้องเป็นตัวเลขไม่ติดลบ" };
+  return { info: { face_value: face, interest_rate: rate, coupon_frequency: freq } };
+}
+async function saveCouponInfo(supabase: Awaited<ReturnType<typeof createClient>>, holdingId: string | null, info: ReturnType<typeof couponInfo>["info"]) {
+  if (!info || !holdingId) return null;
+  const { error } = await supabase.from("investment_holdings").update(info).eq("id", holdingId);
+  return error ? `บันทึกรายการแล้ว แต่ตั้งข้อมูลดอกเบี้ยไม่สำเร็จ (${friendlyError(error.message)}) — ใส่ได้ที่หน้าหลักทรัพย์ → แก้ไขข้อมูล` : null;
+}
+
 export async function addHolding(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
-  const { error } = await supabase.rpc("add_holding", {
+  const coupon = couponInfo(form, "");
+  if (coupon.error) return { error: coupon.error };
+  const { data: newId, error } = await supabase.rpc("add_holding", {
     p_portfolio_asset_id: id,
     p_holding_type: str(form.get("holding_type")) ?? "EQUITY",
     p_name: str(form.get("name")),
@@ -55,8 +70,9 @@ export async function addHolding(_: ActionState, form: FormData): Promise<Action
     p_notes: null,
   });
   if (error) return { error: friendlyError(error.message) };
+  const couponErr = await saveCouponInfo(supabase, newId as string | null, coupon.info);
   revalidate(id);
-  return { ok: "เพิ่มยอดตั้งต้นแล้ว" };
+  return couponErr ? { error: couponErr } : { ok: "เพิ่มยอดตั้งต้นแล้ว" };
 }
 
 /** NAV จาก ก.ล.ต. (Edge Function sec-nav · Key อยู่ใน Supabase Secrets) — อ่านอย่างเดียว ไม่บันทึก */
@@ -98,7 +114,9 @@ export async function recordTx(_: ActionState, form: FormData): Promise<ActionSt
   const type = String(form.get("type"));
   const holding = str(form.get("holding_id"));
   const isNew = holding === "__new__";
-  const { error } = await supabase.rpc("record_investment_tx", {
+  const coupon = isNew ? couponInfo(form, "new_") : { info: null };
+  if (coupon.error) return { error: coupon.error };
+  const { data: txId, error } = await supabase.rpc("record_investment_tx", {
     p_portfolio_asset_id: id,
     p_tx: {
       type, date: str(form.get("date")), settlement_date: str(form.get("settlement_date")),
@@ -116,9 +134,14 @@ export async function recordTx(_: ActionState, form: FormData): Promise<ActionSt
     },
   });
   if (error) return { error: friendlyError(error.message) };
+  let couponErr: string | null = null;
+  if (coupon.info && txId) {
+    const { data: t } = await supabase.from("investment_transactions").select("holding_id").eq("id", txId as string).maybeSingle();
+    couponErr = await saveCouponInfo(supabase, t?.holding_id ?? null, coupon.info);
+  }
   revalidate(id);
   revalidatePath("/financial/cash");
-  return { ok: "บันทึกรายการแล้ว" };
+  return couponErr ? { error: couponErr } : { ok: "บันทึกรายการแล้ว" };
 }
 
 export async function recordMaturity(_: ActionState, form: FormData): Promise<ActionState> {
