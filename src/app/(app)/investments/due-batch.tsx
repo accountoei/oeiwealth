@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { bankId, endpointValue, holdingId, parseEndpoint } from "@/lib/money-endpoint";
+import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 
@@ -17,7 +18,9 @@ import type { Bank, CashAcct } from "./[id]/forms";
 export type DueItem = {
   key: string; kind: "INTEREST" | "PRINCIPAL"; label: string; due: string; expected: number | null;
   received: { date: string; amount: number } | null; defaultDate: string;
-  holding: { id: string; name: string; holding_type: string; currency: string; status: string };
+  holding: { id: string; name: string; holding_type: string; currency: string; status: string;
+    /** บัญชีรับเงินที่ผูกไว้ → ค่าตั้งต้นของคอลัมน์ "เข้าบัญชี" (เปลี่ยนในตาราง = ครั้งนี้ครั้งเดียว) */
+    income_cash_holding_id?: string | null; income_bank_asset_id?: string | null };
 };
 export type DueGroup = { pf: string; name: string; rows: DueItem[] };
 export type PfCash = CashAcct & { pf: string; pfName: string; rate: number | null; received: number };
@@ -64,8 +67,9 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
 
   // ปลายทาง (ดอกเบี้ย / เงินต้นของหลักทรัพย์): บัญชีเงินฝากในพอร์ต (สกุลเดียวกัน · บัญชีหลักก่อน) หรือบัญชีธนาคาร
   const pfCash = (p: string, ccy: string) => cash.filter((c) => c.pf === p && c.currency === ccy).sort((a, b) => Number(b.is_default_cash) - Number(a.is_default_cash));
-  const destOf = (r: Row) => dest[r.key] ?? (pfCash(r.pf, r.currency)[0] ? endpointValue({ kind: "portfolio", id: pfCash(r.pf, r.currency)[0].id })
-    : banks.find((b) => b.currency === r.currency) ? endpointValue({ kind: "bank", id: banks.find((b) => b.currency === r.currency)!.asset_id }) : "");
+  //   ค่าตั้งต้น: บัญชีที่ผูกไว้กับหลักทรัพย์ (ถ้ายังอยู่ในรายการ) → บัญชีหลักในพอร์ต ★ → บัญชีธนาคารแรก · เปลี่ยนในแถว = มีผลครั้งนี้ครั้งเดียว
+  const destOf = (r: Row) => dest[r.key] ?? defaultIncomeAccount(
+    incomeAccountOptions(pfCash(r.pf, r.currency), banks, r.currency), r.item?.holding.income_cash_holding_id, r.item?.holding.income_bank_asset_id);
 
   const filled = (r: Row) => editable(r) && (vals[r.key] ?? "").trim() !== "";
   type Line = BatchIncomeRow & { title: string };

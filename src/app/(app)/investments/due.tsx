@@ -45,6 +45,7 @@ export function ScheduleBox({ rows, currency, today }: { rows: DueRow[]; currenc
 
 type HRow = { id: string; name: string; holding_type: string; currency: string; status: string; maturity_date: string | null;
   current_value: number | null; face_value: number | null; interest_rate: number | null; coupon_frequency: string | null;
+  income_cash_holding_id: string | null; income_bank_asset_id: string | null;
   investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
 type Fcn = { holding_id: string; principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
 type Tx = { holding_id: string; transaction_type: string; transaction_date: string; amount: number | null };
@@ -57,7 +58,7 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
   const dueDefault = (due: string) => (due > today ? today : due < goLive ? goLive : due);
   const supabase = await createClient();
   const { data: hs } = await supabase.from("investment_holdings")
-    .select("id,name,holding_type,currency,status,maturity_date,current_value,face_value,interest_rate,coupon_frequency,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
+    .select("id,name,holding_type,currency,status,maturity_date,current_value,face_value,interest_rate,coupon_frequency,income_cash_holding_id,income_bank_asset_id,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
     .in("holding_type", ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"]).not("maturity_date", "is", null)
     .is("deleted_at", null).is("investment_portfolios.deleted_at", null);
   const holdings = ((hs as unknown as HRow[] | null) ?? []).filter((h) => h.investment_portfolios && showAsset(h.investment_portfolios.asset_id));
@@ -102,7 +103,8 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
   const months = monthOptions(goLive, today, 12, month);
   const dueGroups: DueGroup[] = [...groups.entries()].map(([pf, g]) => ({ pf, name: g.name, rows: g.rows.map(({ r, h }) => ({
     key: r.key, kind: r.kind, label: label(r), due: r.due, expected: r.expected, received: r.received, defaultDate: dueDefault(r.due),
-    holding: { id: h.id, name: h.name, holding_type: h.holding_type, currency: h.currency, status: h.status } })) }));
+    holding: { id: h.id, name: h.name, holding_type: h.holding_type, currency: h.currency, status: h.status,
+      income_cash_holding_id: h.income_cash_holding_id, income_bank_asset_id: h.income_bank_asset_id } })) }));
   // ดอกเบี้ยเงินฝากในพอร์ต: รับแล้วในเดือนที่เลือก (สุทธิหลังภาษี)
   const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("holding_id,amount,tax,fee")
     .in("holding_id", cashRows.map((c) => c.id)).eq("transaction_type", "INTEREST").gte("transaction_date", start).lte("transaction_date", end).is("deleted_at", null)
