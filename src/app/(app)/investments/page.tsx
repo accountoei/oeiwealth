@@ -22,7 +22,7 @@ type H = { id: string; portfolio_asset_id: string; holding_type: string; currenc
   status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
   value_thb: number | null };
 
-export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; tab?: string; m?: string }> }) {
+export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; tab?: string; m?: string; d?: string }> }) {
   const sp = await searchParams;
   const tab = sp.tab === "due" || sp.tab === "update" ? sp.tab : "overview";
   const me = await requireAppUser();
@@ -197,7 +197,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       </TabPanel>
 
       <TabPanel id="update">
-        <UpdateTab today={todayBangkok()} goLive={goLive} canWrite={me.role !== "VIEWER"}
+        <UpdateTab today={todayBangkok()} date={sp.d} goLive={goLive} canWrite={me.role !== "VIEWER"}
           portfolios={list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").map((p) => ({ asset_id: p.asset_id, name: p.name }))} />
       </TabPanel>
 

@@ -22,11 +22,11 @@ const filled = (s: string | undefined) => (s ?? "").trim() !== "";
  * อัปเดตราคา / ยอดตาม Statement หลายพอร์ตพร้อมกัน (ตกลง 25 ต.ค. 2026) — ทำงานแบบปุ่ม "อัปเดตราคา / Statement" ของแต่ละพอร์ต
  *   ตัวกรองพอร์ต (ซ้าย) · วันที่เดียวทั้งชุด (ขวา) · ช่องว่าง = ไม่บันทึก · ยอดที่กรอกในพอร์ตที่ถูกตัวกรองซ่อนยังบันทึกด้วย
  */
-export default function UpdateBatch({ rows, today, minDate, canWrite }: { rows: UpdateRow[]; today: string; minDate: string; canWrite: boolean }) {
+export default function UpdateBatch({ rows, today, initialDate, minDate, canWrite }: { rows: UpdateRow[]; today: string; initialDate: string; minDate: string; canWrite: boolean }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
   const [pf, setPf] = useState("");
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(initialDate);
   const [price, setPrice] = useState<Record<string, string>>({});
   const [mv, setMv] = useState<Record<string, string>>({});
   // บันทึกแล้ว → ล้างช่องที่กรอก + โหลดราคาใหม่
