@@ -77,6 +77,8 @@ function checkLines(issues: Issue[], ym: string, end: string, dest: Map<string, 
       group(i.code, `/financial/cash?tab=update&d=${end}`, (n) => `ยังไม่ได้อัปเดตยอดสิ้นเดือน ${n} บัญชี · ใช้ยอดตามระบบ (ยอดล่าสุด + เงินเข้า − เงินออก)`);
     else if (i.code === "PRICE_OLD") group(i.code, "/investments", (n) => `ราคาล่าสุดเก่ากว่า 30 วัน ${n} รายการ`);
     else if (i.code === "COST_ONLY") group(i.code, "/investments", (n) => `ใช้ราคาทุน · รอ Statement ${n} รายการ`);
+    else if (i.code === "CASH_NOT_UPDATED")
+      group(i.code, `/investments?tab=update&d=${end}`, (n) => `บัญชีเงินฝากในพอร์ตยังไม่ได้อัปเดตยอดสิ้นเดือน ${n} บัญชี · ใช้ยอดตามระบบ`);
     else if (d) group(`VALUE_OLD:${d.href}`, d.href, (n) => `${d.label}: มูลค่าล่าสุดเก่ากว่า 90 วัน / ยังไม่มีมูลค่า ${n} รายการ`);
     else if (i.code === "EXPECTED_OVERDUE")
       group(i.code, `/income-expenses?tab=income&m=${ym}`, (n) => `รายได้ถึงกำหนดแต่ยังไม่ได้รับ ${n} รายการ`);
