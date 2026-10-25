@@ -28,8 +28,22 @@ export async function changeGoLiveDate(_: GoLiveState, form: FormData): Promise<
   const { data, error } = await supabase.rpc("change_go_live_date", { p_new_date: `${ym}-01` });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/", "layout");
-  const d = data as { changed?: boolean; moved?: Record<string, number> } | null;
+  const d = data as { changed?: boolean; moved?: Record<string, number>; mode?: string } | null;
   if (!d?.changed) return { ok: "วันเดิม — ไม่มีอะไรเปลี่ยน" };
   const n = Object.values(d.moved ?? {}).reduce((t, x) => t + Number(x ?? 0), 0);
-  return { ok: `เปลี่ยนวัน Go-live แล้ว · ย้ายวันที่ของยอดตั้งต้น ${n} รายการ` };
+  return d.mode === "ROLL_FORWARD"
+    ? { ok: `เปลี่ยนวัน Go-live แล้ว · ตั้งยอดตั้งต้นใหม่จากยอดตามระบบ ${n} รายการ` }
+    : { ok: `เปลี่ยนวัน Go-live แล้ว · ย้ายวันที่ของยอดตั้งต้น ${n} รายการ` };
+}
+
+/** ยกเลิก Go-live (ADMIN · ต้อง Reopen ทุกเดือนก่อน) → กลับเป็น SETUP เพื่อแก้ยอด / เปลี่ยนวัน แล้ว Confirm ใหม่ */
+export async function cancelGoLive(_: GoLiveState, form: FormData): Promise<GoLiveState> {
+  const reason = String(form.get("reason") ?? "").trim();
+  if (!reason) return { error: "กรุณาระบุเหตุผล" };
+  if (form.get("ack") !== "on") return { error: "กรุณาติ๊กยืนยันว่าเข้าใจผลของการยกเลิก Go-live" };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("cancel_go_live", { p_reason: reason });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/", "layout");
+  return { ok: "ยกเลิก Go-live แล้ว · ระบบกลับเป็นช่วงตั้งค่า (SETUP)" };
 }

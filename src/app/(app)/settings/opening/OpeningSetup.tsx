@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, money, thDate } from "@/lib/format";
 import ConfirmGoLive from "./ConfirmGoLive";
 import ChangeGoLive from "./ChangeGoLive";
+import CancelGoLive from "./CancelGoLive";
 import { ActionBar } from "@/components/ActionBar";
 
 type Row = {
@@ -42,6 +43,7 @@ function fixLink(r: Row): string {
     case "HOLDING": return "/investments";
     case "LOAN": return r.entity_id ? `/financial/loans/${r.entity_id}` : "/financial/loans";
     case "INSURANCE_POLICY": return "/insurance";
+    case "BEFORE_GO_LIVE": return "";
   }
   if (r.category === "CASH" && r.entity_id) return `/financial/cash/${r.entity_id}`;
   if (r.entity_type === "ASSET" && r.entity_id && r.category !== "CASH") return `/a/${r.entity_id}`;
@@ -55,9 +57,10 @@ function fixLink(r: Row): string {
 export default async function OpeningSetup() {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: family }, { data: rows, error }] = await Promise.all([
+  const [{ data: family }, { data: rows, error }, { count: finalMonths }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status,go_live_confirmed_at").maybeSingle(),
     supabase.from("v_go_live_readiness").select("category,entity_type,entity_id,name,currency,opening_value,opening_date,status,message"),
+    supabase.from("net_worth_snapshots").select("id", { count: "exact", head: true }).eq("status", "FINAL").is("deleted_at", null),
   ]);
   if (!family) return <p className="text-sm text-red-600">ไม่พบข้อมูลครอบครัว</p>;
 
@@ -75,12 +78,19 @@ export default async function OpeningSetup() {
             ตรวจยอดตั้งต้นก่อน Go-live · Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}
           </p>
         </div>
-        {!isLive && me.role === "ADMIN" && <ActionBar><ChangeGoLive current={family.go_live_date} /></ActionBar>}
+        {me.role === "ADMIN" && (
+          <ActionBar>
+            {isLive
+              ? <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />
+              : <ChangeGoLive current={family.go_live_date} />}
+          </ActionBar>
+        )}
       </div>
 
       {isLive ? (
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
           ระบบ LIVE แล้ว (ยืนยันเมื่อ {thDate(family.go_live_confirmed_at)}) · ยอดตั้งต้นถูกล็อก แก้ได้เฉพาะ ADMIN พร้อมเหตุผล
+          {me.role === "ADMIN" && " · ถ้าต้องแก้ยอดตั้งต้นมาก ๆ หรือเปลี่ยนวัน Go-live ใช้ปุ่ม “ยกเลิก Go-live” ด้านบน"}
         </section>
       ) : (
         <section className="grid gap-3 sm:grid-cols-3">
@@ -116,7 +126,7 @@ export default async function OpeningSetup() {
                     {r.opening_date && r.category !== "OWNERSHIP" ? ` · ${thDate(r.opening_date)}` : ""}
                   </span>
                   {r.message && <span className="w-full text-xs text-slate-500 sm:w-auto">{r.message}</span>}
-                  {(r.status === "MISSING" || r.status === "WARN") && (
+                  {(r.status === "MISSING" || r.status === "WARN") && fixLink(r) && (
                     <Link href={fixLink(r)} className="text-xs text-slate-700 underline">ไปแก้</Link>
                   )}
                 </li>

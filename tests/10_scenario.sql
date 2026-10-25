@@ -2941,6 +2941,96 @@ SELECT t.ok(EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, j
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz11. ยกเลิก Go-live → เลื่อน Go-live ไปช้าลง (ยอดตั้งต้นใหม่ = ยอดตามระบบ) → Confirm ใหม่ (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$SELECT public.cancel_go_live('ทดสอบ')$$, 'PERMISSION_DENIED', 'ยกเลิก Go-live: EDITOR กดไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.fails($$SELECT public.cancel_go_live('  ')$$, 'ต้องระบุเหตุผล', 'ยกเลิก Go-live: ต้องมีเหตุผล');
+SELECT t.fails($$SELECT public.cancel_go_live('ทดสอบ')$$, 'GO_LIVE_CANCEL_BLOCKED.*Reopen', 'ยกเลิก Go-live: ยังมีเดือนที่ปิดอยู่ → ไม่ให้กด');
+SELECT t.fails($$UPDATE public.families SET system_status = 'SETUP'$$, 'GO_LIVE_LOCKED|CACHE_FIELD', 'ยกเลิก Go-live: แก้สถานะตรง ๆ ไม่ได้ (ต้องผ่านปุ่ม)');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.cancel_go_live(text)', 'EXECUTE'), 'ยกเลิก Go-live: anon เรียกไม่ได้');
+-- ยอดก่อนเปลี่ยน (ทุกรายการ ณ 30 ก.ย. และวันนี้)
+CREATE TEMP TABLE _nw_before ON COMMIT DROP AS
+  SELECT d, item_type, coalesce(asset_id, liability_id, credit_card_id, lease_id) AS k, round(sum(base_value), 2) AS v
+    FROM (VALUES ('2026-09-30'::date), (current_date)) x(d), private.net_worth_items((SELECT id FROM public.families), x.d, false) n
+   GROUP BY 1, 2, 3;
+GRANT SELECT ON _nw_before TO authenticated;
+CREATE TEMP TABLE _kbank ON COMMIT DROP AS SELECT private.bank_calculated_balance(t.a('KBank ออมทรัพย์'), '2026-09-30') AS bal;
+GRANT SELECT ON _kbank TO authenticated;
+-- Reopen ทุกเดือน (ล่าสุดก่อน) แล้วยกเลิก Go-live
+DO $$ DECLARE m date;
+BEGIN
+  FOR m IN SELECT snapshot_month FROM public.net_worth_snapshots WHERE status = 'FINAL' AND deleted_at IS NULL ORDER BY snapshot_month DESC LOOP
+    PERFORM public.reopen_month(m, 'ทดสอบยกเลิก Go-live');
+  END LOOP;
+END $$;
+SELECT public.cancel_go_live('ทดสอบ: เลื่อนวันเริ่มใช้จริง') ->> 'status' AS cancelled;
+SELECT t.ok((SELECT system_status = 'SETUP' AND go_live_confirmed_at IS NULL FROM public.families),
+            'ยกเลิก Go-live: สถานะกลับเป็น SETUP');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.net_worth_snapshots WHERE deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto),
+            'ยกเลิก Go-live: Snapshot ที่ Reopen แล้วถูกลบ (soft) · ยอดอัตโนมัติถูกล้าง');
+SELECT t.ok((SELECT count(*) FROM public.audit_logs WHERE action = 'CANCEL_GO_LIVE' AND metadata ->> 'reason' LIKE 'ทดสอบ%') = 1,
+            'ยกเลิก Go-live: บันทึก Audit พร้อมเหตุผล');
+SELECT t.fails($$SELECT public.cancel_go_live('ซ้ำ')$$, 'ยังไม่ได้ Go-live', 'ยกเลิก Go-live: กดซ้ำตอน SETUP ไม่ได้');
+-- เลื่อน Go-live 1 ก.ค. → 1 ต.ค. (มีรายการ ก.ค.–ก.ย. + กระทบยอดแล้ว)
+SELECT t.fails($$SELECT public.change_go_live_date('2099-01-01')$$, 'GO_LIVE_CHANGE_BLOCKED.*ยังไม่ถึง', 'เลื่อน Go-live: วันตั้งต้นใหม่ในอนาคต → ปฏิเสธ');
+CREATE TEMP TABLE _roll ON COMMIT DROP AS SELECT public.change_go_live_date('2026-10-01') AS r;
+GRANT SELECT ON _roll TO authenticated;
+SELECT t.ok((SELECT r ->> 'mode' FROM _roll) = 'ROLL_FORWARD', 'เลื่อน Go-live: 1 ต.ค. ใช้ยอดตามระบบเป็นยอดตั้งต้น');
+SELECT r -> 'moved' AS rolled FROM _roll;
+SELECT t.ok((SELECT go_live_date FROM public.families) = '2026-10-01', 'เลื่อน Go-live: วัน Go-live = 1 ต.ค.');
+SELECT t.ok(NOT EXISTS (
+    SELECT 1 FROM _nw_before b
+      FULL JOIN (SELECT d, item_type, coalesce(asset_id, liability_id, credit_card_id, lease_id) AS k, round(sum(base_value), 2) AS v
+                   FROM (VALUES ('2026-09-30'::date), (current_date)) x(d), private.net_worth_items((SELECT id FROM public.families), x.d, false) n
+                  GROUP BY 1, 2, 3) a USING (d, item_type, k)
+     WHERE a.v IS DISTINCT FROM b.v),
+  'เลื่อน Go-live: มูลค่าทุกรายการ ณ 30 ก.ย. และวันนี้ เท่าเดิม');
+SELECT t.ok((SELECT valuation_date = '2026-09-30' AND value = (SELECT bal FROM _kbank)
+               FROM public.asset_valuations WHERE asset_id = t.a('KBank ออมทรัพย์') AND is_opening AND deleted_at IS NULL),
+            'เลื่อน Go-live: ยอดตั้งต้นบัญชี = ยอดตามระบบ ณ 30 ก.ย.');
+SELECT t.ok((SELECT valuation_date FROM public.liability_valuations WHERE liability_id = (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') AND is_opening AND deleted_at IS NULL) = '2026-09-30'
+            AND (SELECT opening_date FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = '2026-09-30'
+            AND (SELECT opening_outstanding_principal FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = private.loan_outstanding_at(t.a('เงินกู้ญาติ'), current_date),
+            'เลื่อน Go-live: ยอดตั้งต้นหนี้ / เงินให้กู้ ย้ายมา 30 ก.ย. ด้วยยอดคงเหลือตามระบบ');
+SELECT t.ok((SELECT transaction_date = '2026-09-30' AND quantity = (SELECT quantity FROM private.holding_value_at(t.h('AAPL'), '2026-09-30'))
+               FROM public.investment_transactions WHERE holding_id = t.h('AAPL') AND transaction_type = 'OPENING_BALANCE' AND deleted_at IS NULL
+               ORDER BY transaction_date DESC LIMIT 1),
+            'เลื่อน Go-live: หลักทรัพย์ได้ OPENING_BALANCE ใหม่ ณ 30 ก.ย. (หน่วยตามระบบ)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_go_live_readiness WHERE status = 'MISSING'
+                         AND category NOT IN ('OWNERSHIP') AND name <> 'บริษัททดสอบ'),
+            'เลื่อน Go-live: Readiness ไม่มี "ยังขาด" (นอกจากข้อมูลทดสอบที่ไม่มีเจ้าของ / ธุรกิจที่มีมูลค่าครั้งแรกวันนี้)');
+-- ข้อมูลทดสอบที่สร้างหลัง Go-live เดิมโดยไม่ระบุเจ้าของ → ใส่ให้ครบก่อน Confirm ใหม่
+UPDATE public.assets SET acquisition_date = current_date WHERE name = 'บริษัททดสอบ';
+INSERT INTO public.asset_ownerships(asset_id, person_id, ownership_percent, start_date)
+  SELECT r.entity_id, t.p('คุณพ่อ'), 100, '2020-01-01' FROM public.v_go_live_readiness r
+   WHERE r.status = 'MISSING' AND r.category = 'OWNERSHIP' AND r.entity_type = 'ASSET';
+INSERT INTO public.liability_ownerships(liability_id, person_id, responsibility_percent)
+  SELECT r.entity_id, t.p('คุณพ่อ'), 100 FROM public.v_go_live_readiness r
+   WHERE r.status = 'MISSING' AND r.category = 'OWNERSHIP' AND r.entity_type = 'LIABILITY';
+SELECT category, entity_type, name, message FROM public.v_go_live_readiness WHERE status = 'MISSING';
+SELECT t.ok(EXISTS (SELECT 1 FROM public.v_go_live_readiness WHERE entity_type = 'BEFORE_GO_LIVE' AND status = 'WARN')
+            AND (SELECT count(*) FROM public.v_go_live_readiness WHERE entity_type = 'BEFORE_GO_LIVE') <= 4,
+            'เลื่อน Go-live: รายการก่อน Go-live = "ควรตรวจ" สรุปไม่เกิน 4 บรรทัด');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND created_at = now())
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND created_at = now()),
+            'เลื่อน Go-live: ไม่สร้างก้อนรอแยกรายละเอียด');
+-- แถวประวัติก่อน Go-live ลบได้ระหว่าง SETUP (วันที่เดิม) แต่ลงใหม่ไม่ได้
+SELECT t.fails($$INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source)
+                 VALUES (t.a('บ้าน A'), '2026-09-15', 1, 'USER_ESTIMATE', 'USER')$$, 'BEFORE_GO_LIVE', 'เลื่อน Go-live: ลงมูลค่าใหม่ก่อน Go-live ไม่ได้');
+-- Confirm ใหม่ → รายการก่อน Go-live ถูกล็อก
+SELECT public.confirm_go_live() ->> 'status' AS go_live_again;
+SELECT t.ok((SELECT system_status = 'LIVE' FROM public.families), 'Confirm Go-live ใหม่ได้ (รายการก่อน Go-live ไม่บล็อก)');
+SELECT t.fails($$UPDATE public.cash_movements SET description = 'แก้' WHERE id = (SELECT id FROM public.cash_movements WHERE movement_date < '2026-10-01' AND deleted_at IS NULL AND source_entity_type IS NULL LIMIT 1)$$,
+               'BEFORE_GO_LIVE', 'หลัง Confirm ใหม่: รายการก่อน Go-live แก้ไม่ได้');
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_refresh_month_auto() >= 0 AS refreshed;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto WHERE snapshot_month < '2026-10-01'), 'หลัง Confirm ใหม่: ไม่มียอดอัตโนมัติของเดือนก่อน Go-live');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

@@ -28,17 +28,24 @@ export default function ChangeGoLive({ current }: { current: string }) {
       {changed && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-medium">Go-live ใหม่ {thDate(next)} ({thMonth(next)}) · ยอดตั้งต้นใหม่ ณ สิ้นวัน {thDate(addDay(next, -1))}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
-            <li>ยอดตั้งต้นที่ลงวันที่ {thDate(addDay(current, -1))} (บัญชี · ทรัพย์สิน · หนี้ · พอร์ต · เงินให้กู้ · บัตร · เจ้าของ) ย้ายไปวันที่ {thDate(addDay(next, -1))} ให้ — ตัวเลขเท่าเดิม</li>
-            <li>ถ้ายอดจริง ณ วันใหม่ต่างจากเดิม ให้แก้ตัวเลขเองหลังเปลี่ยน (หน้า Opening Setup จะเตือนรายการที่ต้องดู)</li>
-            {next > current
-              ? <li>เลื่อนช้าลง: ถ้ามีรายการลงวันที่ระหว่าง {thDate(current)} ถึง {thDate(addDay(next, -1))} ระบบจะไม่ให้เปลี่ยน (ลบหรือแก้วันที่รายการนั้นก่อน)</li>
-              : <li>เลื่อนเร็วขึ้น: ต้องมีอัตราแลกเปลี่ยนของวันที่ {thDate(addDay(next, -1))} ด้วย (หน้า Opening Setup จะบอกถ้าขาด)</li>}
-            <li>วันตั้งต้นใหม่ต้องไม่ใช่วันในอนาคต ถ้ามียอดตั้งต้นแล้ว · ทำได้เฉพาะก่อน Confirm Go-live และยังไม่ปิดเดือน</li>
-          </ul>
+          {next > current ? (
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+              <li>ยอดตั้งต้นใหม่ = <b>ยอดตามระบบ ณ สิ้นวัน {thDate(addDay(next, -1))}</b> (บัญชี · ทรัพย์สิน · หนี้ · พอร์ต · เงินให้กู้ · บัตร) ระบบตั้งให้</li>
+              <li>รายการที่ลงไว้ก่อน {thDate(next)} ไม่เปลี่ยน — กลายเป็นรายการก่อน Go-live (ประวัติ) · หลัง Confirm แก้ / ลบไม่ได้</li>
+              <li>ยอดตั้งต้นเดิมเก็บไว้ใน Audit Log · ถ้ายอดจริงต่างจากยอดตามระบบ แก้ตัวเลขที่หน้าของรายการนั้นได้</li>
+              <li>ทำได้ตั้งแต่วันที่ {thDate(addDay(next, -1))} เป็นต้นไป (ต้องรู้ยอดสิ้นวันนั้นก่อน) · ต้องไม่มีเดือนที่ปิดอยู่</li>
+            </ul>
+          ) : (
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+              <li>ยอดตั้งต้นที่ลงวันที่ {thDate(addDay(current, -1))} (บัญชี · ทรัพย์สิน · หนี้ · พอร์ต · เงินให้กู้ · บัตร · เจ้าของ) ย้ายไปวันที่ {thDate(addDay(next, -1))} ให้ — ตัวเลขเท่าเดิม</li>
+              <li>ถ้ายอดจริง ณ วันใหม่ต่างจากเดิม ให้แก้ตัวเลขเองหลังเปลี่ยน แล้วลงรายการย้อนหลังตั้งแต่ {thDate(next)}</li>
+              <li>ต้องมีอัตราแลกเปลี่ยนของวันที่ {thDate(addDay(next, -1))} ด้วย (หน้า Opening Setup จะบอกถ้าขาด)</li>
+              <li>ทำได้เฉพาะตอนยังไม่มีการปิดเดือนและการกระทบยอดบัญชีธนาคาร</li>
+            </ul>
+          )}
           <label className="mt-2 flex items-start gap-2 text-sm">
             <input type="checkbox" name="ack" className="mt-1" />
-            <span>เข้าใจแล้ว ให้ย้ายยอดตั้งต้นไปวันใหม่</span>
+            <span>เข้าใจแล้ว ให้เปลี่ยนวัน Go-live</span>
           </label>
         </div>
       )}
