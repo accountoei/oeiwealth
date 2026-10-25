@@ -251,6 +251,49 @@ export async function saveValuations(_: ActionState, form: FormData): Promise<Ac
   return { ok: `บันทึกราคา ${rows.length} รายการแล้ว` };
 }
 
+/**
+ * แท็บ "อัปเดตยอดคงเหลือ" (หน้า Investments): ราคา / มูลค่าตาม Statement หลายพอร์ตพร้อมกัน · วันที่เดียวทั้งชุด
+ *   rows = [{ holding_id, price?, mv? }] · จำนวนที่ถือ / ประเภท อ่านจากฐานข้อมูล (ไม่เชื่อค่าจากหน้าเว็บ)
+ *   บันทึกด้วยคำสั่งเดียว → ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด · สิทธิ์ / RLS / Trigger เดียวกับปุ่ม "อัปเดตราคา / Statement"
+ */
+export async function batchValuations(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  if (!date) return { error: "กรุณาใส่วันที่ของราคา" };
+  let input: { holding_id: string; price?: string; mv?: string }[];
+  try { input = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  if (!Array.isArray(input) || input.length === 0) return { error: "ยังไม่ได้กรอกราคาหรือมูลค่าเลย" };
+  const { data: hs, error: hErr } = await supabase.from("v_holdings_active")
+    .select("id,name,holding_type,quantity,portfolio_asset_id").in("id", input.map((r) => r.holding_id));
+  if (hErr) return { error: friendlyError(hErr.message) };
+  const byId = new Map((hs ?? []).map((h) => [h.id as string, h]));
+  const rows: Record<string, unknown>[] = [];
+  const pfs = new Set<string>();
+  for (const r of input) {
+    const h = byId.get(r.holding_id);
+    if (!h) return { error: "ไม่พบหลักทรัพย์บางรายการ (อาจถูกลบหรือปิดไปแล้ว) — โหลดหน้าใหม่แล้วลองอีกครั้ง" };
+    const price = num(r.price ?? null), mv = num(r.mv ?? null);
+    if ((price !== null && (Number.isNaN(price) || price < 0)) || (mv !== null && (Number.isNaN(mv) || mv < 0)))
+      return { error: `${h.name} · ราคา / มูลค่าต้องเป็นตัวเลขไม่ติดลบ` };
+    if (price === null && mv === null) continue;
+    const q = Number(h.quantity ?? 0);
+    if (h.holding_type === "CASH") {           // เงินฝากในพอร์ต: ยอดตาม Statement = จำนวน = มูลค่า
+      if (mv === null) continue;
+      rows.push({ holding_id: h.id, valuation_date: date, price: 1, quantity: mv, market_value: mv, source: "STATEMENT" });
+    } else {
+      rows.push({ holding_id: h.id, valuation_date: date, price, quantity: q,
+        market_value: mv ?? Math.round((price ?? 0) * q * 10000) / 10000, source: "STATEMENT" });
+    }
+    pfs.add(h.portfolio_asset_id as string);
+  }
+  if (!rows.length) return { error: "ยังไม่ได้กรอกราคาหรือมูลค่าเลย" };
+  const { error } = await supabase.from("investment_valuations").insert(rows);
+  if (error) return { error: friendlyError(error.message) };
+  pfs.forEach((a) => revalidate(a));
+  revalidate();
+  return { ok: `บันทึกราคา / ยอด ${rows.length} รายการแล้ว` };
+}
+
 /** แลกเงินภายในพอร์ต (เงินฝากสกุลหนึ่ง → อีกสกุล) */
 /** ย้ายเงินระหว่างบัญชีเงินฝากในพอร์ต: สกุลเดียวกัน = โอน · คนละสกุล = แลกเงิน ("new:XXX" = สกุลใหม่ สร้างบัญชีให้) */
 export async function moveCash(_: ActionState, form: FormData): Promise<ActionState> {
