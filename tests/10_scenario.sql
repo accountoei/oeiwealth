@@ -3031,6 +3031,24 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto WHERE snapshot
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz12. Checklist ปิดเดือน: บัญชีเงินฝากในพอร์ตยังไม่ได้อัปเดตยอดสิ้นเดือน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                     WHERE e->>'code' = 'CASH_NOT_UPDATED' AND e->>'severity' = 'REVIEW' AND e->>'entity_id' = t.h('Cash USD')::text),
+            'ปิดเดือน: เงินฝากในพอร์ตที่มียอดแต่ไม่มียอดสิ้นเดือน → เตือน (ไม่บล็อก)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                         WHERE e->>'code' = 'CASH_NOT_UPDATED' AND e->>'entity_id' IN (SELECT h.id::text FROM public.investment_holdings h
+                           WHERE h.holding_type = 'CASH' AND round(coalesce((SELECT hv.value FROM private.holding_value_at(h.id, '2026-09-30') hv), 0), 2) = 0)),
+            'ปิดเดือน: บัญชีเงินฝากในพอร์ตที่ยอดเป็น 0 ไม่เตือน');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value)
+  SELECT t.h('Cash USD'), '2026-09-30', 1, hv.value, hv.value FROM private.holding_value_at(t.h('Cash USD'), '2026-09-30') hv;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                         WHERE e->>'code' = 'CASH_NOT_UPDATED' AND e->>'entity_id' = t.h('Cash USD')::text),
+            'ปิดเดือน: ใส่ยอด ณ 30 ก.ย. แล้ว → คำเตือนหายไป');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
