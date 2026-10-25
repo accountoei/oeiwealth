@@ -1,0 +1,43 @@
+# ยอดสิ้นเดือนอัตโนมัติ (ไม่ล็อก): คำนวณ Net Worth ณ สิ้นเดือน ของทุกเดือนที่จบแล้วแต่ยังไม่ได้ปิดเดือน → Supabase (net_worth_month_auto)
+#   ใช้ในกราฟ Net Worth และ "ความมั่งคั่งเปลี่ยนเพราะอะไร" · ลงรายการย้อนหลัง → ยอดอัปเดตในรอบถัดไป
+# Repository secrets: SUPABASE_URL, SUPABASE_SECRET_KEY (ตัวเดียวกับ FX / ราคา)
+name: Month-end net worth (auto)
+
+on:
+  schedule:
+    - cron: "30 0 * * *"   # 07:30 เวลาไทย ทุกวัน (ฐานข้อมูลใช้วันที่ UTC → รอบนี้ของวันที่ 1 นับเดือนที่แล้วว่าจบแล้ว)
+  workflow_dispatch: {}      # กดรันเองได้จากแท็บ Actions
+
+permissions:
+  contents: read
+
+concurrency:
+  group: month-auto
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refresh month-end net worth
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
+            echo "::error::ยังไม่ได้ตั้ง Repository secrets SUPABASE_URL / SUPABASE_SECRET_KEY"
+            exit 1
+          fi
+          status=$(curl -sS -o response.txt -w "%{http_code}" \
+            --retry 3 --retry-delay 10 \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/server_refresh_month_auto" \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP ${status}: คำนวณใหม่ $(cat response.txt) เดือน"
+          if [ "$status" != "200" ]; then
+            echo "::error::คำนวณยอดสิ้นเดือนอัตโนมัติไม่สำเร็จ (HTTP ${status})"
+            exit 1
+          fi

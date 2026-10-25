@@ -2861,6 +2861,86 @@ SELECT t.ok((SELECT income_cash_holding_id IS NULL FROM public.investment_holdin
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz10. ยอดสิ้นเดือนอัตโนมัติ (ไม่ล็อก) + ปิดเดือนไม่นับเงินกู้ที่เริ่มหลังสิ้นเดือน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.server_refresh_month_auto()$$, 'permission denied', 'ยอดอัตโนมัติ: ผู้ใช้เรียกงานประจำคืนไม่ได้ (service_role เท่านั้น)');
+SELECT t.fails($$INSERT INTO public.net_worth_month_auto(family_id, snapshot_month, snapshot_date) SELECT id, '2026-08-01', '2026-08-31' FROM public.families$$,
+  'permission denied|row-level security', 'ยอดอัตโนมัติ: ผู้ใช้เขียนตารางเองไม่ได้');
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok(public.server_refresh_month_auto() >= 1, 'ยอดอัตโนมัติ: งานประจำคืนคำนวณได้');
+SELECT t.ok((SELECT result = 'SUCCESS' FROM public.system_job_runs WHERE job_type = 'MONTH_AUTO' ORDER BY id DESC LIMIT 1), 'ยอดอัตโนมัติ: บันทึกผลงาน MONTH_AUTO');
+SELECT t.ok(NOT EXISTS (
+    SELECT 1 FROM generate_series(date_trunc('month', (SELECT go_live_date FROM public.families))::date,
+                                  (date_trunc('month', current_date) - interval '1 month')::date, interval '1 month') g(m)
+     WHERE EXISTS (SELECT 1 FROM public.net_worth_snapshots s WHERE s.snapshot_month = g.m::date AND s.status = 'FINAL' AND s.deleted_at IS NULL)
+               = EXISTS (SELECT 1 FROM public.net_worth_month_auto a WHERE a.snapshot_month = g.m::date)),
+  'ยอดอัตโนมัติ: ทุกเดือนที่จบแล้วมียอด 1 แบบ (ปิดแล้ว = Snapshot · ยังไม่ปิด = อัตโนมัติ)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto WHERE snapshot_date >= current_date), 'ยอดอัตโนมัติ: ไม่มีเดือนที่ยังไม่จบ');
+SELECT t.ok((SELECT a.net_worth = (SELECT sum(CASE WHEN n.item_type = 'ASSET' THEN n.base_value ELSE -n.base_value END)
+                                    FROM private.net_worth_items(a.family_id, '2026-09-30', true) n)
+               FROM public.net_worth_month_auto a WHERE a.snapshot_month = '2026-09-01'),
+            'ยอดอัตโนมัติ: ก.ย. = Net Worth Engine ณ 30 ก.ย. (เหมือนตอนปิดเดือน)');
+SELECT t.ok((SELECT (SELECT sum(v::numeric) FROM jsonb_each_text(a.by_person) x(k, v))
+                    = (SELECT sum(CASE WHEN n.item_type = 'ASSET' THEN n.base_value ELSE -n.base_value END)
+                         FROM private.net_worth_items(a.family_id, '2026-09-30', true) n WHERE n.person_id IS NOT NULL)
+               FROM public.net_worth_month_auto a WHERE a.snapshot_month = '2026-09-01'),
+            'ยอดอัตโนมัติ: ยอดรายคนรวมกันตรงกับรายการที่มีเจ้าของ');
+CREATE TEMP TABLE _auto9 ON COMMIT DROP AS SELECT net_worth, by_person FROM public.net_worth_month_auto WHERE snapshot_month = '2026-09-01';
+GRANT SELECT ON _auto9 TO authenticated;
+
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) = count(DISTINCT e->>'month') FROM jsonb_array_elements(public.net_worth_history()->'snapshots') e),
+            'กราฟ: เดือนละ 1 จุด (ไม่ซ้ำ)');
+SELECT t.ok((SELECT e->>'status' = 'AUTO' AND (e->>'net_worth')::numeric = (SELECT net_worth FROM _auto9)
+               FROM jsonb_array_elements(public.net_worth_history()->'snapshots') e WHERE e->>'month' = '2026-09-01'),
+            'กราฟ: ก.ย. แสดงยอดอัตโนมัติ (AUTO)');
+SELECT t.ok((SELECT e->>'status' = 'FINAL' FROM jsonb_array_elements(public.net_worth_history()->'snapshots') e WHERE e->>'month' = '2026-07-01'),
+            'กราฟ: ก.ค. ที่ปิดแล้วยังใช้ Snapshot (FINAL)');
+SELECT t.ok((SELECT d->'base'->>'label' = 'สิ้นเดือนก่อน' AND (d->'base'->>'net_worth')::numeric = (SELECT net_worth FROM _auto9)
+               FROM (SELECT public.dashboard_month('2026-10-01') AS d) x),
+            'Dashboard: ฐานเทียบ ต.ค. = ยอดสิ้นเดือน ก.ย. (อัตโนมัติ)');
+SELECT t.ok((SELECT d->'base'->>'label' = 'ปิดเดือนก่อน' FROM (SELECT public.dashboard_month('2026-08-01') AS d) x),
+            'Dashboard: ฐานเทียบ ส.ค. = ปิดเดือน ก.ค. (FINAL มาก่อน)');
+SELECT t.ok((SELECT j->>'prev_label' = 'ยอดสิ้นเดือนก่อน (อัตโนมัติ)' AND (j->>'prev_net_worth')::numeric = (SELECT net_worth FROM _auto9)
+               FROM (SELECT public.month_net_worth_preview('2026-10-01') AS j) x),
+            'Month Closing: ยอดงวดก่อนของ ต.ค. = ยอดอัตโนมัติ ก.ย.');
+SELECT t.ok((SELECT (j->>'prev_net_worth')::numeric = (SELECT (by_person->>t.p('คุณพ่อ')::text)::numeric FROM _auto9)
+                    AND EXISTS (SELECT 1 FROM jsonb_array_elements(j->'snapshots') e WHERE e->>'month' = '2026-09-01' AND e->>'status' = 'AUTO')
+               FROM (SELECT public.person_dashboard('2026-10-01', t.p('คุณพ่อ')) AS j) x),
+            'Dashboard รายคน: ยอดงวดก่อน + กราฟ ใช้ยอดอัตโนมัติของคนนั้น');
+
+-- ไม่ล็อก: ลงรายการย้อนหลังใน ก.ย. ได้ · คืนถัดไปยอดอัตโนมัติอัปเดตตาม
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, from_asset_id, amount, currency, description)
+  SELECT id, '2026-09-20', 'OTHER_OUT', t.a('KBank ออมทรัพย์'), 1000, 'THB', 'รายการย้อนหลังทดสอบยอดอัตโนมัติ' FROM public.families;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_refresh_month_auto() >= 1 AS refreshed;
+SELECT t.ok((SELECT a.net_worth = (SELECT net_worth FROM _auto9) - 1000 FROM public.net_worth_month_auto a WHERE a.snapshot_month = '2026-09-01'),
+            'ยอดอัตโนมัติ: ไม่ล็อก ลงรายการย้อนหลังได้ และยอด ก.ย. อัปเดตหลังงานประจำคืน (−1,000)');
+
+-- ปิดเดือน ส.ค. → ใช้ Snapshot ทันที (ไม่ซ้ำกับยอดอัตโนมัติ) · งานคืนถัดไปลบยอดอัตโนมัติของเดือนนั้น
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.finalize_month('2026-08-01') IS NOT NULL AS finalized_aug;
+SELECT t.ok((SELECT count(*) = 1 AND bool_and(e->>'status' = 'FINAL') FROM jsonb_array_elements(public.net_worth_history()->'snapshots') e WHERE e->>'month' = '2026-08-01'),
+            'ปิดเดือน ส.ค.: กราฟใช้ Snapshot ทันที ไม่ซ้ำกับยอดอัตโนมัติ');
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_refresh_month_auto() >= 0 AS refreshed2;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto WHERE snapshot_month = '2026-08-01'), 'ปิดเดือน ส.ค.: งานประจำคืนลบยอดอัตโนมัติของเดือนที่ปิดแล้ว');
+
+-- เงินกู้ที่ยอดแรกลงวันที่หลังสิ้นเดือน → เดือนนั้นยังไม่มีเงินกู้ (ไม่ BLOCKED / ไม่เตือน)
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_liability('PERSONAL_LOAN', 'เงินกู้ใหม่ ต.ค. ทดสอบ', 'THB', 50000, '2026-10-10') IS NOT NULL AS new_loan;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                         WHERE e->>'message' LIKE 'เงินกู้ใหม่ ต.ค. ทดสอบ%'),
+            'ปิดเดือน: เงินกู้ที่ยอดแรกลงวันที่ 10 ต.ค. ไม่ทำให้ ก.ย. BLOCKED / ไม่ขึ้นเตือน');
+INSERT INTO public.liabilities(family_id, liability_type, name, currency) SELECT id, 'PERSONAL_LOAN', 'เงินกู้ไม่มียอดทดสอบ', 'THB' FROM public.families;
+SELECT t.ok(EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') c, jsonb_array_elements(c.issues) e
+                     WHERE e->>'code' = 'NO_BALANCE' AND e->>'severity' = 'BLOCKED' AND e->>'message' LIKE 'เงินกู้ไม่มียอดทดสอบ%'),
+            'ปิดเดือน: เงินกู้ที่ไม่มียอดคงค้างเลย ยัง BLOCKED เหมือนเดิม (ตัวกันพลาด)');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
