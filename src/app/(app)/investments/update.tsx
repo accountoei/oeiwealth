@@ -6,8 +6,8 @@ type HV = { id: string; portfolio_asset_id: string; holding_type: string; name: 
   status: string; is_default_cash: boolean; sort_order: number | null };
 
 /** แท็บ "อัปเดตยอดคงเหลือ": ราคา / ยอดตาม Statement ทุกพอร์ต (แบบเดียวกับแท็บอัปเดตยอดคงเหลือของ Cash & Bank) */
-export async function UpdateTab({ today, goLive, portfolios, canWrite }: {
-  today: string; goLive: string; portfolios: { asset_id: string; name: string }[]; canWrite: boolean;
+export async function UpdateTab({ today, date, goLive, portfolios, canWrite }: {
+  today: string; date?: string; goLive: string; portfolios: { asset_id: string; name: string }[]; canWrite: boolean;
 }) {
   const supabase = await createClient();
   const ids = portfolios.map((p) => p.asset_id);
@@ -35,5 +35,7 @@ export async function UpdateTab({ today, goLive, portfolios, canWrite }: {
       date: h.current_value_date, cash: h.holding_type === "CASH", lump: ex.get(h.id)?.valuation_mode === "LUMP_SUM",
       auto: !!ex.get(h.id)?.auto_price,
     }));
-  return <UpdateBatch rows={rows} today={today} minDate={goLive} canWrite={canWrite} />;
+  // ?d=YYYY-MM-DD (เช่น ลิงก์จาก Month Closing) = วันที่ตั้งต้น · ไม่ถูกต้อง / เกินวันนี้ / ก่อน Go-live → วันนี้
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(date ?? "") && date! <= today && (!goLive || date! >= goLive) ? date! : today;
+  return <UpdateBatch key={start} rows={rows} today={today} initialDate={start} minDate={goLive} canWrite={canWrite} />;
 }

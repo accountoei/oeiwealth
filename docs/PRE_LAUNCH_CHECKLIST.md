@@ -3,7 +3,7 @@
 > **อัปเดตไฟล์นี้ทุกครั้งที่มีการปรับปรุงระบบ** (ทุก Pull Request) — ใครหรือ AI ตัวไหนมาทำต่อ ให้อ่านไฟล์นี้ก่อน
 > ⚠️ repo นี้เป็น **Public** · ห้ามใส่ข้อมูลจริงของครอบครัวในไฟล์นี้ (ชื่อ ที่อยู่ เลขโฉนด เลขบัญชี จำนวนเงิน)
 
-อัปเดตล่าสุด: 25 ต.ค. 2026 (PR #191 · Investments แท็บ "อัปเดตยอดคงเหลือ" ทุกพอร์ต · ไม่มี SQL)
+อัปเดตล่าสุด: 25 ต.ค. 2026 (PR #193 · แท็บอัปเดตยอดคงเหลือ Investments รับวันที่จากลิงก์ `?d=` · ไม่มี SQL)
 
 ---
 
@@ -532,3 +532,4 @@
 | #188 | 25 ต.ค. | ยอดสิ้นเดือนอัตโนมัติ (ไม่ล็อก): ตาราง `net_worth_month_auto` (RLS อ่านอย่างเดียว) · `private.refresh_month_auto` / `public.server_refresh_month_auto` (service_role · job `MONTH_AUTO`) · `private.month_points` (FINAL + AUTO) ใช้ใน `net_worth_history` · `person_dashboard` · ฐานเทียบ `dashboard_month` · ยอดงวดก่อน `month_net_worth_preview` · GitHub Actions `month-auto.yml` (ทุกวัน 07:30) · กราฟ: จุด AUTO ทึบ · `month_closing_issues`: เงินกู้ที่ยอดแรกหลังสิ้นเดือนไม่ BLOCKED · migration `20261025000100_month_auto_snapshot.sql` (คำนวณครั้งแรกตอนรัน) · +20 checks (678) |
 | #190 | 25 ต.ค. | เลื่อน Go-live ไปช้าลง = ยอดตั้งต้นใหม่จากยอดตามระบบ (`change_go_live_date` เขียนใหม่: ROLL_FORWARD / MOVE) · `public.cancel_go_live(p_reason)` (ADMIN · ไม่มี FINAL · DRAFT soft delete · ล้าง `net_worth_month_auto` · Audit `CANCEL_GO_LIVE` เพิ่มใน check) · `tg_families_guard` ยอม LIVE → SETUP เฉพาะใน cancel_go_live · readiness: รายการก่อน Go-live = WARN สรุปต่อประเภท (`BEFORE_GO_LIVE`) + Holding ไม่มีรายการ = NOT_REQUIRED · แถวประวัติก่อน Go-live แก้หมายเหตุ / ลบได้ระหว่าง SETUP (`tg_asset_valuation_check` · `tg_liability_valuation_check` · `tg_itx_check`) · `private.holding_cost_thb_ratio` · หน้า Opening Setup: ปุ่มยกเลิก Go-live + คำอธิบายเลื่อนช้าลง / เร็วขึ้น · migration `20261025000200_go_live_roll_forward.sql` · +23 checks (701) |
 | #191 | 25 ต.ค. | Investments แท็บ "อัปเดตยอดคงเหลือ" (`update.tsx` + `update-batch.tsx` · action `batchValuations`: insert `investment_valuations` คำสั่งเดียว · จำนวน / ประเภทอ่านจากฐานข้อมูล) · ลิงก์ตรง `/investments?tab=update` · ไม่มี SQL |
+| #193 | 25 ต.ค. | Investments แท็บ "อัปเดตยอดคงเหลือ" รับ `?d=YYYY-MM-DD` เป็นวันที่ตั้งต้น (แบบ `/financial/cash?tab=update&d=`) สำหรับลิงก์จากคำเตือน Month Closing · วันที่ผิดรูปแบบ / เกินวันนี้ / ก่อน Go-live → วันนี้ · ไม่มี SQL |
