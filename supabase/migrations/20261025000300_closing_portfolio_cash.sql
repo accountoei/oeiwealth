@@ -11,6 +11,7 @@ BEGIN
   IF position('CASH_NOT_UPDATED' IN v_def) > 0 THEN RETURN; END IF;
   v_anchor := $a$  RETURN QUERY
   SELECT 'INVESTMENTS', 'REVIEW', 'IN_TRANSIT',$a$;
+  v_anchor := replace(v_anchor, E'\r', '');   -- วางใน SQL Editor แล้วบรรทัดมี \r
   IF position(v_anchor IN v_def) = 0 THEN RAISE EXCEPTION 'month_closing_issues: ไม่พบจุดที่จะแก้'; END IF;
   v_new := $n$  -- บัญชีเงินฝากในพอร์ต: ยังไม่ได้อัปเดตยอดสิ้นเดือน (มียอด) → ใช้ยอดตามระบบ
   RETURN QUERY
@@ -28,5 +29,6 @@ BEGIN
      AND (lv.last_date IS NULL OR lv.last_date < d)
      AND round(coalesce(hv.value, 0), 2) <> 0;
 $n$;
+  v_new := replace(v_new, E'\r', '');
   EXECUTE replace(v_def, v_anchor, v_new || v_anchor);
 END $mig$;
