@@ -26,7 +26,7 @@ const PILL: Record<string, string> = {
   READY: "bg-emerald-50 text-emerald-700", REVIEW: "bg-amber-50 text-amber-800", BLOCKED: "bg-red-50 text-red-700",
 };
 
-function fixLink(i: Issue, ym: string): string | null {
+function fixLink(i: Issue, ym: string, end: string): string | null {
   switch (i.entity_type) {
     case "HOLDING": case "INVESTMENT_TX": return "/investments";
     case "PROPERTY_LEASE": return "/property";
@@ -41,11 +41,52 @@ function fixLink(i: Issue, ym: string): string | null {
   }
   if (i.code === "NOT_LIVE") return "/settings/system?tab=opening";
   if (i.code === "NEGATIVE_BALANCE" && i.entity_id) return `/financial/cash/${i.entity_id}?m=${ym}`;
-  if (i.code === "BALANCE_NOT_UPDATED" || i.code?.startsWith("RECON")) return "#cash-update";
+  if (i.code === "BALANCE_NOT_UPDATED" || i.code?.startsWith("RECON")) return `/financial/cash?tab=update&d=${end}`;
   if (i.code === "IN_TRANSIT" && i.entity_id) return `/investments/${i.entity_id}`;
   if (i.entity_type === "ASSET" && i.entity_id) return `/a/${i.entity_id}`;
   if (i.entity_type === "LIABILITY" && i.entity_id) return `/liabilities/${i.entity_id}`;
   return null;
+}
+
+// มูลค่าเก่า (VALUE_OLD) แยกตามหน้าที่ต้องไปอัปเดต
+function valueDest(a: { asset_group: string; asset_type: string }): { href: string; label: string } | null {
+  if (a.asset_type === "PRIVATE_BUSINESS") return { href: "/financial/business", label: "Private Business" };
+  if (a.asset_type === "INSURANCE_CASH_VALUE") return { href: "/insurance", label: "Insurance" };
+  if (a.asset_group === "PROPERTY") return { href: "/property", label: "Property" };
+  if (a.asset_group === "ALTERNATIVE") return { href: "/alternative", label: "Alternative Assets" };
+  return null;
+}
+
+type Line = { text: string; href: string | null; blocked: boolean };
+
+/**
+ * Checklist ต่อหมวด: รายการที่ BLOCKED แสดงทีละรายการ (อยู่บนสุด) ·
+ * คำเตือนที่ต้องไปแก้ที่หน้าต้นทางอยู่แล้ว รวมเป็นบรรทัดสรุป + ลิงก์ · คำเตือนอื่นแสดงทีละรายการ
+ */
+function checkLines(issues: Issue[], ym: string, end: string, dest: Map<string, { href: string; label: string }>): Line[] {
+  const groups = new Map<string, { n: number; text: (n: number) => string; href: string }>();
+  const blocked: Line[] = [], single: Line[] = [];
+  const group = (key: string, href: string, text: (n: number) => string) => {
+    const g = groups.get(key);
+    if (g) g.n++; else groups.set(key, { n: 1, text, href });
+  };
+  for (const i of issues) {
+    if (i.severity === "BLOCKED") { blocked.push({ text: i.message, href: fixLink(i, ym, end), blocked: true }); continue; }
+    const d = i.code === "VALUE_OLD" && i.entity_id ? dest.get(i.entity_id) : undefined;
+    if (i.code === "BALANCE_NOT_UPDATED")
+      group(i.code, `/financial/cash?tab=update&d=${end}`, (n) => `ยังไม่ได้อัปเดตยอดสิ้นเดือน ${n} บัญชี · ใช้ยอดตามระบบ (ยอดล่าสุด + เงินเข้า − เงินออก)`);
+    else if (i.code === "PRICE_OLD") group(i.code, "/investments", (n) => `ราคาล่าสุดเก่ากว่า 30 วัน ${n} รายการ`);
+    else if (i.code === "COST_ONLY") group(i.code, "/investments", (n) => `ใช้ราคาทุน · รอ Statement ${n} รายการ`);
+    else if (d) group(`VALUE_OLD:${d.href}`, d.href, (n) => `${d.label}: มูลค่าล่าสุดเก่ากว่า 90 วัน / ยังไม่มีมูลค่า ${n} รายการ`);
+    else if (i.code === "EXPECTED_OVERDUE")
+      group(i.code, `/income-expenses?tab=income&m=${ym}`, (n) => `รายได้ถึงกำหนดแต่ยังไม่ได้รับ ${n} รายการ`);
+    else if (i.code === "PENDING_SPLIT" && i.entity_type === "PENDING_EXPENSE")
+      group("PENDING_EXPENSE", `/income-expenses?tab=expense&et=split&m=${ym}`, (n) => `ค่าใช้จ่ายรอแยกรายละเอียด ${n} ก้อน`);
+    else if (i.code === "PENDING_SPLIT" && i.entity_type === "PENDING_INCOME")
+      group("PENDING_INCOME", `/income-expenses?tab=income&it=split&m=${ym}`, (n) => `รายได้รอแยกรายละเอียด ${n} ก้อน`);
+    else single.push({ text: i.message, href: fixLink(i, ym, end), blocked: false });
+  }
+  return [...blocked, ...[...groups.values()].map((g) => ({ text: g.text(g.n), href: g.href, blocked: false })), ...single];
 }
 
 export default async function MonthClosingPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
@@ -78,6 +119,11 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
     const issues = c.issues.filter(notTracking);
     return { ...c, issues, issue_count: issues.length, status: c.status === "REVIEW" && !issues.some((i) => i.severity === "REVIEW") ? "READY" : c.status };
   });
+  const valueIds = checks.flatMap((c) => c.issues).filter((i) => i.code === "VALUE_OLD" && i.entity_id).map((i) => i.entity_id as string);
+  const { data: valueAssets } = valueIds.length
+    ? await supabase.from("assets").select("id,asset_group,asset_type").in("id", valueIds)
+    : { data: [] as { id: string; asset_group: string; asset_type: string }[] };
+  const dest = new Map((valueAssets ?? []).flatMap((a) => { const d = valueDest(a); return d ? [[a.id as string, d] as const] : []; }));
   const p = previewRaw as Preview | null;
   const snap = p?.snapshot ?? null;
   const isFinal = snap?.status === "FINAL";
@@ -206,15 +252,12 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                 </summary>
                 {c.issues.length > 0 && (
                   <ul className="mt-2 space-y-1 text-sm">
-                    {c.issues.map((i, k) => {
-                      const href = fixLink(i, ym);
-                      return (
-                        <li key={k} className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className={i.severity === "BLOCKED" ? "text-red-700" : "text-slate-700"}>• {i.message}</span>
-                          {href && <Link href={href} className="text-xs text-slate-800 underline">ไปแก้</Link>}
-                        </li>
-                      );
-                    })}
+                    {checkLines(c.issues, ym, end, dest).map((l, k) => (
+                      <li key={k} className="flex flex-wrap items-baseline justify-between gap-2">
+                        <span className={l.blocked ? "text-red-700" : "text-slate-700"}>• {l.text}</span>
+                        {l.href && <Link href={l.href} className="text-xs text-slate-800 underline">ไปแก้</Link>}
+                      </li>
+                    ))}
                   </ul>
                 )}
               </details>
@@ -223,31 +266,6 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
         </ul>
       </section>
 
-      {/* ---------------------------------------------------------- อัปเดตยอดคงเหลือ (บัญชีธนาคาร) */}
-      <section id="cash-update" className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-medium text-slate-900">อัปเดตยอดคงเหลือบัญชีธนาคาร {thMonth(start)}</h2>
-            <p className="text-xs text-slate-500">
-              กรอกยอดจริงสิ้นเดือนจากแอปธนาคาร หลายบัญชีพร้อมกันที่หน้า Cash &amp; Bank Accounts · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ ·
-              ไม่ได้อัปเดต = ปิดงวดได้ โดยใช้ยอดตามระบบ (ยอดล่าสุด + เงินเข้า − เงินออก)
-            </p>
-          </div>
-          <span className="text-sm text-slate-500">อัปเดตแล้ว <span className="font-medium text-slate-900">{banksDone} / {bankRows.length}</span></span>
-        </div>
-        {bankRows.length > 0 && (
-          <ul className="mt-3 divide-y divide-slate-100 text-sm">
-            {bankRows.map((b) => (
-              <li key={b.asset_id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                <Link href={`/financial/cash/${b.asset_id}`} className="hover:underline">{b.name} <span className="text-xs text-slate-500">{b.currency}</span></Link>
-                {b.last === end || reconBy.has(b.asset_id)
-                  ? <span className="text-xs text-emerald-700">อัปเดตยอดสิ้นเดือนแล้ว ✓</span>
-                  : <span className="text-xs text-amber-700">ยังไม่ได้อัปเดตยอดสิ้นเดือน · ใช้ยอดตามระบบ (ล่าสุด {thDate(b.last)})</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       {/* ---------------------------------------------------------- บัตรเครดิต ณ สิ้นเดือน */}
       {cardRows.length > 0 && (
