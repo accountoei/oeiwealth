@@ -294,7 +294,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-2 font-medium text-slate-900">ความมั่งคั่งเปลี่ยนเพราะอะไร</h2>
             {p.prev_net_worth == null ? (
-              <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ (ต้องปิดเดือนก่อนหน้าก่อน)</p>
+              <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ (ยอดสิ้นเดือนอัตโนมัติคำนวณทุกเช้า หรือปิดเดือนก่อนหน้า)</p>
             ) : (
               <table className="w-full text-sm">
                 <tbody className="divide-y divide-slate-100">
