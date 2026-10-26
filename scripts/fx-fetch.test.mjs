@@ -1,6 +1,6 @@
 // node scripts/fx-fetch.test.mjs — ทดสอบการแปลงข้อมูล ธปท. (ไม่ต่อเน็ต)
 import assert from "node:assert/strict";
-import { parseBotResponse, parseBblResponse, bblRawLines, addDays } from "./fx-fetch.mjs";
+import { parseBotResponse, parseBblResponse, bblRawLines, addDays, isWeekend, bblDatesToFetch, changedRates, retryAfterSeconds } from "./fx-fetch.mjs";
 
 const sample = { result: { data: { data_detail: [
   { period: "2026-09-29", currency_id: "USD", currency_name_eng: "USA : DOLLAR (USD)", buying_transfer: "32.10", selling: "32.50", mid_rate: "32.3050" },
@@ -46,4 +46,23 @@ assert.equal(parseBblResponse(bbl, "2026-10-21", "SELLING").find((x) => x.curren
 assert.equal(m[0].rate_date, "2026-10-21");
 assert.deepEqual(parseBblResponse(null, "2026-10-21"), []);
 assert.equal(bblRawLines(bbl.slice(0, 1))[0], "  RAW ID=1 | Family=USD1 | Description=USD: 1-2 | BuyingRates=32.00 | SellingRates=34.00 | Update=1");
+// รอบประจำวันของธนาคารกรุงเทพ: วันล่าสุดก่อน · ข้ามเสาร์–อาทิตย์ · ข้ามวันเก่าที่ได้รอบสุดท้ายแล้ว (ลดการเรียก API · กัน 429)
+assert.equal(isWeekend("2026-10-24"), true);                                     // เสาร์
+assert.equal(isWeekend("2026-10-26"), false);                                    // จันทร์
+assert.deepEqual(bblDatesToFetch("2026-10-23", "2026-10-26", "2026-10-26"), ["2026-10-26", "2026-10-23"]);
+assert.deepEqual(bblDatesToFetch("2026-10-21", "2026-10-23", "2026-10-23", new Set(["2026-10-21", "2026-10-23"])), ["2026-10-23", "2026-10-22"]);  // วันนี้ดึงเสมอ
+assert.deepEqual(bblDatesToFetch("2026-10-24", "2026-10-25", "2026-10-25"), []);
+// ส่งเฉพาะอัตราใหม่ / เปลี่ยน
+const ex = new Map([
+  ["2026-10-22|USD", { rate_to_thb: 33.7, source: "BBL_API", is_override: false }],
+  ["2026-10-22|EUR", { rate_to_thb: 37.79, source: "BBL_API", is_override: false }],
+  ["2026-10-22|JPY", { rate_to_thb: 0.2, source: "ADMIN_OVERRIDE", is_override: true }],
+  ["2026-10-22|AUD", { rate_to_thb: 23.6, source: "BOT_API", is_override: false }],
+]);
+const cand = ["USD:33.7", "EUR:37.8", "JPY:0.21", "AUD:23.7", "NZD:19.1"].map((x) => ({ rate_date: "2026-10-22", currency: x.split(":")[0], rate_to_thb: Number(x.split(":")[1]) }));
+assert.deepEqual(changedRates(cand, ex, "BBL_API").map((x) => x.currency), ["EUR", "NZD"]);
+assert.equal(retryAfterSeconds(null, '{ "statusCode": 429, "message": "Rate limit is exceeded. Try again in 57 seconds." }'), 57);
+assert.equal(retryAfterSeconds("12", ""), 12);
+assert.equal(retryAfterSeconds(null, "x"), 60);
+assert.equal(retryAfterSeconds("600", ""), 90);
 console.log("fx-fetch tests passed");

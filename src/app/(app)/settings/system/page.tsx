@@ -140,7 +140,7 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
                 <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">เวลา</th><th>งาน</th><th>ผล</th><th>จำนวน</th><th>หมายเหตุ</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {(jobs ?? []).map((j) => {
-                    const d = (j.details ?? {}) as { rows?: number; source?: string; skipped?: { date: string; currency?: string; symbol?: string; rate?: number; price?: number; previous?: number; reason: string }[] };
+                    const d = (j.details ?? {}) as { rows?: number; source?: string; error?: string; run_url?: string | null; skipped?: { date: string; currency?: string; symbol?: string; rate?: number; price?: number; previous?: number; reason: string }[] };
                     const sk = d.skipped ?? [];
                     return (
                       <tr key={j.id} className="align-top">
@@ -148,7 +148,9 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
                         <td>{JOB_LABEL[j.job_type] ?? j.job_type}{d.source && <div className="text-xs text-slate-500">{FX_SOURCE_LABEL[d.source] ?? d.source}</div>}</td>
                         <td className={j.result === "PARTIAL" ? "text-amber-700" : j.result === "FAILED" ? "text-red-600" : ""}>{JOB_RESULT[j.result] ?? j.result}</td>
                         <td>{d.rows ?? "-"}</td>
-                        <td className="text-xs text-slate-600">{sk.length === 0 ? "" : <>
+                        <td className="text-xs text-slate-600">{d.error && <div className="text-red-600">{d.error}
+                          {d.run_url && <> · <a href={d.run_url} target="_blank" rel="noreferrer" className="underline">ดู Log</a></>}</div>}
+                          {sk.length === 0 ? "" : <>
                           ไม่บันทึก {sk.length} รายการ
                           {sk.slice(0, 3).map((x, i) => <div key={i}>{thDate(x.date)} {x.currency ?? x.symbol} {x.rate ?? x.price ?? ""}
                             {x.previous != null && ` (ก่อนหน้า ${x.previous})`} · {SKIP_REASON[x.reason] ?? x.reason}</div>)}
