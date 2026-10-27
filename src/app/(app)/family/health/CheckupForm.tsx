@@ -69,7 +69,7 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
       <p className="text-xs text-slate-500">เว้นช่องผลว่างได้ (ไม่บันทึก) · &ldquo;อัตโนมัติ&rdquo; = ระบบเทียบกับค่าปกติที่กรอกให้ · ค่าปกติเริ่มต้นเป็นค่าทั่วไป ควรแก้ตามใบผลแล็บ</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>

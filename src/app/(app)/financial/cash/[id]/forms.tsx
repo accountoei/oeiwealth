@@ -6,6 +6,7 @@ import { useActionState, useEffect, useState } from "react";
 import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
 import BankSelect from "@/components/BankSelect";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -83,7 +84,7 @@ export function AccountNoPanel({ assetId, bankAccountId, masked, canReveal, canS
             <p className="text-xs text-slate-500">เก็บแบบเข้ารหัส · แสดงเฉพาะ 4 ตัวท้าย</p>
             <div className="flex items-center gap-3">
               <button disabled={setting} className={btn}>{setting ? "กำลังบันทึก…" : "บันทึก"}</button>
-              <button type="button" onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
+              <button type="button" data-close onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
             </div>
             <Msg s={setState} />
           </form>
@@ -119,8 +120,9 @@ export function EditInfoForm({ acc }: { acc: Acc }) {
       <label className="text-sm">ดอกเบี้ย O/D (% ต่อปี)<input name="overdraft_rate" inputMode="decimal" defaultValue={acc.overdraft_rate ?? ""} className={field} /></label>
       <p className="text-xs text-slate-500 md:col-span-2">มีวงเงิน O/D → ยอดติดลบได้ไม่เกินวงเงิน · ส่วนที่ติดลบนับเป็นหนี้สิน (ขึ้นที่ Liabilities) · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo;</p>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={acc.notes ?? ""} className={field} /></label>
-      <div className="md:col-span-2 flex items-center gap-3">
+      <div className="md:col-span-2 flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูลบัญชี"}</button>
+        <StatusSlot />
         <Msg s={state} />
       </div>
     </form>

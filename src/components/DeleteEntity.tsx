@@ -61,9 +61,9 @@ export function useStatusDelete(remove: RemoveOpt | undefined, value: string) {
 }
 
 /** ปุ่มลบแยก (ใช้กับรายการย่อยที่ไม่มีช่องสถานะ เช่น สัญญาเช่า) */
-export default function DeleteEntity({ kind, id, redirectTo, paths = [], label = "ลบรายการนี้", hint, needReason = true }: RemoveOpt) {
+export default function DeleteEntity({ kind, id, redirectTo, paths = [], label = "ลบรายการนี้", hint, needReason = true, buttonCls = "text-xs text-red-600 underline" }: RemoveOpt & { buttonCls?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-red-600 underline")}>{label}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(buttonCls)}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <DeleteForm kind={kind} id={id} redirectTo={redirectTo} paths={paths} label={label} hint={hint} needReason={needReason} onCancel={() => setOpen(false)} />

@@ -91,7 +91,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
           </p>
           <p className="mt-1 text-xs font-medium text-amber-800">ถ้าผู้กู้จ่ายเกิน: บันทึกรับด้วยยอดจริงก่อน แล้วค่อยปรับตาราง (ระบบคำนวณจากเงินต้นคงเหลือหลังหักส่วนที่จ่ายเกิน)</p>
         </div>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
 
       <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">

@@ -7,6 +7,7 @@ import { money, qty } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
 import BusinessBadge from "../badge";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -23,7 +24,7 @@ function Box({ title, label, children, action, pending, state }: {
       {children}
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
@@ -80,8 +81,9 @@ export function BusinessInfoForm({ assetId, byShares, v }: {
       )}
       <label className="text-sm md:col-span-3">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
       <LogoPicker name={v.name} current={v.logo_data} />
-      <div className="flex items-center gap-3 md:col-span-3">
+      <div className="flex flex-wrap items-center gap-3 md:col-span-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
+        <StatusSlot />
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>

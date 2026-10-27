@@ -95,7 +95,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
           <h3 className="font-medium text-slate-900">ตั้งตารางผ่อน</h3>
           <p className="text-xs text-slate-500">เลือกวิธีด้านล่าง · ดูตัวอย่างก่อนกดบันทึก</p>
         </div>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
 
       <label className="block text-sm">วิธีใส่ตารางผ่อน

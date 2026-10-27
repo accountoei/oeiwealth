@@ -195,7 +195,7 @@ function OpeningBody({ assetId, currency, openingDate, isSetup, onClose }:
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกยอดตั้งต้น"}</button>
-        <button type="button" onClick={onClose} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={onClose} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -418,7 +418,7 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <BalanceGuard amount={["amount", "fee"]} date={["settlement_date", "date"]} when={["type", ["BUY", "FEE", "TAX"]]} />
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -533,7 +533,7 @@ function BankTransferBody({ assetId, currency, banks, cashAccounts, today, minDa
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
         <BalanceGuard amount={["amount", "fee"]} when={["direction", ["IN"]]} />
-        <button type="button" onClick={onClose} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={onClose} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -647,7 +647,7 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
       </table>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกราคา"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -696,7 +696,7 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
       <p className="text-xs text-slate-500">ใส่วันที่เงินเข้าบัญชีจริง · บันทึกแล้วหลักทรัพย์นี้ปิดเป็น &ldquo;ครบกำหนด&rdquo; (ลบรายการได้ที่ตารางรายการของพอร์ต ถ้างวดยังไม่ปิด) · เงินต้นไม่ใช่รายได้ · ดอกเบี้ย / Coupon งวดสุดท้ายบันทึกแยกด้วยปุ่มรับปันผล / ดอกเบี้ย / Coupon</p>
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึกรับเงินต้น</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
     </form>
@@ -753,7 +753,7 @@ function MoveCashBody({ assetId, cashAccounts, today, minDate, dirSelect, onClos
       </p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={onClose} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={onClose} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -789,7 +789,7 @@ export function AddCashAccountForm({ assetId, currency, isSetup, openingDate }:
       {!isSetup && <p className="text-xs text-slate-500">ยอดเงินในบัญชีใหม่: ใส่ตาม Statement (อัปเดตราคา / Statement) หรือโอนเข้าจากบัญชีอื่นในพอร์ต</p>}
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "เพิ่มบัญชี"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>

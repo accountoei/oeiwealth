@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, GRAM_PER_GOLD_BAHT } from "@/lib/format";
 import { addGoldValuation, updateAlternativeInfo, type ActionState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const dv = (v: number | string | null | undefined) => (v == null ? "" : String(v));
@@ -95,8 +96,9 @@ export function AltInfoForm({ assetId, code, catName, unitLocked = false, defaul
       <label className="text-sm">ราคาที่ได้มา (ราคาทุน)<input name="acquisition_cost" inputMode="decimal" defaultValue={dv(v.acquisition_cost)} className={input} /></label>
       <label className="text-sm md:col-span-2">รายละเอียด<input name="details" defaultValue={dv(v.details)} className={input} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={dv(v.notes)} className={input} /></label>
-      <div className="flex items-center gap-3 md:col-span-2">
+      <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        <StatusSlot />
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
         {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
       </div>

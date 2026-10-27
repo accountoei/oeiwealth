@@ -63,7 +63,7 @@ export function FcnForm({ assetId, holdingId, fcn, defaultPrincipal }: { assetId
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
-        {fcn && <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>}
+        {fcn && <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>}
         <Msg s={state} />
       </div>
     </form>
@@ -85,7 +85,7 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
       <label className="text-xs">ราคา Strike<input name="strike_price" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
       <label className="text-xs">ราคา Barrier<input name="barrier_price" inputMode="decimal" className={`mt-1 block w-24 ${small}`} /></label>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">เพิ่ม</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <Msg s={state} />
     </form>
   ));
@@ -152,7 +152,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
       <label className="block text-sm">หมายเหตุ<input name="notes" defaultValue={defaultNotes} placeholder={isFcn ? "เช่น งวดที่ 3" : ""} className={input} /></label>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : mat ? "บันทึกรับเงินต้น" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>

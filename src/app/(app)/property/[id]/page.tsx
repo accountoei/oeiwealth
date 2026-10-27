@@ -16,7 +16,7 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
-import StatusSelect from "@/components/StatusSelect";
+import { WithStatus } from "@/components/StatusSelect";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -213,20 +213,18 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             edit={
               <div className="space-y-5">
                 <p className="text-xs text-slate-500">แก้เฉพาะข้อมูล ไม่กระทบมูลค่า (อัปเดตมูลค่าที่กล่อง &ldquo;มูลค่า&rdquo;)</p>
-                <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
-                  acquisition_cost: a.acquisition_cost, asset_id: id }} />
+                <WithStatus status={{ table: "assets", id, value: a.status, paths, label: "สถานะทรัพย์สิน",
+                  options: [["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]],
+                  remove: canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้", hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined }}>
+                  <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
+                    acquisition_cost: a.acquisition_cost, asset_id: id }} />
+                </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                     current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
                 </div>
-                <div className="border-t border-slate-100 pt-4">
-                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะทรัพย์สิน"
-                    options={[["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]]}
-                    remove={canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้",
-                      hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined} />
-                  {canDelete && hasHistory && <p className="mt-2 text-xs text-slate-500">มีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ · ถ้าไม่ได้ถือแล้ว ให้เปลี่ยนสถานะเป็น ขายแล้ว / ยกให้แล้ว / สูญหาย</p>}
-                </div>
+                {canDelete && hasHistory && <p className="text-xs text-slate-500">มีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ · ถ้าไม่ได้ถือแล้ว ให้เปลี่ยนสถานะเป็น ขายแล้ว / ยกให้แล้ว / สูญหาย</p>}
               </div>
             } />
         </div>
@@ -322,7 +320,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
                 )}
                 {canWrite && (
-                  <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false} fields={[
+                  <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false}
+                    deleteControl={canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
+                      hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
+                      buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />} fields={[
                     { name: "tenant_name", label: "ผู้เช่า", value: l.tenant_name },
                     { name: "unit_label", label: "ห้อง", value: l.unit_label, width: "w-24" },
                     { name: "contract_no", label: "เลขสัญญา", value: l.contract_no, width: "w-24" },
@@ -331,8 +332,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
                     { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
                 )}
-                {canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
-                  hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย" />}
                 {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
                   <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
                     banks={bankList} minDate={l.deposit_due_date} today={today} />

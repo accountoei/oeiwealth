@@ -13,7 +13,7 @@ import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import StatusSelect from "@/components/StatusSelect";
+import StatusSelect, { WithStatus } from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
@@ -181,9 +181,13 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             }
             edit={
               <div className="space-y-5">
-                <PolicyInfoForm policyId={id} persons={persons ?? []} showInsured={p.insurance_type !== "PROPERTY"} v={{
-                  person_id: p.person_id, payer_person_id: p.payer_person_id, insurer: p.insurer, policy_no: p.policy_no, start_date: p.start_date,
-                  end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes }} />
+                <WithStatus status={{ table: "insurance_policies", id, value: p.status, paths, label: "สถานะกรมธรรม์",
+                  options: INS_STATUS,
+                  remove: canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้", hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined }}>
+                  <PolicyInfoForm policyId={id} persons={persons ?? []} showInsured={p.insurance_type !== "PROPERTY"} v={{
+                    person_id: p.person_id, payer_person_id: p.payer_person_id, insurer: p.insurer, policy_no: p.policy_no, start_date: p.start_date,
+                    end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes }} />
+                </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผลประโยชน์</h3>
                   <BeneficiaryEditor policyId={id} persons={persons ?? []} startOpen
@@ -196,11 +200,6 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                       current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
                   </div>
                 )}
-                <div className="border-t border-slate-100 pt-4">
-                  <StatusSelect table="insurance_policies" id={id} value={p.status} paths={paths} label="สถานะกรมธรรม์" options={INS_STATUS}
-                    remove={canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้",
-                      hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined} />
-                </div>
               </div>
             } />
         </div>

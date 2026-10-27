@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { landParts, landTaxCalc, money } from "@/lib/format";
 import { useActionSlot } from "@/components/ActionBar";
@@ -33,6 +33,7 @@ export function TaxLineForm({ assetId, year, line, defaults, label, primary = fa
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(saveTaxLine, {});
+  const del = useDeleteTaxLine(assetId, year, canDelete ? line : undefined);
   const land = landParts(line ? line.land_sq_wa : defaults?.land_sq_wa);
   const [v, setV] = useState<Record<string, string>>(() => ({
     rai: land.rai, ngan: land.ngan, wa: land.wa, land_price_per_sq_wa: s(line?.land_price_per_sq_wa),
@@ -104,31 +105,30 @@ export function TaxLineForm({ assetId, year, line, defaults, label, primary = fa
 
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ยกเลิก</button>
+        {del.button}
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ยกเลิก</button>
         <Msg st={state} />
       </div>
     </form>
-    {line && canDelete && (
-      <div className="mt-4 border-t border-slate-100 pt-3">
-        <DeleteTaxLine assetId={assetId} year={year} id={line.id} label={line.description || "รายการ"} />
-      </div>
-    )}
+    {del.form}
   </>));
 }
 
-export function DeleteTaxLine({ assetId, year, id, label }: { assetId: string; year: number; id: string; label: string }) {
+/** ลบรายการภาษี — ปุ่มอยู่ข้างปุ่มบันทึก (ฟอร์มลบแยกอยู่นอกฟอร์มแก้ไข ปุ่มผูกด้วย form={id}) */
+function useDeleteTaxLine(assetId: string, year: number, line: TaxLine | undefined) {
   const [state, action, pending] = useActionState<ActionState, FormData>(deleteTaxLine, {});
   const cf = useConfirmSubmit();
-  return (
-    <>
-      {cf.dialog}
-      <form action={action} onSubmit={cf.guard(`ลบรายการภาษี "${label}"?`, { danger: true, okLabel: "ลบ" })} className="inline">
-        <input type="hidden" name="asset_id" value={assetId} /><input type="hidden" name="tax_year" value={year} /><input type="hidden" name="id" value={id} />
-        <button disabled={pending} className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">{pending ? "กำลังลบ…" : "ลบรายการนี้"}</button>
-        {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
-      </form>
-    </>
-  );
+  const formId = `del-tax-${useId()}`;
+  if (!line) return { form: null, button: null };
+  const form = (<>
+    {cf.dialog}
+    <form id={formId} action={action} onSubmit={cf.guard(`ลบรายการภาษี "${line.description || "รายการ"}"?`, { danger: true, okLabel: "ลบ" })}>
+      <input type="hidden" name="asset_id" value={assetId} /><input type="hidden" name="tax_year" value={year} /><input type="hidden" name="id" value={line.id} />
+    </form>
+    {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+  </>);
+  const button = <button form={formId} disabled={pending} className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">{pending ? "กำลังลบ…" : "ลบรายการนี้"}</button>;
+  return { form, button };
 }
 
 export function CopyTaxYear({ assetId, from, to }: { assetId: string; from: number; to: number }) {

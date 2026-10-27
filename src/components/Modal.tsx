@@ -9,7 +9,8 @@ const stack: object[] = [];                                 // หน้าต�
 
 /**
  * หน้าต่าง pop up ของฟอร์มที่เปิดจากปุ่ม (ใช้ผ่าน useActionSlot ใน ActionBar.tsx)
- *   ปิด: ปุ่ม ✕ · ปุ่ม ปิด / ยกเลิก ของฟอร์ม · กด Esc — คลิกนอกหน้าต่างไม่ปิด (กันข้อมูลที่กรอกหาย)
+ *   ปิด: ปุ่ม ✕ · กด Esc — คลิกนอกหน้าต่างไม่ปิด (กันข้อมูลที่กรอกหาย)
+ *   ปุ่ม ปิด / ยกเลิก ของฟอร์ม (ใส่ data-close) ซ่อนเมื่ออยู่ในหน้าต่างนี้ (มี ✕ แล้ว · ตกลง 27 ต.ค. 2026) · ฟอร์มที่กางในหน้ายังเห็นปุ่มนี้
  *   บันทึกสำเร็จ (ฟอร์มขึ้นข้อความสีเขียวใหม่หลังกดบันทึก) → ปิดเอง + แจ้งข้อความมุมจอ + รีเฟรชหน้า
  *   ไม่ต้องการให้ปิดเอง (เช่น ถามต่อหลังบันทึก) → ใส่ data-keep-open ในเนื้อหา
  */
@@ -73,8 +74,8 @@ export default function Modal({ children, onClose, size = "md", title }: { child
         <button type="button" onClick={() => close.current()} aria-label="ปิด"
           className="absolute right-3 top-3 rounded-md px-2 py-0.5 text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-800">✕</button>
         {title && <h2 className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}
-        {/* กรอบ / พื้นหลังของฟอร์มเดิมไม่ต้องซ้อนในหน้าต่าง */}
-        <div ref={body} className="[&>*:first-child]:mt-0 [&>*:first-child]:rounded-none [&>*:first-child]:border-0 [&>*:first-child]:bg-transparent [&>*:first-child]:p-0">
+        {/* กรอบ / พื้นหลังของฟอร์มเดิมไม่ต้องซ้อนในหน้าต่าง · ซ่อนปุ่ม ปิด / ยกเลิก ของฟอร์ม */}
+        <div ref={body} className="[&_[data-close]]:hidden [&>*:first-child]:mt-0 [&>*:first-child]:rounded-none [&>*:first-child]:border-0 [&>*:first-child]:bg-transparent [&>*:first-child]:p-0">
           {children}
         </div>
       </div>

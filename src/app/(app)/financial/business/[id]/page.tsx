@@ -8,7 +8,7 @@ import { BusinessInfoForm, BuySharesForm, DividendForm, ShareSaleForm, UndoShare
 import EditToggle from "@/components/EditToggle";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import StatusSelect from "@/components/StatusSelect";
+import { WithStatus } from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -137,20 +137,19 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             }
             edit={
               <div className="space-y-5">
-                <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, logo_data: d.logo_data ?? null, company_name: d.company_name, registration_no: d.registration_no,
-                  business_type: d.business_type, total_shares: d.total_shares, par_value: d.par_value, shares_owned: d.shares_owned,
-                  company_ownership_percent: d.company_ownership_percent, investment_cost: d.investment_cost, notes: d.notes }} />
+                <WithStatus status={{ table: "private_business_details", id: d.id, value: d.status, paths, label: "สถานะกิจการ",
+                  options: STATUS,
+                  remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/business", paths: ["/financial/business"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" } : undefined }}
+                  status2={{ table: "assets", id, value: a.status, paths, label: "นับเป็นทรัพย์สิน", options: ASSET_STATUS }}>
+                  <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, logo_data: d.logo_data ?? null, company_name: d.company_name, registration_no: d.registration_no,
+                    business_type: d.business_type, total_shares: d.total_shares, par_value: d.par_value, shares_owned: d.shares_owned,
+                    company_ownership_percent: d.company_ownership_percent, investment_cost: d.investment_cost, notes: d.notes }} />
+                </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                     unit={byShares ? "shares" : "percent"} totalShares={totalShares}
                     current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent), shares: o.shares, cost: o.cost_per_share }))} />
-                </div>
-                <div className="flex flex-wrap gap-x-6 gap-y-3 border-t border-slate-100 pt-4">
-                  <StatusSelect table="private_business_details" id={d.id} value={d.status} paths={paths} label="สถานะกิจการ" options={STATUS}
-                    remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/business", paths: ["/financial/business"], label: "ลบรายการนี้",
-                      hint: "ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" } : undefined} />
-                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="นับเป็นทรัพย์สิน" options={ASSET_STATUS} />
                 </div>
               </div>
             } />

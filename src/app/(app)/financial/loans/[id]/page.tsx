@@ -9,7 +9,7 @@ import ScheduleTable, { type SchedRow } from "./ScheduleTable";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import StatusSelect from "@/components/StatusSelect";
+import { WithStatus } from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ScheduleEditor } from "./schedule-editor";
 import { RestructureEditor } from "./restructure-editor";
@@ -193,19 +193,17 @@ export default async function LoanDetailPage({ params, searchParams }: {
               <EditButton title="แก้ไขรายละเอียด" small>
                 <div className="space-y-5">
                   <p className="text-xs text-slate-500">วันที่ให้กู้และยอดตั้งต้นแก้ไม่ได้ (ผูกกับรายการเงินที่บันทึกแล้ว)</p>
-                  <LoanInfoForm assetId={id} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
-                    borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
+                  <WithStatus status={{ table: "loan_details", id: l.id, value: l.status, paths, label: "สถานะ",
+                    options: LOAN_STATUS_OPTIONS,
+                    remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined }}>
+                    <LoanInfoForm assetId={id} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
+                      borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
+                  </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้ให้กู้ (เจ้าของ)</h3>
                     <ul className="mb-2 space-y-0.5 text-sm">{activeOwners.map((o) => <li key={o.person_id}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}</ul>
                     <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                       current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
-                  </div>
-                  <div className="border-t border-slate-100 pt-4">
-                    <StatusSelect table="loan_details" id={l.id} value={l.status} paths={paths} label="สถานะ"
-                      options={LOAN_STATUS_OPTIONS}
-                      remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้",
-                        hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined} />
                   </div>
                 </div>
               </EditButton>

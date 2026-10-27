@@ -10,6 +10,7 @@ import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
 import { PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -79,7 +80,7 @@ export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, l
       <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} />
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกสัญญา"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -114,7 +115,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
         </select>
       </label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));
@@ -134,7 +135,7 @@ export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
         <input name="terminated_date" type="date" required defaultValue={today} min={startDate} className={`mt-1 block ${small}`} />
       </label>
       <button disabled={pending} className={sbtn}>ยืนยันเลิกสัญญา</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <p className="w-full text-xs text-slate-500">ระบบหยุดคาดค่าเช่าหลังวันนี้ · เงินประกันยังเป็นหนี้จนกว่าจะบันทึกคืน</p>
       <div className="w-full"><Msg s={state} /></div>
     </form>
@@ -190,7 +191,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
       <div className="flex items-center gap-2">
         <button disabled={pending} className={sbtn}>ยืนยัน</button>
         <BalanceGuard bank="refund_from_asset_id" amount="refunded_amount" date="settled_date" />
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
     </form>
@@ -255,8 +256,9 @@ export function EditPropertyForm({ p }: { p: Info }) {
       <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} /></label>
       <label className="text-sm">ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" defaultValue={p.acquisition_cost ?? ""} className={f} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={p.notes ?? ""} className={f} /></label>
-      <div className="md:col-span-2 flex items-center gap-3">
+      <div className="md:col-span-2 flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        <StatusSlot />
         <Msg s={state} />
       </div>
     </form>
@@ -331,7 +333,7 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={sbtn}>เพิ่ม</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -400,7 +402,7 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <BalanceGuard />
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>

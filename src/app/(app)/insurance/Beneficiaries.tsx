@@ -53,7 +53,7 @@ export default function BeneficiaryEditor({ policyId, persons, current, startOpe
       <BeneficiaryRows persons={persons} rows={rows} setRows={setRows} />
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
-        {!startOpen && <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>}
+        {!startOpen && <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>}
         {state.error && <span className="text-xs text-red-600">{state.error}</span>}
         {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
       </div>

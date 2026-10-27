@@ -53,7 +53,7 @@ export function FamilyForm({ name, headId, candidates }: { name: string; headId:
         </div>
         <div className="flex items-center gap-3">
           <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-          <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+          <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
           <Msg s={state} />
         </div>
       </form>
@@ -78,7 +78,7 @@ export function AddPersonForm() {
       <p className="text-xs text-slate-500">ข้อมูลอื่น (ชื่อเต็ม รูป ที่อยู่ เอกสาร) ใส่ต่อได้ที่หน้าของสมาชิกคนนั้น</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "เพิ่มสมาชิก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>

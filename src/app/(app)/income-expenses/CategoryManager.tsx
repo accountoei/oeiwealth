@@ -63,7 +63,7 @@ function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boo
               {c.used > 0 && <p className="text-xs text-slate-500">รายการเดิม {c.used} รายการจะเปลี่ยนชื่อตาม (ยอดเงินไม่เปลี่ยน)</p>}
               <div className="flex items-center gap-3">
                 <button disabled={renaming} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{renaming ? "กำลังบันทึก…" : "บันทึก"}</button>
-                <button type="button" onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
+                <button type="button" data-close onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
                 {rs.error && <span className="text-sm text-red-600">{rs.error}</span>}
                 {rs.ok && <span className="text-sm text-emerald-700">{rs.ok}</span>}
               </div>

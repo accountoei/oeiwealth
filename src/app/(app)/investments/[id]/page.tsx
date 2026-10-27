@@ -20,7 +20,7 @@ import { cashLedger, type LMove, type LTx } from "./cash-ledger";
 import type { PfPayCtx } from "./pf-pay-forms";
 import EditToggle from "@/components/EditToggle";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import StatusSelect from "@/components/StatusSelect";
+import { WithStatus } from "@/components/StatusSelect";
 import { ActionBar } from "@/components/ActionBar";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
@@ -232,17 +232,15 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             }
             edit={
               <div className="space-y-5">
-                <PortfolioInfoForm assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type} currency={a.currency} notes={a.notes} />
+                <WithStatus status={{ table: "assets", id, value: a.status, paths, label: "สถานะพอร์ต",
+                  options: [["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดพอร์ตแล้ว"]],
+                  remove: me.role === "ADMIN" ? { kind: "asset", id, redirectTo: "/investments", paths: ["/investments"], label: "ลบพอร์ตนี้", hint: "ลบได้เฉพาะพอร์ตที่มีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" } : undefined }}>
+                  <PortfolioInfoForm assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type} currency={a.currency} notes={a.notes} />
+                </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                     current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
-                </div>
-                <div className="border-t border-slate-100 pt-4">
-                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะพอร์ต"
-                    options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดพอร์ตแล้ว"]]}
-                    remove={me.role === "ADMIN" ? { kind: "asset", id, redirectTo: "/investments", paths: ["/investments"], label: "ลบพอร์ตนี้",
-                      hint: "ลบได้เฉพาะพอร์ตที่มีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" } : undefined} />
                 </div>
               </div>
             } />
