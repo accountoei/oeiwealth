@@ -3301,6 +3301,49 @@ SELECT t.ok((SELECT encumbrance_type = 'SERVITUDE' FROM public.property_details 
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz17. Property: ค่าน้ำไฟเรียกเก็บผู้เช่า → รับคืนเป็นรายได้ (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT l.id AS rl FROM public.property_leases l JOIN public.property_details pd ON pd.id = l.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND l.deleted_at IS NULL AND l.status = 'ACTIVE' ORDER BY l.created_at LIMIT 1 \gset
+SELECT u.id AS ru FROM public.property_utilities u JOIN public.property_details pd ON pd.id = u.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND u.deleted_at IS NULL ORDER BY u.created_at LIMIT 1 \gset
+UPDATE public.property_leases SET utilities_billing = 'REBILL' WHERE id = :'rl';
+SELECT t.fails($$UPDATE public.property_leases SET utilities_billing = 'X' WHERE id = '$$ || :'rl' || $$'$$, 'pl_utilities_billing_ck', 'สัญญาเช่า: วิธีคิดค่าน้ำไฟที่ไม่รู้จัก → ไม่ได้');
+SELECT (SELECT coalesce(sum(received_amount), 0) FROM public.v_lease_rent_tracking WHERE lease_id = :'rl') AS rent_before \gset
+SELECT t.ok(public.batch_add_property_expenses(jsonb_build_array(jsonb_build_object('date', current_date, 'description', 'ค่าไฟ ห้องเช่า',
+  'amount', 500, 'currency', 'THB', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'property_utility_id', :'ru',
+  'cost_period', date_trunc('month', current_date)::date, 'rebill_lease_id', :'rl', 'rebill_amount', 520))) = 1,
+  'ค่าใช้จ่ายทั้งชุด: แถวที่ติ๊กเรียกเก็บ → บันทึกค่าใช้จ่าย');
+SELECT id AS rc FROM public.v_lease_utility_charges WHERE lease_id = :'rl' AND status = 'PENDING' \gset
+SELECT t.ok((SELECT amount = 520 AND paid_amount = 500 AND cost_period = date_trunc('month', current_date)::date
+               FROM public.v_lease_utility_charges WHERE id = :'rc'), 'เรียกเก็บผู้เช่า: รอรับ 520 (จ่ายจริง 500 · ค่าใช้จ่ายเต็มจำนวน)');
+SELECT t.fails($$SELECT public.add_utility_charge((SELECT expense_item_id FROM public.lease_utility_charges WHERE id = '$$ || :'rc' || $$'), '$$ || :'rl' || $$')$$,
+  'luc_expense_uq', 'เรียกเก็บผู้เช่า: ค่าใช้จ่ายเดิมเรียกเก็บซ้ำไม่ได้');
+SELECT t.ok(public.batch_record_rent(jsonb_build_array(jsonb_build_object('charge_id', :'rc', 'date', current_date, 'amount', 520,
+  'received_to_asset_id', t.a('KBank ออมทรัพย์')))) = 1, 'รับค่าน้ำไฟเรียกเก็บ (แท็บรับค่าเช่าทั้งชุด)');
+SELECT t.ok((SELECT status = 'RECEIVED' AND received_amount = 520 FROM public.v_lease_utility_charges WHERE id = :'rc')
+            AND (SELECT count(*) FROM public.income_transactions i JOIN public.lease_utility_charges c ON c.income_id = i.id
+                  WHERE c.id = :'rc' AND i.income_type = 'OTHER' AND i.income_subtype = 'ค่าน้ำไฟเรียกเก็บจากผู้เช่า'
+                    AND i.lease_id = :'rl' AND i.asset_id = t.a('บ้าน A') AND i.deleted_at IS NULL) = 1,
+            'รับค่าน้ำไฟเรียกเก็บ = รายได้อื่นของ Property ผูกสัญญา');
+SELECT t.ok((SELECT coalesce(sum(received_amount), 0) FROM public.v_lease_rent_tracking WHERE lease_id = :'rl') = :rent_before,
+            'รับค่าน้ำไฟเรียกเก็บ: ไม่นับเป็นค่าเช่า');
+SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(jsonb_build_object('charge_id', '$$ || :'rc' || $$', 'date', current_date, 'amount', 1)))$$,
+  'รับเงินคืนไปแล้ว', 'รับค่าน้ำไฟเรียกเก็บซ้ำ → ไม่ได้');
+SELECT t.fails($$UPDATE public.lease_utility_charges SET deleted_at = now() WHERE id = '$$ || :'rc' || $$'$$,
+  'รับเงินคืนแล้ว', 'รับคืนแล้ว: ลบรายการเรียกเก็บไม่ได้');
+UPDATE public.income_transactions SET deleted_at = now() WHERE id = (SELECT income_id FROM public.lease_utility_charges WHERE id = :'rc');
+SELECT t.ok((SELECT status = 'PENDING' FROM public.v_lease_utility_charges WHERE id = :'rc'), 'ลบรายได้ที่รับคืน → กลับเป็นรอรับ');
+UPDATE public.expense_items SET deleted_at = now() WHERE id = (SELECT expense_item_id FROM public.lease_utility_charges WHERE id = :'rc');
+SELECT t.ok((SELECT count(*) FROM public.v_lease_utility_charges WHERE id = :'rc') = 0, 'ลบค่าใช้จ่ายต้นทาง (ยังไม่ได้รับ) → รายการเรียกเก็บหายไป');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.lease_utility_charges(lease_id, cost_period, description, amount) VALUES ('$$ || :'rl' || $$', current_date, 'x', 1)$$,
+  'row-level security', 'เรียกเก็บผู้เช่า: VIEWER เพิ่มไม่ได้');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.add_utility_charge(uuid, uuid, numeric, text)', 'EXECUTE'), 'เรียกเก็บผู้เช่า: anon เรียกไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

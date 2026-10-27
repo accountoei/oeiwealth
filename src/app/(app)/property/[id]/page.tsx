@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, ENCUMBRANCE_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  COST_STATUS, ENCUMBRANCE_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
   UTIL_LABEL, addDays, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
-  EditPropertyForm, NewLeaseForm, RecordCostForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
+  EditPropertyForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
   UtilityForm, ValuationForm,
 } from "./forms";
 import RowActions from "@/components/RowActions";
@@ -114,8 +114,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const vacancyHistory = ((pd.vacancy_history ?? []) as { from: string; to: string; plan: string | null }[]).slice().reverse();
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }] = await Promise.all([
-    supabase.from("income_transactions").select("id,date,income_period,income_type,amount,tax,currency,received_to_asset_id,notes,lease_id")
+  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }] = await Promise.all([
+    supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
       .in("property_utility_id", utilIds).is("deleted_at", null).order("date", { ascending: false }).limit(60) : Promise.resolve({ data: [] as never[] }),
@@ -123,9 +123,19 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
     supabase.rpc("asset_has_history", { p_asset_id: id }),
     // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
-    supabase.from("property_leases").select("id,rent_to_asset_id").eq("property_id", pd.id).not("rent_to_asset_id", "is", null),
+    supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").eq("property_id", pd.id).is("deleted_at", null),
+    // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
+    supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
+      .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
   ]);
-  const rentTo = new Map(((rentToRows ?? []) as { id: string; rent_to_asset_id: string }[]).map((r) => [r.id, r.rent_to_asset_id]));
+  type LeaseExtra = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
+  const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
+  const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
+  const charges = (chargeRows ?? []) as { id: string; lease_id: string; cost_period: string; description: string; amount: number; currency: string;
+    notes: string | null; paid_date: string | null; paid_amount: number | null }[];
+  // สัญญาที่ "เราจ่ายแล้วเรียกเก็บ" ค่าน้ำไฟ → ติ๊กเรียกเก็บผู้เช่าให้ตอนบันทึกจ่าย
+  const rebillLeases = liveLeases.filter((l) => leaseExtra.get(l.id)?.utilities_billing === "REBILL")
+    .map((l) => ({ id: l.id, label: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") }));
   // ไม่ได้ตั้งบัญชีรับค่าเช่า → ใช้บัญชีที่รับครั้งล่าสุดของสัญญานั้น
   const lastRentBank = new Map<string, string>();
   [...(rentPaid ?? [])].reverse().forEach((x) => { if (x.lease_id && x.received_to_asset_id) lastRentBank.set(x.lease_id as string, x.received_to_asset_id as string); });
@@ -295,6 +305,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
                 {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
                 {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}
+                {leaseExtra.get(l.id)?.utilities_billing && <span className="text-xs text-slate-500"> · ค่าน้ำไฟ: {UTILITIES_BILLING_LABEL[leaseExtra.get(l.id)!.utilities_billing!]}</span>}
               </div>
               {dep > 0 && (
                 <div className="mt-1">
@@ -327,6 +338,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
                     { name: "rent_to_asset_id", label: "บัญชีรับค่าเช่า", type: "select", value: rentTo.get(l.id) ?? "",
                       options: [["", "— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —"], ...bankList.filter((b) => b.currency === l.rent_currency).map((b) => [b.asset_id, b.name] as [string, string])] },
+                    { name: "utilities_billing", label: "ค่าน้ำ / ค่าไฟ", type: "select", value: leaseExtra.get(l.id)?.utilities_billing ?? "",
+                      options: [["", "— ไม่ระบุ —"], ...Object.entries(UTILITIES_BILLING_LABEL) as [string, string][]] },
                     { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
                 )}
                 {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
@@ -378,6 +391,38 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </section>
       )}
 
+      {charges.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-1 font-medium text-slate-900">ค่าน้ำไฟเรียกเก็บผู้เช่า (รอรับ)</h2>
+          <p className="mb-3 text-xs text-slate-500">เราจ่ายไปแล้ว รอผู้เช่าจ่ายคืน · รับคืนแล้วนับเป็นรายได้ของ Property · ไม่เรียกเก็บแล้ว = กดที่แถวแล้วลบ</p>
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr><th className="py-1">งวด</th><th>รายการ</th><th>สัญญา</th><th className="text-right">จ่ายไป</th><th className="text-right">เรียกเก็บ</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {charges.map((c) => (
+                <tr key={c.id} className="align-top">
+                  <td className="py-1.5">{thMonth(c.cost_period)}</td>
+                  <td>{c.description}{c.notes && <div className="text-xs text-slate-400">{c.notes}</div>}</td>
+                  <td className="text-xs text-slate-600">{leaseName.get(c.lease_id) ?? "-"}</td>
+                  <td className="text-right tabular-nums text-slate-500">{c.paid_amount != null ? money(c.paid_amount, c.currency) : "-"}
+                    {c.paid_date && <div className="text-xs">{thDate(c.paid_date)}</div>}</td>
+                  <td className="text-right tabular-nums">{money(c.amount, c.currency)}</td>
+                  <td className="pl-2 text-right">
+                    <div className="flex flex-wrap items-start justify-end gap-3">
+                      {canWrite && <ReceiveChargeForm assetId={id} chargeId={c.id} amount={Number(c.amount)} currency={c.currency} banks={bankList}
+                        today={today} defaultBank={rentTo.get(c.lease_id) ?? lastRentBank.get(c.lease_id)} />}
+                      {canWrite && <RowActions table="lease_utility_charges" id={c.id} paths={paths} canDelete={canDelete} deleteEffect=""
+                        fields={[{ name: "amount", label: "ยอดเรียกเก็บ", type: "number", value: c.amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {(rentPaid ?? []).length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-1 font-medium text-slate-900">ประวัติรับค่าเช่า</h2>
@@ -390,13 +435,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               {(rentPaid ?? []).map((r) => (
                 <tr key={r.id} className="align-top">
                   <td className="py-1.5">{thDate(r.date)}</td>
-                  <td>{r.income_type === "RENT" ? thMonth(r.income_period) : <span className="text-xs text-slate-500">หักจากเงินประกัน</span>}</td>
+                  <td>{r.income_type === "RENT" ? thMonth(r.income_period) : r.income_subtype === REBILL_SUBTYPE
+                    ? <>{thMonth(r.income_period)}<div className="text-xs text-slate-500">ค่าน้ำไฟเรียกเก็บ</div></>
+                    : <span className="text-xs text-slate-500">หักจากเงินประกัน</span>}</td>
                   <td className="text-xs text-slate-600">{leaseName.get(r.lease_id as string) ?? "-"}{r.notes && <div className="text-slate-400">{r.notes}</div>}</td>
                   <td className="text-right tabular-nums">{money(r.amount, r.currency)}{Number(r.tax ?? 0) > 0 && <div className="text-xs text-slate-500">ภาษี {money(r.tax)}</div>}</td>
                   <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                   <td className="pl-2 text-right">
-                    {r.income_type !== "RENT" && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
-                    {canWrite && r.income_type === "RENT" && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
+                    {r.income_type !== "RENT" && r.income_subtype !== REBILL_SUBTYPE && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
+                    {canWrite && (r.income_type === "RENT" || r.income_subtype === REBILL_SUBTYPE) && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
                       fields={rentIncomeFields(r)} />}
                   </td>
                 </tr>
@@ -540,7 +587,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                           label={`${utilName(c.utility_type, c.provider)} · ${a.name} (${thMonth(c.cost_period)})`}
                           category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
                           banks={bankList} cards={cards} persons={persons ?? []} today={today}
-                          defaultBank={utilById.get(c.utility_id)?.paid_from_asset_id} defaultCard={utilById.get(c.utility_id)?.paid_from_credit_card_id} />
+                          defaultBank={utilById.get(c.utility_id)?.paid_from_asset_id} defaultCard={utilById.get(c.utility_id)?.paid_from_credit_card_id}
+                          rebillLeases={["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillLeases : []} />
                       )}
                     </td>
                   </tr>

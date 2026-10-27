@@ -11,6 +11,7 @@ export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
   expected: number; paid: number; currency: string; status: string; category: string;
   /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ (a: / c:) */ pay?: string;
+  /** สัญญาเช่าที่ตั้ง "ค่าน้ำไฟ: เราจ่ายแล้วเรียกเก็บผู้เช่า" (ไฟ / น้ำ) */ rebillLease?: string; rebillLabel?: string;
 };
 export type PayOpt = { value: string; label: string; currency: string };
 type Extra = { id: number; asset: string; description: string; amount: string; pay: string };
@@ -35,6 +36,8 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
     r.pay && pays.some((p) => p.value === r.pay && p.currency === r.currency) ? r.pay : firstPay(r.currency)])));
   const blank = (id: number): Extra => ({ id, asset: "", description: "", amount: "", pay: firstPay("THB") });
   const [extra, setExtra] = useState<Extra[]>([blank(1)]);
+  const [rebill, setRebill] = useState<Record<string, boolean>>({});
+  const rebillOn = (r: CostRow) => !!r.rebillLease && rebill[r.key] !== false;
   const [kind, setKind] = useState("");
   const kinds = [...new Map(rows.map((r) => [r.type, r.typeLabel]))];
   const shownRows = kind ? rows.filter((r) => r.type === kind) : rows;
@@ -46,13 +49,14 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
   const extras = extra.filter((x) => x.amount.trim() !== "");
   const payload = [
     ...chosen.map((r) => ({ date, description: r.label, amount: vals[r.key], pay: pay[r.key] ?? "", currency: r.currency,
-      expense_category: r.category, property_utility_id: r.utilityId, cost_period: r.period })),
+      expense_category: r.category, property_utility_id: r.utilityId, cost_period: r.period,
+      ...(rebillOn(r) ? { rebill_lease_id: r.rebillLease } : {}) })),
     ...extras.map((x) => ({ date, description: x.description, amount: x.amount, pay: x.pay, related_asset_id: x.asset, expense_category: OTHER_CATEGORY })),
   ];
   const name = new Map(props.map((p) => [p.id, p.name]));
   const count = payload.length;
   const onSubmit = cf.guard(`บันทึกค่าใช้จ่าย ${count} รายการ วันที่ ${thDate(date)} ?\n${[
-    ...chosen.map((r) => `• ${r.property} · ${r.label} ${vals[r.key]}`),
+    ...chosen.map((r) => `• ${r.property} · ${r.label} ${vals[r.key]}${rebillOn(r) ? " (เรียกเก็บผู้เช่า)" : ""}`),
     ...extras.map((x) => `• ${name.get(x.asset) ?? "(ยังไม่เลือกทรัพย์สิน)"} · ${x.description || "(ไม่มีรายการ)"} ${x.amount}`),
   ].join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   const setX = (id: number, patch: Partial<Extra>) => setExtra(extra.map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -121,6 +125,12 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
                       {r.expected > 0 && <button type="button" onClick={() => setVals({ ...vals, [r.key]: fmt(r.expected) })} className="mr-2 text-xs text-blue-700 hover:underline">ตามประมาณ</button>}
                       <input inputMode="decimal" value={v} aria-label={`ยอดที่จ่าย ${r.property} ${r.label}`} placeholder={r.currency}
                         onChange={(e) => setVals({ ...vals, [r.key]: e.target.value })} className={`w-32 text-right ${small}`} />
+                      {r.rebillLease && (
+                        <label className="mt-1 flex items-center justify-end gap-1 text-xs text-slate-600" title={r.rebillLabel}>
+                          <input type="checkbox" checked={rebillOn(r)} onChange={(e) => setRebill({ ...rebill, [r.key]: e.target.checked })} />
+                          เรียกเก็บผู้เช่า
+                        </label>
+                      )}
                     </td>
                     <td className="px-3"><PaySelect value={pay[r.key] ?? ""} onChange={(x) => setPay({ ...pay, [r.key]: x })} ccy={r.currency} /></td>
                   </>)}
@@ -175,7 +185,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
           {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
         </div>
       )}
-      <p className="text-xs text-slate-500">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน</p>
+      <p className="text-xs text-slate-500">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า)</p>
     </form>
     </>
   );
