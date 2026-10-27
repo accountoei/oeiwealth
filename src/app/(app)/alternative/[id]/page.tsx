@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, money, qtyUnit, thDate, todayBangkok } from "@/lib/format";
-import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import { WithStatus } from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
@@ -137,38 +136,13 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
       </section>
 
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-        paths={paths} canWrite={canWrite} canDelete={canDelete} />
-
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <div>
-          <h2 className="font-medium text-slate-900">มูลค่า</h2>
-          <p className="text-xs text-slate-500">แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (ทอง / คริปโต ตามราคาตลาด)</p>
-        </div>
-        {canWrite && a.status === "ACTIVE" && (cat?.category_code === "GOLD" && a.currency === "THB"
+        paths={paths} canWrite={canWrite} canDelete={canDelete}
+        valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE} perUnit={qty ? perUnit : undefined} unit={unit}
+        valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (ทอง / คริปโต ตามราคาตลาด)"
+        valuationForm={canWrite && a.status === "ACTIVE" ? (cat?.category_code === "GOLD" && a.currency === "THB"
           ? <GoldValuationForm assetId={id} today={today} minDate={goLive} paths={paths} qtyBaht={goldBaht}
               purity={d.purity_pct != null ? Number(d.purity_pct) : null} ornament={d.gold_form === "ORNAMENT"} deduct={d.deduct_per_baht != null ? Number(d.deduct_per_baht) : null} />
-          : <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />)}
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th>
-            {qty ? <th className="text-right">ต่อ{unit ?? "หน่วย"}</th> : null}<th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th><th></th></tr></thead>
-          <tbody className="divide-y divide-slate-100">
-            {(vals ?? []).map((v) => (
-              <tr key={v.id}>
-                <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
-                {qty ? <td className="text-right tabular-nums text-slate-500">{money(perUnit(v.value))}</td> : null}
-                <td className="pl-4">{SOURCE[v.source] ?? v.source}</td>
-                <td className="pl-4 text-slate-500">{v.notes}</td>
-                <td className="pl-2 text-right">
-                  {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
-                    fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
-                      { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+          : <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />) : undefined} />
     </div>
   );
 }

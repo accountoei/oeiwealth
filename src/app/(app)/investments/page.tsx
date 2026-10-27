@@ -13,7 +13,7 @@ import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { DueTab } from "./due";
 import { UpdateTab } from "./update";
 
-const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["due", "รอรับเดือนนี้"]] as const;
+const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["due", "บันทึกรับผลตอบแทน"]] as const;
 
 type PV = { portfolio_id: string; asset_id: string; name: string; portfolio_currency: string; display_value: number | null;
   display_value_date: string | null; thb_value: number | null; in_transit_thb: number | null;

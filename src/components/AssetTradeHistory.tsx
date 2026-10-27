@@ -2,11 +2,20 @@ import { createClient } from "@/lib/supabase/server";
 import { money, thDate } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
+import HistoryRows, { type HistoryRow } from "@/components/HistoryRows";
+import type { ReactNode } from "react";
 
-/** รายการจ่ายซื้อ / ขาย ของทรัพย์สิน + สรุปกำไรขาดทุนเมื่อขายแล้ว */
-export default async function AssetTradeHistory({ assetId, currency, status, cost, paths, canWrite, canDelete, showMoves = true }: {
+export type ValRow = { id: string; valuation_date: string; value: number; source: string; notes: string | null; valuation_method?: string | null };
+
+/** รายการจ่ายซื้อ / ขาย ของทรัพย์สิน + สรุปกำไรขาดทุนเมื่อขายแล้ว
+ *  ส่ง valuations มาด้วย (Property / Alternative · ตกลง 27 ต.ค. 2026) → กล่องเดียว "ซื้อ / ขาย และมูลค่า":
+ *  ฟอร์มอัปเดตมูลค่า + ตารางเดียวเรียงตามวันที่ (จ่ายซื้อ / เงินขาย / มูลค่า) · ราคาทองอัตโนมัติรายวันซ่อนไว้ก่อน */
+export default async function AssetTradeHistory({ assetId, currency, status, cost, paths, canWrite, canDelete, showMoves = true,
+  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, unit }: {
   assetId: string; currency: string; status: string; cost: number | null; paths: string[];
   canWrite: boolean; canDelete: boolean; showMoves?: boolean;
+  valuations?: ValRow[]; valuationForm?: ReactNode; valuationHint?: string; sourceLabel?: Record<string, string>;
+  methodLabel?: Record<string, string>; perUnit?: (v: number) => number | null; unit?: string | null;
 }) {
   const supabase = await createClient();
   const [{ data: moves }, { data: saleVal }, { data: lastVal }, { data: parts }] = await Promise.all([
@@ -31,11 +40,19 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
   const paid = list.filter((m) => m.movement_type === "ASSET_PURCHASE").reduce((s, m) => s + Number(m.amount), 0);
   const basis = cost ?? (paid > 0 ? paid : null);
   const sold = status === "SOLD" && price != null;
-  if (!sold && partList.length === 0 && (!showMoves || list.length === 0)) return null;
+  const merged = valuations != null;
+  if (!merged && !sold && partList.length === 0 && (!showMoves || list.length === 0)) return null;
 
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="mb-3 font-medium text-slate-900">ซื้อ / ขาย</h2>
+  const moveLabel = (m: (typeof list)[number]) => m.movement_type === "ASSET_SALE"
+    ? `${isPart(m) ? "ขายบางส่วน · " : ""}${(m.metadata as { gain?: number } | null)?.gain != null ? "เงินขาย (ทุนคืน) เข้าบัญชี" : "เงินขาย (สุทธิ) เข้าบัญชี"}`
+    : "จ่ายซื้อ / จ่ายเพิ่ม";
+  const moveActions = (m: (typeof list)[number]) => canWrite && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete && !isPart(m)} canEdit={m.movement_type === "ASSET_PURCHASE"}
+    deleteNote={m.movement_type === "ASSET_SALE" ? `ลบเฉพาะเงินขายที่เข้าบัญชี — สถานะ / มูลค่าราคาขาย ต้องแก้เอง${merged ? "" : "ด้านล่าง"}` : undefined}
+    fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount },
+      { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />;
+
+  const summary = (
+    <>
       {sold && (
         <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-4 text-sm md:grid-cols-4">
           <div><div className="text-xs text-slate-500">ราคาขาย {saleVal && `(${thDate(saleVal.valuation_date)})`}</div><div className="font-medium tabular-nums">{money(price, currency, 0)}</div></div>
@@ -83,18 +100,73 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           <p className="mt-1 text-xs text-slate-500">กำไร / ขาดทุน = เงินขายสุทธิ − มูลค่าส่วนที่ขาย (เทียบมูลค่าล่าสุด) → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน · ยกเลิกได้เฉพาะครั้งล่าสุด</p>
         </div>
       )}
+    </>
+  );
+
+  if (merged) {
+    const showPer = !!perUnit && valuations.some((v) => perUnit(Number(v.value)) != null);
+    type Item = { key: string; date: string; order: number; auto: boolean; row: ReactNode };
+    const items: Item[] = [
+      ...list.map((m): Item => ({ key: `m${m.id}`, date: m.movement_date, order: 0, auto: false, row: (
+        <tr>
+          <td className="py-1.5">{thDate(m.movement_date)}</td>
+          <td>{moveLabel(m)}</td>
+          <td className="text-slate-500">{m.description}</td>
+          <td className={`text-right tabular-nums ${m.movement_type === "ASSET_SALE" ? "text-emerald-700" : ""}`}>{money(m.amount, m.currency)}</td>
+          {showPer && <td></td>}
+          <td className="pl-2 text-right">{moveActions(m)}</td>
+        </tr>) })),
+      ...valuations.map((v): Item => ({ key: `v${v.id}`, date: v.valuation_date, order: 1, auto: v.source === "MARKET", row: (
+        <tr>
+          <td className="py-1.5">{thDate(v.valuation_date)}</td>
+          <td>มูลค่า{v.notes === "ราคาขาย" ? " (ราคาขาย)" : ""}
+            <span className="block text-xs text-slate-400">{[v.valuation_method ? methodLabel?.[v.valuation_method] ?? v.valuation_method : null,
+              sourceLabel[v.source] ?? v.source].filter(Boolean).join(" · ")}</span></td>
+          <td className="text-slate-500">{v.notes === "ราคาขาย" ? "" : v.notes}</td>
+          <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
+          {showPer && <td className="text-right tabular-nums text-slate-500">{perUnit && perUnit(Number(v.value)) != null ? money(perUnit(Number(v.value))) : ""}</td>}
+          <td className="pl-2 text-right">
+            {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && valuations.length > 1}
+              fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
+                { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
+          </td>
+        </tr>) })),
+    ];
+    // ใหม่ → เก่า · วันเดียวกัน: มูลค่าก่อนรายการเงิน (มูลค่าหลังซื้อ / ขายอยู่บนสุด)
+    items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.order - a.order));
+    const rows: HistoryRow[] = items.map(({ key, auto, row }) => ({ key, auto, row }));
+    return (
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <HistoryRows title="ซื้อ / ขาย และมูลค่า" rows={rows}
+          head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th>รายละเอียด / หมายเหตุ</th>
+            <th className="text-right">จำนวนเงิน / มูลค่า</th>{showPer && <th className="text-right">ต่อ{unit ?? "หน่วย"}</th>}<th></th></tr></thead>}>
+          {summary}
+          {valuationForm && (
+            <div className="mb-4 rounded-lg bg-slate-50 p-4">
+              <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า</h3>
+              {valuationHint && <p className="mb-2 text-xs text-slate-500">{valuationHint}</p>}
+              {valuationForm}
+            </div>
+          )}
+        </HistoryRows>
+        {sold && <p className="mt-2 text-xs text-slate-500">บันทึกขายผิด: ลบ &ldquo;เงินขาย&rdquo; ในตาราง ลบรายได้กำไร / ค่าใช้จ่ายขาดทุนจากการขายในหน้ารายได้ / ค่าใช้จ่าย ลบมูลค่า &ldquo;ราคาขาย&rdquo; แล้วเปลี่ยนสถานะกลับเป็น &ldquo;ถืออยู่&rdquo;</p>}
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <h2 className="mb-3 font-medium text-slate-900">ซื้อ / ขาย</h2>
+      {summary}
       {showMoves && list.length > 0 && (
         <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
           {list.map((m) => (
             <tr key={m.id}>
               <td className="py-1.5">{thDate(m.movement_date)}</td>
-              <td>{m.movement_type === "ASSET_SALE" ? `${isPart(m) ? "ขายบางส่วน · " : ""}${(m.metadata as { gain?: number } | null)?.gain != null ? "เงินขาย (ทุนคืน) เข้าบัญชี" : "เงินขาย (สุทธิ) เข้าบัญชี"}` : "จ่ายซื้อ / จ่ายเพิ่ม"}</td>
+              <td>{moveLabel(m)}</td>
               <td className="text-slate-500">{m.description}</td>
               <td className={`text-right tabular-nums ${m.movement_type === "ASSET_SALE" ? "text-emerald-700" : ""}`}>{money(m.amount, m.currency)}</td>
-              <td className="pl-2 text-right">{canWrite && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete && !isPart(m)} canEdit={m.movement_type === "ASSET_PURCHASE"}
-                deleteNote={m.movement_type === "ASSET_SALE" ? "ลบเฉพาะเงินขายที่เข้าบัญชี — สถานะ / มูลค่าราคาขาย ต้องแก้เองด้านล่าง" : undefined}
-                fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount },
-                  { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />}</td>
+              <td className="pl-2 text-right">{moveActions(m)}</td>
             </tr>
           ))}
         </tbody></table>

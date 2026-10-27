@@ -128,7 +128,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ------------------------------------------------ กราฟ */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium text-slate-900">Net Worth {personName || "ครอบครัว"}</h2>
+            <h2 className="font-medium text-slate-900">Net Worth {personName || "ทั้งครอบครัว"}</h2>
             <nav className="flex flex-wrap gap-1" aria-label="ช่วงเวลากราฟ">
               {RANGES.map(([v, label]) => (
                 <Link key={v} href={rangeHref(v)} scroll={false} aria-current={v === range ? "true" : undefined}
@@ -147,8 +147,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
           {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
           <DetailBox start={start} personId={personId} ym={ym}
-            title={<>ความมั่งคั่งเปลี่ยนเพราะอะไร {thMonth(start)}{personName ? <span className="text-xs font-normal text-slate-500"> · {personName}</span> : null}</>}
-            popupTitle={`ความมั่งคั่งเปลี่ยนเพราะอะไร ${thMonth(start)}${personName ? ` · ${personName}` : ""}`}
+            title={<>ความมั่งคั่งเปลี่ยนเพราะอะไร {thMonth(start)}<span className="block text-xs font-normal text-slate-500">{personName || "ทั้งครอบครัว"}</span></>}
+            popupTitle={`ความมั่งคั่งเปลี่ยนเพราะอะไร ${thMonth(start)} · ${personName || "ทั้งครอบครัว"}`}
             bridge={<Suspense fallback={<Lines n={6} />}><ChangeBody start={start} isCurrent={isCurrent} personId={personId} /></Suspense>}>
             <Suspense fallback={<Lines n={6} />}>
               <ChangeBody start={start} isCurrent={isCurrent} personId={personId} />
@@ -161,7 +161,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์ตามหมวด{personName ? ` · ${personName}` : ""}</h2>
+          <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์ตามหมวด · {personName || "ทั้งครอบครัว"}</h2>
           <p className="mb-3 text-xs text-slate-500">% คิดจากสินทรัพย์รวม · กดที่หมวดเพื่อดูรายการ</p>
           <Suspense fallback={<Lines n={7} />}>
             <AllocationBody start={start} personId={personId} />
@@ -231,9 +231,9 @@ async function TopCards({ start, personId, personName }: { start: string; person
   return (
     <>
       <section className="grid gap-4 md:grid-cols-3">
-        <Big label={person ? `สินทรัพย์รวม · ${person.name}` : "สินทรัพย์รวม"} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
-        <Big label={person ? `หนี้สินรวม · ${person.name}` : "หนี้สินรวม"} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
-        <Big label={person ? `ความมั่งคั่งสุทธิ · ${person.name}` : "ความมั่งคั่งสุทธิ (Net Worth)"} value={nw}
+        <Big label={`สินทรัพย์รวม · ${person ? person.name : "ทั้งครอบครัว"}`} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
+        <Big label={`หนี้สินรวม · ${person ? person.name : "ทั้งครอบครัว"}`} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
+        <Big label={`ความมั่งคั่งสุทธิ · ${person ? person.name : "ทั้งครอบครัว"}`} value={nw}
           base={base ? Number(base.net_worth) : null} baseLabel={base?.label} />
       </section>
       {!person && unalloc && Number(unalloc.net_worth) !== 0 && (

@@ -7,6 +7,7 @@ import OwnerShares from "@/components/OwnerShares";
 import LeaseFields, { type Bank } from "../LeaseFields";
 import { PROPERTY_TYPE_LABEL, USAGE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import { useCostValueMirror } from "@/components/useCostValueMirror";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -22,6 +23,7 @@ export default function NewPropertyForm(props: {
   const [late, setLate] = useState(false);
   const [usage, setUsage] = useState("OWNER_OCCUPIED");
   const [currency, setCurrency] = useState("THB");
+  const m = useCostValueMirror();
 
   return (
     <form action={action} className="space-y-6">
@@ -54,9 +56,9 @@ export default function NewPropertyForm(props: {
         <label className={label}>เลขที่โฉนด / เอกสารสิทธิ์<input name="title_deed_no" className={input} /></label>
         <label className={label}>เลขที่ดิน<input name="land_no" className={input} /></label>
         <label className={label}>วันที่ได้มา {!opening && "*"}
-          <input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} className={input} />
+          <input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} {...m.acqDateProps} className={input} />
         </label>
-        <label className={label}>ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" className={input} /></label>
+        <label className={label}>ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" {...m.costProps} className={input} />{m.copied === "cost" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับมูลค่า · แก้ได้</span>}</label>
         {!opening && (
           <label className={label}>จ่ายจากบัญชี
             <select name="pay_bank_asset_id" defaultValue="" className={input}>
@@ -85,14 +87,14 @@ export default function NewPropertyForm(props: {
           </label>
         )}
         <div className="grid gap-4 md:grid-cols-3">
-          <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
+          <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" {...m.valueProps} className={input} />{m.copied === "value" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับราคาที่ได้มา · แก้ได้</span>}</label>
           <label className={label}>มูลค่า ณ วันที่ *
             {opening
               ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
-              : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} className={input} />}
+              : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} {...m.valDateProps} className={input} />}
           </label>
           <label className={label}>วิธีประเมิน
-            <select name="valuation_method" defaultValue="USER_ESTIMATE" className={input}>
+            <select name="valuation_method" defaultValue="USER_ESTIMATE" {...m.methodProps} className={input}>
               <option value="USER_ESTIMATE">ประมาณเอง</option>
               <option value="APPRAISAL">ประเมินโดยผู้ประเมิน / ธนาคาร</option>
               <option value="BOOK_VALUE">ราคาทุน</option>

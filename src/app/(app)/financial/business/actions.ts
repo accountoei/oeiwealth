@@ -112,7 +112,7 @@ export async function buyShares(_: ActionState, form: FormData): Promise<ActionS
   return done(assetId, "บันทึกการลงทุนเพิ่มแล้ว");
 }
 
-/** แท็บ "บันทึกปันผล / มูลค่า": ปันผลแยกตามผู้ถือหุ้น (1 แถว = 1 คน · เข้าบัญชีของคนนั้น) — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
+/** แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า": ปันผลแยกตามผู้ถือหุ้น (1 แถว = 1 คน · เข้าบัญชีของคนนั้น) — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
 export async function batchDividends(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const date = str(form.get("date"));
@@ -129,7 +129,7 @@ export async function batchDividends(_: ActionState, form: FormData): Promise<Ac
   return done("", `บันทึกปันผลแล้ว ${data} รายการ`);
 }
 
-/** แท็บ "บันทึกปันผล / มูลค่า": มูลค่าใหม่หลายกิจการ — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
+/** แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า": มูลค่าใหม่หลายกิจการ — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
 export async function batchValues(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const date = str(form.get("date"));

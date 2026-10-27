@@ -6,6 +6,7 @@ import { addCategory, createAlternative, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import { useCostValueMirror } from "@/components/useCostValueMirror";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -17,6 +18,7 @@ export default function NewAlternativeForm(props: {
 }) {
   const { persons, categories, goLive, openingDate, today, isSetup, isAdmin, banks } = props;
   const [currency, setCurrency] = useState("THB");
+  const m = useCostValueMirror();
   const [state, action, pending] = useActionState<ActionState, FormData>(createAlternative, {});
   const [cs, catAction, adding] = useActionState<ActionState, FormData>(addCategory, {});
   const [opening, setOpening] = useState(isSetup);
@@ -84,15 +86,15 @@ export default function NewAlternativeForm(props: {
           <label className={label}>ที่เก็บ<input name="storage_location" placeholder="เช่น ตู้เซฟธนาคาร" className={input} /></label>
           <label className={label}>สภาพ<input name="condition" className={input} /></label>
           <label className={`${label} md:col-span-2`}>รายละเอียด<input name="details" className={input} /></label>
-          <label className={label}>วันที่ได้มา {!opening && "*"}<input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} className={input} /></label>
-          <label className={label}>ราคาที่ซื้อ<input name="acquisition_cost" inputMode="decimal" className={input} /></label>
+          <label className={label}>วันที่ได้มา {!opening && "*"}<input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} {...m.acqDateProps} className={input} /></label>
+          <label className={label}>ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" {...m.costProps} className={input} />{m.copied === "cost" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับมูลค่า · แก้ได้</span>}</label>
           {!opening && (
             <label className={`${label} md:col-span-2`}>จ่ายจากบัญชี
               <select name="pay_bank_asset_id" defaultValue="" className={input}>
                 <option value="">— ไม่บันทึกเงินออก (ยังไม่จ่าย / จ่ายเป็นงวด) —</option>
                 {banks.filter((b) => b.currency === currency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
               </select>
-              <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ซื้อ ณ วันที่ได้มา (บัญชีสกุลเดียวกับสินทรัพย์) · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าสินทรัพย์</span>
+              <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ได้มา ณ วันที่ได้มา (บัญชีสกุลเดียวกับสินทรัพย์) · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าสินทรัพย์</span>
             </label>
           )}
         </section>
@@ -112,16 +114,16 @@ export default function NewAlternativeForm(props: {
             </label>
           )}
           <div className="grid gap-4 md:grid-cols-4">
-            <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
+            <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" {...m.valueProps} className={input} />{m.copied === "value" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับราคาที่ได้มา · แก้ได้</span>}</label>
             <label className={label}>สกุลเงิน
               <CurrencySelect name="currency" value={currency} onChange={setCurrency} className={input} />
             </label>
             <label className={label}>ณ วันที่ *
               {opening ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
-                : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} className={input} />}
+                : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} {...m.valDateProps} className={input} />}
             </label>
             <label className={label}>วิธีประเมิน
-              <select name="valuation_method" defaultValue="USER_ESTIMATE" className={input}>
+              <select name="valuation_method" defaultValue="USER_ESTIMATE" {...m.methodProps} className={input}>
                 <option value="USER_ESTIMATE">ประมาณเอง</option><option value="APPRAISAL">ผู้ประเมิน / ร้าน</option>
                 <option value="LATEST_TRANSACTION">ราคาตลาดล่าสุด</option><option value="BOOK_VALUE">ราคาทุน</option>
               </select>

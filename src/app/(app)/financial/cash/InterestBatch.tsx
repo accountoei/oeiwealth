@@ -128,7 +128,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
         </div>
       )}
       <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses
-        · ดอกเบี้ยบัญชีเงินฝากในพอร์ตลงทุน บันทึกที่หน้า Investments → แท็บ &ldquo;รอรับเดือนนี้&rdquo;</p>
+        · ดอกเบี้ยบัญชีเงินฝากในพอร์ตลงทุน บันทึกที่หน้า Investments → แท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo;</p>
     </form>
     </>
   );

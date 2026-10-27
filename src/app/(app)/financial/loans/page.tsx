@@ -15,7 +15,7 @@ const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "ม�
 const DERIVED: Record<string, { text: string; cls: string }> = {
   OVERDUE: { text: "เลยกำหนดคืน", cls: "text-red-600" }, DUE_SOON: { text: "ใกล้ครบกำหนด", cls: "text-amber-700" },
 };
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["monthly", "รับชำระคืนประจำเดือน"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["monthly", "บันทึกรับชำระคืนเงินกู้"]];
 const GROUPS: [string, string, string][] = [["ACTIVE", "ปกติ", "#16a34a"], ["AT_RISK", "มีความเสี่ยง", "#f59e0b"], ["WRITTEN_OFF", "ตัดหนี้สูญ", "#64748b"]];
 const BADGE = { red: "bg-red-50 text-red-700", amber: "bg-amber-50 text-amber-800" };
 
@@ -102,7 +102,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     return `/financial/loans${q.size ? `?${q}` : ""}`;
   };
 
-  // ---------------------------------------------------------------- แท็บรับชำระคืนประจำเดือน
+  // ---------------------------------------------------------------- แท็บบันทึกรับชำระคืนเงินกู้
   const loanOf = new Map(rows.map((r) => [r.asset_id, r]));
   const monthLines = sched.filter((x) => loanOf.has(x.loan_asset_id)
     && ((x.due_date >= start && x.due_date <= end) || (x.due_date < start && ["OVERDUE", "PARTIAL"].includes(x.status))));
@@ -243,7 +243,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
       </div>
       </TabPanel>
 
-      {/* ============================================================ รับชำระคืนประจำเดือน */}
+      {/* ============================================================ บันทึกรับชำระคืนเงินกู้ */}
       <TabPanel id="monthly">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-500">งวดที่ครบกำหนดในเดือนที่เลือก + งวดที่ยังค้างจากเดือนก่อน · บันทึกที่นี่หรือที่หน้า Income &amp; Expenses ก็ได้ (คำสั่งเดียวกัน ไม่นับซ้ำ)</p>

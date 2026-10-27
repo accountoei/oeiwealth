@@ -26,7 +26,7 @@ type Exp = { id: string; related_asset_id: string | null; property_utility_id: s
   amount: number; currency: string; base_amount: number | null };
 
 // ทรัพย์สินทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=all → ภาพรวม)
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "รายได้และสัญญาเช่า"], ["expense", "ค่าใช้จ่าย"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "บันทึกรับค่าเช่า/สัญญาเช่า"], ["expense", "ค่าใช้จ่าย"]];
 const TYPE_COLORS: Record<string, string> = { LAND: "#3b82f6", HOUSE: "#8b5cf6", CONDO: "#10b981", OTHER: "#f59e0b" };
 // การใช้งาน → กลุ่มที่แสดงในภาพรวม
 const USAGE_GROUP: Record<string, string> = { RENTAL: "RENTAL", OWNER_OCCUPIED: "LIVE", PERSONAL_USE: "LIVE", VACANT: "VACANT", BUSINESS_USE: "BUSINESS", OTHER: "OTHER" };

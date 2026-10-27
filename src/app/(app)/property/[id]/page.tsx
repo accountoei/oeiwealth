@@ -230,42 +230,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </div>
       </section>
 
+      {/* ---------------- ซื้อ / ขาย และมูลค่า (กล่องเดียว · ตกลง 27 ต.ค. 2026) ---------------- */}
       <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-        paths={paths} canWrite={canWrite} canDelete={canDelete} />
-
-      {/* ---------------- มูลค่า: อัปเดต + ประวัติ ---------------- */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">มูลค่า</h2>
-        {canWrite && a.status === "ACTIVE" && (
-          <>
-            <p className="mb-3 text-xs text-slate-500">อัปเดตมูลค่า · แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)</p>
-            <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} />
-          </>
-        )}
-        <h3 className="mb-2 mt-5 text-sm font-medium text-slate-700">ประวัติมูลค่า</h3>
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500">
-            <tr><th className="py-1">วันที่</th><th className="text-right">มูลค่า</th><th className="pl-4">วิธี</th><th className="pl-4">ที่มา</th><th className="pl-4">หมายเหตุ</th><th></th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {(vals ?? []).map((v) => (
-              <tr key={v.id}>
-                <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
-                <td className="pl-4">{METHOD_LABEL[v.valuation_method] ?? v.valuation_method}</td>
-                <td className="pl-4">{SOURCE_LABEL[v.source] ?? v.source}</td>
-                <td className="pl-4 text-slate-500">{v.notes}</td>
-                <td className="pl-2 text-right">
-                  {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
-                    fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
-                      { name: "value", label: "มูลค่า", type: "number", value: v.value },
-                      { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+        paths={paths} canWrite={canWrite} canDelete={canDelete}
+        valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
+        valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
+        valuationForm={canWrite && a.status === "ACTIVE" ? <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} /> : undefined} />
 
       {/* ---------------- สัญญาเช่า ---------------- */}
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">

@@ -244,7 +244,7 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
 
 export type BatchState = { error?: string; ok?: string };
 
-/** รับค่าเช่าหลายสัญญาพร้อมกัน (แท็บ รายได้และสัญญาเช่า) · ผิดแถวเดียว = ไม่บันทึกเลย */
+/** รับค่าเช่าหลายสัญญาพร้อมกัน (แท็บ บันทึกรับค่าเช่า/สัญญาเช่า) · ผิดแถวเดียว = ไม่บันทึกเลย */
 export async function batchRent(_: BatchState, form: FormData): Promise<BatchState> {
   const supabase = await createClient();
   const rows = readRows<{ lease_id: string; amount: string; date: string; received_to_asset_id: string; income_period: string }>(form);
