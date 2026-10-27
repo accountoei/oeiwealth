@@ -134,11 +134,12 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       <TabPanel id="overview" className="space-y-6">
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
-        <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
+        {/* เรียงตามที่ตกลง 27 ต.ค. 2026: เงินฝากในพอร์ต · จำนวนพอร์ต · รายได้ · มูลค่าลงทุนรวม (ท้ายสุด) */}
+        <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)} />
         <StatBox label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
           sub={list.some((p) => pfStatus.get(p.asset_id) === "CLOSED") ? `ปิดแล้ว ${list.filter((p) => pfStatus.get(p.asset_id) === "CLOSED").length} พอร์ต` : undefined} />
-        <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)} />
+        <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
+        <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
       </section>
 
       {allocTotal > 0 && (

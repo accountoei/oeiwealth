@@ -42,7 +42,7 @@ export function DeleteSlot() { return useContext(DeleteSlotCtx); }
  *   อยู่ในแถวตาราง → กดที่แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ"
  *   บันทึกสำเร็จ → หน้าต่างปิดเอง + รีเฟรชหน้า
  */
-export default function RowActions({ table, id, paths, fields = [], cols = 3, canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, editor, button, deleteControl }: {
+export default function RowActions({ table, id, paths, fields = [], cols = 3, canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, section, editor, button, deleteControl }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
   /** จำนวนช่องต่อแถวบนจอกว้าง (4 = วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว) */
   cols?: 3 | 4;
@@ -50,6 +50,8 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   deleteEffect?: string;
   /** ปุ่มเพิ่มเติมในกล่องใต้แถว (เช่น ดาวน์โหลด / อัปโหลดฉบับใหม่) */
   extra?: React.ReactNode;
+  /** ส่วนเพิ่มเติมเต็มความกว้างต่อจากฟอร์มแก้ไข (มีปุ่มของตัวเอง เช่น "เอกสารของ" ในหน้า Documents) */
+  section?: React.ReactNode;
   /** ฟอร์มแก้ไขของหน้านั้นเอง (มีปุ่มบันทึกของตัวเอง) — ใช้แทนช่อง fields · วาง <DeleteSlot /> ข้างปุ่มบันทึก */
   editor?: React.ReactNode;
   /** ปุ่มลบแบบอื่นของหน้านั้น (เช่น ลบสัญญาเช่า ผ่าน DeleteEntity) — วางข้างปุ่มบันทึกแทนปุ่มลบปกติ (ใช้กับ canDelete={false}) */
@@ -62,7 +64,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   const [es, editAction, saving] = useActionState<RecState, FormData>(updateRecord, {});
   const [ds, delAction, deleting] = useActionState<RecState, FormData>(deleteRecord, {});
   const editable = canEdit && (fields.length > 0 || !!editor);
-  const row = useRowPanel(!button && (editable || canDelete || !!extra));
+  const row = useRowPanel(!button && (editable || canDelete || !!extra || !!section));
   const cf = useConfirmSubmit();
   const router = useRouter();
   const delFormId = `del-${useId()}`;
@@ -123,6 +125,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
     <div className="space-y-4 text-left">
       {editable ? (editorWithDelete || editForm)
         : extra ? null : <p className="text-sm text-slate-500">รายการนี้แก้ไขไม่ได้ (ลบแล้วบันทึกใหม่)</p>}
+      {section && <div className={editable ? "border-t border-slate-100 pt-3" : ""}>{section}</div>}
       {delForm}
       {(extra || (canDelete && !delInline)) && (
         <div className={`flex flex-wrap items-center gap-3 ${editable ? "border-t border-slate-100 pt-3" : ""}`}>
@@ -159,7 +162,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
       </span>
       {ds.error && <div className="text-xs text-red-600">{ds.error}</div>}
       {editing && (
-        <Modal title="แก้ไขรายการ" onClose={() => setEditing(false)}>{editorWithDelete || editForm}{delForm}</Modal>
+        <Modal title="แก้ไขรายการ" onClose={() => setEditing(false)}>{editorWithDelete || editForm}{section && <div className="mt-4 border-t border-slate-100 pt-3">{section}</div>}{delForm}</Modal>
       )}
     </div>
   );

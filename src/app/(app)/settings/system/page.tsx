@@ -1,14 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, thDate, todayBangkok } from "@/lib/format";
+import Link from "next/link";
+import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, HOLDING_TYPE_LABEL, addDays, money, thDate, todayBangkok } from "@/lib/format";
+import ExpandRows, { type ExpandRow } from "./ExpandRows";
 import FxSourceForm from "./FxSourceForm";
 import { ActionBar } from "@/components/ActionBar";
 import OverrideForm from "./OverrideForm";
 import FxRefreshButton from "./FxRefreshButton";
-import OpeningSetup from "../opening/OpeningSetup";
-import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
-
-const TABS = [["fx", "FX & Prices"], ["opening", "Opening Setup"]] as const;
+import { redirect } from "next/navigation";
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
 const JOB_LABEL: Record<string, string> = { FX_FETCH: "อัตราแลกเปลี่ยน", FX_BACKFILL: "อัตราแลกเปลี่ยน (ย้อนหลัง)", BACKUP: "สำรองข้อมูล", PRICE_FETCH: "ราคาอัตโนมัติ" };
@@ -17,20 +16,24 @@ const SKIP_REASON: Record<string, string> = { DEVIATION_OVER_5PCT: "ต่าง
   NEEDS_BASELINE: "รอยืนยันราคาฐาน", NO_ASSOC_PRICE: "อ่านราคาสมาคมค้าทองคำไม่ได้", SOURCE_MISMATCH: "ราคาสมาคมฯ ต่างจากราคาโลกเกิน 3%" };
 
 export default async function SystemPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const tab = (await searchParams).tab === "opening" ? "opening" : "fx";
+  // Opening Setup แยกเป็นแท็บของ Settings แล้ว (ลิงก์เดิม ?tab=opening ยังใช้ได้)
+  if ((await searchParams).tab === "opening") redirect("/settings/opening");
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
-  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { count: autoHold }, { count: autoGold }, { data: lastPrice }, { data: lastRefresh }] = await Promise.all([
+  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { data: autoHolds }, { data: autoGolds }, { data: lastPrice }, { data: lastRefresh }] = await Promise.all([
     supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since").maybeSingle(),
     supabase.from("v_fx_status").select("currency,latest_rate_date,rate_to_thb,source,is_override,age_days,is_stale").order("currency"),
     isAdmin
       ? supabase.from("system_job_runs").select("id,job_type,started_at,result,details").order("started_at", { ascending: false }).limit(10)
       : Promise.resolve({ data: [] as { id: number; job_type: string; started_at: string; result: string; details: unknown }[] }),
+    // อัตราย้อนหลัง ~3 สัปดาห์ (แสดงเมื่อกดขยายแถวของสกุลนั้น)
     supabase.from("fx_rates").select("rate_date,currency,rate_to_thb,source,override_reason").is("deleted_at", null)
-      .in("currency", ["USD", "EUR", "GBP", "JPY", "SGD", "CNY"]).order("rate_date", { ascending: false }).limit(18),
-    supabase.from("investment_holdings").select("id", { count: "exact", head: true }).eq("auto_price", true).eq("status", "ACTIVE").is("deleted_at", null),
-    supabase.from("alternative_asset_details").select("id", { count: "exact", head: true }).eq("auto_price", true).is("deleted_at", null),
+      .gte("rate_date", addDays(todayBangkok(), -21)).order("rate_date", { ascending: false }).limit(500),
+    supabase.from("investment_holdings").select("id,name,symbol,holding_type,currency,price_pending,investment_portfolios(asset_id)")
+      .eq("auto_price", true).eq("status", "ACTIVE").is("deleted_at", null).order("name"),
+    supabase.from("alternative_asset_details").select("asset_id,price_pending,assets!inner(name,status,deleted_at)")
+      .eq("auto_price", true).is("deleted_at", null).eq("assets.status", "ACTIVE").is("assets.deleted_at", null),
     supabase.from("investment_valuations").select("valuation_date").eq("source", "MARKET").is("deleted_at", null).order("valuation_date", { ascending: false }).limit(1),
     // ปุ่มอัปเดตอัตรา: ครั้งล่าสุด + วันหมดอายุของ GitHub token (เตือนก่อน 30 วัน)
     isAdmin
@@ -43,19 +46,93 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
 
   const fxSource = family?.fx_source === "BBL" ? "BBL" : "BOT";
 
+  // ราคาอัตโนมัติ: ราคาล่าสุดของแต่ละรายการ + ย้อนหลัง ~45 วัน (กดขยาย)
+  const since = addDays(todayBangkok(), -45);
+  const holdIds = (autoHolds ?? []).map((h) => h.id);
+  const goldIds = (autoGolds ?? []).map((g) => g.asset_id);
+  const [{ data: hv }, { data: gv }] = await Promise.all([
+    holdIds.length
+      ? supabase.from("investment_valuations").select("holding_id,valuation_date,price,source").in("holding_id", holdIds).is("deleted_at", null)
+          .gte("valuation_date", since).order("valuation_date", { ascending: false }).limit(2000)
+      : Promise.resolve({ data: [] as { holding_id: string; valuation_date: string; price: number | null; source: string }[] }),
+    goldIds.length
+      ? supabase.from("asset_valuations").select("asset_id,valuation_date,value,source,notes").in("asset_id", goldIds).is("deleted_at", null)
+          .gte("valuation_date", since).order("valuation_date", { ascending: false }).limit(2000)
+      : Promise.resolve({ data: [] as { asset_id: string; valuation_date: string; value: number; source: string; notes: string | null }[] }),
+  ]);
+  const VAL_SOURCE: Record<string, string> = { MARKET: "อัตโนมัติ", STATEMENT: "Statement", USER: "ผู้ใช้", APPRAISAL: "ประเมิน", OPENING: "ยอดตั้งต้น" };
+  const today = todayBangkok();
+  const status = (date: string | undefined, pending: unknown) => pending
+    ? <span className="text-amber-700">รอยืนยันราคา</span>
+    : !date ? <span className="text-red-600">ยังไม่มีราคา</span>
+    : date < addDays(today, -5) ? <span className="text-amber-700">เก่ากว่า 5 วัน</span>
+    : <span className="text-emerald-700">ปกติ</span>;
+  // ทองคำ: ราคารับซื้อต่อบาททองคำอยู่ในหมายเหตุของราคาอัตโนมัติ (ถ้าไม่มี แสดงมูลค่ารวม)
+  const goldPrice = (v: { value: number; notes: string | null }) => {
+    const m = v.notes?.match(/รับซื้อ ([\d,.]+)\/บาททองคำ/);
+    return m ? `${money(Number(m[1].replace(/,/g, "")), "THB", 0)} / บาททองคำ` : `มูลค่า ${money(v.value, "THB", 0)}`;
+  };
+  const priceRows: ExpandRow[] = [
+    ...(autoHolds ?? []).map((h) => {
+      const vs = (hv ?? []).filter((v) => v.holding_id === h.id && v.price != null);
+      const pf = (h.investment_portfolios as unknown as { asset_id: string } | null)?.asset_id;
+      const last = vs[0];
+      return {
+        key: `H:${h.id}`,
+        cells: [
+          pf ? <Link href={`/investments/${pf}/holding/${h.id}`} className="hover:underline">{h.symbol || h.name}</Link> : h.symbol || h.name,
+          HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type,
+          last ? `${money(Number(last.price), h.currency, 4)}` : "-",
+          last ? thDate(last.valuation_date) : "-",
+          last ? VAL_SOURCE[last.source] ?? last.source : "-",
+          status(last?.valuation_date, h.price_pending),
+        ],
+        history: vs.slice(1, 11).map((v) => [thDate(v.valuation_date), money(Number(v.price), h.currency, 4), VAL_SOURCE[v.source] ?? v.source]),
+      };
+    }),
+    ...(autoGolds ?? []).map((g) => {
+      const vs = (gv ?? []).filter((v) => v.asset_id === g.asset_id && v.source !== "ACCOUNT_SETUP");
+      const last = vs[0];
+      const name = (g.assets as unknown as { name: string } | null)?.name ?? "ทองคำ";
+      return {
+        key: `G:${g.asset_id}`,
+        cells: [
+          <Link key="n" href={`/alternative/${g.asset_id}`} className="hover:underline">{name}</Link>,
+          "ทองคำ",
+          last ? goldPrice(last) : "-",
+          last ? thDate(last.valuation_date) : "-",
+          last ? VAL_SOURCE[last.source] ?? last.source : "-",
+          status(last?.valuation_date, g.price_pending),
+        ],
+        history: vs.slice(1, 11).map((v) => [thDate(v.valuation_date), goldPrice(v), VAL_SOURCE[v.source] ?? v.source]),
+      };
+    }),
+  ];
+
+  // อัตราแลกเปลี่ยน: แถวละสกุล (วันที่ล่าสุด) · ขยายดู 10 วันก่อนหน้า
+  const fxLabel = (r: { source: string; override_reason: string | null }) =>
+    r.source === "ADMIN_OVERRIDE" ? `Override: ${r.override_reason}` : FX_SOURCE_LABEL[r.source] ?? r.source;
+  const fxRows: ExpandRow[] = (fx ?? []).map((r) => ({
+    key: r.currency,
+    cells: [
+      <span key="c" className="font-medium">{r.currency}</span>,
+      r.rate_to_thb ?? "-",
+      thDate(r.latest_rate_date),
+      r.source ? FX_SOURCE_LABEL[r.source] ?? r.source : "-",
+      r.is_stale ? <span className="text-red-600">ไม่มี / เก่าเกิน 5 วัน</span> : <span className="text-emerald-700">ปกติ</span>,
+    ],
+    history: (recent ?? []).filter((x) => x.currency === r.currency && x.rate_date !== r.latest_rate_date).slice(0, 10)
+      .map((x) => [thDate(x.rate_date), String(x.rate_to_thb), fxLabel(x)]),
+  }));
+
   return (
-    <TabsProvider initial={tab} defaultKey="fx">
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">System</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">FX &amp; Prices</h1>
         <p className="text-sm text-slate-500">
           สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}
         </p>
       </div>
-      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
-
-      <TabPanel id="fx" className="space-y-6">
-
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -80,49 +157,15 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
         {(fx ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">ยังไม่มีทรัพย์สินที่เป็นเงินต่างประเทศ</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500">
-              <tr><th className="py-1">สกุล</th><th>Rate ล่าสุด</th><th>วันที่</th><th>ที่มา</th><th>สถานะ</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(fx ?? []).map((r) => (
-                <tr key={r.currency}>
-                  <td className="py-1.5 font-medium">{r.currency}</td>
-                  <td className="tabular-nums">{r.rate_to_thb ?? "-"}</td>
-                  <td>{thDate(r.latest_rate_date)}</td>
-                  <td>{r.source ? FX_SOURCE_LABEL[r.source] ?? r.source : "-"}</td>
-                  <td>{r.is_stale
-                    ? <span className="text-red-600">ไม่มี / เก่าเกิน 5 วัน</span>
-                    : <span className="text-emerald-700">ปกติ</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">Rate ล่าสุดที่บันทึก (สกุลหลัก)</h2>
-        {(recent ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล — รอ FX Job รอบแรก</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>สกุล</th><th>1 หน่วย = บาท</th><th>ที่มา</th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {(recent ?? []).map((r) => (
-                <tr key={`${r.rate_date}-${r.currency}`}>
-                  <td className="py-1.5">{thDate(r.rate_date)}</td><td>{r.currency}</td>
-                  <td className="tabular-nums">{r.rate_to_thb}</td>
-                  <td className="text-slate-500">{r.source === "ADMIN_OVERRIDE" ? `Override: ${r.override_reason}` : FX_SOURCE_LABEL[r.source] ?? r.source}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ExpandRows head={["สกุล", "Rate ล่าสุด", "วันที่", "ที่มา", "สถานะ"]} historyHead={["วันที่", "1 หน่วย = บาท", "ที่มา"]}
+            rows={fxRows} alignRight={[1]} />
         )}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">ราคาอัตโนมัติ</h2>
         <p className="mt-1 text-sm text-slate-700">
-          เปิดอยู่: หลักทรัพย์ {autoHold ?? 0} ตัว · ทองคำ {autoGold ?? 0} รายการ
+          เปิดอยู่: หลักทรัพย์ {autoHolds?.length ?? 0} ตัว · ทองคำ {autoGolds?.length ?? 0} รายการ
           {lastPrice?.[0]?.valuation_date && <span className="text-slate-500"> · ราคาล่าสุด {thDate(lastPrice[0].valuation_date)}</span>}
         </p>
         <p className="mt-1 text-xs text-slate-500">
@@ -130,6 +173,12 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
           ทองคำประมาณจากราคาตลาดโลก × อัตราแลกเปลี่ยน · เปิดทีละรายการที่หน้าหลักทรัพย์ / หน้าทองคำ → แก้ไขข้อมูล ·
           ราคาครั้งแรก (หรือเว้นไปเกิน 30 วัน) และราคาที่ต่างจากราคาครั้งก่อนเกิน 20% ยังไม่บันทึก — รอ ADMIN / EDITOR กดยืนยันที่หน้ารายการ (แจ้งในหน้าแรก) · ไม่ทับราคาจาก Statement
         </p>
+        {priceRows.length > 0 && (
+          <div className="mt-3 overflow-x-auto">
+            <ExpandRows head={["รายการ", "ประเภท", "ราคาล่าสุด", "วันที่", "ที่มา", "สถานะ"]} historyHead={["วันที่", "ราคา", "ที่มา"]}
+              rows={priceRows} alignRight={[2]} />
+          </div>
+        )}
       </section>
 
       {isAdmin && (
@@ -163,12 +212,6 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
             )}
           </section>
       )}
-      </TabPanel>
-
-      <TabPanel id="opening" className="space-y-6">
-        <OpeningSetup />
-      </TabPanel>
     </div>
-    </TabsProvider>
   );
 }

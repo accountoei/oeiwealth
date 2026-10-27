@@ -20,7 +20,7 @@ export async function undoWhole(_: UndoState, form: FormData): Promise<UndoState
   const { error } = await rpc;
   if (error) return { error: friendlyError(error.message) };
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));
-  ["/", "/income-expenses", "/financial/cash", "/liabilities", "/month-closing", "/alternative"].forEach((p) => revalidatePath(p));
+  ["/", "/income-expenses", "/financial/cash", "/liabilities", "/settings/month-closing", "/alternative"].forEach((p) => revalidatePath(p));
   revalidatePath("/financial/cash", "layout");
   return { ok: "ยกเลิกแล้ว" };
 }

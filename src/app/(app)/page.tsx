@@ -308,11 +308,11 @@ async function AttentionBody({ family, isSetup, today }: { family: Family | null
   const attention: { text: string; href: string; tone: "red" | "amber" | "slate" }[] = [];
   if (isSetup) {
     const missing = (readiness ?? []).filter((r: { status: string }) => r.status === "MISSING").length;
-    attention.push({ text: `ระบบยังอยู่ช่วงตั้งค่า · ยังขาดยอดตั้งต้น ${missing} รายการ ก่อน Confirm Go-live`, href: "/settings/system?tab=opening", tone: "amber" });
+    attention.push({ text: `ระบบยังอยู่ช่วงตั้งค่า · ยังขาดยอดตั้งต้น ${missing} รายการ ก่อน Confirm Go-live`, href: "/settings/opening", tone: "amber" });
   } else if (family) {
     const lastFinal = finals.length ? finals[finals.length - 1].month.slice(0, 7) : null;
     const toClose = lastFinal ? monthRange(lastFinal).next : family.go_live_date.slice(0, 7);
-    if (monthRange(toClose).end < today) attention.push({ text: `ปิดเดือน ${thMonth(`${toClose}-01`)}`, href: `/month-closing?m=${toClose}`, tone: "red" });
+    if (monthRange(toClose).end < today) attention.push({ text: `ปิดเดือน ${thMonth(`${toClose}-01`)}`, href: `/settings/month-closing?m=${toClose}`, tone: "red" });
   }
   const accName = new Map((bankAcc ?? []).map((b) => [b.asset_id as string, b]));
   ((bankBal as { asset_id: string; calculated: number | null }[] | null) ?? [])

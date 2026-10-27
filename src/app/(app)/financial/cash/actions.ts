@@ -82,7 +82,7 @@ export async function updateBalance(_: ActionState, form: FormData): Promise<Act
   revalidatePath(`/financial/cash/${assetId}`);
   revalidatePath("/financial/cash");
   revalidatePath("/income-expenses");
-  revalidatePath("/month-closing");
+  revalidatePath("/settings/month-closing");
   const r = data as { difference: number | null; lump: number | null; history_only?: boolean; merged?: boolean } | null;
   const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const base = "บันทึกยอดคงเหลือแล้ว";
@@ -106,7 +106,7 @@ export async function settleLatest(_: ActionState, form: FormData): Promise<Acti
   revalidatePath(`/financial/cash/${assetId}`);
   revalidatePath("/financial/cash");
   revalidatePath("/income-expenses");
-  revalidatePath("/month-closing");
+  revalidatePath("/settings/month-closing");
   const v = Number((data as { lump?: number } | null)?.lump ?? 0);
   const f = Math.abs(v).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return { ok: v < -0.005 ? `ลงค่าใช้จ่ายก้อนรอแยกรายละเอียด ${f} แล้ว` : v > 0.005 ? `ลงรายได้ก้อนรอแยกรายละเอียด ${f} แล้ว` : "ยอดตรงแล้ว ไม่มีก้อน" };
@@ -147,7 +147,7 @@ export async function batchUpdate(_: BatchState, form: FormData): Promise<BatchS
   if (error) return { error: notSaved("ทุกบัญชี", friendlyError(error.message)) };
   revalidatePath("/financial/cash", "layout");
   revalidatePath("/income-expenses");
-  revalidatePath("/month-closing");
+  revalidatePath("/settings/month-closing");
   const results = ((data as { asset_id: string; lump: number | string | null; history_only?: boolean }[] | null) ?? [])
     .map((r) => ({ asset_id: r.asset_id, lump: r.lump == null ? null : Number(r.lump), history_only: r.history_only }));
   return { ok: `บันทึกยอดแล้ว ${results.length} บัญชี`, results };
