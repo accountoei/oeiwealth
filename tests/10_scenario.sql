@@ -3057,6 +3057,61 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.month_closing_checks('2026-09-01') 
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz13. กล่องเปลี่ยนเพราะอะไร: กำไร / ขาดทุนเงินลงทุน แยกจาก มูลค่าเปลี่ยน / อื่น ๆ (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+CREATE FUNCTION t.ig(p_person uuid DEFAULT NULL) RETURNS numeric LANGUAGE sql AS
+  $$ SELECT coalesce((SELECT (e->>'gain')::numeric FROM jsonb_array_elements(public.month_investment_gain(date_trunc('month', current_date)::date, p_person)->'by_portfolio') e
+                       WHERE e->>'asset_id' = t.a('พอร์ตทดสอบกำไร')::text), 0) $$;
+GRANT EXECUTE ON FUNCTION t.ig(uuid) TO authenticated;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_refresh_month_auto() >= 1 AS refreshed;   -- ยอดสิ้นเดือน ก.ย. อัตโนมัติ = ฐานเทียบของเดือนนี้
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตทดสอบกำไร', 'THB' FROM public.families;
+INSERT INTO public.investment_portfolios(asset_id, institution) VALUES (t.a('พอร์ตทดสอบกำไร'), 'ทดสอบ');
+INSERT INTO public.asset_ownerships(asset_id, person_id, ownership_percent, start_date) VALUES (t.a('พอร์ตทดสอบกำไร'), t.p('คุณพ่อ'), 100, '2020-01-01');
+SELECT public.add_holding(t.a('พอร์ตทดสอบกำไร'), 'CASH', 'เงินฝากพอร์ตทดสอบกำไร', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS g_cash;
+SELECT public.add_holding(t.a('พอร์ตทดสอบกำไร'), 'FUND', 'กองทุนทดสอบกำไร', 'TG-1', 'THB', NULL, NULL, NULL) IS NOT NULL AS g_fund;
+SELECT t.ok(t.ig() = 0, 'กำไรเงินลงทุน: พอร์ตใหม่ยังไม่มีรายการ = 0');
+SELECT public.transfer_portfolio_money(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('direction','IN','bank_asset_id',t.a('KBank ออมทรัพย์'),
+  'cash_holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'),'date',current_date,'amount','10000','counter_amount','10000')) IS NOT NULL AS g_in;
+SELECT t.ok(t.ig() = 0, 'กำไรเงินลงทุน: โอนเงินธนาคาร → พอร์ต ไม่ใช่กำไร');
+SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
+  'quantity',100,'price',50,'cash_holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'))) IS NOT NULL AS g_buy;
+SELECT t.ok(t.ig() = 0, 'กำไรเงินลงทุน: ซื้อกองทุนด้วยเงินในพอร์ต (ยังใช้ราคาทุน) = 0');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value)
+  VALUES (t.h('กองทุนทดสอบกำไร'), current_date, 60, 100, 6000);
+SELECT t.ok(t.ig() = 1000, 'กำไรเงินลงทุน: ราคา 50 → 60 × 100 หน่วย = +1,000');
+SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','DIVIDEND','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
+  'amount',200,'tax',20,'cash_holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'))) IS NOT NULL AS g_div;
+SELECT t.ok(t.ig() = 1000, 'กำไรเงินลงทุน: ปันผลเข้าพอร์ต นับใน "รายได้ลงทุน" แล้ว ไม่นับซ้ำ');
+SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','SELL','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
+  'quantity',50,'price',55,'cash_holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'))) IS NOT NULL AS g_sell;
+SELECT t.ok(t.ig() = 750, 'กำไรเงินลงทุน: ขาย 50 หน่วยที่ 55 (ราคาล่าสุด 60) → ขาดทุนจากราคาล่าสุด −250');
+SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','FEE','date',current_date,'amount',30,
+  'holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'))) IS NOT NULL AS g_fee;
+SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: ค่าธรรมเนียมในพอร์ต −30 ลดกำไร');
+SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
+  'quantity',10,'price',60,'settle_bank_asset_id',t.a('KBank ออมทรัพย์'))) IS NOT NULL AS g_buy_bank;
+SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','SELL','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
+  'quantity',10,'price',60,'settle_bank_asset_id',t.a('KBank ออมทรัพย์'))) IS NOT NULL AS g_sell_bank;
+SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: ซื้อ / ขายที่ตัดจาก / เข้าบัญชีธนาคาร ที่ราคาล่าสุด ไม่เปลี่ยนกำไร');
+SELECT public.transfer_portfolio_money(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('direction','OUT','bank_asset_id',t.a('KBank ออมทรัพย์'),
+  'cash_holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'),'date',current_date,'amount','1000','counter_amount','1000')) IS NOT NULL AS g_out;
+SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: โอนเงินพอร์ต → ธนาคาร ไม่ใช่ขาดทุน');
+SELECT t.ok(t.ig(t.p('คุณพ่อ')) = 720 AND t.ig(t.p('คุณแม่')) = 0, 'กำไรเงินลงทุน รายคน: ตามสัดส่วนเจ้าของ (คุณพ่อ 100%)');
+SELECT t.ok((SELECT (j->>'gain')::numeric = (SELECT sum((e->>'gain')::numeric) FROM jsonb_array_elements(j->'by_portfolio') e)
+               FROM (SELECT public.month_investment_gain(date_trunc('month', current_date)::date) AS j) x),
+            'กำไรเงินลงทุน: ยอดรวม = ผลรวมรายพอร์ต');
+SELECT t.ok((SELECT (j->>'fx')::numeric <> 0 FROM (SELECT public.month_investment_gain('2026-08-01') AS j) x),
+            'กำไรเงินลงทุน: พอร์ต USD มีส่วนจาก FX เมื่ออัตราเปลี่ยน');
+SELECT t.ok((SELECT j IS NULL FROM (SELECT public.month_investment_gain('2026-05-01') AS j) x), 'กำไรเงินลงทุน: เดือนก่อน Go-live ไม่มีฐานเทียบ = NULL');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: VIEWER ดูได้');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.month_investment_gain(date, uuid)', 'EXECUTE'), 'กำไรเงินลงทุน: anon เรียกไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

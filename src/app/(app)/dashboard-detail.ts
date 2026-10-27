@@ -7,6 +7,7 @@ import { INCOME_TYPE_LABEL, monthRange, todayBangkok } from "@/lib/format";
 // รายละเอียดของกล่องบน Dashboard (โหลดตอนกดเปิด pop up เท่านั้น → หน้า Dashboard ไม่ช้าลง)
 //   flows  = รายได้ตามประเภท · ค่าใช้จ่ายตามหมวด · รายได้ลงทุนตามพอร์ต · 10 รายการค่าใช้จ่ายสูงสุด
 //   groups = มูลค่าตามหมวดสินทรัพย์ / หนี้สิน ต้นงวด → สิ้นงวด
+//   gain   = กำไร / ขาดทุนเงินลงทุนตามพอร์ต
 //   รายคน (personId) = ส่วนแบ่งของคนนั้น (กติกาเดียวกับ v_income_by_person / v_expense_by_person และ Dashboard รายคน)
 
 export type Row = { key: string; label: string; value: number; count?: number };
@@ -17,6 +18,11 @@ export type MonthFlows = {
   topExpenses: { date: string; label: string; category: string; value: number }[];
 };
 export type GroupChange = { key: string; label: string; start: number; end: number };
+/** กำไร / ขาดทุนเงินลงทุนของเดือน (public.month_investment_gain) · flows = เงินเข้า (+) / ออก (−) พอร์ตที่ไม่ใช่ผลการลงทุน */
+export type InvestmentGain = {
+  prev_date: string; as_of: string; gain: number; fx: number;
+  by_portfolio: { asset_id: string; name: string; start: number; end: number; flows: number; gain: number; fx: number }[];
+};
 
 const GROUPS: [string, string][] = [["FINANCIAL", "เงินฝาก / เงินสด"], ["LOANS", "เงินให้กู้"], ["INVESTMENT", "การลงทุน"], ["BUSINESS", "ธุรกิจ"],
   ["PROPERTY", "อสังหาริมทรัพย์"], ["ALTERNATIVE", "สินทรัพย์อื่น"], ["INSURANCE", "ประกัน (มูลค่าเวนคืน)"]];
@@ -121,4 +127,12 @@ export async function loadGroupChanges(start: string, personId: string): Promise
   return [...GROUPS, ["LIABILITY", "หนี้สิน"] as [string, string]]
     .map(([key, label]) => ({ key, label, start: s.get(key) ?? 0, end: e.get(key) ?? 0 }))
     .filter((r) => r.start !== 0 || r.end !== 0);
+}
+
+export async function loadInvestmentGain(start: string, personId: string): Promise<InvestmentGain | null | { error: string }> {
+  await requireAppUser();
+  if (!ymd(start)) return { error: "เดือนไม่ถูกต้อง" };
+  const { data, error } = await (await createClient()).rpc("month_investment_gain", { p_month: start, p_person: personId || null });
+  if (error) return { error: error.message };
+  return (data ?? null) as InvestmentGain | null;
 }

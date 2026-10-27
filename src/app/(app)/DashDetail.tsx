@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
 import { money } from "@/lib/format";
-import { loadGroupChanges, loadMonthFlows, type GroupChange, type MonthFlows, type Row } from "./dashboard-detail";
+import { loadGroupChanges, loadInvestmentGain, loadMonthFlows, type GroupChange, type InvestmentGain, type MonthFlows, type Row } from "./dashboard-detail";
 
 /** กล่องบน Dashboard ที่กดได้ → pop up รายละเอียด (โหลดตอนกด) */
 export function DetailBox({ title, hint, children, popupTitle, start, personId, ym, bridge }: {
@@ -84,7 +84,8 @@ function RowsTable({ title, rows, total, totalLabel = "รวม", empty, negati
 function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId: string; ym: string; bridge?: ReactNode }) {
   const { data: f, err: e1 } = useLoad<MonthFlows>(() => loadMonthFlows(start, personId));
   const { data: g, err: e2 } = useLoad<GroupChange[]>(() => loadGroupChanges(start, personId));
-  const err = e1 || e2;
+  const { data: ig, err: e3 } = useLoad<InvestmentGain | null>(() => loadInvestmentGain(start, personId));
+  const err = e1 || e2 || e3;
   const gs = g ?? [];
   const nw = (k: "start" | "end") => gs.reduce((t, r) => t + (r.key === "LIABILITY" ? -r[k] : r[k]), 0);
   return (
@@ -123,6 +124,7 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
               หนี้สินเพิ่ม = ความมั่งคั่งลด
             </p>
           </section>
+          {ig && ig.by_portfolio.length > 0 && <GainTable ig={ig} />}
           <div className="grid gap-5 md:grid-cols-2">
             <div className="space-y-5">
               <RowsTable title="+ รายได้สุทธิ (หลังภาษี) ตามประเภท" rows={f.income} total={f.incomeTotal} empty="ไม่มีรายได้" />
@@ -148,7 +150,7 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
             </section>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-            <p className="text-xs text-slate-500">{personId ? "ส่วนของสมาชิกที่เลือก (ตามสัดส่วน) · " : ""}&ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ราคา · อัตราแลกเปลี่ยน · ประเมินใหม่ · ยอดหนี้ · รายการที่ไม่ได้บันทึก</p>
+            <p className="text-xs text-slate-500">{personId ? "ส่วนของสมาชิกที่เลือก (ตามสัดส่วน) · " : ""}&ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ประเมินใหม่ (อสังหาฯ / ธุรกิจ / ทอง) · อัตราแลกเปลี่ยนนอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก</p>
             <div className="flex flex-wrap items-center gap-3">
               <Link href={`/settings/month-closing?m=${ym}`} className="text-sm text-blue-700 hover:underline">เปิดหน้า Month Closing ›</Link>
               <Link href={`/income-expenses?m=${ym}${personId ? `&p=${personId}` : ""}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
@@ -158,5 +160,48 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
         </>
       )}
     </div>
+  );
+}
+
+/** กำไร / ขาดทุนเงินลงทุนตามพอร์ต: สิ้นงวด − ต้นงวด − เงินเข้า / ออก (โอน · ซื้อขายผ่านบัญชีธนาคาร · ปันผลที่เข้าพอร์ต · จ่ายออก) */
+function GainTable({ ig }: { ig: InvestmentGain }) {
+  const rows = ig.by_portfolio;
+  return (
+    <section>
+      <h3 className="mb-1 text-sm font-medium text-slate-800">± กำไร / ขาดทุนเงินลงทุน ตามพอร์ต</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-slate-500">
+            <tr><th className="py-1">พอร์ต</th><th className="text-right">ต้นงวด</th><th className="text-right">เงินเข้า / ออก</th>
+              <th className="text-right">สิ้นงวด</th><th className="text-right">กำไร / ขาดทุน</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r) => (
+              <tr key={r.asset_id} className="align-top">
+                <td className="py-1.5 pr-2"><Link href={`/investments/${r.asset_id}`} className="hover:underline">{r.name}</Link></td>
+                <td className="text-right tabular-nums">{money(r.start, undefined, 0)}</td>
+                <td className="text-right tabular-nums text-slate-500">{r.flows ? `${r.flows > 0 ? "+" : ""}${money(r.flows, undefined, 0)}` : "-"}</td>
+                <td className="text-right tabular-nums">{money(r.end, undefined, 0)}</td>
+                <td className={`text-right tabular-nums ${sign(r.gain)}`}>
+                  {r.gain > 0 ? "+" : ""}{money(r.gain, undefined, 0)}
+                  {r.fx !== 0 && <div className="text-xs text-slate-500">จาก FX {r.fx > 0 ? "+" : ""}{money(r.fx, undefined, 0)}</div>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot className="border-t-2 border-slate-200 font-medium">
+              <tr><td className="py-1.5" colSpan={4}>รวม</td>
+                <td className={`text-right tabular-nums ${sign(ig.gain)}`}>{ig.gain > 0 ? "+" : ""}{money(ig.gain, undefined, 0)}</td></tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        กำไร / ขาดทุน = สิ้นงวด − ต้นงวด − เงินเข้า / ออก · รวมราคาเปลี่ยน · ขายต่างจากราคาล่าสุด · ค่าธรรมเนียม / ภาษีในพอร์ต · อัตราแลกเปลี่ยนของพอร์ต ·
+        &ldquo;เงินเข้า / ออก&rdquo; = โอนกับธนาคาร · ซื้อขายผ่านบัญชีธนาคาร · ปันผล / ดอกเบี้ยที่เข้าพอร์ต (อยู่ในรายได้ลงทุนแล้ว) · จ่ายค่าใช้จ่าย / บัตรจากพอร์ต ·
+        &ldquo;จาก FX&rdquo; เป็นยอดประมาณ (มูลค่าต้นงวด × อัตราที่เปลี่ยน)
+      </p>
+    </section>
   );
 }
