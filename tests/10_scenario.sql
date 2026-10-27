@@ -3112,6 +3112,85 @@ SELECT t.ok(NOT has_function_privilege('anon', 'public.month_investment_gain(dat
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz14. บันทึกทั้งชุด: จ่ายเบี้ยประกัน · รับผลประโยชน์ · จ่ายเงินกู้ / บัตร (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE tib(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tib TO authenticated;
+INSERT INTO tib SELECT 'pol', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ประกันทดสอบชุด', 'currency', 'THB', 'premium', 12000));
+SELECT public.set_insurance_schedule((SELECT id FROM tib WHERE k = 'pol'), 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', current_date - 40, 'amount', 6000), jsonb_build_object('due_date', current_date - 5, 'amount', 6000)));
+SELECT public.set_insurance_schedule((SELECT id FROM tib WHERE k = 'pol'), 'BENEFIT', jsonb_build_array(
+  jsonb_build_object('due_date', current_date - 1, 'amount', 2500, 'benefit_type', 'CASH_BACK')));
+CREATE OR REPLACE FUNCTION pg_temp.ln(p_kind text, p_no int) RETURNS uuid LANGUAGE sql AS $f$
+  SELECT id FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM tib WHERE k = 'pol') AND kind = p_kind
+     AND installment_no = p_no AND deleted_at IS NULL $f$;
+-- แถวที่ 2 ไม่ได้เลือกบัญชี → ไม่บันทึกทั้งชุด
+SELECT t.fails($$SELECT public.batch_pay_insurance_premiums(jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'), 'label', 'ประกันทดสอบชุด งวด 1', 'date', current_date,
+    'description', 'เบี้ย งวด 1', 'amount', 6000, 'currency', 'THB', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+    'insurance_schedule_line_id', pg_temp.ln('PREMIUM', 1)),
+  jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'), 'label', 'ประกันทดสอบชุด งวด 2', 'date', current_date,
+    'description', 'เบี้ย งวด 2', 'amount', 6000, 'currency', 'THB', 'insurance_schedule_line_id', pg_temp.ln('PREMIUM', 2))))$$,
+  'งวด 2 · กรุณาเลือกบัญชี', 'จ่ายเบี้ยทั้งชุด: แถวไม่มีบัญชี → แจ้งชื่อแถว');
+SELECT t.ok((SELECT count(*) = 0 FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.ln('PREMIUM', 1) AND deleted_at IS NULL),
+            'จ่ายเบี้ยทั้งชุด: ผิดแถวเดียว = ไม่บันทึกเลย');
+SELECT t.ok(public.batch_pay_insurance_premiums(jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'), 'label', 'งวด 1', 'date', current_date,
+    'description', 'เบี้ย งวด 1', 'amount', 6000, 'currency', 'THB', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+    'insurance_schedule_line_id', pg_temp.ln('PREMIUM', 1)),
+  jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'), 'label', 'งวด 2', 'date', current_date,
+    'description', 'เบี้ย งวด 2', 'amount', 6000, 'currency', 'THB', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+    'insurance_schedule_line_id', pg_temp.ln('PREMIUM', 2)))) = 2, 'จ่ายเบี้ยทั้งชุด: บันทึก 2 งวด');
+SELECT t.ok((SELECT count(*) = 2 FROM public.v_insurance_schedule_status WHERE policy_id = (SELECT id FROM tib WHERE k = 'pol') AND kind = 'PREMIUM' AND status = 'PAID')
+  AND (SELECT bool_and(expense_category = 'ประกัน') FROM public.expense_items
+        WHERE insurance_schedule_line_id IN (pg_temp.ln('PREMIUM', 1), pg_temp.ln('PREMIUM', 2)) AND deleted_at IS NULL),
+  'จ่ายเบี้ยทั้งชุด 2 งวด → ชำระแล้วทั้งคู่ · หมวด "ประกัน"');
+SELECT t.fails($$SELECT public.batch_pay_insurance_premiums(jsonb_build_array(jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'),
+  'label', 'ผิดชนิด', 'date', current_date, 'amount', 1, 'currency', 'THB', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurance_schedule_line_id', pg_temp.ln('BENEFIT', 1))))$$, 'ไม่พบงวดเบี้ย', 'จ่ายเบี้ยทั้งชุด: งวดผลประโยชน์ใช้แทนงวดเบี้ยไม่ได้');
+SELECT t.ok(public.batch_receive_insurance_benefits(jsonb_build_array(jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'),
+  'label', 'เงินคืน งวด 1', 'line_id', pg_temp.ln('BENEFIT', 1), 'date', current_date, 'amount', 2500, 'bank_asset_id', t.a('KBank ออมทรัพย์'),
+  'outcome', 'MATURED'))) = 1, 'รับผลประโยชน์ทั้งชุด: บันทึก 1 งวด');
+SELECT t.ok((SELECT status = 'PAID' FROM public.v_insurance_schedule_status WHERE id = pg_temp.ln('BENEFIT', 1))
+  AND (SELECT status = 'ACTIVE' FROM public.insurance_policies WHERE id = (SELECT id FROM tib WHERE k = 'pol')),
+  'รับผลประโยชน์ทั้งชุด → รับแล้ว · ไม่ปิดกรมธรรม์ (ปิดทำที่หน้ากรมธรรม์)');
+SELECT t.fails($$SELECT public.batch_receive_insurance_benefits(jsonb_build_array(jsonb_build_object('policy_id', (SELECT id FROM tib WHERE k = 'pol'),
+  'label', 'ไม่มีบัญชี', 'line_id', pg_temp.ln('BENEFIT', 1), 'date', current_date, 'amount', 1)))$$,
+  'ไม่มีบัญชี · กรุณาเลือกบัญชีที่รับเงิน', 'รับผลประโยชน์ทั้งชุด: ไม่มีบัญชี → แจ้งชื่อแถว');
+-- เงินกู้ + บัตร
+SELECT (SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') AS bdebt \gset
+SELECT (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'CARD_PAYMENT' AND deleted_at IS NULL) AS bcards \gset
+SELECT t.fails($$SELECT public.batch_pay_debts(jsonb_build_array(
+  jsonb_build_object('kind', 'CARD', 'label', 'บัตร 7788', 'card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '7788'),
+    'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'amount', 1000),
+  jsonb_build_object('kind', 'LOAN', 'label', 'สินเชื่อบ้าน', 'liability_id', (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน'),
+    'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 99000000)))$$,
+  'สินเชื่อบ้าน · เงินต้นที่จ่าย', 'จ่ายหนี้ทั้งชุด: เงินต้นเกินยอดหนี้ → แจ้งชื่อแถว');
+SELECT t.ok((SELECT count(*) FROM public.cash_movements WHERE movement_type = 'CARD_PAYMENT' AND deleted_at IS NULL) = :bcards,
+            'จ่ายหนี้ทั้งชุด: ผิดแถวเดียว = บัตรแถวแรกก็ไม่บันทึก');
+SELECT t.ok(public.batch_pay_debts(jsonb_build_array(
+  jsonb_build_object('kind', 'CARD', 'label', 'บัตร 7788', 'card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '7788'),
+    'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'amount', 1000),
+  jsonb_build_object('kind', 'LOAN', 'label', 'สินเชื่อบ้าน', 'liability_id', (SELECT id FROM public.liabilities WHERE name = 'สินเชื่อบ้าน'),
+    'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 5000, 'interest', 700))) = 2, 'จ่ายหนี้ทั้งชุด: บันทึก 2 รายการ');
+SELECT t.ok((SELECT outstanding_amount FROM public.liabilities WHERE name = 'สินเชื่อบ้าน') = :bdebt - 5000
+  AND (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'CARD_PAYMENT' AND deleted_at IS NULL) = :bcards + 1
+  AND EXISTS (SELECT 1 FROM public.expense_items WHERE expense_category = 'ดอกเบี้ยจ่าย' AND amount = 700 AND deleted_at IS NULL),
+  'จ่ายหนี้ทั้งชุด: บัตร 1,000 + เงินกู้ (เงินต้น 5,000 · ดอกเบี้ย 700) ในคำสั่งเดียว');
+SELECT t.fails($$SELECT public.batch_pay_debts('[{"kind":"X","label":"ผิด"}]')$$, 'ประเภทรายการไม่ถูกต้อง', 'จ่ายหนี้ทั้งชุด: ประเภทผิด');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.batch_pay_debts(jsonb_build_array(jsonb_build_object('kind', 'CARD', 'label', 'บัตร',
+  'card_id', (SELECT id FROM public.credit_cards WHERE card_last4 = '7788'), 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'amount', 1)))$$,
+  'PERMISSION_DENIED', 'จ่ายหนี้ทั้งชุด: VIEWER บันทึกไม่ได้');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.batch_pay_debts(jsonb)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'public.batch_pay_insurance_premiums(jsonb)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'public.batch_receive_insurance_benefits(jsonb)', 'EXECUTE'),
+            'บันทึกทั้งชุด: anon เรียกไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

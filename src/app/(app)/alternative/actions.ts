@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
 /** created = สร้างรายการแล้วแต่บันทึกเงินออกไม่สำเร็จ → ลิงก์ไปหน้ารายการ (ไม่ให้กดบันทึกซ้ำ) */
 export type ActionState = FormState & { id?: string; name?: string; unit?: string; created?: string };
@@ -90,4 +91,58 @@ export async function addGoldValuation(_: ActionState, form: FormData): Promise<
   revalidatePath("/alternative");
   revalidatePath(`/alternative/${id}`);
   return { ok: `บันทึกมูลค่า ${Number(data).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาทแล้ว` };
+}
+
+// ---------------------------------------------------------------- แท็บ "บันทึกรับผลตอบแทน/อัพเดตมูลค่า" (ตกลง 27 ต.ค. 2026)
+// บันทึกเป็น INSERT เดียวหลายแถว → ผิดแถวเดียว = ไม่บันทึกเลย
+
+/** รับผลตอบแทนหลายรายการ: รายได้ "อื่น ๆ" ผูกสินทรัพย์ (แบ่งตามเจ้าของ) · สกุล = สกุลของบัญชีที่รับ */
+export async function batchAltIncome(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<{ asset_id: string; label: string; amount: string; tax: string; bank_asset_id: string; notes: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่รับ" };
+  if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 รายการ" };
+  const banks = [...new Set(rows.map((r) => r.bank_asset_id).filter(Boolean))];
+  const { data: accs } = banks.length ? await supabase.from("assets").select("id,currency").in("id", banks) : { data: [] };
+  const ccy = new Map((accs ?? []).map((a) => [a.id as string, a.currency as string]));
+  const clean = rows.map((r) => ({ label: r.label, asset_id: r.asset_id, amount: amountOrNull(r.amount), tax: amountOrNull(r.tax),
+    received_to_asset_id: r.bank_asset_id || null, currency: ccy.get(r.bank_asset_id) ?? null, notes: r.notes?.trim() || null }));
+  for (const r of clean) {
+    if (!isPositive(r.amount)) return { error: `${r.label} · ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0` };
+    if (!isValidTax(r.tax) || (r.tax ?? 0) > r.amount) return { error: `${r.label} · ${TAX_ERROR} และไม่เกินยอดที่ได้รับ` };
+    if (!r.received_to_asset_id || !r.currency) return { error: `${r.label} · กรุณาเลือกบัญชีที่รับ` };
+  }
+  const { error } = await supabase.from("income_transactions").insert(clean.map(({ label, ...r }) => ({
+    ...r, income_type: "OTHER", date, notes: r.notes ? `ผลตอบแทน · ${label} · ${r.notes}` : `ผลตอบแทน · ${label}`,
+  })));
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  revalidatePath("/alternative", "layout");
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/");
+  return { ok: `บันทึกรับผลตอบแทนแล้ว ${clean.length} รายการ` };
+}
+
+/** มูลค่าใหม่หลายรายการ (วันที่ / วิธีประเมินเดียวทั้งชุด) */
+export async function batchAltValues(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const method = str(form.get("method")) ?? "USER_ESTIMATE";
+  if (!["USER_ESTIMATE", "APPRAISAL", "LATEST_TRANSACTION"].includes(method)) return { error: BAD_ROWS_ERROR };
+  const rows = readRows<{ asset_id: string; label: string; value: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่ประเมิน" };
+  if (!rows.length) return { error: "กรุณากรอกมูลค่าอย่างน้อย 1 รายการ" };
+  const clean = rows.map((r) => ({ label: r.label, asset_id: r.asset_id, value: Number(plainNumber(r.value)) }));
+  const bad = clean.find((r) => !plainNumber(String(r.value)) || Number.isNaN(r.value) || r.value < 0);
+  if (bad) return { error: `${bad.label} · มูลค่าต้องเป็นตัวเลข (ไม่ติดลบ)` };
+  const { error } = await supabase.from("asset_valuations").insert(clean.map((r) => ({
+    asset_id: r.asset_id, valuation_date: date, value: r.value, valuation_method: method, source: method === "APPRAISAL" ? "APPRAISAL" : "USER",
+  })));
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  revalidatePath("/alternative", "layout");
+  revalidatePath("/");
+  return { ok: `บันทึกมูลค่าแล้ว ${clean.length} รายการ` };
 }
