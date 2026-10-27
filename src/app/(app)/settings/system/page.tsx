@@ -146,7 +146,7 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
           {isAdmin && <ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /><OverrideForm today={todayBangkok()} /></ActionBar>}
         </div>
         <p className="mb-3 mt-1 text-xs text-slate-500">
-          ดึงอัตราทุกวัน 09:30 · 14:30 · 19:30 · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
+          ดึงอัตราทุกวันราว 09:15 · 14:15 · 19:15 (GitHub อาจเริ่มช้ากว่านี้ได้) · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
         </p>
         {isAdmin && lastRefresh?.[0] && (
           <p className={`mb-3 text-xs ${tokenDays != null && tokenDays <= 30 ? "text-amber-700" : "text-slate-500"}`}>
