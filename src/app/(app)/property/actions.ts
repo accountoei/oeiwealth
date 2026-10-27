@@ -4,10 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
 
-export type ActionState = FormState;
+/** created = สร้างรายการแล้วแต่บันทึกเงินออกไม่สำเร็จ → ลิงก์ไปหน้ารายการ (ไม่ให้กดบันทึกซ้ำ) */
+export type ActionState = FormState & { created?: string };
 
 /** อ่านช่องสัญญาเช่า (prefix lease_) → jsonb สำหรับ create_lease */
 function leaseFromForm(form: FormData) {
@@ -37,6 +39,8 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
   if (value === null || Number.isNaN(value) || value < 0) return { error: "กรุณาใส่มูลค่าเป็นตัวเลข" };
   const usage = str(form.get("usage_type")) ?? "OWNER_OCCUPIED";
   const lease = usage === "RENTAL" ? leaseFromForm(form) : null;
+  const pay = payFromForm(form);
+  if (pay && "error" in pay) return { error: pay.error };
   const { data, error } = await supabase.rpc("create_property", {
     p_name: str(form.get("name")),
     p_property_type: str(form.get("property_type")) ?? "HOUSE",
@@ -60,6 +64,11 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
   });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty();
+  if (pay) {
+    const e2 = await recordAssetPurchase(supabase, String(data), pay);
+    revalidatePath("/financial/cash", "layout");
+    if (e2) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกเงินออกจากบัญชีไม่สำเร็จ (${e2}) — เปิดหน้าทรัพย์สินแล้วใช้ปุ่ม "+ จ่ายซื้อ / จ่ายเพิ่ม"`, created: `/property/${data}` };
+  }
   redirect(`/property/${data}`);
 }
 

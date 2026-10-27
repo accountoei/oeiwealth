@@ -13,8 +13,10 @@ const label = "block text-sm text-slate-700";
 export default function NewAlternativeForm(props: {
   persons: { id: string; name: string }[]; categories: { id: string; name: string; code: string; unit: string | null }[];
   goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean;
+  banks: { asset_id: string; name: string; currency: string }[];
 }) {
-  const { persons, categories, goLive, openingDate, today, isSetup, isAdmin } = props;
+  const { persons, categories, goLive, openingDate, today, isSetup, isAdmin, banks } = props;
+  const [currency, setCurrency] = useState("THB");
   const [state, action, pending] = useActionState<ActionState, FormData>(createAlternative, {});
   const [cs, catAction, adding] = useActionState<ActionState, FormData>(addCategory, {});
   const [opening, setOpening] = useState(isSetup);
@@ -84,6 +86,15 @@ export default function NewAlternativeForm(props: {
           <label className={`${label} md:col-span-2`}>รายละเอียด<input name="details" className={input} /></label>
           <label className={label}>วันที่ได้มา {!opening && "*"}<input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} className={input} /></label>
           <label className={label}>ราคาที่ซื้อ<input name="acquisition_cost" inputMode="decimal" className={input} /></label>
+          {!opening && (
+            <label className={`${label} md:col-span-2`}>จ่ายจากบัญชี
+              <select name="pay_bank_asset_id" defaultValue="" className={input}>
+                <option value="">— ไม่บันทึกเงินออก (ยังไม่จ่าย / จ่ายเป็นงวด) —</option>
+                {banks.filter((b) => b.currency === currency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+              </select>
+              <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ซื้อ ณ วันที่ได้มา (บัญชีสกุลเดียวกับสินทรัพย์) · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าสินทรัพย์</span>
+            </label>
+          )}
         </section>
 
         <OwnerShares persons={persons} title="เจ้าของ" />
@@ -103,7 +114,7 @@ export default function NewAlternativeForm(props: {
           <div className="grid gap-4 md:grid-cols-4">
             <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
             <label className={label}>สกุลเงิน
-              <CurrencySelect name="currency" defaultValue="THB" className={input} />
+              <CurrencySelect name="currency" value={currency} onChange={setCurrency} className={input} />
             </label>
             <label className={label}>ณ วันที่ *
               {opening ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
@@ -117,11 +128,10 @@ export default function NewAlternativeForm(props: {
             </label>
           </div>
           <label className={label}>หมายเหตุ {opening && !isSetup && "(เหตุผล · จำเป็น)"}<textarea name="notes" rows={2} required={opening && !isSetup} className={input} /></label>
-          {!opening && <p className="text-xs text-slate-500">ถ้าจ่ายเงินซื้อจากบัญชี ให้บันทึกรายการเงินออกจากบัญชีด้วย (เงินออกอื่น ๆ)</p>}
         </section>
-        {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+        {state.error && <p className="text-sm text-red-600">{state.error}{state.created && <> · <Link href={state.created} className="underline">เปิดหน้าสินทรัพย์</Link></>}</p>}
         <div className="flex gap-3">
-          <button disabled={pending} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+          <button disabled={pending || !!state.created} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
           <Link href="/alternative" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
         </div>
       </form>
