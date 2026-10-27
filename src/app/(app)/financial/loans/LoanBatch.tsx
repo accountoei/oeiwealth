@@ -25,7 +25,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * แท็บ "บันทึกรับชำระคืนเงินกู้" (ตกลง 27 ต.ค. 2026 · แบบเดียวกับแท็บบันทึกของเมนูอื่น)
  *   1 แถว = 1 สัญญา · ยอดรวมที่รับ → แบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น · แก้ 2 ช่องเองได้
  *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
- *   รับเงินต้นเกินที่ถึงกำหนด → หลังบันทึกมีลิงก์ไป "คำนวณงวดที่เหลือใหม่" ของสัญญานั้น
+ *   เงินต้นที่รับไม่เท่าที่ถึงกำหนด (เกิน / ขาด) → หลังบันทึกถาม: ตารางเดิม หรือ "คำนวณงวดที่เหลือใหม่" ของสัญญานั้น
  */
 export default function LoanBatch({ rows, others, banks, today, minDate, canWrite }: {
   rows: LoanRow[]; others: LoanRow[]; banks: BankOpt[]; today: string; minDate: string; canWrite: boolean;
@@ -70,7 +70,7 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
     `• ${r.name} ${fmt(total(r)) || "0.00"} (เงินต้น ${pr[r.id] || "0.00"} · ดอกเบี้ย ${int[r.id] || "0.00"}) เข้า ${bankName.get(bank[r.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    sent.current = chosen.map((r) => ({ id: r.id, name: r.name, extra: r2(n(pr[r.id]) - r.dueP) })).filter((x) => x.extra > 0.01);
+    sent.current = chosen.map((r) => ({ id: r.id, name: r.name, extra: r2(n(pr[r.id]) - r.dueP) })).filter((x) => Math.abs(x.extra) > 0.01);
     guard(e);
   };
 
@@ -82,7 +82,7 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
           <Link href={`/financial/loans/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
           <div className="text-xs text-slate-500">{r.borrower}</div>
         </td>
-        <td className="min-w-[17rem] px-3 py-2 text-xs">
+        <td className="min-w-[15rem] px-3 py-2 text-xs">
           {r.lines.length === 0 ? <span className="text-slate-400">ไม่มีงวดในเดือนนี้</span> : r.lines.map((x) => (
             <div key={x.no}>งวด {x.no} · {thDate(x.due)} · {money(x.total)}{" "}
               <span className={`whitespace-nowrap rounded px-1 ${x.statusCls}`}>{x.statusText}</span>
@@ -94,22 +94,30 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
         <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums">
           {r.dueP + r.dueI > 0.005 ? <>{money(r2(r.dueP + r.dueI), r.currency)}<div className="text-slate-500">ต้น {money(r.dueP)} · ดอก {money(r.dueI)}</div></> : <span className="text-slate-400">-</span>}
         </td>
-        {canWrite && (done ? <td colSpan={5} className="px-3 py-2 text-xs text-emerald-700">รับครบแล้ว ✓</td> : <>
-          <td className="whitespace-nowrap px-3 py-2 text-right">
-            {r.dueP + r.dueI > 0.005 && <button type="button" onClick={() => fill([r])} className="mr-2 text-xs text-blue-700 hover:underline">ตามงวด</button>}
-            <input inputMode="decimal" value={tot[r.id] ?? ""} onChange={(e) => split(r, e.target.value)} data-money="off" placeholder={r.currency}
-              aria-label={`ยอดรวมที่รับ ${r.name}`} className={`w-32 text-right ${small}`} />
+        {canWrite && (done ? <td colSpan={2} className="px-3 py-2 text-xs text-emerald-700">รับครบแล้ว ✓</td> : <>
+          <td className="whitespace-nowrap px-3 py-2 text-right text-xs text-slate-500">
+            {/* 2 บรรทัดแบบคอลัมน์ "ถึงกำหนด": บน = ยอดรวม · ภาษี · ล่าง = เงินต้น · ดอกเบี้ย */}
+            <div className="flex items-center justify-end gap-1.5">
+              {r.dueP + r.dueI > 0.005 && <button type="button" onClick={() => fill([r])} className="mr-1 text-blue-700 hover:underline">ตามงวด</button>}
+              <input inputMode="decimal" value={tot[r.id] ?? ""} onChange={(e) => split(r, e.target.value)} data-money="off" placeholder={`ยอดรวม ${r.currency}`}
+                aria-label={`ยอดรวมที่รับ ${r.name}`} className={`w-28 text-right ${small}`} />
+              <span className="ml-1">ภาษี</span>
+              <input inputMode="decimal" value={tax[r.id] ?? ""} aria-label={`ภาษีหัก ณ ที่จ่าย ${r.name}`}
+                onChange={(e) => setTax({ ...tax, [r.id]: e.target.value })} className={`w-24 text-right ${small}`} />
+            </div>
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <span>ต้น</span>
+              <input inputMode="decimal" value={pr[r.id] ?? ""} aria-label={`เงินต้น ${r.name}`}
+                onChange={(e) => { setPr({ ...pr, [r.id]: e.target.value }); setTot({ ...tot, [r.id]: fmt(r2(n(e.target.value) + n(int[r.id]))) }); }}
+                className={`w-28 text-right ${small}`} />
+              <span className="ml-1">ดอก</span>
+              <input inputMode="decimal" value={int[r.id] ?? ""} aria-label={`ดอกเบี้ย ${r.name}`}
+                onChange={(e) => { setInt({ ...int, [r.id]: e.target.value }); setTot({ ...tot, [r.id]: fmt(r2(n(pr[r.id]) + n(e.target.value))) }); }}
+                className={`w-28 text-right ${small}`} />
+            </div>
           </td>
-          <td className="px-3 py-2 text-right"><input inputMode="decimal" value={pr[r.id] ?? ""} aria-label={`เงินต้น ${r.name}`}
-            onChange={(e) => { setPr({ ...pr, [r.id]: e.target.value }); setTot({ ...tot, [r.id]: fmt(r2(n(e.target.value) + n(int[r.id]))) }); }}
-            className={`w-28 text-right ${small}`} /></td>
-          <td className="px-3 py-2 text-right"><input inputMode="decimal" value={int[r.id] ?? ""} aria-label={`ดอกเบี้ย ${r.name}`}
-            onChange={(e) => { setInt({ ...int, [r.id]: e.target.value }); setTot({ ...tot, [r.id]: fmt(r2(n(pr[r.id]) + n(e.target.value))) }); }}
-            className={`w-28 text-right ${small}`} /></td>
-          <td className="px-3 py-2 text-right"><input inputMode="decimal" value={tax[r.id] ?? ""} aria-label={`ภาษีหัก ณ ที่จ่าย ${r.name}`}
-            onChange={(e) => setTax({ ...tax, [r.id]: e.target.value })} className={`w-24 text-right ${small}`} /></td>
           <td className="px-3 py-2">
-            <select value={bank[r.id] ?? ""} onChange={(e) => setBank({ ...bank, [r.id]: e.target.value })} className={`max-w-[13rem] ${small}`} aria-label={`เข้าบัญชี ${r.name}`}>
+            <select value={bank[r.id] ?? ""} onChange={(e) => setBank({ ...bank, [r.id]: e.target.value })} className={`w-full max-w-[11rem] ${small}`} aria-label={`เข้าบัญชี ${r.name}`}>
               <option value="">— เลือกบัญชี —</option>
               {banks.filter((b) => b.currency === r.currency).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
@@ -142,14 +150,14 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
             <button type="button" onClick={() => fill(shown)} className="text-sm text-blue-700 hover:underline">ใส่ยอดตามงวดทุกแถว</button>
           )}
         </div>
-        <table className="mt-3 w-full min-w-[64rem] text-sm">
+        <table className="mt-3 w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-3 py-2">สัญญา / ผู้กู้</th><th className="px-3">งวด</th><th className="px-3 text-right">ถึงกำหนด (ยังไม่รับ)</th>
-              {canWrite && <><th className="px-3 text-right">ยอดรวมที่รับ</th><th className="px-3 text-right">เงินต้น</th><th className="px-3 text-right">ดอกเบี้ย (Gross)</th>
-                <th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="px-3">เข้าบัญชี</th></>}</tr>
+              {canWrite && <><th className="px-3 py-2 text-right">ยอดรวมที่รับ · ภาษีหัก ณ ที่จ่าย<div className="font-normal">เงินต้น · ดอกเบี้ย (Gross)</div></th>
+                <th className="px-3">เข้าบัญชี</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ไม่มีงวดที่ต้องรับในเดือนนี้</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={canWrite ? 5 : 3} className="px-4 py-6 text-center text-slate-500">ไม่มีงวดที่ต้องรับในเดือนนี้</td></tr>}
             {shown.map(row)}
           </tbody>
         </table>
@@ -166,12 +174,13 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
       )}
       {state.ok && over.length > 0 && (
         <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-          <p className="font-medium text-slate-900">รับเงินต้นเกินงวด — จะคำนวณงวดที่เหลือใหม่ไหม? (ไม่ปรับก็ได้ ส่วนที่เกินจะหักงวดถัดไปตามลำดับ)</p>
+          <p className="font-medium text-slate-900">เงินต้นที่รับไม่เท่างวด — จะคำนวณงวดที่เหลือใหม่จากเงินต้นคงเหลือจริงไหม? (ดอกเบี้ยงวดที่เหลือคิดใหม่ตามยอดคงเหลือ)</p>
           {over.map((x) => (
-            <p key={x.id}>{x.name} เกิน {money(x.extra)} ·{" "}
-              <Link href={`/financial/loans/${x.id}?restructure=end`} className="text-blue-700 hover:underline">ลดค่างวด (จบวันเดิม)</Link>{" · "}
-              <Link href={`/financial/loans/${x.id}?restructure=payment`} className="text-blue-700 hover:underline">จบเร็วขึ้น (ค่างวดเดิม)</Link></p>
+            <p key={x.id}>{x.name} {x.extra > 0 ? "เกิน" : "ขาด"} {money(Math.abs(x.extra))} ·{" "}
+              <Link href={`/financial/loans/${x.id}?restructure=end`} className="text-blue-700 hover:underline">{x.extra > 0 ? "ลดค่างวด" : "เพิ่มค่างวด"} (จบวันเดิม)</Link>{" · "}
+              <Link href={`/financial/loans/${x.id}?restructure=payment`} className="text-blue-700 hover:underline">{x.extra > 0 ? "จบเร็วขึ้น" : "ขยายงวด"} (ค่างวดเดิม)</Link></p>
           ))}
+          <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — ตารางเดิม: ส่วนที่เกินหักงวดถัดไปตามลำดับ · ส่วนที่ขาดเป็นยอดค้างของงวดนั้น</p>
         </div>
       )}
     </form>
