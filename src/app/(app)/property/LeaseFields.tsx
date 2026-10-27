@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FREQ_LABEL, money, thDate } from "@/lib/format";
+import { FREQ_LABEL, UTILITIES_BILLING_LABEL, money, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -47,6 +47,13 @@ export default function LeaseFields({ banks, goLive, currency = "THB", carryOpti
           <option value="">— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —</option>
           {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
         </select>
+      </label>
+      <label className={label}>ค่าน้ำ / ค่าไฟ
+        <select name="lease_utilities_billing" defaultValue="" className={input}>
+          <option value="">— ไม่ระบุ —</option>
+          {Object.entries(UTILITIES_BILLING_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <span className="mt-1 block text-xs text-slate-500">&ldquo;เราจ่ายแล้วเรียกเก็บ&rdquo; = ตอนบันทึกจ่ายค่าน้ำไฟจะติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; ให้</span>
       </label>
       <label className={label}>เลขที่สัญญา<input name="lease_contract_no" className={input} /></label>
       <label className={label}>หมายเหตุสัญญา<input name="lease_notes" className={input} /></label>

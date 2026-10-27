@@ -121,6 +121,11 @@ export const USAGE_LABEL: Record<string, string> = {
   OWNER_OCCUPIED: "อยู่อาศัยเอง", PERSONAL_USE: "ใช้ส่วนตัว", RENTAL: "ปล่อยเช่า", VACANT: "ว่าง",
   BUSINESS_USE: "ใช้ในกิจการ", OTHER: "อื่น ๆ",
 };
+/** ค่าน้ำไฟของสัญญาเช่า */
+export const UTILITIES_BILLING_LABEL: Record<string, string> = {
+  TENANT_PAYS: "ผู้เช่าจ่ายเอง", INCLUDED: "รวมในค่าเช่า", REBILL: "เราจ่ายแล้วเรียกเก็บ",
+};
+export const REBILL_SUBTYPE = "ค่าน้ำไฟเรียกเก็บจากผู้เช่า";
 /** ภาระผูกพันของ Property (แสดงผลอย่างเดียว ไม่กระทบมูลค่า) */
 export const ENCUMBRANCE_LABEL: Record<string, string> = {
   NONE: "ไม่มี", SERVITUDE: "ภาระจำยอม", USUFRUCT: "สิทธิเก็บกิน", MORTGAGE: "จำนอง", LEASEHOLD: "สิทธิการเช่า", OTHER: "อื่น ๆ",

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
+import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
@@ -84,8 +84,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     .map((u) => [u.id, u.paid_from_credit_card_id ? endpointValue({ kind: "card", id: u.paid_from_credit_card_id })
       : u.paid_from_asset_id ? endpointValue({ kind: "bank", id: u.paid_from_asset_id }) : ""]));
   // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า
-  const { data: rentToRows } = await supabase.from("property_leases").select("id,rent_to_asset_id").not("rent_to_asset_id", "is", null).is("deleted_at", null);
-  const rentTo = new Map(((rentToRows ?? []) as { id: string; rent_to_asset_id: string }[]).map((r) => [r.id, r.rent_to_asset_id]));
+  const [{ data: rentToRows }, { data: chargeRaw }] = await Promise.all([
+    supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").is("deleted_at", null),
+    supabase.from("v_lease_utility_charges").select("id,lease_id,property_asset_id,name,cost_period,description,amount,currency").eq("status", "PENDING").order("cost_period"),
+  ]);
+  type LX = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
+  const rentTo = new Map(((rentToRows ?? []) as LX[]).filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
+  const rebillLeases = new Set(((rentToRows ?? []) as LX[]).filter((r) => r.utilities_billing === "REBILL").map((r) => r.id));
   const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
     .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
   const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount";
@@ -185,6 +190,17 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     bank: [rentTo.get(r.lease_id), lastBank.get(r.lease_id)].find((b) => b && banks.some((x) => x.id === b && x.currency === r.currency))
       ?? banks.find((b) => b.currency === r.currency)?.id ?? "",
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
+  // ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน (ทุกงวด) → ต่อท้ายตารางรับค่าเช่า
+  type CH = { id: string; lease_id: string; property_asset_id: string; name: string; cost_period: string; description: string; amount: number; currency: string };
+  rentRows.push(...((chargeRaw ?? []) as CH[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
+    key: `c:${c.id}`, leaseId: c.lease_id, chargeId: c.id, assetId: c.property_asset_id, property: propName.get(c.property_asset_id) ?? "",
+    tenant: `${REBILL_SUBTYPE} · ${c.description}`, period: c.cost_period, due: null, expected: Number(c.amount), received: 0,
+    currency: c.currency, status: "PENDING",
+    bank: [rentTo.get(c.lease_id), lastBank.get(c.lease_id)].find((b) => b && banks.some((x) => x.id === b && x.currency === c.currency))
+      ?? banks.find((b) => b.currency === c.currency)?.id ?? "",
+  })));
+  // สัญญาที่ตั้ง "เรียกเก็บผู้เช่า" ของแต่ละทรัพย์สิน → ติ๊กเรียกเก็บในแท็บค่าใช้จ่าย (ไฟ / น้ำ)
+  const rebillOf = (assetId: string) => (byProp.get(assetId) ?? []).find((l) => l.lease_status !== "UPCOMING" && rebillLeases.has(l.id));
   type CT = { utility_id: string; property_asset_id: string; utility_type: string; provider: string | null; cost_period: string; due_date: string | null; expected_amount: number | null; paid_amount: number | null; currency: string; status: string };
   const costRows: CostRow[] = ((costTrack ?? []) as CT[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
     key: `${c.utility_id}:${c.cost_period}`, utilityId: c.utility_id, assetId: c.property_asset_id, property: propName.get(c.property_asset_id) ?? "",
@@ -192,6 +208,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     type: c.utility_type, typeLabel: UTIL_LABEL[c.utility_type] ?? c.utility_type,
     expected: Number(c.expected_amount ?? 0), paid: Number(c.paid_amount ?? 0), currency: c.currency, status: c.status,
     category: UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค", pay: utilPay.get(c.utility_id) || undefined,
+    ...(() => {
+      const l = ["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillOf(c.property_asset_id) : undefined;
+      return l ? { rebillLease: l.id, rebillLabel: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") } : {};
+    })(),
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
   // ---------------------------------------------------------------- ภาษีที่ดิน (ปีที่เลือก) รายทรัพย์สิน
   type TL = TaxLineRow & { asset_id: string; tax_year: number };

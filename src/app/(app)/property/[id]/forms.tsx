@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import {
-  addUtility, addValuation, createLease, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
+  addUtility, addValuation, createLease, receiveUtilityCharge, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
   updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
@@ -378,11 +378,13 @@ type Card = { id: string; label: string; currency: string };
 type Person = { id: string; name: string };
 
 /** บันทึกจ่ายค่าใช้จ่ายประจำ 1 งวด (ใช้ทั้งหน้ารายละเอียดและหน้ารวม) */
-export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, defaultBank, defaultCard }: {
+export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, defaultBank, defaultCard, rebillLeases = [] }: {
   assetId: string; utilityId: string; period: string; label: string; expected: number; currency: string; category: string;
   banks: Bank[]; cards: Card[]; persons: Person[]; today: string;
   /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ */ defaultBank?: string | null; defaultCard?: string | null;
+  /** สัญญาเช่าที่ "เราจ่ายแล้วเรียกเก็บ" (มี → ติ๊กเรียกเก็บผู้เช่าไว้ให้) */ rebillLeases?: { id: string; label: string }[];
 }) {
+  const [rebill, setRebill] = useState(rebillLeases.length > 0);
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState(defaultCard && cards.some((c) => c.id === defaultCard) ? "card"
     : defaultBank && banks.some((b) => b.asset_id === defaultBank) ? "bank" : banks.length ? "bank" : cards.length ? "card" : "cash");
@@ -436,10 +438,55 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
         </label>
       )}
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
+      {rebillLeases.length > 0 && (
+        <div className="flex w-full flex-wrap items-end gap-2 rounded-md bg-amber-50 px-2 py-1.5">
+          <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" name="rebill" checked={rebill} onChange={(e) => setRebill(e.target.checked)} />
+            เรียกเก็บผู้เช่า (รับคืนแล้วนับเป็นรายได้)</label>
+          {rebill && <>
+            {rebillLeases.length > 1 ? (
+              <select name="rebill_lease_id" className={small}>{rebillLeases.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}</select>
+            ) : <input type="hidden" name="rebill_lease_id" value={rebillLeases[0].id} />}
+            <label className="text-xs">ยอดเรียกเก็บ<input name="rebill_amount" inputMode="decimal" placeholder="เท่ายอดที่จ่าย" className={`ml-1 w-28 ${small}`} /></label>
+          </>}
+        </div>
+      )}
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <BalanceGuard />
       <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
+      <div className="w-full"><Msg s={state} /></div>
+    </form>
+  ));
+}
+
+/** รับค่าน้ำไฟที่เรียกเก็บผู้เช่า 1 รายการ (รายได้อื่นของ Property) */
+export function ReceiveChargeForm({ assetId, chargeId, amount, currency, banks, today, defaultBank }: {
+  assetId: string; chargeId: string; amount: number; currency: string; banks: Bank[]; today: string; defaultBank?: string;
+}) {
+  const { open, setOpen, present, activeCls } = useActionSlot();
+  const [state, action, pending] = useActionState<ActionState, FormData>(receiveUtilityCharge, {});
+  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกรับ</button>;
+  if (!open) return trigger;
+  const sameCcy = banks.filter((b) => b.currency === currency);
+  return present(trigger, (
+    <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="charge_id" value={chargeId} />
+      <label className="text-xs">ยอดที่ได้รับ
+        <input name="amount" required inputMode="decimal" defaultValue={String(amount)} className={`mt-1 block w-28 ${small}`} />
+      </label>
+      <label className="text-xs">วันที่รับ
+        <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
+      </label>
+      <label className="text-xs">เข้าบัญชี
+        <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
+          <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
+          {sameCcy.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+        </select>
+      </label>
+      <button disabled={pending} className={sbtn}>บันทึก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));

@@ -10,6 +10,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 export type RentRow = {
   key: string; leaseId: string; assetId: string; property: string; tenant: string; period: string; due: string | null;
   expected: number; received: number; currency: string; status: string; bank: string;
+  /** ค่าน้ำไฟที่เราจ่ายแล้วเรียกเก็บผู้เช่า (lease_utility_charges) */ chargeId?: string;
 };
 export type BankOpt = { id: string; name: string; currency: string };
 
@@ -37,7 +38,9 @@ export default function RentBatch({ rows, banks, defaultDate, today, ym, canWrit
   const open = rows.filter((r) => r.status !== "RECEIVED" && r.status !== "DISMISSED");
   const gap = (r: RentRow) => Math.max(r.expected - r.received, 0);
   const chosen = rows.filter((r) => (vals[r.key] ?? "").trim() !== "");
-  const payload = chosen.map((r) => ({ lease_id: r.leaseId, amount: vals[r.key], date, received_to_asset_id: bank[r.key] ?? "", income_period: r.period }));
+  const payload = chosen.map((r) => r.chargeId
+    ? { charge_id: r.chargeId, amount: vals[r.key], date, received_to_asset_id: bank[r.key] ?? "" }
+    : { lease_id: r.leaseId, amount: vals[r.key], date, received_to_asset_id: bank[r.key] ?? "", income_period: r.period });
   const onSubmit = cf.guard(`บันทึกรับค่าเช่า ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.property} · ${r.tenant} ${vals[r.key]}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
 
@@ -110,7 +113,7 @@ export default function RentBatch({ rows, banks, defaultDate, today, ym, canWrit
           {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
         </div>
       )}
-      <p className="text-xs text-slate-500">กรอกยอดเฉพาะสัญญาที่ได้รับแล้ว (ช่องว่าง = ไม่บันทึก) · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · ยกเว้นงวด / แก้ไขรายการ ทำที่หน้าของทรัพย์สิน</p>
+      <p className="text-xs text-slate-500">ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่ใช่ค่าเช่า) · กรอกยอดเฉพาะสัญญาที่ได้รับแล้ว (ช่องว่าง = ไม่บันทึก) · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · ยกเว้นงวด / แก้ไขรายการ ทำที่หน้าของทรัพย์สิน</p>
     </form>
     </>
   );

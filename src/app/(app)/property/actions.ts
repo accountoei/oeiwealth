@@ -26,12 +26,14 @@ function leaseFromForm(form: FormData) {
   };
 }
 
-/** บัญชีรับค่าเช่า (ค่าตั้งต้น) — create_lease ไม่รับช่องนี้ จึงตั้งหลังสร้างสัญญา */
+/** บัญชีรับค่าเช่า (ค่าตั้งต้น) + วิธีคิดค่าน้ำไฟ — create_lease ไม่รับ 2 ช่องนี้ จึงตั้งหลังสร้างสัญญา */
 async function setRentAccount(supabase: Awaited<ReturnType<typeof createClient>>, leaseIds: string[], form: FormData) {
   const to = str(form.get("lease_rent_to_asset_id"));
-  if (!to || !leaseIds.length) return null;
-  const { error } = await supabase.from("property_leases").update({ rent_to_asset_id: to }).in("id", leaseIds);
-  return error ? `ตั้งบัญชีรับค่าเช่าไม่ได้ (${friendlyError(error.message)}) — ตั้งใหม่ที่ปุ่มแก้ไขของสัญญา` : null;
+  const billing = str(form.get("lease_utilities_billing"));
+  if ((!to && !billing) || !leaseIds.length) return null;
+  const { error } = await supabase.from("property_leases")
+    .update({ ...(to ? { rent_to_asset_id: to } : {}), ...(billing ? { utilities_billing: billing } : {}) }).in("id", leaseIds);
+  return error ? `ตั้งบัญชีรับค่าเช่า / ค่าน้ำไฟไม่ได้ (${friendlyError(error.message)}) — ตั้งใหม่ที่ปุ่มแก้ไขของสัญญา` : null;
 }
 
 function revalidateProperty(assetId?: string) {
@@ -248,7 +250,10 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
   const amount = num(form.get("amount"));
   if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
   const pay = endpointFromForm(form);
-  const { error } = await supabase.rpc("add_expense", { p: {
+  const rebillLease = form.get("rebill") === "on" ? str(form.get("rebill_lease_id")) : null;
+  const rebillAmount = rebillLease ? num(form.get("rebill_amount")) : null;
+  if (rebillLease && rebillAmount != null && (Number.isNaN(rebillAmount) || rebillAmount <= 0)) return { error: "ยอดเรียกเก็บผู้เช่าต้องมากกว่า 0" };
+  const { data: expenseId, error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
     ...paidFromColumns(pay),
@@ -260,10 +265,30 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
   revalidateProperty(assetId ?? undefined);
   revalidatePath("/income-expenses");
   revalidatePath("/financial/cash", "layout");
+  if (rebillLease && expenseId) {
+    const { error: e2 } = await supabase.rpc("add_utility_charge", { p_expense_item_id: String(expenseId), p_lease_id: rebillLease, p_amount: rebillAmount });
+    if (e2) return { error: `บันทึกจ่ายแล้ว แต่ตั้งยอดเรียกเก็บผู้เช่าไม่ได้ (${friendlyError(e2.message)})` };
+    return { ok: "บันทึกจ่ายแล้ว · ตั้งยอดเรียกเก็บผู้เช่าแล้ว" };
+  }
   return { ok: "บันทึกจ่ายแล้ว" };
 }
 
 export type BatchState = { error?: string; ok?: string };
+
+/** รับค่าน้ำไฟที่เรียกเก็บผู้เช่า 1 รายการ → รายได้อื่นของ Property (ใช้ batch_record_rent แถวเดียว) */
+export async function receiveUtilityCharge(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const amount = num(form.get("amount"));
+  if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
+  const toAsset = str(form.get("received_to_asset_id"));
+  const { error } = await supabase.rpc("batch_record_rent", { p_rows: [{ charge_id: String(form.get("charge_id")), amount,
+    date: str(form.get("date")), received_to_asset_id: toAsset, notes: str(form.get("notes")) }] });
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(id);
+  if (toAsset) revalidatePath(`/financial/cash/${toAsset}`);
+  return { ok: "บันทึกรับค่าน้ำไฟแล้ว" };
+}
 
 /** รับค่าเช่าหลายสัญญาพร้อมกัน (แท็บ บันทึกรับค่าเช่า/สัญญาเช่า) · ผิดแถวเดียว = ไม่บันทึกเลย */
 export async function batchRent(_: BatchState, form: FormData): Promise<BatchState> {
@@ -277,7 +302,7 @@ export async function batchRent(_: BatchState, form: FormData): Promise<BatchSta
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   revalidateProperty();
   revalidatePath("/financial/cash", "layout");
-  return { ok: `บันทึกรับค่าเช่าแล้ว ${data} รายการ` };
+  return { ok: `บันทึกรับแล้ว ${data} รายการ` };
 }
 
 /** ค่าใช้จ่ายของทรัพย์สินหลายรายการพร้อมกัน (แท็บ ค่าใช้จ่าย) · ผิดแถวเดียว = ไม่บันทึกเลย */
