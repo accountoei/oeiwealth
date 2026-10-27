@@ -29,6 +29,18 @@ export default function NewPropertyForm(props: {
     <form action={action} className="space-y-6">
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
         <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลทรัพย์สิน</h2>
+        {!isSetup && isAdmin && !late && (
+          <button type="button" onClick={() => setLate(true)} className="md:col-span-2 text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+        )}
+        {(isSetup || late) && (
+          <label className="md:col-span-2 flex items-start gap-2 text-sm">
+            <input type="checkbox" name="is_opening" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="mt-1" />
+            <span>
+              มีอยู่ก่อน Go-live ({thDate(goLive)}) — ใช้เป็น <b>มูลค่าตั้งต้น</b> ณ สิ้นวัน {thDate(openingDate)}
+              {!isSetup && <span className="block text-xs text-amber-700">ระบบ LIVE แล้ว: ต้องระบุเหตุผลในหมายเหตุ</span>}
+            </span>
+          </label>
+        )}
         <label className={label}>ชื่อที่ใช้เรียก *<input name="name" required placeholder="เช่น บ้านบางนา" className={input} /></label>
         <label className={label}>ประเภท *
           <select name="property_type" defaultValue="HOUSE" className={input}>
@@ -59,6 +71,20 @@ export default function NewPropertyForm(props: {
           <input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} {...m.acqDateProps} className={input} />
         </label>
         <label className={label}>ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" {...m.costProps} className={input} />{m.copied === "cost" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับมูลค่า · แก้ได้</span>}</label>
+        <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" {...m.valueProps} className={input} />{m.copied === "value" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับราคาที่ได้มา · แก้ได้</span>}</label>
+        <label className={label}>มูลค่า ณ วันที่ *
+          {opening
+            ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
+            : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} {...m.valDateProps} className={input} />}
+        </label>
+        <label className={label}>วิธีประเมิน
+          <select name="valuation_method" defaultValue="USER_ESTIMATE" {...m.methodProps} className={input}>
+            <option value="USER_ESTIMATE">ประมาณเอง</option>
+            <option value="APPRAISAL">ประเมินโดยผู้ประเมิน / ธนาคาร</option>
+            <option value="BOOK_VALUE">ราคาทุน</option>
+            <option value="LATEST_TRANSACTION">ราคาซื้อขายล่าสุด</option>
+          </select>
+        </label>
         {!opening && (
           <label className={label}>จ่ายจากบัญชี
             <select name="pay_bank_asset_id" defaultValue="" className={input}>
@@ -68,44 +94,12 @@ export default function NewPropertyForm(props: {
             <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ได้มา ณ วันที่ได้มา · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าทรัพย์สิน</span>
           </label>
         )}
-      </section>
-
-      <OwnerShares persons={persons} title="เจ้าของ" hint="สัดส่วนกรรมสิทธิ์ · ใช้แบ่งมูลค่า ค่าเช่า และหนี้เงินประกันตามสัดส่วน" />
-
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">มูลค่า (บังคับ)</h2>
-        {!isSetup && isAdmin && !late && (
-          <button type="button" onClick={() => setLate(true)} className="text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
-        )}
-        {(isSetup || late) && (
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" name="is_opening" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="mt-1" />
-            <span>
-              มีอยู่ก่อน Go-live ({thDate(goLive)}) — ใช้เป็น <b>มูลค่าตั้งต้น</b> ณ สิ้นวัน {thDate(openingDate)}
-              {!isSetup && <span className="block text-xs text-amber-700">ระบบ LIVE แล้ว: ต้องระบุเหตุผลในหมายเหตุ</span>}
-            </span>
-          </label>
-        )}
-        <div className="grid gap-4 md:grid-cols-3">
-          <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" {...m.valueProps} className={input} />{m.copied === "value" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับราคาที่ได้มา · แก้ได้</span>}</label>
-          <label className={label}>มูลค่า ณ วันที่ *
-            {opening
-              ? <><input type="hidden" name="value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
-              : <input name="value_date" type="date" required min={goLive} max={today} defaultValue={today} {...m.valDateProps} className={input} />}
-          </label>
-          <label className={label}>วิธีประเมิน
-            <select name="valuation_method" defaultValue="USER_ESTIMATE" {...m.methodProps} className={input}>
-              <option value="USER_ESTIMATE">ประมาณเอง</option>
-              <option value="APPRAISAL">ประเมินโดยผู้ประเมิน / ธนาคาร</option>
-              <option value="BOOK_VALUE">ราคาทุน</option>
-              <option value="LATEST_TRANSACTION">ราคาซื้อขายล่าสุด</option>
-            </select>
-          </label>
-        </div>
-        <label className={label}>หมายเหตุ {opening && !isSetup && "(เหตุผล · จำเป็น)"}
+        <label className={`${label} md:col-span-2`}>หมายเหตุ {opening && !isSetup && "(เหตุผล · จำเป็น)"}
           <textarea name="notes" rows={2} required={opening && !isSetup} className={input} />
         </label>
       </section>
+
+      <OwnerShares persons={persons} title="เจ้าของ" hint="สัดส่วนกรรมสิทธิ์ · ใช้แบ่งมูลค่า ค่าเช่า และหนี้เงินประกันตามสัดส่วน" />
 
       {usage === "RENTAL" && (
         <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
