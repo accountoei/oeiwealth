@@ -107,13 +107,15 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : defaultYm;
   const { start, end, prev, next } = monthRange(ym);
 
-  const [{ data: checksRaw, error: checkErr }, { data: previewRaw, error: prevErr }, { data: banks }, { data: recons }, { data: balAt }] = await Promise.all([
+  const [{ data: checksRaw, error: checkErr }, { data: previewRaw, error: prevErr }, { data: banks }, { data: recons }, { data: balAt }, { data: igRaw }] = await Promise.all([
     supabase.rpc("month_closing_checks", { p_month: start }),
     supabase.rpc("month_net_worth_preview", { p_month: start }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("bank_reconciliations").select("bank_asset_id,status").eq("year_month", start).is("deleted_at", null).neq("status", "OPEN"),
     supabase.rpc("bank_balances_at", { p_date: end < today ? end : today }),
+    supabase.rpc("month_investment_gain", { p_month: start }),
   ]);
+  const ig = igRaw as { gain: number; fx: number } | null;     // กำไร / ขาดทุนเงินลงทุน (แยกจากมูลค่าเปลี่ยน)
   const lastAt = new Map(((balAt as { asset_id: string; last_date: string | null }[] | null) ?? []).map((r) => [r.asset_id, r.last_date]));
   // "ค่าใช้จ่ายบันทึกครบ / ไม่ครบ" ไม่ใช้แล้ว (เงินคงเหลือสุทธิคิดจากรายการที่บันทึกเสมอ) → ไม่แสดงเป็นข้อให้ตรวจ
   const notTracking = (i: Issue) => !i.code.startsWith("EXPENSE_");
@@ -322,7 +324,8 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                   <Row label="+ รายได้ (หลังภาษี · ไม่รวมรายได้ลงทุน)" v={p.income} />
                   <Row label="− ค่าใช้จ่ายสุทธิ (หักเงินคืน)" v={-(p.expenses - p.reimbursements)} />
                   <Row label="+ รายได้จากการลงทุน" v={p.investment_income} />
-                  <Row label="± มูลค่าเปลี่ยน (ราคา · FX · ประเมินใหม่ · ยอดหนี้ · รายการที่ไม่ได้บันทึก)" v={p.other_change ?? 0} />
+                  <Row label={`± กำไร / ขาดทุนเงินลงทุน${ig?.fx ? ` (ในนั้นจาก FX ${money(ig.fx, undefined, 0)})` : ""}`} v={ig?.gain ?? 0} />
+                  <Row label="± มูลค่าเปลี่ยน (ประเมินใหม่ · FX นอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก)" v={(p.other_change ?? 0) - Number(ig?.gain ?? 0)} />
                   <Row label={`= ยอด ${p.confirmed ? "สิ้นเดือน" : "ณ วันนี้"}`} v={p.net_worth} bold />
                 </tbody>
               </table>

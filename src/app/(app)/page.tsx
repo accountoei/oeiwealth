@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Suspense, cache } from "react";
+import { Suspense, cache, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
@@ -33,6 +33,7 @@ type PersonDash = {
   income: number; investment_income: number; expenses: number; reimbursements: number;
 };
 type Family = { name: string; go_live_date: string; system_status: string };
+type InvGain = { gain: number; fx: number };
 
 const GROUP: [string, string][] = [["financial", "เงินฝาก / เงินสด"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
@@ -59,6 +60,9 @@ const getPersonDash = cache(async (start: string, person: string) =>
 /** ฐานเทียบของ 3 การ์ดเมื่อเลือกรายคน (ปิดเดือนก่อน → สิ้นเดือนก่อน อัตโนมัติ → ยอดตั้งต้น) */
 const getPersonBase = cache(async (start: string, person: string) =>
   ((await (await createClient()).rpc("dashboard_person_base", { p_month: start, p_person: person })).data ?? null) as Base | null);
+/** กำไร / ขาดทุนเงินลงทุนของเดือน (ครอบครัว หรือ รายคน) · แยกออกจาก "มูลค่าเปลี่ยน / อื่น ๆ" */
+const getInvGain = cache(async (start: string, person: string) =>
+  ((await (await createClient()).rpc("month_investment_gain", { p_month: start, p_person: person || null })).data ?? null) as InvGain | null);
 const getTrack = cache(async (start: string) => {
   const { data } = await (await createClient()).from("monthly_expenses").select("tracking_status")
     .eq("year_month", start).is("deleted_at", null).maybeSingle();
@@ -98,7 +102,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   };
 
   // เริ่มคำนวณส่วนที่ช้าทันที (ไม่รอ) — การ์ดด้านล่างจะรับผลจากคำขอเดียวกันนี้
-  void getMonth(start); void getPreview(start); void getHistory(); void getTrack(start);
+  void getMonth(start); void getPreview(start); void getHistory(); void getTrack(start); void getInvGain(start, personId);
   if (personId) { void getItems(start, personId); void getPersonDash(start, personId); void getPersonBase(start, personId); } else void getFamilyItems(start);
 
   return (
@@ -353,12 +357,14 @@ function ItemList({ items, showShare, negative }: { items: Item[]; showShare: bo
 
 async function ChangeBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
   // รวมกล่อง "รายได้ & ค่าใช้จ่าย": เงินคงเหลือสุทธิ (ยอดย่อย) = รายได้สุทธิหลังภาษี + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ — ยอดเดียวกับหน้ารายได้ / ค่าใช้จ่าย
-  const [dm, p, track] = await Promise.all([getMonth(start), personId ? getPersonDash(start, personId) : getPreview(start), getTrack(start)]);
+  const [dm, p, track, ig] = await Promise.all([getMonth(start), personId ? getPersonDash(start, personId) : getPreview(start), getTrack(start),
+    getInvGain(start, personId)]);
   if (p?.prev_net_worth == null) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
   const cur = personId ? Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0) : Number(dm?.net_worth ?? 0);
   const expense = Number(p.expenses) - Number(p.reimbursements);
   const net = Number(p.income) + Number(p.investment_income) - expense;
-  const other = cur - Number(p.prev_net_worth) - net;
+  const gain = Number(ig?.gain ?? 0), fx = Number(ig?.fx ?? 0);
+  const other = cur - Number(p.prev_net_worth) - net - gain;
   return (
     <>
       <table className="w-full text-sm">
@@ -370,6 +376,8 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
             ? <tr><td className="py-1.5 pr-2">− ค่าใช้จ่ายสุทธิ</td><td className="text-right text-xs text-slate-500">ยังไม่ได้บันทึก</td></tr>
             : <BRow label={personId ? "− ค่าใช้จ่ายสุทธิ (ที่ระบุชื่อ)" : "− ค่าใช้จ่ายสุทธิ"} v={-expense} />}
           <BRow label="= เงินคงเหลือสุทธิ" v={net} sub />
+          <BRow label={personId ? "± กำไร / ขาดทุนเงินลงทุน (ตามสัดส่วนถือ)" : "± กำไร / ขาดทุนเงินลงทุน"} v={dm ? gain : 0}
+            note={dm && fx ? <>ในนั้นจาก FX {money(fx, undefined, 0)}</> : null} />
           <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={dm ? other : 0} />
           <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
         </tbody>
@@ -439,11 +447,12 @@ function Big({ label, value, base, baseLabel, inverse }: { label: string; value:
   );
 }
 
-function BRow({ label, v, bold, sub }: { label: string; v: number; bold?: boolean; sub?: boolean }) {
-  // sub = ยอดย่อย (ตัวเอียง พื้นเทา) ไม่ใช่บรรทัดที่บวกเพิ่ม
+function BRow({ label, v, bold, sub, note }: { label: string; v: number; bold?: boolean; sub?: boolean; note?: ReactNode }) {
+  // sub = ยอดย่อย (ตัวเอียง พื้นเทา) ไม่ใช่บรรทัดที่บวกเพิ่ม · note = บรรทัดเล็กใต้ชื่อ (ไม่บวกเพิ่ม)
   return (
     <tr className={bold ? "font-medium" : sub ? "bg-slate-50 italic" : ""}>
-      <td className={`py-1.5 pr-2 ${sub ? "pl-2 font-medium text-slate-700" : ""}`}>{label}</td>
+      <td className={`py-1.5 pr-2 ${sub ? "pl-2 font-medium text-slate-700" : ""}`}>{label}
+        {note && <div className="pl-3 text-xs text-slate-500">{note}</div>}</td>
       <td className={`text-right tabular-nums ${sub ? "pr-2 font-medium " : ""}${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{money(v, undefined, 0)}</td>
     </tr>
   );
