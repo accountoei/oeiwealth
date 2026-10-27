@@ -130,10 +130,9 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
   const { error: e2 } = await supabase.from("property_details").update({
     property_type: str(form.get("property_type")), usage_type: str(form.get("usage_type")),
     location_group: str(form.get("location_group")), address: str(form.get("address")),
-    land_area_sq_wa: sqwaFromForm(form), title_type: str(form.get("title_type")),
-    title_deed_no: str(form.get("title_deed_no")), land_no: str(form.get("land_no")),
-    deed_book: str(form.get("deed_book")), deed_page: str(form.get("deed_page")), map_sheet: str(form.get("map_sheet")),
-    survey_page: str(form.get("survey_page")), subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
+    // เนื้อที่: แก้ที่ทรัพย์สินได้เฉพาะตอนยังไม่มีโฉนด (มีโฉนดแล้ว = ผลรวมจากโฉนด · ข้อมูลโฉนดแก้ที่ส่วน "โฉนด / เอกสารสิทธิ์")
+    ...(form.has("land_rai") ? { land_area_sq_wa: sqwaFromForm(form) } : {}),
+    subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
     province: str(form.get("province")),
     encumbrance_type: str(form.get("encumbrance_type")),
     encumbrance_details: ["", "NONE"].includes(str(form.get("encumbrance_type")) ?? "") ? null : str(form.get("encumbrance_details")),
@@ -145,6 +144,28 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
   if (e2) return { error: friendlyError(e2.message) };
   revalidateProperty(id);
   return { ok: "บันทึกข้อมูลแล้ว" };
+}
+
+/** เพิ่ม / แก้โฉนด 1 ใบ (property_deeds) · เนื้อที่ / เลขที่โฉนดของทรัพย์สิน = ระบบรวมจากทุกโฉนดให้ */
+export async function saveDeed(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const id = str(form.get("id"));
+  const row = {
+    title_type: str(form.get("title_type")), title_deed_no: str(form.get("title_deed_no")), land_no: str(form.get("land_no")),
+    deed_book: str(form.get("deed_book")), deed_page: str(form.get("deed_page")), map_sheet: str(form.get("map_sheet")),
+    survey_page: str(form.get("survey_page")), land_area_sq_wa: sqwaFromForm(form), notes: str(form.get("notes")),
+  };
+  if (!row.title_deed_no && !row.land_no && row.land_area_sq_wa == null) return { error: "กรุณาใส่เลขที่โฉนด เลขที่ดิน หรือเนื้อที่ อย่างน้อย 1 ช่อง" };
+  if (row.land_area_sq_wa != null && !(row.land_area_sq_wa >= 0)) return { error: "เนื้อที่ต้องเป็นตัวเลข" };
+  const q = id
+    ? supabase.from("property_deeds").update(row).eq("id", id).select("id")
+    : supabase.from("property_deeds").insert({ ...row, property_id: String(form.get("property_id")) }).select("id");
+  const { data, error } = await q;
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidateProperty(assetId);
+  return { ok: id ? "บันทึกโฉนดแล้ว" : "เพิ่มโฉนดแล้ว" };
 }
 
 export async function setUsage(_: ActionState, form: FormData): Promise<ActionState> {

@@ -3344,6 +3344,46 @@ SELECT t.ok(NOT has_function_privilege('anon', 'public.add_utility_charge(uuid, 
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz18. Property: หลายโฉนดใน 1 รายการ (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT id AS dp FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT t.ok((SELECT count(*) = 1 AND sum(land_area_sq_wa) = 1371 FROM public.property_deeds WHERE property_id = :'dp' AND deleted_at IS NULL),
+            'สร้างทรัพย์สินพร้อมเนื้อที่ → โฉนดแถวแรก');
+INSERT INTO public.property_deeds(property_id, sort_order, title_type, title_deed_no, land_area_sq_wa) VALUES (:'dp', 1, 'โฉนด', 'D-2', 200)
+  RETURNING id AS d2 \gset
+SELECT t.ok((SELECT land_area_sq_wa = 1571 AND title_deed_no = 'D-2' FROM public.property_details WHERE id = :'dp'),
+            'เพิ่มโฉนด → เนื้อที่รวม + เลขที่โฉนดที่ทรัพย์สิน');
+UPDATE public.property_deeds SET land_area_sq_wa = 250 WHERE id = :'d2';
+SELECT t.ok((SELECT land_area_sq_wa FROM public.property_details WHERE id = :'dp') = 1621, 'แก้เนื้อที่โฉนด → เนื้อที่รวมเปลี่ยนตาม');
+UPDATE public.property_details SET land_area_sq_wa = 5, title_deed_no = 'X' WHERE id = :'dp';
+SELECT t.ok((SELECT land_area_sq_wa = 1621 AND title_deed_no = 'D-2' FROM public.property_details WHERE id = :'dp'),
+            'มีโฉนดแล้ว: แก้เนื้อที่ / เลขที่ที่ทรัพย์สินตรง ๆ ไม่ได้ (คำนวณจากโฉนด)');
+UPDATE public.property_deeds SET deleted_at = now() WHERE id = :'d2';
+SELECT t.ok((SELECT land_area_sq_wa = 1371 AND title_deed_no IS NULL FROM public.property_details WHERE id = :'dp'), 'ลบโฉนด → เนื้อที่รวมลดลง');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$INSERT INTO public.property_deeds(property_id, title_deed_no) VALUES ('$$ || :'dp' || $$', 'C-1')$$,
+  'PERMISSION_DENIED', 'โฉนด: CONTRIBUTOR เพิ่มให้ทรัพย์สินที่แก้ไม่ได้ → ไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.property_deeds(property_id, title_deed_no) VALUES ('$$ || :'dp' || $$', 'V-1')$$,
+  'row-level security', 'โฉนด: VIEWER เพิ่มไม่ได้');
+RESET ROLE;
+ALTER TABLE public.property_details DISABLE TRIGGER t30_first_deed;
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'PROPERTY', 'LAND', 'ที่ดินเดิม', 'THB' FROM public.families;
+INSERT INTO public.property_details(asset_id, property_type, usage_type, title_type, title_deed_no, land_no, land_area_sq_wa)
+  VALUES (t.a('ที่ดินเดิม'), 'LAND', 'VACANT', 'โฉนด', 'OLD-1', '77', 100);
+ALTER TABLE public.property_details ENABLE TRIGGER t30_first_deed;
+SELECT t.ok(private.property_deeds_backfill() = 1, 'ย้ายข้อมูลเดิม: ทรัพย์สินที่ยังไม่มีโฉนด → โฉนดแถวแรก');
+SELECT t.ok((SELECT count(*) = 1 AND bool_and(d.title_deed_no = 'OLD-1' AND d.land_no = '77' AND d.land_area_sq_wa = 100)
+               FROM public.property_deeds d JOIN public.property_details p ON p.id = d.property_id WHERE p.asset_id = t.a('ที่ดินเดิม')),
+            'ย้ายข้อมูลเดิม: ค่าเดิมครบ');
+SELECT t.ok(private.property_deeds_backfill() = 0, 'ย้ายข้อมูลเดิม: รันซ้ำไม่สร้างซ้ำ');
+SELECT t.fails($$UPDATE public.property_deeds SET property_id = (SELECT id FROM public.property_details WHERE asset_id = t.a('ที่ดินเดิม')) WHERE property_id = '$$ || :'dp' || $$'$$,
+  'ย้ายโฉนด', 'ย้ายโฉนดไปทรัพย์สินอื่นไม่ได้');
+SELECT t.ok(NOT has_function_privilege('authenticated', 'private.property_deeds_backfill()', 'EXECUTE'), 'ย้ายข้อมูลเดิม: ผู้ใช้เรียกไม่ได้');
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

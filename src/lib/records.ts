@@ -50,7 +50,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
 const DELETABLE = new Set(["income_transactions", "expense_items", "cash_movements", "investment_transactions", "asset_valuations",
   "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "recurring_expense_templates", "property_utilities",
   "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings", "documents", "document_links",
-  "loan_schedule_lines", "insurance_schedule_lines", "insurance_coverages", "lease_utility_charges"]);
+  "loan_schedule_lines", "insurance_schedule_lines", "insurance_coverages", "lease_utility_charges", "property_deeds"]);
 
 function refresh(form: FormData) {
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));
