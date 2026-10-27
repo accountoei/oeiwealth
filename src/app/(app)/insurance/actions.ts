@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
-import { endpointFromForm, paidFromColumns } from "@/lib/money-endpoint";
+import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
+import { BAD_ROWS_ERROR, amountOrNull, isPositive, notSaved, readRows } from "@/lib/batch-entry";
 
 export type ActionState = FormState;
 /** ผลลงมูลค่าเวนคืนตามตารางในสัญญา (sync_insurance_cash_value) */
@@ -192,4 +193,52 @@ export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<
   revalidatePath("/insurance");
   revalidatePath(`/insurance/${id}`);
   return { ok: "บันทึกข้อมูลแล้ว" };
+}
+
+// ---------------------------------------------------------------- แท็บบันทึกทั้งชุด (ตกลง 27 ต.ค. 2026) · ผิดแถวเดียว = ไม่บันทึกเลย
+type BatchLine = { policy_id: string; line_id: string; label: string; amount: string; pay: string; currency: string };
+
+function refreshBatch(rows: BatchLine[]) {
+  revalidatePath("/insurance");
+  new Set(rows.map((r) => r.policy_id)).forEach((id) => revalidatePath(`/insurance/${id}`));
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/");
+}
+
+/** แท็บ "จ่ายชำระเบี้ยประกัน": หลายงวด หลายกรมธรรม์ → ค่าใช้จ่ายหมวด "ประกัน" ผูกงวด + ลงมูลค่าเวนคืนตามตาราง */
+export async function batchPremiums(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<BatchLine>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่จ่าย" };
+  if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 งวด" };
+  const clean = rows.map((r) => ({
+    policy_id: r.policy_id, label: r.label, date, description: r.label, amount: amountOrNull(r.amount), currency: r.currency,
+    paid_from_asset_id: bankId(parseEndpoint(r.pay)), paid_from_credit_card_id: cardId(parseEndpoint(r.pay)), insurance_schedule_line_id: r.line_id,
+  }));
+  if (!clean.every((r) => isPositive(r.amount))) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  const { data, error } = await supabase.rpc("batch_pay_insurance_premiums", { p_rows: clean });
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  refreshBatch(rows);
+  return { ok: `บันทึกจ่ายเบี้ยแล้ว ${data} งวด` };
+}
+
+/** แท็บ "บันทึกรับผลประโยชน์": หลายงวด หลายกรมธรรม์ → ถอนจากมูลค่าเวนคืนก่อน ส่วนเกินเป็นรายได้ */
+export async function batchBenefits(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<BatchLine>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่ได้รับ" };
+  if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 งวด" };
+  const clean = rows.map((r) => ({
+    policy_id: r.policy_id, line_id: r.line_id, label: r.label, date, amount: amountOrNull(r.amount), bank_asset_id: bankId(parseEndpoint(r.pay)),
+  }));
+  if (!clean.every((r) => isPositive(r.amount))) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  const { data, error } = await supabase.rpc("batch_receive_insurance_benefits", { p_rows: clean });
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  refreshBatch(rows);
+  return { ok: `บันทึกรับผลประโยชน์แล้ว ${data} งวด` };
 }

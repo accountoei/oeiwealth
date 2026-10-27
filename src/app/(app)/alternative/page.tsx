@@ -7,9 +7,13 @@ import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import ShareTable, { SHARE_COLORS } from "@/components/ShareTable";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import AltBatch, { type AltRow } from "./AltBatch";
 
 type Cat = { id: string; category_name: string; category_code: string; default_unit: string | null };
-type Row = { id: string; asset_id: string; category_id: string; quantity: number | null; unit: string | null; purity_pct: number | null;
+const TABS = [["overview", "ภาพรวม"], ["record", "บันทึกรับผลตอบแทน/อัพเดตมูลค่า"]] as const;
+
+type Row = { id: string; asset_id: string; category_id: string; quantity: number | null; unit: string | null; purity_pct: number | null; auto_price: boolean | null;
   brand: string | null; model: string | null; storage_location: string | null;
   asset_categories: Cat | Cat[] | null;
   assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string; acquisition_cost: number | null } };
@@ -19,7 +23,7 @@ const COLORS = SHARE_COLORS;
 /** ตัวย่อบนป้าย: ตัวอักษรภาษาอังกฤษ / ตัวเลข 4 ตัวแรก (ไม่มี = 2 ตัวแรก) */
 const initials = (name: string) => { const l = name.replace(/[^A-Za-z0-9]/g, ""); return (l || name).slice(0, l ? 4 : 2).toUpperCase(); };
 
-export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; c?: string }> }) {
+export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; c?: string; tab?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -27,13 +31,15 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const paths = ["/alternative"];
-  const [sortMap, { data, error }, { data: owners }, { data: fx }] = await Promise.all([
+  const [sortMap, { data, error }, { data: owners }, { data: fx }, { data: banks }, { data: family }] = await Promise.all([
     loadSortMap("assets"),
     supabase.from("alternative_asset_details")
-      .select("id,asset_id,category_id,quantity,unit,purity_pct,brand,model,storage_location,asset_categories(id,category_name,category_code,default_unit),assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,deleted_at)")
+      .select("id,asset_id,category_id,quantity,unit,purity_pct,auto_price,brand,model,storage_location,asset_categories(id,category_name,category_code,default_unit),assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,deleted_at)")
       .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("families").select("go_live_date").maybeSingle(),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => (v == null ? null : Number(v) * (rate.get(c) ?? 0));
@@ -70,7 +76,15 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const href = (c?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (c) q.set("c", c); const s = q.toString(); return `/alternative${s ? `?${s}` : ""}`; };
   const num = "px-3 py-3 align-top text-right tabular-nums";
 
+  // แท็บบันทึกทั้งชุด: สินทรัพย์ที่ถืออยู่ (ตามตัวกรองคน) · ทองที่ตั้งราคาอัตโนมัติ (THB) ไม่ต้องกรอกมูลค่า
+  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
+  const batchRows: AltRow[] = mine.filter((r) => r.assets.status === "ACTIVE").map((r) => ({
+    id: r.asset_id, name: r.assets.name, category: catOf(r)?.category_name ?? "-", currency: r.assets.currency,
+    value: r.assets.current_value != null ? Number(r.assets.current_value) : null, valueDate: r.assets.current_value_date,
+    auto: !!r.auto_price && catOf(r)?.category_code === "GOLD" && r.assets.currency === "THB" }));
+
   return (
+    <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -83,6 +97,14 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
+
+      <TabPanel id="record">
+        <AltBatch key={batchRows.map((r) => r.id).join()} rows={batchRows} banks={(banks ?? []).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }))}
+          today={todayBangkok()} minDate={family?.go_live_date ?? ""} canWrite={me.role !== "VIEWER"} />
+      </TabPanel>
+
+      <TabPanel id="overview" className="space-y-6">
 
       {totalMine > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
@@ -174,6 +196,8 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
         </table>
       </div>
       <p className="text-xs text-slate-500">มูลค่าสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · ทองคำ 1 บาททองคำ = 15.244 กรัม · ต่อหน่วย = มูลค่า ÷ จำนวน</p>
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }

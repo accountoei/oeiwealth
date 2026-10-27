@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { BAD_ROWS_ERROR, amountOrNull, isPositive, notSaved, readRows } from "@/lib/batch-entry";
 
 /** ยอดตาม Statement ต่ำกว่าที่คำนวณ → ถามต่อว่าเป็นการจ่ายหรือไม่ (n = เลขครั้ง ให้กล่องถามแสดงใหม่ทุกครั้งที่บันทึก) */
 export type Drop = { kind: "CARD" | "LIABILITY"; id: string; date: string; amount: number; n: number };
@@ -232,4 +233,36 @@ export async function updateCardInfo(_: ActionState, form: FormData): Promise<Ac
   revalidatePath("/liabilities");
   revalidatePath(`/liabilities/cards/${id}`);
   return { ok: "บันทึกข้อมูลแล้ว" };
+}
+
+/** แท็บ "จ่ายชำระเงินกู้/บัตรเครดิต": หลายรายการพร้อมกัน — คำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
+export async function batchPayDebts(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<{ kind: "LOAN" | "CARD"; id: string; label: string; bank_asset_id: string; autopay?: boolean;
+    principal?: string; interest?: string; amount?: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่จ่าย" };
+  if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 รายการ" };
+  const bad = (v: number | null) => v != null && (Number.isNaN(v) || v < 0);
+  type Clean = { kind: "LOAN" | "CARD"; label: string; bank_asset_id: string | null; date: string;
+    liability_id?: string; principal?: number | null; interest?: number | null; card_id?: string; amount?: number | null; autopay?: boolean };
+  const clean = rows.map((r): Clean => r.kind === "LOAN"
+    ? { kind: "LOAN", label: r.label, liability_id: r.id, bank_asset_id: r.bank_asset_id || null, date,
+        principal: amountOrNull(r.principal), interest: amountOrNull(r.interest) }
+    : { kind: "CARD", label: r.label, card_id: r.id, bank_asset_id: r.bank_asset_id || null, date, amount: amountOrNull(r.amount), autopay: !!r.autopay });
+  for (const r of clean) {
+    const ok = r.kind === "CARD" ? isPositive(r.amount ?? null)
+      : !bad(r.principal ?? null) && !bad(r.interest ?? null) && (r.principal ?? 0) + (r.interest ?? 0) > 0;
+    if (!ok)
+      return { error: `${r.label} · ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0` };
+    if (!r.bank_asset_id) return { error: `${r.label} · กรุณาเลือกบัญชีที่จ่าย` };
+  }
+  const { data, error } = await supabase.rpc("batch_pay_debts", { p_rows: clean });
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  revalidatePath("/liabilities", "layout");
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  revalidatePath("/");
+  return { ok: `บันทึกการจ่ายแล้ว ${data} รายการ` };
 }

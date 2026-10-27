@@ -9,6 +9,8 @@ import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { CardBalanceForm, NewCardForm } from "./cards/forms";
 import { StatBox } from "@/components/Boxes";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import PayBatch, { type DebtRow } from "./PayBatch";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
   amount: number | null; balance_date: string | null; due_date: string | null; monthly_payment: number | null;
@@ -26,8 +28,9 @@ const DERIVED: Record<string, { text: string; cls: string }> = {
   HELD: { text: "ถือไว้", cls: "text-slate-500" },
 };
 const CARD_STATUS: Record<string, string> = { ACTIVE: "", SUSPENDED: "ระงับชั่วคราว", CLOSED: "ยกเลิกแล้ว" };
+const TABS = [["overview", "ภาพรวม"], ["pay", "จ่ายชำระเงินกู้/บัตรเครดิต"]] as const;
 
-export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
+export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -91,7 +94,22 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const cardLimit = openCards.reduce((t, c) => t + (c.currency === "THB" ? Number(c.credit_limit ?? 0) : 0), 0);
   const monthly = loans.reduce((t, r) => t + (r.currency === "THB" ? Number(r.monthly_payment ?? 0) * pv.liabilityShare(r.source_id) : 0), 0);
 
+  // แท็บจ่ายชำระทั้งชุด: เงินกู้ที่ยังผ่อน (ยอดเต็ม) + บัตรที่ใช้งาน
+  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
+  const payBanks = (banksRaw ?? []).filter((b) => b.status === "ACTIVE").map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
+  const debtRows: DebtRow[] = [
+    ...loans.filter((r) => r.status === "ACTIVE").map((r): DebtRow => ({ key: `l${r.source_id}`, kind: "LOAN", id: r.source_id, href: `/liabilities/${r.source_id}`,
+      name: r.name, sub: LIABILITY_TYPE_LABEL[r.subtype] ?? null, currency: r.currency, balance: Number(r.full_amount ?? 0),
+      monthly: r.monthly_payment != null ? Number(r.monthly_payment) : null, dueDay: r.payment_due_day, autopay: false,
+      defaultBank: payBanks.find((b) => b.currency === r.currency)?.id ?? "" })),
+    ...cards.filter((c) => c.status === "ACTIVE").map((c): DebtRow => ({ key: `c${c.id}`, kind: "CARD", id: c.id, href: `/liabilities/cards/${c.id}`,
+      name: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "), sub: holder(c), currency: c.currency,
+      balance: curOf(c), monthly: null, dueDay: c.due_day, autopay: !!c.autopay_asset_id,
+      defaultBank: c.autopay_asset_id ?? payBanks.find((b) => b.currency === c.currency)?.id ?? "" })),
+  ];
+
   return (
+    <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -110,6 +128,13 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
+
+      <TabPanel id="pay">
+        <PayBatch key={debtRows.map((r) => r.key).join()} rows={debtRows} banks={payBanks} today={today} minDate={minDate} canWrite={canWrite} />
+      </TabPanel>
+
+      <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้สินรวม"}</div>
@@ -269,7 +294,8 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
           เงินต้นที่บันทึกจ่าย (แยกเงินต้น / ดอกเบี้ย) ลดยอดให้ทันที · อัปเดตยอดตาม Statement เป็นระยะเพื่อความถูกต้อง
         </p>
       </div>
-
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }

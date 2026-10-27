@@ -1,18 +1,22 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, money, thDate, todayBangkok } from "@/lib/format";
+import { COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
 import YearTable, { OPEN, type YLine } from "./YearTable";
+import InsuranceBatch, { type InsLine, type PayOpt } from "./InsuranceBatch";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import { endpointValue } from "@/lib/money-endpoint";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
+const TABS = [["overview", "ภาพรวม"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
 
-export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string }> }) {
+export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
@@ -20,8 +24,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const paths = ["/insurance"];
   const sortMap = await loadSortMap("insurance_policies");
   const supabase = await createClient();
-  const year = todayBangkok().slice(0, 4);
-  const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines }] = await Promise.all([
+  const today = todayBangkok();
+  const year = today.slice(0, 4);
+  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
+  const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
+    { data: banks }, { data: cards }, { data: family }] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status")
       .order("status").order("insurer"),
@@ -36,6 +43,9 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       .in("status", ["OPEN", "IN_PROGRESS"]).order("created_at"),
     supabase.from("v_insurance_schedule_status").select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,paid_amount,remaining,status")
       .order("due_date").order("installment_no"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    supabase.from("families").select("go_live_date").maybeSingle(),
   ]);
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
@@ -95,7 +105,21 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const groupsOf = (kind: string) => rows.map((r) => ({ r, lines: yearLines.filter((l) => l.policy_id === r.id && l.kind === kind) })).filter((g) => g.lines.length > 0);
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
+  // แท็บบันทึกทั้งชุด: งวดที่ยังไม่จ่าย / ยังไม่รับ ของกรมธรรม์ที่มีผล (ตามตัวกรองคน)
+  const activeIds = new Set(mineRows.filter((r) => r.status === "ACTIVE").map((r) => r.id));
+  const batchLines = (k: string): InsLine[] => lineList.filter((l) => l.kind === k && activeIds.has(l.policy_id) && OPEN.includes(l.status))
+    .map((l) => {
+      const r = mineRows.find((x) => x.id === l.policy_id);
+      return { id: l.id, policyId: l.policy_id, policy: policyName.get(l.policy_id) ?? "-", person: r?.person_id ? pname.get(r.person_id) ?? null : null,
+        no: l.installment_no, due: l.due_date, remaining: Number(l.remaining), currency: l.currency, status: l.status, benefitType: l.benefit_type };
+    });
+  const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
+  const cardPays: PayOpt[] = (cards ?? []).map((c) => ({ value: endpointValue({ kind: "card", id: c.id }),
+    label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency }));
+  const canWrite = me.role !== "VIEWER";
+  const goLive = family?.go_live_date ?? "";
   return (
+    <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -108,6 +132,16 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
         </div>
       </div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
+      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
+
+      <TabPanel id="benefit">
+        <InsuranceBatch key={`b${lineList.length}`} kind="BENEFIT" rows={batchLines("BENEFIT")} pays={bankPays} today={today} soon={addDays(today, 60)} minDate={goLive} canWrite={canWrite} />
+      </TabPanel>
+      <TabPanel id="premium">
+        <InsuranceBatch key={`p${lineList.length}`} kind="PREMIUM" rows={batchLines("PREMIUM")} pays={[...bankPays, ...cardPays]} today={today} soon={addDays(today, 60)} minDate={goLive} canWrite={canWrite} />
+      </TabPanel>
+
+      <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatBox label="กรมธรรม์ที่มีผล" value={act.length} unit="ฉบับ" sub={<>ทั้งหมด {mineRows.length} ฉบับ</>} />
         <StatBox label="ทุนประกันรวม (THB)" value={money(insuredTotal, "THB", 0)} />
@@ -225,6 +259,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       </div>
       <YearTable kind="PREMIUM" year={yr} groups={groupsOf("PREMIUM")} pname={pname} prevHref={yHref(yr - 1)} nextHref={yHref(yr + 1)} thisHref={yr !== yNow ? yHref(yNow) : undefined} />
       <YearTable kind="BENEFIT" year={yr} groups={groupsOf("BENEFIT")} pname={pname} prevHref={yHref(yr - 1)} nextHref={yHref(yr + 1)} thisHref={yr !== yNow ? yHref(yNow) : undefined} />
+      </TabPanel>
     </div>
+    </TabsProvider>
   );
 }
