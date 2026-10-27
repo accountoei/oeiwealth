@@ -25,12 +25,12 @@ export default async function LoanDetailPage({ params, searchParams }: {
 }) {
   const { id } = await params;
   const rs = (await searchParams).restructure;
-  const preset = rs === "end" || rs === "payment" ? rs : undefined;
+  const preset = rs === "end" || rs === "payment" || rs === "disburse" || rs === "rate" ? rs : undefined;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }] = await Promise.all([
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
-    supabase.from("loan_details").select("borrower_phone,contract_no,purpose").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
+    supabase.from("loan_details").select("borrower_phone,contract_no,purpose,at_risk_amount,risk_assessed_date,risk_note").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null).order("movement_date", { ascending: false }),
@@ -98,11 +98,17 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const history = [...entries.values()].sort((a, b) => b.date.localeCompare(a.date));
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id, b.name]));
 
-  // วงกลมสถานะการชำระเงินต้น: ชำระแล้ว = เงินต้น − คงเหลือ (ตัดหนี้สูญ: ส่วนที่เหลือ = ตัดหนี้สูญ)
-  const principalAll = Number(l.principal ?? 0);
+  // ให้กู้เพิ่ม = เงินที่จ่ายให้ผู้กู้หลังวันยอดตั้งต้น (ไม่นับครั้งแรกของสัญญาที่ให้กู้ในระบบ)
+  const disb = (moves ?? []).filter((m) => m.movement_type === "LOAN_DISBURSEMENT" && m.to_asset_id === id && m.movement_date > l.opening_date)
+    .sort((a, b) => a.movement_date.localeCompare(b.movement_date));
+  const extraLent = disb.slice(Number(l.opening_outstanding_principal ?? 0) > 0 ? 0 : 1).reduce((s, m) => s + Number(m.amount), 0);
+  // วงกลมสถานะการชำระเงินต้น: ชำระแล้ว = เงินต้น (+ ให้กู้เพิ่ม) − คงเหลือ (ตัดหนี้สูญ: ส่วนที่เหลือ = ตัดหนี้สูญ)
+  const principalAll = Number(l.principal ?? 0) + extraLent;
   const leftP = Math.max(Number(l.outstanding_principal ?? 0), 0);
   const paidP = Math.max(principalAll - leftP, 0);
   const paidPct = principalAll > 0 ? Math.min((paidP / principalAll) * 100, 100) : 0;
+  // มีความเสี่ยง: ส่วนที่มีความเสี่ยงไม่ได้คืน (แสดงอย่างเดียว · Net Worth ยังนับเต็มจนตัดหนี้สูญ)
+  const riskAmt = l.status === "AT_RISK" && extra?.at_risk_amount != null ? Math.min(Number(extra.at_risk_amount), leftP) : null;
   // แบบการชำระ: ดูจากตารางผ่อน
   const payType = sched.length === 0 ? "ไม่มีตารางผ่อน (รับตามจริง)"
     : sched.length > 1 && sched.slice(0, -1).every((x) => Number(x.principal_due) === 0) ? "รับดอกเบี้ยรายงวด · คืนเงินต้นครั้งเดียวตอนจบ"
@@ -147,7 +153,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <Link href={`/print/loan/${id}`} target="_blank" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">พิมพ์สัญญา / ตาราง</Link>
             {canWrite && loanOpen && (
               <ActionBar>
-                <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
+                <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} hasOpenSchedule={open.length > 0} />
               </ActionBar>
             )}
           </div>
@@ -170,12 +176,23 @@ export default async function LoanDetailPage({ params, searchParams }: {
                   <dt className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" />{l.status === "WRITTEN_OFF" ? "ตัดหนี้สูญ" : "คงเหลือ"}</dt>
                   <dd className="text-right tabular-nums"><b>{money(leftP, l.currency, 0)}</b> <span className="ml-2 text-xs text-slate-500">{(100 - paidPct).toFixed(1)}%</span></dd>
                 </div>
+                {riskAmt != null && (
+                  <div className="flex items-center justify-between gap-3 py-2 text-amber-800">
+                    <dt className="pl-4.5 text-xs">ในจำนวนนี้ มีความเสี่ยงไม่ได้คืน<div className="text-slate-500">คาดว่าจะได้คืน {money(leftP - riskAmt, l.currency, 0)}{extra?.risk_assessed_date ? ` · ประเมิน ${thDate(extra.risk_assessed_date)}` : ""}</div></dt>
+                    <dd className="text-right tabular-nums"><b>{money(riskAmt, l.currency, 0)}</b></dd>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 py-2 font-medium">
-                  <dt>รวมเงินต้น</dt><dd className="text-right tabular-nums">{money(Number(l.principal), l.currency, 0)} <span className="ml-2 text-xs text-slate-500">100%</span></dd>
+                  <dt>รวมเงินต้น{extraLent > 0 && <div className="text-xs font-normal text-slate-500">ตามสัญญา {money(Number(l.principal), undefined, 0)} + ให้กู้เพิ่ม {money(extraLent, undefined, 0)}</div>}</dt>
+                  <dd className="text-right tabular-nums">{money(principalAll, l.currency, 0)} <span className="ml-2 text-xs text-slate-500">100%</span></dd>
                 </div>
               </dl>
             </div>
-            <p className="mt-3 text-xs text-slate-500">ดอกเบี้ยรับแล้ว (รายได้) {money(interest, l.currency)}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าใน Net Worth = 0" : ""}</p>
+            <p className="mt-3 text-xs text-slate-500">ดอกเบี้ยรับแล้ว (รายได้) {money(interest, l.currency)}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าใน Net Worth = 0" : ""}
+              {riskAmt != null ? ` · ส่วนที่มีความเสี่ยงยังนับเต็มใน Net Worth จนกว่าจะตัดหนี้สูญ${extra?.risk_note ? ` · ${extra.risk_note}` : ""}` : ""}</p>
+            {l.status === "CLOSED" && leftP > 0.005 && (
+              <p className="mt-2 text-xs text-red-600">สถานะ &ldquo;ปิดแล้ว&rdquo; แต่ยังมีเงินต้นคงเหลือ — เปลี่ยนสถานะกลับเป็น &ldquo;ปกติ&rdquo; แล้วบันทึกรับชำระให้ครบ หรือเลือก &ldquo;ตัดหนี้สูญ&rdquo; (ยอดนี้ยังนับใน Net Worth)</p>
+            )}
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="LOAN" entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
@@ -192,7 +209,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
                   <WithStatus status={{ table: "loan_details", id: l.id, value: l.status, paths, label: "สถานะ",
                     options: LOAN_STATUS_OPTIONS,
                     remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined }}>
-                    <LoanInfoForm assetId={id} minDue={sched.at(-1)?.due_date ?? null} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
+                    <LoanInfoForm assetId={id} minDue={sched.at(-1)?.due_date ?? null} hasOpenSchedule={open.length > 0}
+                      risk={l.status === "AT_RISK" ? { outstanding: leftP, currency: l.currency, today, date: extra?.risk_assessed_date ?? null, note: extra?.risk_note ?? null,
+                        expected: extra?.at_risk_amount == null ? null : Math.max(leftP - Number(extra.at_risk_amount), 0) } : undefined} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
                       borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
                   </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
@@ -237,8 +256,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 {open.length === 0 && <span className="text-emerald-700"> · รับครบทุกงวดแล้ว</span>}
               </div>
             ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
-            {sched.length > 0 && Math.abs(schedP - Number(l.principal)) > 0.01 && (
-              <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา ({money(l.principal)}) — สถานะ &ldquo;รับแล้ว&rdquo; อาจคลาดเคลื่อน</p>
+            {sched.length > 0 && Math.abs(schedP - principalAll) > 0.01 && (
+              <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา{extraLent > 0 ? " รวมที่ให้กู้เพิ่ม" : ""} ({money(principalAll)})
+                {extraLent > 0 ? " — กด “คำนวณงวดที่เหลือใหม่” เพื่อใส่ยอดที่ให้กู้เพิ่มในตาราง" : " — สถานะ “รับแล้ว” อาจคลาดเคลื่อน"}</p>
             )}
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -257,13 +277,13 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 firstDue: addMonthsKeepDay(l.loan_date ?? today, 1), lastDue: l.due_date ?? undefined }} />
           )}
           {canWrite && loanOpen && (payTo ? (
-            <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
+            <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} outstanding={leftP}
               title={`รับชำระงวดที่ ${payTo.installment_no} (ครบ ${thDate(payTo.due_date)})${overdue.filter((x) => x.id !== payTo.id).length
                 ? ` · รวมงวดที่เลยกำหนด ${overdue.filter((x) => x.id !== payTo.id).length} งวด` : ""} · เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน`}
               principal={principalDueUpTo(payTo.due_date)} interest={interestOwedUpTo(payTo.due_date)}
               interestOwed={interestOwedUpTo(payTo.due_date)} principalDue={principalDueUpTo(payTo.due_date)} />
           ) : (
-            <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
+            <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} outstanding={leftP}
               interestOwed={sched.length ? interestOwedUpTo(today) : undefined} principalDue={sched.length ? principalDueUpTo(today) : undefined} />
           ))}
           </div>

@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, thDate, type FormState } from "@/lib/format";
+import { BAD_ROWS_ERROR, amountOrNull, isValidTax, notSaved, readRows, TAX_ERROR } from "@/lib/batch-entry";
 
-export type ActionState = FormState;
+/** rateChanged = แก้อัตราดอกเบี้ย → ถามต่อว่าจะคำนวณงวดที่เหลือใหม่ไหม */
+export type ActionState = FormState & { rateChanged?: boolean };
 
 function done(id: string, msg: string): ActionState {
   revalidatePath("/financial/loans");
@@ -43,6 +45,28 @@ export async function receivePayment(_: ActionState, form: FormData): Promise<Ac
   });
   if (error) return { error: friendlyError(error.message) };
   return done(id, "บันทึกรับชำระแล้ว");
+}
+
+/** แท็บ "บันทึกรับชำระคืนเงินกู้": รับชำระหลายสัญญาในคำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย) */
+export async function batchReceiveLoans(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<{ loan_asset_id: string; label: string; bank_asset_id: string; principal?: string; interest?: string; interest_tax?: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่ได้รับ" };
+  if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 สัญญา" };
+  const bad = (v: number | null) => v != null && (Number.isNaN(v) || v < 0);
+  const clean = rows.map((r) => ({ loan_asset_id: r.loan_asset_id, label: r.label, bank_asset_id: r.bank_asset_id || null, date,
+    principal: amountOrNull(r.principal), interest: amountOrNull(r.interest), interest_tax: amountOrNull(r.interest_tax) }));
+  for (const r of clean) {
+    if (bad(r.principal) || bad(r.interest) || (r.principal ?? 0) + (r.interest ?? 0) <= 0) return { error: `${r.label} · ยอดที่รับต้องเป็นตัวเลขมากกว่า 0` };
+    if (!isValidTax(r.interest_tax)) return { error: `${r.label} · ${TAX_ERROR}` };
+    if (!r.bank_asset_id) return { error: `${r.label} · กรุณาเลือกบัญชีที่รับเงิน` };
+  }
+  const { data, error } = await supabase.rpc("batch_receive_loan_payments", { p_rows: clean });
+  if (error) return { error: notSaved("ทุกสัญญา", friendlyError(error.message)) };
+  clean.forEach((r) => revalidatePath(`/financial/loans/${r.loan_asset_id}`));
+  return done(clean[0].loan_asset_id, `บันทึกรับชำระแล้ว ${data} สัญญา`);
 }
 
 export async function disburseMore(_: ActionState, form: FormData): Promise<ActionState> {
@@ -100,12 +124,25 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
   if (last && (!due || due < last.due_date)) {
     return { error: `วันครบกำหนดสัญญาต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน (${thDate(last.due_date)})` };
   }
+  const { data: cur } = await supabase.from("loan_details").select("interest_rate,outstanding_principal").eq("asset_id", assetId).is("deleted_at", null).maybeSingle();
+  const rate = num(form.get("interest_rate"));
+  // มีความเสี่ยง: กรอก "มูลค่าคาดว่าจะได้รับคืน" → เก็บเป็นส่วนที่มีความเสี่ยง = เงินต้นคงเหลือ − มูลค่าคาดว่าได้คืน (แสดงอย่างเดียว)
+  let risk: { at_risk_amount: number | null; risk_assessed_date: string | null; risk_note: string | null } | null = null;
+  if (form.has("expected_recoverable")) {
+    const expected = num(form.get("expected_recoverable"));
+    const out = Number(cur?.outstanding_principal ?? 0);
+    if (expected != null && (Number.isNaN(expected) || expected < 0)) return { error: "มูลค่าคาดว่าจะได้รับคืนต้องเป็นตัวเลข (ไม่ติดลบ)" };
+    if (expected != null && expected > out + 0.005) return { error: "มูลค่าคาดว่าจะได้รับคืนต้องไม่เกินเงินต้นคงเหลือ" };
+    risk = expected == null ? { at_risk_amount: null, risk_assessed_date: null, risk_note: str(form.get("risk_note")) }
+      : { at_risk_amount: Math.round((out - expected) * 100) / 100, risk_assessed_date: str(form.get("risk_assessed_date")), risk_note: str(form.get("risk_note")) };
+  }
   const { data: a, error: e1 } = await supabase.from("assets").update({ name }).eq("id", assetId).select("id");
   if (e1) return { error: friendlyError(e1.message) };
   if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   const { error: e2 } = await supabase.from("loan_details").update({
+    ...(risk ?? {}),
     borrower_name: str(form.get("borrower_name")),
-    interest_rate: num(form.get("interest_rate")),
+    interest_rate: rate,
     due_date: due,
     notes: str(form.get("notes")),
     borrower_phone: str(form.get("borrower_phone")),
@@ -113,5 +150,15 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
     purpose: str(form.get("purpose")),
   }).eq("asset_id", assetId);
   if (e2) return { error: friendlyError(e2.message) };
-  return done(assetId, "บันทึกรายละเอียดแล้ว");
+  return { ...done(assetId, "บันทึกรายละเอียดแล้ว"), rateChanged: (cur?.interest_rate == null ? null : Number(cur.interest_rate)) !== rate };
+}
+
+/** ปิดสัญญา (หลังรับเงินต้นครบ) · ฐานข้อมูลตรวจซ้ำว่าเงินต้นคงเหลือ = 0 */
+export async function closeLoan(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const { data, error } = await supabase.from("loan_details").update({ status: "CLOSED" }).eq("asset_id", assetId).is("deleted_at", null).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  return done(assetId, "ปิดสัญญาแล้ว");
 }
