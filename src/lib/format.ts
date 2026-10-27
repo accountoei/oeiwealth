@@ -14,6 +14,39 @@ export function thDate(value: string | null | undefined): string {
   return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
 }
 
+/** วันที่แบบเต็ม เช่น "1 ตุลาคม 2569" (ใช้ในเอกสาร / สัญญา) */
+export function thDateLong(value: string | null | undefined): string {
+  if (!value) return "-";
+  const d = new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  return d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" });
+}
+
+const BAHT_DIGIT = ["", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+const BAHT_POS = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน"];
+/** ตัวเลข 0–999,999 เป็นคำอ่าน (เอ็ด / ยี่สิบ ตามหลักภาษาไทย) */
+function bahtWords6(n: number, higher = false): string {
+  const ds = String(n).split("").map(Number);
+  return ds.map((d, i) => {
+    const pos = ds.length - 1 - i;
+    if (d === 0) return "";
+    if (pos === 1 && d === 1) return "สิบ";
+    if (pos === 1 && d === 2) return "ยี่สิบ";
+    if (pos === 0 && d === 1 && (ds.length > 1 || higher)) return "เอ็ด";
+    return BAHT_DIGIT[d] + BAHT_POS[pos];
+  }).join("");
+}
+function bahtWords(n: number): string {
+  if (n >= 1_000_000) return bahtWords(Math.floor(n / 1_000_000)) + "ล้าน" + bahtWords6(n % 1_000_000, true);
+  return bahtWords6(n);
+}
+/** จำนวนเงินเป็นตัวอักษร เช่น 1,250,000.50 → "หนึ่งล้านสองแสนห้าหมื่นบาทห้าสิบสตางค์" */
+export function bahtText(value: number): string {
+  const v = Math.round(Math.abs(value) * 100);
+  const baht = Math.floor(v / 100), satang = v % 100;
+  if (baht === 0 && satang === 0) return "ศูนย์บาทถ้วน";
+  return (baht ? `${bahtWords(baht)}บาท` : "") + (satang ? `${bahtWords(satang)}สตางค์` : "ถ้วน");
+}
+
 /** วันที่วันนี้ตามเวลาไทย รูปแบบ YYYY-MM-DD */
 export function todayBangkok(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });

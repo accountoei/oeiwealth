@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { money, thDate } from "@/lib/format";
 
-/** แถวตารางผ่อน (คำนวณสถานะจากยอดที่รับจริงที่ฐานข้อมูล) · action = ปุ่มบันทึกรับ (เฉพาะงวดเก่าสุดที่ยังค้าง) */
+/** แถวตารางผ่อน (คำนวณสถานะจากยอดที่รับจริงที่ฐานข้อมูล) · บันทึกรับใช้ปุ่ม "บันทึกรับชำระ" ด้านบนตาราง (ปุ่มเดียว) */
 export type SchedRow = {
   id: string; no: number; due: string; principal: number; interest: number; total: number; remaining: number;
   /** เงินต้นคงเหลือตามแผน หลังงวดนี้ (เงินต้นรวมตามตาราง − เงินต้นสะสมถึงงวดนี้) */
@@ -11,7 +11,6 @@ export type SchedRow = {
   status: string; statusText: string; statusCls: string; notes: string | null;
   /** งวดที่รับครบแล้ว: วันที่รับครบ (null = ก่อนเริ่มใช้ระบบ) */
   paidOn?: string | null;
-  action?: ReactNode;
 };
 
 /** ตารางผ่อนชำระ ยาวจนจบ · ตัวกรอง ยังไม่ชำระ (ค่าเริ่มต้น) / ชำระแล้ว / ทั้งหมด */
@@ -32,10 +31,10 @@ export default function ScheduleTable({ rows, currency }: { rows: SchedRow[]; cu
         <table className="w-full min-w-[46rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100"><th className="py-1.5">งวด</th><th>ครบกำหนด</th><th className="text-right">เงินต้น</th><th className="text-right">ดอกเบี้ย</th>
-              <th className="text-right">รวม</th><th className="text-right" title="เงินต้นคงเหลือตามแผน หลังงวดนั้น">ยอดคงเหลือ</th><th className="pl-4">สถานะ</th><th></th></tr>
+              <th className="text-right">รวม</th><th className="text-right" title="เงินต้นคงเหลือตามแผน หลังงวดนั้น">ยอดคงเหลือ</th><th className="pl-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-slate-500">{f === "open" ? "รับครบทุกงวดแล้ว ✓" : "ไม่มีรายการ"}</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-slate-500">{f === "open" ? "รับครบทุกงวดแล้ว ✓" : "ไม่มีรายการ"}</td></tr>}
             {shown.map((x) => (
               <tr key={x.id} className={`align-top ${x.status === "PAID" ? "text-slate-500" : ""}`}>
                 <td className="py-2">{x.no}</td>
@@ -49,7 +48,6 @@ export default function ScheduleTable({ rows, currency }: { rows: SchedRow[]; cu
                   {x.status === "PAID" && <div className="text-xs text-slate-500">{x.paidOn ? `รับครบ ${thDate(x.paidOn)}` : "รับก่อนเริ่มใช้ระบบ"} · {money(x.total)}</div>}
                   {x.status !== "PAID" && x.remaining < x.total - 0.005 && <div className="text-xs text-slate-500">รับแล้ว {money(x.total - x.remaining)} · ค้าง {money(x.remaining)}</div>}
                 </td>
-                <td className="py-2 pl-2 text-right">{x.action}</td>
               </tr>
             ))}
           </tbody>
@@ -58,7 +56,7 @@ export default function ScheduleTable({ rows, currency }: { rows: SchedRow[]; cu
               <tr><td colSpan={2} className="py-2">รวม {shown.length} งวด</td>
                 <td className="text-right tabular-nums">{money(sum("principal"))}</td><td className="text-right tabular-nums">{money(sum("interest"))}</td>
                 <td className="text-right tabular-nums">{money(sum("total"), currency)}</td><td></td>
-                <td className="pl-4 text-xs font-normal text-slate-500">{f !== "paid" && sum("remaining") > 0.005 ? `ค้าง ${money(sum("remaining"))}` : ""}</td><td></td></tr>
+                <td className="pl-4 text-xs font-normal text-slate-500">{f !== "paid" && sum("remaining") > 0.005 ? `ค้าง ${money(sum("remaining"))}` : ""}</td></tr>
             </tfoot>
           )}
         </table>

@@ -3,7 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { saveSchedule, type ActionState } from "../actions";
-import { generateSchedule, parseScheduleRows, parseScheduleText, PAYMENT_LABEL, scheduleToText, SCHED_METHOD_LABEL,
+import { generateSchedule, MAX_PERIODS, parseScheduleRows, parseScheduleText, PAYMENT_LABEL, scheduleToText, SCHED_METHOD_LABEL,
   type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate, numOrZero as num } from "@/lib/format";
 import { DayCountFields } from "./day-count";
@@ -20,10 +20,12 @@ const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hove
  * ผลคำนวณจากวิธีที่ 1 ส่งต่อไปแก้ทีละงวดในวิธีที่ 2 ได้ · ดูตัวอย่างก่อนบันทึก · บันทึก = แทนที่ตารางเดิมทั้งชุด
  */
 type Mode = "FORMULA" | "TEXT";
+const monthsBetween = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 type XSheet = { sheet: string; data: unknown[][] };
 export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedule }: {
   assetId: string; currency: string; current: SchedLine[]; hasSchedule: boolean;
-  defaults: { amount: number; ratePct: number; firstDue: string; interestFrom?: string };
+  /** lastDue = วันครบกำหนดสัญญา → จำนวนงวดเริ่มต้นให้งวดสุดท้ายตรงวันนี้ */
+  defaults: { amount: number; ratePct: number; firstDue: string; interestFrom?: string; lastDue?: string };
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [mode, setMode] = useState<Mode>(hasSchedule ? "TEXT" : "FORMULA");
@@ -35,7 +37,10 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const [payment, setPayment] = useState("");
   const [amount, setAmount] = useState(defaults.amount ? defaults.amount.toFixed(2) : "");
   const [rate, setRate] = useState(defaults.ratePct ? String(defaults.ratePct) : "");
-  const [periods, setPeriods] = useState("12");
+  const [periods, setPeriods] = useState(() => {
+    const m = defaults.lastDue && defaults.lastDue >= defaults.firstDue ? monthsBetween(defaults.firstDue, defaults.lastDue) + 1 : 12;
+    return String(Math.min(Math.max(m, 1), MAX_PERIODS));
+  });
   const [every, setEvery] = useState("1");
   const [actual, setActual] = useState(false);
   const [from, setFrom] = useState(defaults.interestFrom ?? "");
@@ -130,7 +135,8 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
             )}
             {byPayment
               ? <label className="text-sm">{PAYMENT_LABEL[method]}<input value={payment} onChange={(e) => setPayment(e.target.value)} inputMode="decimal" className={input} /></label>
-              : <label className="text-sm">จำนวนงวด<input value={periods} onChange={(e) => setPeriods(e.target.value)} name="quantity" inputMode="decimal" className={input} /></label>}
+              : <label className="text-sm">จำนวนงวด<input value={periods} onChange={(e) => setPeriods(e.target.value)} name="quantity" inputMode="decimal" className={input} />
+                {defaults.lastDue && <span className="mt-1 block text-xs text-slate-500">ค่าเริ่มต้น: งวดสุดท้ายตรงวันครบกำหนดสัญญา ({thDate(defaults.lastDue)}) ถ้าผ่อนทุกเดือน</span>}</label>}
             <label className="text-sm">ครบกำหนดงวดแรก<input type="date" value={first} onChange={(e) => setFirst(e.target.value)} className={input} /></label>
             <DayCountFields actual={actual} setActual={(v) => { setActual(v); setGenerated(null); }} from={from}
               setFrom={(v) => { setFrom(v); setGenerated(null); }} hint="ตั้งต้น = วันที่ให้กู้" />

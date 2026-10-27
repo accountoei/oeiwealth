@@ -57,7 +57,8 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const nextDue = open.find((x) => x.status !== "OVERDUE");
   const overdue = open.filter((x) => x.status === "OVERDUE");
   const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
-  const payable = new Set([...overdue.map((x) => x.id), ...(nextDue ? [nextDue.id] : [])]);
+  // ปุ่ม "บันทึกรับชำระ" (ปุ่มเดียว · ตกลง 27 ต.ค. 2026): เติมยอดงวดปัจจุบันให้ = งวดที่เลยกำหนด + งวดถัดไป (แก้ได้)
+  const payTo = nextDue ?? overdue.at(-1);
   // ดอกเบี้ยค้างสะสมถึงงวดนั้น (ใช้แบ่งยอดรวมที่รับ: หักดอกก่อน ที่เหลือเป็นต้น)
   const interestOwedUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.interest_remaining), 0);
   const principalDueUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.principal_remaining), 0);
@@ -119,8 +120,6 @@ export default async function LoanDetailPage({ params, searchParams }: {
   };
   let cumP = 0, cumI = 0;
   const pBase = Math.max(principalAll - Number(l.opening_outstanding_principal ?? principalAll), 0);
-  // บันทึกรับ: เฉพาะงวดเก่าสุดที่ยังค้าง (เงินตัดงวดเก่าก่อนเสมอ กันสับสน)
-  const firstOpen = open[0];
   const schedRows: SchedRow[] = sched.map((x) => {
     cumP += Number(x.principal_due);
     const preOpening = x.due_date <= l.opening_date;
@@ -131,12 +130,6 @@ export default async function LoanDetailPage({ params, searchParams }: {
       id: x.id, no: x.installment_no, due: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), total: Number(x.total_due),
       remaining: Number(x.total_remaining), balance: Math.max(Math.round((schedP - cumP) * 100) / 100, 0), status: x.status, statusText: x.status === "PAID" ? "ชำระแล้ว" : st?.text ?? x.status, statusCls: st?.cls ?? "",
       notes: x.notes, paidOn: x.status === "PAID" ? [dp, di].filter(Boolean).sort().at(-1) ?? null : undefined,
-      action: canWrite && loanOpen && firstOpen?.id === x.id && payable.has(x.id) ? (
-        <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} small button="บันทึกรับ"
-          title={`รับชำระงวดที่ ${x.installment_no} (ครบ ${thDate(x.due_date)}) · เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน`}
-          principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
-          interestOwed={interestOwedUpTo(x.due_date)} principalDue={principalDueUpTo(x.due_date)} />
-      ) : undefined,
     };
   });
 
@@ -150,11 +143,14 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <p className="text-sm text-slate-500">ผู้กู้ {l.borrower_name}{extra?.borrower_phone && <> · โทร <a href={`tel:${extra.borrower_phone}`} className="hover:underline">{extra.borrower_phone}</a></>}
               {" · "}{l.currency}{l.derived_status === "OVERDUE" && <span className="text-red-600"> · เลยกำหนดคืน</span>}</p>
           </div>
-          {canWrite && loanOpen && (
-            <ActionBar>
-              <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
-            </ActionBar>
-          )}
+          <div className="flex items-start gap-2">
+            <Link href={`/print/loan/${id}`} target="_blank" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">พิมพ์สัญญา / ตาราง</Link>
+            {canWrite && loanOpen && (
+              <ActionBar>
+                <DisburseForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} />
+              </ActionBar>
+            )}
+          </div>
         </div>
       </div>
 
@@ -196,7 +192,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                   <WithStatus status={{ table: "loan_details", id: l.id, value: l.status, paths, label: "สถานะ",
                     options: LOAN_STATUS_OPTIONS,
                     remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined }}>
-                    <LoanInfoForm assetId={id} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
+                    <LoanInfoForm assetId={id} minDue={sched.at(-1)?.due_date ?? null} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
                       borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
                   </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
@@ -258,18 +254,23 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
               current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
               defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0), interestFrom: l.loan_date ?? undefined,
-                firstDue: addMonthsKeepDay(l.loan_date ?? today, 1) }} />
+                firstDue: addMonthsKeepDay(l.loan_date ?? today, 1), lastDue: l.due_date ?? undefined }} />
           )}
-          {canWrite && loanOpen && (
+          {canWrite && loanOpen && (payTo ? (
             <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
-              interestOwed={sched.length ? interestOwedUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined}
-              principalDue={sched.length ? principalDueUpTo(nextDue?.due_date && nextDue.due_date > today ? nextDue.due_date : today) : undefined} />
-          )}
+              title={`รับชำระงวดที่ ${payTo.installment_no} (ครบ ${thDate(payTo.due_date)})${overdue.filter((x) => x.id !== payTo.id).length
+                ? ` · รวมงวดที่เลยกำหนด ${overdue.filter((x) => x.id !== payTo.id).length} งวด` : ""} · เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน`}
+              principal={principalDueUpTo(payTo.due_date)} interest={interestOwedUpTo(payTo.due_date)}
+              interestOwed={interestOwedUpTo(payTo.due_date)} principalDue={principalDueUpTo(payTo.due_date)} />
+          ) : (
+            <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive}
+              interestOwed={sched.length ? interestOwedUpTo(today) : undefined} principalDue={sched.length ? principalDueUpTo(today) : undefined} />
+          ))}
           </div>
         </div>
         {sched.length > 0 && <ScheduleTable rows={schedRows} currency={l.currency} />}
         {sched.length > 0 && <p className="text-xs text-slate-500">
-          ปุ่ม &ldquo;บันทึกรับ&rdquo; อยู่ที่งวดเก่าสุดที่ยังค้าง · รับหลายงวดพร้อมกันใช้ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตาราง ·
+          ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดปัจจุบัน (รวมงวดที่เลยกำหนด) ให้ แก้ยอดได้ตามที่รับจริง ·
           ลบการรับชำระที่บันทึกผิดได้ที่ประวัติด้านล่าง (ตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "ตั้ง / แก้ตารางผ่อน"}&rdquo; ·
           สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
           ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
