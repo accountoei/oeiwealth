@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, thDate, type FormState } from "@/lib/format";
 
 export type ActionState = FormState;
 
@@ -93,13 +93,20 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
   const name = str(form.get("name"));
   if (!name) return { error: "กรุณาใส่ชื่อรายการ" };
   if (!str(form.get("borrower_name"))) return { error: "กรุณาใส่ชื่อผู้กู้" };
+  // วันครบกำหนดสัญญาต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน (ตั้ง / ปรับตาราง ระบบตั้งให้เท่างวดสุดท้ายเอง)
+  const due = str(form.get("due_date"));
+  const { data: last } = await supabase.from("loan_schedule_lines").select("due_date").eq("loan_asset_id", assetId).is("deleted_at", null)
+    .order("due_date", { ascending: false }).limit(1).maybeSingle();
+  if (last && (!due || due < last.due_date)) {
+    return { error: `วันครบกำหนดสัญญาต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน (${thDate(last.due_date)})` };
+  }
   const { data: a, error: e1 } = await supabase.from("assets").update({ name }).eq("id", assetId).select("id");
   if (e1) return { error: friendlyError(e1.message) };
   if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   const { error: e2 } = await supabase.from("loan_details").update({
     borrower_name: str(form.get("borrower_name")),
     interest_rate: num(form.get("interest_rate")),
-    due_date: str(form.get("due_date")),
+    due_date: due,
     notes: str(form.get("notes")),
     borrower_phone: str(form.get("borrower_phone")),
     contract_no: str(form.get("contract_no")),

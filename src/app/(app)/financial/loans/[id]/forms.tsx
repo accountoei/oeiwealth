@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
-import { ROW_BTN, numOrZero as num } from "@/lib/format";
+import { ROW_BTN, numOrZero as num, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 
@@ -130,7 +130,9 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
 }
 
 /** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
-export function LoanInfoForm({ assetId, v }: {
+export function LoanInfoForm({ assetId, v, minDue }: {
+  /** งวดสุดท้ายในตารางผ่อน → วันครบกำหนดสัญญาต้องไม่ก่อนวันนี้ */
+  minDue?: string | null;
   assetId: string; v: { name: string; borrower_name: string; interest_rate: number | null; due_date: string | null; notes: string | null;
     borrower_phone: string | null; contract_no: string | null; purpose: string | null };
 }) {
@@ -144,7 +146,8 @@ export function LoanInfoForm({ assetId, v }: {
       <label className="text-sm">เลขที่สัญญา<input name="contract_no" maxLength={100} defaultValue={v.contract_no ?? ""} className={input} /></label>
       <label className="text-sm md:col-span-2">วัตถุประสงค์<input name="purpose" maxLength={500} defaultValue={v.purpose ?? ""} className={input} /></label>
       <label className="text-sm">ดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={v.interest_rate ?? ""} className={input} /></label>
-      <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} className={input} /></label>
+      <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} min={minDue ?? undefined} required={!!minDue} className={input} />
+        {minDue && <span className="mt-1 block text-xs text-slate-500">ต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน ({thDate(minDue)})</span>}</label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
       <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
