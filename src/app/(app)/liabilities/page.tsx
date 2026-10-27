@@ -130,6 +130,68 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         <StatBox label={<>เงินประกันการเช่า ({depRows.length} สัญญา)</>} value={money(depTotal, "THB")} valueClass="text-red-700" sub="ต้องคืนผู้เช่าเมื่อหมดสัญญา" />
       </section>
 
+      {/* บัตรเครดิตอยู่บนสุด (ตกลง 27 ต.ค. 2026) */}
+      <div id="cards" className="scroll-mt-20 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">บัตรเครดิต</h2>
+          {canOrder && cards.length > 1 && <SortToggle active={ordering === "cards"} {...orderHrefs("/liabilities", { p: sp.p }, "cards")} />}
+        </div>
+        <table className="mt-2 w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr><th className="px-4 py-2">บัตร</th><th className="px-4">ผู้ถือ</th><th className="px-4 text-right">ยอดค้าง</th>
+              <th className="px-4">วงเงิน / รอบบิล</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {cards.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีบัตรเครดิตของ ${pv.personName}` : "ยังไม่มีบัตรเครดิต"}</td></tr>}
+            {cards.map((c, i) => (
+              <tr key={c.id} className={`align-top hover:bg-slate-50 ${c.status === "CLOSED" ? "opacity-50" : c.status === "SUSPENDED" ? "opacity-70" : ""}`}>
+                <td className="px-4 py-3">
+                  {ordering === "cards" && <div className="mb-1"><MoveButtons table="credit_cards" id={c.id} paths={paths} {...neighbors(cards, i, (x) => x.id)} /></div>}
+                  <Link href={`/liabilities/cards/${c.id}`} className="font-medium text-slate-900 hover:underline">{c.issuer} {c.card_name}</Link>
+                  <div className="text-xs text-slate-500">
+                    {c.card_last4 ? `•••• ${c.card_last4}` : "ไม่ระบุเลขท้าย"} · {c.currency}
+                    {CARD_STATUS[c.status] && <span className="text-amber-700"> · {CARD_STATUS[c.status]}</span>}
+                  </div>
+                </td>
+                <td className="px-4 py-3">{holder(c)}</td>
+                <td className="px-4 py-3 text-right">
+                  <div className="tabular-nums">{money(curOf(c), c.currency)}</div>
+                  <div className="text-xs text-slate-500">
+                    {Math.abs(curOf(c) - Number(c.outstanding_balance)) > 0.005
+                      ? <>ตาม Statement {money(c.outstanding_balance)} ณ {thDate(c.balance_date)}<br />+ รูด − จ่าย หลังจากนั้น</>
+                      : <>ตาม Statement ณ {thDate(c.balance_date)}</>}
+                  </div>
+                  {canWrite && c.status !== "CLOSED" && (
+                    <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate}
+                      banks={(banksRaw ?? []).filter((b) => b.currency === c.currency && b.status === "ACTIVE") as { asset_id: string; name: string }[]} />
+                  )}
+                </td>
+                <td className="px-4 py-3 text-xs text-slate-600">
+                  {c.credit_limit ? `วงเงิน ${money(c.credit_limit)}` : "-"}
+                  {c.statement_day ? <div>ตัดรอบวันที่ {c.statement_day}</div> : null}
+                  {c.due_day ? <div>ชำระภายในวันที่ {c.due_day}</div> : null}
+                  {(c.autopay_asset_id || c.autopay_cash_holding_id) && (
+                    <div className="mt-1 text-emerald-700">
+                      ตัดบัญชีอัตโนมัติ{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {c.autopay_asset_id ? bankName.get(c.autopay_asset_id) ?? "บัญชี" : "เงินฝากในพอร์ต"}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {cards.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr><td className="px-4 py-3">รวม {openCards.length} ใบ</td><td></td><td className="px-4 text-right tabular-nums">{money(cardTotal, "THB")}</td>
+                <td className="px-4 text-xs text-slate-600">{cardLimit > 0 ? `วงเงินรวม ${money(cardLimit, undefined, 0)}` : ""}</td></tr>
+            </tfoot>
+          )}
+        </table>
+        <p className="px-4 py-3 text-xs text-slate-500">
+          ยอดค้าง = ยอดตาม Statement ล่าสุด + รูดบัตรที่บันทึก − จ่ายบัตร หลังวันที่ของยอด (คำนวณให้) · อัปเดตยอดตาม Statement ทุกเดือน ·
+          กดชื่อบัตรเพื่อดูรายการ ประวัติยอด ตั้งตัดบัญชีอัตโนมัติ และแก้ไขข้อมูลบัตร
+        </p>
+      </div>
+
       {ods.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-3 px-4 pt-4">
@@ -208,66 +270,6 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         </p>
       </div>
 
-      <div id="cards" className="scroll-mt-20 overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">บัตรเครดิต</h2>
-          {canOrder && cards.length > 1 && <SortToggle active={ordering === "cards"} {...orderHrefs("/liabilities", { p: sp.p }, "cards")} />}
-        </div>
-        <table className="mt-2 w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-4 py-2">บัตร</th><th className="px-4">ผู้ถือ</th><th className="px-4 text-right">ยอดค้าง</th>
-              <th className="px-4">วงเงิน / รอบบิล</th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {cards.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีบัตรเครดิตของ ${pv.personName}` : "ยังไม่มีบัตรเครดิต"}</td></tr>}
-            {cards.map((c, i) => (
-              <tr key={c.id} className={`align-top hover:bg-slate-50 ${c.status === "CLOSED" ? "opacity-50" : c.status === "SUSPENDED" ? "opacity-70" : ""}`}>
-                <td className="px-4 py-3">
-                  {ordering === "cards" && <div className="mb-1"><MoveButtons table="credit_cards" id={c.id} paths={paths} {...neighbors(cards, i, (x) => x.id)} /></div>}
-                  <Link href={`/liabilities/cards/${c.id}`} className="font-medium text-slate-900 hover:underline">{c.issuer} {c.card_name}</Link>
-                  <div className="text-xs text-slate-500">
-                    {c.card_last4 ? `•••• ${c.card_last4}` : "ไม่ระบุเลขท้าย"} · {c.currency}
-                    {CARD_STATUS[c.status] && <span className="text-amber-700"> · {CARD_STATUS[c.status]}</span>}
-                  </div>
-                </td>
-                <td className="px-4 py-3">{holder(c)}</td>
-                <td className="px-4 py-3 text-right">
-                  <div className="tabular-nums">{money(curOf(c), c.currency)}</div>
-                  <div className="text-xs text-slate-500">
-                    {Math.abs(curOf(c) - Number(c.outstanding_balance)) > 0.005
-                      ? <>ตาม Statement {money(c.outstanding_balance)} ณ {thDate(c.balance_date)}<br />+ รูด − จ่าย หลังจากนั้น</>
-                      : <>ตาม Statement ณ {thDate(c.balance_date)}</>}
-                  </div>
-                  {canWrite && c.status !== "CLOSED" && (
-                    <CardBalanceForm cardId={c.id} currency={c.currency} today={today} minDate={minDate}
-                      banks={(banksRaw ?? []).filter((b) => b.currency === c.currency && b.status === "ACTIVE") as { asset_id: string; name: string }[]} />
-                  )}
-                </td>
-                <td className="px-4 py-3 text-xs text-slate-600">
-                  {c.credit_limit ? `วงเงิน ${money(c.credit_limit)}` : "-"}
-                  {c.statement_day ? <div>ตัดรอบวันที่ {c.statement_day}</div> : null}
-                  {c.due_day ? <div>ชำระภายในวันที่ {c.due_day}</div> : null}
-                  {(c.autopay_asset_id || c.autopay_cash_holding_id) && (
-                    <div className="mt-1 text-emerald-700">
-                      ตัดบัญชีอัตโนมัติ{c.autopay_mode === "MINIMUM" ? "ขั้นต่ำ" : "เต็มจำนวน"} จาก {c.autopay_asset_id ? bankName.get(c.autopay_asset_id) ?? "บัญชี" : "เงินฝากในพอร์ต"}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          {cards.length > 0 && (
-            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
-              <tr><td className="px-4 py-3">รวม {openCards.length} ใบ</td><td></td><td className="px-4 text-right tabular-nums">{money(cardTotal, "THB")}</td>
-                <td className="px-4 text-xs text-slate-600">{cardLimit > 0 ? `วงเงินรวม ${money(cardLimit, undefined, 0)}` : ""}</td></tr>
-            </tfoot>
-          )}
-        </table>
-        <p className="px-4 py-3 text-xs text-slate-500">
-          ยอดค้าง = ยอดตาม Statement ล่าสุด + รูดบัตรที่บันทึก − จ่ายบัตร หลังวันที่ของยอด (คำนวณให้) · อัปเดตยอดตาม Statement ทุกเดือน ·
-          กดชื่อบัตรเพื่อดูรายการ ประวัติยอด ตั้งตัดบัญชีอัตโนมัติ และแก้ไขข้อมูลบัตร
-        </p>
-      </div>
     </div>
   );
 }

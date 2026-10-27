@@ -83,6 +83,14 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     ...(persons ?? []).map((p) => ({ type: "PERSON", id: p.id, label: p.name, group: "PERSON", category: "PERSON" })),
     ...(cards ?? []).map((c) => ({ type: "CREDIT_CARD", id: c.id, label: cardName(c), group: "CREDIT_CARD", category: "CARD" })),
   ];
+  // ประเภทเริ่มต้นตอนผูกเพิ่ม = ประเภทของรายการแรกที่ผูกอยู่ · ยังไม่ผูก = ตามหมวดของเอกสาร
+  const groupOf = (key: string | undefined, category: string | undefined) => {
+    if (key) {
+      const [t, id] = key.split(":");
+      return options.find((o) => o.type === t && o.id === id)?.group ?? (t === "ASSET" ? assetBy.get(id)?.asset_group : t);
+    }
+    return options.find((o) => o.category === category)?.group;
+  };
   const href = (patch: Partial<Record<"c" | "m" | "q" | "all" | "u", string | undefined>>) => {
     const p = new URLSearchParams();
     const v = { c: sp.c, m: sp.m, q: sp.q, all: sp.all, u: sp.u, ...patch };
@@ -148,7 +156,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
         </div>
         <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false} className={`block rounded-xl [&>div]:h-full ${sp.u ? "ring-2 ring-blue-600" : "hover:ring-1 hover:ring-slate-300"}`}>
           <StatBox label="ยังไม่ผูกกับรายการ" value={unlinked} unit="ไฟล์" valueClass={unlinked ? "text-amber-700" : ""}
-            sub={unlinked ? (sp.u ? "กำลังแสดงเฉพาะที่ยังไม่ผูก · กดอีกครั้งเพื่อแสดงทั้งหมด" : "กดเพื่อดูเฉพาะที่ยังไม่ผูก แล้วกด \"ผูก\" ในคอลัมน์เอกสารของ") : "ผูกครบทุกไฟล์แล้ว"} />
+            sub={unlinked ? (sp.u ? "กำลังแสดงเฉพาะที่ยังไม่ผูก · กดอีกครั้งเพื่อแสดงทั้งหมด" : "กดเพื่อดูเฉพาะที่ยังไม่ผูก แล้วกดที่บรรทัดเพื่อผูก") : "ผูกครบทุกไฟล์แล้ว"} />
         </Link>
       </section>
 
@@ -199,7 +207,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                   <tr key={d.id} className={`align-top ${d.version_status !== "CURRENT" ? "opacity-60" : ""}`}>
                     <td className="px-4 py-2.5">
                       <div className="font-medium text-slate-900">
-                        {st.connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="hover:underline">{d.title}</a> : d.title}
+                        {st.connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" title="กดเพื่อเปิดดูเอกสาร (แท็บใหม่)" className="hover:underline">{d.title}</a> : d.title}
                         {d.version_status !== "CURRENT" && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs font-normal text-slate-500">ฉบับเก่า</span>}</div>
                       <div className="text-xs text-slate-500">{DOC_CATEGORY_LABEL[cat.get(d.id) ?? "OTHER"]} · {d.document_type}{d.file_size ? ` · ${fileSize(d.file_size)}` : ""}{d.notes && ` · ${d.notes}`}</div>
                       <RowActions table="documents" id={d.id} paths={["/family/documents"]} canEdit={canWrite} canDelete={canWrite && canDelete}
@@ -209,6 +217,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                           {canWrite && d.version_status === "CURRENT" &&
                             <DocumentUpload category={cat.get(d.id)} supersedes={{ id: d.id, title: d.title, document_type: d.document_type, module: d.module }} label="อัปโหลดฉบับใหม่" />}
                         </> : undefined}
+                        section={canWrite && d.version_status === "CURRENT" ? (
+                          <LinkDocument docId={d.id} title={d.title} options={options} canUnlink={canDelete} defaultGroup={groupOf(ls[0]?.key, cat.get(d.id))}
+                            linked={ls.map((l) => ({ id: l.id, key: l.key, name: label.get(l.key)?.name ?? "(รายการถูกลบ)" }))} />
+                        ) : undefined}
                         fields={[
                           { name: "title", label: "ชื่อ", value: d.title, width: "w-48" }, { name: "document_type", label: "ประเภท", value: d.document_type },
                           { name: "issue_date", label: "วันที่ออก", type: "date", value: d.issue_date }, { name: "expiry_date", label: "หมดอายุ", type: "date", value: d.expiry_date },
@@ -217,14 +229,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
                     <td className="px-3 py-2.5 text-xs">
                       {ls.length === 0 ? <span className="text-amber-700">ยังไม่ผูก</span> : ls.map((l) => {
                         const x = label.get(l.key);
-                        return <div key={l.id}>{x ? <Link href={x.href} className="text-slate-700 hover:underline">{x.name}</Link> : <span className="text-slate-400">(รายการถูกลบ)</span>}</div>;
+                        return <div key={l.id}>{x ? <Link href={x.href} title="เปิดหน้ารายการนี้" className="text-slate-700 hover:underline">{x.name}</Link> : <span className="text-slate-400">(รายการถูกลบ)</span>}</div>;
                       })}
-                      {canWrite && d.version_status === "CURRENT" && (
-                        <div className={ls.length ? "mt-0.5" : "inline"}>{ls.length ? "" : " · "}
-                          <LinkDocument docId={d.id} title={d.title} options={options} canUnlink={canDelete}
-                            linked={ls.map((l) => ({ id: l.id, key: l.key, name: label.get(l.key)?.name ?? "(รายการถูกลบ)" }))} />
-                        </div>
-                      )}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-600">
                       {d.issue_date ? thDate(d.issue_date) : "-"}

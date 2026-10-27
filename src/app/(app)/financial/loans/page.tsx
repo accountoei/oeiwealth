@@ -207,7 +207,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
         </div>
         <table className="mt-2 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-4 py-2">รายการ</th><th className="px-4 text-right">เงินต้นคงเหลือ</th><th className="px-4">งวดถัดไป</th><th className="px-4">ครบกำหนดสัญญา</th><th className="px-4">สถานะ</th></tr>
+            <tr><th className="px-4 py-2">รายการ</th><th className="px-4">สถานะ</th><th className="px-4">งวดถัดไป</th><th className="px-4">ครบกำหนดสัญญา</th><th className="px-4 text-right">เงินต้นคงเหลือ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีเงินให้กู้ของ ${pv.personName}` : "ยังไม่มีเงินให้กู้"}</td></tr>}
@@ -219,24 +219,24 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
                   <div className="text-xs text-slate-500">ผู้กู้ {r.borrower_name}{phone.get(r.asset_id) && ` · โทร ${phone.get(r.asset_id)}`}</div>
                   <div className="text-xs text-slate-400">เงินต้น {money(r.principal, r.currency)}{r.interest_rate != null && ` · ดอกเบี้ย ${Number(r.interest_rate)}%`}</div>
                 </td>
-                <td className="px-4 text-right tabular-nums">
-                  {money(r.outstanding_principal == null ? null : Number(r.outstanding_principal) * pv.assetShare(r.asset_id), r.currency)}
-                  {pv.assetPct(r.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(r.asset_id)}% ของ {money(r.outstanding_principal, r.currency)}</div>}
-                </td>
+                <td className="px-4 text-xs">{STATUS[r.status] ?? r.status}
+                  {r.derived_status && <div className={DERIVED[r.derived_status]?.cls}>{DERIVED[r.derived_status]?.text}</div>}</td>
                 <td className="px-4">
                   {nextDue.get(r.asset_id) ? <>{thDate(nextDue.get(r.asset_id)?.due_date)}
                     <div className="text-xs tabular-nums text-slate-500">{money(nextDue.get(r.asset_id)?.amount, r.currency)}</div></> : <span className="text-slate-400">-</span>}
                   {overdue.get(r.asset_id) && <div className="text-xs text-red-600">เลยกำหนด {overdue.get(r.asset_id)?.n} งวด · {money(overdue.get(r.asset_id)?.amount)}</div>}
                 </td>
                 <td className="px-4">{thDate(r.due_date)}</td>
-                <td className="px-4 text-xs">{STATUS[r.status] ?? r.status}
-                  {r.derived_status && <div className={DERIVED[r.derived_status]?.cls}>{DERIVED[r.derived_status]?.text}</div>}</td>
+                <td className="px-4 text-right tabular-nums">
+                  {money(r.outstanding_principal == null ? null : Number(r.outstanding_principal) * pv.assetShare(r.asset_id), r.currency)}
+                  {pv.assetPct(r.asset_id) != null && <div className="text-xs text-slate-400">{pv.assetPct(r.asset_id)}% ของ {money(r.outstanding_principal, r.currency)}</div>}
+                </td>
               </tr>
             ))}
           </tbody>
           {rows.length > 0 && (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
-              <tr><td className="px-4 py-3">รวม {open.length} สัญญาที่ยังไม่ปิด</td><td className="px-4 text-right tabular-nums">{money(outTotal, "THB")}</td><td></td><td></td><td></td></tr>
+              <tr><td className="px-4 py-3">รวม {open.length} สัญญาที่ยังไม่ปิด</td><td></td><td></td><td></td><td className="px-4 text-right tabular-nums">{money(outTotal, "THB")}</td></tr>
             </tfoot>
           )}
         </table>
