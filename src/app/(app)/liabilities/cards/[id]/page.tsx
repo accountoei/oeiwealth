@@ -6,7 +6,7 @@ import { money, thDate, todayBangkok } from "@/lib/format";
 import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
 import EntityDocuments from "@/components/docs/EntityDocuments";
-import { CardAutopayForm, CardBalanceForm, CardInfoForm, CardStatusForm } from "../forms";
+import { CardAutopayForm, CardBalanceForm, CardInfoForm } from "../forms";
 import EditToggle from "@/components/EditToggle";
 import SplitForm from "../../../income-expenses/SplitForm";
 import { splitMoves } from "@/lib/split-moves";
@@ -145,7 +145,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
             edit={
               <div className="space-y-5">
                 <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลบัตร ไม่กระทบยอดค้าง (ยอดแก้ด้วย &ldquo;อัปเดตยอดตาม Statement&rdquo;)</p>
-                <CardInfoForm cardId={id} v={{ issuer: c.issuer, card_name: c.card_name, card_last4: c.card_last4, credit_limit: c.credit_limit,
+                <CardInfoForm cardId={id} status={c.status}
+                  remove={canDelete ? { kind: "card", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบบัตรนี้",
+                    hint: "บัตรที่เลิกใช้จริงให้เปลี่ยนสถานะเป็น \"ยกเลิกบัตรแล้ว\"" } : undefined} v={{ issuer: c.issuer, card_name: c.card_name, card_last4: c.card_last4, credit_limit: c.credit_limit,
                   statement_day: c.statement_day, due_day: c.due_day, annual_fee: c.annual_fee, expiry_date: c.expiry_date, notes: c.notes }} />
                 {c.status !== "CLOSED" && (
                   <div className="border-t border-slate-100 pt-4">
@@ -154,9 +156,6 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                       bank={c.autopay_asset_id} hold={c.autopay_cash_holding_id} mode={c.autopay_mode} />
                   </div>
                 )}
-                <div className="flex items-center gap-2 border-t border-slate-100 pt-4 text-sm">สถานะ <CardStatusForm cardId={id} status={c.status}
-                  remove={canDelete ? { kind: "card", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบบัตรนี้",
-                    hint: "บัตรที่เลิกใช้จริงให้เปลี่ยนสถานะเป็น \"ยกเลิกบัตรแล้ว\"" } : undefined} /></div>
               </div>
             } />
         </div>

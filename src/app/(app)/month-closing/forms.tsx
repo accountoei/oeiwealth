@@ -100,7 +100,7 @@ export function FinalizeForm({ month, warnings, label, summary }: { month: strin
       </label>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังปิดเดือน…" : "ยืนยันปิดเดือน (Finalize)"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ยกเลิก</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
     </form>
@@ -120,7 +120,7 @@ export function ReopenForm({ month }: { month: string }) {
       <input name="reason" required placeholder="เหตุผล เช่น ลืมบันทึกค่าใช้จ่าย" className={`w-full ${small}`} />
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-red-700 px-3 py-1.5 text-xs text-white disabled:opacity-50">ยืนยัน Reopen</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
     </form>

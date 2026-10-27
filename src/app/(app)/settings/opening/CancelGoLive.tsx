@@ -41,7 +41,7 @@ export default function CancelGoLive({ goLive, finalMonths }: { goLive: string; 
       <div className="flex items-center gap-3">
         <button disabled={pending || blocked} className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50">
           {pending ? "กำลังยกเลิก…" : "ยกเลิก Go-live"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}

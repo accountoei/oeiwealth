@@ -12,7 +12,7 @@ import { AccountNoPanel, EditInfoForm, SettleLatestButton, UpdateBalanceForm } f
 import EditButton from "@/components/EditButton";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import StatusSelect from "@/components/StatusSelect";
+import { WithStatus } from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
 
@@ -247,7 +247,11 @@ export default async function AccountDetailPage({ params, searchParams }: {
               <EditButton title="แก้ไขรายละเอียด" small>
                 <div className="space-y-5">
                   <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลบัญชี ไม่กระทบยอดเงิน</p>
-                  <EditInfoForm acc={acc} />
+                  <WithStatus status={{ table: "assets", id, value: acc.status, paths,
+                    options: [["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]], label: "สถานะบัญชี",
+                    remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/cash", paths: ["/financial/cash"], label: "ลบบัญชีนี้", hint: "ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น \"ปิดบัญชีแล้ว\"" } : undefined }}>
+                    <EditInfoForm acc={acc} />
+                  </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="mb-2 text-sm font-medium text-slate-800">เลขบัญชี</h3>
                     <AccountNoPanel assetId={id} bankAccountId={acc.id} masked={acc.account_no_masked} canReveal={canEdit} canSet={canWrite} />
@@ -259,12 +263,6 @@ export default async function AccountDetailPage({ params, searchParams }: {
                     </ul>
                     <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                       current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
-                  </div>
-                  <div className="border-t border-slate-100 pt-4">
-                    <StatusSelect table="assets" id={id} value={acc.status} paths={paths}
-                      options={[["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดบัญชีแล้ว"]]} label="สถานะบัญชี"
-                      remove={canDelete ? { kind: "asset", id, redirectTo: "/financial/cash", paths: ["/financial/cash"], label: "ลบบัญชีนี้",
-                        hint: "ลบได้เมื่อไม่มีรายการเงินเข้าออกผูกอยู่ · ปิดบัญชีจริงให้เปลี่ยนสถานะเป็น \"ปิดบัญชีแล้ว\"" } : undefined} />
                   </div>
                 </div>
               </EditButton>

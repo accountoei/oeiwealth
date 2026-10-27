@@ -151,7 +151,7 @@ function PropertyTaxEditor({ row, year, canDelete }: { row: TaxPropRow; year: nu
           </tbody>
         </table>
       )}
-      <div><button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button></div>
+      <div><button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button></div>
     </div>
   ));
 }

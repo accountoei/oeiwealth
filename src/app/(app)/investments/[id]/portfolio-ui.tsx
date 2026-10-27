@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { updatePortfolio, type ActionState } from "../actions";
 import { PORTFOLIO_TYPE_LABEL } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const lbl = "block text-sm text-slate-700";
@@ -47,8 +48,9 @@ export function PortfolioInfoForm({ assetId, name, institution, portfolioType, c
           </label>
         </div>
       )}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending || (ccyChanged && !confirm)} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียดพอร์ต"}</button>
+        <StatusSlot />
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>

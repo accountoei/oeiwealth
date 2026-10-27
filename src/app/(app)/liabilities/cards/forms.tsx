@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { createCard, setCardAutopay, updateCardBalance, updateCardInfo, updateCardStatus, type ActionState } from "../actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
@@ -57,7 +57,7 @@ export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
       </p>
       <div className="md:col-span-3 flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกบัตร"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -85,33 +85,39 @@ export function CardBalanceForm({ cardId, currency, today, minDate, banks = [], 
       </label>
       <p className="w-full text-xs text-slate-500">ส่วนต่างลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ของเดือนนี้ให้อัตโนมัติ (สูงกว่าที่บันทึก → ค่าใช้จ่ายก้อน · ต่ำกว่า → รายได้ก้อนเข้าบัตร เช่น เงินคืน / เครดิต แล้วถามต่อว่าเป็นการจ่ายบัตรจากบัญชีหรือไม่)</p>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
     {state.drop && <DropPrompt key={state.drop.n} drop={state.drop} currency={currency} banks={banks} />}
   </div>));
 }
 
-export function CardStatusForm({ cardId, status, remove }: { cardId: string; status: string; remove?: RemoveOpt }) {
+/** สถานะบัตร (มี "ลบ…" อยู่ข้างใน) — บันทึกทันทีเมื่อเลือก · ช่องผูกกับฟอร์มด้วย form={id} จึงวางข้างปุ่มบันทึกของฟอร์มข้อมูลบัตรได้ */
+function useCardStatus(cardId: string, status: string, remove?: RemoveOpt) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardStatus, {});
   const del = useStatusDelete(remove, status);
-  return (
-    <>
-    <form action={action} className="flex items-center gap-1">
-      <input type="hidden" name="card_id" value={cardId} />
-      <select name="status" defaultValue={status} disabled={pending}
+  const formId = `card-status-${useId()}`;
+  const control = (
+    <span className="inline-flex items-center gap-2 text-sm">
+      <span className="text-xs text-slate-500">สถานะ</span>
+      <select form={formId} name="status" defaultValue={status} disabled={pending}
         onChange={(e) => { if (del.pick(e)) return; e.currentTarget.form?.requestSubmit(); }}
-        className="rounded-md border border-slate-300 px-2 py-1 text-xs">
+        className="rounded-md border border-slate-300 px-2 py-1 text-sm">
         <option value="ACTIVE">ใช้งาน</option>
         <option value="SUSPENDED">ระงับชั่วคราว</option>
         <option value="CLOSED">ยกเลิกบัตรแล้ว</option>
         {del.option}
       </select>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
-    </form>
-    {del.dialog}
+    </span>
+  );
+  const form = (
+    <>
+      <form id={formId} action={action} className="hidden"><input type="hidden" name="card_id" value={cardId} /></form>
+      {del.dialog}
     </>
   );
+  return { control, form };
 }
 
 /** ตั้งค่าตัดบัญชีอัตโนมัติ: ถึงวันครบชำระ หน้า Income &amp; Expenses จะแสดงรายการ "รอยืนยัน" */
@@ -159,12 +165,16 @@ export function CardAutopayForm({ cardId, banks, pfCash = [], bank, hold = null,
 }
 
 /** แก้ข้อมูลบัตร (ในหน้าต่าง "แก้ไขข้อมูล") */
-export function CardInfoForm({ cardId, v }: { cardId: string; v: {
+export function CardInfoForm({ cardId, v, status, remove }: { cardId: string; v: {
   issuer: string; card_name: string | null; card_last4: string | null; credit_limit: number | null; statement_day: number | null;
-  due_day: number | null; annual_fee: number | null; expiry_date: string | null; notes: string | null } }) {
+  due_day: number | null; annual_fee: number | null; expiry_date: string | null; notes: string | null };
+  /** สถานะบัตร → ช่องสถานะข้างปุ่มบันทึก */
+  status: string; remove?: RemoveOpt }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardInfo, {});
+  const st = useCardStatus(cardId, status, remove);
   const d = (x: string | number | null) => (x == null ? "" : String(x));
   return (
+    <>
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="card_id" value={cardId} />
       <label className="text-sm">ผู้ออกบัตร<input name="issuer" required defaultValue={v.issuer} className={input} /></label>
@@ -176,10 +186,13 @@ export function CardInfoForm({ cardId, v }: { cardId: string; v: {
       <label className="text-sm">ค่าธรรมเนียมรายปี<input name="annual_fee" inputMode="decimal" defaultValue={d(v.annual_fee)} className={input} /></label>
       <label className="text-sm">บัตรหมดอายุ<input name="expiry_date" type="date" defaultValue={d(v.expiry_date)} className={input} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={d(v.notes)} className={input} /></label>
-      <div className="flex items-center gap-3 md:col-span-2">
+      <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        {st.control}
         <Msg s={state} />
       </div>
     </form>
+    {st.form}
+    </>
   );
 }

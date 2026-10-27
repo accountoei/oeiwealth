@@ -9,6 +9,7 @@ import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmo
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate, numOrZero as num } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -87,7 +88,7 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
           <h3 className="font-medium text-slate-900">{hasLines ? `แก้${label}` : `ตั้ง${label}`}</h3>
           <p className="text-xs text-slate-500">งวดที่มีการชำระ / รับแล้วเก็บไว้ · แทนเฉพาะงวดที่ยังไม่ชำระ · งวดใหม่ต้องอยู่หลังงวดที่ชำระแล้ว</p>
         </div>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-sm md:col-span-2">วิธีใส่
@@ -226,7 +227,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50">บันทึก</button>
       <BalanceGuard />
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));
@@ -286,7 +287,7 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
       {outcome && <p className="text-xs text-amber-700">ปิดกรมธรรม์: สถานะเปลี่ยนเป็น &ldquo;{outcome === "MATURED" ? "ครบสัญญา" : outcome === "SURRENDERED" ? "เวนคืนแล้ว" : "เคลมจบแล้ว"}&rdquo;{hasCashValue && " · มูลค่าเวนคืนที่เหลือเป็น 0"} · งวดเบี้ยที่ยังไม่จ่ายไม่ต้องจ่ายแล้ว</p>}
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -310,7 +311,7 @@ export function CoverageForm({ policyId, currency }: { policyId: string; currenc
       <label className="text-xs">วงเงิน ({currency})<input name="limit_amount" required inputMode="decimal" className={`mt-1 block w-32 ${small}`} /></label>
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-48 ${small}`} /></label>
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50">เพิ่ม</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));
@@ -342,7 +343,7 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
       </label>
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
       </div>
       <Msg s={state} />
     </form>
@@ -380,8 +381,9 @@ export function PolicyInfoForm({ policyId, persons, showInsured, v }: {
       <label className="text-sm">ทุนประกัน<input name="insured_amount" inputMode="decimal" defaultValue={d(v.insured_amount)} className={input} /></label>
       <label className="text-sm">เบี้ยต่อปี<input name="premium" inputMode="decimal" defaultValue={d(v.premium)} className={input} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={d(v.notes)} className={input} /></label>
-      <div className="flex items-center gap-3 md:col-span-2">
+      <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        <StatusSlot />
         <Msg s={state} />
       </div>
     </form>
@@ -427,7 +429,7 @@ export function CashValueTableEditor({ policyId, startDate, current }: { policyI
       <div className="flex flex-wrap items-center gap-2">
         <button disabled={pending || parsed.errors.length > 0 || (parsed.lines.length === 0 && current.length === 0)} className={btn}>
           {pending ? "กำลังบันทึก…" : parsed.lines.length === 0 ? "ล้างตาราง" : `บันทึก ${parsed.lines.length} ปี`}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>

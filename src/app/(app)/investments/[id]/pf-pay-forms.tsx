@@ -80,7 +80,7 @@ export function PfExpenseBody({ ctx, today, minDate, fixed, onClose }: { ctx: Pf
       <p className="text-xs text-slate-500">บันทึกเป็นค่าใช้จ่ายของครอบครัว (ขึ้นที่หน้า Income &amp; Expenses ด้วย) · ระบบหักเงินฝากในพอร์ตให้ · โอนเข้าบัญชีของครอบครัวเอง / จ่ายบัตร ไม่ใช่ค่าใช้จ่าย</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกค่าใช้จ่าย"}</button>
-        <button type="button" onClick={onClose} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={onClose} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -120,7 +120,7 @@ export function PfCardPayBody({ ctx, today, minDate, fixed, onClose }: { ctx: Pf
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending || cards.length === 0} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการจ่ายบัตร"}</button>
-        <button type="button" onClick={onClose} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={onClose} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>

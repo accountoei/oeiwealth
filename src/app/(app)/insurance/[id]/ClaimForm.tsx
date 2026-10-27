@@ -38,7 +38,7 @@ export default function ClaimForm({ policyId, currency, today, coverages = [] }:
       <p className="text-xs text-slate-500">เงินเคลมที่ได้รับคืนจากค่ารักษา ให้บันทึกเป็น &ldquo;เงินคืน&rdquo; ของค่าใช้จ่ายนั้นที่หน้า Income &amp; Expenses (ไม่ใช่รายได้)</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>

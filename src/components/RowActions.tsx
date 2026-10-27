@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useState } from "react";
+import { createContext, useActionState, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { deleteRecord, updateRecord, type RecState } from "@/lib/records";
 import { useRowPanel } from "@/components/RowPanel";
@@ -33,12 +33,16 @@ function recalc(form: HTMLFormElement, changed: string, fields: FieldSpec[]) {
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
+const DeleteSlotCtx = createContext<ReactNode>(null);
+/** ปุ่มลบของ RowActions สำหรับฟอร์มแก้ไขของหน้าเอง (editor) — วางไว้ข้างปุ่มบันทึก · นอก RowActions ไม่แสดงอะไร */
+export function DeleteSlot() { return useContext(DeleteSlotCtx); }
+
 /**
  * แก้ไข / ลบ ต่อแถว (ลบ = Soft Delete พร้อมยืนยัน) — เปิดเป็นหน้าต่าง pop up เสมอ
  *   อยู่ในแถวตาราง → กดที่แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ"
  *   บันทึกสำเร็จ → หน้าต่างปิดเอง + รีเฟรชหน้า
  */
-export default function RowActions({ table, id, paths, fields = [], cols = 3, canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, editor, button }: {
+export default function RowActions({ table, id, paths, fields = [], cols = 3, canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, editor, button, deleteControl }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
   /** จำนวนช่องต่อแถวบนจอกว้าง (4 = วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว) */
   cols?: 3 | 4;
@@ -46,8 +50,10 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   deleteEffect?: string;
   /** ปุ่มเพิ่มเติมในกล่องใต้แถว (เช่น ดาวน์โหลด / อัปโหลดฉบับใหม่) */
   extra?: React.ReactNode;
-  /** ฟอร์มแก้ไขของหน้านั้นเอง (มีปุ่มบันทึกของตัวเอง) — ใช้แทนช่อง fields */
+  /** ฟอร์มแก้ไขของหน้านั้นเอง (มีปุ่มบันทึกของตัวเอง) — ใช้แทนช่อง fields · วาง <DeleteSlot /> ข้างปุ่มบันทึก */
   editor?: React.ReactNode;
+  /** ปุ่มลบแบบอื่นของหน้านั้น (เช่น ลบสัญญาเช่า ผ่าน DeleteEntity) — วางข้างปุ่มบันทึกแทนปุ่มลบปกติ (ใช้กับ canDelete={false}) */
+  deleteControl?: React.ReactNode;
   /** ปุ่มเดียว (เช่น "แก้ไข") เปิดหน้าต่างแก้ไข + ลบ — ใช้แทนการกดที่แถว (ช่องสถานะของตารางรายได้ / ค่าใช้จ่าย) */
   button?: string;
 }) {
@@ -87,12 +93,13 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
       )}
     </label>
   ));
-  // ปุ่มลบอยู่ข้างปุ่มบันทึก (ตกลง 24 ต.ค. 2026) — ฟอร์มลบแยกอยู่นอกฟอร์มแก้ไข ปุ่มผูกด้วย form={id}
-  const delInline = editable && !editor;
+  // ปุ่มลบอยู่ข้างปุ่มบันทึก (ตกลง 24 ต.ค. 2026 · ฟอร์มของหน้าเองด้วย 27 ต.ค.) — ฟอร์มลบแยกอยู่นอกฟอร์มแก้ไข ปุ่มผูกด้วย form={id}
+  const delInline = editable;
   const delButton = (
     <button form={delFormId} disabled={deleting} className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">{deleting ? "กำลังลบ…" : "ลบรายการนี้"}</button>
   );
   const delForm = canDelete ? <form id={delFormId} action={delAction} onSubmit={confirmDelete}>{hidden}</form> : null;
+  const editorWithDelete = editor && <DeleteSlotCtx.Provider value={canDelete ? delButton : null}>{editor}</DeleteSlotCtx.Provider>;
   const editForm = (
     <form action={editAction} className="space-y-3"
       onInput={fields.some((f) => f.calc) ? (e) => {
@@ -104,6 +111,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
         {canDelete && delInline && delButton}
+        {deleteControl}
         {es.error && <span className="text-sm text-red-600">{es.error}</span>}
         {es.ok && <span className="text-sm text-emerald-700">{es.ok}</span>}
       </div>
@@ -113,7 +121,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   // เนื้อหาในหน้าต่าง: ฟอร์มแก้ไข (ถ้ามี) + ปุ่มเพิ่มเติม / ลบ
   const panel = (
     <div className="space-y-4 text-left">
-      {editable ? (editor ?? editForm)
+      {editable ? (editorWithDelete || editForm)
         : extra ? null : <p className="text-sm text-slate-500">รายการนี้แก้ไขไม่ได้ (ลบแล้วบันทึกใหม่)</p>}
       {delForm}
       {(extra || (canDelete && !delInline)) && (
@@ -151,7 +159,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
       </span>
       {ds.error && <div className="text-xs text-red-600">{ds.error}</div>}
       {editing && (
-        <Modal title="แก้ไขรายการ" onClose={() => setEditing(false)}>{editor ?? editForm}{!editor && delForm}</Modal>
+        <Modal title="แก้ไขรายการ" onClose={() => setEditing(false)}>{editorWithDelete || editForm}{delForm}</Modal>
       )}
     </div>
   );

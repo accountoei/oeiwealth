@@ -52,7 +52,7 @@ export default function ChangeGoLive({ current }: { current: string }) {
       <div className="flex items-center gap-3">
         <button disabled={pending || !changed} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
           {pending ? "กำลังเปลี่ยน…" : "เปลี่ยนวัน Go-live"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}

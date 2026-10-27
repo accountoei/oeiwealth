@@ -5,7 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, money, qtyUnit, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
-import StatusSelect from "@/components/StatusSelect";
+import { WithStatus } from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
@@ -116,22 +116,21 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
             }
             edit={
               <div className="space-y-5">
-                <AltInfoForm assetId={id} code={cat?.category_code ?? ""} catName={cat?.category_name ?? null} unitLocked={!!hasHistory} defaultUnit={cat?.default_unit ?? null} v={{
-                  name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
-                  brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
-                  storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price,
-                  gold_form: d.gold_form, deduct_per_baht: d.deduct_per_baht }} />
+                <WithStatus status={{ table: "assets", id, value: a.status, paths, label: "สถานะ",
+                  options: Object.entries(ASSET_STATUS) as [string, string][],
+                  remove: canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined }}>
+                  <AltInfoForm assetId={id} code={cat?.category_code ?? ""} catName={cat?.category_name ?? null} unitLocked={!!hasHistory} defaultUnit={cat?.default_unit ?? null} v={{
+                    name: a.name, acquisition_date: a.acquisition_date, acquisition_cost: a.acquisition_cost, notes: a.notes,
+                    brand: d.brand, model: d.model, serial_no: d.serial_no, quantity: d.quantity, unit: d.unit, purity_pct: d.purity_pct,
+                    storage_location: d.storage_location, condition: d.condition, details: d.details, auto_price: d.auto_price,
+                    gold_form: d.gold_form, deduct_per_baht: d.deduct_per_baht }} />
+                </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
                   <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
                     current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
                 </div>
-                <div className="border-t border-slate-100 pt-4">
-                  <StatusSelect table="assets" id={id} value={a.status} paths={paths} label="สถานะ"
-                    options={Object.entries(ASSET_STATUS) as [string, string][]}
-                    remove={canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/alternative", paths: ["/alternative"], label: "ลบรายการนี้" } : undefined} />
-                  {canDelete && hasHistory && <p className="mt-2 text-xs text-slate-500">มีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ · ถ้าไม่ได้ถือแล้ว ให้เปลี่ยนสถานะเป็น ขายแล้ว / ยกให้แล้ว / สูญหาย</p>}
-                </div>
+                {canDelete && hasHistory && <p className="text-xs text-slate-500">มีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ · ถ้าไม่ได้ถือแล้ว ให้เปลี่ยนสถานะเป็น ขายแล้ว / ยกให้แล้ว / สูญหาย</p>}
               </div>
             } />
         </div>

@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { DeleteSlot } from "@/components/RowActions";
 import { updateTransfer, type ActionState } from "./actions";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -35,6 +36,7 @@ export default function TransferEditor({ id, banks, values }: {
       {f("รายละเอียด", <input name="description" defaultValue={values.description ?? ""} className={`${cls} w-44`} />)}
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
         {pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+      <DeleteSlot />
       {state.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
       {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
     </form>

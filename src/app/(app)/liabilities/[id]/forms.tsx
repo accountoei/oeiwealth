@@ -66,17 +66,18 @@ export function EditLiabilityForm({ l, remove }: { l: Info; remove?: RemoveOpt }
       <label className="text-sm">ค่างวดต่อเดือน<input name="monthly_payment" inputMode="decimal" defaultValue={l.monthly_payment ?? ""} className={f} /></label>
       <label className="text-sm">ครบกำหนดจ่ายทุกวันที่<input name="payment_due_day" type="number" min={1} max={31} defaultValue={l.payment_due_day ?? ""} className={f} /></label>
       <label className="text-sm">วันครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={l.due_date ?? ""} className={f} /></label>
-      <label className="text-sm">สถานะ
-        <select name="status" defaultValue={l.status} onChange={(e) => { del.pick(e); }} className={f}>
-          <option value="ACTIVE">ยังผ่อนอยู่</option>
-          <option value="CLOSED">ปิดหนี้แล้ว</option>
-          <option value="WRITTEN_OFF">ตัดหนี้สูญ / ยกหนี้</option>
-          {del.option}
-        </select>
-      </label>
       <label className="text-sm">หมายเหตุ<input name="notes" defaultValue={l.notes ?? ""} className={f} /></label>
-      <div className="md:col-span-2 flex items-center gap-3">
+      <div className="md:col-span-2 flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
+        {/* สถานะอยู่ข้างปุ่มบันทึก (มี "ลบ…" อยู่ข้างใน) · บันทึกพร้อมข้อมูลอื่น */}
+        <label className="inline-flex items-center gap-2 text-sm"><span className="text-xs text-slate-500">สถานะ</span>
+          <select name="status" defaultValue={l.status} onChange={(e) => { del.pick(e); }} className="rounded-md border border-slate-300 px-2 py-2 text-sm">
+            <option value="ACTIVE">ยังผ่อนอยู่</option>
+            <option value="CLOSED">ปิดหนี้แล้ว</option>
+            <option value="WRITTEN_OFF">ตัดหนี้สูญ / ยกหนี้</option>
+            {del.option}
+          </select>
+        </label>
         <Msg s={state} />
       </div>
       <p className="md:col-span-2 text-xs text-slate-500">
@@ -131,7 +132,7 @@ export function PayLiabilityForm({ liabilityId, currency, banks, monthlyPayment,
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการจ่าย"}</button>
         <BalanceGuard amount={["principal", "interest"]} />
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>

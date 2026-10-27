@@ -229,7 +229,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
       )}
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={busy || !!pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{busy && !pending ? "กำลังตรวจ / อัปโหลด…" : "อัปโหลด"}</button>
-        <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={close} className="text-sm text-slate-500">ปิด</button>
         {msg.error && <span className="text-sm text-red-600">{msg.error}</span>}
       </div>
       {supersedes && <p className="text-xs text-slate-500">ฉบับเดิมยังเก็บไว้ (สถานะ &ldquo;ฉบับเก่า&rdquo;) · ฉบับใหม่ผูกกับรายการเดียวกันให้อัตโนมัติ</p>}

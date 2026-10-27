@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useActionSlot } from "@/components/ActionBar";
+import { DeleteSlot } from "@/components/RowActions";
 import {
   addExpense, addExpenseTemplate, addIncome, addMovement, addReimbursement, addTemplate, dismissExpected, dismissExpense,
   payRecurringExpense, saveEntry, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
@@ -133,6 +134,7 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfC
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
         {pending ? "…" : "บันทึก"}
       </button>
+      <DeleteSlot />
       {state.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
       {state.ok && <span className="w-full text-xs text-emerald-700">{state.ok}</span>}
     </form>
@@ -196,7 +198,7 @@ export function IncomeForm({ banks, persons, today, minDate, subtypes = [] }: { 
           <p className="text-xs text-slate-500">ปันผล / ดอกเบี้ยจากพอร์ต บันทึกที่หน้า Investments · ค่าเช่าบันทึกจากการ์ดใน &ldquo;รายได้ที่ต้องได้รับ&rdquo; หรือหน้า Property</p>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-            <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+            <button type="button" data-close onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
         </form>
@@ -230,7 +232,7 @@ export function ExpectedActions(props: {
       </label>
       <button disabled={dismissing} className={sbtn}>ยืนยัน &ldquo;เดือนนี้ไม่ได้รับ&rdquo;</button>
       <button type="button" onClick={() => setMode("record")} className="text-xs text-slate-600 underline">← กลับไปบันทึกรับ</button>
-      <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={ds} /></div>
     </form>
   ) : (
@@ -250,7 +252,7 @@ export function ExpectedActions(props: {
         </select>
       </label>
       <button disabled={recording} className={sbtn}>บันทึก</button>
-      <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
       <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้รับ…</button>
       <div className="w-full"><Msg s={rs} /></div>
     </form>
@@ -300,7 +302,7 @@ export function TemplateForm({ banks, persons, today }: { banks: Bank[]; persons
           </div>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-            <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+            <button type="button" data-close onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
         </form>
@@ -382,7 +384,7 @@ export function ExpenseTemplateForm({ banks, cards, persons, categories, today }
           </div>
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-            <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+            <button type="button" data-close onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
         </form>
@@ -426,7 +428,7 @@ export function DismissCostForm({ sourceType, sourceId, period, onBack, onClose 
       </label>
       <button disabled={pending} className={sbtn}>ยืนยัน &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo;</button>
       <button type="button" onClick={onBack} className="text-xs text-slate-600 underline">← กลับไปบันทึกจ่าย</button>
-      <button type="button" onClick={onClose} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={onClose} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={ds} /></div>
     </form>
   );
@@ -506,7 +508,7 @@ export function RecurringPayActions(props: {
       <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <BalanceGuard />
-      <button type="button" onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
       <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
       <div className="w-full"><Msg s={rs} /></div>
     </form>
@@ -612,7 +614,7 @@ export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
             <BalanceGuard />
-            <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+            <button type="button" data-close onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
         </form>
@@ -676,7 +678,7 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, c
         </label>
       )}
       <button disabled={pending} className={sbtn}>บันทึก</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));
@@ -781,7 +783,7 @@ export function MovementForm({ banks, cards, pfCash = [], liabilities, today, mi
           <div className="flex items-center gap-3">
             <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
             <BalanceGuard bank="from_asset_id" amount={["amount", "fee", "principal", "interest"]} />
-            <button type="button" onClick={close} className="text-sm text-slate-500">ปิด</button>
+            <button type="button" data-close onClick={close} className="text-sm text-slate-500">ปิด</button>
             <Msg s={state} />
           </div>
         </form>

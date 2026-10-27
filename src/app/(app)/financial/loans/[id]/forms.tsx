@@ -6,6 +6,7 @@ import { useActionState, useState } from "react";
 import { disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
 import { ROW_BTN, numOrZero as num } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
+import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -93,7 +94,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
       <p className="text-xs text-slate-500">เงินต้น = ลดยอดเงินให้กู้ (ไม่ใช่รายได้) · ดอกเบี้ย = รายได้ · ระบบสร้างรายการเงินเข้าบัญชีให้ทั้งสองส่วน</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -121,7 +122,7 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <BalanceGuard />
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
@@ -145,8 +146,9 @@ export function LoanInfoForm({ assetId, v }: {
       <label className="text-sm">ดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={v.interest_rate ?? ""} className={input} /></label>
       <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} className={input} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
-      <div className="flex items-center gap-3 md:col-span-2">
+      <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
+        <StatusSlot />
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>

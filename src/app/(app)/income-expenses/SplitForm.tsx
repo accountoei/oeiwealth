@@ -117,7 +117,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
       <div className="flex items-center gap-2">
         <button disabled={pending || (left < 0 && !overOk) || sum <= 0 || missingCat || missingTo} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
           {pending ? "…" : "บันทึกการแยก"}</button>
-        <button type="button" onClick={close} className="text-xs text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={close} className="text-xs text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-xs text-red-600">{state.error}</p>}
       <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)

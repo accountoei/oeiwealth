@@ -82,7 +82,7 @@ export default function LinkDocument({ docId, title, options, linked, canUnlink 
               <p className="text-xs text-slate-500">หมวดของเอกสารเปลี่ยนตามรายการที่ผูก (รายการแรก) · ผูกผิด = กด &ldquo;ยกเลิกผูก&rdquo; อันเดิม แล้วเลือกอันใหม่</p>
               <div className="flex flex-wrap items-center gap-3">
                 <button disabled={busy || !entity} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{busy ? "กำลังบันทึก…" : "ผูก"}</button>
-                <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+                <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
                 {err && <span className="text-sm text-red-600">{err}</span>}
               </div>
             </form>
