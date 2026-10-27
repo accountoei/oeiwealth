@@ -57,6 +57,15 @@ export default function NewPropertyForm(props: {
           <input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} className={input} />
         </label>
         <label className={label}>ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" className={input} /></label>
+        {!opening && (
+          <label className={label}>จ่ายจากบัญชี
+            <select name="pay_bank_asset_id" defaultValue="" className={input}>
+              <option value="">— ไม่บันทึกเงินออก (ยังไม่จ่าย / จ่ายเป็นงวด) —</option>
+              {banks.filter((b) => b.currency === currency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ได้มา ณ วันที่ได้มา · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าทรัพย์สิน</span>
+          </label>
+        )}
       </section>
 
       <OwnerShares persons={persons} title="เจ้าของ" hint="สัดส่วนกรรมสิทธิ์ · ใช้แบ่งมูลค่า ค่าเช่า และหนี้เงินประกันตามสัดส่วน" />
@@ -74,9 +83,6 @@ export default function NewPropertyForm(props: {
               {!isSetup && <span className="block text-xs text-amber-700">ระบบ LIVE แล้ว: ต้องระบุเหตุผลในหมายเหตุ</span>}
             </span>
           </label>
-        )}
-        {!opening && (
-          <p className="text-xs text-slate-500">ได้มาหลัง Go-live: ถ้าจ่ายเงินซื้อจากบัญชี ให้บันทึกรายการเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; ที่หน้า Income &amp; Expenses ด้วย</p>
         )}
         <div className="grid gap-4 md:grid-cols-3">
           <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" className={input} /></label>
@@ -107,9 +113,9 @@ export default function NewPropertyForm(props: {
         </section>
       )}
 
-      {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+      {state.error && <p className="text-sm text-red-600">{state.error}{state.created && <> · <Link href={state.created} className="underline">เปิดหน้าทรัพย์สิน</Link></>}</p>}
       <div className="flex gap-3">
-        <button disabled={pending} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">
+        <button disabled={pending || !!state.created} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">
           {pending ? "กำลังบันทึก…" : "บันทึก"}
         </button>
         <Link href="/property" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>

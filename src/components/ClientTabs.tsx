@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 // แท็บที่สลับในเบราว์เซอร์ทันที (ไม่โหลดหน้าใหม่ · หน้าไม่เด้งขึ้นบน)
 // ข้อมูลทุกแท็บโหลดมาพร้อมกันตั้งแต่เปิดหน้า · URL เปลี่ยนตาม (?<param>=) → Refresh / ส่งลิงก์ แล้วเปิดแท็บเดิมได้
@@ -10,6 +10,8 @@ export function TabsProvider({ initial, param = "tab", defaultKey, children }: {
   initial: string; param?: string; defaultKey?: string; children: ReactNode;
 }) {
   const [active, setState] = useState(initial);
+  // URL เปลี่ยน ?<param>= จากภายนอก (เช่น กดชื่อเมนูซ้ายของหน้านี้ → กลับแท็บแรก) → สลับแท็บตาม
+  useEffect(() => { setState(initial); }, [initial]);
   const setActive = (k: string) => {
     setState(k);
     try {
