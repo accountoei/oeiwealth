@@ -3,19 +3,21 @@ import { money, thDate } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import HistoryRows, { type HistoryRow } from "@/components/HistoryRows";
+import ModalButton from "@/components/ModalButton";
 import type { ReactNode } from "react";
 
 export type ValRow = { id: string; valuation_date: string; value: number; source: string; notes: string | null; valuation_method?: string | null };
 
 /** รายการจ่ายซื้อ / ขาย ของทรัพย์สิน + สรุปกำไรขาดทุนเมื่อขายแล้ว
- *  ส่ง valuations มาด้วย (Property / Alternative · ตกลง 27 ต.ค. 2026) → กล่องเดียว "ซื้อ / ขาย และมูลค่า":
- *  ฟอร์มอัปเดตมูลค่า + ตารางเดียวเรียงตามวันที่ (จ่ายซื้อ / เงินขาย / มูลค่า) · ราคาทองอัตโนมัติรายวันซ่อนไว้ก่อน */
+ *  ส่ง valuations มาด้วย (Property / Alternative / Business) → ปุ่มสำหรับวางในกล่องมูลค่าล่าสุด (ตกลง 27 ต.ค. 2026):
+ *  "อัปเดตมูลค่า" (pop up ฟอร์ม) + "ประวัติ…" (pop up ตารางเดียวเรียงตามวันที่: จ่ายซื้อ / เงินขาย / มูลค่า + สรุปการขาย)
+ *  ราคาทองอัตโนมัติรายวันซ่อนไว้ก่อน */
 export default async function AssetTradeHistory({ assetId, currency, status, cost, paths, canWrite, canDelete, showMoves = true,
-  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, unit }: {
+  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, perUnitDigits, unit }: {
   assetId: string; currency: string; status: string; cost: number | null; paths: string[];
   canWrite: boolean; canDelete: boolean; showMoves?: boolean;
   valuations?: ValRow[]; valuationForm?: ReactNode; valuationHint?: string; sourceLabel?: Record<string, string>;
-  methodLabel?: Record<string, string>; perUnit?: (v: number) => number | null; unit?: string | null;
+  methodLabel?: Record<string, string>; perUnit?: (v: number, date: string) => number | null; unit?: string | null; perUnitDigits?: number;
 }) {
   const supabase = await createClient();
   const [{ data: moves }, { data: saleVal }, { data: lastVal }, { data: parts }] = await Promise.all([
@@ -104,10 +106,10 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
   );
 
   if (merged) {
-    const showPer = !!perUnit && valuations.some((v) => perUnit(Number(v.value)) != null);
+    const showPer = !!perUnit && valuations.some((v) => perUnit(Number(v.value), v.valuation_date) != null);
     type Item = { key: string; date: string; order: number; auto: boolean; row: ReactNode };
     const items: Item[] = [
-      ...list.map((m): Item => ({ key: `m${m.id}`, date: m.movement_date, order: 0, auto: false, row: (
+      ...(showMoves ? list : []).map((m): Item => ({ key: `m${m.id}`, date: m.movement_date, order: 0, auto: false, row: (
         <tr>
           <td className="py-1.5">{thDate(m.movement_date)}</td>
           <td>{moveLabel(m)}</td>
@@ -124,7 +126,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
               sourceLabel[v.source] ?? v.source].filter(Boolean).join(" · ")}</span></td>
           <td className="text-slate-500">{v.notes === "ราคาขาย" ? "" : v.notes}</td>
           <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
-          {showPer && <td className="text-right tabular-nums text-slate-500">{perUnit && perUnit(Number(v.value)) != null ? money(perUnit(Number(v.value))) : ""}</td>}
+          {showPer && <td className="text-right tabular-nums text-slate-500">{perUnit && perUnit(Number(v.value), v.valuation_date) != null ? money(perUnit(Number(v.value), v.valuation_date), undefined, perUnitDigits) : ""}</td>}
           <td className="pl-2 text-right">
             {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && valuations.length > 1}
               fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
@@ -135,22 +137,26 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
     // ใหม่ → เก่า · วันเดียวกัน: มูลค่าก่อนรายการเงิน (มูลค่าหลังซื้อ / ขายอยู่บนสุด)
     items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.order - a.order));
     const rows: HistoryRow[] = items.map(({ key, auto, row }) => ({ key, auto, row }));
+    const historyLabel = sold || partList.length > 0 ? "ประวัติซื้อ / ขาย / มูลค่า" : list.length > 0 ? "ประวัติซื้อ / มูลค่า" : "ประวัติมูลค่า";
+    const history = (
+      <HistoryRows title={null} rows={rows}
+        head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th>รายละเอียด / หมายเหตุ</th>
+          <th className="text-right">จำนวนเงิน / มูลค่า</th>{showPer && <th className="text-right">ต่อ{unit ?? "หน่วย"}</th>}<th></th></tr></thead>}>
+        {summary}
+        {sold && <p className="mb-3 text-xs text-slate-500">บันทึกขายผิด: ลบ &ldquo;เงินขาย&rdquo; ในตาราง ลบรายได้กำไร / ค่าใช้จ่ายขาดทุนจากการขายในหน้ารายได้ / ค่าใช้จ่าย ลบมูลค่า &ldquo;ราคาขาย&rdquo; แล้วเปลี่ยนสถานะกลับเป็น &ldquo;ถืออยู่&rdquo;</p>}
+      </HistoryRows>
+    );
+    // ปุ่มในกล่องมูลค่าล่าสุด (แทนกล่อง "ซื้อ / ขาย และมูลค่า" · ตกลง 27 ต.ค. 2026)
     return (
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <HistoryRows title="ซื้อ / ขาย และมูลค่า" rows={rows}
-          head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th>รายละเอียด / หมายเหตุ</th>
-            <th className="text-right">จำนวนเงิน / มูลค่า</th>{showPer && <th className="text-right">ต่อ{unit ?? "หน่วย"}</th>}<th></th></tr></thead>}>
-          {summary}
-          {valuationForm && (
-            <div className="mb-4 rounded-lg bg-slate-50 p-4">
-              <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า</h3>
-              {valuationHint && <p className="mb-2 text-xs text-slate-500">{valuationHint}</p>}
-              {valuationForm}
-            </div>
-          )}
-        </HistoryRows>
-        {sold && <p className="mt-2 text-xs text-slate-500">บันทึกขายผิด: ลบ &ldquo;เงินขาย&rdquo; ในตาราง ลบรายได้กำไร / ค่าใช้จ่ายขาดทุนจากการขายในหน้ารายได้ / ค่าใช้จ่าย ลบมูลค่า &ldquo;ราคาขาย&rdquo; แล้วเปลี่ยนสถานะกลับเป็น &ldquo;ถืออยู่&rdquo;</p>}
-      </section>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {valuationForm && (
+          <ModalButton label="อัปเดตมูลค่า" title="อัปเดตมูลค่า" primary>
+            {valuationHint && <p className="mb-3 text-xs text-slate-500">{valuationHint}</p>}
+            {valuationForm}
+          </ModalButton>
+        )}
+        <ModalButton label={`${historyLabel} (${rows.filter((r) => !r.auto).length})`} title={historyLabel} size="lg">{history}</ModalButton>
+      </div>
     );
   }
 

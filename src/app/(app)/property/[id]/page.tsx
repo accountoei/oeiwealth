@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -169,6 +170,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             {a.acquisition_cost != null && (
               <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
             )}
+            {/* อัปเดตมูลค่า / ประวัติซื้อ / ขาย / มูลค่า เป็นปุ่ม pop up (แทนกล่องแยก · ตกลง 27 ต.ค. 2026) */}
+            <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+              paths={paths} canWrite={canWrite} canDelete={canDelete}
+              valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
+              valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
+              valuationForm={canWrite && a.status === "ACTIVE" ? <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} /> : undefined} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
@@ -230,14 +237,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </div>
       </section>
 
-      {/* ---------------- ซื้อ / ขาย และมูลค่า (กล่องเดียว · ตกลง 27 ต.ค. 2026) ---------------- */}
-      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-        paths={paths} canWrite={canWrite} canDelete={canDelete}
-        valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
-        valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
-        valuationForm={canWrite && a.status === "ACTIVE" ? <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} /> : undefined} />
-
-      {/* ---------------- สัญญาเช่า ---------------- */}
+      {/* ---------------- สัญญาเช่า (แสดงเฉพาะที่ให้เช่า · ไม่ได้ให้เช่าแล้วแต่เคยมีสัญญา → พับเป็นประวัติ · ตกลง 27 ต.ค. 2026) ---------------- */}
+      {(isRental || leases.length > 0) && <LeaseWrap open={isRental} count={leases.length}>
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-medium text-slate-900">สัญญาเช่า</h2>
@@ -246,11 +247,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา"} />
           )}
         </div>
-        {!isRental && leases.length === 0 && (
-          <p className="text-sm text-slate-500">
-            ทรัพย์สินนี้{USAGE_LABEL[pd.usage_type] ?? ""} — ไม่ต้องมีสัญญาเช่า (ไม่นับว่าข้อมูลขาด)
-          </p>
-        )}
         {canWrite && pd.usage_type === "RENTAL" && liveLeases.length === 0 && <SuggestVacant assetId={id} />}
 
         {leases.map((l) => {
@@ -378,6 +374,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </table>
         </section>
       )}
+      </LeaseWrap>}
 
       {/* ---------------- ภาษีที่ดินและสิ่งปลูกสร้าง ---------------- */}
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
@@ -555,3 +552,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 }
 
 const ASSET_STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย", CLOSED: "ปิดแล้ว" };
+
+/** ให้เช่าอยู่ → แสดงตามปกติ · ไม่ได้ให้เช่าแล้วแต่เคยมีสัญญา → พับไว้เป็น "ประวัติสัญญาเช่า" */
+function LeaseWrap({ open, count, children }: { open: boolean; count: number; children: ReactNode }) {
+  if (open) return <>{children}</>;
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white p-5">
+      <summary className="cursor-pointer font-medium text-slate-900">ประวัติสัญญาเช่า ({count})
+        <span className="ml-2 text-xs font-normal text-slate-500">ไม่ได้ให้เช่าแล้ว · จะให้เช่าใหม่ ให้เปลี่ยนการใช้งานเป็น &ldquo;ให้เช่า&rdquo; ที่ แก้ไขข้อมูล</span></summary>
+      <div className="mt-4 space-y-6">{children}</div>
+    </details>
+  );
+}

@@ -83,6 +83,15 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}</div>
             {perUnit(a.current_value) != null && <div className="mt-1 text-xs text-slate-500">{unit ?? "หน่วย"}ละ {money(perUnit(a.current_value))}</div>}
             {vsCost != null && <div className={`mt-1 text-xs ${vsCost >= 0 ? "text-emerald-700" : "text-red-700"}`}>เทียบทุน {pctText(vsCost)}</div>}
+            {/* อัปเดตมูลค่า / ประวัติ เป็นปุ่ม pop up (แทนกล่องแยก · ตกลง 27 ต.ค. 2026) */}
+            <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+              paths={paths} canWrite={canWrite} canDelete={canDelete}
+              valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE} perUnit={qty ? perUnit : undefined} unit={unit}
+              valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (ทอง / คริปโต ตามราคาตลาด)"
+              valuationForm={canWrite && a.status === "ACTIVE" ? (cat?.category_code === "GOLD" && a.currency === "THB"
+                ? <GoldValuationForm assetId={id} today={today} minDate={goLive} paths={paths} qtyBaht={goldBaht}
+                    purity={d.purity_pct != null ? Number(d.purity_pct) : null} ornament={d.gold_form === "ORNAMENT"} deduct={d.deduct_per_baht != null ? Number(d.deduct_per_baht) : null} />
+                : <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />) : undefined} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="ALTERNATIVE" entityType="ASSET" entityId={id} module="ALTERNATIVE" role={me.role} paths={paths} fill />
@@ -135,14 +144,6 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
         </div>
       </section>
 
-      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-        paths={paths} canWrite={canWrite} canDelete={canDelete}
-        valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE} perUnit={qty ? perUnit : undefined} unit={unit}
-        valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (ทอง / คริปโต ตามราคาตลาด)"
-        valuationForm={canWrite && a.status === "ACTIVE" ? (cat?.category_code === "GOLD" && a.currency === "THB"
-          ? <GoldValuationForm assetId={id} today={today} minDate={goLive} paths={paths} qtyBaht={goldBaht}
-              purity={d.purity_pct != null ? Number(d.purity_pct) : null} ornament={d.gold_form === "ORNAMENT"} deduct={d.deduct_per_baht != null ? Number(d.deduct_per_baht) : null} />
-          : <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths} />) : undefined} />
     </div>
   );
 }

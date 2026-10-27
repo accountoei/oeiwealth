@@ -16,6 +16,11 @@ import { ActionBar } from "@/components/ActionBar";
 import { businessDividendFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
 
+const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
+const METHOD_LABEL: Record<string, string> = {
+  BOOK_VALUE: "มูลค่าตามบัญชี", USER_ESTIMATE: "ประมาณเอง", APPRAISAL: "ผู้ประเมิน", LATEST_TRANSACTION: "ราคาซื้อขายล่าสุด",
+};
+
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
@@ -24,7 +29,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle(),
     supabase.from("private_business_details").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,cost_per_share,start_date,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
-    supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
+    supabase.from("asset_valuations").select("id,valuation_date,value,source,notes,valuation_method").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,income_type,income_subtype").eq("asset_id", id).is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("cash_movements").select("id,movement_date,movement_type,amount,currency,description,is_derived,metadata").or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`)
       .is("deleted_at", null).order("movement_date", { ascending: false }),
@@ -104,6 +109,16 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             <div className="text-xs text-slate-500">มูลค่าส่วนของครอบครัว</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>ณ {thDate(a.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
+            {/* อัปเดตมูลค่า / ประวัติมูลค่า เป็นปุ่ม pop up (แทนกล่อง "มูลค่า" · ตกลง 27 ต.ค. 2026) */}
+            <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} paths={paths} canWrite={canWrite} canDelete={canDelete} showMoves={false}
+              cost={d.investment_cost != null ? Number(d.investment_cost) : a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+              valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
+              perUnit={byShares ? (v, dt) => (sharesAt(dt) > 0 ? v / sharesAt(dt) : null) : undefined} perUnitDigits={4} unit="หุ้น"
+              valuationHint="ปกติอัปเดตปีละครั้ง ตามงบการเงิน"
+              valuationForm={canWrite && a.status === "ACTIVE" ? (
+                <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths}
+                  methods={[["BOOK_VALUE", "มูลค่าตามบัญชี"], ["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]]} />
+              ) : undefined} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="BUSINESS" entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
@@ -156,9 +171,6 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         </div>
       </section>
 
-      <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} paths={paths} canWrite={canWrite} canDelete={canDelete} showMoves={false}
-        cost={d.investment_cost != null ? Number(d.investment_cost) : a.acquisition_cost != null ? Number(a.acquisition_cost) : null} />
-
       {saleList.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-2 font-medium text-slate-900">ประวัติซื้อ / ขายหุ้น</h2>
@@ -197,29 +209,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         </section>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-          <div>
-            <h2 className="font-medium text-slate-900">มูลค่า</h2>
-            <p className="text-xs text-slate-500">ปกติอัปเดตปีละครั้ง ตามงบการเงิน</p>
-            {stale && a.status === "ACTIVE" && <p className="mt-1 text-xs font-medium text-amber-700">มูลค่าล่าสุดเกิน 1 ปีแล้ว ({thDate(a.current_value_date)})</p>}
-          </div>
-          {canWrite && a.status === "ACTIVE" && (
-            <AssetValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} paths={paths}
-              methods={[["BOOK_VALUE", "มูลค่าตามบัญชี"], ["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]]} />
-          )}
-          <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
-            {(vals ?? []).map((v) => (
-              <tr key={v.id}>
-                <td className="whitespace-nowrap py-1.5">{thDate(v.valuation_date)}</td><td className="text-right tabular-nums">{money(v.value, undefined, 0)}
-                  {byShares && sharesAt(v.valuation_date) > 0 && <div className="text-xs text-slate-500">หุ้นละ {money(Number(v.value) / sharesAt(v.valuation_date), undefined, 4)}</div>}</td>
-                <td className="pl-3 text-xs text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes}</td>
-                <td className="pl-2 text-right">{canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
-                  fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value }]} />}</td>
-              </tr>
-            ))}
-          </tbody></table>
-        </div>
+      {stale && a.status === "ACTIVE" && <p className="text-xs font-medium text-amber-700">มูลค่าล่าสุดเกิน 1 ปีแล้ว ({thDate(a.current_value_date)}) · กด &ldquo;อัปเดตมูลค่า&rdquo; ในกล่องมูลค่า</p>}
+      <section>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-medium text-slate-900">ปันผล / เงินลงทุนเพิ่ม / ขาย</h2>
