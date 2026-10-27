@@ -6,10 +6,11 @@ import NewAlternativeForm from "./NewAlternativeForm";
 export default async function NewAlternativePage() {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: family }, { data: persons }, { data: cats }] = await Promise.all([
+  const [{ data: family }, { data: persons }, { data: cats }, { data: banks }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("asset_categories").select("id,category_name,category_code,default_unit,family_id").is("deleted_at", null).eq("active", true).order("family_id", { nullsFirst: true }).order("category_name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
   ]);
   if (me.role === "VIEWER") return <p className="text-sm text-slate-600">สิทธิ์ผู้ดูเพิ่มรายการไม่ได้</p>;
   if (!family) return <p className="text-sm text-red-600">ไม่พบข้อมูลครอบครัว</p>;
@@ -21,7 +22,7 @@ export default async function NewAlternativePage() {
       </div>
       <NewAlternativeForm persons={persons ?? []} categories={(cats ?? []).map((c) => ({ id: c.id, name: c.category_name, code: c.category_code, unit: c.default_unit }))}
         goLive={family.go_live_date} openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}
-        isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"} />
+        isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"} banks={banks ?? []} />
     </div>
   );
 }

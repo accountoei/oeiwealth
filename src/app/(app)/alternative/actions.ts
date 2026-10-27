@@ -3,14 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 
-export type ActionState = FormState & { id?: string; name?: string; unit?: string };
+/** created = สร้างรายการแล้วแต่บันทึกเงินออกไม่สำเร็จ → ลิงก์ไปหน้ารายการ (ไม่ให้กดบันทึกซ้ำ) */
+export type ActionState = FormState & { id?: string; name?: string; unit?: string; created?: string };
 
 export async function createAlternative(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const value = num(form.get("value"));
   if (value === null || Number.isNaN(value) || value < 0) return { error: "กรุณาใส่มูลค่าเป็นตัวเลข" };
+  const pay = payFromForm(form);
+  if (pay && "error" in pay) return { error: pay.error };
   const { data, error } = await supabase.rpc("create_alternative_asset", { p: {
     name: str(form.get("name")), category_id: str(form.get("category_id")), currency: str(form.get("currency")),
     value, value_date: str(form.get("value_date")), is_opening: form.get("is_opening") === "on",
@@ -22,6 +26,11 @@ export async function createAlternative(_: ActionState, form: FormData): Promise
   } });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/alternative");
+  if (pay) {
+    const e2 = await recordAssetPurchase(supabase, String(data), pay);
+    revalidatePath("/financial/cash", "layout");
+    if (e2) return { error: `บันทึกสินทรัพย์แล้ว แต่บันทึกเงินออกจากบัญชีไม่สำเร็จ (${e2}) — เปิดหน้าสินทรัพย์แล้วใช้ปุ่ม "+ จ่ายซื้อ / จ่ายเพิ่ม"`, created: `/alternative/${data}` };
+  }
   redirect(`/alternative/${data}`);
 }
 

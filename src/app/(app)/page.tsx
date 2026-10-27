@@ -38,10 +38,6 @@ const GROUP: [string, string][] = [["financial", "เงินฝาก / เง
 /** item_group ของรายการรายคน → คีย์หมวดบน Dashboard */
 const GROUP_FIELD: Record<string, string> = { FINANCIAL: "financial", LOANS: "loans", INVESTMENT: "investment", BUSINESS: "business",
   PROPERTY: "property", ALTERNATIVE: "alternative", INSURANCE: "insurance" };
-const FIELD: Record<string, string> = {
-  document: "เอกสาร", ownership: "เจ้าของครบ 100%", valuation: "มูลค่า", acquisition_date: "วันที่ได้มา",
-  acquisition_cost: "ราคาที่ได้มา", account_no: "เลขบัญชี", title_deed_no: "เลขโฉนด", land_area_sq_wa: "เนื้อที่",
-};
 
 // ---------------------------------------------------------------------------
 // โหลดข้อมูลส่วนที่ช้า (คำนวณ Net Worth) ผ่าน cache() → เริ่มยิงตั้งแต่ต้นหน้า แล้วการ์ดหลายใบใช้ผลเดียวกันได้
@@ -174,25 +170,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        {/* ------------------------------------------------ Attention */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">สิ่งที่ต้องทำ <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
-          <Suspense fallback={<Lines n={4} />}>
-            <AttentionBody family={family} isSetup={isSetup} today={today} />
-          </Suspense>
-        </div>
-
-        {/* ------------------------------------------------ Data Completeness */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <Suspense fallback={<>
-            <h2 className="mb-2 font-medium text-slate-900">ความครบถ้วนของข้อมูล <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
-            <Lines n={5} />
-          </>}>
-            <CompletenessBody />
-          </Suspense>
-        </div>
-      </section>
       {me.role === "VIEWER" && <p className="text-xs text-slate-400">สิทธิ์ผู้ดู: ดูข้อมูลได้อย่างเดียว</p>}
     </div>
   );
@@ -281,76 +258,6 @@ async function ChartBody({ start, isCurrent, personId, from }: { start: string; 
   }
   points = clipRange(points, from);
   return <TrendChart points={points} selected={points.findIndex((pt) => pt.date === asOf)} />;
-}
-
-async function AttentionBody({ family, isSetup, today }: { family: Family | null; isSetup: boolean; today: string }) {
-  const supabase = await createClient();
-  const [h, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }, { data: pendH }, { data: pendG }] = await Promise.all([
-    getHistory(),
-    isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
-    supabase.from("v_fx_status").select("currency,latest_rate_date,is_stale"),
-    supabase.from("v_expected_income").select("name,income_period,status").eq("status", "OVERDUE"),
-    supabase.from("v_liabilities_all").select("name,liability_source,derived_status").not("derived_status", "is", null),
-    supabase.from("v_holdings_active").select("name,portfolio_asset_id,status,derived_status,valued_at_cost,maturity_date").eq("status", "ACTIVE"),
-    supabase.from("v_lease_status").select("tenant_name,unit_label,end_date,property_asset_id,lease_status").eq("lease_status", "EXPIRING_SOON"),
-    supabase.from("v_insurance_schedule_status").select("policy_id,kind").eq("status", "OVERDUE"),
-    supabase.from("insurance_followups").select("id").is("deleted_at", null).in("status", ["OPEN", "IN_PROGRESS"]),
-    // บัญชีธนาคารที่ยอดตามระบบติดลบ ณ วันนี้ (แสดงสีแดง · ปิดเดือนไม่ได้จนกว่าจะกลับเป็นบวก)
-    supabase.rpc("bank_balances_at", { p_date: today }),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE"),
-    // ราคาอัตโนมัติรอยืนยัน (ครั้งแรก / ต่างเกิน 20%)
-    supabase.from("investment_holdings").select("id,name,portfolio_id,investment_portfolios(asset_id)").not("price_pending", "is", null).is("deleted_at", null),
-    supabase.from("alternative_asset_details").select("asset_id").not("price_pending", "is", null).is("deleted_at", null),
-  ]);
-  const finals = (h?.snapshots ?? []).filter((s) => s.status === "FINAL");
-
-  // งานที่ต้องทำ (Attention) — ปิดเดือนอยู่บนสุด
-  const attention: { text: string; href: string; tone: "red" | "amber" | "slate" }[] = [];
-  if (isSetup) {
-    const missing = (readiness ?? []).filter((r: { status: string }) => r.status === "MISSING").length;
-    attention.push({ text: `ระบบยังอยู่ช่วงตั้งค่า · ยังขาดยอดตั้งต้น ${missing} รายการ ก่อน Confirm Go-live`, href: "/settings/opening", tone: "amber" });
-  } else if (family) {
-    const lastFinal = finals.length ? finals[finals.length - 1].month.slice(0, 7) : null;
-    const toClose = lastFinal ? monthRange(lastFinal).next : family.go_live_date.slice(0, 7);
-    if (monthRange(toClose).end < today) attention.push({ text: `ปิดเดือน ${thMonth(`${toClose}-01`)}`, href: `/settings/month-closing?m=${toClose}`, tone: "red" });
-  }
-  const accName = new Map((bankAcc ?? []).map((b) => [b.asset_id as string, b]));
-  ((bankBal as { asset_id: string; calculated: number | null }[] | null) ?? [])
-    .filter((r) => accName.has(r.asset_id) && r.calculated != null && Number(r.calculated) < -0.005)
-    .forEach((r) => attention.push({ text: `บัญชี ${accName.get(r.asset_id)?.name} ติดลบ ${money(Number(r.calculated), accName.get(r.asset_id)?.currency as string)}`,
-      href: `/financial/cash/${r.asset_id}`, tone: "red" }));
-  ((pendH ?? []) as { id: string; name: string; investment_portfolios: { asset_id: string } | { asset_id: string }[] | null }[]).forEach((x) => {
-    const pf = Array.isArray(x.investment_portfolios) ? x.investment_portfolios[0] : x.investment_portfolios;
-    if (pf) attention.push({ text: `ราคา ${x.name} รอยืนยัน (ราคาอัตโนมัติ)`, href: `/investments/${pf.asset_id}/holding/${x.id}`, tone: "amber" });
-  });
-  (pendG ?? []).forEach((x) => attention.push({ text: "มูลค่าทองคำรอยืนยัน (ราคาอัตโนมัติ)", href: `/alternative/${x.asset_id}`, tone: "amber" }));
-  (fx ?? []).filter((f) => f.is_stale).forEach((f) => attention.push({ text: `อัตราแลกเปลี่ยน ${f.currency} ไม่อัปเดต (ล่าสุด ${thDate(f.latest_rate_date)})`, href: "/settings/system", tone: "red" }));
-  if ((fups ?? []).length) attention.push({ text: `กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
-  const premOver = (insOverdue ?? []).filter((x) => x.kind === "PREMIUM").length;
-  if (premOver) attention.push({ text: `เบี้ยประกันเลยกำหนด ${premOver} งวด`, href: "/income-expenses?tab=expense", tone: "red" });
-  if ((expected ?? []).length) attention.push({ text: `รายได้เลยกำหนดยังไม่ได้รับ ${(expected ?? []).length} รายการ`, href: "/income-expenses?tab=income", tone: "amber" });
-  (liabs ?? []).forEach((l) => {
-    if (l.derived_status === "PAID_AFTER_BALANCE_DATE") attention.push({ text: `${l.name}: จ่ายบัตรแล้ว ยังไม่อัปเดตยอด`, href: "/liabilities#cards", tone: "amber" });
-    if (l.derived_status === "DEPOSIT_REFUND_OVERDUE") attention.push({ text: `${l.name}: เงินประกันเลยกำหนดคืน`, href: "/property", tone: "red" });
-  });
-  const atCost = (holds ?? []).filter((x) => x.valued_at_cost);
-  if (atCost.length) attention.push({ text: `หลักทรัพย์ใช้ราคาทุน รอ Statement ${atCost.length} ตัว`, href: "/investments", tone: "slate" });
-  (holds ?? []).filter((x) => x.derived_status === "MATURITY_SOON").forEach((x) =>
-    attention.push({ text: `${x.name} ครบกำหนด ${thDate(x.maturity_date)}`, href: `/investments/${x.portfolio_asset_id}`, tone: "slate" }));
-  (leases ?? []).forEach((l) => attention.push({ text: `สัญญาเช่า ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} หมด ${thDate(l.end_date)}`, href: `/property/${l.property_asset_id}`, tone: "slate" }));
-
-  if (attention.length === 0) return <p className="text-sm text-emerald-700">ไม่มีงานค้าง ✓</p>;
-  return (
-    <ul className="space-y-1.5 text-sm">
-      {attention.slice(0, 10).map((a, i) => (
-        <li key={i} className="flex gap-2">
-          <span className={a.tone === "red" ? "text-red-600" : a.tone === "amber" ? "text-amber-600" : "text-slate-400"}>●</span>
-          <Link href={a.href} className="hover:underline">{a.text}</Link>
-        </li>
-      ))}
-      {attention.length > 10 && <li className="text-xs text-slate-500">และอีก {attention.length - 10} รายการ</li>}
-    </ul>
-  );
 }
 
 async function AllocationBody({ start, personId }: { start: string; personId: string }) {
@@ -505,31 +412,6 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
           <td className="text-right tabular-nums">{money(total, undefined, 0)}</td></tr>
       </tfoot>
     </table>
-  );
-}
-
-async function CompletenessBody() {
-  const { data: completeness } = await (await createClient()).rpc("asset_completeness");
-  const comp = (completeness ?? []) as { asset_id: string; name: string; asset_group: string; asset_type: string; score: number | null; missing: string[] }[];
-  const compAvg = comp.length ? Math.round(comp.reduce((s, c) => s + Number(c.score ?? 0), 0) / comp.length) : null;
-  const assetHref = (c: { asset_id: string }) => `/a/${c.asset_id}`;
-  return (
-    <>
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="font-medium text-slate-900">ความครบถ้วนของข้อมูล <span className="text-xs font-normal text-slate-500">(ณ วันนี้)</span></h2>
-        {compAvg != null && <span className="text-xl font-semibold tabular-nums">{compAvg}%</span>}
-      </div>
-      <p className="mb-2 text-xs text-slate-500">คิดจากข้อมูลที่แนะนำ (เอกสาร เจ้าของ มูลค่า ฯลฯ) · ไม่กระทบตัวเลข Net Worth</p>
-      <ul className="space-y-1 text-sm">
-        {comp.filter((c) => Number(c.score) < 100).sort((a, b) => Number(a.score) - Number(b.score)).slice(0, 6).map((c) => (
-          <li key={c.asset_id} className="flex justify-between gap-2">
-            <Link href={assetHref(c)} className="hover:underline">{c.name}</Link>
-            <span className="text-xs text-slate-500">{c.score}% · ขาด {c.missing.map((m) => FIELD[m] ?? m).join(", ")}</span>
-          </li>
-        ))}
-        {comp.length > 0 && comp.every((c) => Number(c.score) >= 100) && <li className="text-emerald-700">ครบทุกรายการ ✓</li>}
-      </ul>
-    </>
   );
 }
 
