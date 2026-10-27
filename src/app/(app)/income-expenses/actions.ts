@@ -346,7 +346,7 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
   const note = lumpNote(before, await lumpSnap(supabase, accs, newDate), accs, null);
   return done((warn ? "บันทึกแล้ว · บัญชีนี้อัปเดตยอดคงเหลือเดือนนี้ไปแล้ว ก้อนรอแยกปรับตามให้เอง ตรวจได้ที่หน้า Cash & Bank Accounts" : "บันทึกแล้ว") + note,
-    ["/liabilities", "/month-closing", "/"]);
+    ["/liabilities", "/settings/month-closing", "/"]);
 }
 
 // ------------------------------------------------------------------ ค่าใช้จ่ายประจำทั่วไป

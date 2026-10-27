@@ -150,7 +150,7 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
             <p className="text-xs text-slate-500">{personId ? "ส่วนของสมาชิกที่เลือก (ตามสัดส่วน) · " : ""}&ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ราคา · อัตราแลกเปลี่ยน · ประเมินใหม่ · ยอดหนี้ · รายการที่ไม่ได้บันทึก</p>
             <div className="flex flex-wrap items-center gap-3">
-              <Link href={`/month-closing?m=${ym}`} className="text-sm text-blue-700 hover:underline">เปิดหน้า Month Closing ›</Link>
+              <Link href={`/settings/month-closing?m=${ym}`} className="text-sm text-blue-700 hover:underline">เปิดหน้า Month Closing ›</Link>
               <Link href={`/income-expenses?m=${ym}${personId ? `&p=${personId}` : ""}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
                 เปิดหน้ารายได้ / ค่าใช้จ่าย (ทุกรายการ)</Link>
             </div>

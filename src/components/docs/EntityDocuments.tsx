@@ -31,7 +31,7 @@ export default async function EntityDocuments({ entityType, entityId, module, ro
   const canWrite = role !== "VIEWER";
   const canDelete = role === "ADMIN" || role === "EDITOR";
   const today = todayBangkok();
-  const paths = ["/documents", ...pagePaths];
+  const paths = ["/family/documents", ...pagePaths];
   // ฉบับปัจจุบัน: หมดอายุ / ใกล้หมดอายุขึ้นก่อน แล้วตามวันที่แนบล่าสุด · แสดง 5 ฉบับแรก ที่เหลือกด "ดูทั้งหมด"
   const warn = (d: Doc) => !!d.expiry_date && d.expiry_date <= addDays(today, 60);
   const current = docs.filter((d) => d.version_status === "CURRENT").sort((a, b) => Number(warn(b)) - Number(warn(a)));
@@ -42,7 +42,7 @@ export default async function EntityDocuments({ entityType, entityId, module, ro
     <section className={bare ? "" : `rounded-xl border border-slate-200 bg-white p-5${fill ? " flex-1" : ""}`}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className={bare ? "text-sm font-medium text-slate-800" : "font-medium text-slate-900"}>{title}</h2>
-        <Link href="/documents" className="text-xs text-slate-500 hover:underline">เอกสารทั้งหมด →</Link>
+        <Link href="/family/documents" className="text-xs text-slate-500 hover:underline">เอกสารทั้งหมด →</Link>
       </div>
       {current.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีเอกสาร</p> : (
         <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
@@ -69,7 +69,7 @@ export default async function EntityDocuments({ entityType, entityId, module, ro
       {canWrite && (
         <div className="mt-3">
           {connected ? <DocumentUpload module={module} link={{ type: entityType, id: entityId }} category={category} />
-            : <p className="text-xs text-amber-700">ยังไม่ได้เชื่อม Google Drive — ADMIN เชื่อมได้ที่หน้า <Link href="/documents" className="underline">Documents</Link></p>}
+            : <p className="text-xs text-amber-700">ยังไม่ได้เชื่อม Google Drive — ADMIN เชื่อมได้ที่หน้า <Link href="/family/documents" className="underline">Documents</Link></p>}
         </div>
       )}
     </section>

@@ -5,13 +5,14 @@ import { getCurrencyLists } from "@/lib/currencies";
 import { createClient } from "@/lib/supabase/server";
 import { Toaster } from "@/components/Modal";
 import KeepHeight from "@/components/KeepHeight";
+import { monthToClose } from "@/lib/closing";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
-  const ccy = await getCurrencyLists(await createClient());
+  const [ccy, due] = await Promise.all([createClient().then(getCurrencyLists), monthToClose()]);
   return (
     <div className="flex min-h-screen">
-      <Sidebar />
+      <Sidebar dots={due ? ["/settings/month-closing"] : []} />
       <div className="flex-1 min-w-0">
         <header className="sticky top-0 z-10 flex items-center justify-end gap-3 border-b border-slate-200 bg-white/90 px-4 py-2.5 text-sm backdrop-blur md:px-8">
           <span className="mr-auto" />

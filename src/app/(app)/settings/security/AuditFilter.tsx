@@ -18,14 +18,14 @@ export default function AuditFilter({ actions, users, applied, shown }: {
     e.preventDefault();
     if (same) {
       setF({ action: "", user: "", entity: "" });
-      router.push("/settings/security", { scroll: false });
+      router.push("/settings/family-users#security", { scroll: false });
       return;
     }
     const qs = new URLSearchParams({ show: "1" });
     if (f.action) qs.set("action", f.action);
     if (f.user) qs.set("user", f.user);
     if (f.entity.trim()) qs.set("entity", f.entity.trim());
-    router.push(`/settings/security?${qs}`, { scroll: false });
+    router.push(`/settings/family-users?${qs}#security`, { scroll: false });
   }
 
   return (

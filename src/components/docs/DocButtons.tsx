@@ -43,7 +43,7 @@ export function ConnectDrive({ label = "เชื่อม Google Drive", ask: a
     if (askText && !(await ask(askText, { okLabel: "ไปหน้า Google" }))) return;
     setBusy(true); setErr("");
     try {
-      const back = `${window.location.origin}/documents`;
+      const back = `${window.location.origin}/family/documents`;
       const r = await callDrive({ action: "connect", return_url: back });
       const { url } = await r.json();
       window.location.href = url;

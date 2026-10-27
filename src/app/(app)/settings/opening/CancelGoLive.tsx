@@ -25,7 +25,7 @@ export default function CancelGoLive({ goLive, finalMonths }: { goLive: string; 
       </ul>
       {blocked ? (
         <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          ยังมีเดือนที่ปิดอยู่ {finalMonths} เดือน — ไปที่ <Link href="/month-closing" className="underline">Month Closing</Link> แล้ว Reopen ทุกเดือนก่อน (ไล่จากเดือนล่าสุด)
+          ยังมีเดือนที่ปิดอยู่ {finalMonths} เดือน — ไปที่ <Link href="/settings/month-closing" className="underline">Month Closing</Link> แล้ว Reopen ทุกเดือนก่อน (ไล่จากเดือนล่าสุด)
         </p>
       ) : (
         <>

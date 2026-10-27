@@ -1,6 +1,6 @@
 // โครงเมนูตาม Core Schema V1.1 Section 1 (Navigation)
-export type NavItem = { label: string; href: string; ready?: boolean };
-export type NavGroup = { label: string; href?: string; ready?: boolean; items?: NavItem[] };
+export type NavItem = { label: string; href: string; match?: string; ready?: boolean };
+export type NavGroup = { label: string; href?: string; match?: string; ready?: boolean; items?: NavItem[] };
 
 export const NAV: NavGroup[] = [
   { label: "Dashboard", href: "/", ready: true },
@@ -13,26 +13,11 @@ export const NAV: NavGroup[] = [
   { label: "Alternative Assets", href: "/alternative", ready: true },
   { label: "Insurance", href: "/insurance", ready: true },
   { label: "Liabilities", href: "/liabilities", ready: true },
-  {
-    label: "Family",
-    items: [
-      { label: "Members", href: "/family/members", ready: true },
-      { label: "Membership & Points", href: "/family/memberships", ready: true },
-      { label: "Health", href: "/family/health", ready: true },
-    ],
-  },
-  { label: "Documents", href: "/documents", ready: true },
-  { label: "Month Closing", href: "/month-closing", ready: true },
-  {
-    label: "Settings",
-    items: [
-      { label: "Users", href: "/settings/family-users", ready: true },
-      { label: "System", href: "/settings/system", ready: true },
-      { label: "Security", href: "/settings/security", ready: true },
-    ],
-  },
+  // รวมเป็นแท็บ (ตกลง 27 ต.ค. 2026): match = path ที่ถือว่าอยู่ในเมนูนี้
+  { label: "Family & Documents", href: "/family/members", match: "/family", ready: true },
+  { label: "Settings", href: "/settings/month-closing", match: "/settings", ready: true },
 ];
 
 /** ทุก href ในเมนู (ใช้เลือกเมนูที่ตรงที่สุดตอนไฮไลต์) */
-export const NAV_HREFS: string[] = NAV.flatMap((g) => (g.items ? g.items.map((i) => i.href) : g.href ? [g.href] : []))
+export const NAV_HREFS: string[] = NAV.flatMap((g) => (g.items ? g.items.map((i) => i.match ?? i.href) : g.href ? [g.match ?? g.href] : []))
   .map((h) => h.split("#")[0]);

@@ -1,10 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
 import { InviteButton, UserManage } from "./forms";
+import SecuritySection, { type SecuritySp } from "../security/SecuritySection";
 
 const USER_STATUS: Record<string, string> = { INVITED: "รอเข้าใช้ครั้งแรก", ACTIVE: "ใช้งาน", DISABLED: "ปิดการใช้งาน" };
 
-export default async function UsersPage() {
+export default async function UsersPage({ searchParams }: { searchParams: Promise<SecuritySp> }) {
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
@@ -18,7 +20,7 @@ export default async function UsersPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Users</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">User &amp; Security</h1>
         <p className="text-sm text-slate-500">{family?.name} · Go-live {family?.go_live_date} · {family?.system_status}</p>
       </div>
 
@@ -60,6 +62,8 @@ export default async function UsersPage() {
           </table>
         </div>
       </section>
+
+      <SecuritySection sp={sp} />
     </div>
   );
 }

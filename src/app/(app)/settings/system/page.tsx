@@ -5,10 +5,7 @@ import FxSourceForm from "./FxSourceForm";
 import { ActionBar } from "@/components/ActionBar";
 import OverrideForm from "./OverrideForm";
 import FxRefreshButton from "./FxRefreshButton";
-import OpeningSetup from "../opening/OpeningSetup";
-import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
-
-const TABS = [["fx", "FX & Prices"], ["opening", "Opening Setup"]] as const;
+import { redirect } from "next/navigation";
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
 const JOB_LABEL: Record<string, string> = { FX_FETCH: "อัตราแลกเปลี่ยน", FX_BACKFILL: "อัตราแลกเปลี่ยน (ย้อนหลัง)", BACKUP: "สำรองข้อมูล", PRICE_FETCH: "ราคาอัตโนมัติ" };
@@ -17,7 +14,8 @@ const SKIP_REASON: Record<string, string> = { DEVIATION_OVER_5PCT: "ต่าง
   NEEDS_BASELINE: "รอยืนยันราคาฐาน", NO_ASSOC_PRICE: "อ่านราคาสมาคมค้าทองคำไม่ได้", SOURCE_MISMATCH: "ราคาสมาคมฯ ต่างจากราคาโลกเกิน 3%" };
 
 export default async function SystemPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const tab = (await searchParams).tab === "opening" ? "opening" : "fx";
+  // Opening Setup แยกเป็นแท็บของ Settings แล้ว (ลิงก์เดิม ?tab=opening ยังใช้ได้)
+  if ((await searchParams).tab === "opening") redirect("/settings/opening");
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
@@ -44,18 +42,13 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
   const fxSource = family?.fx_source === "BBL" ? "BBL" : "BOT";
 
   return (
-    <TabsProvider initial={tab} defaultKey="fx">
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">System</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">FX &amp; Prices</h1>
         <p className="text-sm text-slate-500">
           สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}
         </p>
       </div>
-      <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
-
-      <TabPanel id="fx" className="space-y-6">
-
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -163,12 +156,6 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
             )}
           </section>
       )}
-      </TabPanel>
-
-      <TabPanel id="opening" className="space-y-6">
-        <OpeningSetup />
-      </TabPanel>
     </div>
-    </TabsProvider>
   );
 }

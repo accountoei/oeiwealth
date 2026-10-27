@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { NAV, NAV_HREFS } from "./nav";
 
-function NavLink({ href, label, ready, nested }: { href: string; label: string; ready?: boolean; nested?: boolean }) {
+function NavLink({ href, match: prefix, label, ready, nested, dot }: { href: string; match?: string; label: string; ready?: boolean; nested?: boolean; dot?: boolean }) {
   const pathname = usePathname();
-  const base = href.split("#")[0];
+  const base = prefix ?? href.split("#")[0];
   // เลือกเมนูที่ตรงที่สุด (ถ้ามีเมนูย่อยที่ path ยาวกว่า ให้ไฮไลต์เมนูย่อยนั้นแทน)
   const match = (h: string) => (h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(`${h}/`));
   const active = match(base) && !NAV_HREFS.some((h) => h !== base && h.startsWith(`${base}/`) && match(h));
@@ -15,13 +15,14 @@ function NavLink({ href, label, ready, nested }: { href: string; label: string; 
     <Link href={href}
       className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${nested ? "pl-6" : ""} ${
         active ? "bg-blue-50 font-semibold text-blue-700 ring-1 ring-blue-100" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}>
-      <span>{label}</span>
+      <span className="flex items-center gap-1.5">{label}{dot && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}</span>
       {!ready && <span className="text-[11px] text-slate-400">เร็ว ๆ นี้</span>}
     </Link>
   );
 }
 
-export default function Sidebar() {
+/** dots = href ของเมนูที่ต้องแสดงจุดแดง (เช่น Settings เมื่อมีเดือนที่ถึงเวลาปิดแล้วยังไม่ปิด) */
+export default function Sidebar({ dots = [] }: { dots?: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -43,7 +44,7 @@ export default function Sidebar() {
                 {g.items.map((i) => <NavLink key={i.href} {...i} nested />)}
               </div>
             ) : (
-              <NavLink key={g.label} href={g.href!} label={g.label} ready={g.ready} />
+              <NavLink key={g.label} href={g.href!} match={g.match} label={g.label} ready={g.ready} dot={dots.includes(g.href!)} />
             ),
           )}
         </nav>

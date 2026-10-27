@@ -37,7 +37,7 @@ function fixLink(r: Row): string {
   switch (r.entity_type) {
     case "PERSON": return "/family/members";
     case "APP_USER": return "/settings/family-users";
-    case "FX_RATE": return "/settings/system?tab=fx";
+    case "FX_RATE": return "/settings/system";
     case "CREDIT_CARD": return r.entity_id ? `/liabilities/cards/${r.entity_id}` : "/liabilities#cards";
     case "LIABILITY": return r.entity_id ? `/liabilities/${r.entity_id}` : "/liabilities";
     case "HOLDING": return "/investments";
@@ -53,7 +53,7 @@ function fixLink(r: Row): string {
   return "/";
 }
 
-/** เนื้อหาแท็บ "Opening Setup" ในหน้า System */
+/** แท็บ "Opening Setup" ใน Settings */
 export default async function OpeningSetup() {
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -73,7 +73,7 @@ export default async function OpeningSetup() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-medium text-slate-900">Opening Setup</h2>
+          <h1 className="text-2xl font-semibold text-slate-900">Opening Setup</h1>
           <p className="text-sm text-slate-500">
             ตรวจยอดตั้งต้นก่อน Go-live · Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}
           </p>

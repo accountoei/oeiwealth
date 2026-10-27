@@ -7,7 +7,7 @@ import { friendlyError, numOrNull as num, strOrNull as str, type FormState } fro
 export type ActionState = FormState;
 
 function done(msg: string): ActionState {
-  revalidatePath("/month-closing");
+  revalidatePath("/settings/month-closing");
   revalidatePath("/financial/cash", "layout");
   revalidatePath("/");
   return { ok: msg };

@@ -93,7 +93,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
 
       <nav className="flex flex-wrap gap-2 text-sm">
         {[[`/?p=${id}`, "Dashboard ของคนนี้"], [`/insurance?p=${id}`, `กรมธรรม์ (${policies ?? 0})`], [`/family/health?p=${id}`, "สุขภาพ"],
-          [`/family/memberships?p=${id}`, "สมาชิกภาพ & แต้ม"], [`/documents?p=${id}`, "เอกสาร"]].map(([href, l]) => (
+          [`/family/memberships?p=${id}`, "สมาชิกภาพ & แต้ม"], [`/family/documents?p=${id}`, "เอกสาร"]].map(([href, l]) => (
           <Link key={href} href={href} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">{l}</Link>
         ))}
       </nav>
