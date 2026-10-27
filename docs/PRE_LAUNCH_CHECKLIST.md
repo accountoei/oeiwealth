@@ -30,7 +30,7 @@
   - PR ที่ต่อจาก PR ที่ยังไม่ Merge: แตก branch จาก branch นั้น แล้วบอกเจ้าของลำดับ Merge (กัน conflict ในไฟล์นี้)
 - migration ใหม่ = ไฟล์ใหม่เสมอ (ห้ามแก้ไฟล์ที่รันแล้ว) · **เจ้าของรันเองใน Supabase SQL Editor** จากลิงก์ `raw.githubusercontent.com/accountoei/oeiwealth/<branch>/supabase/migrations/<file>` → AI ตรวจด้วย SELECT ผ่าน connector (`execute_sql`): คอลัมน์ / ตาราง / ฟังก์ชัน `md5(replace(prosrc, E'\r', ''))` เทียบกับ DB ทดสอบในเครื่อง · RLS · สิทธิ์ anon · `get_advisors` → เจ้าของกด Merge · **รัน SQL ก่อนกด Merge เสมอ**
   - AI ห้ามเรียก `apply_migration` (ถูกยกเลิกทุกครั้ง) · migration ที่ลบ / เปลี่ยนชื่อ / แก้ข้อมูลเดิม ต้องถามเจ้าของก่อน
-- ก่อน push: `service postgresql start; DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **753 checks** · นับจาก `grep -c "NOTICE:  PASS"`) + `npx tsc --noEmit && npx eslint src` + `next build` (env ปลอม) · ลบ `.next/types` หลัง build
+- ก่อน push: `service postgresql start; DB=fwv_test bash tests/run.sh --scenario` (ล่าสุด **766 checks** · นับจาก `grep -c "NOTICE:  PASS"`) + `npx tsc --noEmit && npx eslint src` + `next build` (env ปลอม) · ลบ `.next/types` หลัง build
 - ดูหน้าจอโดยไม่ต้องมีฐานข้อมูล: หน้าชั่วคราว `src/app/login/zz-preview/page.tsx` (ข้อมูลสมมติ) + `next dev -p 3123` + Playwright (`/opt/npm-tools/node_modules/playwright/index.mjs`, `executablePath: /opt/pw-browsers/chromium`) แล้ว**ลบหน้าชั่วคราวก่อน commit**
 - ทุก PR อัปเดตไฟล์นี้ (แถวการตัดสินใจ / รายการงาน / ประวัติ PR) และจำนวน checks ใน `AGENTS.md`
 - ปิดงานด้วยภาษาไทย 3 ส่วน: เปลี่ยนอะไร · ต้องทำอะไร (SQL → Merge) · เช็กลิสต์ทดสอบด้วยข้อมูลสมมติ
