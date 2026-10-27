@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, landText, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
@@ -15,7 +15,7 @@ import { TabNav, TabPanel, TabsProvider } from "../income-expenses/tabs";
 import { StatBox } from "@/components/Boxes";
 import LandTaxTable, { type TaxLineRow, type TaxPropRow } from "./LandTaxTable";
 
-type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; location_group: string | null;
+type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; vacant_since: string | null; location_group: string | null;
   land_area_sq_wa: number | null;
   assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string;
     acquisition_cost: number | null; acquisition_date: string | null } };
@@ -60,7 +60,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const [{ data, error }, { data: leases }, { data: fx }, { data: family }, sortMap, { data: rentTrack }, { data: costTrack },
     { data: bankRows }, { data: cardRows }] = await Promise.all([
     supabase.from("property_details")
-      .select("id,asset_id,property_type,usage_type,location_group,land_area_sq_wa,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
+      .select("id,asset_id,property_type,usage_type,vacant_since,location_group,land_area_sq_wa,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
       .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
     supabase.from("v_lease_status").select("id,property_asset_id,tenant_name,unit_label,rent_amount,rent_currency,payment_frequency,start_date,end_date,lease_status")
       .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]),
@@ -77,8 +77,15 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const ids = allProps.map((p) => p.asset_id);
   const none = Promise.resolve({ data: [] as never[] });
   const { data: utils } = allProps.length
-    ? await supabase.from("property_utilities").select("id,property_id").in("property_id", allProps.map((p) => p.id))
-    : { data: [] as { id: string; property_id: string }[] };
+    ? await supabase.from("property_utilities").select("id,property_id,paid_from_asset_id,paid_from_credit_card_id").in("property_id", allProps.map((p) => p.id))
+    : { data: [] as { id: string; property_id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[] };
+  // "จ่ายจาก" ที่ตั้งไว้ในแต่ละรายการค่าใช้จ่ายประจำ → ค่าตั้งต้นของแท็บบันทึกค่าใช้จ่าย
+  const utilPay = new Map(((utils ?? []) as { id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[])
+    .map((u) => [u.id, u.paid_from_credit_card_id ? endpointValue({ kind: "card", id: u.paid_from_credit_card_id })
+      : u.paid_from_asset_id ? endpointValue({ kind: "bank", id: u.paid_from_asset_id }) : ""]));
+  // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า
+  const { data: rentToRows } = await supabase.from("property_leases").select("id,rent_to_asset_id").not("rent_to_asset_id", "is", null).is("deleted_at", null);
+  const rentTo = new Map(((rentToRows ?? []) as { id: string; rent_to_asset_id: string }[]).map((r) => [r.id, r.rent_to_asset_id]));
   const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
     .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
   const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount";
@@ -159,6 +166,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       leases: ls.map((l) => ({ id: l.id, badge: LEASE_STATUS[l.lease_status]?.text ?? l.lease_status, cls: LEASE_STATUS[l.lease_status]?.cls ?? "",
         text: `${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} · ถึง ${thDate(l.end_date)}` })),
       noLease: p.usage_type === "RENTAL" && ls.length === 0,
+      vacant: p.usage_type === "VACANT" && p.vacant_since
+        ? (() => { const mo = monthsBetween(p.vacant_since, today); return { text: `ว่าง ${durationText(mo)}`, warn: !!vacancyWarning(mo) }; })() : null,
       move: ordering ? <MoveButtons table="assets" id={p.asset_id} paths={paths} {...neighbors(props, i, (x) => x.asset_id)} /> : undefined,
     };
   });
@@ -173,7 +182,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     key: `${r.lease_id}:${r.income_period}`, leaseId: r.lease_id, assetId: r.property_asset_id, property: propName.get(r.property_asset_id) ?? "",
     tenant: r.name, period: r.income_period, due: r.due_date, expected: Number(r.expected_amount), received: Number(r.received_amount ?? 0),
     currency: r.currency, status: r.status,
-    bank: lastBank.get(r.lease_id) ?? banks.find((b) => b.currency === r.currency)?.id ?? "",
+    bank: [rentTo.get(r.lease_id), lastBank.get(r.lease_id)].find((b) => b && banks.some((x) => x.id === b && x.currency === r.currency))
+      ?? banks.find((b) => b.currency === r.currency)?.id ?? "",
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
   type CT = { utility_id: string; property_asset_id: string; utility_type: string; provider: string | null; cost_period: string; due_date: string | null; expected_amount: number | null; paid_amount: number | null; currency: string; status: string };
   const costRows: CostRow[] = ((costTrack ?? []) as CT[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
@@ -181,7 +191,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     label: [UTIL_LABEL[c.utility_type] ?? c.utility_type, c.provider].filter(Boolean).join(" · "), period: c.cost_period, due: c.due_date,
     type: c.utility_type, typeLabel: UTIL_LABEL[c.utility_type] ?? c.utility_type,
     expected: Number(c.expected_amount ?? 0), paid: Number(c.paid_amount ?? 0), currency: c.currency, status: c.status,
-    category: UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค",
+    category: UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค", pay: utilPay.get(c.utility_id) || undefined,
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
   // ---------------------------------------------------------------- ภาษีที่ดิน (ปีที่เลือก) รายทรัพย์สิน
   type TL = TaxLineRow & { asset_id: string; tax_year: number };

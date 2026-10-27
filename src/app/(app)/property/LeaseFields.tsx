@@ -42,6 +42,12 @@ export default function LeaseFields({ banks, goLive, currency = "THB", carryOpti
         </select>
       </label>
       <label className={label}>ครบกำหนดจ่ายทุกวันที่<input name="lease_payment_due_day" type="number" min={1} max={31} className={input} /></label>
+      <label className={label}>บัญชีรับค่าเช่า (ค่าตั้งต้นตอนบันทึกรับ)
+        <select name="lease_rent_to_asset_id" defaultValue="" className={input}>
+          <option value="">— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —</option>
+          {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+        </select>
+      </label>
       <label className={label}>เลขที่สัญญา<input name="lease_contract_no" className={input} /></label>
       <label className={label}>หมายเหตุสัญญา<input name="lease_notes" className={input} /></label>
 

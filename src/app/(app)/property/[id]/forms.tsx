@@ -7,7 +7,7 @@ import {
   updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
-import { PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
+import { ENCUMBRANCE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
@@ -87,8 +87,9 @@ export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, l
   ));
 }
 
-export function RecordRentForm({ assetId, leaseId, period, expected, currency, banks, today }: {
+export function RecordRentForm({ assetId, leaseId, period, expected, currency, banks, today, defaultBank }: {
   assetId: string; leaseId: string; period: string; expected: number; currency: string; banks: Bank[]; today: string;
+  /** บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา (หรือบัญชีที่รับครั้งล่าสุด) */ defaultBank?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordRent, {});
@@ -109,7 +110,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
         <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
       </label>
       <label className="text-xs">เข้าบัญชี
-        <select name="received_to_asset_id" defaultValue={sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
+        <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
           <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
           {sameCcy.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
         </select>
@@ -203,10 +204,14 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   land_area_sq_wa: number | null; title_type: string | null; title_deed_no: string | null; land_no: string | null;
   deed_book: string | null; deed_page: string | null; map_sheet: string | null; survey_page: string | null;
   subdistrict: string | null; district: string | null; province: string | null;
-  map_url?: string | null; latitude?: number | null; longitude?: number | null };
+  map_url?: string | null; latitude?: number | null; longitude?: number | null;
+  vacant_since?: string | null; vacant_plan?: string | null; vacant_plan_date?: string | null;
+  encumbrance_type?: string | null; encumbrance_details?: string | null };
 
 export function EditPropertyForm({ p }: { p: Info }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
+  const [usage, setUsage] = useState(p.usage_type);
+  const [enc, setEnc] = useState(p.encumbrance_type ?? "");
   const f = "mt-1 block w-full " + input;
   const land = landParts(p.land_area_sq_wa);
   return (
@@ -219,10 +224,22 @@ export function EditPropertyForm({ p }: { p: Info }) {
         </select>
       </label>
       <label className="text-sm">การใช้งาน
-        <select name="usage_type" defaultValue={p.usage_type} className={f}>
+        <select name="usage_type" value={usage} onChange={(e) => setUsage(e.target.value)} className={f}>
           {Object.entries(USAGE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
+      {usage === "VACANT" && (
+        <div className="grid gap-3 rounded-lg bg-amber-50 p-3 md:col-span-2 md:grid-cols-3">
+          <label className="text-sm">ว่างตั้งแต่
+            <input name="vacant_since" type="date" defaultValue={p.vacant_since ?? ""} max={new Date().toISOString().slice(0, 10)} className={f} />
+            <span className="text-xs text-slate-500">{p.usage_type === "VACANT" ? "แก้ย้อนได้" : "เว้นว่าง = วันนี้"}</span></label>
+          <label className="text-sm md:col-span-2">แผน / โครงการ
+            <input name="vacant_plan" defaultValue={p.vacant_plan ?? ""} placeholder="เช่น สร้างบ้านให้ลูก · รอขาย" className={f} /></label>
+          <label className="text-sm">กำหนดเริ่ม (ไม่บังคับ)
+            <input name="vacant_plan_date" type="date" defaultValue={p.vacant_plan_date ?? ""} className={f} /></label>
+          <p className="self-end text-xs text-slate-500 md:col-span-2">ว่างต่อเนื่องเกิน 3 ปี ภาษีที่ดินอาจสูงขึ้น ระบบจะเตือนล่วงหน้า 6 เดือน · เปลี่ยนเป็นการใช้งานอื่นแล้ว ระบบเก็บช่วงที่ว่างไว้เป็นประวัติ</p>
+        </div>
+      )}
       <label className="text-sm">กลุ่มทำเล<input name="location_group" defaultValue={p.location_group ?? ""} className={f} /></label>
       <label className="text-sm md:col-span-2">ที่อยู่<input name="address" defaultValue={p.address ?? ""} className={f} /></label>
       <label className="text-sm">ลิงก์ Google Maps
@@ -253,6 +270,14 @@ export function EditPropertyForm({ p }: { p: Info }) {
         <label className="text-sm">ระวาง<input name="map_sheet" defaultValue={p.map_sheet ?? ""} className={f} data-plain /></label>
         <label className="text-sm">หน้าสำรวจ<input name="survey_page" defaultValue={p.survey_page ?? ""} className={f} data-plain /></label>
       </div>
+      <label className="text-sm">ภาระผูกพัน
+        <select name="encumbrance_type" value={enc} onChange={(e) => setEnc(e.target.value)} className={f}>
+          <option value="">— ยังไม่ระบุ —</option>
+          {Object.entries(ENCUMBRANCE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select></label>
+      <label className="text-sm">รายละเอียดภาระผูกพัน
+        <input name="encumbrance_details" defaultValue={p.encumbrance_details ?? ""} disabled={!enc || enc === "NONE"}
+          placeholder="เช่น ทางเข้าออกกว้าง 4 ม. ให้แปลงข้างเคียง" className={`${f} disabled:bg-slate-50`} /></label>
       <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} /></label>
       <label className="text-sm">ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" defaultValue={p.acquisition_cost ?? ""} className={f} /></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={p.notes ?? ""} className={f} /></label>
@@ -268,8 +293,9 @@ export function EditPropertyForm({ p }: { p: Info }) {
 export type PropertyPick = { id: string; assetId: string; name: string; currency: string };
 
 /** เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค · หน้ารายละเอียดทรัพย์สินส่ง propertyId มา · หน้า Income & Expenses ส่งรายการทรัพย์สินให้เลือก */
-export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false }: {
+export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false, pays }: {
   assetId?: string; propertyId?: string; currency?: string; properties?: PropertyPick[]; label?: string; tracked?: boolean;
+  /** ตัวเลือก "จ่ายจาก" ค่าตั้งต้น [ค่า (a:/c:), ชื่อ] */ pays?: [string, string][];
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [freq, setFreq] = useState(tracked ? "MONTHLY" : "");
@@ -330,6 +356,14 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
           </label>
         )}
         <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-40 ${small}`} /></label>
+        {pays && (
+          <label className="text-xs">จ่ายจาก (ค่าตั้งต้นตอนบันทึกจ่าย)
+            <select name="pay_default" defaultValue="" className={`mt-1 block max-w-[16rem] ${small}`}>
+              <option value="">— ไม่ระบุ —</option>
+              {pays.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={sbtn}>เพิ่ม</button>
@@ -344,12 +378,14 @@ type Card = { id: string; label: string; currency: string };
 type Person = { id: string; name: string };
 
 /** บันทึกจ่ายค่าใช้จ่ายประจำ 1 งวด (ใช้ทั้งหน้ารายละเอียดและหน้ารวม) */
-export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today }: {
+export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, defaultBank, defaultCard }: {
   assetId: string; utilityId: string; period: string; label: string; expected: number; currency: string; category: string;
   banks: Bank[]; cards: Card[]; persons: Person[]; today: string;
+  /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ */ defaultBank?: string | null; defaultCard?: string | null;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
+  const [via, setVia] = useState(defaultCard && cards.some((c) => c.id === defaultCard) ? "card"
+    : defaultBank && banks.some((b) => b.asset_id === defaultBank) ? "bank" : banks.length ? "bank" : cards.length ? "card" : "cash");
   const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
@@ -380,14 +416,14 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
       </label>
       {via === "bank" && (
         <label className="text-xs">บัญชี
-          <select name="bank_asset_id" required className={`mt-1 block ${small}`}>
+          <select name="bank_asset_id" required defaultValue={sameBanks.find((b) => b.asset_id === defaultBank)?.asset_id} className={`mt-1 block ${small}`}>
             {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
           </select>
         </label>
       )}
       {via === "card" && (
         <label className="text-xs">บัตร
-          <select name="card_id" required className={`mt-1 block ${small}`}>
+          <select name="card_id" required defaultValue={sameCards.find((c) => c.id === defaultCard)?.id} className={`mt-1 block ${small}`}>
             {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
         </label>

@@ -121,6 +121,27 @@ export const USAGE_LABEL: Record<string, string> = {
   OWNER_OCCUPIED: "อยู่อาศัยเอง", PERSONAL_USE: "ใช้ส่วนตัว", RENTAL: "ปล่อยเช่า", VACANT: "ว่าง",
   BUSINESS_USE: "ใช้ในกิจการ", OTHER: "อื่น ๆ",
 };
+/** ภาระผูกพันของ Property (แสดงผลอย่างเดียว ไม่กระทบมูลค่า) */
+export const ENCUMBRANCE_LABEL: Record<string, string> = {
+  NONE: "ไม่มี", SERVITUDE: "ภาระจำยอม", USUFRUCT: "สิทธิเก็บกิน", MORTGAGE: "จำนอง", LEASEHOLD: "สิทธิการเช่า", OTHER: "อื่น ๆ",
+};
+/** จำนวนเดือนเต็มระหว่าง 2 วัน (YYYY-MM-DD) */
+export function monthsBetween(from: string, to: string): number {
+  const [y1, m1, d1] = from.split("-").map(Number);
+  const [y2, m2, d2] = to.split("-").map(Number);
+  return Math.max(0, (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0));
+}
+/** "2 ปี 4 เดือน" · ไม่ถึงเดือน = "ไม่ถึง 1 เดือน" */
+export function durationText(months: number): string {
+  const y = Math.floor(months / 12), m = months % 12;
+  return [y && `${y} ปี`, m && `${m} เดือน`].filter(Boolean).join(" ") || "ไม่ถึง 1 เดือน";
+}
+/** ที่ดินว่างเปล่าไม่ทำประโยชน์ต่อเนื่อง 3 ปี → อัตราภาษีที่ดินเพิ่ม 0.3% ทุก 3 ปี (สูงสุด 3%) · เตือนล่วงหน้า 6 เดือน */
+export function vacancyWarning(months: number): string | null {
+  if (months >= 36) return `ว่างต่อเนื่องเกิน 3 ปี — ภาษีที่ดินที่ดินว่างเปล่าอาจเพิ่ม 0.3% ทุก 3 ปี (ตรวจกับ อปท.)`;
+  if (months >= 30) return `อีก ${36 - months} เดือนจะว่างครบ 3 ปี — ภาษีที่ดินที่ดินว่างเปล่าอาจเพิ่ม (ตรวจกับ อปท.)`;
+  return null;
+}
 export const FREQ_LABEL: Record<string, string> = {
   MONTHLY: "รายเดือน", QUARTERLY: "ราย 3 เดือน", YEARLY: "รายปี", OTHER: "อื่น ๆ",
 };

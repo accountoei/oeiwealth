@@ -9,6 +9,7 @@ export type PropRow = {
   id: string; assetId: string; name: string; sub: string; loc: string | null; type: string; typeLabel: string; usage: string; usageLabel: string;
   status: string; cost: number | null; costDate: string | null; value: number | null; valueDate: string | null; stale: boolean;
   rent: number; ytd: number; leases: { id: string; badge: string; cls: string; text: string }[]; noLease: boolean; move?: ReactNode;
+  /** ว่างมาแล้วกี่เดือน (เฉพาะที่ว่างและใส่วันเริ่มว่าง) · เตือนเรื่องภาษีที่ดิน */ vacant?: { text: string; warn: boolean } | null;
 };
 
 const STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย", CLOSED: "ปิดแล้ว" };
@@ -78,7 +79,8 @@ export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]
                 {p.sub && <div className="text-xs text-slate-500">{p.sub}</div>}
               </td>
               <td className="px-3 py-3">{p.typeLabel}</td>
-              <td className="px-3 py-3">{p.usageLabel}</td>
+              <td className="px-3 py-3">{p.usageLabel}
+                {p.vacant && <div className={`text-xs ${p.vacant.warn ? "font-medium text-amber-700" : "text-slate-500"}`}>{p.vacant.text}</div>}</td>
               <td className="px-3 py-3 text-right tabular-nums">{money(p.cost)}
                 {p.costDate && <div className="text-xs text-slate-400">ซื้อ {thDate(p.costDate)}</div>}</td>
               <td className="px-3 py-3 text-right font-medium tabular-nums">{money(p.value)}
