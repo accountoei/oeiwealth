@@ -8,7 +8,7 @@ import {
   UTIL_LABEL, addDays, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
-  EditPropertyForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
+  DeedForm, EditPropertyForm, NewLeaseForm, type Deed, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
   UtilityForm, ValuationForm,
 } from "./forms";
 import RowActions from "@/components/RowActions";
@@ -18,6 +18,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import { WithStatus } from "@/components/StatusSelect";
+import ModalButton from "@/components/ModalButton";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -67,7 +68,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
     { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id)")
+    supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(id,sort_order,title_type,title_deed_no,land_no,deed_book,deed_page,map_sheet,survey_page,land_area_sq_wa,notes,created_at,deleted_at)")
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes")
@@ -102,6 +103,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       deposit: Number(l.security_deposit), currency: l.deposit_currency ?? l.rent_currency }));
   const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
   const utilities = ((pd.property_utilities ?? []) as Util[]).filter((u) => !u.deleted_at);
+  // โฉนด / เอกสารสิทธิ์ (หลายใบได้ · ตกลง 27 ต.ค. 2026) · เนื้อที่ของทรัพย์สิน = ผลรวม
+  const deeds = ((pd.property_deeds ?? []) as (Deed & { sort_order: number; created_at: string; deleted_at: string | null })[])
+    .filter((d) => !d.deleted_at).sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at));
   const costs = (costRows as Cost[] | null) ?? [];
   const cards = (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string,
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
@@ -206,7 +210,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
-            view={
+            view={<>
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <Item label="ประเภท / การใช้งาน">{PROPERTY_TYPE_LABEL[pd.property_type] ?? pd.property_type} · {USAGE_LABEL[pd.usage_type] ?? pd.usage_type}
                   {pd.usage_type === "VACANT" && (pd.vacant_since
@@ -224,11 +228,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <Item label="ประวัติช่วงที่ว่าง">{vacancyHistory.map((v, i) => (
                     <span key={i} className="block text-xs text-slate-600">{thDate(v.from)} – {thDate(v.to)} ({durationText(monthsBetween(v.from, v.to))}){v.plan && ` · ${v.plan}`}</span>))}</Item>
                 )}
-                <Item label="เนื้อที่">{landText(pd.land_area_sq_wa)}</Item>
+                <Item label={deeds.length > 1 ? `เนื้อที่ (รวม ${deeds.length} โฉนด)` : "เนื้อที่"}>{landText(pd.land_area_sq_wa)}</Item>
                 <Item label="กลุ่มทำเล">{pd.location_group || "-"}</Item>
-                <Item label="เอกสารสิทธิ์">{[pd.title_type, pd.title_deed_no && `เลขที่ ${pd.title_deed_no}`].filter(Boolean).join(" · ") || "-"}
-                  {(pd.deed_book || pd.deed_page) && <span className="block text-xs text-slate-500">{[pd.deed_book && `เล่ม ${pd.deed_book}`, pd.deed_page && `หน้า ${pd.deed_page}`].filter(Boolean).join(" · ")}</span>}</Item>
-                <Item label="เลขที่ดิน / ระวาง / หน้าสำรวจ">{[pd.land_no, pd.map_sheet && `ระวาง ${pd.map_sheet}`, pd.survey_page && `หน้าสำรวจ ${pd.survey_page}`].filter(Boolean).join(" · ") || "-"}</Item>
                 <Item label="ตำบล / อำเภอ / จังหวัด">{[pd.subdistrict, pd.district, pd.province].filter(Boolean).join(" · ") || "-"}</Item>
                 <Item label="วันที่ได้มา">{a.acquisition_date ? thDate(a.acquisition_date) : "-"}</Item>
                 <Item label="ราคาที่ได้มา" num>{money(a.acquisition_cost, undefined, 0)}</Item>
@@ -254,7 +255,38 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 )}
                 {a.notes && <Item label="หมายเหตุ" wide>{a.notes}</Item>}
               </dl>
-            }
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium text-slate-800">โฉนด / เอกสารสิทธิ์ {deeds.length > 0 && <span className="font-normal text-slate-500">({deeds.length})</span>}</h3>
+                  {canWrite && <ModalButton label="+ เพิ่มโฉนด" title="เพิ่มโฉนด / เอกสารสิทธิ์"><DeedForm assetId={id} propertyId={pd.id} /></ModalButton>}
+                </div>
+                {deeds.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูลโฉนด · ซื้อหลายโฉนดพร้อมกันเป็นแปลงเดียว เพิ่มทีละใบได้ (เนื้อที่รวมให้อัตโนมัติ)</p> : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[40rem] text-sm">
+                      <thead className="text-left text-xs text-slate-500">
+                        <tr><th className="py-1">เอกสารสิทธิ์</th><th>เลขที่ดิน</th><th>เล่ม / หน้า</th><th>ระวาง / หน้าสำรวจ</th><th className="text-right">เนื้อที่</th><th></th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {deeds.map((d) => (
+                          <tr key={d.id} className="align-top">
+                            <td className="py-1.5">{[d.title_type, d.title_deed_no && `เลขที่ ${d.title_deed_no}`].filter(Boolean).join(" ") || "-"}
+                              {d.notes && <div className="text-xs text-slate-400">{d.notes}</div>}</td>
+                            <td>{d.land_no || "-"}</td>
+                            <td>{[d.deed_book && `เล่ม ${d.deed_book}`, d.deed_page && `หน้า ${d.deed_page}`].filter(Boolean).join(" · ") || "-"}</td>
+                            <td>{[d.map_sheet, d.survey_page && `หน้าสำรวจ ${d.survey_page}`].filter(Boolean).join(" · ") || "-"}</td>
+                            <td className="text-right text-xs tabular-nums">{d.land_area_sq_wa != null ? landText(d.land_area_sq_wa) : "-"}</td>
+                            <td className="pl-2 text-right">
+                              {canWrite && <RowActions table="property_deeds" id={d.id} paths={paths} canDelete={canDelete} deleteEffect="เนื้อที่รวมของทรัพย์สินจะลดลงตามโฉนดใบนี้"
+                                editor={<DeedForm assetId={id} propertyId={pd.id} deed={d} />} />}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>}
             edit={
               <div className="space-y-5">
                 <p className="text-xs text-slate-500">แก้เฉพาะข้อมูล ไม่กระทบมูลค่า (อัปเดตมูลค่าที่กล่อง &ldquo;มูลค่า&rdquo;)</p>
@@ -262,7 +294,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   options: [["ACTIVE", "ถืออยู่"], ["SOLD", "ขายแล้ว"], ["GIFTED", "ยกให้แล้ว"], ["LOST", "สูญหาย / เสียหาย"]],
                   remove: canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้", hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined }}>
                   <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
-                    acquisition_cost: a.acquisition_cost, asset_id: id }} />
+                    acquisition_cost: a.acquisition_cost, asset_id: id }} hasDeeds={deeds.length > 0} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>

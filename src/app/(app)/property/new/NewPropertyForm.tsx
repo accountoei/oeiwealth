@@ -66,7 +66,8 @@ export default function NewPropertyForm(props: {
         </div>
         <label className={label}>ประเภทเอกสารสิทธิ์<input name="title_type" placeholder="เช่น โฉนด · น.ส.3ก · อ.ช.2" className={input} /></label>
         <label className={label}>เลขที่โฉนด / เอกสารสิทธิ์<input name="title_deed_no" className={input} /></label>
-        <label className={label}>เลขที่ดิน<input name="land_no" className={input} /></label>
+        <label className={label}>เลขที่ดิน<input name="land_no" className={input} />
+          <span className="mt-1 block text-xs text-slate-400">ซื้อหลายโฉนดเป็นแปลงเดียว: ใส่โฉนดใบแรกที่นี่ แล้วเพิ่มใบอื่นที่หน้าทรัพย์สิน</span></label>
         <label className={label}>วันที่ได้มา {!opening && "*"}
           <input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} {...m.acqDateProps} className={input} />
         </label>
