@@ -26,6 +26,14 @@ function leaseFromForm(form: FormData) {
   };
 }
 
+/** บัญชีรับค่าเช่า (ค่าตั้งต้น) — create_lease ไม่รับช่องนี้ จึงตั้งหลังสร้างสัญญา */
+async function setRentAccount(supabase: Awaited<ReturnType<typeof createClient>>, leaseIds: string[], form: FormData) {
+  const to = str(form.get("lease_rent_to_asset_id"));
+  if (!to || !leaseIds.length) return null;
+  const { error } = await supabase.from("property_leases").update({ rent_to_asset_id: to }).in("id", leaseIds);
+  return error ? `ตั้งบัญชีรับค่าเช่าไม่ได้ (${friendlyError(error.message)}) — ตั้งใหม่ที่ปุ่มแก้ไขของสัญญา` : null;
+}
+
 function revalidateProperty(assetId?: string) {
   revalidatePath("/property");
   revalidatePath("/income-expenses");
@@ -64,6 +72,12 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
   });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty();
+  if (lease?.tenant_name) {
+    const { data: ls } = await supabase.from("property_leases").select("id,property_details!inner(asset_id)")
+      .eq("property_details.asset_id", String(data)).is("deleted_at", null);
+    const e1 = await setRentAccount(supabase, (ls ?? []).map((l) => l.id), form);
+    if (e1) return { error: `บันทึกทรัพย์สินแล้ว แต่${e1}`, created: `/property/${data}` };
+  }
   if (pay) {
     const e2 = await recordAssetPurchase(supabase, String(data), pay);
     revalidatePath("/financial/cash", "layout");
@@ -119,6 +133,11 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
     deed_book: str(form.get("deed_book")), deed_page: str(form.get("deed_page")), map_sheet: str(form.get("map_sheet")),
     survey_page: str(form.get("survey_page")), subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
     province: str(form.get("province")),
+    encumbrance_type: str(form.get("encumbrance_type")),
+    encumbrance_details: ["", "NONE"].includes(str(form.get("encumbrance_type")) ?? "") ? null : str(form.get("encumbrance_details")),
+    // ที่ว่าง: ส่งเฉพาะตอนเป็น "ว่าง" (ระบบเติมวันเริ่มว่าง / เก็บประวัติให้เมื่อเปลี่ยนการใช้งาน)
+    ...(str(form.get("usage_type")) === "VACANT" ? { vacant_since: str(form.get("vacant_since")), vacant_plan: str(form.get("vacant_plan")),
+      vacant_plan_date: str(form.get("vacant_plan_date")) } : {}),
     ...(form.has("coords") ? { map_url: mapUrl, latitude: xy.lat, longitude: xy.lng } : {}),
   }).eq("asset_id", id);
   if (e2) return { error: friendlyError(e2.message) };
@@ -140,10 +159,11 @@ export async function setUsage(_: ActionState, form: FormData): Promise<ActionSt
 export async function createLease(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
-  const { error } = await supabase.rpc("create_lease", { p_property_asset_id: id, p_lease: leaseFromForm(form) });
+  const { data: leaseId, error } = await supabase.rpc("create_lease", { p_property_asset_id: id, p_lease: leaseFromForm(form) });
   if (error) return { error: friendlyError(error.message) };
+  const warn = await setRentAccount(supabase, leaseId ? [String(leaseId)] : [], form);
   revalidateProperty(id);
-  return { ok: "สร้างสัญญาเช่าแล้ว" };
+  return warn ? { error: `สร้างสัญญาแล้ว แต่${warn}` } : { ok: "สร้างสัญญาเช่าแล้ว" };
 }
 
 export async function terminateLease(_: ActionState, form: FormData): Promise<ActionState> {
@@ -214,6 +234,7 @@ export async function addUtility(_: ActionState, form: FormData): Promise<Action
     provider: str(form.get("provider")), account_no: str(form.get("account_no")), meter_no: str(form.get("meter_no")),
     notes: str(form.get("notes")), expected_amount: amount, frequency, currency: str(form.get("currency")) ?? "THB",
     due_day: dueDay, due_month: dueMonth,
+    ...(form.has("pay_default") ? (() => { const e = parseEndpoint(str(form.get("pay_default"))); return { paid_from_asset_id: bankId(e), paid_from_credit_card_id: cardId(e) }; })() : {}),
   });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty(id);

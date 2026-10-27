@@ -3255,6 +3255,52 @@ SELECT t.ok(NOT has_function_privilege('anon', 'public.batch_receive_loan_paymen
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz16. Property: บัญชีตั้งต้น (ค่าเช่า / ค่าใช้จ่าย) · ที่ว่าง · ภาระผูกพัน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+-- 1) บัญชีรับค่าเช่า
+UPDATE public.property_leases SET rent_to_asset_id = t.a('KBank ออมทรัพย์') WHERE tenant_name = 'ผู้เช่า ก' AND deleted_at IS NULL;
+SELECT t.ok((SELECT bool_and(rent_to_asset_id = t.a('KBank ออมทรัพย์')) FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ก' AND deleted_at IS NULL),
+            'สัญญาเช่า: ตั้งบัญชีรับค่าเช่าได้');
+SELECT t.fails($$UPDATE public.property_leases SET rent_to_asset_id = t.a('BBL USD') WHERE tenant_name = 'ผู้เช่า ก'$$,
+  'บัญชีตั้งต้นต้องเป็นบัญชีธนาคาร', 'สัญญาเช่า: บัญชีรับค่าเช่าต่างสกุลเงิน → ไม่ได้');
+SELECT t.fails($$UPDATE public.property_leases SET rent_to_asset_id = t.a('บ้าน A') WHERE tenant_name = 'ผู้เช่า ก'$$,
+  'บัญชีตั้งต้นต้องเป็นบัญชีธนาคาร', 'สัญญาเช่า: บัญชีรับค่าเช่าต้องเป็นบัญชีธนาคาร');
+-- 1) จ่ายจากบัญชี / บัตร (เลือกอย่างใดอย่างหนึ่ง · เปลี่ยนช่องหนึ่ง → อีกช่องถูกล้าง)
+SELECT id AS util FROM public.property_utilities WHERE deleted_at IS NULL ORDER BY created_at LIMIT 1 \gset
+UPDATE public.property_utilities SET paid_from_asset_id = t.a('KBank ออมทรัพย์') WHERE id = :'util';
+UPDATE public.property_utilities SET paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7788') WHERE id = :'util';
+SELECT t.ok((SELECT paid_from_asset_id IS NULL AND paid_from_credit_card_id IS NOT NULL FROM public.property_utilities WHERE id = :'util'),
+            'ค่าใช้จ่ายประจำ: เลือกบัตร → บัญชีที่ตั้งไว้ถูกล้าง');
+UPDATE public.property_utilities SET paid_from_asset_id = t.a('KBank ออมทรัพย์') WHERE id = :'util';
+SELECT t.ok((SELECT paid_from_asset_id IS NOT NULL AND paid_from_credit_card_id IS NULL FROM public.property_utilities WHERE id = :'util'),
+            'ค่าใช้จ่ายประจำ: เลือกบัญชี → บัตรที่ตั้งไว้ถูกล้าง');
+SELECT t.fails($$UPDATE public.property_utilities SET paid_from_asset_id = t.a('BBL USD') WHERE id = '$$ || :'util' || $$'$$,
+  'บัญชีตั้งต้นต้องเป็นบัญชีธนาคาร', 'ค่าใช้จ่ายประจำ: บัญชีต่างสกุลเงิน → ไม่ได้');
+-- 3) ที่ว่าง: เปลี่ยนเป็นว่าง → วันที่เริ่มว่าง = วันนี้ · ออกจากว่าง → เก็บประวัติ + ล้างช่อง
+UPDATE public.property_details SET usage_type = 'VACANT' WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT vacant_since = current_date FROM public.property_details WHERE asset_id = t.a('บ้าน A')), 'ที่ว่าง: เปลี่ยนเป็นว่าง → ว่างตั้งแต่วันนี้');
+UPDATE public.property_details SET vacant_since = current_date - 400, vacant_plan = 'สร้างบ้าน' WHERE asset_id = t.a('บ้าน A');
+SELECT t.fails($$UPDATE public.property_details SET vacant_since = current_date + 1 WHERE asset_id = t.a('บ้าน A')$$,
+  'วันในอนาคต', 'ที่ว่าง: วันที่เริ่มว่างในอนาคต → ไม่ได้');
+UPDATE public.property_details SET usage_type = 'OWNER_OCCUPIED' WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT vacant_since IS NULL AND vacant_plan IS NULL AND jsonb_array_length(vacancy_history) = 1
+                    AND vacancy_history->0->>'from' = (current_date - 400)::text AND vacancy_history->0->>'plan' = 'สร้างบ้าน'
+               FROM public.property_details WHERE asset_id = t.a('บ้าน A')),
+            'ที่ว่าง: เปลี่ยนเป็นอยู่เอง → เก็บช่วงที่ว่างเป็นประวัติ ล้างช่อง');
+UPDATE public.property_details SET vacant_since = current_date - 10 WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT vacant_since IS NULL FROM public.property_details WHERE asset_id = t.a('บ้าน A')), 'ที่ว่าง: ไม่ได้ว่าง → ไม่เก็บวันที่เริ่มว่าง');
+-- 4) ภาระผูกพัน
+UPDATE public.property_details SET encumbrance_type = 'SERVITUDE', encumbrance_details = 'ทางเข้าออก' WHERE asset_id = t.a('บ้าน A');
+SELECT t.fails($$UPDATE public.property_details SET encumbrance_type = 'X' WHERE asset_id = t.a('บ้าน A')$$,
+  'pd_encumbrance_type_ck', 'ภาระผูกพัน: ประเภทที่ไม่รู้จัก → ไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.property_details WHERE asset_id = t.a('บ้าน A') AND encumbrance_type = 'SERVITUDE') = 1, 'ภาระผูกพัน: VIEWER อ่านได้');
+UPDATE public.property_details SET encumbrance_type = 'NONE' WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT encumbrance_type = 'SERVITUDE' FROM public.property_details WHERE asset_id = t.a('บ้าน A')), 'ภาระผูกพัน: VIEWER แก้ไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

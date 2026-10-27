@@ -10,6 +10,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
   expected: number; paid: number; currency: string; status: string; category: string;
+  /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ (a: / c:) */ pay?: string;
 };
 export type PayOpt = { value: string; label: string; currency: string };
 type Extra = { id: number; asset: string; description: string; amount: string; pay: string };
@@ -30,7 +31,8 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
   const firstPay = (ccy: string) => pays.find((p) => p.currency === ccy)?.value ?? "";
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
-  const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key, firstPay(r.currency)])));
+  const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key,
+    r.pay && pays.some((p) => p.value === r.pay && p.currency === r.currency) ? r.pay : firstPay(r.currency)])));
   const blank = (id: number): Extra => ({ id, asset: "", description: "", amount: "", pay: firstPay("THB") });
   const [extra, setExtra] = useState<Extra[]>([blank(1)]);
   const [kind, setKind] = useState("");

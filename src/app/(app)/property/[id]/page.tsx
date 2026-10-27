@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  UTIL_LABEL, addDays, landText, money, scheduleText, thDate, thMonth, todayBangkok,
+  COST_STATUS, ENCUMBRANCE_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  UTIL_LABEL, addDays, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, NewLeaseForm, RecordCostForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -24,6 +24,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
 import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
@@ -49,7 +50,7 @@ type Lease = { id: string; unit_label: string | null; tenant_name: string; contr
   lease_status: string; deposit_status: string; deposit_due_date: string };
 type Util = { id: string; utility_type: string; provider: string | null; account_no: string | null; meter_no: string | null;
   notes: string | null; deleted_at: string | null; expected_amount: number | null; currency: string; frequency: string | null;
-  due_day: number | null; due_month: number | null; active: boolean };
+  due_day: number | null; due_month: number | null; active: boolean; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null };
 type Cost = { utility_id: string; utility_type: string; provider: string | null; cost_period: string; due_date: string;
   expected_amount: number; paid_amount: number; gap: number; currency: string; status: string; last_paid_date: string | null;
   dismissal_id: string | null; dismissal_reason: string | null };
@@ -66,7 +67,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
     { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active)")
+    supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id)")
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes")
@@ -108,9 +109,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     .reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount ?? 0) * (PERIODS_PER_YEAR[u.frequency!] ?? 0)), new Map<string, number>());
   const utilName = (t: string, provider: string | null) => [UTIL_LABEL[t] ?? t, provider].filter(Boolean).join(" · ");
   const isRental = pd.usage_type === "RENTAL" || liveLeases.length > 0;
+  // ที่ว่าง: ระยะเวลาที่ว่าง + ประวัติช่วงที่เคยว่าง
+  const vacantMonths = pd.usage_type === "VACANT" && pd.vacant_since ? monthsBetween(pd.vacant_since, today) : 0;
+  const vacancyHistory = ((pd.vacancy_history ?? []) as { from: string; to: string; plan: string | null }[]).slice().reverse();
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }] = await Promise.all([
+  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -118,7 +122,16 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_property_tax_lines").select("*").eq("asset_id", id).order("tax_year", { ascending: false }).order("sort_order").order("created_at"),
     // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
     supabase.rpc("asset_has_history", { p_asset_id: id }),
+    // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
+    supabase.from("property_leases").select("id,rent_to_asset_id").eq("property_id", pd.id).not("rent_to_asset_id", "is", null),
   ]);
+  const rentTo = new Map(((rentToRows ?? []) as { id: string; rent_to_asset_id: string }[]).map((r) => [r.id, r.rent_to_asset_id]));
+  // ไม่ได้ตั้งบัญชีรับค่าเช่า → ใช้บัญชีที่รับครั้งล่าสุดของสัญญานั้น
+  const lastRentBank = new Map<string, string>();
+  [...(rentPaid ?? [])].reverse().forEach((x) => { if (x.lease_id && x.received_to_asset_id) lastRentBank.set(x.lease_id as string, x.received_to_asset_id as string); });
+  const payOpts: [string, string][] = [["", "— ไม่ระบุ —"],
+    ...bankList.map((b) => [endpointValue({ kind: "bank", id: b.asset_id }), `บัญชี ${b.name} (${b.currency})`] as [string, string]),
+    ...cards.map((c) => [endpointValue({ kind: "card", id: c.id }), `บัตร ${c.label} (${c.currency})`] as [string, string])];
   // ภาษีที่ดิน: เลือกปี (?ty=) · ค่าเริ่มต้น = ปีปัจจุบัน · ปีที่มีข้อมูล + ปีปัจจุบัน + ปีหน้า
   type TaxRow = TaxLine & { tax_year: number; land_value: number; building_value: number; depreciation: number; total_value: number;
     taxable_value: number; tax_full: number; tax_amount: number };
@@ -185,7 +198,22 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                <Item label="ประเภท / การใช้งาน">{PROPERTY_TYPE_LABEL[pd.property_type] ?? pd.property_type} · {USAGE_LABEL[pd.usage_type] ?? pd.usage_type}</Item>
+                <Item label="ประเภท / การใช้งาน">{PROPERTY_TYPE_LABEL[pd.property_type] ?? pd.property_type} · {USAGE_LABEL[pd.usage_type] ?? pd.usage_type}
+                  {pd.usage_type === "VACANT" && (pd.vacant_since
+                    ? <span className="block text-xs text-slate-500">ว่างมาแล้ว {durationText(vacantMonths)} (ตั้งแต่ {thDate(pd.vacant_since)})</span>
+                    : <span className="block text-xs text-amber-700">ยังไม่ได้ใส่วันที่เริ่มว่าง (แก้ไขข้อมูล)</span>)}
+                  {vacancyWarning(vacantMonths) && <span className="block text-xs font-medium text-amber-700">{vacancyWarning(vacantMonths)}</span>}</Item>
+                {pd.usage_type === "VACANT" && (pd.vacant_plan || pd.vacant_plan_date) && (
+                  <Item label="แผน / โครงการ">{pd.vacant_plan ?? "-"}{pd.vacant_plan_date && <span className="block text-xs text-slate-500">กำหนดเริ่ม {thDate(pd.vacant_plan_date)}</span>}</Item>
+                )}
+                {pd.encumbrance_type && pd.encumbrance_type !== "NONE" && (
+                  <Item label="ภาระผูกพัน">{ENCUMBRANCE_LABEL[pd.encumbrance_type] ?? pd.encumbrance_type}
+                    {pd.encumbrance_details && <span className="block text-xs text-slate-500">{pd.encumbrance_details}</span>}</Item>
+                )}
+                {vacancyHistory.length > 0 && (
+                  <Item label="ประวัติช่วงที่ว่าง">{vacancyHistory.map((v, i) => (
+                    <span key={i} className="block text-xs text-slate-600">{thDate(v.from)} – {thDate(v.to)} ({durationText(monthsBetween(v.from, v.to))}){v.plan && ` · ${v.plan}`}</span>))}</Item>
+                )}
                 <Item label="เนื้อที่">{landText(pd.land_area_sq_wa)}</Item>
                 <Item label="กลุ่มทำเล">{pd.location_group || "-"}</Item>
                 <Item label="เอกสารสิทธิ์">{[pd.title_type, pd.title_deed_no && `เลขที่ ${pd.title_deed_no}`].filter(Boolean).join(" · ") || "-"}
@@ -266,6 +294,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 {l.terminated_date && <span className="text-red-600"> · เลิก {thDate(l.terminated_date)}</span>}
                 {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
                 {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
+                {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}
               </div>
               {dep > 0 && (
                 <div className="mt-1">
@@ -296,6 +325,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     { name: "end_date", label: "สิ้นสุด", type: "date", value: l.end_date },
                     { name: "rent_amount", label: "ค่าเช่า", type: "number", value: l.rent_amount },
                     { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
+                    { name: "rent_to_asset_id", label: "บัญชีรับค่าเช่า", type: "select", value: rentTo.get(l.id) ?? "",
+                      options: [["", "— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —"], ...bankList.filter((b) => b.currency === l.rent_currency).map((b) => [b.asset_id, b.name] as [string, string])] },
                     { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
                 )}
                 {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
@@ -337,7 +368,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     {canWrite && (r.status === "OVERDUE" || r.status === "PENDING") && (
                       <RecordRentForm assetId={id} leaseId={r.lease_id} period={r.income_period}
                         expected={Number(r.expected_amount) - Number(r.received_amount)} currency={r.currency}
-                        banks={bankList} today={today} />
+                        banks={bankList} today={today} defaultBank={rentTo.get(r.lease_id) ?? lastRentBank.get(r.lease_id)} />
                     )}
                   </td>
                 </tr>
@@ -444,7 +475,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               <p key={ccy} className="text-xs text-slate-500">ประมาณการต่อปี <span className="font-medium tabular-nums text-slate-700">{money(v, ccy, 0)}</span></p>
             ))}
           </div>
-          {canWrite && <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} />}
+          {canWrite && <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} />}
         </div>
         {utilities.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล · เพิ่มค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ พร้อมยอดประมาณเพื่อติดตามการจ่าย</p> : (
           <table className="w-full text-sm">
@@ -470,6 +501,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                         options: [["", "-"], ...TH_MONTHS.map((m, i) => [String(i + 1), m] as [string, string])] },
                       { name: "due_day", label: "ทุกวันที่", type: "number", value: u.due_day, width: "w-16" },
                       { name: "account_no", label: "เลขที่ผู้ใช้", value: u.account_no }, { name: "meter_no", label: "มิเตอร์", value: u.meter_no },
+                      { name: "paid_from_asset_id", label: "จ่ายจากบัญชี (ค่าตั้งต้น)", type: "select", value: u.paid_from_asset_id ?? "",
+                        options: [["", "—"], ...bankList.filter((b) => b.currency === u.currency).map((b) => [b.asset_id, b.name] as [string, string])] },
+                      { name: "paid_from_credit_card_id", label: "หรือบัตร (ค่าตั้งต้น)", type: "select", value: u.paid_from_credit_card_id ?? "",
+                        options: [["", "—"], ...cards.filter((c) => c.currency === u.currency).map((c) => [c.id, c.label] as [string, string])] },
                       { name: "notes", label: "หมายเหตุ", value: u.notes }]} />}
                   </td>
                 </tr>
@@ -504,7 +539,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                         <RecordCostForm assetId={id} utilityId={c.utility_id} period={c.cost_period} currency={c.currency}
                           label={`${utilName(c.utility_type, c.provider)} · ${a.name} (${thMonth(c.cost_period)})`}
                           category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
-                          banks={bankList} cards={cards} persons={persons ?? []} today={today} />
+                          banks={bankList} cards={cards} persons={persons ?? []} today={today}
+                          defaultBank={utilById.get(c.utility_id)?.paid_from_asset_id} defaultCard={utilById.get(c.utility_id)?.paid_from_credit_card_id} />
                       )}
                     </td>
                   </tr>
