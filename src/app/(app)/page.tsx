@@ -19,6 +19,7 @@ type DM = {
   by_person: { person_id: string | null; name: string; assets: number; liabilities: number; net_worth: number }[];
   base: { label: string; date: string; total_assets: number; total_liabilities: number; net_worth: number } | null;
 };
+type Base = { label: string; date: string; total_assets: number; total_liabilities: number; net_worth: number };
 type Hist = {
   opening: { date: string; total_assets: number; total_liabilities: number; net_worth: number };
   snapshots: { month: string; date: string; status: string; total_assets: number; total_liabilities: number; net_worth: number }[];
@@ -59,6 +60,9 @@ const getFamilyItems = cache(async (start: string) =>
   ((await (await createClient()).rpc("month_family_items", { p_month: start })).data ?? null) as Item[] | null);
 const getPersonDash = cache(async (start: string, person: string) =>
   ((await (await createClient()).rpc("person_dashboard", { p_month: start, p_person: person })).data ?? null) as PersonDash | null);
+/** ฐานเทียบของ 3 การ์ดเมื่อเลือกรายคน (ปิดเดือนก่อน → สิ้นเดือนก่อน อัตโนมัติ → ยอดตั้งต้น) */
+const getPersonBase = cache(async (start: string, person: string) =>
+  ((await (await createClient()).rpc("dashboard_person_base", { p_month: start, p_person: person })).data ?? null) as Base | null);
 const getTrack = cache(async (start: string) => {
   const { data } = await (await createClient()).from("monthly_expenses").select("tracking_status")
     .eq("year_month", start).is("deleted_at", null).maybeSingle();
@@ -99,7 +103,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // เริ่มคำนวณส่วนที่ช้าทันที (ไม่รอ) — การ์ดด้านล่างจะรับผลจากคำขอเดียวกันนี้
   void getMonth(start); void getPreview(start); void getHistory(); void getTrack(start);
-  if (personId) { void getItems(start, personId); void getPersonDash(start, personId); } else void getFamilyItems(start);
+  if (personId) { void getItems(start, personId); void getPersonDash(start, personId); void getPersonBase(start, personId); } else void getFamilyItems(start);
 
   return (
     <div className="space-y-6">
@@ -233,8 +237,9 @@ async function AsOf({ start, isCurrent, today }: { start: string; isCurrent: boo
 }
 
 async function TopCards({ start, personId, personName }: { start: string; personId: string; personName: string }) {
-  const dm = await getMonth(start);
-  const base = dm?.base ?? null;
+  const [dm, pBase] = await Promise.all([getMonth(start), personId ? getPersonBase(start, personId) : null]);
+  // ฐานเทียบ: ครอบครัว = dashboard_month.base · รายคน = dashboard_person_base (ลำดับเลือกฐานเดียวกัน)
+  const base = personId ? pBase : dm?.base ?? null;
   const byPerson = dm?.by_person ?? [];
   const person = personId ? byPerson.find((x) => x.person_id === personId) ?? { person_id: personId,
     name: personName, assets: 0, liabilities: 0, net_worth: 0 } : null;
@@ -245,10 +250,10 @@ async function TopCards({ start, personId, personName }: { start: string; person
   return (
     <>
       <section className="grid gap-4 md:grid-cols-3">
-        <Big label={person ? `สินทรัพย์รวม · ${person.name}` : "สินทรัพย์รวม"} value={assets} base={!person && base ? Number(base.total_assets) : null} baseLabel={base?.label} />
-        <Big label={person ? `หนี้สินรวม · ${person.name}` : "หนี้สินรวม"} value={liab} base={!person && base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
+        <Big label={person ? `สินทรัพย์รวม · ${person.name}` : "สินทรัพย์รวม"} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
+        <Big label={person ? `หนี้สินรวม · ${person.name}` : "หนี้สินรวม"} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
         <Big label={person ? `ความมั่งคั่งสุทธิ · ${person.name}` : "ความมั่งคั่งสุทธิ (Net Worth)"} value={nw}
-          base={!person && base ? Number(base.net_worth) : null} baseLabel={base?.label} />
+          base={base ? Number(base.net_worth) : null} baseLabel={base?.label} />
       </section>
       {!person && unalloc && Number(unalloc.net_worth) !== 0 && (
         <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {money(unalloc.net_worth, "THB", 0)} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
@@ -534,17 +539,19 @@ async function CompletenessBody() {
 }
 
 function Big({ label, value, base, baseLabel, inverse }: { label: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean }) {
-  const diff = base == null ? null : Number(value) - base;
+  // ปัดเป็นบาท (เหมือนตัวเลขที่แสดง) แล้วต่างกัน 0 = "ไม่เปลี่ยนแปลง"
+  const diff = base == null ? null : Math.round(Number(value) - base);
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{money(value, "THB", 0)}</div>
-      {diff != null && (
-        <div className={`mt-1 text-xs ${diff === 0 ? "text-slate-500" : good ? "text-emerald-700" : "text-red-700"}`}>
-          {diff > 0 ? "▲ +" : diff < 0 ? "▼ " : ""}{money(diff, undefined, 0)}
-          {base ? ` (${((diff / Math.abs(base)) * 100).toFixed(2)}%)` : ""} จาก{baseLabel}
-        </div>
+      {diff != null && (diff === 0
+        ? <div className="mt-1 text-xs text-slate-500">ไม่เปลี่ยนแปลงจาก{baseLabel}</div>
+        : <div className={`mt-1 text-xs ${good ? "text-emerald-700" : "text-red-700"}`}>
+            {diff > 0 ? "▲ +" : "▼ "}{money(diff, undefined, 0)}
+            {base ? ` (${((diff / Math.abs(base)) * 100).toFixed(2)}%)` : ""} จาก{baseLabel}
+          </div>
       )}
     </div>
   );

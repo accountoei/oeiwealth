@@ -2909,6 +2909,14 @@ SELECT t.ok((SELECT (j->>'prev_net_worth')::numeric = (SELECT (by_person->>t.p('
                     AND EXISTS (SELECT 1 FROM jsonb_array_elements(j->'snapshots') e WHERE e->>'month' = '2026-09-01' AND e->>'status' = 'AUTO')
                FROM (SELECT public.person_dashboard('2026-10-01', t.p('คุณพ่อ')) AS j) x),
             'Dashboard รายคน: ยอดงวดก่อน + กราฟ ใช้ยอดอัตโนมัติของคนนั้น');
+SELECT t.ok((SELECT j->>'label' = 'สิ้นเดือนก่อน' AND (j->>'net_worth')::numeric = (SELECT (by_person->>t.p('คุณพ่อ')::text)::numeric FROM _auto9)
+                    AND (j->>'net_worth')::numeric = (j->>'total_assets')::numeric - (j->>'total_liabilities')::numeric
+               FROM (SELECT public.dashboard_person_base('2026-10-01', t.p('คุณพ่อ')) AS j) x),
+            'Dashboard รายคน 3 การ์ด: ฐาน ต.ค. = ยอดสิ้นเดือน ก.ย. (อัตโนมัติ) ของคนนั้น · สินทรัพย์ − หนี้สิน = Net Worth');
+SELECT t.ok((SELECT j->>'label' = 'ปิดเดือนก่อน' AND (j->>'net_worth')::numeric = (SELECT (pd->>'prev_net_worth')::numeric
+                      FROM (SELECT public.person_dashboard('2026-08-01', t.p('คุณแม่')) AS pd) y)
+               FROM (SELECT public.dashboard_person_base('2026-08-01', t.p('คุณแม่')) AS j) x),
+            'Dashboard รายคน 3 การ์ด: ฐาน ส.ค. = ปิดเดือน ก.ค. (FINAL) ตรงกับกล่องเปลี่ยนเพราะอะไร');
 
 -- ไม่ล็อก: ลงรายการย้อนหลังใน ก.ย. ได้ · คืนถัดไปยอดอัตโนมัติอัปเดตตาม
 SELECT t.login('00000000-0000-0000-0000-00000000000e');
