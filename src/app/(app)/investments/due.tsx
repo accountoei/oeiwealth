@@ -5,7 +5,7 @@ import MonthPicker from "@/components/MonthPicker";
 import type { Bank } from "./[id]/forms";
 import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
 
-// แท็บ "รอรับเดือนนี้" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
+// แท็บ "บันทึกรับผลตอบแทน" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
 //   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก (ทุกพอร์ตในตารางเดียว) · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
 //   ตารางคำนวณจากข้อมูลหลักทุกครั้ง (src/lib/coupon-schedule.ts) · ช่องกรอก / บันทึกหลายรายการพร้อมกันอยู่ใน due-batch.tsx
 
@@ -18,7 +18,7 @@ export function ScheduleBox({ rows, currency, today }: { rows: DueRow[]; currenc
     <section className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-medium text-slate-900">ตารางรับดอกเบี้ย / เงินต้น</h2>
-        <span className="text-xs text-slate-500">ยังไม่รับ {open} รายการ · บันทึกรับได้ที่หน้า Investments → แท็บ &ldquo;รอรับเดือนนี้&rdquo;</span>
+        <span className="text-xs text-slate-500">ยังไม่รับ {open} รายการ · บันทึกรับได้ที่หน้า Investments → แท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo;</span>
       </div>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[32rem] text-sm">
@@ -50,7 +50,7 @@ type HRow = { id: string; name: string; holding_type: string; currency: string; 
 type Fcn = { holding_id: string; principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
 type Tx = { holding_id: string; transaction_type: string; transaction_date: string; amount: number | null };
 
-/** แท็บ "รอรับเดือนนี้" */
+/** แท็บ "บันทึกรับผลตอบแทน" */
 export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
   month: string; today: string; goLive: string; showAsset: (assetId: string) => boolean; canWrite: boolean;
 }) {

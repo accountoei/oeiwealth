@@ -153,7 +153,7 @@ export async function batchUpdate(_: BatchState, form: FormData): Promise<BatchS
   return { ok: `บันทึกยอดแล้ว ${results.length} บัญชี`, results };
 }
 
-/** รับดอกเบี้ยหลายบัญชีพร้อมกัน (แท็บ รับดอกเบี้ย) · ผิดแถวเดียว = ไม่บันทึกเลย */
+/** รับดอกเบี้ยหลายบัญชีพร้อมกัน (แท็บ บันทึกรับดอกเบี้ย) · ผิดแถวเดียว = ไม่บันทึกเลย */
 export async function batchInterest(_: BatchState, form: FormData): Promise<BatchState> {
   const supabase = await createClient();
   const date = str(form.get("date"));

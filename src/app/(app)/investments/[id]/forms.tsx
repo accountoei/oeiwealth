@@ -76,7 +76,7 @@ function CouponFields({ prefix, currency, face, onFace, faceHint, faceAuto }: {
           </select></label>
       </div>
       {faceHint && <p className="text-xs text-slate-500">{faceHint}</p>}
-      <p className="text-xs text-slate-500">ใส่ครบ + วันครบกำหนด → ตารางรับดอกเบี้ย / เงินต้นขึ้นทันที และขึ้นในแท็บ &ldquo;รอรับเดือนนี้&rdquo; · ไม่ใส่ตอนนี้ แก้ทีหลังได้ที่หน้าหลักทรัพย์</p>
+      <p className="text-xs text-slate-500">ใส่ครบ + วันครบกำหนด → ตารางรับดอกเบี้ย / เงินต้นขึ้นทันที และขึ้นในแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; · ไม่ใส่ตอนนี้ แก้ทีหลังได้ที่หน้าหลักทรัพย์</p>
     </div>
   );
 }
@@ -658,7 +658,7 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
    วันที่เดียว = วันที่เงินเข้าจริง (ไม่มีเงินระหว่างทาง) · ก่อนกดบันทึก มูลค่ายังอยู่ที่หลักทรัพย์ตัวนี้ */
 export function MaturityForm({ assetId, portfolioName = "", holding, banks, cashAccounts = [], today, minDate, label, defaultAmount, defaultDate }:
   { assetId: string; portfolioName?: string; holding: Holding; banks: Bank[]; cashAccounts?: CashAcct[]; today: string; minDate: string;
-    /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม (ปุ่มแถวตาราง) · ยอดเงินต้นที่คาดว่าจะได้รับ */ label?: string; defaultAmount?: number | null;
+    /** ใช้จากแท็บ "บันทึกรับผลตอบแทน": ชื่อปุ่ม (ปุ่มแถวตาราง) · ยอดเงินต้นที่คาดว่าจะได้รับ */ label?: string; defaultAmount?: number | null;
     /** วันที่ตั้งต้น (แท็บรอรับ: วันรับตามตาราง · แก้ได้) */ defaultDate?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const cf = useConfirmSubmit();

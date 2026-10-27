@@ -10,7 +10,7 @@ import BusinessBadge from "./badge";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
 
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["record", "บันทึกปันผล / มูลค่า"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["record", "บันทึกรับเงินปันผล/อัพเดตมูลค่า"]];
 
 type Row = { id: string; asset_id: string; company_name: string; logo_data: string | null; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null; par_value: number | null; investment_cost: number | null;
@@ -118,7 +118,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   };
   const who = pv.personId ? pv.personName : "ครอบครัว";
 
-  // ---------------------------------------------------------------- แท็บ "บันทึกปันผล / มูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
+  // ---------------------------------------------------------------- แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
   const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name]));
   const batchRows: BizRow[] = rows.filter((r) => r.status === "ACTIVE").map((r) => {
     const os = nowOwn.filter((o) => o.asset_id === r.asset_id);

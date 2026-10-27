@@ -10,7 +10,7 @@ import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 
-// แท็บ "รอรับเดือนนี้" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
+// แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
 //   ด้านบน (แบบแท็บรับดอกเบี้ยของ Cash & Bank): ตัวกรองพอร์ต + กรอกตามตารางทุกแถว · คิดภาษี 15% + วันที่รับ (ใช้กับทุกแถว)
 //   เงินต้นไม่ใช่รายได้ · บันทึกแล้วหลักทรัพย์ปิดเป็น "ครบกำหนด" (batch_record_investment_income → record_holding_maturity)

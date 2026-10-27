@@ -48,7 +48,7 @@ export function DividendForm({ assetId, banks, today, minDate }: { assetId: stri
         </label>
         <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" className={input} /></label>
       </div>
-      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ปันผลกิจการ&rdquo; แบ่งตามสัดส่วนเจ้าของ · ปันผลที่แยกเข้าบัญชีของผู้ถือหุ้นแต่ละคน บันทึกที่หน้า Private Business → แท็บ &ldquo;บันทึกปันผล / มูลค่า&rdquo;</p>
+      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ปันผลกิจการ&rdquo; แบ่งตามสัดส่วนเจ้าของ · ปันผลที่แยกเข้าบัญชีของผู้ถือหุ้นแต่ละคน บันทึกที่หน้า Private Business → แท็บ &ldquo;บันทึกรับเงินปันผล/อัพเดตมูลค่า&rdquo;</p>
     </Box>
   );
 }

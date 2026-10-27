@@ -96,7 +96,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
   assetId: string; portfolioName?: string; holdingId: string; holdingName?: string; currency: string; isFcn: boolean;
   /** หุ้นกู้ / FCN / Structured / อื่น ๆ ที่ยังถืออยู่ → มีประเภท "คืนเงินต้น" */ canMature?: boolean;
   banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
-  /** ใช้จากแท็บ "รอรับเดือนนี้": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
+  /** ใช้จากแท็บ "บันทึกรับผลตอบแทน": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
   label?: string; title?: string; defaultAmount?: number | null; defaultNotes?: string;
   /** วันที่ตั้งต้น (แท็บรอรับ: วันรับตามตาราง · แก้ได้) */ defaultDate?: string;
   /** บัญชีรับเงินที่ผูกไว้กับหลักทรัพย์ ("h:<id>" / "a:<id>") → ค่าตั้งต้นของการรับครั้งนี้ (เปลี่ยนได้ ไม่แก้ค่าที่ผูก) */
@@ -168,7 +168,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
   autoKind?: "EQUITY" | "FUND" | null;
   /** เหตุผลที่ยังเปิดราคาอัตโนมัติไม่ได้ (มูลค่าก้อนเดียว / กองทุน 1 หน่วย) — ฐานข้อมูลกันซ้ำ */
   autoBlocked?: string | null;
-  /** บัญชีรับดอกเบี้ย / ปันผล / เงินคืน (ค่าตั้งต้นของฟอร์มรับเงิน · แท็บรอรับเดือนนี้) */
+  /** บัญชีรับดอกเบี้ย / ปันผล / เงินคืน (ค่าตั้งต้นของฟอร์มรับเงิน · แท็บบันทึกรับผลตอบแทน) */
   income?: { currency: string; cashAccounts: CashAcct[]; banks: Bank[]; cashId: string | null; bankId: string | null };
 }) {
   const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
@@ -192,7 +192,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
             <select value={inc} onChange={(e) => setInc(e.target.value)} className={input}>
               {incomeOpts.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
             </select>
-            <span className="mt-1 block text-xs text-slate-500">ค่าตั้งต้นของปุ่มรับปันผล / ดอกเบี้ย และแท็บ &ldquo;รอรับเดือนนี้&rdquo; (เปลี่ยนตอนรับได้ เฉพาะครั้งนั้น)</span>
+            <span className="mt-1 block text-xs text-slate-500">ค่าตั้งต้นของปุ่มรับปันผล / ดอกเบี้ย และแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; (เปลี่ยนตอนรับได้ เฉพาะครั้งนั้น)</span>
           </label>
         )}
       </div>
@@ -209,7 +209,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
                 <option value="">— ไม่ระบุ —</option>{COUPON_FREQ_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
               </select></label>
           </div>
-          <p className="text-xs text-slate-500">ใส่ครบ (และมีวันครบกำหนด) → ขึ้นในแท็บ &ldquo;รอรับเดือนนี้&rdquo; หน้า Investments · วันรับนับย้อนจากวันครบกำหนด · ยอดต่องวด = เงินต้น × อัตรา × เดือน ÷ 12</p>
+          <p className="text-xs text-slate-500">ใส่ครบ (และมีวันครบกำหนด) → ขึ้นในแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; หน้า Investments · วันรับนับย้อนจากวันครบกำหนด · ยอดต่องวด = เงินต้น × อัตรา × เดือน ÷ 12</p>
         </div>
       )}
       {autoKind && (

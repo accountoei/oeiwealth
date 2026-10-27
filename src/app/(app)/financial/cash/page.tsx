@@ -20,7 +20,7 @@ type Sum = { asset_id: string; balance: number | null; prev_balance: number | nu
 type At = { asset_id: string; calculated: number | null; last_date: string | null; last_value: number | null };
 
 // บัญชีทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=accounts → ภาพรวม)
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["interest", "รับดอกเบี้ย"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["interest", "บันทึกรับดอกเบี้ย"]];
 const TYPE_COLORS = ["#2563eb", "#7c3aed", "#059669", "#f59e0b", "#94a3b8"];
 const BANK_COLORS = ["#2563eb", "#f59e0b", "#059669", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#ea580c", "#475569"];
 const PERSON_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#84cc16"];
