@@ -9,7 +9,7 @@ import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortCon
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
-import { PaymentForm } from "./[id]/forms";
+import LoanBatch, { type LoanRow } from "./LoanBatch";
 
 const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "มีความเสี่ยง", CLOSED: "ปิดแล้ว", WRITTEN_OFF: "ตัดหนี้สูญ" };
 const DERIVED: Record<string, { text: string; cls: string }> = {
@@ -40,20 +40,21 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     supabase.from("v_loans_status")
       .select("asset_id,name,currency,borrower_name,principal,outstanding_principal,interest_rate,due_date,status,derived_status")
       .order("status").order("name"),
-    supabase.from("loan_details").select("asset_id,borrower_phone").is("deleted_at", null),
+    supabase.from("loan_details").select("asset_id,borrower_phone,at_risk_amount").is("deleted_at", null),
     supabase.from("v_loan_schedule_status")
       .select("id,loan_asset_id,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
       .neq("status", "WRITTEN_OFF").order("due_date").order("installment_no"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     // รับชำระจริง: เงินต้น (เงินเข้าจากเงินให้กู้) + ดอกเบี้ย (รายได้)
-    supabase.from("cash_movements").select("from_asset_id,movement_date,amount").eq("movement_type", "LOAN_PRINCIPAL_RECEIPT").is("deleted_at", null),
-    supabase.from("income_transactions").select("asset_id,date,amount").eq("income_type", "LOAN_INTEREST").not("asset_id", "is", null).is("deleted_at", null),
+    supabase.from("cash_movements").select("from_asset_id,to_asset_id,movement_date,amount").eq("movement_type", "LOAN_PRINCIPAL_RECEIPT").is("deleted_at", null),
+    supabase.from("income_transactions").select("asset_id,date,amount,received_to_asset_id").eq("income_type", "LOAN_INTEREST").not("asset_id", "is", null).is("deleted_at", null),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     loadSortMap("assets"),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const phone = new Map((extras ?? []).map((x) => [x.asset_id as string, x.borrower_phone as string | null]));
+  const riskSet = new Map((extras ?? []).filter((x) => x.at_risk_amount != null).map((x) => [x.asset_id as string, Number(x.at_risk_amount)]));
   const sched = ((schedRaw as Line[] | null) ?? []).filter((x) => pv.showAsset(x.loan_asset_id));
   const byLoan = new Map<string, Line[]>();
   sched.forEach((x) => byLoan.set(x.loan_asset_id, [...(byLoan.get(x.loan_asset_id) ?? []), x]));
@@ -67,9 +68,12 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     } else if (!nextDue.has(x.loan_asset_id)) nextDue.set(x.loan_asset_id, { due_date: x.due_date, amount: Number(x.total_remaining) });
   });
   const lastPaid = new Map<string, string>();
-  const seen = (id: string | null, d: string) => { if (id && d > (lastPaid.get(id) ?? "")) lastPaid.set(id, d); };
-  (pMoves ?? []).forEach((m) => seen(m.from_asset_id, m.movement_date));
-  (iRows ?? []).forEach((i) => seen(i.asset_id, i.date));
+  const lastBank = new Map<string, string>();   // บัญชีที่รับครั้งล่าสุด → ค่าเริ่มต้นของแท็บรับชำระ
+  const seen = (id: string | null, d: string, bank: string | null) => {
+    if (id && d >= (lastPaid.get(id) ?? "")) { lastPaid.set(id, d); if (bank) lastBank.set(id, bank); }
+  };
+  (pMoves ?? []).forEach((m) => seen(m.from_asset_id, m.movement_date, m.to_asset_id));
+  (iRows ?? []).forEach((i) => seen(i.asset_id, i.date, i.received_to_asset_id));
 
   const rows = bySort((data ?? []).filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   type R = (typeof rows)[number];
@@ -83,6 +87,9 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     return { k, label, color, n: list.length, v: k === "WRITTEN_OFF" ? 0 : list.reduce((t, r) => t + thbOf(r, r.outstanding_principal), 0) };
   });
   const gTotal = groups.reduce((t, g) => t + g.v, 0);
+  // ส่วนที่มีความเสี่ยงไม่ได้คืน (สัญญา "มีความเสี่ยง" · แสดงอย่างเดียว ยังนับใน Net Worth)
+  const riskOf = (r: R) => (r.status === "AT_RISK" && riskSet.has(r.asset_id) ? Math.min(riskSet.get(r.asset_id)!, Math.max(Number(r.outstanding_principal ?? 0), 0)) : 0);
+  const riskTotal = rows.reduce((t, r) => t + thbOf(r, riskOf(r)), 0);
   const gCount = groups.reduce((t, g) => t + g.n, 0);
 
   // ---------------------------------------------------------------- กล่องขวา: รายการที่ต้องติดตาม
@@ -92,7 +99,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     const issues: { text: string; tone: "red" | "amber" }[] = [];
     if (o) issues.push({ text: `เกินกำหนด ${days(o.oldest)} วัน`, tone: "red" });
     else if (r.derived_status === "OVERDUE" && Number(r.outstanding_principal ?? 0) > 0) issues.push({ text: "เลยวันครบกำหนดสัญญา", tone: "red" });
-    if (r.status === "AT_RISK") issues.push({ text: "มีความเสี่ยงไม่ได้รับคืน", tone: "amber" });
+    if (r.status === "AT_RISK") issues.push({ text: `มีความเสี่ยงไม่ได้รับคืน${riskOf(r) > 0.005 ? ` ${money(riskOf(r), undefined, 0)}` : ""}`, tone: "amber" });
     return { r, issues, amount: o ? o.amount : Number(r.outstanding_principal ?? 0), sev: o ? days(o.oldest) + 10000 : r.status === "AT_RISK" ? 1 : 5000 };
   }).filter((x) => x.issues.length > 0).sort((a, b) => b.sev - a.sev);
   const showAllFollow = sp.follow === "all";
@@ -113,13 +120,24 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     .filter((x) => loanOf.has(x.id) && x.d >= start && x.d <= end).reduce((t, x) => t + thbOf(loanOf.get(x.id)!, x.v), 0);
   const overdueAll = sched.filter((x) => x.status === "OVERDUE" && loanOf.has(x.loan_asset_id));
   const overdueThb = overdueAll.reduce((t, x) => t + thbOf(lr(x), x.total_remaining), 0);
-  // บันทึกรับ: เฉพาะงวดเก่าสุดที่ยังค้างของแต่ละสัญญา (เงินที่รับตัดงวดเก่าก่อน)
-  const firstOpen = new Map<string, string>();
-  sched.filter((x) => x.status !== "PAID").forEach((x) => { if (!firstOpen.has(x.loan_asset_id)) firstOpen.set(x.loan_asset_id, x.id); });
   const upTo = (loan: string, d: string, k: "interest_remaining" | "principal_remaining") =>
     (byLoan.get(loan) ?? []).filter((y) => y.due_date <= d).reduce((t, y) => t + Number(y[k]), 0);
   const months = monthOptions(family?.go_live_date, today, 3, ym);
   const goLive = family?.go_live_date ?? "";
+  // แท็บรับชำระ: 1 แถวต่อสัญญาที่ยังไม่ปิด · ยอดที่ถึงกำหนด = ยังไม่ได้รับของทุกงวดถึงสิ้นเดือน
+  const bankList = (banks ?? []).map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
+  const toRow = (r: R): LoanRow => ({
+    id: r.asset_id, name: r.name, borrower: r.borrower_name, currency: r.currency,
+    lines: monthLines.filter((x) => x.loan_asset_id === r.asset_id).map((x) => ({ no: x.installment_no, due: x.due_date, total: Number(x.total_due),
+      remaining: Number(x.total_remaining), status: x.status, statusText: LOAN_SCHED_STATUS[x.status]?.text ?? x.status,
+      statusCls: LOAN_SCHED_STATUS[x.status]?.cls ?? "", carried: x.due_date < start })),
+    dueP: Math.round(upTo(r.asset_id, end, "principal_remaining") * 100) / 100, dueI: Math.round(upTo(r.asset_id, end, "interest_remaining") * 100) / 100,
+    defaultBank: [lastBank.get(r.asset_id)].find((b) => b && bankList.some((x) => x.id === b && x.currency === r.currency))
+      ?? bankList.find((x) => x.currency === r.currency)?.id ?? "",
+  });
+  const withLines = new Set(monthLines.map((x) => x.loan_asset_id));
+  const batchRows = open.filter((r) => withLines.has(r.asset_id)).map(toRow);
+  const batchOthers = open.filter((r) => !withLines.has(r.asset_id)).map(toRow);
 
   return (
     <TabsProvider initial={tab}>
@@ -151,7 +169,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
                 const pct = gTotal > 0 ? (g.v / gTotal) * 100 : 0;
                 return (
                   <tr key={g.k}>
-                    <td className="px-3 py-2.5"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: g.color }} />{g.label}</td>
+                    <td className="px-3 py-2.5"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: g.color }} />{g.label}
+                      {g.k === "AT_RISK" && riskTotal > 0.005 && <div className="pl-4.5 text-xs text-amber-800">ส่วนที่เสี่ยงไม่ได้คืน {money(riskTotal, undefined, 0)}</div>}</td>
                     <td className="px-3 text-right tabular-nums">{g.n}</td>
                     <td className="px-3 text-right tabular-nums">{money(g.v, undefined, 0)}</td>
                     <td className="px-3 text-right tabular-nums">{pct.toFixed(1)}%</td>
@@ -166,7 +185,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
                 <td className="px-3"><div className="h-2.5 rounded-full bg-blue-600" /></td></tr>
             </tfoot>
           </table>
-          <p className="mt-2 text-xs text-slate-500">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ใน Net Worth</p>
+          <p className="mt-2 text-xs text-slate-500">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ใน Net Worth
+            {riskTotal > 0.005 && ` · ส่วนที่มีความเสี่ยงไม่ได้คืน ${money(riskTotal, undefined, 0)} ยังนับใน Net Worth จนกว่าจะตัดหนี้สูญ`}</p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -266,44 +286,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
             <div className="mt-1 text-xs text-slate-500">{overdueAll.length} งวด</div>
           </div>
         </section>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="w-full min-w-[48rem] text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">สัญญา / ผู้กู้</th><th className="px-3">งวด</th><th className="px-3">ครบกำหนด</th><th className="px-3 text-right">เงินต้น</th>
-                <th className="px-3 text-right">ดอกเบี้ย</th><th className="px-3 text-right">รวม</th><th className="px-3">สถานะ</th><th className="px-3"></th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {monthLines.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ไม่มีงวดที่ต้องรับในเดือนนี้</td></tr>}
-              {monthLines.map((x) => {
-                const r = lr(x);
-                const st = LOAN_SCHED_STATUS[x.status];
-                const loanOpen = r.status !== "CLOSED" && r.status !== "WRITTEN_OFF";
-                return (
-                  <tr key={x.id} className={`align-top ${x.status === "PAID" ? "text-slate-500" : ""}`}>
-                    <td className="px-4 py-2.5"><Link href={`/financial/loans/${r.asset_id}`} className="font-medium hover:underline">{r.name}</Link>
-                      <div className="text-xs text-slate-500">{r.borrower_name}{phone.get(r.asset_id) && ` · โทร ${phone.get(r.asset_id)}`}</div></td>
-                    <td className="px-3 py-2.5">{x.installment_no}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{thDate(x.due_date)}{x.due_date < start && <div className="text-xs text-red-600">ค้างจากเดือนก่อน</div>}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{money(x.principal_due)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{money(x.interest_due)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{money(x.total_due, r.currency)}</td>
-                    <td className="px-3 py-2.5"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? x.status}</span>
-                      {x.status !== "PAID" && Number(x.total_remaining) < Number(x.total_due) - 0.005 && <div className="text-xs text-slate-500">ค้าง {money(x.total_remaining)}</div>}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      {canWrite && loanOpen && firstOpen.get(x.loan_asset_id) === x.id && (
-                        <PaymentForm assetId={r.asset_id} currency={r.currency} banks={banks ?? []} today={today} minDate={goLive} small button="บันทึกรับ"
-                          title={`รับชำระ ${r.name} งวดที่ ${x.installment_no} · เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน`}
-                          principal={Number(x.principal_remaining)} interest={Number(x.interest_remaining)}
-                          interestOwed={upTo(x.loan_asset_id, x.due_date, "interest_remaining")} principalDue={upTo(x.loan_asset_id, x.due_date, "principal_remaining")} />
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-xs text-slate-500">ปุ่ม &ldquo;บันทึกรับ&rdquo; อยู่ที่งวดเก่าสุดที่ยังค้างของแต่ละสัญญา · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้ (เห็นในหน้า Income &amp; Expenses ด้วย) · ยอดในกล่องเป็นบาท{pv.personId ? " ตามสัดส่วนของสมาชิกที่เลือก" : ""}</p>
+        <LoanBatch rows={batchRows} others={batchOthers} banks={bankList} today={today} minDate={goLive} canWrite={canWrite} />
+        <p className="text-xs text-slate-500">เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้ (เห็นในหน้า Income &amp; Expenses ด้วย) · ยอดในกล่องเป็นบาท{pv.personId ? " ตามสัดส่วนของสมาชิกที่เลือก" : ""}</p>
       </TabPanel>
     </div>
     </TabsProvider>

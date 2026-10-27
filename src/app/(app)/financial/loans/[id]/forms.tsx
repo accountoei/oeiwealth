@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
-import { disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
+import { closeLoan, disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
 import { ROW_BTN, numOrZero as num, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
@@ -26,10 +26,12 @@ const amt = (v?: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigi
  * interestOwed: ดอกเบี้ยค้างตามตาราง → มีช่อง "ยอดรวมที่รับ" แบ่งให้เอง: หักดอกเบี้ยค้างก่อน ที่เหลือเป็นเงินต้น
  * principalDue: เงินต้นที่ถึงกำหนดตามตาราง → บันทึกแล้วถ้ารับเงินต้นเกิน ถามต่อว่าจะคำนวณงวดที่เหลือใหม่ไหม
  */
-export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, principalDue, title,
+export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, principalDue, title, outstanding,
   button = "บันทึกรับชำระ", small = false }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
   principal?: number; interest?: number; interestOwed?: number; principalDue?: number; title?: string; button?: string; small?: boolean;
+  /** เงินต้นคงเหลือก่อนรับ → รับครบแล้วถามต่อว่าจะปิดสัญญาไหม */
+  outstanding?: number;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
@@ -46,8 +48,27 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   const sumOf = (pp: string, iv: string) => setTotal(amt(num(pp) + num(iv)));
   const extra = principalDue != null ? Math.round((num(p) - principalDue) * 100) / 100 : 0;
   const [dismissed, setDismissed] = useState(false);
+  const [closeState, closeAction, closing] = useActionState<ActionState, FormData>(closeLoan, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)}
     className={activeCls(small ? ROW_BTN : btn)}>{button}</button>;
+  if (state.ok && outstanding != null && num(p) >= outstanding - 0.005 && !dismissed && open) {
+    // รับเงินต้นครบ → ถามต่อในหน้าต่างเดิมว่าจะปิดสัญญาไหม (ไม่ปิดเอง)
+    return present(trigger, (
+      <form action={closeAction} data-keep-open className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left text-sm">
+        <input type="hidden" name="asset_id" value={assetId} />
+        <p className="text-emerald-700">{state.ok}</p>
+        {closeState.ok ? <p className="font-medium text-emerald-800">{closeState.ok}</p> : <>
+          <p className="font-medium text-slate-900">รับเงินต้นครบแล้ว (คงเหลือ 0) — เปลี่ยนสถานะเป็น &ldquo;ปิดแล้ว&rdquo; เลยไหม?</p>
+          <div className="flex flex-wrap gap-2">
+            <button disabled={closing} className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700 disabled:opacity-50">{closing ? "กำลังปิด…" : "ปิดสัญญา"}</button>
+            <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="px-2 text-slate-500 underline">ยังไม่ปิด</button>
+          </div>
+          {closeState.error && <p className="text-red-600">{closeState.error}</p>}
+        </>}
+        {closeState.ok && <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="text-slate-500 underline">ปิดหน้าต่าง</button>}
+      </form>
+    ));
+  }
   if (state.ok && extra > 0.01 && !dismissed && open) {
     const href = (k: string) => `/financial/loans/${assetId}?restructure=${k}`;
     // ถามต่อในหน้าต่างเดิม (ไม่ปิดเอง)
@@ -101,11 +122,30 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   ));
 }
 
-export function DisburseForm({ assetId, currency, banks, today, minDate }: { assetId: string; currency: string; banks: Bank[]; today: string; minDate: string }) {
+export function DisburseForm({ assetId, currency, banks, today, minDate, hasOpenSchedule = false }: {
+  assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
+  /** มีงวดที่ยังไม่ได้รับ → บันทึกแล้วถามต่อว่าจะคำนวณงวดที่เหลือใหม่ไหม (ตารางเดิมไม่รวมยอดที่ให้กู้เพิ่ม) */
+  hasOpenSchedule?: boolean;
+}) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(disburseMore, {});
+  const [dismissed, setDismissed] = useState(false);
   const list = banks.filter((b) => b.currency === currency);
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>ให้กู้เพิ่ม</button>;
+  if (state.ok && hasOpenSchedule && !dismissed && open) {
+    return present(trigger, (
+      <div data-keep-open className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm">
+        <p className="text-emerald-700">{state.ok}</p>
+        <p className="font-medium text-slate-900">ตารางผ่อนยังไม่รวมยอดที่ให้กู้เพิ่ม — จะคำนวณงวดที่เหลือใหม่เลยไหม?</p>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/financial/loans/${assetId}?restructure=disburse`} onClick={() => { setDismissed(true); setOpen(false); }}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700">คำนวณงวดที่เหลือใหม่</Link>
+          <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="px-2 text-slate-500 underline">ไว้ทีหลัง</button>
+        </div>
+        <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — งวดเดิมไม่เปลี่ยน · ยอดที่ให้กู้เพิ่มยังไม่มีในตาราง</p>
+      </div>
+    ));
+  }
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
@@ -130,9 +170,12 @@ export function DisburseForm({ assetId, currency, banks, today, minDate }: { ass
 }
 
 /** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
-export function LoanInfoForm({ assetId, v, minDue }: {
+export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false }: {
   /** งวดสุดท้ายในตารางผ่อน → วันครบกำหนดสัญญาต้องไม่ก่อนวันนี้ */
   minDue?: string | null;
+  /** สถานะ "มีความเสี่ยง": ช่องมูลค่าคาดว่าจะได้รับคืน (เก็บเป็นส่วนที่มีความเสี่ยง · แสดงอย่างเดียว ไม่กระทบ Net Worth) */
+  risk?: { outstanding: number; expected: number | null; date: string | null; note: string | null; currency: string; today: string };
+  hasOpenSchedule?: boolean;
   assetId: string; v: { name: string; borrower_name: string; interest_rate: number | null; due_date: string | null; notes: string | null;
     borrower_phone: string | null; contract_no: string | null; purpose: string | null };
 }) {
@@ -149,12 +192,28 @@ export function LoanInfoForm({ assetId, v, minDue }: {
       <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} min={minDue ?? undefined} required={!!minDue} className={input} />
         {minDue && <span className="mt-1 block text-xs text-slate-500">ต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน ({thDate(minDue)})</span>}</label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
+      {risk && (
+        <fieldset className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 md:col-span-2 md:grid-cols-2">
+          <legend className="px-1 text-sm font-medium text-amber-800">มีความเสี่ยงไม่ได้คืน</legend>
+          <label className="text-sm">มูลค่าคาดว่าจะได้รับคืน ({risk.currency})
+            <input name="expected_recoverable" inputMode="decimal" defaultValue={risk.expected == null ? "" : amt(risk.expected) || "0.00"} className={input} />
+            <span className="mt-1 block text-xs text-slate-500">จากเงินต้นคงเหลือ {amt(risk.outstanding) || "0.00"} · ส่วนที่เหลือ = ส่วนที่มีความเสี่ยง (แสดงแยก · Net Worth ยังนับเต็มจนตัดหนี้สูญ)</span></label>
+          <label className="text-sm">ประเมิน ณ วันที่<input name="risk_assessed_date" type="date" defaultValue={risk.date ?? risk.today} max={risk.today} className={input} /></label>
+          <label className="text-sm md:col-span-2">เหตุผล / หมายเหตุการประเมิน<input name="risk_note" defaultValue={risk.note ?? ""} className={input} /></label>
+        </fieldset>
+      )}
       <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
         <StatusSlot />
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
       </div>
+      {state.ok && state.rateChanged && hasOpenSchedule && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-slate-700 md:col-span-2">
+          เปลี่ยนอัตราดอกเบี้ยแล้ว — ตารางผ่อนยังคิดดอกเบี้ยอัตราเดิม ·{" "}
+          <Link href={`/financial/loans/${assetId}?restructure=rate`} className="text-blue-700 hover:underline">คำนวณงวดที่เหลือใหม่ด้วยอัตราใหม่ →</Link>
+        </p>
+      )}
     </form>
   );
 }

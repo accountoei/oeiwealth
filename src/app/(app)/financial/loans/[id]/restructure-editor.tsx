@@ -14,6 +14,13 @@ const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-7
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
 const fmt2 = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const PRESET_TEXT = {
+  end: "ลดค่างวด — จบวันเดิม: ใส่จำนวนงวดที่เหลือเท่าเดิมไว้ให้แล้ว",
+  payment: "จบเร็วขึ้น — ค่างวดเดิม: ใส่ยอดผ่อนต่องวดเดิมไว้ให้แล้ว",
+  disburse: "หลังให้กู้เพิ่ม: ยอดเงินต้น = เงินต้นคงเหลือใหม่ (รวมที่ให้กู้เพิ่ม) · จำนวนงวดเท่าเดิมไว้ให้แล้ว · งวดแรกของตารางใหม่คิดดอกเบี้ยจากยอดใหม่ทั้งงวด",
+  rate: "หลังเปลี่ยนอัตราดอกเบี้ย: ใส่อัตราใหม่ · จำนวนงวดเท่าเดิมไว้ให้แล้ว · งวดแรกของตารางใหม่คิดอัตราใหม่ทั้งงวด",
+} as const;
+
 export type OldSummary = { count: number; firstTotal: number; interest: number; lastDue: string | null };
 
 /**
@@ -25,8 +32,9 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   interestFrom, preset, periodsDefault }: {
   assetId: string; currency: string; outstanding: number; ratePct: number; startDefault: string;
   overdueInterest: number; old: OldSummary; methodGuess?: SchedMethod; interestFrom?: string;
-  /** เปิดมาจากคำถามหลังรับเงินต้นเกินงวด: end = ลดค่างวด (จบวันเดิม) · payment = จบเร็วขึ้น (ค่างวดเดิม) */
-  preset?: "end" | "payment"; periodsDefault?: number;
+  /** เปิดมาจากคำถามหลังรับเงินต้นเกินงวด: end = ลดค่างวด (จบวันเดิม) · payment = จบเร็วขึ้น (ค่างวดเดิม)
+   *  disburse = หลังให้กู้เพิ่ม · rate = หลังเปลี่ยนอัตราดอกเบี้ย (ยอด / อัตราใหม่ใส่ไว้ให้ จำนวนงวดเท่าเดิม) */
+  preset?: "end" | "payment" | "disburse" | "rate"; periodsDefault?: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -79,7 +87,7 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
     <div ref={box} className="w-full scroll-mt-4 space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-5">
       {preset && !state.ok && (
         <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">
-          {preset === "end" ? "ลดค่างวด — จบวันเดิม: ใส่จำนวนงวดที่เหลือเท่าเดิมไว้ให้แล้ว" : "จบเร็วขึ้น — ค่างวดเดิม: ใส่ยอดผ่อนต่องวดเดิมไว้ให้แล้ว"} · ตรวจแล้วกด &ldquo;คำนวณ&rdquo;
+          {PRESET_TEXT[preset]} · ตรวจแล้วกด &ldquo;คำนวณ&rdquo;
         </p>
       )}
       <div className="flex items-start justify-between gap-3">

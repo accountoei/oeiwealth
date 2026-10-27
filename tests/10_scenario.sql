@@ -3191,6 +3191,70 @@ SELECT t.ok(NOT has_function_privilege('anon', 'public.batch_pay_debts(jsonb)', 
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz15. เงินให้กู้: ให้กู้เพิ่มไม่ทำงวดเก่าเพี้ยน · ตรวจก่อนปิด · วันครบกำหนด · ส่วนเสี่ยง · รับชำระทั้งชุด (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT (SELECT outstanding_principal FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) AS lo,
+       (SELECT count(*) FROM public.v_loan_schedule_status WHERE loan_asset_id = t.a('เงินกู้ญาติ') AND status = 'PAID') AS lpaid,
+       (SELECT max(due_date) FROM public.loan_schedule_lines WHERE loan_asset_id = t.a('เงินกู้ญาติ') AND deleted_at IS NULL) AS llast \gset
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+VALUES (current_date, 'LOAN_DISBURSEMENT', t.a('KBank ออมทรัพย์'), t.a('เงินกู้ญาติ'), 100000, 'THB', 'ให้กู้เพิ่ม');
+SELECT t.ok((SELECT outstanding_principal FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = :lo + 100000,
+            'ให้กู้เพิ่ม: เงินต้นคงเหลือเพิ่ม');
+SELECT t.ok((SELECT count(*) FROM public.v_loan_schedule_status WHERE loan_asset_id = t.a('เงินกู้ญาติ') AND status = 'PAID') = :lpaid,
+            'ให้กู้เพิ่ม: งวดที่รับแล้วยังเป็น "รับแล้ว" (ไม่กลับเป็นเลยกำหนด)');
+SELECT t.fails($$UPDATE public.loan_details SET status = 'CLOSED' WHERE asset_id = t.a('เงินกู้ญาติ')$$,
+  'ยังมีเงินต้นคงเหลือ', 'ปิดสัญญาไม่ได้ถ้ายังมีเงินต้นคงเหลือ');
+SELECT t.fails(format($$UPDATE public.loan_details SET due_date = %L WHERE asset_id = t.a('เงินกู้ญาติ')$$, (:'llast'::date - 1)),
+  'ไม่ก่อนงวดสุดท้าย', 'วันครบกำหนดก่อนงวดสุดท้าย → ไม่ได้');
+UPDATE public.loan_details SET due_date = :'llast'::date + 30 WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok((SELECT due_date FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = :'llast'::date + 30,
+            'วันครบกำหนดหลังงวดสุดท้าย → ได้');
+SELECT t.fails($$UPDATE public.loan_details SET at_risk_amount = -1 WHERE asset_id = t.a('เงินกู้ญาติ')$$,
+  'at_risk_amount_check', 'ส่วนเสี่ยงติดลบไม่ได้');
+UPDATE public.loan_details SET status = 'AT_RISK', at_risk_amount = 300000, risk_assessed_date = current_date, risk_note = 'ทดสอบ'
+ WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok((SELECT current_value FROM public.assets WHERE id = t.a('เงินกู้ญาติ')) = :lo + 100000,
+            'มีความเสี่ยง + ส่วนเสี่ยง: มูลค่าใน Net Worth ยังนับเต็ม (แสดงอย่างเดียว)');
+-- รับชำระทั้งชุด
+SELECT (SELECT count(*) FROM public.cash_movements WHERE movement_type = 'LOAN_PRINCIPAL_RECEIPT' AND deleted_at IS NULL) AS lrc \gset
+SELECT t.fails($$SELECT public.batch_receive_loan_payments(jsonb_build_array(
+  jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ', 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 1000, 'interest', 100),
+  jsonb_build_object('loan_asset_id', t.a('บ้าน A'), 'label', 'แถวผิด', 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 1000)))$$,
+  'แถวผิด · ไม่พบเงินให้กู้', 'รับชำระทั้งชุด: แถวผิด → แจ้งชื่อแถว');
+SELECT t.ok((SELECT count(*) FROM public.cash_movements WHERE movement_type = 'LOAN_PRINCIPAL_RECEIPT' AND deleted_at IS NULL) = :lrc,
+            'รับชำระทั้งชุด: ผิดแถวเดียว = แถวแรกก็ไม่บันทึก');
+SELECT t.fails($$SELECT public.batch_receive_loan_payments(jsonb_build_array(
+  jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ', 'bank_asset_id', '', 'date', current_date, 'principal', 1000)))$$,
+  'กรุณาเลือกบัญชี', 'รับชำระทั้งชุด: ไม่เลือกบัญชี');
+SELECT t.ok(public.batch_receive_loan_payments(jsonb_build_array(
+  jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ 1', 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 1000, 'interest', 100, 'interest_tax', 1),
+  jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ 2', 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'principal', 1000))) = 2,
+  'รับชำระทั้งชุด: บันทึก 2 รายการ');
+SELECT t.ok((SELECT outstanding_principal FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = :lo + 100000 - 2000
+            AND (SELECT count(*) FROM public.income_transactions WHERE asset_id = t.a('เงินกู้ญาติ') AND income_type = 'LOAN_INTEREST'
+                   AND amount = 100 AND tax = 1 AND date = current_date AND deleted_at IS NULL) = 1,
+            'รับชำระทั้งชุด: เงินต้นลดยอด · ดอกเบี้ย (ภาษีหัก) เป็นรายได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.batch_receive_loan_payments(jsonb_build_array(jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ',
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'interest', 10)))$$, 'PERMISSION_DENIED', 'รับชำระทั้งชุด: VIEWER บันทึกไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+-- รับครบ → ปิดได้ · ปิดแล้วรับเพิ่ม / ลบรายการรับไม่ได้
+SELECT public.batch_receive_loan_payments(jsonb_build_array(jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ',
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date,
+  'principal', (SELECT outstanding_principal FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ'))))) AS lfull \gset
+UPDATE public.loan_details SET status = 'CLOSED' WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok((SELECT status = 'CLOSED' AND outstanding_principal = 0 FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')),
+            'รับเงินต้นครบ → เปลี่ยนเป็นปิดแล้วได้');
+SELECT t.fails($$SELECT public.batch_receive_loan_payments(jsonb_build_array(jsonb_build_object('loan_asset_id', t.a('เงินกู้ญาติ'), 'label', 'ญาติ',
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'date', current_date, 'interest', 10)))$$, 'ปิดแล้ว', 'รับชำระทั้งชุด: สัญญาปิดแล้วรับไม่ได้');
+SELECT t.fails($$UPDATE public.cash_movements SET deleted_at = now() WHERE id = (SELECT id FROM public.cash_movements
+  WHERE from_asset_id = t.a('เงินกู้ญาติ') AND movement_type = 'LOAN_PRINCIPAL_RECEIPT' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1)$$,
+  'สัญญานี้ปิดแล้ว', 'สัญญาปิดแล้ว: ลบรายการรับเงินต้นจนกลับมาค้าง → ไม่ได้');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.batch_receive_loan_payments(jsonb)', 'EXECUTE'), 'รับชำระทั้งชุด: anon เรียกไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
