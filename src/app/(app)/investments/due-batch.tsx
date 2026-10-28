@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { bankId, endpointValue, holdingId, parseEndpoint } from "@/lib/money-endpoint";
-import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
+import { defaultIncomeAccount, INCOME_GROUP, incomeAccountOptions } from "@/lib/income-account";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
@@ -177,8 +177,10 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
                     <td className="px-2">
                       {c ? <span className="text-xs text-slate-500">บัญชีนี้</span> : (
                         <select value={destOf(r)} onChange={(e) => setDest({ ...dest, [r.key]: e.target.value })} className={`w-full max-w-[11rem] ${small}`} aria-label="เข้าบัญชี">
-                          {pfCash(r.pf, r.currency).map((x) => <option key={x.id} value={endpointValue({ kind: "portfolio", id: x.id })}>ในพอร์ต · {x.name}</option>)}
-                          {banks.filter((b) => b.currency === r.currency).map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>ธนาคาร · {b.name}</option>)}
+                          {pfCash(r.pf, r.currency).length > 0 && <optgroup label={INCOME_GROUP.portfolio}>
+                            {pfCash(r.pf, r.currency).map((x) => <option key={x.id} value={endpointValue({ kind: "portfolio", id: x.id })}>{x.name}</option>)}</optgroup>}
+                          {banks.some((b) => b.currency === r.currency) && <optgroup label={INCOME_GROUP.bank}>
+                            {banks.filter((b) => b.currency === r.currency).map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>{b.name}</option>)}</optgroup>}
                         </select>
                       )}
                     </td>

@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
  *   มือถือ / แท็บเล็ต (นิ้ว) ใช้ตัวเลือกของเครื่องเหมือนเดิม · ใส่ data-native ที่ <select> = ไม่ใช้ตัวนี้
  */
 type Opt = { value: string; label: string; disabled: boolean; group: string | null; index: number };
-type State = { el: HTMLSelectElement; opts: Opt[]; active: number; q: string; rect: DOMRect };
+type State = { el: HTMLSelectElement; opts: Opt[]; active: number; q: string; rect: DOMRect; fit: number };
 
 const MANY = 8;
 const MAX_H = 320;
@@ -39,6 +39,18 @@ function choose(el: HTMLSelectElement, value: string) {
   el.focus();
 }
 
+/** ความกว้างรายการ = พอแสดงชื่อยาวสุดเต็ม ๆ (ไม่แคบกว่าช่อง · ไม่เกินจอ) — ตกลง 28 ต.ค. 2026 (ชื่อบัญชีถูกตัด "…") */
+let canvas: HTMLCanvasElement | null = null;
+function fitWidth(el: HTMLSelectElement, opts: Opt[]) {
+  canvas ??= document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return 0;
+  ctx.font = `500 14px ${getComputedStyle(el).fontFamily}`;
+  const text = Math.max(0, ...opts.map((o) => ctx.measureText(o.label).width + (o.group ? 8 : 0)));
+  // ✓ 16 + ช่องห่าง 8 + ขอบซ้าย / ขวา 24 + แถบเลื่อน / กรอบ ~20
+  return Math.ceil(text + 68);
+}
+
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
 export default function SelectEnhancer() {
@@ -59,7 +71,7 @@ export default function SelectEnhancer() {
   const open = useCallback((el: HTMLSelectElement) => {
     const opts = readOpts(el);
     const sel = Math.max(0, el.selectedIndex);
-    setSt({ el, opts, active: sel, q: "", rect: el.getBoundingClientRect() });
+    setSt({ el, opts, active: sel, q: "", rect: el.getBoundingClientRect(), fit: fitWidth(el, opts) });
   }, []);
 
   // เปิด: เมาส์กดที่ช่อง (นิ้ว = ตัวเลือกของเครื่อง) · คีย์บอร์ด Space / Enter / Alt+↓ / F4
@@ -160,8 +172,9 @@ export default function SelectEnhancer() {
   const want = Math.min(MAX_H, st.opts.length * 34 + (many ? 44 : 8));
   const up = below < want && above > below;
   const maxH = Math.max(120, Math.min(MAX_H, up ? above : below));
-  const width = Math.min(Math.max(r.width, 176), 448);
-  const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+  const width = Math.min(Math.max(r.width, 176, st.fit), 560, window.innerWidth - 16);
+  // กว้างกว่าช่องแล้วล้นขวา → ชิดขอบขวาของช่อง (ขยายไปทางซ้าย)
+  const left = Math.max(8, r.left + width > window.innerWidth - 8 ? Math.min(r.right, window.innerWidth - 8) - width : r.left);
   const pos = up ? { bottom: window.innerHeight - r.top + 2 } : { top: r.bottom + 2 };
 
   return createPortal(

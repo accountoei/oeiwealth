@@ -10,7 +10,7 @@ import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
 import SecNavPicker from "@/components/SecNavPicker";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
-import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
+import { defaultIncomeAccount, groupIncomeOptions, incomeAccountOptions } from "@/lib/income-account";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -190,7 +190,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
             <input type="hidden" name="f_income_cash_holding_id" value={inc.startsWith("h:") ? inc.slice(2) : ""} />
             <input type="hidden" name="f_income_bank_asset_id" value={inc.startsWith("a:") ? inc.slice(2) : ""} />
             <select value={inc} onChange={(e) => setInc(e.target.value)} className={input}>
-              {incomeOpts.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
+              {groupIncomeOptions(incomeOpts).map(([g, os]) => <optgroup key={g} label={g}>{os.map(([o, l]) => <option key={o} value={o}>{l}</option>)}</optgroup>)}
             </select>
             <span className="mt-1 block text-xs text-slate-500">ค่าตั้งต้นของปุ่มรับปันผล / ดอกเบี้ย และแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; (เปลี่ยนตอนรับได้ เฉพาะครั้งนั้น)</span>
           </label>
