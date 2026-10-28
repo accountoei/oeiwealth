@@ -6,6 +6,7 @@ import RowActions from "@/components/RowActions";
 import { MembershipForm, PointsForm } from "./member-forms";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { orderHrefs } from "@/lib/sort";
 import { ActionBar } from "@/components/ActionBar";
@@ -56,7 +57,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} />
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></HeaderFilters>
           {canWrite && (
             <ActionBar>
               <MembershipForm persons={persons ?? []} />

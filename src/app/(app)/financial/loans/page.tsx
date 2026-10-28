@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -167,11 +168,10 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Loans Receivable</h1>
           <p className="text-sm text-slate-500">เงินที่ให้คนอื่นยืม · มูลค่า = เงินต้นคงเหลือ (ลดลงเมื่อบันทึกรับชำระ)</p>
         </div>
         <div className="flex items-start gap-2">
-          <PersonFilter persons={pv.persons} value={pv.personId} />
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
           {me.role !== "VIEWER" && <Link href="/financial/loans/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินให้กู้</Link>}
         </div>
       </div>

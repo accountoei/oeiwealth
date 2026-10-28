@@ -23,6 +23,7 @@ import MonthPicker from "@/components/MonthPicker";
 import CategoryManager from "./CategoryManager";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
@@ -603,12 +604,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Income &amp; Expenses</h1>
           <p className="text-sm text-slate-500">รายได้ · ค่าใช้จ่าย (ไม่บังคับบันทึก) · เงินคืน · โอนและจ่ายหนี้</p>
         </div>
         <div className="flex flex-wrap items-start gap-3">
-          <PersonFilter persons={pv.persons} value={pv.personId} />
-          <MonthPicker months={months} value={ym} />
+          <HeaderFilters>
+            <PersonFilter persons={pv.persons} value={pv.personId} />
+            <MonthPicker months={months} value={ym} />
+          </HeaderFilters>
         </div>
       </div>
 

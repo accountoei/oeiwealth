@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
+import { HeaderFilters } from "@/components/HeaderBar";
 import { DetailBox } from "./DashDetail";
 
 type Preview = {
@@ -115,8 +116,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             {" · "}{isSetup ? "ช่วงตั้งค่า (SETUP)" : `Go-live ${thDate(family?.go_live_date)}`}
           </p>
         </div>
-        <DashboardFilters persons={persons.map((x) => ({ id: x.id, name: x.name }))} months={months}
-          person={personId} month={ym} />
+        <HeaderFilters><DashboardFilters persons={persons.map((x) => ({ id: x.id, name: x.name }))} months={months}
+          person={personId} month={ym} /></HeaderFilters>
       </div>
 
       {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → ความมั่งคั่งสุทธิ */}
@@ -128,7 +129,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ------------------------------------------------ กราฟ */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium text-slate-900">Net Worth {personName || "ทั้งครอบครัว"}</h2>
+            <h2 className="min-w-0 truncate font-medium text-slate-900">Net Worth {personName || "ทั้งครอบครัว"}</h2>
             <nav className="flex flex-wrap gap-1" aria-label="ช่วงเวลากราฟ">
               {RANGES.map(([v, label]) => (
                 <Link key={v} href={rangeHref(v)} scroll={false} aria-current={v === range ? "true" : undefined}
@@ -161,7 +162,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="font-medium text-slate-900">สัดส่วนสินทรัพย์ตามหมวด · {personName || "ทั้งครอบครัว"}</h2>
+          <h2 className="truncate font-medium text-slate-900">สัดส่วนสินทรัพย์ตามหมวด · {personName || "ทั้งครอบครัว"}</h2>
           <p className="mb-3 text-xs text-slate-500">% คิดจากสินทรัพย์รวม · กดที่หมวดเพื่อดูรายการ</p>
           <Suspense fallback={<Lines n={7} />}>
             <AllocationBody start={start} personId={personId} />
@@ -231,9 +232,9 @@ async function TopCards({ start, personId, personName }: { start: string; person
   return (
     <>
       <section className="grid gap-4 md:grid-cols-3">
-        <Big label={`สินทรัพย์รวม · ${person ? person.name : "ทั้งครอบครัว"}`} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
-        <Big label={`หนี้สินรวม · ${person ? person.name : "ทั้งครอบครัว"}`} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
-        <Big label={`ความมั่งคั่งสุทธิ · ${person ? person.name : "ทั้งครอบครัว"}`} value={nw}
+        <Big label="สินทรัพย์รวม" who={person ? person.name : "ทั้งครอบครัว"} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
+        <Big label="หนี้สินรวม" who={person ? person.name : "ทั้งครอบครัว"} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
+        <Big label="ความมั่งคั่งสุทธิ" who={person ? person.name : "ทั้งครอบครัว"} value={nw}
           base={base ? Number(base.net_worth) : null} baseLabel={base?.label} />
       </section>
       {!person && unalloc && Number(unalloc.net_worth) !== 0 && (
@@ -428,13 +429,14 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
   );
 }
 
-function Big({ label, value, base, baseLabel, inverse }: { label: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean }) {
+function Big({ label, who, value, base, baseLabel, inverse }: { label: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean }) {
   // ปัดเป็นบาท (เหมือนตัวเลขที่แสดง) แล้วต่างกัน 0 = "ไม่เปลี่ยนแปลง"
   const diff = base == null ? null : Math.round(Number(value) - base);
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-      <div className="text-xs text-slate-500">{label}</div>
+      {/* ชื่อคนบรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง */}
+      <div className="truncate text-xs text-slate-500" title={`${label} · ${who}`}>{label} · {who}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{money(value, "THB", 0)}</div>
       {diff != null && (diff === 0
         ? <div className="mt-1 text-xs text-slate-500">ไม่เปลี่ยนแปลงจาก{baseLabel}</div>

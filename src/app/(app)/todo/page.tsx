@@ -27,7 +27,6 @@ export default async function TodoPage({ searchParams }: { searchParams: Promise
     <TabsProvider initial={tab} defaultKey="todo">
       <div className="space-y-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">สิ่งที่ต้องทำ</h1>
           <p className="text-sm text-slate-500">ณ วันนี้ · กดรายการเพื่อไปแก้ไข แล้วกด Back กลับมาที่หน้านี้</p>
         </div>
         <div className="border-b border-slate-200"><TabNav tabs={tabs} /></div>

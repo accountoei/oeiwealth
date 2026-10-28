@@ -8,13 +8,14 @@ import { NAV } from "./nav";
 
 // หน้า / แท็บในระบบ (ค้นได้ทันทีไม่ต้องรอเซิร์ฟเวอร์) · words = คำค้นเพิ่มเติม
 const PAGES: { label: string; href: string; words?: string }[] = [
-  ...NAV.filter((g) => g.href).map((g) => ({ label: g.label, href: g.href! })),
+  ...NAV.filter((g) => g.href && g.href !== "/todo").map((g) => ({ label: g.label, href: g.href! })),
   { label: "Income & Expenses · รายได้", href: "/income-expenses?tab=income", words: "รายรับ" },
   { label: "Income & Expenses · ค่าใช้จ่าย", href: "/income-expenses?tab=expense", words: "รายจ่าย" },
   { label: "Income & Expenses · ตั้งค่า (รายการประจำ / หมวด)", href: "/income-expenses?tab=settings", words: "ค่าใช้จ่ายประจำ รายได้ประจำ หมวด" },
   { label: "Cash · อัปเดตยอดคงเหลือ", href: "/financial/cash?tab=update", words: "statement ยอดธนาคาร" },
   { label: "Cash · รับดอกเบี้ย", href: "/financial/cash?tab=interest" },
   { label: "Investments · อัปเดตยอดคงเหลือ", href: "/investments?tab=update", words: "statement ราคา" },
+  { label: "To-do · สิ่งที่ต้องทำ", href: "/todo", words: "งานค้าง แจ้งเตือน" },
   { label: "ความครบถ้วนของข้อมูล", href: "/todo?tab=data" },
   { label: "Members", href: "/family/members", words: "สมาชิก" },
   { label: "Membership & Points", href: "/family/memberships", words: "สมาชิก แต้ม" },
@@ -88,7 +89,7 @@ export default function SearchBox() {
         {loading && t.length >= 2 && <span className="whitespace-nowrap text-xs text-slate-400">กำลังค้น…</span>}
         {q ? <button type="button" onClick={() => { clear(); input.current?.focus(); }} aria-label="ล้างคำค้น"
           className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
-          : <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-400 sm:inline">Ctrl K</kbd>}
+          : null}
       </div>
       {show && (
         <div id="search-results" role="listbox" className="absolute inset-x-0 top-full z-50 max-h-[60vh] overflow-y-auto rounded-b-lg border border-t-0 border-slate-300 bg-white py-1 shadow-lg">
