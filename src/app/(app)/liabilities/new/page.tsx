@@ -17,11 +17,12 @@ export default async function NewLiabilityPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">เพิ่มเงินกู้ / หนี้สิน</h1>
-        <p className="text-sm text-slate-500">บัตรเครดิตเพิ่มที่หน้า Cards · เงินประกันการเช่ามาจากสัญญาเช่าอัตโนมัติ</p>
+        <p className="text-sm text-slate-500">เงินกู้ · วงเงินสินเชื่อ · บัตรเครดิต (เลือกที่ช่องประเภท) · เงินประกันการเช่ามาจากสัญญาเช่าอัตโนมัติ</p>
       </div>
       <NewLiabilityForm persons={persons ?? []} assets={assets ?? []} goLive={family.go_live_date}
         openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}
-        isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"} />
+        isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"}
+        cardDate={family.system_status === "SETUP" ? addDays(family.go_live_date, -1) : todayBangkok()} />
     </div>
   );
 }

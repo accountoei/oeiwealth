@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionSlot } from "@/components/ActionBar";
 import { createCard, setCardAutopay, updateCardBalance, updateCardInfo, updateCardStatus, type ActionState } from "../actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
@@ -16,16 +18,20 @@ function Msg({ s }: { s: ActionState }) {
   return null;
 }
 
-export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
-  persons: { id: string; name: string }[]; defaultDate: string; today: string; minDate: string; isSetup: boolean;
+/** ฟอร์มเพิ่มบัตรเครดิต — อยู่ในหน้า "เพิ่มเงินกู้ / หนี้สิน" เมื่อเลือกประเภท "บัตรเครดิต" (ตกลง 28 ต.ค. 2026) · typeField = ช่องประเภทของหน้านั้น */
+export function NewCardInline({ persons, defaultDate, today, minDate, isSetup, typeField }: {
+  persons: { id: string; name: string }[]; defaultDate: string; today: string; minDate: string; isSetup: boolean; typeField: ReactNode;
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
-  const [state, action, pending] = useActionState<ActionState, FormData>(createCard, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>+ เพิ่มบัตรเครดิต</button>;
-  if (!open) return trigger;
-  return present(trigger, (
+  const router = useRouter();
+  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev: ActionState, form: FormData) => {
+    const r = await createCard(prev, form);
+    if (r.ok) router.push("/liabilities#cards");
+    return r;
+  }, {});
+  return (
     <form action={action} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-3">
-      <h2 className="md:col-span-3 font-medium text-slate-900">เพิ่มบัตรเครดิต</h2>
+      <h2 className="md:col-span-3 font-medium text-slate-900">ข้อมูลบัตรเครดิต</h2>
+      {typeField}
       <label className="text-sm">ผู้ถือบัตร *
         <select name="person_id" required className={input}>
           {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -57,11 +63,11 @@ export function NewCardForm({ persons, defaultDate, today, minDate, isSetup }: {
       </p>
       <div className="md:col-span-3 flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกบัตร"}</button>
-        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
+        <Link href="/liabilities" className="rounded-md border border-slate-300 px-4 py-2 text-sm">ยกเลิก</Link>
         <Msg s={state} />
       </div>
     </form>
-  ));
+  );
 }
 
 export function CardBalanceForm({ cardId, currency, today, minDate, banks = [], label = "อัปเดตยอดตาม Statement" }:

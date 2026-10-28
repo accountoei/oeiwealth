@@ -6,29 +6,37 @@ import { createLiability, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
 import { LIABILITY_TYPE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import { NewCardInline } from "../cards/forms";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
 
 export default function NewLiabilityForm(props: {
   persons: { id: string; name: string }[]; assets: { id: string; name: string; asset_group: string }[];
-  goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean;
+  goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean; cardDate: string;
 }) {
-  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin } = props;
+  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, cardDate } = props;
+  // ประเภท "บัตรเครดิต" = ฟอร์มบัตร (ตาราง credit_cards) แทนฟอร์มเงินกู้ (ตกลง 28 ต.ค. 2026 · ปุ่มเดียวที่หน้า Liabilities)
+  const [type, setType] = useState("MORTGAGE");
+  const typeField = (
+    <label className={label}>ประเภท *
+      <select name={type === "CARD" ? undefined : "liability_type"} value={type} onChange={(e) => setType(e.target.value)} className={input}>
+        {Object.entries(LIABILITY_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        <option value="CARD">บัตรเครดิต</option>
+      </select>
+    </label>
+  );
   const [state, action, pending] = useActionState<ActionState, FormData>(createLiability, {});
   const [opening, setOpening] = useState(isSetup);
   // หลัง Go-live: ซ่อนตัวเลือก "มีอยู่ก่อน Go-live" (ไม่ติ๊ก) · ADMIN กดลิงก์เล็กเพื่อเพิ่มรายการที่ตกหล่น
   const [late, setLate] = useState(false);
 
+  if (type === "CARD") return <NewCardInline persons={persons} defaultDate={cardDate} today={today} minDate={goLive} isSetup={isSetup} typeField={typeField} />;
   return (
     <form action={action} className="space-y-6">
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
         <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลหนี้สิน</h2>
-        <label className={label}>ประเภท *
-          <select name="liability_type" defaultValue="MORTGAGE" className={input}>
-            {Object.entries(LIABILITY_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </label>
+        {typeField}
         <label className={label}>ชื่อที่ใช้เรียก *<input name="name" required placeholder="เช่น สินเชื่อบ้าน A" className={input} /></label>
         <label className={label}>ผู้ให้กู้<input name="lender" placeholder="เช่น SCB" className={input} /></label>
         <label className={label}>สกุลเงิน
