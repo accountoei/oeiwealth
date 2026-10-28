@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, thDate, todayBangkok } from "@/lib/format";
+import { COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters } from "@/components/HeaderBar";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -20,7 +21,7 @@ const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
 const TABS = [["overview", "ภาพรวม"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
 
-export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string }> }) {
+export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
@@ -29,6 +30,12 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const sortMap = await loadSortMap("insurance_policies");
   const supabase = await createClient();
   const today = todayBangkok();
+  // เดือนที่เลือก (แถบบน · ตกลง 28 ต.ค. 2026): เดือนนี้ = แท็บรับ / จ่ายแบบเดิม (ค้าง + ภายใน 60 วัน · ครบแล้วภายใน 60 วัน)
+  //   เดือนอื่น = งวดค้าง + งวดที่ครบถึงสิ้นเดือนนั้น · งวดครบแล้วที่บันทึกในเดือนนั้น · วันที่ตั้งต้น = สิ้นเดือน (ไม่เกินวันนี้)
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  const isCur = ym === today.slice(0, 7);
+  const { start: mStart, end: mEnd } = monthRange(ym);
+  const defaultDate = mEnd < today ? mEnd : today;
   const year = today.slice(0, 4);
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
@@ -103,7 +110,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   };
   const shown = new Set(rows.map((r) => r.id));
   const yNow = Number(year);
-  const yr = /^\d{4}$/.test(sp.y ?? "") ? Number(sp.y) : yNow;
+  const yr = /^\d{4}$/.test(sp.y ?? "") ? Number(sp.y) : isCur ? yNow : Number(ym.slice(0, 4));
   const yearLines = lineList.filter((l) => shown.has(l.policy_id) && l.due_date.startsWith(`${yr}-`));
   const yHref = (y: number) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (tFilter) q.set("t", tFilter); if (y !== yNow) q.set("y", String(y)); const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`; };
   const groupsOf = (kind: string) => rows.map((r) => ({ r, lines: yearLines.filter((l) => l.policy_id === r.id && l.kind === kind) })).filter((g) => g.lines.length > 0);
@@ -113,13 +120,15 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const activeIds = new Set(mineRows.filter((r) => r.status === "ACTIVE").map((r) => r.id));
   // งวดที่จ่าย / รับไปแล้ว (บางส่วน หรือครบภายใน 60 วัน) → ยอดที่บันทึกแล้วกดเพื่อแก้ / ลบ ในตาราง (ตกลง 28 ต.ค. 2026)
   //   เบี้ย = ฟอร์มเดียวกับหน้ากรมธรรม์ · ผลประโยชน์ = ยกเลิกทั้งก้อนแล้วบันทึกใหม่ · งวดที่ครบแล้วยังอยู่ในตาราง ("ครบแล้ว" · ไม่มีช่องกรอก)
-  const since = addDays(today, -60);
+  const since = isCur ? addDays(today, -60) : mStart, until = isCur ? today : mEnd;
   const [{ data: recentPays }, { data: recentBens }] = await Promise.all([
-    supabase.from("expense_items").select("insurance_schedule_line_id").not("insurance_schedule_line_id", "is", null).gte("date", since).is("deleted_at", null),
-    supabase.from("insurance_benefit_receipts").select("line_id").not("line_id", "is", null).gte("receipt_date", since).is("undone_at", null).is("deleted_at", null),
+    supabase.from("expense_items").select("insurance_schedule_line_id").not("insurance_schedule_line_id", "is", null).gte("date", since).lte("date", until).is("deleted_at", null),
+    supabase.from("insurance_benefit_receipts").select("line_id").not("line_id", "is", null).gte("receipt_date", since).lte("receipt_date", until).is("undone_at", null).is("deleted_at", null),
   ]);
   const recentLines = new Set([...(recentPays ?? []).map((e) => e.insurance_schedule_line_id as string), ...(recentBens ?? []).map((b) => b.line_id as string)]);
-  const inBatch = (l: YLine) => activeIds.has(l.policy_id) && (OPEN.includes(l.status) || (l.status === "PAID" && recentLines.has(l.id)));
+  const inBatch = (l: YLine) => activeIds.has(l.policy_id)
+    && ((OPEN.includes(l.status) && (isCur || l.due_date <= mEnd)) || (l.status === "PAID" && recentLines.has(l.id)));
+  const soon = isCur ? addDays(today, 60) : mEnd;
   const paidIds = lineList.filter((l) => inBatch(l) && Number(l.paid_amount ?? 0) > 0).map((l) => l.id);
   const [{ data: partPays }, { data: partBens }] = paidIds.length ? await Promise.all([
     supabase.from("expense_items").select("id,insurance_schedule_line_id,date,amount,currency,notes").in("insurance_schedule_line_id", paidIds).is("deleted_at", null).order("date"),
@@ -162,7 +171,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           <p className="text-sm text-slate-500">กรมธรรม์ทั้งหมด · มูลค่าเวนคืนนับเป็นสินทรัพย์ (หมวดการเงิน)</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={monthOptions(goLive, today, 12, ym)} value={ym} /></HeaderFilters>
           {me.role !== "VIEWER" && <Link href="/insurance/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มกรมธรรม์</Link>}
         </div>
       </div>
@@ -170,10 +179,10 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
       <TabPanel id="benefit">
-        <InsuranceBatch key={`b${lineList.length}`} kind="BENEFIT" rows={batchLines("BENEFIT")} pays={bankPays} today={today} soon={addDays(today, 60)} minDate={goLive} canWrite={canWrite} />
+        <InsuranceBatch key={`b${ym}${lineList.length}`} kind="BENEFIT" rows={batchLines("BENEFIT")} pays={bankPays} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
       </TabPanel>
       <TabPanel id="premium">
-        <InsuranceBatch key={`p${lineList.length}`} kind="PREMIUM" rows={batchLines("PREMIUM")} pays={[...bankPays, ...cardPays]} today={today} soon={addDays(today, 60)} minDate={goLive} canWrite={canWrite} />
+        <InsuranceBatch key={`p${ym}${lineList.length}`} kind="PREMIUM" rows={batchLines("PREMIUM")} pays={[...bankPays, ...cardPays]} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">

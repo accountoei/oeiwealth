@@ -9,7 +9,7 @@ import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
-  /** ปันผลที่รับแล้วปีนี้ (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
+  /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
 export type BizRow = { id: string; name: string; currency: string; value: number | null; valueDate: string | null; holders: BizHolder[] };
 export type BizBank = { id: string; name: string; currency: string; owners: string[] };
 
@@ -24,13 +24,13 @@ const METHODS: [string, string][] = [["USER_ESTIMATE", "ประมาณเอ
  *   ปันผล: 1 แถว = ผู้ถือหุ้น 1 คน → เข้าบัญชีของคนนั้น · รายได้เป็นของคนนั้น · ใส่ "ปันผลต่อหุ้น" แล้วคิดยอดรายคนให้
  *   มูลค่า: 1 แถว = 1 กิจการ · วันที่ / วิธีประเมินเดียวทั้งชุด
  */
-export default function BusinessBatch({ rows, banks, today, minDate, canWrite }: {
-  rows: BizRow[]; banks: BizBank[]; today: string; minDate: string; canWrite: boolean;
+export default function BusinessBatch({ rows, banks, today, defaultDate = today, minDate, canWrite }: {
+  rows: BizRow[]; banks: BizBank[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
 }) {
   return (
     <div className="space-y-6">
-      <DividendBatch rows={rows} banks={banks} today={today} minDate={minDate} canWrite={canWrite} />
-      <ValueBatch rows={rows} today={today} minDate={minDate} canWrite={canWrite} />
+      <DividendBatch rows={rows} banks={banks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
+      <ValueBatch rows={rows} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
     </div>
   );
 }
@@ -39,10 +39,10 @@ function Result({ s }: { s: ActionState }) {
   return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}{s.ok && <span className="text-sm text-emerald-700">{s.ok}</span>}</>;
 }
 
-function DividendBatch({ rows, banks, today, minDate, canWrite }: { rows: BizRow[]; banks: BizBank[]; today: string; minDate: string; canWrite: boolean }) {
+function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; banks: BizBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(defaultDate);
   const [dps, setDps] = useState<Record<string, string>>({});
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
@@ -155,10 +155,10 @@ function DividendBatch({ rows, banks, today, minDate, canWrite }: { rows: BizRow
   );
 }
 
-function ValueBatch({ rows, today, minDate, canWrite }: { rows: BizRow[]; today: string; minDate: string; canWrite: boolean }) {
+function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(defaultDate);
   const [method, setMethod] = useState(METHODS[0][0]);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [state, action, pending] = useActionState<ActionState, FormData>(batchValues, {});

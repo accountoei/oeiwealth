@@ -29,14 +29,14 @@ const STATUS: Record<string, { text: string; cls: string }> = {
  *   งวดที่ยังไม่จ่าย / ยังไม่รับ ของทุกกรมธรรม์ (ตั้งต้น: เลยกำหนด + ภายใน 60 วัน · ติ๊กเพื่อแสดงทุกงวด)
  *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องยอดว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
  */
-export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate, canWrite }: {
-  kind: "PREMIUM" | "BENEFIT"; rows: InsLine[]; pays: PayOpt[]; today: string; soon: string; minDate: string; canWrite: boolean;
+export default function InsuranceBatch({ kind, rows, pays, today, defaultDate = today, soon, minDate, canWrite }: {
+  kind: "PREMIUM" | "BENEFIT"; rows: InsLine[]; pays: PayOpt[]; today: string; defaultDate?: string; soon: string; minDate: string; canWrite: boolean;
 }) {
   const prem = kind === "PREMIUM";
   const router = useRouter();
   const cf = useConfirmSubmit();
   const firstPay = (ccy: string) => pays.find((p) => p.currency === ccy)?.value ?? "";
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(defaultDate);
   const [all, setAll] = useState(false);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.id, firstPay(r.currency)])));
@@ -92,7 +92,7 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
           </thead>
           <tbody className="divide-y divide-slate-100">
             {shown.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-              {rows.length === 0 ? `ไม่มีงวด${prem ? "เบี้ย" : "ผลประโยชน์"}ที่ค้าง (ตั้งตารางได้ที่หน้ากรมธรรม์)` : "ไม่มีงวดที่เลยกำหนดหรือถึงกำหนดใน 60 วัน"}</td></tr>}
+              {rows.length === 0 ? `ไม่มีงวด${prem ? "เบี้ย" : "ผลประโยชน์"}ที่ค้าง (ตั้งตารางได้ที่หน้ากรมธรรม์)` : `ไม่มีงวดที่เลยกำหนดหรือถึงกำหนดถึง ${thDate(soon)}`}</td></tr>}
             {shown.map((r) => {
               const v = vals[r.id] ?? "";
               const st = STATUS[r.status];

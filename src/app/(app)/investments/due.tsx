@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { money, monthOptions, monthRange, thDate } from "@/lib/format";
+import { money, monthRange, thDate } from "@/lib/format";
 import { scheduleOf, type DueRow } from "@/lib/coupon-schedule";
-import MonthPicker from "@/components/MonthPicker";
 import type { Bank } from "./[id]/forms";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
@@ -102,7 +101,6 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite, canDel
     if (!ccys.length) return <div>-</div>;
     return ccys.map((c) => <div key={c}>{m.has(c) ? money(m.get(c)!, c) : <span className="text-slate-400">- {c}</span>}</div>);
   };
-  const months = monthOptions(goLive, today, 12, month);
   // รับแล้ว → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติของหลักทรัพย์ · ผ่านบัญชีธนาคาร = แก้ที่หน้าหลักทรัพย์ไม่ได้ → ลิงก์)
   const txById = new Map(((txs as Tx[] | null) ?? []).map((t) => [t.id, t]));
   const paths = ["/investments", "/income-expenses", "/financial/cash"];
@@ -140,10 +138,8 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite, canDel
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยเงินฝากในพอร์ต · ทุกพอร์ตในตารางเดียว · ตั้งข้อมูลที่หลักทรัพย์ → แก้ไขข้อมูล (เงินต้น · อัตรา · จ่ายทุก)</p>
-        <MonthPicker months={months} value={month} />
-      </div>
+      {/* ตัวเลือกเดือนอยู่ที่แถบบนของหน้า Investments (28 ต.ค. 2026) */}
+      <p className="text-sm text-slate-600">ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยเงินฝากในพอร์ต · ทุกพอร์ตในตารางเดียว · ตั้งข้อมูลที่หลักทรัพย์ → แก้ไขข้อมูล (เงินต้น · อัตรา · จ่ายทุก)</p>
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">ยังไม่บันทึกรับ</div>
           <div className="text-2xl font-semibold">{open.length} รายการ</div>

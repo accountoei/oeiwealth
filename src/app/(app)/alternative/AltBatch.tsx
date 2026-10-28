@@ -9,7 +9,7 @@ import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchAltIncome, batchAltValues, type ActionState } from "./actions";
 
 export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean;
-  /** ผลตอบแทนที่รับแล้วเดือนนี้ (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
+  /** ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
 export type AltBank = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -26,21 +26,21 @@ function Result({ s }: { s: ActionState }) {
  *   อัปเดตมูลค่า: มูลค่าใหม่หลายรายการ · ทองที่ตั้งราคาอัตโนมัติไม่ต้องกรอก
  *   ผิดแถวเดียว = ไม่บันทึกทั้งชุด
  */
-export default function AltBatch({ rows, banks, today, minDate, canWrite }: {
-  rows: AltRow[]; banks: AltBank[]; today: string; minDate: string; canWrite: boolean;
+export default function AltBatch({ rows, banks, today, defaultDate = today, minDate, canWrite }: {
+  rows: AltRow[]; banks: AltBank[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
 }) {
   return (
     <div className="space-y-6">
-      <IncomeBatch rows={rows} banks={banks} today={today} minDate={minDate} canWrite={canWrite} />
-      <ValueBatch rows={rows} today={today} minDate={minDate} canWrite={canWrite} />
+      <IncomeBatch rows={rows} banks={banks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
+      <ValueBatch rows={rows} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
     </div>
   );
 }
 
-function IncomeBatch({ rows, banks, today, minDate, canWrite }: { rows: AltRow[]; banks: AltBank[]; today: string; minDate: string; canWrite: boolean }) {
+function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: AltRow[]; banks: AltBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -122,10 +122,10 @@ function IncomeBatch({ rows, banks, today, minDate, canWrite }: { rows: AltRow[]
   );
 }
 
-function ValueBatch({ rows, today, minDate, canWrite }: { rows: AltRow[]; today: string; minDate: string; canWrite: boolean }) {
+function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: AltRow[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(defaultDate);
   const [method, setMethod] = useState("USER_ESTIMATE");
   const [vals, setVals] = useState<Record<string, string>>({});
   const [state, action, pending] = useActionState<ActionState, FormData>(batchAltValues, {});
