@@ -127,6 +127,28 @@ export const UTILITIES_BILLING_LABEL: Record<string, string> = {
   TENANT_PAYS: "ผู้เช่าจ่ายเอง", INCLUDED: "รวมในค่าเช่า", REBILL: "เราจ่ายแล้วเรียกเก็บ",
 };
 export const REBILL_SUBTYPE = "ค่าน้ำไฟเรียกเก็บจากผู้เช่า";
+/** ราคาตลาด Property (อ้างอิง · ไม่นับเข้า Net Worth · ตกลง 28 ต.ค. 2026) */
+export const MARKET_METHOD_LABEL: Record<string, string> = {
+  OWNER_ESTIMATE: "เจ้าของประเมินเอง", BROKER: "นายหน้าประเมิน", APPRAISER: "ผู้ประเมินอิสระ / ธนาคาร",
+  COMPARABLE_SALES: "เทียบราคาซื้อขายแถวนั้น", OTHER: "อื่น ๆ",
+};
+export const MARKET_PRICE_TYPE_LABEL: Record<string, string> = { LISTING: "ราคาประกาศขาย", TRANSACTION: "ราคาซื้อขายจริง", APPRAISAL: "ราคาจากผู้ประเมิน" };
+export const MARKET_CONFIDENCE_LABEL: Record<string, string> = { HIGH: "มั่นใจสูง", MEDIUM: "มั่นใจปานกลาง", LOW: "มั่นใจต่ำ" };
+export const MARKET_UNIT_LABEL: Record<string, string> = { SQ_WA: "ตร.ว.", SQ_M: "ตร.ม.", TOTAL: "ยอดรวม" };
+/** หน่วยตั้งต้นตามประเภททรัพย์สิน: ที่ดิน → ต่อ ตร.ว. · คอนโด → ต่อ ตร.ม. · อื่น ๆ → ยอดรวม */
+export function marketDefaultUnit(propertyType: string): string {
+  return propertyType === "LAND" ? "SQ_WA" : propertyType === "CONDO" ? "SQ_M" : "TOTAL";
+}
+/** ราคาตลาดเก่ากว่า 12 เดือน → เตือน */
+export function marketStale(date: string | null | undefined, today: string): boolean {
+  return !!date && date < addDays(today, -365);
+}
+/** ส่วนต่าง เช่น "+3,200,000.00 (+64.0%)" */
+export function diffText(diff: number, base: number): string {
+  const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
+  const pct = base > 0 ? ` (${sign}${(Math.abs(diff) * 100 / base).toFixed(1)}%)` : "";
+  return `${sign}${money(Math.abs(diff))}${pct}`;
+}
 /** ภาระผูกพันของ Property (แสดงผลอย่างเดียว ไม่กระทบมูลค่า) */
 export const ENCUMBRANCE_LABEL: Record<string, string> = {
   NONE: "ไม่มี", SERVITUDE: "ภาระจำยอม", USUFRUCT: "สิทธิเก็บกิน", MORTGAGE: "จำนอง", LEASEHOLD: "สิทธิการเช่า", OTHER: "อื่น ๆ",

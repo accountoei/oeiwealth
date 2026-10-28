@@ -21,6 +21,8 @@ import { WithStatus } from "@/components/StatusSelect";
 import ModalButton from "@/components/ModalButton";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
+import MarketBox from "../MarketBox";
+import type { MarketValuation } from "../MarketValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
@@ -66,7 +68,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
-    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }] = await Promise.all([
+    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(id,sort_order,title_type,title_deed_no,land_no,deed_book,deed_page,map_sheet,survey_page,land_area_sq_wa,notes,created_at,deleted_at)")
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
@@ -82,6 +84,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_property_cost_tracking").select("utility_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,gap,currency,status,last_paid_date,dismissal_id,dismissal_reason")
       .eq("property_asset_id", id).order("cost_period", { ascending: false }).order("utility_type").limit(48),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    // ราคาตลาด (อ้างอิง · ไม่นับใน Net Worth) · หนี้ที่ผูกกับทรัพย์สินนี้ → สุทธิหลังปิดหนี้
+    supabase.from("v_property_market_valuations").select("*").eq("asset_id", id)
+      .order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("liabilities").select("outstanding_amount,currency").eq("linked_asset_id", id).eq("status", "ACTIVE").is("deleted_at", null),
   ]);
   if (!a || !pd) notFound();
 
@@ -101,6 +107,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     .filter((l) => Number(l.security_deposit ?? 0) > 0 && !l.deposit_settled_date)
     .map((l) => ({ id: l.id, label: [l.unit_label, l.tenant_name, `ถึง ${thDate(l.end_date)}`].filter(Boolean).join(" · "),
       deposit: Number(l.security_deposit), currency: l.deposit_currency ?? l.rent_currency }));
+  const debtSame = (debtRows ?? []).filter((l) => l.currency === a.currency);
+  const debt = debtSame.length ? debtSame.reduce((t, l) => t + Number(l.outstanding_amount ?? 0), 0) : null;
   const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
   const utilities = ((pd.property_utilities ?? []) as Util[]).filter((u) => !u.deleted_at);
   // โฉนด / เอกสารสิทธิ์ (หลายใบได้ · ตกลง 27 ต.ค. 2026) · เนื้อที่ของทรัพย์สิน = ผลรวม
@@ -203,6 +211,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
               valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
               valuationForm={canWrite && a.status === "ACTIVE" ? <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} /> : undefined} />
+            <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
+              areaSqWa={pd.land_area_sq_wa != null ? Number(pd.land_area_sq_wa) : null} nwValue={Number(a.current_value ?? 0)}
+              history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />

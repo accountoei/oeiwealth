@@ -168,6 +168,67 @@ export async function saveDeed(_: ActionState, form: FormData): Promise<ActionSt
   return { ok: id ? "บันทึกโฉนดแล้ว" : "เพิ่มโฉนดแล้ว" };
 }
 
+/** ราคาตลาด (อ้างอิง · ไม่นับเข้า Net Worth): เพิ่ม / แก้ 1 ครั้ง · ราคาต่อหน่วย × เนื้อที่ → ระบบคำนวณยอดรวม */
+export async function saveMarketValuation(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const id = str(form.get("id"));
+  const unit = str(form.get("unit_basis")) ?? "TOTAL";
+  const unitPrice = num(form.get("unit_price")), area = num(form.get("area")), total = num(form.get("market_value"));
+  const nums = { unitPrice, area, total, low: num(form.get("value_low")), high: num(form.get("value_high")),
+    fee: num(form.get("broker_fee")), tax: num(form.get("tax_transfer_estimate")), other: num(form.get("other_selling_cost")) };
+  if (Object.values(nums).some((v) => v !== null && (Number.isNaN(v) || v < 0))) return { error: "ตัวเลขต้องไม่ติดลบ" };
+  const value = unit === "TOTAL" ? total : unitPrice !== null && area !== null ? Math.round(unitPrice * area * 100) / 100 : null;
+  if (unit !== "TOTAL" && (!unitPrice || !area)) return { error: `กรุณาใส่ราคาต่อ ${unit === "SQ_WA" ? "ตร.ว." : "ตร.ม."} และเนื้อที่` };
+  if (!value) return { error: "กรุณาใส่ราคาตลาด" };
+  if (nums.low !== null && nums.low > value) return { error: "ราคาต่ำสุดต้องไม่เกินราคากลาง" };
+  if (nums.high !== null && nums.high < value) return { error: "ราคาสูงสุดต้องไม่ต่ำกว่าราคากลาง" };
+  const feeUnit = str(form.get("broker_fee_unit")) ?? "PCT";
+  if (feeUnit === "PCT" && nums.fee !== null && nums.fee > 100) return { error: "ค่านายหน้าต้องไม่เกิน 100%" };
+  const row = {
+    valuation_date: str(form.get("valuation_date")), unit_basis: unit,
+    unit_price: unit === "TOTAL" ? null : unitPrice, area: unit === "TOTAL" ? null : area, market_value: value,
+    value_low: nums.low, value_high: nums.high, method: str(form.get("method")) ?? "OWNER_ESTIMATE",
+    price_type: str(form.get("price_type")), source: str(form.get("source")), confidence: str(form.get("confidence")),
+    broker_fee_pct: feeUnit === "PCT" ? nums.fee : null, broker_fee_amount: feeUnit === "THB" ? nums.fee : null,
+    tax_transfer_estimate: nums.tax, other_selling_cost: nums.other, notes: str(form.get("notes")),
+  };
+  const q = id
+    ? supabase.from("property_market_valuations").update(row).eq("id", id).select("id")
+    : supabase.from("property_market_valuations").insert({ ...row, asset_id: assetId }).select("id");
+  const { data, error } = await q;
+  if (error) {
+    if (error.message.includes("pmv_asset_date_uq")) return { error: "วันนี้ประเมินทรัพย์สินนี้ไปแล้ว — แก้รายการเดิมในประวัติราคาตลาด หรือเลือกวันอื่น" };
+    return { error: friendlyError(error.message) };
+  }
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidateProperty(assetId);
+  return { ok: "บันทึกราคาตลาดแล้ว (ไม่นับเข้า Net Worth)" };
+}
+
+/** แท็บ อัปเดตมูลค่า: มูลค่าใน Net Worth ของหลายทรัพย์สินพร้อมกัน (วันที่ / วิธีเดียวกันทั้งชุด) · บันทึกครั้งเดียว ผิดแถวเดียว = ไม่บันทึกเลย */
+export async function batchPropertyValues(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  if (!date) return { error: "กรุณาใส่วันที่ของมูลค่า" };
+  const method = str(form.get("valuation_method")) ?? "USER_ESTIMATE";
+  let input: { asset_id: string; value: string }[];
+  try { input = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  if (!Array.isArray(input)) return { error: "ข้อมูลไม่ถูกต้อง" };
+  const rows = input.map((r) => ({ asset_id: String(r.asset_id), value: num(r.value) }));
+  if (!rows.length) return { error: "ยังไม่ได้กรอกมูลค่าใหม่เลย" };
+  if (rows.some((r) => r.value === null || Number.isNaN(r.value) || r.value < 0)) return { error: "มูลค่าต้องเป็นตัวเลขไม่ติดลบทุกแถวที่กรอก" };
+  const notes = str(form.get("notes"));
+  const { error } = await supabase.from("asset_valuations").insert(rows.map((r) => ({
+    asset_id: r.asset_id, valuation_date: date, value: r.value, valuation_method: method,
+    source: method === "APPRAISAL" ? "APPRAISAL" : "USER", notes,
+  })));
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  rows.forEach((r) => revalidateProperty(r.asset_id));
+  revalidateProperty();
+  return { ok: `บันทึกมูลค่าแล้ว ${rows.length} รายการ` };
+}
+
 export async function setUsage(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));

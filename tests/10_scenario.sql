@@ -3414,6 +3414,48 @@ SELECT t.fails($$UPDATE public.property_deeds SET property_id = (SELECT id FROM 
 SELECT t.ok(NOT has_function_privilege('authenticated', 'private.property_deeds_backfill()', 'EXECUTE'), 'ย้ายข้อมูลเดิม: ผู้ใช้เรียกไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz19. Property: ราคาตลาด (อ้างอิง) ไม่นับเข้า Net Worth (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT round(sum(net_worth), 2) AS nw0 FROM public.v_net_worth_by_person \gset
+SELECT current_value AS cv0 FROM public.assets WHERE id = t.a('บ้าน A') \gset
+INSERT INTO public.property_market_valuations(asset_id, valuation_date, unit_basis, unit_price, area, market_value, value_low, value_high,
+            method, price_type, source, confidence, broker_fee_pct, tax_transfer_estimate)
+  VALUES (t.a('บ้าน A'), current_date - 30, 'SQ_WA', 20000, 1371, 1, NULL, NULL, 'BROKER', 'LISTING', 'นายหน้าทดสอบ', 'MEDIUM', 3, 500000)
+  RETURNING id AS mv1 \gset
+SELECT t.ok((SELECT market_value = 27420000 AND currency = 'THB' FROM public.property_market_valuations WHERE id = :'mv1'),
+            'ราคาตลาด: ราคาต่อ ตร.ว. × เนื้อที่ = ราคากลาง (ระบบคำนวณ)');
+SELECT t.ok((SELECT selling_cost = 1322600 AND net_before_debt = 26097400 FROM public.v_property_market_valuations WHERE id = :'mv1'),
+            'ราคาตลาด: ค่าใช้จ่ายขาย = นายหน้า 3% + ภาษี / ค่าโอน · สุทธิก่อนปิดหนี้');
+SELECT t.ok((SELECT round(sum(net_worth), 2) FROM public.v_net_worth_by_person) = :nw0
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('บ้าน A')) = :cv0,
+            'ราคาตลาด: ไม่เปลี่ยน Net Worth / มูลค่าทรัพย์สิน');
+INSERT INTO public.property_market_valuations(asset_id, valuation_date, unit_basis, unit_price, market_value, broker_fee_amount)
+  VALUES (t.a('บ้าน A'), current_date, 'TOTAL', 999, 30000000, 600000) RETURNING id AS mv2 \gset
+SELECT t.ok((SELECT id = :'mv2' AND valuation_count = 2 AND net_before_debt = 29400000 AND unit_price IS NULL
+               FROM public.v_property_market_latest WHERE asset_id = t.a('บ้าน A')),
+            'ราคาตลาด: ล่าสุด = วันที่ประเมินใหม่ที่สุด · ยอดรวมตรง ๆ ไม่มีราคาต่อหน่วย');
+SELECT t.fails($$INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value) VALUES (t.a('บ้าน A'), current_date, 1)$$,
+  'pmv_asset_date_uq', 'ราคาตลาด: วันเดียวกันซ้ำไม่ได้ (กันกดซ้ำ)');
+SELECT t.fails($$INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value) VALUES (t.a('บ้าน A'), current_date + 1, 1)$$,
+  'วันในอนาคต', 'ราคาตลาด: วันในอนาคตไม่ได้');
+SELECT t.fails($$INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value) VALUES (t.a('KBank ออมทรัพย์'), current_date - 1, 1)$$,
+  'เฉพาะทรัพย์สินประเภท Property', 'ราคาตลาด: ใช้ได้เฉพาะ Property');
+SELECT t.fails($$INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value, value_low) VALUES (t.a('บ้าน A'), current_date - 2, 100, 200)$$,
+  'pmv_range_ck', 'ราคาตลาด: ช่วงต่ำต้องไม่เกินราคากลาง');
+SELECT t.fails($$INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value, broker_fee_pct, broker_fee_amount) VALUES (t.a('บ้าน A'), current_date - 2, 100, 3, 3)$$,
+  'pmv_broker_ck', 'ราคาตลาด: นายหน้าใส่ได้แบบเดียว (% หรือบาท)');
+UPDATE public.property_market_valuations SET deleted_at = now() WHERE id = :'mv2';
+SELECT t.ok((SELECT id FROM public.v_property_market_latest WHERE asset_id = t.a('บ้าน A')) = :'mv1', 'ราคาตลาด: ลบครั้งล่าสุด → กลับไปใช้ครั้งก่อน');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value) VALUES (t.a('บ้าน A'), current_date - 3, 1)$$,
+  'row-level security', 'ราคาตลาด: VIEWER เพิ่มไม่ได้');
+SELECT t.ok((SELECT count(*) FROM public.v_property_market_latest) = 1, 'ราคาตลาด: VIEWER อ่านได้');
+RESET ROLE;
+SELECT t.ok(NOT has_table_privilege('anon', 'public.property_market_valuations', 'SELECT')
+            AND NOT has_table_privilege('anon', 'public.v_property_market_latest', 'SELECT'), 'ราคาตลาด: anon อ่านไม่ได้');
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
