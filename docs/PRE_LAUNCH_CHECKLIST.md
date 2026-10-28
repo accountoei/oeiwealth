@@ -589,4 +589,4 @@
 | #221 | 28 ต.ค. | `src/components/SelectEnhancer.tsx` (วางใน `src/app/layout.tsx`): ดักเมาส์ / Space / Enter / Alt+↓ ที่ `<select>` → รายการ portal ใต้ช่อง · เลือกแล้วตั้งค่าที่ `<select>` เดิม + ส่ง change · นิ้ว = ของเครื่อง · ไม่มี SQL |
 | #222 | 28 ต.ค. | `SelectEnhancer` วัดความกว้างชื่อยาวสุด (canvas) · `incomeAccountOptions` คืน [ค่า, ชื่อ, กลุ่ม] + `groupIncomeOptions` / `INCOME_GROUP` (optgroup) ใน due-batch / ฟอร์มหลักทรัพย์ · nav "To-Do List" · header `min-h-[3.75rem]` · ไม่มี SQL |
 | #223 | 28 ต.ค. | `family/memberships/page.tsx` ตารางรวม + PersonFilter ในหน้า · `NewCardForm` (popup) → `NewCardInline` ใน `liabilities/new/NewLiabilityForm.tsx` (ประเภท "CARD") · ไม่มี SQL |
-| #224 | 28 ต.ค. | `MonthPicker` ใน `HeaderFilters` 5 หน้า · batch (Alt / Business / Insurance / PayBatch) รับ `defaultDate` · ช่วงวันที่ของรายการบันทึกแล้วตาม `?m=` · `investments/due.tsx` ไม่มีตัวเลือกเดือนในแท็บแล้ว · ซ้อนบน #223 · ไม่มี SQL |
+| #224 | 28 ต.ค. | `MonthPicker` ใน `HeaderFilters` 5 หน้า · batch (Alt / Business / Insurance / PayBatch) รับ `defaultDate` · ช่วงวันที่ของรายการบันทึกแล้วตาม `?m=` · `investments/due.tsx` ไม่มีตัวเลือกเดือนในแท็บแล้ว · ไม่มี SQL |
