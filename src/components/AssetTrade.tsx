@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { payForAsset, sellAsset, type TradeState } from "@/lib/asset-trade";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -75,8 +75,9 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
   );
 }
 
-export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม" }: {
+export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม", property = false }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; label?: string;
+  /** Property: ติ๊ก "เพิ่มมูลค่าตามยอดนี้" (ค่าตั้งต้น) + "อาคาร / สิ่งปลูกสร้าง" (หักค่าเสื่อม · ราคาขายขั้นต่ำที่คุ้ม) */ property?: boolean;
 }) {
   const [state, action, pending] = useActionState<TradeState, FormData>(payForAsset, {});
   const list = banks.filter((b) => b.currency === currency);
@@ -93,9 +94,28 @@ export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, 
         <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>
         <BalanceGuard amount={["amount", "fee"]} />
         <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ผ่อนดาวน์งวด 3 / ต่อเติมห้องครัว" className={input} /></label>
+        {property && <PropertyPayExtras />}
       </div>
       {list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
-      <p className="text-xs text-slate-500">เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย) · มูลค่าทรัพย์สินไม่เปลี่ยนเอง ให้อัปเดตมูลค่าหลังบันทึก</p>
+      <p className="text-xs text-slate-500">เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย) · {property
+        ? "ติ๊กเพิ่มมูลค่า → มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (แก้ / ลบรายการจ่ายแล้วมูลค่าปรับตาม)"
+        : "มูลค่าทรัพย์สินไม่เปลี่ยนเอง ให้อัปเดตมูลค่าหลังบันทึก"}</p>
     </Box>
+  );
+}
+
+/** ช่องเพิ่มของ Property: เพิ่มมูลค่าตามยอดนี้ · อาคาร / สิ่งปลูกสร้าง + อายุ (ใช้ทั้งตอนจ่ายและตอนแก้รายการจ่าย) */
+export function PropertyPayExtras({ addValue = true, building = false, years = 20, showAddValue = true }: {
+  addValue?: boolean; building?: boolean; years?: number; showAddValue?: boolean;
+}) {
+  const [b, setB] = useState(building);
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg bg-slate-50 px-3 py-2 text-sm md:col-span-4">
+      <input type="hidden" name="property" value="1" />
+      {showAddValue && <label className="flex items-center gap-2"><input type="checkbox" name="add_value" defaultChecked={addValue} /> เพิ่มมูลค่าทรัพย์สินตามยอดนี้</label>}
+      <label className="flex items-center gap-2"><input type="checkbox" name="is_building" checked={b} onChange={(e) => setB(e.target.checked)} /> อาคาร / สิ่งปลูกสร้าง (หักค่าเสื่อม)</label>
+      {b && <label className="flex items-center gap-2">อายุ<input name="depreciation_years" inputMode="numeric" data-plain defaultValue={String(years)}
+        className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm" />ปี</label>}
+    </div>
   );
 }

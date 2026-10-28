@@ -22,7 +22,8 @@ import ModalButton from "@/components/ModalButton";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import MarketBox from "../MarketBox";
-import TargetBox, { type TargetPrice } from "../TargetBox";
+import TargetBox, { CostLotsSection, type TargetPrice } from "../TargetBox";
+import PropertyPaymentForm from "../PropertyPaymentForm";
 import type { CostLot } from "../CostItemForm";
 import type { MarketValuation } from "../MarketValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -120,6 +121,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const deeds = ((pd.property_deeds ?? []) as (Deed & { sort_order: number; created_at: string; deleted_at: string | null })[])
     .filter((d) => !d.deleted_at).sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at));
   const costs = (costRows as Cost[] | null) ?? [];
+  const lots = (lotRows ?? []) as CostLot[];
   const cards = (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string,
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const yearly = utilities.filter((u) => u.frequency && u.active)
@@ -191,7 +193,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </div>
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
-              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} />
+              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property />
               <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
             </ActionBar>
           )}
@@ -210,17 +212,21 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             {a.acquisition_cost != null && (
               <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
             )}
-            {/* อัปเดตมูลค่า / ประวัติซื้อ / ขาย / มูลค่า เป็นปุ่ม pop up (แทนกล่องแยก · ตกลง 27 ต.ค. 2026) */}
+            {/* ปุ่มเดียว "มูลค่าและต้นทุน": อัปเดตมูลค่า + ประวัติซื้อ / ขาย / มูลค่า + ต้นทุนรายก้อน (ตกลง 28 ต.ค. 2026) */}
             <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-              paths={paths} canWrite={canWrite} canDelete={canDelete}
+              paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="มูลค่าและต้นทุน"
+              paymentEditor={(m) => { const lot = lots.find((l) => l.source === "PAYMENT" && l.movement_id === m.id); return (
+                <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value}
+                  building={!!lot?.is_building} years={lot?.depreciation_years ?? 20} />); }}
+              extra={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />}
               valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value) }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
               valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
               valuationForm={canWrite && a.status === "ACTIVE" ? <ValuationForm assetId={id} currency={a.currency} today={today} minDate={goLive} /> : undefined} />
             <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
               areaSqWa={pd.land_area_sq_wa != null ? Number(pd.land_area_sq_wa) : null} nwValue={Number(a.current_value ?? 0)}
               history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
-            <TargetBox assetId={id} currency={a.currency} today={today} target={(targetRow as TargetPrice | null) ?? null} lots={(lotRows ?? []) as CostLot[]}
-              unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
+            <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null}
+              unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
