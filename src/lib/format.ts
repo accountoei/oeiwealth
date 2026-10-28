@@ -575,3 +575,15 @@ export function qtyUnit(q: number | string | null | undefined, unit: string | nu
   const g = unit === "บาททองคำ" ? ` (${(n * GRAM_PER_GOLD_BAHT).toLocaleString("en-US", { maximumFractionDigits: 2 })} กรัม)` : "";
   return `${s}${unit ? ` ${unit}` : ""}${g}`;
 }
+
+/** ปุ่ม "+ เพิ่ม…" ท้ายแถวแท็บ — ขนาดเดียวกันทุกเมนู (ตกลง 28 ต.ค. 2026) */
+export const ADD_BTN = "inline-flex items-center whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700";
+
+/** ชื่อย่อครอบครัว (ไม่มีรูป): หลายคำ (เว้นวรรค / ขีด) = ตัวแรกของ 2 คำแรก · คำเดียว = 2 ตัวแรก · ภาษาไทย = พยัญชนะตัวแรก */
+export function familyInitials(name: string | null | undefined): string {
+  const n = (name ?? "").trim();
+  if (!n) return "FW";
+  if (/^[\u0E00-\u0E7F]/.test(n)) return n.match(/[\u0E01-\u0E2E]/)?.[0] ?? n.charAt(0);
+  const words = n.split(/[\s\-_.]+/).filter(Boolean);
+  return (words.length > 1 ? words[0].charAt(0) + words[1].charAt(0) : words[0].slice(0, 2)).toUpperCase();
+}

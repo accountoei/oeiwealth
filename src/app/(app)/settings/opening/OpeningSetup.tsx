@@ -6,6 +6,8 @@ import ConfirmGoLive from "./ConfirmGoLive";
 import ChangeGoLive from "./ChangeGoLive";
 import CancelGoLive from "./CancelGoLive";
 import { ActionBar } from "@/components/ActionBar";
+import { PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 
 type Row = {
   category: string; entity_type: string; entity_id: string | null; name: string; currency: string | null;
@@ -71,19 +73,19 @@ export default async function OpeningSetup() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Opening Setup</h1>
-          <p className="text-sm text-slate-500">
-            ตรวจยอดตั้งต้นก่อน Go-live · Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}
-          </p>
-        </div>
+      <PageInfo>ตรวจยอดตั้งต้นก่อน Go-live · ยอดตั้งต้น = ยอด ณ สิ้นวันก่อน Go-live</PageInfo>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">
+          Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}
+        </p>
         {me.role === "ADMIN" && (
-          <ActionBar>
-            {isLive
-              ? <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />
-              : <ChangeGoLive current={family.go_live_date} />}
-          </ActionBar>
+          <TabActions>
+            <ActionBar>
+              {isLive
+                ? <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />
+                : <ChangeGoLive current={family.go_live_date} />}
+            </ActionBar>
+          </TabActions>
         )}
       </div>
 

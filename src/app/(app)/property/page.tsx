@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
+import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import PropertyTable, { type PropRow } from "./PropertyTable";
@@ -286,20 +287,12 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   return (
     <TabsProvider initial={tab}>
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">อสังหาริมทรัพย์ทุกการใช้งาน · สัญญาเช่า · ค่าเช่า · ค่าใช้จ่าย</p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters>
-            <PersonFilter persons={pv.persons} value={pv.personId} />
-            <MonthPicker months={months} value={ym} />
-          </HeaderFilters>
-          {me.role !== "VIEWER" && (
-            <Link href="/property/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มทรัพย์สิน</Link>
-          )}
-        </div>
-      </div>
+      <PageInfo>อสังหาริมทรัพย์ทุกการใช้งาน · สัญญาเช่า · ค่าเช่า · ค่าใช้จ่าย</PageInfo>
+      <HeaderFilters>
+        <PersonFilter persons={pv.persons} value={pv.personId} />
+        <MonthPicker months={months} value={ym} />
+      </HeaderFilters>
+      {me.role !== "VIEWER" && <TabActions><Link href="/property/new" className={ADD_BTN}>+ เพิ่มทรัพย์สิน</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <TabNav tabs={TABS} />
 

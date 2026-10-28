@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays } from "@/lib/format";
+import { ADD_BTN, HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
-import { HeaderFilters } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -123,17 +124,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และอัตราแลกเปลี่ยนล่าสุด</p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
-          {me.role !== "VIEWER" && (
-            <Link href="/investments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มพอร์ต</Link>
-          )}
-        </div>
-      </div>
+      <PageInfo>ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และอัตราแลกเปลี่ยนล่าสุด</PageInfo>
+      <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
+      {me.role !== "VIEWER" && <TabActions><Link href="/investments/new" className={ADD_BTN}>+ เพิ่มพอร์ต</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 

@@ -27,6 +27,11 @@ export const NAV_PINNED_LAST = "/settings/month-closing";
 /** cookie ของแต่ละเครื่อง (ไม่เก็บในฐานข้อมูล): ลำดับเมนู / ยุบแถบ */
 export const NAV_ORDER_COOKIE = "fwv_nav_order";
 export const NAV_COLLAPSED_COOKIE = "fwv_nav_collapsed";
+/** ความกว้างแถบเมนู (px) ที่ลากยืดไว้ — จำต่อเครื่อง · 256 (ค่าเดิม) ถึง 384 (~1.5 เท่า) */
+export const NAV_WIDTH_COOKIE = "fwv_nav_width";
+export const NAV_WIDTH_MIN = 256;
+export const NAV_WIDTH_MAX = 384;
+export const clampNavWidth = (w: number) => (Number.isFinite(w) ? Math.min(NAV_WIDTH_MAX, Math.max(NAV_WIDTH_MIN, Math.round(w))) : NAV_WIDTH_MIN);
 
 /** ทุก href ในเมนู (ใช้เลือกเมนูที่ตรงที่สุดตอนไฮไลต์) */
 export const NAV_HREFS: string[] = NAV.flatMap((g) => (g.items ? g.items.map((i) => i.match ?? i.href) : g.href ? [g.match ?? g.href] : []))

@@ -1,7 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useSyncExternalStore, useTransition, type ReactNode, type TransitionStartFunction } from "react";
+import { createContext, useContext, useState, useSyncExternalStore, useTransition, type ReactNode, type TransitionStartFunction } from "react";
+import { Info } from "lucide-react";
 import { createPortal } from "react-dom";
 import { NAV, NAV_HREFS } from "./nav";
 
@@ -11,6 +12,8 @@ import { NAV, NAV_HREFS } from "./nav";
  *   เปลี่ยนคน / เดือน = คงหน้าเดิมไว้แต่จางลงจนข้อมูลใหม่มาครบ (ไม่ล้างเป็นโครงเทา → กล่องไม่กระโดด)
  */
 export const HEADER_SLOT_ID = "header-filters";
+/** ที่วาง ⓘ คำอธิบายหน้า (ข้างชื่อเมนู) */
+export const HEADER_INFO_ID = "header-info";
 
 /** ชื่อเมนูของหน้าที่อยู่ (เมนูที่ตรงที่สุด · หน้ารายละเอียด = ชื่อเมนูแม่) */
 export function HeaderTitle() {
@@ -28,6 +31,27 @@ export function HeaderFilters({ children }: { children: ReactNode }) {
   // ฝั่งเซิร์ฟเวอร์ / ตอน hydrate = ยังไม่มีที่วาง → วาดหลังโหลดหน้า (ไม่ใช้ setState ใน effect)
   const target = useSyncExternalStore(noSubscribe, () => document.getElementById(HEADER_SLOT_ID), () => null);
   return target ? createPortal(<div className="flex flex-wrap items-center justify-end gap-2">{children}</div>, target) : null;
+}
+
+/** คำอธิบายหน้า → ไอคอน ⓘ ข้างชื่อเมนูที่แถบบน (ตกลง 28 ต.ค. 2026 · แทนบรรทัดคำอธิบายใต้หัวหน้า) · ชี้ / แตะ = แสดง */
+export function PageInfo({ children }: { children: ReactNode }) {
+  const target = useSyncExternalStore(noSubscribe, () => document.getElementById(HEADER_INFO_ID), () => null);
+  return target ? createPortal(<InfoTip>{children}</InfoTip>, target) : null;
+}
+
+function InfoTip({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button type="button" aria-label="คำอธิบายหน้านี้" aria-expanded={open} onClick={() => setOpen(!open)} onBlur={() => setOpen(false)}
+        className="rounded-full p-0.5 text-slate-400 hover:text-slate-700"><Info className="h-4 w-4" /></button>
+      {open && (
+        <span role="tooltip" className="absolute left-0 top-full z-30 mt-1 w-[min(22rem,80vw)] rounded-lg border border-slate-200 bg-white p-3 text-xs font-normal leading-relaxed text-slate-600 shadow-lg">
+          {children}
+        </span>
+      )}
+    </span>
+  );
 }
 
 const Pending = createContext<{ pending: boolean; start: TransitionStartFunction }>({ pending: false, start: (f) => { void f(); } });

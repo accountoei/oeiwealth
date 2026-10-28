@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -196,20 +197,12 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   return (
     <TabsProvider initial={tab}>
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">บัญชีเงินฝากทั้งหมดของครอบครัว · ยอดเงินฝาก · เงินเข้า–ออก · อัปเดตยอดคงเหลือ</p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters>
-            <PersonFilter persons={pv.persons} value={pv.personId} />
-            <MonthPicker months={months} value={ym} />
-          </HeaderFilters>
-          {canWrite && (
-            <Link href="/financial/cash/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มบัญชี</Link>
-          )}
-        </div>
-      </div>
+      <PageInfo>บัญชีเงินฝากทั้งหมดของครอบครัว · ยอดเงินฝาก · เงินเข้า–ออก · อัปเดตยอดคงเหลือ</PageInfo>
+      <HeaderFilters>
+        <PersonFilter persons={pv.persons} value={pv.personId} />
+        <MonthPicker months={months} value={ym} />
+      </HeaderFilters>
+      {canWrite && <TabActions><Link href="/financial/cash/new" className={ADD_BTN}>+ เพิ่มบัญชี</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <TabNav tabs={TABS} />
 

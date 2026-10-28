@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
-import { HeaderFilters } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { DetailBox } from "./DashDetail";
 
 type Preview = {
@@ -108,17 +108,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{family?.name ?? "Dashboard"}</h1>
-          <p className="text-sm text-slate-500">
-            <Suspense fallback={<>ณ {thDate(today)}</>}><AsOf start={start} isCurrent={isCurrent} today={today} /></Suspense>
-            {" · "}{isSetup ? "ช่วงตั้งค่า (SETUP)" : `Go-live ${thDate(family?.go_live_date)}`}
-          </p>
-        </div>
-        <HeaderFilters><DashboardFilters persons={persons.map((x) => ({ id: x.id, name: x.name }))} months={months}
-          person={personId} month={ym} /></HeaderFilters>
-      </div>
+      {/* ชื่อครอบครัวอยู่มุมซ้ายบนของเมนูแล้ว · คำอธิบายย้ายเป็น ⓘ ข้างชื่อเมนู (ตกลง 28 ต.ค. 2026) */}
+      <PageInfo>
+        <Suspense fallback={<>ณ {thDate(today)}</>}><AsOf start={start} isCurrent={isCurrent} today={today} /></Suspense>
+        {" · "}{isSetup ? "ช่วงตั้งค่า (SETUP)" : `Go-live ${thDate(family?.go_live_date)}`}
+      </PageInfo>
+      <HeaderFilters><DashboardFilters persons={persons.map((x) => ({ id: x.id, name: x.name }))} months={months}
+        person={personId} month={ym} /></HeaderFilters>
 
       {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → ความมั่งคั่งสุทธิ */}
       <Suspense fallback={<section className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <CardSkeleton key={i} />)}</section>}>

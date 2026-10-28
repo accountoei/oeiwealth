@@ -1,4 +1,6 @@
 import Form from "next/form";
+import { PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -108,13 +110,8 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Members</h1>
-          <p className="text-sm text-slate-500">สมาชิกครอบครัว · ลำดับในหน้านี้ใช้เรียงรายชื่อทุกหน้าและตัวกรองสมาชิก</p>
-        </div>
-        {me.role !== "VIEWER" && <ActionBar><AddPersonForm /></ActionBar>}
-      </div>
+      <PageInfo>สมาชิกครอบครัว · ลำดับในหน้านี้ใช้เรียงรายชื่อทุกหน้าและตัวกรองสมาชิก</PageInfo>
+      {me.role !== "VIEWER" && <TabActions><ActionBar><AddPersonForm /></ActionBar></TabActions>}
 
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">

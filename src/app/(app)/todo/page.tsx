@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { getAttention } from "@/lib/attention";
@@ -26,9 +27,7 @@ export default async function TodoPage({ searchParams }: { searchParams: Promise
   return (
     <TabsProvider initial={tab} defaultKey="todo">
       <div className="space-y-4">
-        <div>
-          <p className="text-sm text-slate-500">ณ วันนี้ · กดรายการเพื่อไปแก้ไข แล้วกด Back กลับมาที่หน้านี้</p>
-        </div>
+        <PageInfo>ณ วันนี้ · กดรายการเพื่อไปแก้ไข แล้วกด Back กลับมาที่หน้านี้</PageInfo>
         <div className="border-b border-slate-200"><TabNav tabs={tabs} /></div>
 
         <TabPanel id="todo">

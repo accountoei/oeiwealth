@@ -26,9 +26,10 @@ export type EntityOption = { type: string; id: string; label: string; group: str
  * - หน้า Documents: เลือกรายการที่จะผูกจาก entityOptions (ไม่บังคับ)
  * - ฉบับใหม่แทนฉบับเดิม: ส่ง supersedes มา
  */
-export default function DocumentUpload({ module: fixedModule, link, entityOptions, supersedes, label = "+ แนบเอกสาร", category }: {
+export default function DocumentUpload({ module: fixedModule, link, entityOptions, supersedes, label = "+ แนบเอกสาร", category, primary = false }: {
   module?: string; link?: { type: string; id: string }; entityOptions?: EntityOption[];
   supersedes?: { id: string; title: string; document_type: string; module: string }; label?: string;
+  /** ปุ่มสีน้ำเงิน (ปุ่ม "+ เพิ่ม…" ท้ายแถวแท็บ หน้า Documents) */ primary?: boolean;
   /** หมวดเอกสาร (หน้าที่แนบ) → รายการประเภทให้เลือก */
   category?: string;
 }) {
@@ -53,7 +54,8 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   const trigger = (
     <span className="inline-flex items-center gap-2">
       <button type="button" onClick={() => { setOpen(true); setMsg({}); }}
-        className={supersedes ? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-50" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
+        className={supersedes ? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-50"
+          : primary ? "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
       {msg.ok && <span className="text-xs text-emerald-700">{msg.ok}</span>}
     </span>
   );

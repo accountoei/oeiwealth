@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
@@ -180,11 +181,8 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
 
   return (
     <div className="space-y-6">
+      <PageInfo>ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</PageInfo>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Month Closing</h1>
-          <p className="text-sm text-slate-500">ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</p>
-        </div>
         <div className="flex flex-wrap items-start gap-2">
           <div className="flex items-center gap-2 text-sm">
             <Link href={`/settings/month-closing?m=${prev}`} scroll={false} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนก่อน">←</Link>
