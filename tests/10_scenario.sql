@@ -2328,6 +2328,26 @@ SELECT public.dismiss_pending_price(NULL, t.a('สร้อยทดสอบ'))
 SELECT t.ok((SELECT price_pending IS NULL FROM public.alternative_asset_details WHERE asset_id = t.a('สร้อยทดสอบ'))
             AND (SELECT current_value FROM public.assets WHERE id = t.a('สร้อยทดสอบ')) = 5000, 'ราคา: ไม่ใช้ราคานี้ → ล้าง · มูลค่าเดิม');
 RESET ROLE;
+-- หุ้นไทยใหม่ → เปิดราคาอัตโนมัติเอง · ราคาฐานจาก Statement ที่มีแค่มูลค่า + จำนวน (มูลค่า ÷ จำนวน)
+INSERT INTO public.investment_holdings(portfolio_id, holding_type, name, symbol, currency)
+  SELECT portfolio_id, 'EQUITY', 'หุ้นไทยทดสอบ', 'THAI1', 'THB' FROM public.investment_holdings WHERE id = t.h('AAPL');
+INSERT INTO public.investment_holdings(portfolio_id, holding_type, name, symbol, currency)
+  SELECT portfolio_id, 'EQUITY', 'หุ้นนอกทดสอบ', 'FOR1', 'USD' FROM public.investment_holdings WHERE id = t.h('AAPL');
+SELECT t.ok((SELECT auto_price FROM public.investment_holdings WHERE id = t.h('หุ้นไทยทดสอบ'))
+            AND NOT (SELECT auto_price FROM public.investment_holdings WHERE id = t.h('หุ้นนอกทดสอบ')), 'ราคา: หุ้นไทยที่สร้างใหม่ → เปิดราคาอัตโนมัติ · หุ้นต่างประเทศไม่เปิดเอง');
+INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+  VALUES (t.h('หุ้นไทยทดสอบ'), current_date - 20, NULL, 100, 3000, 'STATEMENT');
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('หุ้นไทยทดสอบ'), 'date', current_date - 2, 'price', 40, 'source_reference', 'TEST'))) AS thai_far;
+SELECT t.ok((SELECT price_pending ->> 'reason' = 'DEVIATION_OVER_20PCT' AND (price_pending ->> 'previous')::numeric = 30 FROM public.investment_holdings WHERE id = t.h('หุ้นไทยทดสอบ')),
+            'ราคา: Statement ไม่มีราคาต่อหน่วย → ราคาก่อนหน้า = 3,000 ÷ 100 = 30 · 40 ต่างเกิน 20% → รอยืนยัน');
+SELECT public.server_upsert_prices(jsonb_build_array(
+  jsonb_build_object('kind', 'HOLDING', 'id', t.h('หุ้นไทยทดสอบ'), 'date', current_date - 1, 'price', 31.5, 'source_reference', 'TEST'))) AS thai_near;
+SELECT t.ok((SELECT price_pending IS NULL FROM public.investment_holdings WHERE id = t.h('หุ้นไทยทดสอบ'))
+            AND EXISTS (SELECT 1 FROM public.investment_valuations WHERE holding_id = t.h('หุ้นไทยทดสอบ') AND source = 'MARKET' AND price = 31.5 AND deleted_at IS NULL),
+            'ราคา: ราคาแรกต่างจาก Statement ไม่เกิน 20% → บันทึกเลย ไม่ต้องยืนยันราคาฐาน');
+RESET ROLE;
 SET ROLE service_role; SELECT t.login(NULL);
 SELECT public.server_upsert_prices(jsonb_build_array(
   jsonb_build_object('kind', 'HOLDING', 'id', t.h('MSFT'), 'date', (now() AT TIME ZONE 'Asia/Bangkok')::date, 'price', 560, 'source_reference', 'TEST'))) AS msft_next;
