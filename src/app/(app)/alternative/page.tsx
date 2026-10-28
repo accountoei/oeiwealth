@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, money, qtyUnit, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import ShareTable, { SHARE_COLORS } from "@/components/ShareTable";
@@ -100,11 +101,10 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Alternative Assets</h1>
           <p className="text-sm text-slate-500">ทอง เครื่องประดับ นาฬิกา ของสะสม คริปโต และอื่น ๆ</p>
         </div>
         <div className="flex items-start gap-2">
-          <PersonFilter persons={pv.persons} value={pv.personId} />
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
           {me.role !== "VIEWER" && <Link href="/alternative/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มสินทรัพย์</Link>}
         </div>
       </div>

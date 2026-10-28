@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -197,12 +198,13 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Cash &amp; Bank Accounts</h1>
           <p className="text-sm text-slate-500">บัญชีเงินฝากทั้งหมดของครอบครัว · ยอดเงินฝาก · เงินเข้า–ออก · อัปเดตยอดคงเหลือ</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <PersonFilter persons={pv.persons} value={pv.personId} />
-          <MonthPicker months={months} value={ym} />
+          <HeaderFilters>
+            <PersonFilter persons={pv.persons} value={pv.personId} />
+            <MonthPicker months={months} value={ym} />
+          </HeaderFilters>
           {canWrite && (
             <Link href="/financial/cash/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มบัญชี</Link>
           )}

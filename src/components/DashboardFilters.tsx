@@ -2,17 +2,19 @@
 
 import { useRouter } from "next/navigation";
 import MonthPicker from "./MonthPicker";
+import { useNavPending } from "./HeaderBar";
 
 /** Dropdown เลือกสมาชิก + เดือน (‹ ›) ของ Dashboard (เปลี่ยนแล้วโหลดหน้าใหม่ตาม ?p= &m=) */
 export default function DashboardFilters({ persons, months, person, month }: {
   persons: { id: string; name: string }[]; months: { value: string; label: string }[]; person: string; month: string;
 }) {
   const router = useRouter();
+  const { start } = useNavPending();
   const go = (p: string, m: string) => {
     const q = new URLSearchParams();
     if (p) q.set("p", p);
     if (m) q.set("m", m);
-    router.push(q.size ? `/?${q}` : "/", { scroll: false });
+    start(() => router.push(q.size ? `/?${q}` : "/", { scroll: false }));
   };
   const sel = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm";
   return (
