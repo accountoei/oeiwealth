@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
+import { addDays, money, monthOptions, monthRange, qty, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters } from "@/components/HeaderBar";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -22,7 +23,7 @@ type Own = { asset_id: string; person_id: string; ownership_percent: number; sha
 
 const COLORS = ["#2563eb", "#7c3aed", "#f43f5e", "#f59e0b", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899", "#14b8a6", "#64748b"];
 
-export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string }> }) {
+export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -32,7 +33,12 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const paths = ["/financial/business"];
   const sortMap = await loadSortMap("assets");
   const today = todayBangkok();
-  const yearStart = `${today.slice(0, 4)}-01-01`;
+  // เดือนที่เลือก (แถบบน · ตกลง 28 ต.ค. 2026): ปันผลตั้งแต่ต้นปีของปีนั้นถึงสิ้นเดือน · แท็บบันทึก = รายการรับแล้วของเดือน + วันที่ตั้งต้นสิ้นเดือน
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  const { start: mStart, end: mEnd } = monthRange(ym);
+  const defaultDate = mEnd < today ? mEnd : today;
+  const yearStart = `${ym.slice(0, 4)}-01-01`;
+  const divEnd = defaultDate;
   const { data, error } = await supabase.from("private_business_details")
     .select("id,asset_id,company_name,logo_data,business_type,company_ownership_percent,total_shares,shares_owned,par_value,investment_cost,status,assets!inner(name,currency,current_value,current_value_date,deleted_at)")
     .is("deleted_at", null).is("assets.deleted_at", null).order("created_at");
@@ -44,8 +50,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }] = await Promise.all([
     ids.length ? supabase.from("asset_ownerships").select("asset_id,person_id,ownership_percent,shares,cost_per_share,start_date,end_date").in("asset_id", ids).is("deleted_at", null) : none,
     ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount,person_id,date,amount,tax,notes,currency").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
-      .gte("date", yearStart).lte("date", today).is("deleted_at", null) : none,
-    pv.personId ? supabase.from("v_income_by_person").select("income_id,base_amount_share").eq("person_id", pv.personId).eq("income_type", "BUSINESS_DIVIDEND").gte("date", yearStart) : none,
+      .gte("date", yearStart).lte("date", divEnd).is("deleted_at", null) : none,
+    pv.personId ? supabase.from("v_income_by_person").select("income_id,base_amount_share").eq("person_id", pv.personId).eq("income_type", "BUSINESS_DIVIDEND").gte("date", yearStart).lte("date", divEnd) : none,
     canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
     canWrite ? supabase.from("v_asset_ownerships_active").select("asset_id,person_id,end_date") : none,
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
@@ -132,8 +138,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       value: r.assets.current_value == null ? null : Number(r.assets.current_value), valueDate: r.assets.current_value_date,
       holders: os.map((o) => ({ personId: o.person_id, name: nameOf.get(o.person_id) ?? "สมาชิก", shares: o.shares == null ? null : Number(o.shares),
         pct: bySh ? (tot > 0 ? (Number(o.shares) * 100) / tot : 0) : Number(o.ownership_percent),
-        // ปันผลที่รับแล้วปีนี้ (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้ากิจการ · ตกลง 28 ต.ค. 2026)
-        edits: ((divs ?? []) as DivRow[]).filter((d) => d.asset_id === r.asset_id && d.person_id === o.person_id).sort((a, b) => a.date.localeCompare(b.date))
+        // ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้ากิจการ · ตกลง 28 ต.ค. 2026)
+        edits: ((divs ?? []) as DivRow[]).filter((d) => d.asset_id === r.asset_id && d.person_id === o.person_id && d.date >= mStart).sort((a, b) => a.date.localeCompare(b.date))
           .map((d) => ({ id: d.id, node: recEdit({ canWrite, canDelete: me.role === "ADMIN" || me.role === "EDITOR", table: "income_transactions", id: d.id,
             label: recLabel("รับแล้ว", d.date, Number(d.amount) - Number(d.tax ?? 0), d.currency),
             paths: ["/financial/business", `/financial/business/${r.asset_id}`, "/income-expenses"], fields: businessDividendFields(d) }) })) })) };
@@ -143,6 +149,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     owners: ((bankOwners ?? []) as { asset_id: string; person_id: string; end_date: string | null }[]).filter((o) => o.asset_id === b.asset_id && !o.end_date).map((o) => o.person_id),
   }));
   const minDate = family?.system_status === "SETUP" ? "" : family?.go_live_date ?? "";
+  const months = monthOptions(family?.go_live_date, today, 0, ym);
 
   return (
     <TabsProvider initial={tab}>
@@ -152,7 +159,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           <p className="text-sm text-slate-500">ธุรกิจของครอบครัว / หุ้นนอกตลาด · ปันผลเป็นรายได้ · เงินลงทุนเพิ่มไม่ใช่ค่าใช้จ่าย</p>
         </div>
         <div className="flex items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
           {me.role !== "VIEWER" && <Link href="/financial/business/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มกิจการ</Link>}
         </div>
       </div>
@@ -185,7 +192,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               {th("กิจการ", false)}{th("ทุนจดทะเบียน (THB)")}{th("% ที่ถือ")}
-              {th("ราคาทุน (THB)")}{th("มูลค่าปัจจุบัน (THB)")}{th("เทียบทุน")}{th("ปันผลปีนี้ (THB)")}
+              {th("ราคาทุน (THB)")}{th("มูลค่าปัจจุบัน (THB)")}{th("เทียบทุน")}{th(ym === today.slice(0, 7) ? "ปันผลปีนี้ (THB)" : `ปันผล ม.ค.–${thMonth(mStart)} (THB)`)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -244,7 +251,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       </TabPanel>
 
       <TabPanel id="record">
-        <BusinessBatch rows={batchRows} banks={bizBanks} today={today} minDate={minDate} canWrite={canWrite} />
+        <BusinessBatch key={ym} rows={batchRows} banks={bizBanks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
       </TabPanel>
     </div>
     </TabsProvider>

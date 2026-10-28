@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, thDate, todayBangkok, addDays } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters } from "@/components/HeaderBar";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
@@ -42,6 +43,11 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(pv.personId ? 60 : 10),
   ]);
   const goLive = family?.go_live_date ?? "";
+  // เดือนที่เลือก (แถบบน · ตกลง 28 ต.ค. 2026): แท็บรับผลตอบแทน = เดือนนั้น · แท็บอัปเดตยอด = เริ่มที่สิ้นเดือนนั้น (ไม่เกินวันนี้) · ภาพรวม = ยอดล่าสุด
+  const today = todayBangkok();
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  const monthEnd = monthRange(ym).end;
+  const months = monthOptions(goLive, today, 12, ym);
   // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
   const { data: income } = pv.personId
     ? await supabase.from("v_income_by_person").select("base_amount:base_amount_share").eq("person_id", pv.personId)
@@ -122,7 +128,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           <p className="text-sm text-slate-500">ทุกพอร์ต · มูลค่าเป็นบาทใช้ราคา Statement ล่าสุดของแต่ละตัว และอัตราแลกเปลี่ยนล่าสุด</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
           {me.role !== "VIEWER" && (
             <Link href="/investments/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มพอร์ต</Link>
           )}
@@ -198,12 +204,12 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       </TabPanel>
 
       <TabPanel id="update">
-        <UpdateTab today={todayBangkok()} date={sp.d} goLive={goLive} canWrite={me.role !== "VIEWER"}
+        <UpdateTab today={today} date={sp.d ?? (monthEnd < today ? monthEnd : undefined)} goLive={goLive} canWrite={me.role !== "VIEWER"}
           portfolios={list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").map((p) => ({ asset_id: p.asset_id, name: p.name }))} />
       </TabPanel>
 
       <TabPanel id="due">
-        <DueTab month={/^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : todayBangkok().slice(0, 7)} today={todayBangkok()} goLive={goLive}
+        <DueTab month={ym} today={today} goLive={goLive}
           showAsset={(x) => pv.showAsset(x)} canWrite={me.role !== "VIEWER"} canDelete={canOrder} />
       </TabPanel>
     </div>

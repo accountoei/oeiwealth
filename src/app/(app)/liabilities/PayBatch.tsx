@@ -11,7 +11,7 @@ import { batchPayDebts, type ActionState } from "./actions";
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
   balance: number; monthly: number | null; dueDay: number | null; autopay: boolean; defaultBank: string;
-  /** จ่ายแล้วเดือนนี้ (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
+  /** จ่ายแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
 };
 export type BankOpt = { id: string; name: string; currency: string };
 
@@ -24,12 +24,12 @@ const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
  *   เงินกู้: เงินต้น (ลดยอดหนี้) + ดอกเบี้ย (ค่าใช้จ่าย "ดอกเบี้ยจ่าย") · บัตร: ยอดที่จ่าย (บัตรตัดอัตโนมัติ = ยืนยันว่าตัดแล้ว)
  *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องยอดว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
  */
-export default function PayBatch({ rows, banks, today, minDate, canWrite }: {
-  rows: DebtRow[]; banks: BankOpt[]; today: string; minDate: string; canWrite: boolean;
+export default function PayBatch({ rows, banks, today, defaultDate = today, minDate, canWrite }: {
+  rows: DebtRow[]; banks: BankOpt[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
 }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(defaultDate);
   const [pr, setPr] = useState<Record<string, string>>({});     // เงินต้น (เงินกู้) / ยอดที่จ่าย (บัตร)
   const [int, setInt] = useState<Record<string, string>>({});   // ดอกเบี้ย (เงินกู้)
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key, r.defaultBank])));

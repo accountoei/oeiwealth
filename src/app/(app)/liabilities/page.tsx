@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { LIABILITY_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
+import { LIABILITY_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters } from "@/components/HeaderBar";
 import { ActionBar } from "@/components/ActionBar";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
@@ -33,7 +34,7 @@ const DERIVED: Record<string, { text: string; cls: string }> = {
 const CARD_STATUS: Record<string, string> = { ACTIVE: "", SUSPENDED: "ระงับชั่วคราว", CLOSED: "ยกเลิกแล้ว" };
 const TABS = [["overview", "ภาพรวม"], ["pay", "จ่ายชำระเงินกู้/บัตรเครดิต"]] as const;
 
-export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string }> }) {
+export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -99,17 +100,21 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   // แท็บจ่ายชำระทั้งชุด: เงินกู้ที่ยังผ่อน (ยอดเต็ม) + บัตรที่ใช้งาน
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const payBanks = (banksRaw ?? []).filter((b) => b.status === "ACTIVE").map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
-  // จ่ายแล้วเดือนนี้ (ทีละครั้ง) → กดเพื่อแก้ / ลบ · จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) ลบทั้งก้อน (ตกลง 28 ต.ค. 2026)
-  const mStart = `${today.slice(0, 7)}-01`;
+  // เดือนที่เลือก (แถบบน · ตกลง 28 ต.ค. 2026): รายการจ่ายแล้วของเดือนนั้น · วันที่ตั้งต้น = สิ้นเดือน (ไม่เกินวันนี้) · ยอดหนี้ในภาพรวม = ยอดล่าสุด
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  const mEnd = monthRange(ym).end;
+  const defaultDate = mEnd < today ? mEnd : today;
+  // จ่ายแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเพื่อแก้ / ลบ · จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) ลบทั้งก้อน (ตกลง 28 ต.ค. 2026)
+  const mStart = `${ym}-01`;
   const loanIds = loans.filter((r) => r.status === "ACTIVE").map((r) => r.source_id), cardIds = cards.filter((c) => c.status === "ACTIVE").map((c) => c.id);
   const noRows = Promise.resolve({ data: [] as never[] });
   const [{ data: lPays }, { data: lInts }, { data: cPays }] = await Promise.all([
     loanIds.length ? supabase.from("cash_movements").select("id,to_liability_id,movement_date,amount,currency,movement_group_id,is_derived")
-      .eq("movement_type", "LIABILITY_PAYMENT").in("to_liability_id", loanIds).gte("movement_date", mStart).is("deleted_at", null).order("movement_date") : noRows,
+      .eq("movement_type", "LIABILITY_PAYMENT").in("to_liability_id", loanIds).gte("movement_date", mStart).lte("movement_date", mEnd).is("deleted_at", null).order("movement_date") : noRows,
     loanIds.length ? supabase.from("expense_items").select("id,liability_id,date,amount,currency,notes").in("liability_id", loanIds).eq("pending_split", false)
-      .not("paid_from_asset_id", "is", null).gte("date", mStart).is("deleted_at", null).order("date") : noRows,
+      .not("paid_from_asset_id", "is", null).gte("date", mStart).lte("date", mEnd).is("deleted_at", null).order("date") : noRows,
     cardIds.length ? supabase.from("cash_movements").select("id,to_credit_card_id,movement_date,amount,currency,is_derived")
-      .eq("movement_type", "CARD_PAYMENT").in("to_credit_card_id", cardIds).gte("movement_date", mStart).is("deleted_at", null).order("movement_date") : noRows,
+      .eq("movement_type", "CARD_PAYMENT").in("to_credit_card_id", cardIds).gte("movement_date", mStart).lte("movement_date", mEnd).is("deleted_at", null).order("movement_date") : noRows,
   ]);
   type PM = { id: string; to_liability_id: string; movement_date: string; amount: number; currency: string; movement_group_id: string | null; is_derived: boolean };
   type PI = { id: string; liability_id: string; date: string; amount: number; currency: string; notes: string | null };
@@ -157,7 +162,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
           <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า · เงินเบิกเกินบัญชี (O/D)</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={monthOptions(goLive, today, 0, ym)} value={ym} /></HeaderFilters>
           {canWrite && (
             <ActionBar>
               <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้ / หนี้สิน</Link>
@@ -169,7 +174,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
       <TabPanel id="pay">
-        <PayBatch key={debtRows.map((r) => r.key).join()} rows={debtRows} banks={payBanks} today={today} minDate={minDate} canWrite={canWrite} />
+        <PayBatch key={`${ym}${debtRows.map((r) => r.key).join()}`} rows={debtRows} banks={payBanks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, money, qtyUnit, thDate, todayBangkok } from "@/lib/format";
+import { addDays, money, monthOptions, monthRange, qtyUnit, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters } from "@/components/HeaderBar";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -26,7 +27,7 @@ const COLORS = SHARE_COLORS;
 /** ตัวย่อบนป้าย: ตัวอักษรภาษาอังกฤษ / ตัวเลข 4 ตัวแรก (ไม่มี = 2 ตัวแรก) */
 const initials = (name: string) => { const l = name.replace(/[^A-Za-z0-9]/g, ""); return (l || name).slice(0, l ? 4 : 2).toUpperCase(); };
 
-export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; c?: string; tab?: string }> }) {
+export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; c?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -61,7 +62,8 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const per = (v: number | null, r: Row) => (v == null || !r.quantity ? null : v / (Number(r.quantity) * share(r.asset_id)));
   const vs = (r: Row) => { const v = valueOf(r), c = costOf(r); return v == null || !c ? null : ((v - c) * 100) / c; };
   const pctText = (v: number) => `${v >= 0 ? "+" : ""}${v.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
-  const old = addDays(todayBangkok(), -90);
+  const today = todayBangkok();
+  const old = addDays(today, -90);
 
   // กล่องสรุป: ตามหมวด (ตามสมาชิกที่เลือก) · ตามสมาชิก (ทั้งครอบครัวเสมอ)
   const active = mine.filter((r) => r.assets.status === "ACTIVE" && (valueOf(r) ?? 0) > 0);
@@ -81,11 +83,14 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
 
   // แท็บบันทึกทั้งชุด: สินทรัพย์ที่ถืออยู่ (ตามตัวกรองคน) · ทองที่ตั้งราคาอัตโนมัติ (THB) ไม่ต้องกรอกมูลค่า
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
-  // ผลตอบแทนที่รับแล้วเดือนนี้ (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026)
+  // ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026) · เดือนที่แถบบน: วันที่ตั้งต้น = สิ้นเดือน (ไม่เกินวันนี้)
   const activeIds = mine.filter((r) => r.assets.status === "ACTIVE").map((r) => r.asset_id);
-  const monthStart = `${todayBangkok().slice(0, 7)}-01`;
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  const { start: mStart, end: mEnd } = monthRange(ym);
+  const defaultDate = mEnd < today ? mEnd : today;
+  const months = monthOptions(family?.go_live_date, today, 0, ym);
   const { data: gotRaw } = activeIds.length ? await supabase.from("income_transactions").select("id,asset_id,date,amount,tax,notes,currency")
-    .in("asset_id", activeIds).eq("income_type", "OTHER").eq("pending_split", false).gte("date", monthStart).is("deleted_at", null).order("date")
+    .in("asset_id", activeIds).eq("income_type", "OTHER").eq("pending_split", false).gte("date", mStart).lte("date", mEnd).is("deleted_at", null).order("date")
     : { data: [] as { id: string; asset_id: string; date: string; amount: number; tax: number | null; notes: string | null; currency: string }[] };
   const batchRows: AltRow[] = mine.filter((r) => r.assets.status === "ACTIVE").map((r) => ({
     edits: (gotRaw ?? []).filter((i) => i.asset_id === r.asset_id).map((i) => ({ id: i.id as string, node: recEdit({
@@ -104,7 +109,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
           <p className="text-sm text-slate-500">ทอง เครื่องประดับ นาฬิกา ของสะสม คริปโต และอื่น ๆ</p>
         </div>
         <div className="flex items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
           {me.role !== "VIEWER" && <Link href="/alternative/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มสินทรัพย์</Link>}
         </div>
       </div>
@@ -112,8 +117,8 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
       <TabPanel id="record">
-        <AltBatch key={batchRows.map((r) => r.id).join()} rows={batchRows} banks={(banks ?? []).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }))}
-          today={todayBangkok()} minDate={family?.go_live_date ?? ""} canWrite={me.role !== "VIEWER"} />
+        <AltBatch key={`${ym}${batchRows.map((r) => r.id).join()}`} rows={batchRows} banks={(banks ?? []).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }))}
+          today={today} defaultDate={defaultDate} minDate={family?.go_live_date ?? ""} canWrite={me.role !== "VIEWER"} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">
