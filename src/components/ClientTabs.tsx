@@ -1,5 +1,6 @@
 "use client";
 
+import { TabActionsSlot } from "./TabActions";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 // แท็บที่สลับในเบราว์เซอร์ทันที (ไม่โหลดหน้าใหม่ · หน้าไม่เด้งขึ้นบน)
@@ -33,6 +34,8 @@ export function TabNav({ tabs }: { tabs: readonly (readonly [string, string])[] 
           {l}
         </button>
       ))}
+      {/* ปุ่ม "+ เพิ่ม…" ของหน้า (TabActions) ชิดขวาสุดของแถวแท็บ */}
+      <TabActionsSlot />
     </nav>
   );
 }

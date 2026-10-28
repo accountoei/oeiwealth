@@ -11,7 +11,7 @@ function Shell({ label, title, action, pending, state, children }: {
   label: string; title: string; action: (f: FormData) => void; pending: boolean; state: ActionState; children: React.ReactNode;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>{label}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3">

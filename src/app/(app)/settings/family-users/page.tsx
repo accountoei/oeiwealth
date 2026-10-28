@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { PageInfo } from "@/components/HeaderBar";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
 import { InviteButton, UserManage } from "./forms";
 import SecuritySection, { type SecuritySp } from "../security/SecuritySection";
@@ -19,10 +20,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">User &amp; Security</h1>
-        <p className="text-sm text-slate-500">{family?.name} · Go-live {family?.go_live_date} · {family?.system_status}</p>
-      </div>
+      <PageInfo>{family?.name} · Go-live {family?.go_live_date} · {family?.system_status}</PageInfo>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">

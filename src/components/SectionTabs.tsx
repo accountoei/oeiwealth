@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { TabActionsSlot } from "./TabActions";
 
 /**
  * แถบแท็บของเมนูที่รวมหลายหน้า (Family & Documents · Settings) — แต่ละแท็บเป็นหน้าของตัวเอง
@@ -14,7 +15,8 @@ export default function SectionTabs({ tabs }: { tabs: { href: string; label: str
   const [pending, setPending] = useState<{ href: string; from: string } | null>(null);
   const current = pending && pending.from === pathname ? pending.href : pathname;
   return (
-    <nav className="mb-6 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 text-sm [scrollbar-width:none]" aria-label="แท็บ">
+    <div className="mb-6 flex items-end border-b border-slate-200">
+    <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden text-sm [scrollbar-width:none]" aria-label="แท็บ">
       {tabs.map((t) => {
         const active = current === t.href || current.startsWith(`${t.href}/`);
         return (
@@ -27,5 +29,8 @@ export default function SectionTabs({ tabs }: { tabs: { href: string; label: str
         );
       })}
     </nav>
+    {/* ปุ่ม "+ เพิ่ม…" ของแต่ละหน้า (TabActions) ชิดขวาสุดของแถวแท็บ */}
+    <TabActionsSlot />
+    </div>
   );
 }

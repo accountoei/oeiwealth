@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { PageInfo } from "@/components/HeaderBar";
 import { requireAppUser } from "@/lib/auth";
 import Link from "next/link";
 import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, HOLDING_TYPE_LABEL, addDays, money, thDate, todayBangkok } from "@/lib/format";
@@ -127,12 +128,7 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">FX &amp; Prices</h1>
-        <p className="text-sm text-slate-500">
-          สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}
-        </p>
-      </div>
+      <PageInfo>สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}</PageInfo>
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

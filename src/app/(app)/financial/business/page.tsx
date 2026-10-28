@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, money, monthOptions, monthRange, qty, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, addDays, money, monthOptions, monthRange, qty, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
-import { HeaderFilters } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import BusinessBadge from "./badge";
@@ -154,15 +155,9 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   return (
     <TabsProvider initial={tab}>
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">ธุรกิจของครอบครัว / หุ้นนอกตลาด · ปันผลเป็นรายได้ · เงินลงทุนเพิ่มไม่ใช่ค่าใช้จ่าย</p>
-        </div>
-        <div className="flex items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
-          {me.role !== "VIEWER" && <Link href="/financial/business/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มกิจการ</Link>}
-        </div>
-      </div>
+      <PageInfo>ธุรกิจของครอบครัว / หุ้นนอกตลาด · ปันผลเป็นรายได้ · เงินลงทุนเพิ่มไม่ใช่ค่าใช้จ่าย</PageInfo>
+      <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
+      {me.role !== "VIEWER" && <TabActions><Link href="/financial/business/new" className={ADD_BTN}>+ เพิ่มกิจการ</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <TabNav tabs={TABS} />
 

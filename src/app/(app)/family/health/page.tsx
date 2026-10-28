@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import { requireAppUser } from "@/lib/auth";
 import { money, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
@@ -48,16 +50,9 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Health</h1>
-          <p className="text-sm text-slate-500">ผลตรวจสุขภาพประจำปีของสมาชิก · ข้อมูลอ่อนไหว ผู้ใช้ทุกคนในระบบเห็นได้ตามสิทธิ์</p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          <PersonPicker persons={list} value={pid} />
-          {canWrite && <ActionBar><CheckupForm personId={pid} today={todayBangkok()} /></ActionBar>}
-        </div>
-      </div>
+      <PageInfo>ผลตรวจสุขภาพประจำปีของสมาชิก · ข้อมูลอ่อนไหว ผู้ใช้ทุกคนในระบบเห็นได้ตามสิทธิ์</PageInfo>
+      {canWrite && <TabActions><ActionBar><CheckupForm personId={pid} today={todayBangkok()} /></ActionBar></TabActions>}
+      <div className="flex justify-end"><PersonPicker persons={list} value={pid} /></div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">

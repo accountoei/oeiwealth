@@ -1,4 +1,6 @@
 import Form from "next/form";
+import { PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -108,13 +110,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Documents</h1>
-          <p className="text-sm text-slate-500">ไฟล์เก็บใน Google Drive ของระบบ · เปิดได้เฉพาะผู้ใช้ในระบบ (ทุกการเปิดบันทึกใน Audit Log)</p>
-        </div>
-        {canWrite && st.connected && <ActionBar><DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" /></ActionBar>}
-      </div>
+      <PageInfo>ไฟล์เก็บใน Google Drive ของระบบ · เปิดได้เฉพาะผู้ใช้ในระบบ (ทุกการเปิดบันทึกใน Audit Log)</PageInfo>
+      {canWrite && st.connected && <TabActions><ActionBar><DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" primary /></ActionBar></TabActions>}
 
       {sp.drive === "connected" && <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">เชื่อม Google Drive เรียบร้อยแล้ว</p>}
       {sp.drive_error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">เชื่อม Google Drive ไม่สำเร็จ: {sp.drive_error}</p>}

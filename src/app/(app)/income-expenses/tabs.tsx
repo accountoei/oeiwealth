@@ -1,5 +1,6 @@
 "use client";
 
+import { TabActionsSlot } from "@/components/TabActions";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -54,6 +55,8 @@ export function TabNav({ tabs }: { tabs: [string, string][] }) {
         <button key={k} type="button" onClick={() => setActive(k)}
           className={`-mb-px border-b-2 px-4 py-2 text-sm ${active === k ? "border-slate-900 font-medium text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{l}</button>
       ))}
+      {/* ปุ่ม "+ เพิ่ม…" ของหน้า (TabActions) ชิดขวาสุดของแถวแท็บ */}
+      <TabActionsSlot />
     </nav>
   );
 }

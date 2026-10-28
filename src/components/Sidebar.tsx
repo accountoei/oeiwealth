@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, Suspense, use, useContext, useState } from "react";
+import { createContext, Suspense, use, useContext, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, Briefcase, Building2, ChevronsLeft, ChevronsRight, CreditCard, Gem, HandCoins,
   Landmark, LayoutDashboard, ListChecks, LogOut, Settings, ShieldCheck, TrendingUp, Users, type LucideIcon,
 } from "lucide-react";
-import { NAV_COLLAPSED_COOKIE, NAV_HREFS, NAV_ORDER_COOKIE, NAV_PINNED_FIRST, NAV_PINNED_LAST, orderNav, type NavGroup } from "./nav";
+import { clampNavWidth, NAV_COLLAPSED_COOKIE, NAV_HREFS, NAV_ORDER_COOKIE, NAV_WIDTH_COOKIE, NAV_PINNED_FIRST, NAV_PINNED_LAST, orderNav, type NavGroup } from "./nav";
 import { NAV_RESET_EVENT } from "./NavReset";
+import { familyInitials } from "@/lib/format";
 
 const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, todo: ListChecks, income: ArrowLeftRight, cash: Landmark, loans: HandCoins, investments: TrendingUp,
@@ -91,14 +92,16 @@ function SortRow({ g, onUp, onDown }: { g: NavGroup; onUp?: () => void; onDown?:
  * dots = href ของเมนูที่ต้องแสดงจุดแดง (เช่น Settings เมื่อมีเดือนที่ถึงเวลาปิดแล้วยังไม่ปิด)
  * initialOrder / initialCollapsed = ค่าจาก cookie ของเครื่องนี้ · todo = จำนวนงานค้าง (Promise → แสดงเมื่อพร้อม)
  */
-export default function Sidebar({ dots = [], user, initialOrder = [], initialCollapsed = false, todo }: {
-  dots?: string[]; user: { name: string; email: string; role: string }; initialOrder?: string[]; initialCollapsed?: boolean;
-  todo?: Promise<TodoCount | null>;
+export default function Sidebar({ dots = [], user, familyName = "", initialOrder = [], initialCollapsed = false, initialWidth, todo }: {
+  dots?: string[]; user: { name: string; email: string; role: string }; familyName?: string; initialOrder?: string[]; initialCollapsed?: boolean;
+  initialWidth?: number; todo?: Promise<TodoCount | null>;
 }) {
   const [open, setOpen] = useState(false);
   const [collapsedPref, setCollapsed] = useState(initialCollapsed);
   const [order, setOrder] = useState<string[]>(initialOrder);
   const [sorting, setSorting] = useState(false);
+  const [width, setWidth] = useState(clampNavWidth(initialWidth ?? 0));
+  const [dragging, setDragging] = useState(false);
   const pathname = usePathname();
   const [pending, setPendingState] = useState<{ href: string; from: string } | null>(null);
   const path = pending && pending.from === pathname ? pending.href : pathname;
@@ -116,19 +119,41 @@ export default function Sidebar({ dots = [], user, initialOrder = [], initialCol
   };
   const resetOrder = () => { setOrder([]); setCookie(NAV_ORDER_COOKIE, null); };
   const initial = (user.name || user.email).trim().charAt(0).toUpperCase();
+  const title = familyName.trim() || "Family Wealth Vault";
+
+  // ลากเส้นขอบขวาเพื่อยืด / หดแถบเมนู (จอใหญ่) · ปล่อยแล้วจำไว้ที่เครื่องนี้ · ดับเบิลคลิก = กลับขนาดเดิม
+  const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = width;
+    let w = w0;
+    setDragging(true);
+    const onMove = (ev: PointerEvent) => { w = clampNavWidth(w0 + ev.clientX - x0); setWidth(w); };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setDragging(false);
+      setCookie(NAV_WIDTH_COOKIE, w === clampNavWidth(0) ? null : String(w));
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+  const resetWidth = () => { setWidth(clampNavWidth(0)); setCookie(NAV_WIDTH_COOKIE, null); };
 
   return (
     <PendingCtx.Provider value={{ path, setPending: (href) => setPendingState({ href, from: pathname }) }}>
       <button onClick={() => setOpen(!open)} aria-label="เปิดเมนู"
         className="md:hidden fixed top-2.5 left-3 z-30 rounded-md bg-blue-600 text-white px-3 py-1.5 text-sm shadow">☰ เมนู</button>
-      <aside className={`${open ? "flex" : "hidden"} md:flex fixed md:sticky top-0 z-20 h-screen shrink-0 flex-col pt-10 md:pt-0 border-r border-slate-200 bg-white transition-[width] duration-150 ${
-        collapsed ? "w-16" : "w-64"}`}>
+      <aside style={collapsed ? undefined : { width }}
+        className={`${open ? "flex" : "hidden"} md:flex fixed md:sticky top-0 z-20 h-screen shrink-0 flex-col pt-10 md:pt-0 border-r border-slate-200 bg-white ${
+        dragging ? "select-none" : "transition-[width] duration-150"} ${collapsed ? "w-16" : ""}`}>
+        {/* มุมซ้ายบน: ชื่อครอบครัว + "Wealth Vault" · ไม่มีรูป → ชื่อย่อครอบครัว (ตกลง 28 ต.ค. 2026) */}
         <div className={`flex items-center gap-2 pb-3 pt-5 ${collapsed ? "flex-col px-2" : "pl-5 pr-3"}`}>
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">FW</span>
+          <span title={collapsed ? title : undefined}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{familyInitials(familyName)}</span>
           {!collapsed && (
-            <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate text-[15px] font-bold text-slate-900">Family Wealth Vault</span>
-              <span className="block text-xs text-slate-500">ทรัพย์สินครอบครัว</span>
+            <span className="min-w-0 flex-1 leading-tight" title={title}>
+              <span className="block truncate text-[15px] font-bold text-slate-900">{title}</span>
+              <span className="block text-xs text-slate-500">Wealth Vault</span>
             </span>
           )}
           {!collapsed && !sorting && (
@@ -181,6 +206,11 @@ export default function Sidebar({ dots = [], user, initialOrder = [], initialCol
             </button>
           </form>
         </div>
+        {!collapsed && (
+          <div onPointerDown={startDrag} onDoubleClick={resetWidth} role="separator" aria-orientation="vertical" aria-label="ลากเพื่อยืด / หดเมนู"
+            title="ลากเพื่อยืด / หดเมนู · ดับเบิลคลิก = ขนาดเดิม"
+            className={`absolute inset-y-0 -right-1 hidden w-2 cursor-col-resize md:block ${dragging ? "bg-blue-400/40" : "hover:bg-blue-300/40"}`} />
+        )}
       </aside>
     </PendingCtx.Provider>
   );

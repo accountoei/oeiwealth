@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -166,15 +167,9 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
   return (
     <TabsProvider initial={tab}>
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">เงินที่ให้คนอื่นยืม · มูลค่า = เงินต้นคงเหลือ (ลดลงเมื่อบันทึกรับชำระ)</p>
-        </div>
-        <div className="flex items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
-          {me.role !== "VIEWER" && <Link href="/financial/loans/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินให้กู้</Link>}
-        </div>
-      </div>
+      <PageInfo>เงินที่ให้คนอื่นยืม · มูลค่า = เงินต้นคงเหลือ (ลดลงเมื่อบันทึกรับชำระ)</PageInfo>
+      <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
+      {me.role !== "VIEWER" && <TabActions><Link href="/financial/loans/new" className={ADD_BTN}>+ เพิ่มเงินให้กู้</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <TabNav tabs={TABS} />
 
@@ -288,9 +283,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
 
       {/* ============================================================ บันทึกรับชำระคืนเงินกู้ */}
       <TabPanel id="monthly">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
           <p className="text-sm text-slate-500">งวดที่ครบกำหนดในเดือนที่เลือก + งวดที่ยังค้างจากเดือนก่อน · บันทึกที่นี่หรือที่หน้า Income &amp; Expenses ก็ได้ (คำสั่งเดียวกัน ไม่นับซ้ำ)</p>
-          <MonthPicker months={months} value={ym} />
         </div>
         <section className="grid gap-4 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">

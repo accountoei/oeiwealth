@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { LIABILITY_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, LIABILITY_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
-import { HeaderFilters } from "@/components/HeaderBar";
-import { ActionBar } from "@/components/ActionBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { CardBalanceForm } from "./cards/forms";
@@ -157,19 +157,9 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า · เงินเบิกเกินบัญชี (O/D)</p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={monthOptions(goLive, today, 0, ym)} value={ym} /></HeaderFilters>
-          {canWrite && (
-            <ActionBar>
-              <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้ / หนี้สิน</Link>
-            </ActionBar>
-          )}
-        </div>
-      </div>
+      <PageInfo>หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า · เงินเบิกเกินบัญชี (O/D)</PageInfo>
+      <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={monthOptions(goLive, today, 0, ym)} value={ym} /></HeaderFilters>
+      {canWrite && <TabActions><Link href="/liabilities/new" className={ADD_BTN}>+ เพิ่มเงินกู้ / หนี้สิน</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 

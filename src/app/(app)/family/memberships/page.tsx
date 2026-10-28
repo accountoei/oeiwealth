@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageInfo } from "@/components/HeaderBar";
+import { TabActions } from "@/components/TabActions";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { thDate, todayBangkok } from "@/lib/format";
@@ -48,24 +50,17 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Membership &amp; Points</h1>
-          <p className="text-sm text-slate-500">
-            สมาชิกภาพ / สิทธิประโยชน์ และแต้มสะสม / ไมล์ ของสมาชิกในครอบครัว
-          </p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          {/* ตัวเลือกคนอยู่ในหน้า (เหมือนแท็บ Health) ไม่ขึ้นแถบบน — ตกลง 28 ต.ค. 2026 */}
-          <PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} />
-          {canWrite && (
-            <ActionBar>
-              <MembershipForm persons={persons ?? []} />
-              <PointsForm persons={persons ?? []} today={today} links={pointLinks} />
-            </ActionBar>
-          )}
-        </div>
-      </div>
+      <PageInfo>สมาชิกภาพ / สิทธิประโยชน์ และแต้มสะสม / ไมล์ ของสมาชิกในครอบครัว</PageInfo>
+      {canWrite && (
+        <TabActions>
+          <ActionBar>
+            <MembershipForm persons={persons ?? []} />
+            <PointsForm persons={persons ?? []} today={today} links={pointLinks} />
+          </ActionBar>
+        </TabActions>
+      )}
+      {/* ตัวเลือกคนอยู่ในหน้า (เหมือนแท็บ Health) ไม่ขึ้นแถบบน — ตกลง 28 ต.ค. 2026 */}
+      <div className="flex justify-end"><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></div>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
