@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, useState, useTransition, type ReactNode, type TransitionStartFunction } from "react";
+import { createContext, useContext, useSyncExternalStore, useTransition, type ReactNode, type TransitionStartFunction } from "react";
 import { createPortal } from "react-dom";
 import { NAV, NAV_HREFS } from "./nav";
 
@@ -21,10 +21,12 @@ export function HeaderTitle() {
   return <div className="truncate text-lg font-semibold text-slate-900">{group?.label ?? ""}</div>;
 }
 
+const noSubscribe = () => () => {};
+
 /** ตัวเลือกของหน้า → ไปแสดงที่แถบบนด้านขวา */
 export function HeaderFilters({ children }: { children: ReactNode }) {
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-  useEffect(() => setTarget(document.getElementById(HEADER_SLOT_ID)), []);
+  // ฝั่งเซิร์ฟเวอร์ / ตอน hydrate = ยังไม่มีที่วาง → วาดหลังโหลดหน้า (ไม่ใช้ setState ใน effect)
+  const target = useSyncExternalStore(noSubscribe, () => document.getElementById(HEADER_SLOT_ID), () => null);
   return target ? createPortal(<div className="flex flex-wrap items-center justify-end gap-2">{children}</div>, target) : null;
 }
 
