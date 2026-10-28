@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { LIABILITY_TYPE_LABEL, addDays, money, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import { ActionBar } from "@/components/ActionBar";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -154,11 +155,10 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Liabilities</h1>
           <p className="text-sm text-slate-500">หนี้สินทั้งหมด: เงินกู้ · บัตรเครดิต · เงินประกันการเช่า · เงินเบิกเกินบัญชี (O/D)</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <PersonFilter persons={pv.persons} value={pv.personId} />
+          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
           {canWrite && (
             <ActionBar>
               <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้</Link>

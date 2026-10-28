@@ -1,15 +1,17 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useNavPending } from "./HeaderBar";
 
 /** เลือกเดือน: ‹ dropdown › · เปลี่ยนเฉพาะ ?m= และคงพารามิเตอร์อื่น (สมาชิก / แท็บ) · months เรียงใหม่สุดก่อน */
 export default function MonthPicker({ months, value }: { months: { value: string; label: string }[]; value: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { start } = useNavPending();
   const go = (m: string) => {
     const q = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
     q.set("m", m);
-    router.push(`${pathname}?${q}`, { scroll: false });
+    start(() => router.push(`${pathname}?${q}`, { scroll: false }));
   };
   const i = months.findIndex((m) => m.value === value);
   const older = i >= 0 ? months[i + 1]?.value : undefined;

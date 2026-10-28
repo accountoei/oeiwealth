@@ -5,6 +5,7 @@ import { INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
+import { HeaderFilters } from "@/components/HeaderBar";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import PropertyTable, { type PropRow } from "./PropertyTable";
@@ -287,12 +288,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Property</h1>
           <p className="text-sm text-slate-500">อสังหาริมทรัพย์ทุกการใช้งาน · สัญญาเช่า · ค่าเช่า · ค่าใช้จ่าย</p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <PersonFilter persons={pv.persons} value={pv.personId} />
-          <MonthPicker months={months} value={ym} />
+          <HeaderFilters>
+            <PersonFilter persons={pv.persons} value={pv.personId} />
+            <MonthPicker months={months} value={ym} />
+          </HeaderFilters>
           {me.role !== "VIEWER" && (
             <Link href="/property/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มทรัพย์สิน</Link>
           )}
