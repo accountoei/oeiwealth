@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { LIABILITY_TYPE_LABEL, addDays, money, thDate, todayBangkok } from "@/lib/format";
+import { LIABILITY_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { HeaderFilters } from "@/components/HeaderBar";
 import { ActionBar } from "@/components/ActionBar";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
-import { CardBalanceForm, NewCardForm } from "./cards/forms";
+import { CardBalanceForm } from "./cards/forms";
 import { StatBox } from "@/components/Boxes";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import PayBatch, { type DebtRow } from "./PayBatch";
@@ -40,14 +40,13 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder ? sp.order ?? "" : "";        // "1" = เงินกู้ · "cards" = บัตร
   const paths = ["/liabilities"];
-  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: persons }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }] = await Promise.all([
+  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }] = await Promise.all([
     loadPersonView(sp.p, { liabilities: true }),
     supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
     loadSortMap("liabilities"),
     supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,credit_limit,currency,statement_day,due_day,outstanding_balance,balance_date,status,autopay_asset_id,autopay_cash_holding_id,autopay_mode,persons(name)")
       .is("deleted_at", null).order("sort_order").order("issuer"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,status"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,status,overdraft_limit,overdraft_rate").not("overdraft_limit", "is", null).order("name"),
@@ -161,9 +160,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
           <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /></HeaderFilters>
           {canWrite && (
             <ActionBar>
-              <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้</Link>
-              <NewCardForm persons={persons ?? []} defaultDate={isSetup && goLive ? addDays(goLive, -1) : today} today={today}
-                minDate={goLive} isSetup={isSetup} />
+              <Link href="/liabilities/new" className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ เพิ่มเงินกู้ / หนี้สิน</Link>
             </ActionBar>
           )}
         </div>

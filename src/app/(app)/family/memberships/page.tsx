@@ -6,7 +6,6 @@ import RowActions from "@/components/RowActions";
 import { MembershipForm, PointsForm } from "./member-forms";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters } from "@/components/HeaderBar";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { orderHrefs } from "@/lib/sort";
 import { ActionBar } from "@/components/ActionBar";
@@ -57,7 +56,8 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></HeaderFilters>
+          {/* ตัวเลือกคนอยู่ในหน้า (เหมือนแท็บ Health) ไม่ขึ้นแถบบน — ตกลง 28 ต.ค. 2026 */}
+          <PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} />
           {canWrite && (
             <ActionBar>
               <MembershipForm persons={persons ?? []} />
@@ -76,15 +76,16 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
         <StatBox label="แต้มใกล้หมดอายุ (60 วัน)" value={pointSoon} unit="บัญชี" sub="แต้ม / ไมล์ ไม่นับใน Net Worth" subClass={(pointSoon > 0) ? "text-amber-700" : undefined} />
       </section>
 
+      {/* สมาชิกภาพ + แต้มสะสม / ไมล์ ในกล่องเดียว แบ่งด้วยหัวกลุ่ม (ตกลง 28 ต.ค. 2026) */}
       <section className="space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ</h2>
-          {canOrder && memberRows.length > 1 && <SortToggle active={ordering === "members"} {...oh("members")} />}
-        </div>
+        <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ · แต้มสะสม / ไมล์</h2>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4">ระดับ / สิทธิ</th><th className="px-4">หมดอายุ</th><th></th></tr></thead>
+            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4">ระดับ / สิทธิ · แต้มคงเหลือ</th><th className="px-4">หมดอายุ</th><th></th></tr></thead>
             <tbody className="divide-y divide-slate-100">
+              <tr className="bg-slate-50/60"><td colSpan={5} className="px-4 py-1.5">
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-600">สมาชิกภาพ</span>
+                  {canOrder && memberRows.length > 1 && <SortToggle active={ordering === "members"} {...oh("members")} />}</div></td></tr>
               {memberRows.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
               {memberRows.map((m, i) => (
                 <tr key={m.id} className={`align-top ${m.status !== "ACTIVE" ? "opacity-50" : ""}`}>
@@ -99,26 +100,15 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
                     { name: "benefits", label: "สิทธิประโยชน์", value: m.benefits, width: "w-48" }]} />}</td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">แต้มสะสม / ไมล์</h2>
-          {canOrder && pointRows.length > 1 && <SortToggle active={ordering === "points"} {...oh("points")} />}
-        </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4 text-right">คงเหลือ</th><th className="px-4">แต้มหมดอายุ</th><th></th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
+              <tr className="bg-slate-50/60"><td colSpan={5} className="px-4 py-1.5">
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-600">แต้มสะสม / ไมล์</span>
+                  {canOrder && pointRows.length > 1 && <SortToggle active={ordering === "points"} {...oh("points")} />}</div></td></tr>
               {pointRows.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
               {pointRows.map((pt, i) => (
                 <tr key={pt.id} className="align-top">
                   <td className="px-4 py-2.5 font-medium">{ordering === "points" && <div className="mb-1"><MoveButtons table="points_accounts" id={pt.id} paths={["/family/memberships"]} {...neighbors(pointRows, i, (x) => x.id)} /></div>}{pt.program_name}</td>
                   <td className="px-4">{pmap.get(pt.person_id) ?? "-"}</td>
-                  <td className="px-4 text-right"><div className="tabular-nums">{Number(pt.balance).toLocaleString("th-TH")}</div><div className="text-xs text-slate-500">ณ {thDate(pt.balance_date)}</div></td>
+                  <td className="px-4"><div className="tabular-nums">{Number(pt.balance).toLocaleString("th-TH")}</div><div className="text-xs text-slate-500">ณ {thDate(pt.balance_date)}</div></td>
                   <td className={`px-4 ${pt.expiry_date && pt.expiry_date <= today ? "text-red-600" : ""}`}>{thDate(pt.expiry_date)}</td>
                   <td className="px-4 text-right">{canWrite && <RowActions table="points_accounts" id={pt.id} paths={["/family/memberships"]} canDelete={canDelete} fields={[
                     { name: "balance", label: "คงเหลือ", type: "number", value: pt.balance }, { name: "balance_date", label: "ณ วันที่", type: "date", value: today },
