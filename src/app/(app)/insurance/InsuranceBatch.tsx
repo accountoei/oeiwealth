@@ -21,6 +21,7 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const STATUS: Record<string, { text: string; cls: string }> = {
   OVERDUE: { text: "เลยกำหนด", cls: "text-red-600" }, PARTIAL: { text: "จ่ายบางส่วน", cls: "text-amber-700" }, PENDING: { text: "รอ", cls: "text-slate-500" },
+  PAID: { text: "ครบแล้ว", cls: "text-emerald-700" },
 };
 
 /**
@@ -42,7 +43,8 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
   const [state, action, pending] = useActionState<ActionState, FormData>(prem ? batchPremiums : batchBenefits, {});
   useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
 
-  const shown = all ? rows : rows.filter((r) => r.status === "OVERDUE" || r.due <= soon);
+  // งวดที่จ่าย / รับครบภายใน 60 วัน (PAID) แสดงไว้ให้กดแก้ยอดที่บันทึกแล้ว · ไม่มีช่องกรอก
+  const shown = all ? rows : rows.filter((r) => r.status === "OVERDUE" || r.status === "PAID" || r.due <= soon);
   const hidden = rows.length - shown.length;
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
   const label = (r: InsLine) => `${r.policy} งวดที่ ${r.no}`;
@@ -103,13 +105,14 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
                   <td className="whitespace-nowrap px-3 text-xs">งวดที่ {r.no}{r.benefitType ? ` · ${BENEFIT_TYPE_LABEL[r.benefitType] ?? r.benefitType}` : ""}
                     <div>{thDate(r.due)}{st && <span className={`ml-1 ${st.cls}`}>· {!prem && r.status === "PARTIAL" ? "รับบางส่วน" : st.text}</span>}</div></td>
                   {/* ทยอยจ่าย / รับไปบางส่วน → บรรทัดเล็ก "จ่ายแล้ว / รับแล้ว" + ยอดเต็มงวด (ตกลง 28 ต.ค. 2026) */}
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(r.remaining, r.currency)}
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{r.status !== "PAID" && money(r.remaining, r.currency)}
                     {r.paid > 0.005 && <>
                       {r.edits?.length ? <RecordedLines items={r.edits} />
                         : <div className="text-xs text-emerald-700">{prem ? "จ่ายแล้ว" : "รับแล้ว"} {money(r.paid, r.currency)}</div>}
-                      <div className="text-xs text-slate-400">จากงวด {money(r.amount, r.currency)}</div>
+                      {r.status !== "PAID" && <div className="text-xs text-slate-400">จากงวด {money(r.amount, r.currency)}</div>}
                     </>}</td>
-                  {canWrite && <>
+                  {canWrite && r.status === "PAID" && <><td /><td /></>}
+                  {canWrite && r.status !== "PAID" && <>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <button type="button" onClick={() => setVals({ ...vals, [r.id]: fmt(r.remaining) })} className="mr-2 text-xs text-blue-700 hover:underline">ตามงวด</button>
                       <input inputMode="decimal" value={v} placeholder={r.currency} aria-label={`ยอด ${label(r)}`}
@@ -142,6 +145,7 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
       <p className="text-xs text-slate-500">
         {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์</>
           : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำที่หน้ากรมธรรม์</>}
+        {" "}· งวดที่{prem ? "จ่าย" : "รับ"}ครบภายใน 60 วันยังแสดงไว้ (&ldquo;ครบแล้ว&rdquo;) · {prem ? "กดยอดสีเขียวเพื่อแก้ / ลบ" : "แก้ยอดที่รับ: กด \"ยกเลิก\" (ย้อนทั้งก้อน) แล้วบันทึกใหม่"}
         {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
       </p>
     </form>
