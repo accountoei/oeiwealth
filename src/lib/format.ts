@@ -67,6 +67,7 @@ export function friendlyError(message: string): string {
   if (/persons_death_date_status/.test(message)) return "วันที่เสียชีวิตใส่ได้เฉพาะสมาชิกที่เป็น Archived";
   if (/persons_national_id_format/.test(message)) return "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก";
   if (/persons_photo_format/.test(message)) return "รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพ (JPG / PNG / WEBP) และไม่ใหญ่เกินไป";
+  if (/families_photo_format/.test(message)) return "รูปครอบครัวต้องเป็นไฟล์รูปภาพ (JPG / PNG / WEBP) และไม่ใหญ่เกินไป";
   const m = message.match(/^[A-Z_]+: ([\s\S]*)$/);
   return m ? m[1] : message;
 }

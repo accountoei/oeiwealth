@@ -4,7 +4,7 @@ import { TabActions } from "@/components/TabActions";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ageFrom, daysToBirthday, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
+import { ageFrom, familyInitials, daysToBirthday, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
 import { movePerson } from "./actions";
 import { AddPersonForm, FamilyForm } from "./forms";
 import { FamilyTree } from "./tree";
@@ -49,7 +49,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const cur = { archived: sp.archived === "1", q, gen: fGen, g: fG, missing: fMissing };
 
   const [{ data: family }, { data: persons, error }, { data: nwRows }, { data: policyRows }] = await Promise.all([
-    supabase.from("families").select("name,head_person_id").maybeSingle(),
+    supabase.from("families").select("name,head_person_id,photo").maybeSingle(),
     supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,full_name_en,title_prefix,gender,national_id,education_level,occupation,workplace,job_title,passport_expiry,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("v_net_worth_by_person").select("person_id,net_worth"),
     supabase.from("insurance_policies").select("person_id").eq("status", "ACTIVE").is("deleted_at", null),
@@ -116,10 +116,16 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       <section className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว
-            {isAdmin && <ActionBar><FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null}
+            {isAdmin && <ActionBar><FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null} photo={family?.photo ?? null}
               candidates={active.map((p) => ({ id: p.id, name: p.name }))} /></ActionBar>}
           </div>
-          <div className="mt-1 truncate text-xl font-semibold">{family?.name || "-"}</div>
+          <div className="mt-1 flex min-w-0 items-center gap-2.5">
+            {family?.photo
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={family.photo} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+              : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{familyInitials(family?.name ?? "")}</span>}
+            <span className="truncate text-xl font-semibold">{family?.name || "-"}</span>
+          </div>
           {ages.length > 0 && <div className="text-xs text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">หัวหน้าครอบครัว</div>
           <div className="mt-1 truncate text-lg font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">★ {head.name}</Link> : "-"}</div>

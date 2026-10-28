@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const [ccy, due, jar, { data: person }, { data: family }] = await Promise.all([
     getCurrencyLists(supabase), monthToClose(), cookies(),
     user.person_id ? supabase.from("persons").select("name").eq("id", user.person_id).maybeSingle() : Promise.resolve({ data: null }),
-    supabase.from("families").select("name").maybeSingle(),
+    supabase.from("families").select("name,photo").maybeSingle(),
   ]);
   // จำนวนงานค้างที่เมนู "สิ่งที่ต้องทำ": ไม่รอ (ส่งเป็น Promise → ตัวเลขขึ้นเมื่อคำนวณเสร็จ หน้าไม่ช้าลง)
   const todo: Promise<TodoCount | null> = getAttention()
@@ -31,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen">
       <Sidebar dots={due ? ["/settings/month-closing"] : []} todo={todo} initialOrder={order}
         initialCollapsed={jar.get(NAV_COLLAPSED_COOKIE)?.value === "1"} initialWidth={Number(jar.get(NAV_WIDTH_COOKIE)?.value)}
-        familyName={(family as { name: string } | null)?.name ?? ""}
+        familyName={(family as { name: string } | null)?.name ?? ""} familyPhoto={(family as { photo: string | null } | null)?.photo ?? null}
         user={{ name: (person as { name: string } | null)?.name ?? "", email: user.email, role: ROLE_LABEL[user.role] }} />
       <NavPendingProvider><div className="flex-1 min-w-0">
         {/* แถบบน (28 ต.ค. 2026): ชื่อเมนู · ช่องค้นหาตรงกลาง · คน / เดือนของหน้า (HeaderFilters) · สูงเท่ากันทุกหน้า (min-h 60px) · มือถือเว้นที่ให้ปุ่ม ☰ และตัวเลือกขึ้นบรรทัดที่สอง */}
