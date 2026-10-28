@@ -220,7 +220,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
             <span>ดึงราคาอัตโนมัติทุกวันทำการ (วันละ 3 รอบ)
               <span className="block text-xs text-slate-500">{autoKind === "FUND"
                 ? "ราคา NAV จาก ก.ล.ต. · ใส่ชื่อย่อกองทุนในช่อง \"สัญลักษณ์ / รหัส\" (เช่น K-FIXED) · กองทุนที่มีหลายชนิดหน่วยให้ใส่ชื่อชนิดหน่วยที่ถือ (เช่น K-FIXED-A) ระบบหารหัสกองทุนให้เอง"
-                : "ราคาจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่สัญลักษณ์ เช่น PTT · หุ้นต่างประเทศ เช่น AAPL"}
+                : "ราคาจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · หุ้นไทยใส่สัญลักษณ์ เช่น PTT (หุ้นไทยที่สร้างใหม่เปิดให้เอง) · หุ้นต่างประเทศ เช่น AAPL"}
                 {" "}· ราคาที่ต่างจากราคาก่อนหน้าเกิน 20% ไม่บันทึก · ไม่ทับราคาจาก Statement</span>
               {autoBlocked && !auto && <span className="block text-xs text-amber-700">{autoBlocked}</span>}</span>
           </label>
