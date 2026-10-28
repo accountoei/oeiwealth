@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, ENCUMBRANCE_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
   UTIL_LABEL, addDays, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
@@ -22,6 +22,8 @@ import ModalButton from "@/components/ModalButton";
 import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import MarketBox from "../MarketBox";
+import TargetBox, { type TargetPrice } from "../TargetBox";
+import type { CostLot } from "../CostItemForm";
 import type { MarketValuation } from "../MarketValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
@@ -68,7 +70,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
-    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }] = await Promise.all([
+    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("property_details").select("*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(id,sort_order,title_type,title_deed_no,land_no,deed_book,deed_page,map_sheet,survey_page,land_area_sq_wa,notes,created_at,deleted_at)")
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
@@ -88,6 +90,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_property_market_valuations").select("*").eq("asset_id", id)
       .order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("liabilities").select("outstanding_amount,currency").eq("linked_asset_id", id).eq("status", "ACTIVE").is("deleted_at", null),
+    // ราคาขายขั้นต่ำที่คุ้ม (ต้นทุน + ดอกเบี้ย − ค่าเสื่อม · ไม่นับใน Net Worth)
+    supabase.from("v_property_cost_lots").select("*").eq("asset_id", id).order("lot_date"),
+    supabase.from("v_property_target_price").select("*").eq("asset_id", id).maybeSingle(),
   ]);
   if (!a || !pd) notFound();
 
@@ -214,6 +219,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
               areaSqWa={pd.land_area_sq_wa != null ? Number(pd.land_area_sq_wa) : null} nwValue={Number(a.current_value ?? 0)}
               history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
+            <TargetBox assetId={id} currency={a.currency} today={today} target={(targetRow as TargetPrice | null) ?? null} lots={(lotRows ?? []) as CostLot[]}
+              unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
@@ -690,4 +697,10 @@ function LeaseWrap({ open, count, children }: { open: boolean; count: number; ch
       <div className="mt-4 space-y-6">{children}</div>
     </details>
   );
+}
+
+/** ราคาขายขั้นต่ำต่อหน่วย: ตามหน่วยของราคาตลาดครั้งล่าสุด (ต่อ ตร.ว. / ตร.ม.) หรือเนื้อที่โฉนด (ตร.ว.) */
+function targetUnit(m: MarketValuation | undefined, sqwa: number | null): { area: number; label: string } | null {
+  if (m && m.unit_basis !== "TOTAL" && m.area) return { area: Number(m.area), label: MARKET_UNIT_LABEL[m.unit_basis] };
+  return sqwa ? { area: Number(sqwa), label: "ตร.ว." } : null;
 }

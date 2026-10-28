@@ -109,7 +109,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const taxYears = landTaxYears(today, taxDataYears);
   const taxYear = taxYears.includes(Number(sp.ty)) ? Number(sp.ty)
     : taxYears.includes(Number(ym.slice(0, 4))) ? Number(ym.slice(0, 4)) : Number(today.slice(0, 4));
-  const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }, { data: marketRaw }] = await Promise.all([
+  const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }, { data: marketRaw }, { data: targetRaw }] = await Promise.all([
     ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split")
       .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
     ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
@@ -118,6 +118,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       .order("sort_order").order("created_at") : none,
     // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
     ids.length ? supabase.from("v_property_market_latest").select("*").in("asset_id", ids) : none,
+    ids.length ? supabase.from("v_property_target_price").select("asset_id,min_price").in("asset_id", ids) : none,
   ]);
 
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
@@ -280,12 +281,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     };
   });
   // ---------------------------------------------------------------- อัปเดตมูลค่า: มูลค่าใน Net Worth + ราคาตลาด ของทรัพย์สินที่ถืออยู่
+  const minOf = new Map(((targetRaw ?? []) as { asset_id: string; min_price: number | null }[]).map((t) => [t.asset_id, t.min_price == null ? null : Number(t.min_price)]));
   const marketOf = new Map(((marketRaw ?? []) as (MarketValuation & { asset_id: string })[]).map((m) => [m.asset_id, m]));
   const valueRows: ValueRow[] = active.map((p) => ({
     id: p.asset_id, name: p.assets.name, typeLabel: PROPERTY_TYPE_LABEL[p.property_type] ?? p.property_type, currency: p.assets.currency,
     value: p.assets.current_value == null ? null : Number(p.assets.current_value), date: p.assets.current_value_date,
     defaultUnit: marketDefaultUnit(p.property_type), areaSqWa: p.land_area_sq_wa != null ? Number(p.land_area_sq_wa) : null,
-    market: marketOf.get(p.asset_id) ?? null, factor: thb(1, p.assets.currency) * share(p.asset_id),
+    market: marketOf.get(p.asset_id) ?? null, factor: thb(1, p.assets.currency) * share(p.asset_id), minPrice: minOf.get(p.asset_id) ?? null,
   }));
   // ประมาณรายได้ค่าเช่าทั้งปี = ค่าเช่าตามสัญญาที่มีผล (ต่อเดือน) × 12
   const leaseCount = props.reduce((t, p) => t + (byProp.get(p.asset_id) ?? []).filter((l) => l.lease_status !== "UPCOMING" && PER_MONTHS[l.payment_frequency]).length, 0);
