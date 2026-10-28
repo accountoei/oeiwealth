@@ -14,7 +14,7 @@ import SecNavPicker from "@/components/SecNavPicker";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { PfCardPayBody, PfExpenseBody, type PfPayCtx } from "./pf-pay-forms";
 import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
-import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
+import { defaultIncomeAccount, groupIncomeOptions, incomeAccountOptions } from "@/lib/income-account";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -367,7 +367,7 @@ export function TxForm({ assetId, portfolioName = "", portfolioCurrency, holding
             {incomeOpts.length > 0 && (
               <label className={`${lbl} md:col-span-2`}>รับดอกเบี้ย / ปันผล / เงินคืน เข้าบัญชี
                 <select key={`inc-${ccy}`} name="income_account" defaultValue={defaultIncomeAccount(incomeOpts)} className={input}>
-                  {incomeOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  {groupIncomeOptions(incomeOpts).map(([g, os]) => <optgroup key={g} label={g}>{os.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>)}
                 </select>
                 <span className="mt-1 block text-xs text-slate-500">ใช้เป็นค่าตั้งต้นตอนรับเงิน (เปลี่ยนตอนรับได้) · แก้ทีหลังได้ที่หน้าหลักทรัพย์ → แก้ไขข้อมูล</span>
               </label>

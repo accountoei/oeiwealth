@@ -15,7 +15,7 @@ const PAGES: { label: string; href: string; words?: string }[] = [
   { label: "Cash · อัปเดตยอดคงเหลือ", href: "/financial/cash?tab=update", words: "statement ยอดธนาคาร" },
   { label: "Cash · รับดอกเบี้ย", href: "/financial/cash?tab=interest" },
   { label: "Investments · อัปเดตยอดคงเหลือ", href: "/investments?tab=update", words: "statement ราคา" },
-  { label: "To-do · สิ่งที่ต้องทำ", href: "/todo", words: "งานค้าง แจ้งเตือน" },
+  { label: "To-Do List · สิ่งที่ต้องทำ", href: "/todo", words: "งานค้าง แจ้งเตือน" },
   { label: "ความครบถ้วนของข้อมูล", href: "/todo?tab=data" },
   { label: "Members", href: "/family/members", words: "สมาชิก" },
   { label: "Membership & Points", href: "/family/memberships", words: "สมาชิก แต้ม" },

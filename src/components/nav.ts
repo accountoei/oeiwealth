@@ -6,7 +6,7 @@ export type NavGroup = { label: string; href?: string; match?: string; ready?: b
 export const NAV: NavGroup[] = [
   { label: "Dashboard", href: "/", ready: true, icon: "dashboard" },
   // ย้ายจากท้ายหน้า Dashboard (ตกลง 27 ต.ค. 2026): สิ่งที่ต้องทำ + ความครบถ้วนของข้อมูล
-  { label: "To-do", href: "/todo", ready: true, icon: "todo" },
+  { label: "To-Do List", href: "/todo", ready: true, icon: "todo" },
   { label: "Income & Expenses", href: "/income-expenses", ready: true, icon: "income" },
   { label: "Cash & Bank Accounts", href: "/financial/cash", ready: true, icon: "cash" },
   { label: "Loans Receivable", href: "/financial/loans", ready: true, icon: "loans" },
