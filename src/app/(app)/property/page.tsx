@@ -10,7 +10,8 @@ import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortCon
 import PropertyTable, { type PropRow } from "./PropertyTable";
 import RentBatch, { type RentRow } from "./RentBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
-import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { assetIncomeFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import RowActions from "@/components/RowActions";
 import ExpenseBatch, { type CostRow, type PayOpt } from "./ExpenseBatch";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { TabNav, TabPanel, TabsProvider } from "../income-expenses/tabs";
@@ -23,9 +24,11 @@ type Prop = { id: string; asset_id: string; property_type: string; usage_type: s
     acquisition_cost: number | null; acquisition_date: string | null } };
 type Lease = { id: string; property_asset_id: string; tenant_name: string; unit_label: string | null; rent_amount: number;
   rent_currency: string; payment_frequency: string; start_date: string; end_date: string; lease_status: string };
-type Inc = { id: string; asset_id: string; lease_id: string | null; received_to_asset_id: string | null; income_type: string; date: string; amount: number; currency: string; base_amount: number | null; notes: string | null };
+type Inc = { id: string; asset_id: string; lease_id: string | null; received_to_asset_id: string | null; income_type: string; date: string; amount: number; currency: string; base_amount: number | null; notes: string | null;
+  tax: number | null; income_subtype: string | null; pending_split: boolean | null };
 type Exp = { id: string; related_asset_id: string | null; property_utility_id: string | null; date: string; description: string;
-  amount: number; currency: string; base_amount: number | null };
+  amount: number; currency: string; base_amount: number | null; notes: string | null; pending_split: boolean | null;
+  source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null };
 
 // ทรัพย์สินทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=all → ภาพรวม)
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "บันทึกรับค่าเช่า/สัญญาเช่า"], ["expense", "ค่าใช้จ่าย"]];
@@ -95,7 +98,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const rebillLeases = new Set(((rentToRows ?? []) as LX[]).filter((r) => r.utilities_billing === "REBILL").map((r) => r.id));
   const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
     .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
-  const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount";
+  const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
   // ภาษีที่ดิน: ปีที่เลือก (?ty=) · ค่าเริ่มต้น = ปีของเดือนที่เลือก
   const { data: taxYearRows } = ids.length ? await supabase.from("property_tax_lines").select("tax_year").in("asset_id", ids).is("deleted_at", null) : { data: [] };
   const taxDataYears = [...new Set((taxYearRows ?? []).map((r) => Number(r.tax_year)))];
@@ -103,7 +106,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const taxYear = taxYears.includes(Number(sp.ty)) ? Number(sp.ty)
     : taxYears.includes(Number(ym.slice(0, 4))) ? Number(ym.slice(0, 4)) : Number(today.slice(0, 4));
   const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }] = await Promise.all([
-    ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes")
+    ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split")
       .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
     ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
     utilProp.size ? supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", start).lte("date", end).is("deleted_at", null) : none,
@@ -137,6 +140,30 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     .map((x) => ({ ...x, prop: x.related_asset_id && shown.has(x.related_asset_id) ? x.related_asset_id : utilProp.get(x.property_utility_id ?? "") ?? "" }))
     .filter((x) => shown.has(x.prop)).sort((a, b) => b.date.localeCompare(a.date));
   const expOf = (x: (typeof expRows)[number]) => baseOf(x) * share(x.prop);
+  // กล่อง "ที่บันทึกแล้ว" ของเดือน: กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับหน้าทรัพย์สิน · ตกลง 28 ต.ค. 2026)
+  //   รายการที่มาจากหน้าอื่น (หนี้สิน · กรมธรรม์ · รายการโอน · หักจากเงินประกัน) → ลิงก์ไปแก้ที่หน้าต้นทาง · รอแยกก้อน → แยกที่ Income & Expenses
+  const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
+  const boxPaths = (asset: string) => ["/property", `/property/${asset}`, "/income-expenses"];
+  const amtLink = (text: string, href: string) => <Link href={href} className={AMT} title="แก้ / ลบที่หน้าต้นทาง">{text} →</Link>;
+  const incAmt = (x: Inc) => {
+    const text = money(incOf(x));
+    if (!canWrite) return text;
+    if (x.pending_split) return amtLink(text, `/income-expenses?m=${ym}`);
+    const rentLike = x.income_type === "RENT" || x.income_subtype === REBILL_SUBTYPE;
+    if (x.lease_id && !rentLike) return amtLink(text, `/property/${x.asset_id}`);
+    const row = { date: x.date, amount: x.amount, tax: x.tax, notes: x.notes };
+    return <RowActions table="income_transactions" id={x.id} paths={boxPaths(x.asset_id)} canDelete={canOrder}
+      fields={rentLike ? rentIncomeFields(row) : assetIncomeFields(row)} button={`${text} ✎`} buttonClass={AMT} />;
+  };
+  const expAmt = (x: (typeof expRows)[number]) => {
+    const text = money(expOf(x));
+    if (!canWrite) return text;
+    if (x.liability_id) return amtLink(text, `/liabilities/${x.liability_id}`);
+    if (x.insurance_schedule_line_id) return amtLink(text, "/insurance?tab=premium");
+    if (x.source_cash_movement_id || x.pending_split) return amtLink(text, `/income-expenses?m=${ym}`);
+    return <RowActions table="expense_items" id={x.id} paths={boxPaths(x.prop)} canDelete={canOrder}
+      fields={propertyCostFields(x)} button={`${text} ✎`} buttonClass={AMT} />;
+  };
   const incTotal = incMonth.reduce((t, x) => t + incOf(x), 0);
   const expTotal = expRows.reduce((t, x) => t + expOf(x), 0);
 
@@ -328,7 +355,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                     <td className="px-3"><Link href={`/property/${x.asset_id}`} className="hover:underline">{propName.get(x.asset_id)}</Link></td>
                     <td className="px-3">{INCOME_TYPE_LABEL[x.income_type] ?? x.income_type}</td>
                     <td className="px-3 text-xs text-slate-500">{x.notes}</td>
-                    <td className="px-3 text-right tabular-nums text-emerald-700">{money(incOf(x))}</td>
+                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-emerald-700">{incAmt(x)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -378,7 +405,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                     <td className="whitespace-nowrap px-3 py-2">{thDate(x.date)}</td>
                     <td className="px-3"><Link href={`/property/${x.prop}`} className="hover:underline">{propName.get(x.prop)}</Link></td>
                     <td className="px-3">{x.description}</td>
-                    <td className="px-3 text-right tabular-nums text-red-700">{money(expOf(x))}</td>
+                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-red-700">{expAmt(x)}</td>
                   </tr>
                 ))}
               </tbody>
