@@ -117,6 +117,8 @@ function parseCoords(raw: string | null, url: string | null): { lat: number | nu
 export async function updatePropertyInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
+  const rate = num(form.get("opportunity_rate_pct"));
+  if (rate !== null && (Number.isNaN(rate) || rate < 0 || rate > 100)) return { error: "อัตราดอกเบี้ยเทียบต้องอยู่ระหว่าง 0–100%" };
   const mapUrl = str(form.get("map_url"));
   if (mapUrl && !/^https:\/\//i.test(mapUrl)) return { error: "ลิงก์ Google Maps ต้องขึ้นต้นด้วย https://" };
   const xy = parseCoords(str(form.get("coords")), mapUrl);
@@ -134,6 +136,7 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
     ...(form.has("land_rai") ? { land_area_sq_wa: sqwaFromForm(form) } : {}),
     subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
     province: str(form.get("province")),
+    ...(form.has("opportunity_rate_pct") ? { opportunity_rate_pct: rate } : {}),
     encumbrance_type: str(form.get("encumbrance_type")),
     encumbrance_details: ["", "NONE"].includes(str(form.get("encumbrance_type")) ?? "") ? null : str(form.get("encumbrance_details")),
     // ที่ว่าง: ส่งเฉพาะตอนเป็น "ว่าง" (ระบบเติมวันเริ่มว่าง / เก็บประวัติให้เมื่อเปลี่ยนการใช้งาน)
@@ -204,6 +207,34 @@ export async function saveMarketValuation(_: ActionState, form: FormData): Promi
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   revalidateProperty(assetId);
   return { ok: "บันทึกราคาตลาดแล้ว (ไม่นับเข้า Net Worth)" };
+}
+
+/** ต้นทุนเพิ่ม (ราคาขายขั้นต่ำที่คุ้ม · ไม่นับใน Net Worth) — เพิ่ม / แก้ · ผูก "จ่ายเพิ่ม" ในระบบ = ยอด / วันที่ตามเงินออก (แก้ได้แค่อาคาร / ปี / รายละเอียด) */
+export async function saveCostItem(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const id = str(form.get("id"));
+  const movementId = str(form.get("movement_id"));
+  const years = num(form.get("depreciation_years")) ?? 20;
+  if (Number.isNaN(years) || years < 1 || years > 100 || !Number.isInteger(years)) return { error: "อายุการใช้งานต้องเป็นจำนวนปีเต็ม 1–100" };
+  const row: Record<string, unknown> = {
+    description: str(form.get("description")), is_building: form.get("is_building") === "on", depreciation_years: years, notes: str(form.get("notes")),
+  };
+  if (!movementId) {
+    const amount = num(form.get("amount"));
+    if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดเงิน" };
+    const date = str(form.get("cost_date"));
+    if (!date) return { error: "กรุณาใส่วันที่จ่าย" };
+    Object.assign(row, { amount, cost_date: date });
+  }
+  const { data, error } = id
+    ? await supabase.from("property_cost_items").update(row).eq("id", id).select("id")
+    : await supabase.from("property_cost_items").insert({ ...row, asset_id: assetId, movement_id: movementId,
+        ...(movementId ? { amount: 1, cost_date: "2000-01-01" } : {}) }).select("id");
+  if (error) return { error: error.message.includes("pci_movement_uq") ? "รายการจ่ายนี้ตั้งไว้แล้ว — แก้ที่รายการเดิม" : friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidateProperty(assetId);
+  return { ok: "บันทึกต้นทุนแล้ว (ไม่นับใน Net Worth)" };
 }
 
 /** แท็บ อัปเดตมูลค่า: มูลค่าใน Net Worth ของหลายทรัพย์สินพร้อมกัน (วันที่ / วิธีเดียวกันทั้งชุด) · บันทึกครั้งเดียว ผิดแถวเดียว = ไม่บันทึกเลย */

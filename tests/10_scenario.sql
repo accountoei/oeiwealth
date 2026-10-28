@@ -3456,6 +3456,62 @@ SELECT t.ok(NOT has_table_privilege('anon', 'public.property_market_valuations',
             AND NOT has_table_privilege('anon', 'public.v_property_market_latest', 'SELECT'), 'ราคาตลาด: anon อ่านไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz20. Property: ราคาขายขั้นต่ำที่คุ้ม (ต้นทุน + ดอกเบี้ย − ค่าเสื่อม · ไม่นับเข้า Net Worth · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.families SET opportunity_rate_pct = 3;
+UPDATE public.assets SET acquisition_cost = 1000000, acquisition_date = current_date - 730 WHERE id = t.a('บ้าน A');
+SELECT t.ok((SELECT interest = 60900 AND rate_pct = 3 AND depreciation = 0 FROM public.v_property_cost_lots
+              WHERE asset_id = t.a('บ้าน A') AND source = 'ACQUISITION'),
+            'ราคาขั้นต่ำ: ราคาที่ได้มา 2 ปี ที่ 3% → ดอกเบี้ยทบต้น 60,900');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.property_cost_items(asset_id, cost_date, amount, description, is_building)
+  VALUES (t.a('บ้าน A'), current_date - 1825, 500000, 'ค่าก่อสร้างทดสอบ', true) RETURNING id AS ci1 \gset
+SELECT t.ok((SELECT interest = 79637.04 AND depreciation = 125000 AND years_held = 5 FROM public.v_property_cost_lots WHERE item_id = :'ci1'),
+            'ราคาขั้นต่ำ: ค่าก่อสร้าง 5 ปี → ดอกเบี้ย + ค่าเสื่อมเส้นตรง 5/20');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+  VALUES (current_date - 10, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 100000, 'THB', 'จ่ายเพิ่มทดสอบ') RETURNING id AS mv1 \gset
+SELECT round(sum(net_worth), 2) AS nw0 FROM public.v_net_worth_by_person \gset
+SELECT t.ok((SELECT count(*) = 1 AND bool_and(NOT is_building) FROM public.v_property_cost_lots WHERE movement_id = :'mv1'),
+            'ราคาขั้นต่ำ: จ่ายเพิ่มที่บันทึกในระบบนับเป็นต้นทุนอัตโนมัติ');
+INSERT INTO public.property_cost_items(asset_id, movement_id, cost_date, amount, is_building)
+  VALUES (t.a('บ้าน A'), :'mv1', current_date - 1, 1, true) RETURNING id AS ci2 \gset
+SELECT t.ok((SELECT count(*) = 1 AND bool_and(is_building) AND min(amount) = 100000 AND min(lot_date) = current_date - 10
+               FROM public.v_property_cost_lots WHERE movement_id = :'mv1'),
+            'ราคาขั้นต่ำ: ตั้งจ่ายเพิ่มเป็นอาคาร → ใช้ยอด / วันที่ตามเงินออก ไม่นับซ้ำ');
+SELECT t.ok((SELECT lot_count = 3 AND building_count = 2 AND cost_total = 1600000 AND rate_source = 'FAMILY'
+                    AND carrying_value = cost_total + interest_total - depreciation_total AND min_price = carrying_value
+               FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'ราคาขั้นต่ำ: สรุป 3 ก้อน · ยังไม่มีราคาตลาด = ไม่มีค่าใช้จ่ายขาย');
+INSERT INTO public.property_market_valuations(asset_id, valuation_date, market_value, broker_fee_pct, tax_transfer_estimate)
+  VALUES (t.a('บ้าน A'), current_date, 3000000, 3, 50000);
+SELECT t.ok((SELECT min_price = round((carrying_value + 50000) / 0.97, 2) AND market_value = 3000000
+               FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'ราคาขั้นต่ำ: + ภาษี / ค่าโอน แล้ว ÷ (1 − นายหน้า %) จากราคาตลาดครั้งล่าสุด');
+UPDATE public.property_details SET opportunity_rate_pct = 5 WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT rate_pct = 5 AND rate_source = 'ASSET' FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A'))
+            AND (SELECT interest = 102500 FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A') AND source = 'ACQUISITION'),
+            'ราคาขั้นต่ำ: อัตรารายแปลงแทนอัตราครอบครัว');
+SELECT t.ok((SELECT round(sum(net_worth), 2) FROM public.v_net_worth_by_person) = :nw0,
+            'ราคาขั้นต่ำ: ต้นทุนเพิ่ม / อัตรา / ราคาตลาด ไม่เปลี่ยน Net Worth');
+SELECT t.fails($$INSERT INTO public.property_cost_items(asset_id, cost_date, amount) VALUES (t.a('KBank ออมทรัพย์'), current_date - 1, 1)$$,
+  'เฉพาะทรัพย์สินประเภท Property', 'ราคาขั้นต่ำ: ต้นทุนเพิ่มใช้ได้เฉพาะ Property');
+SELECT t.fails($$INSERT INTO public.property_cost_items(asset_id, cost_date, amount) VALUES (t.a('บ้าน A'), current_date + 1, 1)$$,
+  'วันในอนาคต', 'ราคาขั้นต่ำ: วันที่จ่ายในอนาคตไม่ได้');
+SELECT t.fails(format($$INSERT INTO public.property_cost_items(asset_id, movement_id, cost_date, amount) VALUES (t.a('บ้าน A'), %L, current_date - 1, 1)$$, :'mv1'),
+  'pci_movement_uq', 'ราคาขั้นต่ำ: ผูกเงินออกรายการเดียวซ้ำไม่ได้');
+UPDATE public.families SET opportunity_rate_pct = 4;
+SELECT t.ok((SELECT opportunity_rate_pct FROM public.families) = 3, 'ราคาขั้นต่ำ: EDITOR แก้อัตราครอบครัวไม่ได้ (ADMIN เท่านั้น)');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.property_cost_items(asset_id, cost_date, amount) VALUES (t.a('บ้าน A'), current_date - 3, 1)$$,
+  'row-level security', 'ราคาขั้นต่ำ: VIEWER เพิ่มต้นทุนไม่ได้');
+SELECT t.ok((SELECT count(*) FROM public.v_property_target_price WHERE min_price IS NOT NULL) = 1, 'ราคาขั้นต่ำ: VIEWER อ่านได้');
+RESET ROLE;
+SELECT t.ok(NOT has_table_privilege('anon', 'public.property_cost_items', 'SELECT')
+            AND NOT has_table_privilege('anon', 'public.v_property_target_price', 'SELECT')
+            AND NOT has_table_privilege('anon', 'public.v_property_cost_lots', 'SELECT'), 'ราคาขั้นต่ำ: anon อ่านไม่ได้');
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

@@ -13,6 +13,7 @@ export type ValueRow = {
   id: string; name: string; typeLabel: string; currency: string; value: number | null; date: string | null;
   defaultUnit: string; areaSqWa: number | null; market: MarketValuation | null;
   /** อัตราเป็นบาท × สัดส่วนของสมาชิกที่เลือก → ยอดรวมท้ายตาราง */ factor: number;
+  /** ราคาขายขั้นต่ำที่คุ้ม (ต้นทุน + ดอกเบี้ย − ค่าเสื่อม + ค่าใช้จ่ายขาย) · null = ยังไม่มีต้นทุน */ minPrice: number | null;
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -72,7 +73,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[56rem] text-sm">
+        <table className="w-full min-w-[66rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="min-w-[12rem] px-3 py-2">ทรัพย์สิน</th>
@@ -81,11 +82,12 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
               <th className="w-44 px-3 text-right">ราคาตลาด (อ้างอิง)</th>
               <th className="w-44 px-3 text-right">ส่วนต่างจาก Net Worth</th>
               <th className="w-40 px-3 text-right">ถ้าขายได้สุทธิ</th>
+              <th className="w-44 px-3 text-right">ราคาขั้นต่ำที่คุ้ม</th>
               <th className="w-28 px-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">ไม่มีทรัพย์สินที่ถืออยู่</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ไม่มีทรัพย์สินที่ถืออยู่</td></tr>}
             {rows.map((r) => {
               const m = r.market;
               const v = Number(r.value ?? 0);
@@ -119,6 +121,11 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{m ? money(m.net_before_debt, r.currency, 0) : <span className="text-slate-400">-</span>}
                     {m && Number(m.selling_cost) > 0 && <div className="text-xs text-slate-400">หักค่าใช้จ่ายขาย {money(m.selling_cost, undefined, 0)}</div>}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{r.minPrice == null ? <span className="text-xs text-slate-400">ยังไม่มีต้นทุน</span> : (<>
+                    {money(r.minPrice, r.currency, 0)}
+                    {m && <div className={`text-xs ${Number(m.market_value) >= r.minPrice ? "text-emerald-700" : "text-red-700"}`}>
+                      {Number(m.market_value) >= r.minPrice ? "คุ้ม " : "ยังไม่คุ้ม "}{diffText(Number(m.market_value) - r.minPrice, r.minPrice)}</div>}
+                  </>)}</td>
                   <td className="px-3 py-2 text-right">
                     {canWrite && (
                       <ModalButton label="ราคาตลาด" title={`ประเมินราคาตลาด · ${r.name}`} size="lg">
@@ -142,6 +149,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
                   {valued.length ? diffText(mkTotal - nwOfValued, nwOfValued) : "-"}
                   {valued.length > 0 && valued.length < rows.length && <div className="font-normal text-slate-400">เทียบเฉพาะ {valued.length} รายการที่ประเมินแล้ว</div>}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{valued.length ? money(netTotal, "THB", 0) : "-"}</td>
+                <td></td>
                 <td></td>
               </tr>
             </tfoot>

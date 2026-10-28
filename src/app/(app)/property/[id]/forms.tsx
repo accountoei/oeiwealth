@@ -207,7 +207,7 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   subdistrict: string | null; district: string | null; province: string | null;
   map_url?: string | null; latitude?: number | null; longitude?: number | null;
   vacant_since?: string | null; vacant_plan?: string | null; vacant_plan_date?: string | null;
-  encumbrance_type?: string | null; encumbrance_details?: string | null };
+  encumbrance_type?: string | null; encumbrance_details?: string | null; opportunity_rate_pct?: number | null };
 
 export function EditPropertyForm({ p, hasDeeds = false }: { p: Info; hasDeeds?: boolean }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
@@ -277,6 +277,9 @@ export function EditPropertyForm({ p, hasDeeds = false }: { p: Info; hasDeeds?: 
           placeholder="เช่น ทางเข้าออกกว้าง 4 ม. ให้แปลงข้างเคียง" className={`${f} disabled:bg-slate-50`} /></label>
       <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} /></label>
       <label className="text-sm">ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" defaultValue={p.acquisition_cost ?? ""} className={f} /></label>
+      <label className="text-sm">อัตราดอกเบี้ยเทียบของแปลงนี้ (% ต่อปี)
+        <input name="opportunity_rate_pct" inputMode="decimal" data-money="off" defaultValue={p.opportunity_rate_pct ?? ""} placeholder="ว่าง = ใช้อัตราครอบครัว" className={f} />
+        <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับใน Net Worth) · อัตราครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={p.notes ?? ""} className={f} /></label>
       <div className="md:col-span-2 flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>

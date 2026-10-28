@@ -8,6 +8,7 @@ import FxSourceForm from "./FxSourceForm";
 import { ActionBar } from "@/components/ActionBar";
 import OverrideForm from "./OverrideForm";
 import FxRefreshButton from "./FxRefreshButton";
+import OpportunityRateForm from "./OpportunityRateForm";
 import { redirect } from "next/navigation";
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
@@ -23,7 +24,7 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
   const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { data: autoHolds }, { data: autoGolds }, { data: lastPrice }, { data: lastRefresh }] = await Promise.all([
-    supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since").maybeSingle(),
+    supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since,opportunity_rate_pct").maybeSingle(),
     supabase.from("v_fx_status").select("currency,latest_rate_date,rate_to_thb,source,is_override,age_days,is_stale").order("currency"),
     isAdmin
       ? supabase.from("system_job_runs").select("id,job_type,started_at,result,details").order("started_at", { ascending: false }).limit(10)
@@ -208,6 +209,16 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
             )}
           </section>
       )}
+
+      {/* อัตราดอกเบี้ยเทียบ (ตกลง 28 ต.ค. 2026) · กล่องล่างสุดของแท็บ FX & Prices */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-medium text-slate-900">อัตราดอกเบี้ยเทียบ (ต้นทุนเสียโอกาส)</h2>
+        <p className="mb-3 mt-1 text-xs text-slate-500">
+          ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับใน Net Worth ·
+          แก้เป็นรายแปลงได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; ของทรัพย์สิน{isAdmin ? "" : " · แก้ได้เฉพาะ ADMIN"}
+        </p>
+        <OpportunityRateForm rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null} canEdit={isAdmin} />
+      </section>
     </div>
   );
 }
