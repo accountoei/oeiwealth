@@ -8,6 +8,7 @@ import LeaseFields, { type Bank } from "../LeaseFields";
 import { PROPERTY_TYPE_LABEL, USAGE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { useCostValueMirror } from "@/components/useCostValueMirror";
+import AcqBuildingFields from "../AcqBuildingFields";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -57,21 +58,12 @@ export default function NewPropertyForm(props: {
         </label>
         <label className={label}>กลุ่มทำเล<input name="location_group" placeholder="เช่น กรุงเทพ · เชียงใหม่" className={input} /></label>
         <label className={label}>ที่อยู่<input name="address" className={input} /></label>
-        <div className={label}>เนื้อที่ (ไร่-งาน-ตารางวา)
-          <div className="mt-1 flex gap-2">
-            <input name="land_rai" inputMode="numeric" placeholder="ไร่" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-            <input name="land_ngan" inputMode="numeric" placeholder="งาน" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-            <input name="land_wa" inputMode="decimal" placeholder="ตร.ว." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          </div>
-        </div>
-        <label className={label}>ประเภทเอกสารสิทธิ์<input name="title_type" placeholder="เช่น โฉนด · น.ส.3ก · อ.ช.2" className={input} /></label>
-        <label className={label}>เลขที่โฉนด / เอกสารสิทธิ์<input name="title_deed_no" className={input} /></label>
-        <label className={label}>เลขที่ดิน<input name="land_no" className={input} />
-          <span className="mt-1 block text-xs text-slate-400">ซื้อหลายโฉนดเป็นแปลงเดียว: ใส่โฉนดใบแรกที่นี่ แล้วเพิ่มใบอื่นที่หน้าทรัพย์สิน</span></label>
+        <DeedRows />
         <label className={label}>วันที่ได้มา {!opening && "*"}
           <input name="acquisition_date" type="date" required={!opening} min={opening ? undefined : goLive} max={today} {...m.acqDateProps} className={input} />
         </label>
         <label className={label}>ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" {...m.costProps} className={input} />{m.copied === "cost" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับมูลค่า · แก้ได้</span>}</label>
+        <AcqBuildingFields className={label} />
         <label className={label}>มูลค่า *<input name="value" required inputMode="decimal" {...m.valueProps} className={input} />{m.copied === "value" && <span className="mt-1 block text-xs text-slate-400">ใช้ยอดเดียวกับราคาที่ได้มา · แก้ได้</span>}</label>
         <label className={label}>มูลค่า ณ วันที่ *
           {opening
@@ -118,5 +110,41 @@ export default function NewPropertyForm(props: {
         <Link href="/property" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
       </div>
     </form>
+  );
+}
+
+const cell = "w-full rounded-md border border-slate-300 px-2 py-2 text-sm";
+
+/** โฉนด / เอกสารสิทธิ์ (ซื้อหลายโฉนดเป็นแปลงเดียวได้ · ตกลง 28 ต.ค. 2026)
+ *  ใบแรก = ช่องหลักเดิม (ระบบสร้างโฉนดใบแรกให้) · ใบอื่น = x_* · เนื้อที่ของทรัพย์สิน = ผลรวมทุกใบ */
+function DeedRows() {
+  const [n, setN] = useState(1);
+  const row = (i: number) => {
+    const k = (f: string) => (i === 0 ? f : `x_${f}`);
+    return (
+      <div key={i} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_2fr_auto] md:items-center">
+        <input name={k("title_type")} placeholder="ประเภท เช่น โฉนด · น.ส.3ก · อ.ช.2" aria-label="ประเภทเอกสารสิทธิ์" className={cell} />
+        <input name={k("title_deed_no")} placeholder="เลขที่โฉนด" aria-label="เลขที่โฉนด" className={cell} />
+        <input name={k("land_no")} placeholder="เลขที่ดิน" aria-label="เลขที่ดิน" className={cell} />
+        <div className="flex gap-2">
+          <input name={k("land_rai")} inputMode="numeric" placeholder="ไร่" aria-label="ไร่" className={cell} />
+          <input name={k("land_ngan")} inputMode="numeric" placeholder="งาน" aria-label="งาน" className={cell} />
+          <input name={k("land_wa")} inputMode="decimal" placeholder="ตร.ว." aria-label="ตารางวา" className={cell} />
+        </div>
+        {i > 0 && i === n - 1
+          ? <button type="button" onClick={() => setN(n - 1)} className="text-xs text-red-600 hover:underline">ลบแถว</button>
+          : <span className="hidden md:block md:w-10" />}
+      </div>
+    );
+  };
+  return (
+    <div className="md:col-span-2 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm text-slate-700">โฉนด / เอกสารสิทธิ์ · เนื้อที่ (ไร่-งาน-ตารางวา)</span>
+        <button type="button" onClick={() => setN(n + 1)} className="text-sm text-blue-700 hover:underline">+ เพิ่มโฉนดอีกใบ</button>
+      </div>
+      {Array.from({ length: n }, (_, i) => row(i))}
+      <p className="text-xs text-slate-400">ซื้อหลายโฉนดเป็นแปลงเดียว: เพิ่มแถวละใบ · เนื้อที่ของทรัพย์สิน = ผลรวมทุกใบ (เพิ่ม / แก้ภายหลังได้ที่หน้าทรัพย์สิน)</p>
+    </div>
   );
 }

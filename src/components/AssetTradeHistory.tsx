@@ -13,11 +13,15 @@ export type ValRow = { id: string; valuation_date: string; value: number; source
  *  "อัปเดตมูลค่า" (pop up ฟอร์ม) + "ประวัติ…" (pop up ตารางเดียวเรียงตามวันที่: จ่ายซื้อ / เงินขาย / มูลค่า + สรุปการขาย)
  *  ราคาทองอัตโนมัติรายวันซ่อนไว้ก่อน */
 export default async function AssetTradeHistory({ assetId, currency, status, cost, paths, canWrite, canDelete, showMoves = true,
-  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, perUnitDigits, unit }: {
+  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, perUnitDigits, unit, paymentEditor, extra, singleLabel }: {
   assetId: string; currency: string; status: string; cost: number | null; paths: string[];
   canWrite: boolean; canDelete: boolean; showMoves?: boolean;
   valuations?: ValRow[]; valuationForm?: ReactNode; valuationHint?: string; sourceLabel?: Record<string, string>;
   methodLabel?: Record<string, string>; perUnit?: (v: number, date: string) => number | null; unit?: string | null; perUnitDigits?: number;
+  /** Property: ฟอร์มแก้รายการจ่ายซื้อ / จ่ายเพิ่ม (ติ๊กอาคารได้) แทนฟอร์มกลาง */
+  paymentEditor?: (m: { id: string; movement_date: string; amount: number; description: string | null; add_value: boolean }) => ReactNode;
+  /** Property: ส่วนต่อท้ายในหน้าต่างเดียวกัน (ต้นทุนรายก้อน + เพิ่มต้นทุน) */ extra?: ReactNode;
+  /** มีค่า = ปุ่มเดียว (อัปเดตมูลค่า + ประวัติ + extra ในหน้าต่างเดียว · ตกลง 28 ต.ค. 2026) */ singleLabel?: string;
 }) {
   const supabase = await createClient();
   const [{ data: moves }, { data: saleVal }, { data: lastVal }, { data: parts }] = await Promise.all([
@@ -49,6 +53,9 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
     ? `${isPart(m) ? "ขายบางส่วน · " : ""}${(m.metadata as { gain?: number } | null)?.gain != null ? "เงินขาย (ทุนคืน) เข้าบัญชี" : "เงินขาย (สุทธิ) เข้าบัญชี"}`
     : "จ่ายซื้อ / จ่ายเพิ่ม";
   const moveActions = (m: (typeof list)[number]) => canWrite && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete && !isPart(m)} canEdit={m.movement_type === "ASSET_PURCHASE"}
+    editor={paymentEditor && m.movement_type === "ASSET_PURCHASE"
+      ? paymentEditor({ id: m.id, movement_date: m.movement_date, amount: Number(m.amount), description: m.description,
+        add_value: (m.metadata as { add_value?: boolean } | null)?.add_value === true }) : undefined}
     deleteNote={m.movement_type === "ASSET_SALE" ? `ลบเฉพาะเงินขายที่เข้าบัญชี — สถานะ / มูลค่าราคาขาย ต้องแก้เอง${merged ? "" : "ด้านล่าง"}` : undefined}
     fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount },
       { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />;
@@ -145,6 +152,27 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
         {summary}
         {sold && <p className="mb-3 text-xs text-slate-500">บันทึกขายผิด: ลบ &ldquo;เงินขาย&rdquo; ในตาราง ลบรายได้กำไร / ค่าใช้จ่ายขาดทุนจากการขายในหน้ารายได้ / ค่าใช้จ่าย ลบมูลค่า &ldquo;ราคาขาย&rdquo; แล้วเปลี่ยนสถานะกลับเป็น &ldquo;ถืออยู่&rdquo;</p>}
       </HistoryRows>
+    );
+    // Property: ปุ่มเดียว "มูลค่าและต้นทุน" = อัปเดตมูลค่า + ประวัติ + ต้นทุนรายก้อน (ตกลง 28 ต.ค. 2026)
+    if (singleLabel) return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <ModalButton label={singleLabel} title={singleLabel} size="lg" primary>
+          <div className="space-y-5">
+            {valuationForm && (
+              <div>
+                <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับใน Net Worth)</h3>
+                {valuationHint && <p className="mb-2 text-xs text-slate-500">{valuationHint}</p>}
+                {valuationForm}
+              </div>
+            )}
+            <div className="border-t border-slate-100 pt-3">
+              <h3 className="mb-1 text-sm font-medium text-slate-800">{historyLabel}</h3>
+              {history}
+            </div>
+            {extra}
+          </div>
+        </ModalButton>
+      </div>
     );
     // ปุ่มในกล่องมูลค่าล่าสุด (แทนกล่อง "ซื้อ / ขาย และมูลค่า" · ตกลง 27 ต.ค. 2026)
     return (

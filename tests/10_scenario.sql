@@ -3512,6 +3512,39 @@ SELECT t.ok(NOT has_table_privilege('anon', 'public.property_cost_items', 'SELEC
             AND NOT has_table_privilege('anon', 'public.v_property_cost_lots', 'SELECT'), 'ราคาขั้นต่ำ: anon อ่านไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz21. Property: จ่ายเพิ่ม → เพิ่มมูลค่าอัตโนมัติ · ค่าอาคารในราคาที่ได้มา (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.assets SET acquisition_cost = 1000000, acquisition_date = current_date - 730 WHERE id = t.a('บ้าน A');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.property_details SET acq_building_cost = 400000 WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT count(*) = 2 AND sum(amount) = 1000000 AND sum(depreciation) = 40000
+                    AND bool_or(is_building AND amount = 400000) AND bool_or(NOT is_building AND amount = 600000)
+               FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A') AND source = 'ACQUISITION'),
+            'จ่ายเพิ่ม: ราคาที่ได้มาแยกที่ดิน + อาคาร · ค่าเสื่อมเฉพาะอาคาร 2/20');
+SELECT current_value AS cv0 FROM public.assets WHERE id = t.a('บ้าน A') \gset
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description, metadata)
+  VALUES (current_date, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 100000, 'THB', 'ต่อเติมทดสอบ', '{"add_value": true}')
+  RETURNING id AS mv1 \gset
+SELECT t.ok((SELECT current_value = :cv0 + 100000 AND current_value_date = current_date FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT count(*) = 1 FROM public.asset_valuations WHERE source_movement_id = :'mv1' AND deleted_at IS NULL AND valuation_method = 'BOOK_VALUE'),
+            'จ่ายเพิ่ม: ติ๊กเพิ่มมูลค่า → มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย');
+UPDATE public.cash_movements SET amount = 150000 WHERE id = :'mv1';
+SELECT t.ok((SELECT current_value = :cv0 + 150000 FROM public.assets WHERE id = t.a('บ้าน A')), 'จ่ายเพิ่ม: แก้ยอดจ่าย → มูลค่าปรับตาม');
+UPDATE public.cash_movements SET deleted_at = now() WHERE id = :'mv1';
+SELECT t.ok((SELECT current_value = :cv0 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND NOT EXISTS (SELECT 1 FROM public.asset_valuations WHERE source_movement_id = :'mv1' AND deleted_at IS NULL),
+            'จ่ายเพิ่ม: ลบรายการจ่าย → มูลค่าที่เพิ่มให้ถูกลบด้วย');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+  VALUES (current_date, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 50000, 'THB', 'ไม่เพิ่มมูลค่า') RETURNING id AS mv2 \gset
+SELECT t.ok((SELECT current_value = :cv0 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND NOT EXISTS (SELECT 1 FROM public.asset_valuations WHERE source_movement_id = :'mv2'),
+            'จ่ายเพิ่ม: ไม่ติ๊กเพิ่มมูลค่า → มูลค่าไม่เปลี่ยน (เหมือนเดิม)');
+SELECT t.fails($$UPDATE public.property_details SET acq_building_years = 0 WHERE asset_id = t.a('บ้าน A')$$, 'pd_acq_building_ck',
+  'จ่ายเพิ่ม: อายุอาคารต้อง 1–100 ปี');
+RESET ROLE;
+ROLLBACK;
+
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
