@@ -92,8 +92,8 @@ function SortRow({ g, onUp, onDown }: { g: NavGroup; onUp?: () => void; onDown?:
  * dots = href ของเมนูที่ต้องแสดงจุดแดง (เช่น Settings เมื่อมีเดือนที่ถึงเวลาปิดแล้วยังไม่ปิด)
  * initialOrder / initialCollapsed = ค่าจาก cookie ของเครื่องนี้ · todo = จำนวนงานค้าง (Promise → แสดงเมื่อพร้อม)
  */
-export default function Sidebar({ dots = [], user, familyName = "", initialOrder = [], initialCollapsed = false, initialWidth, todo }: {
-  dots?: string[]; user: { name: string; email: string; role: string }; familyName?: string; initialOrder?: string[]; initialCollapsed?: boolean;
+export default function Sidebar({ dots = [], user, familyName = "", familyPhoto = null, initialOrder = [], initialCollapsed = false, initialWidth, todo }: {
+  dots?: string[]; user: { name: string; email: string; role: string }; familyName?: string; familyPhoto?: string | null; initialOrder?: string[]; initialCollapsed?: boolean;
   initialWidth?: number; todo?: Promise<TodoCount | null>;
 }) {
   const [open, setOpen] = useState(false);
@@ -146,10 +146,13 @@ export default function Sidebar({ dots = [], user, familyName = "", initialOrder
       <aside style={collapsed ? undefined : { width }}
         className={`${open ? "flex" : "hidden"} md:flex fixed md:sticky top-0 z-20 h-screen shrink-0 flex-col pt-10 md:pt-0 border-r border-slate-200 bg-white ${
         dragging ? "select-none" : "transition-[width] duration-150"} ${collapsed ? "w-16" : ""}`}>
-        {/* มุมซ้ายบน: ชื่อครอบครัว + "Wealth Vault" · ไม่มีรูป → ชื่อย่อครอบครัว (ตกลง 28 ต.ค. 2026) */}
+        {/* มุมซ้ายบน: ชื่อครอบครัว + "Wealth Vault" · รูปครอบครัว (ใส่ที่ Members → แก้ไข) · ไม่มีรูป → ชื่อย่อ (ตกลง 28 ต.ค. 2026) */}
         <div className={`flex items-center gap-2 pb-3 pt-5 ${collapsed ? "flex-col px-2" : "pl-5 pr-3"}`}>
-          <span title={collapsed ? title : undefined}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{familyInitials(familyName)}</span>
+          {familyPhoto
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={familyPhoto} alt="" title={collapsed ? title : undefined} className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+            : <span title={collapsed ? title : undefined}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{familyInitials(familyName)}</span>}
           {!collapsed && (
             <span className="min-w-0 flex-1 leading-tight" title={title}>
               <span className="block truncate text-[15px] font-bold text-slate-900">{title}</span>

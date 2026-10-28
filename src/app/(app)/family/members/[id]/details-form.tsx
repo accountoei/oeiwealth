@@ -20,7 +20,7 @@ export type PersonDetails = {
 };
 
 /** ย่อรูปเป็นสี่เหลี่ยมจัตุรัส 256 px (JPEG) ในเบราว์เซอร์ → data URL เล็ก ๆ */
-async function resizePhoto(file: File): Promise<string> {
+export async function resizePhoto(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((ok, bad) => {

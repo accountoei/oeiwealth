@@ -35,7 +35,7 @@ export async function movePerson(form: FormData): Promise<void> {
   refresh();
 }
 
-/** ชื่อครอบครัว + หัวหน้าครอบครัว (ADMIN เท่านั้น — ฐานข้อมูลบังคับสิทธิ์) */
+/** ชื่อครอบครัว + รูป + หัวหน้าครอบครัว (ADMIN เท่านั้น — ฐานข้อมูลบังคับสิทธิ์) */
 export async function updateFamily(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const name = String(form.get("name") ?? "").trim();
@@ -44,8 +44,17 @@ export async function updateFamily(_: ActionState, form: FormData): Promise<Acti
   if (name.length > 120) return { error: "ชื่อยาวเกินไป" };
   const { data: family } = await supabase.from("families").select("id,name,head_person_id").maybeSingle();
   if (!family) return { error: "ไม่พบข้อมูลครอบครัว" };
-  if (name !== family.name) {
-    const { data, error } = await supabase.from("families").update({ name }).eq("id", family.id).select("id");
+  const row: { name?: string; photo?: string | null } = {};
+  if (name !== family.name) row.name = name;
+  // รูปครอบครัว: ส่งมาเฉพาะเมื่อเลือกรูปใหม่ / กดลบรูป
+  const photo = String(form.get("photo") ?? "");
+  if (form.get("photo_clear") === "1") row.photo = null;
+  else if (photo) {
+    if (!/^data:image\/(jpeg|png|webp);base64,/.test(photo) || photo.length > 300000) return { error: "รูปครอบครัวใหญ่เกินไป หรือไม่ใช่ไฟล์รูปภาพ" };
+    row.photo = photo;
+  }
+  if (Object.keys(row).length) {
+    const { data, error } = await supabase.from("families").update(row).eq("id", family.id).select("id");
     if (error) return { error: friendly(error.message) };
     if (!data?.length) return { error: "เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ข้อมูลครอบครัวได้" };
   }

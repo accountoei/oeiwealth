@@ -722,6 +722,16 @@ SELECT t.fails($$UPDATE public.persons SET national_id = '123-45' WHERE name = '
   'เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก');
 SELECT t.fails($$UPDATE public.persons SET photo = 'javascript:alert(1)' WHERE name = 'หลานทดสอบ'$$, 'persons_photo_format',
   'รูปโปรไฟล์ต้องเป็นไฟล์รูปภาพเท่านั้น');
+-- รูปครอบครัว (28 ต.ค. 2026): รูปแบบเดียวกับรูปสมาชิก · แก้ได้เฉพาะ ADMIN
+UPDATE public.families SET photo = 'data:image/jpeg;base64,AAAA';
+SELECT t.ok((SELECT photo IS NULL FROM public.families), 'EDITOR ใส่รูปครอบครัวไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.fails($$UPDATE public.families SET photo = 'javascript:alert(1)'$$, 'families_photo_format',
+  'รูปครอบครัวต้องเป็นไฟล์รูปภาพเท่านั้น');
+UPDATE public.families SET photo = 'data:image/jpeg;base64,AAAA';
+SELECT t.ok((SELECT photo = 'data:image/jpeg;base64,AAAA' FROM public.families), 'ADMIN ใส่รูปครอบครัวได้');
+UPDATE public.families SET photo = NULL;
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
 -- เพศ + การศึกษา / การทำงาน
 SELECT t.ok((SELECT gender = 'M' FROM public.persons WHERE name = 'หลานทดสอบ'), 'คำนำหน้า "เด็กชาย" → เพศชายให้เอง');
 UPDATE public.persons SET gender = 'F' WHERE name = 'หลานทดสอบ';
