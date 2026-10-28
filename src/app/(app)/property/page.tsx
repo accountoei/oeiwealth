@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
+import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, marketDefaultUnit, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
@@ -18,6 +18,8 @@ import ExpenseBatch, { type CostRow, type PayOpt } from "./ExpenseBatch";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { TabNav, TabPanel, TabsProvider } from "../income-expenses/tabs";
 import { StatBox } from "@/components/Boxes";
+import ValueBatch, { type ValueRow } from "./ValueBatch";
+import type { MarketValuation } from "./MarketValuationForm";
 import LandTaxTable, { type TaxLineRow, type TaxPropRow } from "./LandTaxTable";
 
 type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; vacant_since: string | null; location_group: string | null;
@@ -33,7 +35,7 @@ type Exp = { id: string; related_asset_id: string | null; property_utility_id: s
   source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null };
 
 // ทรัพย์สินทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=all → ภาพรวม)
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "บันทึกรับค่าเช่า/สัญญาเช่า"], ["expense", "ค่าใช้จ่าย"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["income", "บันทึกรับค่าเช่า/สัญญาเช่า"], ["expense", "ค่าใช้จ่าย"], ["update", "อัปเดตมูลค่า"]];
 const TYPE_COLORS: Record<string, string> = { LAND: "#3b82f6", HOUSE: "#8b5cf6", CONDO: "#10b981", OTHER: "#f59e0b" };
 // การใช้งาน → กลุ่มที่แสดงในภาพรวม
 const USAGE_GROUP: Record<string, string> = { RENTAL: "RENTAL", OWNER_OCCUPIED: "LIVE", PERSONAL_USE: "LIVE", VACANT: "VACANT", BUSINESS_USE: "BUSINESS", OTHER: "OTHER" };
@@ -107,13 +109,15 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const taxYears = landTaxYears(today, taxDataYears);
   const taxYear = taxYears.includes(Number(sp.ty)) ? Number(sp.ty)
     : taxYears.includes(Number(ym.slice(0, 4))) ? Number(ym.slice(0, 4)) : Number(today.slice(0, 4));
-  const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }] = await Promise.all([
+  const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }, { data: marketRaw }] = await Promise.all([
     ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split")
       .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
     ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
     utilProp.size ? supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", start).lte("date", end).is("deleted_at", null) : none,
     ids.length ? supabase.from("v_property_tax_lines").select("*").in("asset_id", ids).in("tax_year", [taxYear, taxYear - 1])
       .order("sort_order").order("created_at") : none,
+    // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
+    ids.length ? supabase.from("v_property_market_latest").select("*").in("asset_id", ids) : none,
   ]);
 
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
@@ -275,6 +279,14 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       rate: Number(prevLines.at(-1)?.rate_pct ?? LAND_TAX_RATE_BY_USAGE[p.usage_type] ?? 0.3),
     };
   });
+  // ---------------------------------------------------------------- อัปเดตมูลค่า: มูลค่าใน Net Worth + ราคาตลาด ของทรัพย์สินที่ถืออยู่
+  const marketOf = new Map(((marketRaw ?? []) as (MarketValuation & { asset_id: string })[]).map((m) => [m.asset_id, m]));
+  const valueRows: ValueRow[] = active.map((p) => ({
+    id: p.asset_id, name: p.assets.name, typeLabel: PROPERTY_TYPE_LABEL[p.property_type] ?? p.property_type, currency: p.assets.currency,
+    value: p.assets.current_value == null ? null : Number(p.assets.current_value), date: p.assets.current_value_date,
+    defaultUnit: marketDefaultUnit(p.property_type), areaSqWa: p.land_area_sq_wa != null ? Number(p.land_area_sq_wa) : null,
+    market: marketOf.get(p.asset_id) ?? null, factor: thb(1, p.assets.currency) * share(p.asset_id),
+  }));
   // ประมาณรายได้ค่าเช่าทั้งปี = ค่าเช่าตามสัญญาที่มีผล (ต่อเดือน) × 12
   const leaseCount = props.reduce((t, p) => t + (byProp.get(p.asset_id) ?? []).filter((l) => l.lease_status !== "UPCOMING" && PER_MONTHS[l.payment_frequency]).length, 0);
   const annualRent = props.reduce((t, p) => t + monthlyRent(p.asset_id), 0) * 12;
@@ -408,6 +420,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
             </table>
           </div>
         </div>
+      </TabPanel>
+      <TabPanel id="update">
+        <ValueBatch rows={valueRows} today={today} minDate={family?.go_live_date ?? ""} canWrite={canWrite}
+          shareNote={pv.personId ? `ยอดรวมท้ายตาราง = ส่วนของ ${pv.personName} ตามสัดส่วนความเป็นเจ้าของ (มูลค่าในแถว = ทั้งทรัพย์สิน)` : null} />
       </TabPanel>
     </div>
     </TabsProvider>
