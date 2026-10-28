@@ -8,7 +8,9 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
 
 export type InsLine = {
-  id: string; policyId: string; policy: string; person: string | null; no: number; due: string; remaining: number; currency: string;
+  id: string; policyId: string; policy: string; person: string | null; no: number; due: string; remaining: number;
+  /** ยอดเต็มงวด · จ่าย / รับไปแล้ว (งวดที่ทยอยจ่าย / รับ → แสดงใต้ยอดค้าง) */
+  amount: number; paid: number; currency: string;
   status: string; benefitType: string | null;
 };
 export type PayOpt = { value: string; label: string; currency: string };
@@ -78,10 +80,11 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
             )}
           </div>
         </div>
-        <table className="mt-3 w-full min-w-[52rem] text-sm">
+        <table className="mt-3 w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">กรมธรรม์</th><th className="px-3">งวด / ครบกำหนด</th><th className="px-3 text-right">{prem ? "ยอดค้าง" : "ยอดที่จะได้รับ"}</th>
-              {canWrite && <><th className="px-3 text-right">{prem ? "ยอดที่จ่าย" : "ยอดที่ได้รับ"}</th><th className="px-3">{prem ? "จ่ายจาก" : "เข้าบัญชี"}</th></>}</tr>
+            {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
+            <tr><th className="min-w-[12rem] px-3 py-2">กรมธรรม์</th><th className="w-44 px-3">งวด / ครบกำหนด</th><th className="w-44 px-3 text-right">{prem ? "ยอดค้าง" : "ยอดที่จะได้รับ"}</th>
+              {canWrite && <><th className="w-56 px-3 text-right">{prem ? "ยอดที่จ่าย" : "ยอดที่ได้รับ"}</th><th className="w-64 px-3">{prem ? "จ่ายจาก" : "เข้าบัญชี"}</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {shown.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">
@@ -96,8 +99,13 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
                     {r.person && <div className="text-xs text-slate-500">{r.person}</div>}
                   </td>
                   <td className="whitespace-nowrap px-3 text-xs">งวดที่ {r.no}{r.benefitType ? ` · ${BENEFIT_TYPE_LABEL[r.benefitType] ?? r.benefitType}` : ""}
-                    <div>{thDate(r.due)}{st && <span className={`ml-1 ${st.cls}`}>· {st.text}</span>}</div></td>
-                  <td className="px-3 text-right tabular-nums">{money(r.remaining, r.currency)}</td>
+                    <div>{thDate(r.due)}{st && <span className={`ml-1 ${st.cls}`}>· {!prem && r.status === "PARTIAL" ? "รับบางส่วน" : st.text}</span>}</div></td>
+                  {/* ทยอยจ่าย / รับไปบางส่วน → บรรทัดเล็ก "จ่ายแล้ว / รับแล้ว" + ยอดเต็มงวด (ตกลง 28 ต.ค. 2026) */}
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(r.remaining, r.currency)}
+                    {r.paid > 0.005 && <>
+                      <div className="text-xs text-emerald-700">{prem ? "จ่ายแล้ว" : "รับแล้ว"} {money(r.paid, r.currency)}</div>
+                      <div className="text-xs text-slate-400">จากงวด {money(r.amount, r.currency)}</div>
+                    </>}</td>
                   {canWrite && <>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <button type="button" onClick={() => setVals({ ...vals, [r.id]: fmt(r.remaining) })} className="mr-2 text-xs text-blue-700 hover:underline">ตามงวด</button>
@@ -105,7 +113,7 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
                         onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} />
                     </td>
                     <td className="px-3">
-                      <select value={pay[r.id] ?? ""} onChange={(e) => setPay({ ...pay, [r.id]: e.target.value })} className={`max-w-[15rem] ${small}`}
+                      <select value={pay[r.id] ?? ""} onChange={(e) => setPay({ ...pay, [r.id]: e.target.value })} className={`w-full max-w-[15rem] ${small}`}
                         aria-label={`${prem ? "จ่ายจาก" : "เข้าบัญชี"} ${label(r)}`}>
                         <option value="">{prem ? "— เลือกบัญชี / บัตร —" : "— เลือกบัญชี —"}</option>
                         {pays.filter((p) => p.currency === r.currency).map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}

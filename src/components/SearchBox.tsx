@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import { searchAll, type SearchHit } from "@/lib/search";
 import { NAV } from "./nav";
@@ -27,7 +26,8 @@ const PAGES: { label: string; href: string; words?: string }[] = [
   { label: "Opening Setup", href: "/settings/opening", words: "ยอดตั้งต้น go-live" },
 ];
 
-/** ช่องค้นหาด้านบน (กด หรือ Ctrl/⌘ + K) → กล่องค้นหา · ผลแยกกลุ่ม · ↑↓ Enter เลือก · Esc ปิด */
+/** ช่องค้นหาด้านบน (แบบ Google · ตกลง 28 ต.ค. 2026): พิมพ์ในช่องได้ทันที (หรือ Ctrl/⌘ + K) → ผลแยกกลุ่มเลื่อนลงใต้ช่อง ไม่มีหน้าต่างกลางจอ
+ *   ↑↓ Enter เลือก · Esc / คลิกที่อื่น = ปิดรายการ */
 export default function SearchBox() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -36,16 +36,19 @@ export default function SearchBox() {
   const [sel, setSel] = useState(0);
   const [loading, startTransition] = useTransition();
   const input = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen(true); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); input.current?.focus(); setOpen(true); }
     };
+    // คลิกนอกช่อง / รายการ → ปิดรายการ (คำที่พิมพ์ยังอยู่ · กลับมาคลิกช่องแล้วรายการขึ้นอีก)
+    const onDown = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => { window.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
   }, []);
-  useEffect(() => { if (open) input.current?.focus(); }, [open]);
 
   // ค้นในฐานข้อมูลหลังหยุดพิมพ์ 250 ms (ผลที่มาช้ากว่าคำค้นล่าสุดทิ้งไป)
   useEffect(() => {
@@ -64,53 +67,45 @@ export default function SearchBox() {
     .map((p) => ({ group: "หน้า / เมนู", label: p.label, href: p.href })) : [];
   const all = [...pages, ...(t.length >= 2 ? hits : [])];
 
-  const close = () => { setOpen(false); setQ(""); setHits([]); setSel(0); };
-  const go = (h: SearchHit | undefined) => { if (!h) return; close(); router.push(h.href); };
+  const clear = () => { setQ(""); setHits([]); setSel(0); };
+  const go = (h: SearchHit | undefined) => { if (!h) return; setOpen(false); clear(); input.current?.blur(); router.push(h.href); };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") close();
-    else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, all.length - 1)); }
+    if (e.key === "Escape") { if (open && t) setOpen(false); else { clear(); input.current?.blur(); } }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setSel((s) => Math.min(s + 1, all.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); go(all[sel]); }
   };
+  const show = open && t !== "";
 
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)}
-        className="flex w-full max-w-md items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500 hover:border-slate-300 hover:bg-white">
-        <Search className="h-4 w-4 shrink-0" aria-hidden />
-        <span className="flex-1 truncate text-left">ค้นหาข้อมูลในระบบ…</span>
-        <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-400 sm:inline">Ctrl K</kbd>
-      </button>
-      {/* portal: แถบบนมี backdrop-blur ทำให้ fixed ข้างในไม่เต็มจอ */}
-      {open && createPortal(
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 p-4 pt-[12vh]" onMouseDown={close}>
-          <div role="dialog" aria-label="ค้นหา" className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-slate-200" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 border-b border-slate-200 px-4">
-              <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
-              <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onKeyDown} data-plain
-                placeholder="พิมพ์ชื่อบัญชี ทรัพย์สิน หลักทรัพย์ บัตร เอกสาร สมาชิก หรือชื่อเมนู…"
-                className="w-full py-3 text-sm outline-none" />
-              {loading && <span className="whitespace-nowrap text-xs text-slate-400">กำลังค้น…</span>}
-              <button type="button" onClick={close} className="rounded px-1.5 text-xs text-slate-400 hover:bg-slate-100">Esc</button>
+    <div ref={box} className="relative w-full max-w-md">
+      <div className={`flex items-center gap-2 border bg-slate-50 px-3 py-1.5 text-sm focus-within:border-blue-400 focus-within:bg-white ${show
+        ? "rounded-t-lg border-slate-300 bg-white" : "rounded-lg border-slate-200 hover:border-slate-300 hover:bg-white"}`}>
+        <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+        <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); setOpen(true); }} onFocus={() => setOpen(true)} onKeyDown={onKeyDown}
+          data-plain role="combobox" aria-expanded={show} aria-controls="search-results" aria-label="ค้นหาข้อมูลในระบบ"
+          placeholder="ค้นหาข้อมูลในระบบ…" style={{ outline: "none", background: "transparent" }} className="w-full min-w-0 bg-transparent text-slate-800 outline-none placeholder:text-slate-500" />
+        {loading && t.length >= 2 && <span className="whitespace-nowrap text-xs text-slate-400">กำลังค้น…</span>}
+        {q ? <button type="button" onClick={() => { clear(); input.current?.focus(); }} aria-label="ล้างคำค้น"
+          className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
+          : <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-400 sm:inline">Ctrl K</kbd>}
+      </div>
+      {show && (
+        <div id="search-results" role="listbox" className="absolute inset-x-0 top-full z-50 max-h-[60vh] overflow-y-auto rounded-b-lg border border-t-0 border-slate-300 bg-white py-1 shadow-lg">
+          {t.length < 2 && pages.length === 0 && <p className="px-4 py-2 text-sm text-slate-500">พิมพ์อย่างน้อย 2 ตัวอักษร</p>}
+          {t.length >= 2 && all.length === 0 && !loading && <p className="px-4 py-2 text-sm text-slate-500">ไม่พบ &ldquo;{q.trim()}&rdquo;</p>}
+          {all.map((h, i) => (
+            <div key={`${h.href}-${i}`}>
+              {(i === 0 || all[i - 1].group !== h.group) && <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{h.group}</div>}
+              <button type="button" role="option" aria-selected={i === sel} onMouseEnter={() => setSel(i)} onClick={() => go(h)}
+                className={`flex w-full items-baseline justify-between gap-3 px-4 py-1.5 text-left text-sm ${i === sel ? "bg-blue-50 text-blue-800" : "text-slate-800"}`}>
+                <span className="truncate">{h.label}</span>
+                {h.sub && <span className="shrink-0 text-xs text-slate-500">{h.sub}</span>}
+              </button>
             </div>
-            <div className="max-h-[60vh] overflow-y-auto py-2">
-              {!t && <p className="px-4 py-3 text-sm text-slate-500">พิมพ์อย่างน้อย 2 ตัวอักษร · ↑↓ เลือก · Enter เปิด</p>}
-              {t && all.length === 0 && !loading && <p className="px-4 py-3 text-sm text-slate-500">ไม่พบ &ldquo;{q.trim()}&rdquo;</p>}
-              {all.map((h, i) => (
-                <div key={`${h.href}-${i}`}>
-                  {(i === 0 || all[i - 1].group !== h.group) && <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{h.group}</div>}
-                  <button type="button" onMouseEnter={() => setSel(i)} onClick={() => go(h)}
-                    className={`flex w-full items-baseline justify-between gap-3 px-4 py-1.5 text-left text-sm ${i === sel ? "bg-blue-50 text-blue-800" : "text-slate-800"}`}>
-                    <span className="truncate">{h.label}</span>
-                    {h.sub && <span className="shrink-0 text-xs text-slate-500">{h.sub}</span>}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>,
-        document.body,
+          ))}
+        </div>
       )}
-    </>
+    </div>
   );
 }

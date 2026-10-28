@@ -80,10 +80,10 @@ function DividendBatch({ rows, banks, today, minDate, canWrite }: { rows: BizRow
         )}
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[56rem] text-sm">
+        <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">กิจการ / ผู้ถือหุ้น</th><th className="px-3 text-right">หุ้น / สัดส่วน</th>
-              {canWrite && <><th className="px-3 text-right">ปันผลก่อนภาษี</th><th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="px-3 text-right">สุทธิ</th><th className="px-3">เข้าบัญชี</th></>}</tr>
+            <tr><th className="min-w-[12rem] px-3 py-2">กิจการ / ผู้ถือหุ้น</th><th className="w-40 px-3 text-right">หุ้น / สัดส่วน</th>
+              {canWrite && <><th className="w-40 px-3 text-right">ปันผลก่อนภาษี</th><th className="w-36 px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-40 px-3 text-right">สุทธิ</th><th className="w-64 px-3">เข้าบัญชี</th></>}</tr>
           </thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีกิจการที่ดำเนินการอยู่</td></tr>}
@@ -120,9 +120,9 @@ function DividendBatch({ rows, banks, today, minDate, canWrite }: { rows: BizRow
                           onChange={(e) => setVals({ ...vals, [k]: e.target.value })} className={`w-32 text-right ${small}`} /></td>
                         <td className="px-3 text-right"><input inputMode="decimal" value={tax[k] ?? ""} disabled={!has} aria-label={`ภาษี ${r.name} ${h.name}`}
                           onChange={(e) => setTax({ ...tax, [k]: e.target.value })} className={`w-28 text-right ${small}`} /></td>
-                        <td className={`px-3 text-right tabular-nums ${net != null && net <= 0 ? "text-red-700" : ""}`}>{net != null && !Number.isNaN(net) ? money(net) : <span className="text-slate-400">-</span>}</td>
+                        <td className={`whitespace-nowrap px-3 text-right tabular-nums ${net != null && net <= 0 ? "text-red-700" : ""}`}>{net != null && !Number.isNaN(net) ? money(net) : <span className="text-slate-400">-</span>}</td>
                         <td className="px-3">
-                          <select value={bank[k] ?? ""} onChange={(e) => setBank({ ...bank, [k]: e.target.value })} className={`max-w-[15rem] ${small}`} aria-label={`เข้าบัญชี ${h.name}`}>
+                          <select value={bank[k] ?? ""} onChange={(e) => setBank({ ...bank, [k]: e.target.value })} className={`w-full max-w-[15rem] ${small}`} aria-label={`เข้าบัญชี ${h.name}`}>
                             <option value="">— ไม่ผ่านบัญชี —</option>
                             {own.length > 0 && <optgroup label={`บัญชีของ ${h.name}`}>{own.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>)}</optgroup>}
                             {others.length > 0 && <optgroup label="บัญชีอื่น">{others.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>)}</optgroup>}
@@ -185,7 +185,7 @@ function ValueBatch({ rows, today, minDate, canWrite }: { rows: BizRow[]; today:
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[40rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">กิจการ</th><th className="px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <><th className="px-3 text-right">มูลค่าใหม่</th><th className="px-3 text-right">เปลี่ยนแปลง</th></>}</tr>
+            <tr><th className="px-3 py-2">กิจการ</th><th className="w-48 px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <><th className="w-52 px-3 text-right">มูลค่าใหม่</th><th className="w-56 px-3 text-right">เปลี่ยนแปลง</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => {
@@ -200,7 +200,7 @@ function ValueBatch({ rows, today, minDate, canWrite }: { rows: BizRow[]; today:
                   {canWrite && <>
                     <td className="px-3 text-right"><input inputMode="decimal" value={v} placeholder={r.currency} aria-label={`มูลค่าใหม่ ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-40 text-right ${small}`} /></td>
-                    <td className={`px-3 text-right tabular-nums ${diff == null ? "text-slate-400" : diff >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                    <td className={`whitespace-nowrap px-3 text-right tabular-nums ${diff == null ? "text-slate-400" : diff >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                       {diff == null ? "-" : `${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))}${r.value ? ` (${((diff * 100) / r.value).toFixed(1)}%)` : ""}`}</td>
                   </>}
                 </tr>

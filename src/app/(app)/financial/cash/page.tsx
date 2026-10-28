@@ -149,9 +149,30 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const interestIn = new Map<string, number>();
   (interestRaw ?? []).forEach((i) => interestIn.set(i.received_to_asset_id as string,
     (interestIn.get(i.received_to_asset_id as string) ?? 0) + Number(i.amount) - Number(i.tax ?? 0)));
+  // ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดในเดือนที่เลือก (ตกลง 28 ต.ค. 2026 · ออมทรัพย์ / กระแสรายวันไม่ประมาณ)
+  //   เงินต้น × อัตรา % × จำนวนวันฝาก ÷ 365 · เงินต้น = ยอดสิ้นเดือนก่อน · วันเริ่มฝาก = วันรับดอกเบี้ยครั้งก่อน → วันที่ได้มา (ไม่มีทั้งคู่ = ไม่ประมาณ)
+  const fdDue = all.filter((a) => a.status === "ACTIVE" && a.account_type === "FIXED" && a.interest_rate != null
+    && !!a.maturity_date && a.maturity_date >= start && a.maturity_date <= end);
+  const fdIds = fdDue.map((a) => a.asset_id);
+  const [{ data: fdLast }, { data: fdAcq }] = fdIds.length ? await Promise.all([
+    supabase.from("income_transactions").select("received_to_asset_id,date").eq("income_type", "INTEREST").in("received_to_asset_id", fdIds)
+      .lt("date", start).is("deleted_at", null).order("date", { ascending: false }),
+    supabase.from("assets").select("id,acquisition_date").in("id", fdIds),
+  ]) : [{ data: [] as { received_to_asset_id: string; date: string }[] }, { data: [] as { id: string; acquisition_date: string | null }[] }];
+  const fdStart = new Map<string, string>();
+  (fdAcq ?? []).forEach((x) => { if (x.acquisition_date) fdStart.set(x.id as string, x.acquisition_date as string); });
+  const seenLast = new Set<string>();
+  (fdLast ?? []).forEach((x) => { const id = x.received_to_asset_id as string; if (!seenLast.has(id)) { seenLast.add(id); fdStart.set(id, x.date as string); } });
+  const fdExpected = new Map<string, number>();
+  fdDue.forEach((a) => {
+    const from = fdStart.get(a.asset_id), principal = Number(sum.get(a.asset_id)?.prev_balance ?? 0);
+    const days = from ? Math.round((Date.parse(a.maturity_date!) - Date.parse(from)) / 86400000) : 0;
+    if (days > 0 && principal > 0) fdExpected.set(a.asset_id, Math.round(principal * Number(a.interest_rate) / 100 * days / 365 * 100) / 100);
+  });
   const interestRows: InterestRow[] = all.filter((a) => a.status === "ACTIVE").map((a) => ({
     id: a.asset_id, name: a.name, bank: a.bank_name, currency: a.currency, type: ACCOUNT_TYPE_LABEL[a.account_type] ?? a.account_type,
     rate: a.interest_rate == null ? null : Number(a.interest_rate), maturity: a.maturity_date, received: interestIn.get(a.asset_id) ?? 0,
+    expected: fdExpected.get(a.asset_id) ?? null,
   }));
 
   // บัตรเครดิตตัดบัญชีอัตโนมัติที่ถึงวันตัดเดือนนี้แต่ยังไม่กดยืนยัน → เตือนก่อนอัปเดตยอด (ไม่งั้นเงินที่ถูกตัดไปลงก้อนรอแยก + ยอดบัตรไม่ลด)

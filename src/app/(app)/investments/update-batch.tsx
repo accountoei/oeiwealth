@@ -70,16 +70,17 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              <th className="px-3 py-2">หลักทรัพย์ / บัญชี</th>
-              <th className="px-3 text-right">จำนวนที่ถือ</th>
-              <th className="px-3 text-right">ล่าสุด</th>
-              <th className="px-3 text-right">ราคาต่อหน่วย</th>
-              <th className="px-3 text-right">หรือ มูลค่ารวม</th>
+              <th className="min-w-[13rem] px-3 py-2">หลักทรัพย์ / บัญชี</th>
+              <th className="w-28 px-3 text-right">จำนวนที่ถือ</th>
+              <th className="w-44 px-3 text-right">ล่าสุด</th>
+              <th className="w-32 px-3 text-right">ราคาต่อหน่วย</th>
+              <th className="w-40 px-3 text-right">หรือ มูลค่ารวม</th>
               <th className="w-40 whitespace-nowrap px-3 text-right">มูลค่าใหม่</th>
-              <th className="w-36 whitespace-nowrap px-3 text-right">ส่วนต่าง</th>
+              <th className="w-40 whitespace-nowrap px-3 text-right">ส่วนต่าง</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

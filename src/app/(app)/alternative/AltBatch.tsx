@@ -65,11 +65,12 @@ function IncomeBatch({ rows, banks, today, minDate, canWrite }: { rows: AltRow[]
         )}
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[56rem] text-sm">
+        <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">สินทรัพย์</th>
-              {canWrite && <><th className="px-3 text-right">ยอดที่ได้รับ (ก่อนภาษี)</th><th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="px-3 text-right">สุทธิ</th>
-                <th className="px-3">เข้าบัญชี</th><th className="px-3">หมายเหตุ</th></>}</tr>
+            {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
+            <tr><th className="min-w-[12rem] px-3 py-2">สินทรัพย์</th>
+              {canWrite && <><th className="w-40 px-3 text-right">ยอดที่ได้รับ (ก่อนภาษี)</th><th className="w-36 px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-44 px-3 text-right">สุทธิ</th>
+                <th className="w-60 px-3">เข้าบัญชี</th><th className="w-48 px-3">หมายเหตุ</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีสินทรัพย์ที่ถืออยู่</td></tr>}
@@ -87,9 +88,9 @@ function IncomeBatch({ rows, banks, today, minDate, canWrite }: { rows: AltRow[]
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} /></td>
                     <td className="px-3 text-right"><input inputMode="decimal" value={tax[r.id] ?? ""} disabled={!has} aria-label={`ภาษี ${r.name}`}
                       onChange={(e) => setTax({ ...tax, [r.id]: e.target.value })} className={`w-28 text-right ${small}`} /></td>
-                    <td className={`px-3 text-right tabular-nums ${net != null && net <= 0 ? "text-red-700" : ""}`}>{net != null && !Number.isNaN(net) ? money(net, ccy) : <span className="text-slate-400">-</span>}</td>
+                    <td className={`whitespace-nowrap px-3 text-right tabular-nums ${net != null && net <= 0 ? "text-red-700" : ""}`}>{net != null && !Number.isNaN(net) ? money(net, ccy) : <span className="text-slate-400">-</span>}</td>
                     <td className="px-3">
-                      <select value={bank[r.id] ?? ""} onChange={(e) => setBank({ ...bank, [r.id]: e.target.value })} className={`max-w-[14rem] ${small}`} aria-label={`เข้าบัญชี ${r.name}`}>
+                      <select value={bank[r.id] ?? ""} onChange={(e) => setBank({ ...bank, [r.id]: e.target.value })} className={`w-full max-w-[14rem] ${small}`} aria-label={`เข้าบัญชี ${r.name}`}>
                         <option value="">— เลือกบัญชี —</option>
                         {banks.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.currency})</option>)}
                       </select>
@@ -150,7 +151,7 @@ function ValueBatch({ rows, today, minDate, canWrite }: { rows: AltRow[]; today:
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[40rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">สินทรัพย์</th><th className="px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <th className="px-3 text-right">มูลค่าใหม่</th>}</tr>
+            <tr><th className="px-3 py-2">สินทรัพย์</th><th className="w-48 px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <th className="w-60 px-3 text-right">มูลค่าใหม่</th>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">ไม่มีสินทรัพย์ที่ถืออยู่</td></tr>}
