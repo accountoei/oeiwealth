@@ -108,7 +108,11 @@ export async function updatePropertyPayment(_: TradeState, form: FormData): Prom
   const supabase = await createClient();
   const id = String(form.get("id"));
   const description = str(form.get("description"));
-  const { data, error } = await supabase.from("cash_movements").update({ movement_date: date, amount, description })
+  // ติ๊ก "เพิ่มมูลค่า" ย้อนหลัง / เอาติ๊กออก → metadata.add_value (ฐานข้อมูลเพิ่ม / ลบมูลค่าให้)
+  const { data: cur } = await supabase.from("cash_movements").select("metadata").eq("id", id).maybeSingle();
+  const meta = { ...((cur?.metadata as Record<string, unknown> | null) ?? {}) };
+  if (form.get("add_value") === "on") meta.add_value = true; else delete meta.add_value;
+  const { data, error } = await supabase.from("cash_movements").update({ movement_date: date, amount, description, metadata: meta })
     .eq("id", id).eq("movement_type", "ASSET_PURCHASE").select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };

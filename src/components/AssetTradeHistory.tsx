@@ -6,7 +6,8 @@ import HistoryRows, { type HistoryRow } from "@/components/HistoryRows";
 import ModalButton from "@/components/ModalButton";
 import type { ReactNode } from "react";
 
-export type ValRow = { id: string; valuation_date: string; value: number; source: string; notes: string | null; valuation_method?: string | null };
+export type ValRow = { id: string; valuation_date: string; value: number; source: string; notes: string | null; valuation_method?: string | null;
+  /** Property: รายละเอียดแยกตามโฉนด / อาคาร (ข้อความสรุป) */ detail?: string | null };
 
 /** รายการจ่ายซื้อ / ขาย ของทรัพย์สิน + สรุปกำไรขาดทุนเมื่อขายแล้ว
  *  ส่ง valuations มาด้วย (Property / Alternative / Business) → ปุ่มสำหรับวางในกล่องมูลค่าล่าสุด (ตกลง 27 ต.ค. 2026):
@@ -131,7 +132,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           <td>มูลค่า{v.notes === "ราคาขาย" ? " (ราคาขาย)" : ""}
             <span className="block text-xs text-slate-400">{[v.valuation_method ? methodLabel?.[v.valuation_method] ?? v.valuation_method : null,
               sourceLabel[v.source] ?? v.source].filter(Boolean).join(" · ")}</span></td>
-          <td className="text-slate-500">{v.notes === "ราคาขาย" ? "" : v.notes}</td>
+          <td className="text-slate-500">{v.notes === "ราคาขาย" ? "" : v.notes}{v.detail && <span className="block text-xs text-slate-400">{v.detail}</span>}</td>
           <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
           {showPer && <td className="text-right tabular-nums text-slate-500">{perUnit && perUnit(Number(v.value), v.valuation_date) != null ? money(perUnit(Number(v.value), v.valuation_date), undefined, perUnitDigits) : ""}</td>}
           <td className="pl-2 text-right">

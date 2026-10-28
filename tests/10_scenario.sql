@@ -3545,6 +3545,45 @@ SELECT t.fails($$UPDATE public.property_details SET acq_building_years = 0 WHERE
 RESET ROLE;
 ROLLBACK;
 
+
+\echo '== 13zz22. Property: มูลค่าแยกตามโฉนด + อาคาร · ติ๊กเพิ่มมูลค่าย้อนหลัง (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT d.id AS deed_a FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT t.fails(format($$SELECT public.add_property_valuation(t.a('บ้าน A'), current_date - 1, 9000000, 'APPRAISAL', null,
+  '[{"type":"DEED","deed_id":"%s","value":6000000},{"type":"BUILDING","label":"บ้าน","value":2000000}]')$$, :'deed_a'),
+  'ไม่เท่ามูลค่า', 'มูลค่าแยกส่วน: ยอดรวมรายส่วนต้องเท่ามูลค่า');
+SELECT public.add_property_valuation(t.a('บ้าน A'), current_date - 1, 9000000, 'APPRAISAL', null,
+  format('[{"type":"DEED","deed_id":"%s","value":6500000},{"type":"BUILDING","label":"บ้าน","value":2500000}]', :'deed_a')::jsonb) AS val1 \gset
+SELECT t.ok((SELECT current_value = 9000000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT count(*) = 2 AND sum(value) = 9000000 AND bool_and(asset_id = t.a('บ้าน A'))
+                   FROM public.asset_valuation_parts WHERE valuation_id = :'val1' AND deleted_at IS NULL),
+            'มูลค่าแยกส่วน: บันทึกมูลค่า + รายละเอียดในคราวเดียว (Net Worth ใช้ยอดรวม)');
+SELECT t.fails(format($$SELECT public.set_valuation_parts('%s', '[{"type":"DEED","deed_id":"%s","value":9000000}]')$$,
+  :'val1', gen_random_uuid()),
+  'INVALID', 'มูลค่าแยกส่วน: โฉนดต้องเป็นของทรัพย์สินนี้');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+  VALUES (current_date, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 100000, 'THB', 'ต่อไฟทดสอบ') RETURNING id AS mv3 \gset
+UPDATE public.cash_movements SET metadata = coalesce(metadata, '{}') || '{"add_value": true}' WHERE id = :'mv3';
+SELECT t.ok((SELECT current_value = 9100000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT count(*) = 3 AND sum(p.value) = 9100000 AND bool_or(p.source_movement_id = :'mv3' AND p.value = 100000)
+                   FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+                  WHERE v.source_movement_id = :'mv3' AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'มูลค่าแยกส่วน: ติ๊กเพิ่มมูลค่าย้อนหลัง → มูลค่าใหม่ + คัดลอกรายละเอียด + แถวจ่ายเพิ่ม');
+UPDATE public.cash_movements SET amount = 120000 WHERE id = :'mv3';
+SELECT t.ok((SELECT current_value = 9120000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT sum(p.value) = 9120000 FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+                  WHERE v.source_movement_id = :'mv3' AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'มูลค่าแยกส่วน: แก้ยอดจ่าย → มูลค่าและแถวจ่ายเพิ่มปรับตาม (ยอดรวมยังตรง)');
+UPDATE public.cash_movements SET metadata = metadata - 'add_value' WHERE id = :'mv3';
+SELECT t.ok((SELECT current_value = 9000000 FROM public.assets WHERE id = t.a('บ้าน A')),
+            'มูลค่าแยกส่วน: เอาติ๊กเพิ่มมูลค่าออก → ลบมูลค่าที่ระบบเพิ่มให้');
+UPDATE public.asset_valuations SET value = 9500000 WHERE id = :'val1';
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.asset_valuation_parts WHERE valuation_id = :'val1' AND deleted_at IS NULL),
+            'มูลค่าแยกส่วน: แก้มูลค่าทางอื่นจนยอดไม่ตรง → ล้างรายละเอียด');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
