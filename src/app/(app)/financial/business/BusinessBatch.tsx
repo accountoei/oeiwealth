@@ -5,9 +5,11 @@ import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { money, qty, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
 
-export type BizHolder = { personId: string; name: string; shares: number | null; pct: number };
+export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
+  /** ปันผลที่รับแล้วปีนี้ (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
 export type BizRow = { id: string; name: string; currency: string; value: number | null; valueDate: string | null; holders: BizHolder[] };
 export type BizBank = { id: string; name: string; currency: string; owners: string[] };
 
@@ -113,7 +115,7 @@ function DividendBatch({ rows, banks, today, minDate, canWrite }: { rows: BizRow
                   const others = banks.filter((b) => !b.owners.includes(h.personId));
                   return (
                     <tr key={k} className={`border-t border-slate-100 ${has ? "bg-blue-50/40" : ""}`}>
-                      <td className="py-2 pl-8 pr-3">{h.name}</td>
+                      <td className="py-2 pl-8 pr-3">{h.name}<RecordedLines items={h.edits} /></td>
                       <td className="px-3 text-right tabular-nums text-xs text-slate-500">{h.shares != null ? `${qty(h.shares)} หุ้น · ` : ""}{h.pct.toFixed(2)}%</td>
                       {canWrite && <>
                         <td className="px-3 text-right"><input inputMode="decimal" value={v} placeholder={r.currency} aria-label={`ปันผล ${r.name} ${h.name}`}

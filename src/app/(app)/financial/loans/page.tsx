@@ -10,6 +10,8 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import LoanBatch, { type LoanRow } from "./LoanBatch";
+import { recEdit, recLabel, recLink, wholeUndo, type Recorded } from "@/lib/recorded-edit";
+import { loanInterestFields } from "@/lib/source-edit";
 
 const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "มีความเสี่ยง", CLOSED: "ปิดแล้ว", WRITTEN_OFF: "ตัดหนี้สูญ" };
 const DERIVED: Record<string, { text: string; cls: string }> = {
@@ -46,8 +48,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
       .neq("status", "WRITTEN_OFF").order("due_date").order("installment_no"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     // รับชำระจริง: เงินต้น (เงินเข้าจากเงินให้กู้) + ดอกเบี้ย (รายได้)
-    supabase.from("cash_movements").select("from_asset_id,to_asset_id,movement_date,amount").eq("movement_type", "LOAN_PRINCIPAL_RECEIPT").is("deleted_at", null),
-    supabase.from("income_transactions").select("asset_id,date,amount,received_to_asset_id").eq("income_type", "LOAN_INTEREST").not("asset_id", "is", null).is("deleted_at", null),
+    supabase.from("cash_movements").select("id,from_asset_id,to_asset_id,movement_date,amount,movement_group_id,is_derived").eq("movement_type", "LOAN_PRINCIPAL_RECEIPT").is("deleted_at", null),
+    supabase.from("income_transactions").select("id,asset_id,date,amount,tax,currency,received_to_asset_id").eq("income_type", "LOAN_INTEREST").not("asset_id", "is", null).is("deleted_at", null),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     loadSortMap("assets"),
@@ -126,8 +128,29 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
   const goLive = family?.go_live_date ?? "";
   // แท็บรับชำระ: 1 แถวต่อสัญญาที่ยังไม่ปิด · ยอดที่ถึงกำหนด = ยังไม่ได้รับของทุกงวดถึงสิ้นเดือน
   const bankList = (banks ?? []).map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
+  // รับชำระแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเงินต้น / ดอกเบี้ยเพื่อแก้ · ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) ลบทั้งก้อน (ตกลง 28 ต.ค. 2026)
+  const pMonth = (pMoves ?? []).filter((m) => m.movement_date >= start && m.movement_date <= end);
+  const iMonth = (iRows ?? []).filter((i) => i.date >= start && i.date <= end);
+  const { data: iMoves } = iMonth.length ? await supabase.from("cash_movements").select("source_entity_id,movement_group_id")
+    .eq("source_entity_type", "INCOME").in("source_entity_id", iMonth.map((i) => i.id)).is("deleted_at", null) : { data: [] as { source_entity_id: string; movement_group_id: string | null }[] };
+  const iGroup = new Map((iMoves ?? []).map((m) => [m.source_entity_id as string, m.movement_group_id as string | null]));
+  const recEdits = (loan: string, ccy: string): Recorded[] => {
+    const lp = ["/financial/loans", `/financial/loans/${loan}`, "/income-expenses"];
+    const ps = pMonth.filter((m) => m.from_asset_id === loan), is = iMonth.filter((i) => i.asset_id === loan);
+    const both = (g: string | null | undefined) => !!g && ps.some((m) => m.movement_group_id === g) && is.some((i) => iGroup.get(i.id) === g);
+    const undo = (g: string, d: string) => canOrder ? wholeUndo(g, lp, `ลบการรับชำระวันที่ ${thDate(d)}?\nเงินต้น + ดอกเบี้ยของครั้งนี้จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`) : undefined;
+    return [
+      ...ps.map((m) => ({ d: m.movement_date as string, x: { id: m.id as string, node: m.is_derived ? recLink(recLabel("เงินต้น", m.movement_date, Number(m.amount), ccy), `/financial/loans/${loan}`)
+        : recEdit({ canWrite, canDelete: canOrder && !both(m.movement_group_id), table: "cash_movements", id: m.id as string, paths: lp,
+          label: recLabel("เงินต้น", m.movement_date, Number(m.amount), ccy), extra: both(m.movement_group_id) ? undo(m.movement_group_id!, m.movement_date) : undefined,
+          fields: [{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "เงินต้น", type: "number", value: m.amount }] }) } })),
+      ...is.map((i) => ({ d: i.date as string, x: { id: i.id as string, node: recEdit({ canWrite, canDelete: canOrder && !both(iGroup.get(i.id)), table: "income_transactions",
+        id: i.id as string, paths: lp, label: recLabel("ดอกเบี้ย", i.date, Number(i.amount), ccy),
+        extra: both(iGroup.get(i.id)) ? undo(iGroup.get(i.id)!, i.date) : undefined, fields: loanInterestFields(i) }) } })),
+    ].sort((a, b) => a.d.localeCompare(b.d)).map((y) => y.x);
+  };
   const toRow = (r: R): LoanRow => ({
-    id: r.asset_id, name: r.name, borrower: r.borrower_name, currency: r.currency,
+    id: r.asset_id, name: r.name, borrower: r.borrower_name, currency: r.currency, edits: recEdits(r.asset_id, r.currency),
     lines: monthLines.filter((x) => x.loan_asset_id === r.asset_id).map((x) => ({ no: x.installment_no, due: x.due_date, total: Number(x.total_due),
       remaining: Number(x.total_remaining), status: x.status, statusText: LOAN_SCHED_STATUS[x.status]?.text ?? x.status,
       statusCls: LOAN_SCHED_STATUS[x.status]?.cls ?? "", carried: x.due_date < start })),

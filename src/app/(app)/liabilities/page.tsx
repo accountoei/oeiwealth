@@ -11,6 +11,8 @@ import { CardBalanceForm, NewCardForm } from "./cards/forms";
 import { StatBox } from "@/components/Boxes";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import PayBatch, { type DebtRow } from "./PayBatch";
+import { recEdit, recLabel, recLink, wholeUndo, type Recorded } from "@/lib/recorded-edit";
+import { debtInterestFields } from "@/lib/source-edit";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
   amount: number | null; balance_date: string | null; due_date: string | null; monthly_payment: number | null;
@@ -97,15 +99,54 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   // แท็บจ่ายชำระทั้งชุด: เงินกู้ที่ยังผ่อน (ยอดเต็ม) + บัตรที่ใช้งาน
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const payBanks = (banksRaw ?? []).filter((b) => b.status === "ACTIVE").map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
+  // จ่ายแล้วเดือนนี้ (ทีละครั้ง) → กดเพื่อแก้ / ลบ · จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) ลบทั้งก้อน (ตกลง 28 ต.ค. 2026)
+  const mStart = `${today.slice(0, 7)}-01`;
+  const loanIds = loans.filter((r) => r.status === "ACTIVE").map((r) => r.source_id), cardIds = cards.filter((c) => c.status === "ACTIVE").map((c) => c.id);
+  const noRows = Promise.resolve({ data: [] as never[] });
+  const [{ data: lPays }, { data: lInts }, { data: cPays }] = await Promise.all([
+    loanIds.length ? supabase.from("cash_movements").select("id,to_liability_id,movement_date,amount,currency,movement_group_id,is_derived")
+      .eq("movement_type", "LIABILITY_PAYMENT").in("to_liability_id", loanIds).gte("movement_date", mStart).is("deleted_at", null).order("movement_date") : noRows,
+    loanIds.length ? supabase.from("expense_items").select("id,liability_id,date,amount,currency,notes").in("liability_id", loanIds).eq("pending_split", false)
+      .not("paid_from_asset_id", "is", null).gte("date", mStart).is("deleted_at", null).order("date") : noRows,
+    cardIds.length ? supabase.from("cash_movements").select("id,to_credit_card_id,movement_date,amount,currency,is_derived")
+      .eq("movement_type", "CARD_PAYMENT").in("to_credit_card_id", cardIds).gte("movement_date", mStart).is("deleted_at", null).order("movement_date") : noRows,
+  ]);
+  type PM = { id: string; to_liability_id: string; movement_date: string; amount: number; currency: string; movement_group_id: string | null; is_derived: boolean };
+  type PI = { id: string; liability_id: string; date: string; amount: number; currency: string; notes: string | null };
+  type CP = { id: string; to_credit_card_id: string; movement_date: string; amount: number; currency: string; is_derived: boolean };
+  const lIntIds = ((lInts ?? []) as PI[]).map((e) => e.id);
+  const { data: lIntMv } = lIntIds.length ? await supabase.from("cash_movements").select("source_entity_id,movement_group_id")
+    .eq("source_entity_type", "EXPENSE").in("source_entity_id", lIntIds).is("deleted_at", null) : { data: [] as { source_entity_id: string; movement_group_id: string | null }[] };
+  const intGroup = new Map((lIntMv ?? []).map((m) => [m.source_entity_id as string, m.movement_group_id as string | null]));
+  const loanEdits = (lid: string): Recorded[] => {
+    const lp = ["/liabilities", `/liabilities/${lid}`, "/income-expenses"];
+    const ps = ((lPays ?? []) as PM[]).filter((m) => m.to_liability_id === lid), is = ((lInts ?? []) as PI[]).filter((e) => e.liability_id === lid);
+    const both = (g: string | null | undefined) => !!g && ps.some((m) => m.movement_group_id === g) && is.some((e) => intGroup.get(e.id) === g);
+    const undo = (g: string, d: string) => canOrder ? wholeUndo(g, lp, `ยกเลิกการจ่ายวันที่ ${thDate(d)} ทั้งก้อน?\nเงินต้น + ดอกเบี้ยของครั้งนี้จะถูกลบพร้อมกัน`) : undefined;
+    return [
+      ...ps.map((m) => ({ d: m.movement_date, x: { id: m.id, node: m.is_derived ? recLink(recLabel("เงินต้น", m.movement_date, Number(m.amount), m.currency), `/liabilities/${lid}`)
+        : recEdit({ canWrite, canDelete: canOrder && !both(m.movement_group_id), table: "cash_movements", id: m.id, paths: lp,
+          label: recLabel("เงินต้น", m.movement_date, Number(m.amount), m.currency), extra: both(m.movement_group_id) ? undo(m.movement_group_id!, m.movement_date) : undefined,
+          fields: [{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "เงินต้น", type: "number", value: m.amount }] }) } })),
+      ...is.map((e) => ({ d: e.date, x: { id: e.id, node: recEdit({ canWrite, canDelete: canOrder && !both(intGroup.get(e.id)), table: "expense_items", id: e.id, paths: lp,
+        label: recLabel("ดอกเบี้ย", e.date, Number(e.amount), e.currency), extra: both(intGroup.get(e.id)) ? undo(intGroup.get(e.id)!, e.date) : undefined,
+        fields: debtInterestFields(e) }) } })),
+    ].sort((a, b) => a.d.localeCompare(b.d)).map((y) => y.x);
+  };
+  const cardEdits = (cid: string): Recorded[] => ((cPays ?? []) as CP[]).filter((m) => m.to_credit_card_id === cid).map((m) => ({ id: m.id,
+    node: m.is_derived ? recLink(recLabel("จ่ายแล้ว", m.movement_date, Number(m.amount), m.currency), `/liabilities/cards/${cid}`)
+      : recEdit({ canWrite, canDelete: canOrder, table: "cash_movements", id: m.id, paths: ["/liabilities", `/liabilities/cards/${cid}`, "/income-expenses"],
+        label: recLabel("จ่ายแล้ว", m.movement_date, Number(m.amount), m.currency),
+        fields: [{ name: "movement_date", label: "วันที่จ่าย", type: "date", value: m.movement_date }, { name: "amount", label: "ยอด", type: "number", value: m.amount }] }) }));
   const debtRows: DebtRow[] = [
     ...loans.filter((r) => r.status === "ACTIVE").map((r): DebtRow => ({ key: `l${r.source_id}`, kind: "LOAN", id: r.source_id, href: `/liabilities/${r.source_id}`,
       name: r.name, sub: LIABILITY_TYPE_LABEL[r.subtype] ?? null, currency: r.currency, balance: Number(r.full_amount ?? 0),
       monthly: r.monthly_payment != null ? Number(r.monthly_payment) : null, dueDay: r.payment_due_day, autopay: false,
-      defaultBank: payBanks.find((b) => b.currency === r.currency)?.id ?? "" })),
+      defaultBank: payBanks.find((b) => b.currency === r.currency)?.id ?? "", edits: loanEdits(r.source_id) })),
     ...cards.filter((c) => c.status === "ACTIVE").map((c): DebtRow => ({ key: `c${c.id}`, kind: "CARD", id: c.id, href: `/liabilities/cards/${c.id}`,
       name: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "), sub: holder(c), currency: c.currency,
       balance: curOf(c), monthly: null, dueDay: c.due_day, autopay: !!c.autopay_asset_id,
-      defaultBank: c.autopay_asset_id ?? payBanks.find((b) => b.currency === c.currency)?.id ?? "" })),
+      defaultBank: c.autopay_asset_id ?? payBanks.find((b) => b.currency === c.currency)?.id ?? "", edits: cardEdits(c.id) })),
   ];
 
   return (

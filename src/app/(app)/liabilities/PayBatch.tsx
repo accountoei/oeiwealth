@@ -5,11 +5,13 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchPayDebts, type ActionState } from "./actions";
 
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
   balance: number; monthly: number | null; dueDay: number | null; autopay: boolean; defaultBank: string;
+  /** จ่ายแล้วเดือนนี้ (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
 };
 export type BankOpt = { id: string; name: string; currency: string };
 
@@ -56,6 +58,7 @@ export default function PayBatch({ rows, banks, today, minDate, canWrite }: {
     <td className="px-3 py-2">
       <Link href={r.href} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
       {r.sub && <div className="text-xs text-slate-500">{r.sub}</div>}
+      <RecordedLines items={r.edits} />
     </td>
   );
 

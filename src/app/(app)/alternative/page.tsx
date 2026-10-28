@@ -9,6 +9,8 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 import ShareTable, { SHARE_COLORS } from "@/components/ShareTable";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import AltBatch, { type AltRow } from "./AltBatch";
+import { recEdit, recLabel } from "@/lib/recorded-edit";
+import { assetIncomeFields } from "@/lib/source-edit";
 
 type Cat = { id: string; category_name: string; category_code: string; default_unit: string | null };
 const TABS = [["overview", "ภาพรวม"], ["record", "บันทึกรับผลตอบแทน/อัพเดตมูลค่า"]] as const;
@@ -78,7 +80,17 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
 
   // แท็บบันทึกทั้งชุด: สินทรัพย์ที่ถืออยู่ (ตามตัวกรองคน) · ทองที่ตั้งราคาอัตโนมัติ (THB) ไม่ต้องกรอกมูลค่า
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
+  // ผลตอบแทนที่รับแล้วเดือนนี้ (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026)
+  const activeIds = mine.filter((r) => r.assets.status === "ACTIVE").map((r) => r.asset_id);
+  const monthStart = `${todayBangkok().slice(0, 7)}-01`;
+  const { data: gotRaw } = activeIds.length ? await supabase.from("income_transactions").select("id,asset_id,date,amount,tax,notes,currency")
+    .in("asset_id", activeIds).eq("income_type", "OTHER").eq("pending_split", false).gte("date", monthStart).is("deleted_at", null).order("date")
+    : { data: [] as { id: string; asset_id: string; date: string; amount: number; tax: number | null; notes: string | null; currency: string }[] };
   const batchRows: AltRow[] = mine.filter((r) => r.assets.status === "ACTIVE").map((r) => ({
+    edits: (gotRaw ?? []).filter((i) => i.asset_id === r.asset_id).map((i) => ({ id: i.id as string, node: recEdit({
+      canWrite: me.role !== "VIEWER", canDelete: canOrder, table: "income_transactions", id: i.id as string,
+      label: recLabel("รับแล้ว", i.date as string, Number(i.amount) - Number(i.tax ?? 0), i.currency as string),
+      paths: ["/alternative", `/alternative/${r.asset_id}`, "/income-expenses"], fields: assetIncomeFields(i as { date: string; amount: number }) }) })),
     id: r.asset_id, name: r.assets.name, category: catOf(r)?.category_name ?? "-", currency: r.assets.currency,
     value: r.assets.current_value != null ? Number(r.assets.current_value) : null, valueDate: r.assets.current_value_date,
     auto: !!r.auto_price && catOf(r)?.category_code === "GOLD" && r.assets.currency === "THB" }));

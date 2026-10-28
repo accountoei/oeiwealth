@@ -5,9 +5,11 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchAltIncome, batchAltValues, type ActionState } from "./actions";
 
-export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean };
+export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean;
+  /** ผลตอบแทนที่รับแล้วเดือนนี้ (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
 export type AltBank = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -82,7 +84,7 @@ function IncomeBatch({ rows, banks, today, minDate, canWrite }: { rows: AltRow[]
               return (
                 <tr key={r.id} className={has ? "bg-blue-50/40" : ""}>
                   <td className="px-3 py-2"><Link href={`/alternative/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
-                    <div className="text-xs text-slate-500">{r.category}</div></td>
+                    <div className="text-xs text-slate-500">{r.category}</div><RecordedLines items={r.edits} /></td>
                   {canWrite && <>
                     <td className="px-3 text-right"><input inputMode="decimal" value={v} placeholder={ccy} aria-label={`ผลตอบแทน ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} /></td>

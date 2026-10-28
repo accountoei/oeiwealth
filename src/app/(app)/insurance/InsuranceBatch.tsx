@@ -5,12 +5,14 @@ import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
 
 export type InsLine = {
   id: string; policyId: string; policy: string; person: string | null; no: number; due: string; remaining: number;
   /** ยอดเต็มงวด · จ่าย / รับไปแล้ว (งวดที่ทยอยจ่าย / รับ → แสดงใต้ยอดค้าง) */
   amount: number; paid: number; currency: string;
+  /** ที่จ่าย / รับแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
   status: string; benefitType: string | null;
 };
 export type PayOpt = { value: string; label: string; currency: string };
@@ -103,7 +105,8 @@ export default function InsuranceBatch({ kind, rows, pays, today, soon, minDate,
                   {/* ทยอยจ่าย / รับไปบางส่วน → บรรทัดเล็ก "จ่ายแล้ว / รับแล้ว" + ยอดเต็มงวด (ตกลง 28 ต.ค. 2026) */}
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(r.remaining, r.currency)}
                     {r.paid > 0.005 && <>
-                      <div className="text-xs text-emerald-700">{prem ? "จ่ายแล้ว" : "รับแล้ว"} {money(r.paid, r.currency)}</div>
+                      {r.edits?.length ? <RecordedLines items={r.edits} />
+                        : <div className="text-xs text-emerald-700">{prem ? "จ่ายแล้ว" : "รับแล้ว"} {money(r.paid, r.currency)}</div>}
                       <div className="text-xs text-slate-400">จากงวด {money(r.amount, r.currency)}</div>
                     </>}</td>
                   {canWrite && <>

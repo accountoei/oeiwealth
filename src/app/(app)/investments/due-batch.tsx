@@ -7,6 +7,7 @@ import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { bankId, endpointValue, holdingId, parseEndpoint } from "@/lib/money-endpoint";
 import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 
@@ -18,12 +19,16 @@ import type { Bank, CashAcct } from "./[id]/forms";
 export type DueItem = {
   key: string; kind: "INTEREST" | "PRINCIPAL"; label: string; due: string; expected: number | null;
   received: { date: string; amount: number } | null; defaultDate: string;
+  /** รายการที่รับแล้ว → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026) */
+  edit?: Recorded[];
   holding: { id: string; name: string; holding_type: string; currency: string; status: string;
     /** บัญชีรับเงินที่ผูกไว้ → ค่าตั้งต้นของคอลัมน์ "เข้าบัญชี" (เปลี่ยนในตาราง = ครั้งนี้ครั้งเดียว) */
     income_cash_holding_id?: string | null; income_bank_asset_id?: string | null };
 };
 export type DueGroup = { pf: string; name: string; rows: DueItem[] };
-export type PfCash = CashAcct & { pf: string; pfName: string; rate: number | null; received: number };
+export type PfCash = CashAcct & { pf: string; pfName: string; rate: number | null; received: number;
+  /** ดอกเบี้ยที่รับแล้วในเดือน (ทีละครั้ง · กดเพื่อแก้ / ลบ) */
+  edits?: Recorded[] };
 
 export function DueStatus({ due, received, today }: { due: string; received: { date: string } | null; today: string }) {
   if (received) return <span className="text-emerald-700">รับแล้ว {thDate(received.date)}</span>;
@@ -156,8 +161,10 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
                     {it && <div className="text-xs"><DueStatus due={it.due} received={it.received} today={today} /></div>}</td>
                   {/* ยอดที่รับแล้วอยู่ใต้ยอดคาดว่าจะได้รับ ทุกแถว (ตกลง 28 ต.ค. 2026) */}
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{it?.expected != null ? money(it.expected, r.currency) : <span className="text-slate-400">-</span>}
-                    {it?.received && <div className="text-xs text-emerald-700">ได้รับ {money(it.received.amount, r.currency)}</div>}
-                    {c && c.received > 0 && <div className="text-xs text-emerald-700">รับแล้วเดือนนี้ {money(c.received, r.currency)}</div>}</td>
+                    {it?.received && (it.edit?.length ? <RecordedLines items={it.edit} />
+                      : <div className="text-xs text-emerald-700">ได้รับ {money(it.received.amount, r.currency)}</div>)}
+                    {c && (c.edits?.length ? <RecordedLines items={c.edits} />
+                      : c.received > 0 && <div className="text-xs text-emerald-700">รับแล้วเดือนนี้ {money(c.received, r.currency)}</div>)}</td>
                   {canWrite && (!open ? <td colSpan={4} /> : <>
                     <td className="px-2 text-right">
                       <input inputMode="decimal" value={v} placeholder={r.currency} aria-label={it?.kind === "PRINCIPAL" ? "เงินต้นที่ได้คืน" : "ยอดก่อนภาษี"}

@@ -7,12 +7,15 @@ import { money, thDate } from "@/lib/format";
 import { batchInterest, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
   rate: number | null; maturity: string | null; received: number;
   /** ยอดคาดว่าจะได้รับ (ก่อนภาษี) — เฉพาะเงินฝากประจำที่ครบกำหนดในเดือนที่เลือก · อื่น ๆ = null */
   expected: number | null;
+  /** ดอกเบี้ยที่รับแล้วในเดือน (ทีละครั้ง · กดเพื่อแก้ / ลบ) */
+  edits?: Recorded[];
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -107,7 +110,8 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
                   </td>
                   <td className="whitespace-nowrap px-3">{r.maturity ? <span className={dueSoon ? "text-amber-700" : ""}>{thDate(r.maturity)}</span> : <span className="text-slate-400">-</span>}</td>
                   <td className="whitespace-nowrap px-3 text-right tabular-nums">{r.expected != null ? money(r.expected, r.currency) : <span className="text-slate-400">-</span>}
-                    {r.received > 0 && <div className="text-xs text-emerald-700">รับแล้ว {monthLabel} {money(r.received, r.currency)}</div>}</td>
+                    {r.edits?.length ? <RecordedLines items={r.edits} />
+                      : r.received > 0 && <div className="text-xs text-emerald-700">รับแล้ว {monthLabel} {money(r.received, r.currency)}</div>}</td>
                   <td className="px-3 text-right">
                     <input inputMode="decimal" value={v} disabled={!canWrite} placeholder={r.currency} aria-label={`ดอกเบี้ย ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} />
@@ -137,7 +141,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
           {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
         </div>
       )}
-      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses
+      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · กดยอด &ldquo;รับแล้ว …&rdquo; เพื่อแก้ / ลบ (หรือที่หน้า Income &amp; Expenses)
         · ดอกเบี้ยบัญชีเงินฝากในพอร์ตลงทุน บันทึกที่หน้า Investments → แท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo;</p>
     </form>
     </>

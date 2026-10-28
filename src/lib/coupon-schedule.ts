@@ -21,7 +21,8 @@ export type SchedInput = {
   /** มูลค่าปัจจุบัน — ใช้เป็นยอดเงินต้นเมื่อไม่ได้ใส่เงินต้น */
   current_value: number | null;
 };
-export type Receipt = { date: string; amount: number };
+/** id = รายการลงทุนที่รับ (ใช้เปิดหน้าต่างแก้ไขในแท็บบันทึกรับ) */
+export type Receipt = { date: string; amount: number; id?: string };
 export type DueRow = {
   key: string; kind: "INTEREST" | "PRINCIPAL"; no: number; total: number; due: string;
   expected: number | null; received: Receipt | null;
@@ -88,7 +89,7 @@ export function buildSchedule(h: SchedInput, coupons: Receipt[], maturityTx: Rec
 type HoldingCols = { id: string; status: string; maturity_date: string | null; current_value: number | null;
   face_value?: number | null; interest_rate?: number | null; coupon_frequency?: string | null };
 type FcnCols = { principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
-type TxCols = { transaction_type: string; transaction_date: string; amount: number | null };
+type TxCols = { id?: string; transaction_type: string; transaction_date: string; amount: number | null };
 
 /** ข้อมูลหลัก + รายการของหลักทรัพย์ → ตารางรับ (หุ้นกู้ใช้คอลัมน์ของหลักทรัพย์ · FCN ใช้ fcn_details เมื่อหลักทรัพย์ไม่ได้ใส่) */
 export function scheduleOf(h: HoldingCols, fcn: FcnCols | null, txs: TxCols[]): DueRow[] {
@@ -101,6 +102,6 @@ export function scheduleOf(h: HoldingCols, fcn: FcnCols | null, txs: TxCols[]): 
     face: n(h.face_value) ?? n(fcn?.principal), rate: n(h.interest_rate) ?? n(fcn?.coupon_rate),
     freq: h.coupon_frequency ?? fcn?.coupon_frequency ?? null,
     start: fcn?.issue_date ?? fcn?.trade_date ?? firstTx,
-  }, txs.filter((t) => t.transaction_type === "COUPON" || t.transaction_type === "INTEREST").map((t) => ({ date: t.transaction_date, amount: Number(t.amount ?? 0) })),
-  mat ? { date: mat.transaction_date, amount: Number(mat.amount ?? 0) } : null);
+  }, txs.filter((t) => t.transaction_type === "COUPON" || t.transaction_type === "INTEREST").map((t) => ({ date: t.transaction_date, amount: Number(t.amount ?? 0), id: t.id })),
+  mat ? { date: mat.transaction_date, amount: Number(mat.amount ?? 0), id: mat.id } : null);
 }

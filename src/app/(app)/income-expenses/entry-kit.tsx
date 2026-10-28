@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import { INCOME_TYPE_LABEL, MOVE_LABEL, money, thDate } from "@/lib/format";
-import { businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { assetIncomeFields, businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
 import { stripPending } from "@/lib/ledger";
 import type { ExpHint } from "@/lib/category-hints";
@@ -132,6 +132,7 @@ export function makeEntryKit(c: KitCtx) {
     if (i.lease_id) return i.income_type === "RENT" ? rentIncomeFields(row) : null;   // หักจากเงินประกัน → ยกเลิกที่สัญญา
     if (i.income_type === "LOAN_INTEREST" && i.asset_id) return loanInterestFields(row);
     if (i.income_type === "BUSINESS_DIVIDEND" && i.asset_id) return businessDividendFields(row);
+    if (i.income_type === "OTHER" && i.asset_id) return assetIncomeFields(row);   // ผลตอบแทน Alternative
     return null;
   };
   // รับ / จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ลบทั้งก้อน

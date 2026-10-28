@@ -42,7 +42,7 @@ export function DeleteSlot() { return useContext(DeleteSlotCtx); }
  *   อยู่ในแถวตาราง → กดที่แถว · ไม่อยู่ในตาราง → ปุ่ม "แก้ไข" / "ลบ"
  *   บันทึกสำเร็จ → หน้าต่างปิดเอง + รีเฟรชหน้า
  */
-export default function RowActions({ table, id, paths, fields = [], cols = 3, canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, section, editor, button, deleteControl }: {
+export default function RowActions({ table, id, paths, fields = [], cols = 3, canEdit = true, canDelete = true, deleteNote, deleteEffect, extra, section, editor, button, buttonClass, deleteControl }: {
   table: string; id: string; paths: string[]; fields?: FieldSpec[]; canEdit?: boolean; canDelete?: boolean; deleteNote?: string;
   /** จำนวนช่องต่อแถวบนจอกว้าง (4 = วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว) */
   cols?: 3 | 4;
@@ -58,6 +58,8 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   deleteControl?: React.ReactNode;
   /** ปุ่มเดียว (เช่น "แก้ไข") เปิดหน้าต่างแก้ไข + ลบ — ใช้แทนการกดที่แถว (ช่องสถานะของตารางรายได้ / ค่าใช้จ่าย) */
   button?: string;
+  /** หน้าตาของปุ่มเดียว (เช่น ลิงก์ "รับแล้ว 5 ต.ค. · 500.00" ในแท็บบันทึกรับ) · ไม่ใส่ = ปุ่มขอบเทา */
+  buttonClass?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -141,7 +143,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   if (button) return (
     <>
       <button type="button" onClick={() => setPanelOpen(true)}
-        className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">{button}</button>
+        className={buttonClass ?? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"}>{button}</button>
       {panelOpen && <Modal title={title} onClose={() => setPanelOpen(false)}>{panel}</Modal>}
     </>
   );

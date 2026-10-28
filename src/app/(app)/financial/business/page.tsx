@@ -9,6 +9,8 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 import BusinessBadge from "./badge";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
+import { recEdit, recLabel } from "@/lib/recorded-edit";
+import { businessDividendFields } from "@/lib/source-edit";
 
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["record", "บันทึกรับเงินปันผล/อัพเดตมูลค่า"]];
 
@@ -40,7 +42,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }] = await Promise.all([
     ids.length ? supabase.from("asset_ownerships").select("asset_id,person_id,ownership_percent,shares,cost_per_share,start_date,end_date").in("asset_id", ids).is("deleted_at", null) : none,
-    ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
+    ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount,person_id,date,amount,tax,notes,currency").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
       .gte("date", yearStart).lte("date", today).is("deleted_at", null) : none,
     pv.personId ? supabase.from("v_income_by_person").select("income_id,base_amount_share").eq("person_id", pv.personId).eq("income_type", "BUSINESS_DIVIDEND").gte("date", yearStart) : none,
     canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
@@ -119,6 +121,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const who = pv.personId ? pv.personName : "ครอบครัว";
 
   // ---------------------------------------------------------------- แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
+  type DivRow = { id: string; asset_id: string; person_id: string | null; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
   const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name]));
   const batchRows: BizRow[] = rows.filter((r) => r.status === "ACTIVE").map((r) => {
     const os = nowOwn.filter((o) => o.asset_id === r.asset_id);
@@ -127,7 +130,12 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     return { id: r.asset_id, name: r.assets.name, currency: r.assets.currency,
       value: r.assets.current_value == null ? null : Number(r.assets.current_value), valueDate: r.assets.current_value_date,
       holders: os.map((o) => ({ personId: o.person_id, name: nameOf.get(o.person_id) ?? "สมาชิก", shares: o.shares == null ? null : Number(o.shares),
-        pct: bySh ? (tot > 0 ? (Number(o.shares) * 100) / tot : 0) : Number(o.ownership_percent) })) };
+        pct: bySh ? (tot > 0 ? (Number(o.shares) * 100) / tot : 0) : Number(o.ownership_percent),
+        // ปันผลที่รับแล้วปีนี้ (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้ากิจการ · ตกลง 28 ต.ค. 2026)
+        edits: ((divs ?? []) as DivRow[]).filter((d) => d.asset_id === r.asset_id && d.person_id === o.person_id).sort((a, b) => a.date.localeCompare(b.date))
+          .map((d) => ({ id: d.id, node: recEdit({ canWrite, canDelete: me.role === "ADMIN" || me.role === "EDITOR", table: "income_transactions", id: d.id,
+            label: recLabel("รับแล้ว", d.date, Number(d.amount) - Number(d.tax ?? 0), d.currency),
+            paths: ["/financial/business", `/financial/business/${r.asset_id}`, "/income-expenses"], fields: businessDividendFields(d) }) })) })) };
   });
   const bizBanks: BizBank[] = ((bankAccs ?? []) as { asset_id: string; name: string; currency: string }[]).map((b) => ({
     id: b.asset_id, name: b.name, currency: b.currency,
