@@ -11,6 +11,8 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
   rate: number | null; maturity: string | null; received: number;
+  /** ยอดคาดว่าจะได้รับ (ก่อนภาษี) — เฉพาะเงินฝากประจำที่ครบกำหนดในเดือนที่เลือก · อื่น ๆ = null */
+  expected: number | null;
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -43,6 +45,9 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
   const payload = chosen.map((r) => ({ asset_id: r.id, amount: vals[r.id], tax: tax[r.id] ?? "" }));
   const onSubmit = cf.guard(`บันทึกรับดอกเบี้ย ${chosen.length} บัญชี วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
+  // กรอกตามยอดคาดว่าจะได้รับ (แถวที่แสดง ยังว่าง มียอดคาดการณ์) · แบบแท็บบันทึกรับผลตอบแทนของ Investments
+  const fillable = shown.filter((r) => r.expected != null && !(vals[r.id] ?? "").trim());
+  const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.id, fmt(r.expected!)])) });
   const taxAll = () => setTax({ ...tax, ...Object.fromEntries(chosen.filter((r) => !Number.isNaN(n(vals[r.id]))).map((r) => [r.id, fmt(Math.round(n(vals[r.id]) * TAX_RATE * 100) / 100)])) });
 
   return (
@@ -53,14 +58,17 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {bankList.length > 1 && (
-            <label className="flex items-center gap-2">ธนาคาร
-              <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
-                <option value="">ทุกธนาคาร</option>
-                {bankList.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </label>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {bankList.length > 1 && (
+              <label className="flex items-center gap-2">ธนาคาร
+                <select value={bank} onChange={(e) => setBank(e.target.value)} className={small}>
+                  <option value="">ทุกธนาคาร</option>
+                  {bankList.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </label>
+            )}
+            {canWrite && fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามยอดคาดว่าจะได้รับ ({fillable.length})</button>}
+          </div>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {canWrite && chosen.length > 0 && (
               <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>
@@ -71,16 +79,18 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
           </div>
         </div>
         <p className="text-xs text-slate-500">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
+          · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
           · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[52rem] text-sm">
+        {/* คอลัมน์เรียงแบบเดียวกับแท็บ "บันทึกรับผลตอบแทน" ของ Investments (ตกลง 28 ต.ค. 2026) · ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ (กรอกแล้วไม่ขยับ) */}
+        <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              <th className="px-3 py-2">บัญชี</th><th className="px-3 text-right">อัตรา</th>
-              <th className="px-3 text-right">รับแล้ว {monthLabel}</th>
-              <th className="px-3 text-right">ดอกเบี้ยก่อนภาษี</th><th className="px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-40 whitespace-nowrap px-3 text-right">ยอดเข้าบัญชีสุทธิ</th>
+              <th className="min-w-[13rem] px-3 py-2">บัญชี</th><th className="w-32 px-3">วันครบกำหนด</th>
+              <th className="w-40 px-3 text-right">ยอดคาดว่าจะได้รับ</th>
+              <th className="w-40 px-3 text-right">ดอกเบี้ยก่อนภาษี</th><th className="w-36 px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-44 whitespace-nowrap px-3 text-right">ยอดเข้าบัญชีสุทธิ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -93,11 +103,11 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
                 <tr key={r.id} className={has ? "bg-blue-50/40" : ""}>
                   <td className="px-3 py-2">
                     <Link href={`/financial/cash/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
-                    <div className="text-xs text-slate-500">{r.bank} · {r.type} · {r.currency}
-                      {r.maturity && <span className={dueSoon ? "text-amber-700" : ""}> · ครบกำหนด {thDate(r.maturity)}</span>}</div>
+                    <div className="text-xs text-slate-500">{r.bank} · {r.type} · {r.currency}{r.rate != null && ` · อัตรา ${r.rate.toFixed(2)}%`}</div>
                   </td>
-                  <td className="px-3 text-right tabular-nums">{r.rate != null ? `${r.rate.toFixed(2)}%` : <span className="text-slate-400">-</span>}</td>
-                  <td className="px-3 text-right tabular-nums">{r.received > 0 ? <span className="text-emerald-700">{money(r.received, r.currency)}</span> : <span className="text-slate-400">-</span>}</td>
+                  <td className="whitespace-nowrap px-3">{r.maturity ? <span className={dueSoon ? "text-amber-700" : ""}>{thDate(r.maturity)}</span> : <span className="text-slate-400">-</span>}</td>
+                  <td className="whitespace-nowrap px-3 text-right tabular-nums">{r.expected != null ? money(r.expected, r.currency) : <span className="text-slate-400">-</span>}
+                    {r.received > 0 && <div className="text-xs text-emerald-700">รับแล้ว {monthLabel} {money(r.received, r.currency)}</div>}</td>
                   <td className="px-3 text-right">
                     <input inputMode="decimal" value={v} disabled={!canWrite} placeholder={r.currency} aria-label={`ดอกเบี้ย ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} />

@@ -72,12 +72,13 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              <th className="px-3 py-2">บัญชี</th>
-              <th className="px-3 text-right">ยอดคงเหลือ ณ {thDate(date)}</th>
-              <th className="px-3 text-right">ยอดจริง</th><th className="w-40 whitespace-nowrap px-3 text-right">ส่วนต่าง</th><th className="px-3">สถานะ</th>
+              <th className="min-w-[13rem] px-3 py-2">บัญชี</th>
+              <th className="w-48 px-3 text-right">ยอดคงเหลือ ณ {thDate(date)}</th>
+              <th className="w-44 px-3 text-right">ยอดจริง</th><th className="w-44 whitespace-nowrap px-3 text-right">ส่วนต่าง</th><th className="w-56 px-3">สถานะ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

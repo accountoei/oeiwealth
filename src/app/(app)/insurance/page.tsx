@@ -111,7 +111,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     .map((l) => {
       const r = mineRows.find((x) => x.id === l.policy_id);
       return { id: l.id, policyId: l.policy_id, policy: policyName.get(l.policy_id) ?? "-", person: r?.person_id ? pname.get(r.person_id) ?? null : null,
-        no: l.installment_no, due: l.due_date, remaining: Number(l.remaining), currency: l.currency, status: l.status, benefitType: l.benefit_type };
+        no: l.installment_no, due: l.due_date, remaining: Number(l.remaining),
+        amount: Number(l.amount), paid: Number(l.paid_amount ?? 0), currency: l.currency, status: l.status, benefitType: l.benefit_type };
     });
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
   const cardPays: PayOpt[] = (cards ?? []).map((c) => ({ value: endpointValue({ kind: "card", id: c.id }),
