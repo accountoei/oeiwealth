@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, thDate, todayBangkok } from "@/lib/format";
@@ -13,6 +14,8 @@ import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
+import RowActions from "@/components/RowActions";
+import UndoButton from "@/components/UndoButton";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -116,6 +119,17 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("insurance_benefit_receipts").select("id,line_id,receipt_date,amount,currency").in("line_id", partIds).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
   ]) : [{ data: [] as { id: string; insurance_schedule_line_id: string; date: string; amount: number; currency: string; notes: string | null }[] },
     { data: [] as { id: string; line_id: string; receipt_date: string; amount: number; currency: string }[] }];
+  // กล่อง "จ่าย / รับแล้วล่าสุด" ใต้ตาราง: รายการ 60 วันล่าสุด (รวมงวดที่จ่าย / รับครบแล้วซึ่งหายจากตาราง) · เบี้ย = แก้ / ลบ · ผลประโยชน์ = ยกเลิกทั้งก้อน แล้วบันทึกใหม่ (ตกลง 28 ต.ค. 2026)
+  const since = addDays(today, -60);
+  const mineIds = new Set(mineRows.map((r) => r.id));
+  const lineOf = new Map(lineList.map((l) => [l.id, l]));
+  const [{ data: recentPays }, { data: recentBens }] = await Promise.all([
+    supabase.from("expense_items").select("id,insurance_schedule_line_id,date,amount,currency,notes,paid_from_asset_id,paid_from_credit_card_id")
+      .not("insurance_schedule_line_id", "is", null).gte("date", since).is("deleted_at", null).order("date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("insurance_benefit_receipts").select("id,policy_id,line_id,receipt_date,amount,currency,bank_asset_id,outcome")
+      .not("line_id", "is", null).gte("receipt_date", since).is("undone_at", null).is("deleted_at", null)
+      .order("receipt_date", { ascending: false }).order("created_at", { ascending: false }),
+  ]);
   const editsOf = (l: { id: string; policy_id: string }): Recorded[] => [
     ...(partPays ?? []).filter((e) => e.insurance_schedule_line_id === l.id).map((e) => ({ id: e.id as string, node: recEdit({
       canWrite, canDelete: canOrder, table: "expense_items", id: e.id as string, label: recLabel("จ่ายแล้ว", e.date as string, Number(e.amount), e.currency as string),
@@ -134,6 +148,27 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const cardPays: PayOpt[] = (cards ?? []).map((c) => ({ value: endpointValue({ kind: "card", id: c.id }),
     label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency }));
   const canWrite = me.role !== "VIEWER";
+  const bankLabel = new Map(bankPays.map((b) => [b.value, b.label]));
+  const cardLabel = new Map(cardPays.map((c) => [c.value, c.label]));
+  const fromLabel = (bank?: string | null, card?: string | null) => bank ? bankLabel.get(endpointValue({ kind: "bank", id: bank })) ?? "บัญชี"
+    : card ? cardLabel.get(endpointValue({ kind: "card", id: card })) ?? "บัตร" : "เงินสด / อื่น ๆ";
+  const lineName = (lineId: string) => { const l = lineOf.get(lineId); return l ? { pid: l.policy_id, text: `${policyName.get(l.policy_id) ?? "-"} · งวดที่ ${l.installment_no}` } : null; };
+  const recentPrem: RecentRow[] = (recentPays ?? []).flatMap((e) => {
+    const n = lineName(e.insurance_schedule_line_id as string);
+    if (!n || !mineIds.has(n.pid)) return [];
+    return [{ id: e.id as string, date: e.date as string, pid: n.pid, what: n.text, amount: money(Number(e.amount), e.currency as string),
+      via: fromLabel(e.paid_from_asset_id as string | null, e.paid_from_credit_card_id as string | null),
+      action: canWrite ? <RowActions table="expense_items" id={e.id as string} paths={["/insurance", `/insurance/${n.pid}`, "/income-expenses"]} canDelete={canOrder}
+        fields={premiumPaymentFields(e as { date: string; amount: number; notes: string | null })} /> : null }];
+  });
+  const recentBen: RecentRow[] = (recentBens ?? []).flatMap((b) => {
+    const n = lineName(b.line_id as string);
+    if (!n || !mineIds.has(b.policy_id as string)) return [];
+    return [{ id: b.id as string, date: b.receipt_date as string, pid: n.pid, what: n.text, amount: money(Number(b.amount), b.currency as string),
+      via: fromLabel(b.bank_asset_id as string | null),
+      action: canOrder && !b.outcome ? <UndoButton kind="BENEFIT" id={b.id as string} paths={["/insurance", `/insurance/${n.pid}`, "/income-expenses"]} label="ยกเลิก"
+        confirmText={`ยกเลิกการรับ ${money(Number(b.amount), b.currency as string)} วันที่ ${thDate(b.receipt_date as string)} (${n.text}) ทั้งก้อน?\nงวดนี้จะกลับไปอยู่ในตารางให้บันทึกใหม่`} /> : null }];
+  });
   const goLive = family?.go_live_date ?? "";
   return (
     <TabsProvider initial={tab} defaultKey="overview">
@@ -153,9 +188,12 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
 
       <TabPanel id="benefit">
         <InsuranceBatch key={`b${lineList.length}`} kind="BENEFIT" rows={batchLines("BENEFIT")} pays={bankPays} today={today} soon={addDays(today, 60)} minDate={goLive} canWrite={canWrite} />
+        <RecentBox title="รับผลประโยชน์แล้ว 60 วันล่าสุด" verb="เข้าบัญชี" rows={recentBen}
+          note="แก้ยอด / วันที่: กด “ยกเลิก” (ย้อนทุกส่วนพร้อมกัน) แล้วบันทึกใหม่ในตารางด้านบน" />
       </TabPanel>
       <TabPanel id="premium">
         <InsuranceBatch key={`p${lineList.length}`} kind="PREMIUM" rows={batchLines("PREMIUM")} pays={[...bankPays, ...cardPays]} today={today} soon={addDays(today, 60)} minDate={goLive} canWrite={canWrite} />
+        <RecentBox title="จ่ายเบี้ยแล้ว 60 วันล่าสุด" verb="จ่ายจาก" rows={recentPrem} note="กดแก้ไขเพื่อเปลี่ยนวันที่ / ยอด / หมายเหตุ หรือลบ" />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">
@@ -279,5 +317,37 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       </TabPanel>
     </div>
     </TabsProvider>
+  );
+}
+
+type RecentRow = { id: string; date: string; pid: string; what: string; amount: string; via: string; action: ReactNode };
+
+/** รายการที่บันทึกแล้วล่าสุด ใต้ตารางบันทึกทั้งชุด — งวดที่จ่าย / รับครบแล้วหายจากตาราง จึงแก้ได้ที่นี่ */
+function RecentBox({ title, verb, rows, note }: { title: string; verb: string; rows: RecentRow[]; note: string }) {
+  return (
+    <section className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="px-4 pt-4">
+        <h2 className="font-medium text-slate-900">{title}</h2>
+        <p className="text-xs text-slate-500">{note}</p>
+      </div>
+      <table className="mt-3 w-full text-sm">
+        <thead className="bg-slate-50 text-left text-xs text-slate-500">
+          <tr><th className="w-32 px-3 py-2">วันที่</th><th className="min-w-[12rem] px-3">กรมธรรม์ / งวด</th><th className="w-40 px-3 text-right">ยอด</th>
+            <th className="w-64 px-3">{verb}</th><th className="w-28 px-3"></th></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีรายการใน 60 วันล่าสุด</td></tr>}
+          {rows.map((r) => (
+            <tr key={r.id} className="align-top">
+              <td className="whitespace-nowrap px-3 py-2">{thDate(r.date)}</td>
+              <td className="px-3 py-2"><Link href={`/insurance/${r.pid}`} className="hover:underline">{r.what}</Link></td>
+              <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{r.amount}</td>
+              <td className="px-3 py-2 text-xs text-slate-600">{r.via}</td>
+              <td className="px-3 py-2 text-right">{r.action}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
