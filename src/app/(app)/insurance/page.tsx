@@ -9,6 +9,8 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
 import YearTable, { OPEN, type YLine } from "./YearTable";
 import InsuranceBatch, { type InsLine, type PayOpt } from "./InsuranceBatch";
+import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
+import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
 
@@ -107,12 +109,26 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
   // แท็บบันทึกทั้งชุด: งวดที่ยังไม่จ่าย / ยังไม่รับ ของกรมธรรม์ที่มีผล (ตามตัวกรองคน)
   const activeIds = new Set(mineRows.filter((r) => r.status === "ACTIVE").map((r) => r.id));
+  // งวดที่จ่าย / รับไปบางส่วน → ยอดที่บันทึกแล้วกดเพื่อแก้ / ลบ (เบี้ย = ฟอร์มเดียวกับหน้ากรมธรรม์ · ผลประโยชน์ = ยกเลิกทั้งก้อนที่หน้ากรมธรรม์ · ตกลง 28 ต.ค. 2026)
+  const partIds = lineList.filter((l) => l.status === "PARTIAL" && activeIds.has(l.policy_id)).map((l) => l.id);
+  const [{ data: partPays }, { data: partBens }] = partIds.length ? await Promise.all([
+    supabase.from("expense_items").select("id,insurance_schedule_line_id,date,amount,currency,notes").in("insurance_schedule_line_id", partIds).is("deleted_at", null).order("date"),
+    supabase.from("insurance_benefit_receipts").select("id,line_id,receipt_date,amount,currency").in("line_id", partIds).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
+  ]) : [{ data: [] as { id: string; insurance_schedule_line_id: string; date: string; amount: number; currency: string; notes: string | null }[] },
+    { data: [] as { id: string; line_id: string; receipt_date: string; amount: number; currency: string }[] }];
+  const editsOf = (l: { id: string; policy_id: string }): Recorded[] => [
+    ...(partPays ?? []).filter((e) => e.insurance_schedule_line_id === l.id).map((e) => ({ id: e.id as string, node: recEdit({
+      canWrite, canDelete: canOrder, table: "expense_items", id: e.id as string, label: recLabel("จ่ายแล้ว", e.date as string, Number(e.amount), e.currency as string),
+      paths: ["/insurance", `/insurance/${l.policy_id}`, "/income-expenses"], fields: premiumPaymentFields(e as { date: string; amount: number }) }) })),
+    ...(partBens ?? []).filter((b) => b.line_id === l.id).map((b) => ({ id: b.id as string,
+      node: recLink(recLabel("รับแล้ว", b.receipt_date as string, Number(b.amount), b.currency as string), `/insurance/${l.policy_id}`) })),
+  ];
   const batchLines = (k: string): InsLine[] => lineList.filter((l) => l.kind === k && activeIds.has(l.policy_id) && OPEN.includes(l.status))
     .map((l) => {
       const r = mineRows.find((x) => x.id === l.policy_id);
       return { id: l.id, policyId: l.policy_id, policy: policyName.get(l.policy_id) ?? "-", person: r?.person_id ? pname.get(r.person_id) ?? null : null,
         no: l.installment_no, due: l.due_date, remaining: Number(l.remaining),
-        amount: Number(l.amount), paid: Number(l.paid_amount ?? 0), currency: l.currency, status: l.status, benefitType: l.benefit_type };
+        amount: Number(l.amount), paid: Number(l.paid_amount ?? 0), currency: l.currency, status: l.status, benefitType: l.benefit_type, edits: editsOf(l) };
     });
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
   const cardPays: PayOpt[] = (cards ?? []).map((c) => ({ value: endpointValue({ kind: "card", id: c.id }),

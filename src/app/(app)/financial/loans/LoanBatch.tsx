@@ -5,6 +5,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
 
 export type LoanRow = {
@@ -13,6 +14,8 @@ export type LoanRow = {
   lines: { no: number; due: string; total: number; remaining: number; status: string; statusText: string; statusCls: string; carried: boolean }[];
   /** ยอดที่ถึงกำหนดถึงสิ้นเดือน (ยังไม่ได้รับ) */
   dueP: number; dueI: number; defaultBank: string;
+  /** รับชำระแล้วในเดือน (เงินต้น / ดอกเบี้ย ทีละครั้ง · กดเพื่อแก้ / ลบ) */
+  edits?: Recorded[];
 };
 export type BankOpt = { id: string; name: string; currency: string };
 
@@ -81,6 +84,7 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
         <td className="min-w-[10rem] px-3 py-2">
           <Link href={`/financial/loans/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
           <div className="text-xs text-slate-500">{r.borrower}</div>
+          <RecordedLines items={r.edits} />
         </td>
         <td className="min-w-[15rem] px-3 py-2 text-xs">
           {r.lines.length === 0 ? <span className="text-slate-400">ไม่มีงวดในเดือนนี้</span> : r.lines.map((x) => (

@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { money, thDate, thMonth } from "@/lib/format";
 import { batchRent, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 
 export type RentRow = {
   key: string; leaseId: string; assetId: string; property: string; tenant: string; period: string; due: string | null;
   expected: number; received: number; currency: string; status: string; bank: string;
   /** ค่าน้ำไฟที่เราจ่ายแล้วเรียกเก็บผู้เช่า (lease_utility_charges) */ chargeId?: string;
+  /** ค่าเช่าที่รับแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
 };
 export type BankOpt = { id: string; name: string; currency: string };
 
@@ -82,7 +84,8 @@ export default function RentBatch({ rows, banks, defaultDate, today, ym, canWrit
                   </td>
                   <td className="whitespace-nowrap px-3 text-xs">{thDate(r.due)}</td>
                   <td className="px-3 text-right tabular-nums">{money(r.expected, r.currency)}</td>
-                  <td className="px-3 text-right tabular-nums">{r.received > 0 ? money(r.received, r.currency) : <span className="text-slate-400">-</span>}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{r.edits?.length ? <RecordedLines items={r.edits} />
+                    : r.received > 0 ? money(r.received, r.currency) : <span className="text-slate-400">-</span>}</td>
                   <td className={`px-3 text-xs ${STATUS[r.status]?.cls ?? ""}`}>{STATUS[r.status]?.text ?? r.status}</td>
                   {canWrite && (done ? <td colSpan={2} className="px-3 text-xs text-slate-400">-</td> : <>
                     <td className="whitespace-nowrap px-3 py-2 text-right">

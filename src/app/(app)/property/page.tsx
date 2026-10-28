@@ -9,6 +9,8 @@ import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import PropertyTable, { type PropRow } from "./PropertyTable";
 import RentBatch, { type RentRow } from "./RentBatch";
+import { recEdit, recLabel } from "@/lib/recorded-edit";
+import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import ExpenseBatch, { type CostRow, type PayOpt } from "./ExpenseBatch";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { TabNav, TabPanel, TabsProvider } from "../income-expenses/tabs";
@@ -190,6 +192,21 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     bank: [rentTo.get(r.lease_id), lastBank.get(r.lease_id)].find((b) => b && banks.some((x) => x.id === b && x.currency === r.currency))
       ?? banks.find((b) => b.currency === r.currency)?.id ?? "",
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
+  // รับแล้ว / จ่ายแล้วของงวดที่เลือก → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้าทรัพย์สิน · ตกลง 28 ต.ค. 2026)
+  const leaseIds = [...new Set(rentRows.map((r) => r.leaseId))], utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
+  const [{ data: rentGot }, { data: costPaid }] = await Promise.all([
+    leaseIds.length ? supabase.from("income_transactions").select("id,lease_id,income_period,date,amount,tax,notes,currency").in("lease_id", leaseIds)
+      .eq("income_type", "RENT").eq("income_period", start).is("deleted_at", null).order("date") : none,
+    utilIds.length ? supabase.from("expense_items").select("id,property_utility_id,cost_period,date,amount,notes,currency,related_asset_id").in("property_utility_id", utilIds)
+      .eq("cost_period", start).is("deleted_at", null).order("date") : none,
+  ]);
+  type GotRow = { id: string; lease_id: string; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
+  type PaidRow = { id: string; property_utility_id: string; date: string; amount: number; notes: string | null; currency: string; related_asset_id: string | null };
+  rentRows.forEach((r) => {
+    r.edits = ((rentGot ?? []) as GotRow[]).filter((i) => i.lease_id === r.leaseId).map((i) => ({ id: i.id, node: recEdit({
+      canWrite, canDelete: canOrder, table: "income_transactions", id: i.id, label: recLabel("รับแล้ว", i.date, Number(i.amount), i.currency),
+      paths: [...paths, `/property/${r.assetId}`, "/income-expenses"], fields: rentIncomeFields(i) }) }));
+  });
   // ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน (ทุกงวด) → ต่อท้ายตารางรับค่าเช่า
   type CH = { id: string; lease_id: string; property_asset_id: string; name: string; cost_period: string; description: string; amount: number; currency: string };
   rentRows.push(...((chargeRaw ?? []) as CH[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
@@ -212,6 +229,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       const l = ["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillOf(c.property_asset_id) : undefined;
       return l ? { rebillLease: l.id, rebillLabel: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") } : {};
     })(),
+    edits: ((costPaid ?? []) as PaidRow[]).filter((e) => e.property_utility_id === c.utility_id).map((e) => ({ id: e.id, node: recEdit({
+      canWrite, canDelete: canOrder, table: "expense_items", id: e.id, label: recLabel("จ่ายแล้ว", e.date, Number(e.amount), e.currency),
+      paths: [...paths, `/property/${c.property_asset_id}`, "/income-expenses"], fields: propertyCostFields(e) }) })),
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
   // ---------------------------------------------------------------- ภาษีที่ดิน (ปีที่เลือก) รายทรัพย์สิน
   type TL = TaxLineRow & { asset_id: string; tax_year: number };

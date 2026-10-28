@@ -12,6 +12,8 @@ import ShareBars, { type BarRow } from "./ShareBars";
 import AccountsTable, { type AccountRow } from "./AccountsTable";
 import BatchUpdate, { type BatchRow } from "./BatchUpdate";
 import InterestBatch, { type InterestRow } from "./InterestBatch";
+import { recEdit, recLabel } from "@/lib/recorded-edit";
+import { assetIncomeFields } from "@/lib/source-edit";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
   account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null; overdraft_limit: number | null };
@@ -57,7 +59,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     supabase.from("income_transactions").select("received_to_asset_id,date").eq("pending_split", true).not("received_to_asset_id", "is", null).is("deleted_at", null),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     loadSortMap("assets"),
-    supabase.from("income_transactions").select("received_to_asset_id,amount,tax").eq("income_type", "INTEREST").eq("pending_split", false)
+    supabase.from("income_transactions").select("id,date,notes,received_to_asset_id,amount,tax").eq("income_type", "INTEREST").eq("pending_split", false)
       .gte("date", start).lte("date", end).not("received_to_asset_id", "is", null).is("deleted_at", null),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,due_day,autopay_asset_id,autopay_mode")
       .eq("status", "ACTIVE").not("autopay_asset_id", "is", null).not("due_day", "is", null).is("deleted_at", null),
@@ -173,6 +175,12 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     id: a.asset_id, name: a.name, bank: a.bank_name, currency: a.currency, type: ACCOUNT_TYPE_LABEL[a.account_type] ?? a.account_type,
     rate: a.interest_rate == null ? null : Number(a.interest_rate), maturity: a.maturity_date, received: interestIn.get(a.asset_id) ?? 0,
     expected: fdExpected.get(a.asset_id) ?? null,
+    // รับแล้วทีละครั้ง → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026)
+    edits: (interestRaw ?? []).filter((i) => i.received_to_asset_id === a.asset_id).sort((x, y) => String(x.date).localeCompare(String(y.date)))
+      .map((i) => ({ id: i.id as string, node: recEdit({ canWrite, canDelete: canOrder, table: "income_transactions", id: i.id as string,
+        label: recLabel("รับแล้ว", i.date as string, Number(i.amount) - Number(i.tax ?? 0), a.currency),
+        paths: [...paths, "/income-expenses", `/financial/cash/${a.asset_id}`], fields: assetIncomeFields(i as { date: string; amount: number }),
+        deleteEffect: `เงินเข้า ${a.name} จะถูกยกเลิก (ยอดบัญชีกลับเป็นเหมือนก่อนบันทึก)` }) })),
   }));
 
   // บัตรเครดิตตัดบัญชีอัตโนมัติที่ถึงวันตัดเดือนนี้แต่ยังไม่กดยืนยัน → เตือนก่อนอัปเดตยอด (ไม่งั้นเงินที่ถูกตัดไปลงก้อนรอแยก + ยอดบัตรไม่ลด)

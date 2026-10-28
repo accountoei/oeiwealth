@@ -204,7 +204,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
 
       <TabPanel id="due">
         <DueTab month={/^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : todayBangkok().slice(0, 7)} today={todayBangkok()} goLive={goLive}
-          showAsset={(x) => pv.showAsset(x)} canWrite={me.role !== "VIEWER"} />
+          showAsset={(x) => pv.showAsset(x)} canWrite={me.role !== "VIEWER"} canDelete={canOrder} />
       </TabPanel>
     </div>
     </TabsProvider>

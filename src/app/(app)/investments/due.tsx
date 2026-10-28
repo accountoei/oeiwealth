@@ -3,6 +3,7 @@ import { money, monthOptions, monthRange, thDate } from "@/lib/format";
 import { scheduleOf, type DueRow } from "@/lib/coupon-schedule";
 import MonthPicker from "@/components/MonthPicker";
 import type { Bank } from "./[id]/forms";
+import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
 
 // แท็บ "บันทึกรับผลตอบแทน" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
@@ -48,11 +49,12 @@ type HRow = { id: string; name: string; holding_type: string; currency: string; 
   income_cash_holding_id: string | null; income_bank_asset_id: string | null;
   investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
 type Fcn = { holding_id: string; principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
-type Tx = { holding_id: string; transaction_type: string; transaction_date: string; amount: number | null };
+type Tx = { id: string; holding_id: string; transaction_type: string; transaction_date: string; amount: number | null;
+  tax: number | null; notes: string | null; cash_movement_id: string | null };
 
 /** แท็บ "บันทึกรับผลตอบแทน" */
-export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
-  month: string; today: string; goLive: string; showAsset: (assetId: string) => boolean; canWrite: boolean;
+export async function DueTab({ month, today, goLive, showAsset, canWrite, canDelete }: {
+  month: string; today: string; goLive: string; showAsset: (assetId: string) => boolean; canWrite: boolean; canDelete: boolean;
 }) {
   // วันที่ตั้งต้นของฟอร์มบันทึกรับ = วันรับตามตาราง (ยังไม่ถึง → วันนี้ · ก่อน Go-live → วัน Go-live) · แก้ได้ในฟอร์ม
   const dueDefault = (due: string) => (due > today ? today : due < goLive ? goLive : due);
@@ -66,7 +68,7 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
   const none = Promise.resolve({ data: [] as never[] });
   const [{ data: fcns }, { data: txs }, { data: banks }, { data: cash }] = await Promise.all([
     ids.length ? supabase.from("fcn_details").select("holding_id,principal,coupon_rate,coupon_frequency,issue_date,trade_date").in("holding_id", ids).is("deleted_at", null) : none,
-    ids.length ? supabase.from("investment_transactions").select("holding_id,transaction_type,transaction_date,amount").in("holding_id", ids)
+    ids.length ? supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,notes,cash_movement_id").in("holding_id", ids)
       .in("transaction_type", ["OPENING_BALANCE", "BUY", "COUPON", "INTEREST", "MATURITY"]).is("deleted_at", null) : none,
     canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
     supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,current_value,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
@@ -101,19 +103,36 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite }: {
     return ccys.map((c) => <div key={c}>{m.has(c) ? money(m.get(c)!, c) : <span className="text-slate-400">- {c}</span>}</div>);
   };
   const months = monthOptions(goLive, today, 12, month);
+  // รับแล้ว → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติของหลักทรัพย์ · ผ่านบัญชีธนาคาร = แก้ที่หน้าหลักทรัพย์ไม่ได้ → ลิงก์)
+  const txById = new Map(((txs as Tx[] | null) ?? []).map((t) => [t.id, t]));
+  const paths = ["/investments", "/income-expenses", "/financial/cash"];
+  const txEdit = (t: Tx, pf: string, ccy: string, verb: string, net: boolean): Recorded => {
+    const amt = Number(t.amount ?? 0) - (net ? Number(t.tax ?? 0) : 0);
+    const lbl = recLabel(verb, t.transaction_date, amt, ccy);
+    return { id: t.id, node: t.cash_movement_id ? recLink(lbl, `/investments/${pf}/holding/${t.holding_id}`) : recEdit({
+      canWrite, canDelete, label: lbl, table: "investment_transactions", id: t.id, paths: [...paths, `/investments/${pf}`],
+      deleteNote: "รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม",
+      fields: [{ name: "transaction_date", label: "วันที่", type: "date", value: t.transaction_date },
+        { name: "amount", label: t.transaction_type === "MATURITY" ? "เงินต้นที่ได้คืน" : "ยอดก่อนภาษี", type: "number", value: t.amount },
+        { name: "tax", label: "ภาษีหัก ณ ที่จ่าย", type: "number", value: t.tax },
+        { name: "notes", label: "หมายเหตุ", value: t.notes, wide: true }] }) };
+  };
   const dueGroups: DueGroup[] = [...groups.entries()].map(([pf, g]) => ({ pf, name: g.name, rows: g.rows.map(({ r, h }) => ({
     key: r.key, kind: r.kind, label: label(r), due: r.due, expected: r.expected, received: r.received, defaultDate: dueDefault(r.due),
+    edit: r.received?.id && txById.has(r.received.id) ? [txEdit(txById.get(r.received.id)!, pf, h.currency, "ได้รับ", false)] : undefined,
     holding: { id: h.id, name: h.name, holding_type: h.holding_type, currency: h.currency, status: h.status,
       income_cash_holding_id: h.income_cash_holding_id, income_bank_asset_id: h.income_bank_asset_id } })) }));
   // ดอกเบี้ยเงินฝากในพอร์ต: รับแล้วในเดือนที่เลือก (สุทธิหลังภาษี)
-  const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("holding_id,amount,tax,fee")
+  const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,fee,notes,cash_movement_id")
     .in("holding_id", cashRows.map((c) => c.id)).eq("transaction_type", "INTEREST").gte("transaction_date", start).lte("transaction_date", end).is("deleted_at", null)
-    : { data: [] as { holding_id: string; amount: number; tax: number | null; fee: number | null }[] };
+    : { data: [] as (Tx & { fee: number | null })[] };
   const gotOf = new Map<string, number>();
   (cashInt ?? []).forEach((t) => gotOf.set(t.holding_id, (gotOf.get(t.holding_id) ?? 0) + Number(t.amount ?? 0) - Number(t.tax ?? 0) - Number(t.fee ?? 0)));
   const pfCash: PfCash[] = cashRows.map((c) => ({ id: c.id, name: c.name, currency: c.currency, is_default_cash: c.is_default_cash,
     pf: c.investment_portfolios!.asset_id, pfName: c.investment_portfolios!.assets?.name ?? "พอร์ต",
-    rate: c.interest_rate == null ? null : Number(c.interest_rate), received: gotOf.get(c.id) ?? 0 }))
+    rate: c.interest_rate == null ? null : Number(c.interest_rate), received: gotOf.get(c.id) ?? 0,
+    edits: (cashInt ?? []).filter((t) => t.holding_id === c.id).sort((a, b) => a.transaction_date.localeCompare(b.transaction_date))
+      .map((t) => txEdit(t as Tx, c.investment_portfolios!.asset_id, c.currency, "รับแล้ว", true)) }))
     // บัญชีที่ระบบสร้างให้แต่ไม่มีเงิน ไม่มีอัตรา และไม่ได้รับดอกเบี้ยเดือนนี้ → ไม่แสดง (ไม่มีดอกเบี้ยให้รับ)
     .filter((c) => c.rate != null || c.received !== 0 || Math.abs(Number(cashRows.find((x) => x.id === c.id)?.current_value ?? 0)) >= 0.005)
     .sort((a, b) => a.pfName.localeCompare(b.pfName, "th"));

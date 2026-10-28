@@ -58,3 +58,11 @@ export const debtDropIncomeFields = (r: IncRow): FieldSpec[] => [
   { name: "amount", label: "ยอด", type: "number", value: r.amount },
   { name: "notes", label: "รายละเอียด", value: r.notes ?? null, width: "w-48" },
 ];
+
+/** รายได้อื่นผูกทรัพย์สิน (Alternative "บันทึกรับผลตอบแทน") · ดอกเบี้ยเงินฝาก (Cash "บันทึกรับดอกเบี้ย") */
+export const assetIncomeFields = (r: IncRow): FieldSpec[] => [
+  { name: "date", label: "วันที่รับ", type: "date", value: r.date },
+  { name: "amount", label: "ยอดก่อนภาษี", type: "number", value: r.amount },
+  { name: "tax", label: "ภาษีหัก ณ ที่จ่าย", type: "number", value: r.tax ?? null },
+  { name: "notes", label: "หมายเหตุ", value: r.notes ?? null, width: "w-48" },
+];

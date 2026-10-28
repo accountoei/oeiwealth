@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import { COST_STATUS, money, thDate, thMonth } from "@/lib/format";
 import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 
 export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
   expected: number; paid: number; currency: string; status: string; category: string;
   /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ (a: / c:) */ pay?: string;
   /** สัญญาเช่าที่ตั้ง "ค่าน้ำไฟ: เราจ่ายแล้วเรียกเก็บผู้เช่า" (ไฟ / น้ำ) */ rebillLease?: string; rebillLabel?: string;
+  /** ที่จ่ายแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
 };
 export type PayOpt = { value: string; label: string; currency: string };
 type Extra = { id: number; asset: string; description: string; amount: string; pay: string };
@@ -119,7 +121,8 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
                   <td className="whitespace-nowrap px-3 text-xs">{thDate(r.due)}</td>
                   <td className="px-3 text-right tabular-nums">{r.expected > 0 ? money(r.expected, r.currency) : <span className="text-slate-400">-</span>}</td>
                   <td className={`px-3 text-xs ${COST_STATUS[r.status]?.cls ?? ""}`}>{COST_STATUS[r.status]?.text ?? r.status}
-                    {r.status === "PAID" && <span className="ml-1 text-slate-400">{money(r.paid, r.currency)}</span>}</td>
+                    {r.edits?.length ? <RecordedLines items={r.edits} />
+                      : r.status === "PAID" && <span className="ml-1 text-slate-400">{money(r.paid, r.currency)}</span>}</td>
                   {canWrite && (done ? <td colSpan={2} className="px-3 text-xs text-slate-400">-</td> : <>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       {r.expected > 0 && <button type="button" onClick={() => setVals({ ...vals, [r.key]: fmt(r.expected) })} className="mr-2 text-xs text-blue-700 hover:underline">ตามประมาณ</button>}
