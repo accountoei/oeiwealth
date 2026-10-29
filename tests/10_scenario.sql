@@ -3584,6 +3584,58 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.asset_valuation_parts WHERE valuati
             'มูลค่าแยกส่วน: แก้มูลค่าทางอื่นจนยอดไม่ตรง → ล้างรายละเอียด');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz23. Property: ส่วนประกอบ (ที่ดิน / อาคาร / อื่น ๆ) · ต้นทุนและมูลค่ารายแถว (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT d.id AS deed_c FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT land_area_sq_wa AS area0 FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT t.fails(format($$SELECT public.save_property_components(t.a('บ้าน A'),
+  '[{"id":"%s","type":"LAND","land_area_sq_wa":"%s","value":"6000000"},{"type":"BUILDING","label":"บ้าน 2 ชั้น"}]', '{}',
+  '{"date":"%s","method":"APPRAISAL"}')$$, :'deed_c', :'area0', current_date - 2),
+  'ครบทุกแถว', 'ส่วนประกอบ: ใส่มูลค่าบางแถวไม่ได้ (ต้องครบทุกแถว หรือยอดรวมอย่างเดียว)');
+SELECT t.fails($$SELECT public.save_property_components(t.a('บ้าน A'), '[{"type":"BUILDING"}]', '{}', null)$$,
+  'ชื่ออาคาร', 'ส่วนประกอบ: อาคารต้องมีชื่อ');
+SELECT (public.save_property_components(t.a('บ้าน A'),
+  format('[{"id":"%s","type":"LAND","title_deed_no":"T-1","land_area_sq_wa":"%s","acq_cost":"4000000","value":"6500000"},
+           {"type":"BUILDING","label":"บ้าน 2 ชั้น","building_area_sqm":"250","useful_life_years":"30","acquired_date":"2020-01-01","acq_cost":"1000000","value":"2500000"}]',
+         :'deed_c', :'area0')::jsonb, '{}',
+  format('{"date":"%s","method":"APPRAISAL"}', current_date - 2)::jsonb))[2] AS bld \gset
+SELECT t.ok((SELECT current_value = 9000000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT count(*) = 2 AND bool_and(p.deed_id IS NOT NULL) AND bool_or(p.deed_id = :'bld' AND p.part_type = 'BUILDING')
+                   FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+                  WHERE v.asset_id = t.a('บ้าน A') AND v.valuation_date = current_date - 2 AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'ส่วนประกอบ: บันทึกตารางทั้งชุด + มูลค่ารายแถว (อาคารผูกกับแถวอาคาร · Net Worth ใช้ยอดรวม)');
+SELECT t.ok((SELECT land_area_sq_wa IS NOT DISTINCT FROM :'area0'::numeric AND title_deed_no = 'T-1'
+               FROM public.property_details WHERE asset_id = t.a('บ้าน A')),
+            'ส่วนประกอบ: เนื้อที่ / เลขที่โฉนดของทรัพย์สิน = เฉพาะแถวที่ดิน');
+SELECT t.ok((SELECT count(*) = 1 FROM public.v_property_cost_lots
+              WHERE asset_id = t.a('บ้าน A') AND source = 'ACQUISITION' AND description = 'ราคาที่ได้มา · บ้าน 2 ชั้น'
+                AND is_building AND depreciation_years = 30 AND amount = 1000000)
+            AND NOT EXISTS (SELECT 1 FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A') AND description = 'ราคาที่ได้มา (อาคาร)'),
+            'ส่วนประกอบ: ต้นทุนรายแถว → ราคาที่ได้มาแยกตามแถว (อาคารหักค่าเสื่อมตามอายุของหลังนั้น)');
+SELECT t.fails(format($$SELECT public.save_property_components(t.a('บ้าน A'),
+  '[{"id":"%s","type":"LAND","land_area_sq_wa":"%s"}]', ARRAY['%s']::uuid[], null)$$, :'deed_c', :'area0', :'bld'),
+  'บันทึกมูลค่าใหม่', 'ส่วนประกอบ: ลบส่วนที่ยังมีมูลค่าอยู่ ต้องบันทึกมูลค่าใหม่ไปพร้อมกัน');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+  VALUES (current_date - 1, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 200000, 'THB', 'ต่อเติมครัว') RETURNING id AS mv4 \gset
+UPDATE public.cash_movements SET metadata = coalesce(metadata, '{}') || jsonb_build_object('add_value', true, 'component_id', :'bld') WHERE id = :'mv4';
+SELECT t.ok((SELECT sum(p.value) FILTER (WHERE p.deed_id = :'bld') = 2700000 AND count(*) = 3
+               FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+              WHERE v.source_movement_id = :'mv4' AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'ส่วนประกอบ: จ่ายเพิ่มที่เลือกแถวอาคาร → มูลค่าของอาคารนั้นเพิ่ม');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
+  VALUES (current_date, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 50000, 'THB', 'รั้ว') RETURNING id AS mv5 \gset
+UPDATE public.cash_movements SET metadata = coalesce(metadata, '{}') || '{"add_value": true}' WHERE id = :'mv5';
+SELECT t.ok((SELECT count(*) = 1 FROM public.property_deeds WHERE source_movement_id = :'mv5' AND component_type = 'OTHER' AND deleted_at IS NULL)
+            AND (SELECT bool_and(p.deed_id IS NOT NULL) FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+                  WHERE v.source_movement_id = :'mv5' AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'ส่วนประกอบ: จ่ายเพิ่มที่ไม่ได้เลือกแถว → ระบบสร้างแถว "อื่น ๆ" ให้ (ทุกรายส่วนผูกกับส่วนประกอบ)');
+UPDATE public.cash_movements SET metadata = metadata - 'add_value' WHERE id = :'mv5';
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.property_deeds WHERE source_movement_id = :'mv5' AND deleted_at IS NULL),
+            'ส่วนประกอบ: เอาติ๊กเพิ่มมูลค่าออก → แถวที่ระบบสร้างให้ถูกลบด้วย');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

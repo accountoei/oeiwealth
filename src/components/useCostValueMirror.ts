@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useRef, useState, type ChangeEvent } from "react";
 
 // ฟอร์มเพิ่ม Property / Alternative (ตกลง 27 ต.ค. 2026): "ราคาที่ได้มา" กับ "มูลค่า" กรอกช่องใดช่องหนึ่งได้
 //   อีกช่องใช้ยอดเดียวกันให้ (จนกว่าจะแก้ช่องนั้นเอง) · มูลค่าที่ใช้ราคาที่ได้มา → วิธีประเมิน "ราคาทุน"
@@ -32,8 +32,13 @@ export function useCostValueMirror() {
   };
   const onAcqDate = (v: string) => { if (!own.current.valDate && valDate.current && v) valDate.current.value = v; };
 
+  // ตารางส่วนประกอบ Property: มูลค่าใช้ยอดเดียวกับต้นทุน → วิธีประเมิน "ราคาทุน" (จนกว่าจะเลือกเอง)
+  const setValueFromCost = useCallback((on: boolean) => {
+    if (!own.current.method && method.current) method.current.value = on ? "BOOK_VALUE" : "USER_ESTIMATE";
+  }, []);
+
   return {
-    copied,
+    copied, setValueFromCost,
     costProps: { ref: cost, onChange: (e: ChangeEvent<HTMLInputElement>) => onCost(e.target.value) },
     valueProps: { ref: value, onChange: (e: ChangeEvent<HTMLInputElement>) => onValue(e.target.value) },
     methodProps: { ref: method, onChange: () => { own.current.method = true; } },

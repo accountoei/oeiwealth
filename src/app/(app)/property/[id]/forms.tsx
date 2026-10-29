@@ -1,18 +1,18 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import AcqBuildingFields from "../AcqBuildingFields";
+import ComponentTable from "../ComponentTable";
+import type { Component } from "../components";
 import { useActionSlot } from "@/components/ActionBar";
 import {
-  addUtility, addValuation, createLease, receiveUtilityCharge, recordPropertyCost, recordRent, saveDeed, setUsage, settleDeposit, terminateLease,
+  addUtility, addValuation, createLease, receiveUtilityCharge, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
   updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
-import { ENCUMBRANCE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, landParts, money } from "@/lib/format";
+import { ENCUMBRANCE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
-import { DeleteSlot } from "@/components/RowActions";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -211,12 +211,14 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   encumbrance_type?: string | null; encumbrance_details?: string | null; opportunity_rate_pct?: number | null;
   acq_building_cost?: number | null; acq_building_years?: number | null };
 
-export function EditPropertyForm({ p, hasDeeds = false }: { p: Info; hasDeeds?: boolean }) {
+/** แก้ข้อมูลทรัพย์สิน + ตารางส่วนประกอบ (ข้อมูล · ต้นทุน · มูลค่ารายแถว) ในฟอร์มเดียว ปุ่มบันทึกปุ่มเดียว (ตกลง 29 ต.ค. 2026) */
+export function EditPropertyForm({ p, components, latest, currency, currentValue, today, minDate }: {
+  p: Info; components: Component[]; latest: Record<string, number>; currency: string; currentValue: number | null; today: string; minDate: string;
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
   const [usage, setUsage] = useState(p.usage_type);
   const [enc, setEnc] = useState(p.encumbrance_type ?? "");
   const f = "mt-1 block w-full " + input;
-  const land = landParts(p.land_area_sq_wa);
   return (
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="asset_id" value={p.asset_id} />
@@ -257,18 +259,6 @@ export function EditPropertyForm({ p, hasDeeds = false }: { p: Info; hasDeeds?: 
         <label className="text-sm">อำเภอ / เขต<input name="district" defaultValue={p.district ?? ""} className={f} /></label>
         <label className="text-sm">จังหวัด<input name="province" defaultValue={p.province ?? ""} className={f} /></label>
       </div>
-      {hasDeeds ? (
-        <p className="self-end text-xs text-slate-500">เนื้อที่ = ผลรวมจากโฉนด · แก้ข้อมูลโฉนดที่ส่วน &ldquo;โฉนด / เอกสารสิทธิ์&rdquo;</p>
-      ) : (
-        <div className="text-sm">เนื้อที่ (ไร่-งาน-ตารางวา)
-          <div className="mt-1 flex gap-2">
-            <input name="land_rai" inputMode="numeric" placeholder="ไร่" defaultValue={land.rai} className={`w-full ${input}`} />
-            <input name="land_ngan" inputMode="numeric" placeholder="งาน" defaultValue={land.ngan} className={`w-full ${input}`} />
-            <input name="land_wa" inputMode="decimal" placeholder="ตร.ว." defaultValue={land.wa} className={`w-full ${input}`} />
-          </div>
-          <span className="text-xs text-slate-500">มีโฉนด → ใส่เนื้อที่ที่โฉนดแทน (ระบบรวมให้)</span>
-        </div>
-      )}
       <label className="text-sm">ภาระผูกพัน
         <select name="encumbrance_type" value={enc} onChange={(e) => setEnc(e.target.value)} className={f}>
           <option value="">— ยังไม่ระบุ —</option>
@@ -277,9 +267,13 @@ export function EditPropertyForm({ p, hasDeeds = false }: { p: Info; hasDeeds?: 
       <label className="text-sm">รายละเอียดภาระผูกพัน
         <input name="encumbrance_details" defaultValue={p.encumbrance_details ?? ""} disabled={!enc || enc === "NONE"}
           placeholder="เช่น ทางเข้าออกกว้าง 4 ม. ให้แปลงข้างเคียง" className={`${f} disabled:bg-slate-50`} /></label>
-      <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} /></label>
-      <label className="text-sm">ราคาที่ได้มา<input name="acquisition_cost" inputMode="decimal" defaultValue={p.acquisition_cost ?? ""} className={f} /></label>
-      <AcqBuildingFields cost={p.acq_building_cost} years={p.acq_building_years} />
+      <div className="space-y-1 md:col-span-2">
+        <h3 className="text-sm font-medium text-slate-800">ส่วนประกอบ · ต้นทุน · มูลค่า</h3>
+        <ComponentTable mode="edit" currency={currency} initial={components} latest={latest} acquisitionCost={p.acquisition_cost}
+          currentValue={currentValue} today={today} minDate={minDate} />
+      </div>
+      <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} />
+        <span className="text-xs text-slate-500">แถวที่ไม่ได้ใส่วันที่ได้มา ใช้วันที่นี้</span></label>
       <label className="text-sm">อัตราดอกเบี้ยเทียบของแปลงนี้ (% ต่อปี)
         <input name="opportunity_rate_pct" inputMode="decimal" data-money="off" defaultValue={p.opportunity_rate_pct ?? ""} placeholder="ว่าง = ใช้อัตราครอบครัว" className={f} />
         <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับใน Net Worth) · อัตราครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>
@@ -493,41 +487,4 @@ export function ReceiveChargeForm({ assetId, chargeId, amount, currency, banks, 
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));
-}
-
-export type Deed = { id: string; title_type: string | null; title_deed_no: string | null; land_no: string | null; deed_book: string | null;
-  deed_page: string | null; map_sheet: string | null; survey_page: string | null; land_area_sq_wa: number | null; notes: string | null };
-
-/** เพิ่ม / แก้โฉนด 1 ใบ · แก้ = ใช้ใน RowActions (ปุ่มลบอยู่ข้างปุ่มบันทึก) */
-export function DeedForm({ assetId, propertyId, deed }: { assetId: string; propertyId: string; deed?: Deed }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(saveDeed, {});
-  const f = "mt-1 block w-full " + input;
-  const land = landParts(deed?.land_area_sq_wa);
-  return (
-    <form action={action} className="grid gap-3 md:grid-cols-4">
-      <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="property_id" value={propertyId} />
-      {deed && <input type="hidden" name="id" value={deed.id} />}
-      <label className="text-sm">ประเภทเอกสารสิทธิ์<input name="title_type" defaultValue={deed?.title_type ?? "โฉนด"} placeholder="โฉนด · น.ส.3ก · อ.ช.2" className={f} /></label>
-      <label className="text-sm">เลขที่โฉนด<input name="title_deed_no" defaultValue={deed?.title_deed_no ?? ""} className={f} data-plain /></label>
-      <label className="text-sm">เลขที่ดิน<input name="land_no" defaultValue={deed?.land_no ?? ""} className={f} data-plain /></label>
-      <div className="text-sm">เนื้อที่ (ไร่-งาน-ตร.ว.)
-        <div className="mt-1 flex gap-1">
-          <input name="land_rai" inputMode="numeric" placeholder="ไร่" defaultValue={land.rai} className={`w-full ${small}`} />
-          <input name="land_ngan" inputMode="numeric" placeholder="งาน" defaultValue={land.ngan} className={`w-full ${small}`} />
-          <input name="land_wa" inputMode="decimal" placeholder="ตร.ว." defaultValue={land.wa} className={`w-full ${small}`} />
-        </div>
-      </div>
-      <label className="text-sm">เล่ม<input name="deed_book" defaultValue={deed?.deed_book ?? ""} className={f} data-plain /></label>
-      <label className="text-sm">หน้า<input name="deed_page" defaultValue={deed?.deed_page ?? ""} className={f} data-plain /></label>
-      <label className="text-sm">ระวาง<input name="map_sheet" defaultValue={deed?.map_sheet ?? ""} className={f} data-plain /></label>
-      <label className="text-sm">หน้าสำรวจ<input name="survey_page" defaultValue={deed?.survey_page ?? ""} className={f} data-plain /></label>
-      <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" defaultValue={deed?.notes ?? ""} placeholder="เช่น แปลงหน้าติดถนน" className={f} /></label>
-      <div className="flex flex-wrap items-center gap-3 md:col-span-4">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : deed ? "บันทึก" : "เพิ่มโฉนด"}</button>
-        {deed && <DeleteSlot />}
-        <Msg s={state} />
-      </div>
-    </form>
-  );
 }
