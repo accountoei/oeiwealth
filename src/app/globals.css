@@ -80,6 +80,8 @@ input:focus, select:focus, textarea:focus {
 }
 input::placeholder, textarea::placeholder { color: #8a94a6; }
 input[inputmode="decimal"] { text-align: right; font-variant-numeric: tabular-nums; }
+/* เลขจำนวนเต็ม (ไร่ / งาน / ปี / วันที่ของเดือน) ชิดขวาเหมือนช่องเงิน · ยกเว้นช่องที่เป็นรหัส (ตกลง 29 ต.ค. 2026) */
+input[inputmode="numeric"]:not([name="card_last4"]):not([name="account_no"]):not([name="national_id"]):not([data-code]) { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ปุ่มหลัก */
 button.bg-blue-600, a.bg-blue-600 { font-weight: 500; box-shadow: 0 1px 2px rgb(31 94 255 / 0.25); }

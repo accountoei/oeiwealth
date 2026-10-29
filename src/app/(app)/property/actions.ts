@@ -172,7 +172,7 @@ function partsFromForm(form: FormData): ValuePart[] | { error: string } {
     const value = Number(x.value);
     if (!Number.isFinite(value) || value < 0) return { error: "มูลค่ารายส่วนต้องเป็นตัวเลขไม่ติดลบ" };
     if (type === "DEED" && !x.deed_id) return { error: "รายละเอียดมูลค่าไม่ถูกต้อง" };
-    out.push({ type, value, deed_id: type === "DEED" ? String(x.deed_id) : null, label: x.label ? String(x.label) : null,
+    out.push({ type, value, deed_id: x.deed_id ? String(x.deed_id) : null, label: x.label ? String(x.label) : null,
       source_movement_id: x.source_movement_id ? String(x.source_movement_id) : null });
   }
   return out;
@@ -472,6 +472,7 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
     ...paidFromColumns(pay),
     person_id: pay.kind === "cash" ? str(form.get("person_id")) : null,
     property_utility_id: str(form.get("utility_id")), cost_period: str(form.get("cost_period")),
+    related_asset_id: str(form.get("utility_id")) ? null : assetId,
     notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };

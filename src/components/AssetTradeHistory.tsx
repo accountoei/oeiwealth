@@ -15,7 +15,7 @@ export type ValRow = { id: string; valuation_date: string; value: number; source
  *  "อัปเดตมูลค่า" (pop up ฟอร์ม) + "ประวัติ…" (pop up ตารางเดียวเรียงตามวันที่: จ่ายซื้อ / เงินขาย / มูลค่า + สรุปการขาย)
  *  ราคาทองอัตโนมัติรายวันซ่อนไว้ก่อน */
 export default async function AssetTradeHistory({ assetId, currency, status, cost, paths, canWrite, canDelete, showMoves = true,
-  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, perUnitDigits, unit, paymentEditor, extra, singleLabel, flow }: {
+  valuations, valuationForm, valuationHint, sourceLabel = {}, methodLabel, perUnit, perUnitDigits, unit, paymentEditor, extra, singleLabel, flow, deletableValuation }: {
   assetId: string; currency: string; status: string; cost: number | null; paths: string[];
   canWrite: boolean; canDelete: boolean; showMoves?: boolean;
   valuations?: ValRow[]; valuationForm?: ReactNode; valuationHint?: string; sourceLabel?: Record<string, string>;
@@ -26,6 +26,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
   /** มีค่า = ปุ่มเดียว (อัปเดตมูลค่า + ประวัติ + extra ในหน้าต่างเดียว · ตกลง 28 ต.ค. 2026) */ singleLabel?: string;
   /** Property: ตารางประวัติแยกคอลัมน์ "เงินจ่าย / รับ" กับ "มูลค่าเปลี่ยน" + มูลค่าหลังรายการ · รายการจ่ายที่เพิ่มมูลค่าอยู่บรรทัดเดียว (ตกลง 29 ต.ค. 2026)
    *  ค่า = ชื่อส่วนประกอบ (id → ชื่อ) ของรายการจ่าย */ flow?: Record<string, string>;
+  /** flow: มูลค่าแก้ไม่ได้ · ลบได้เฉพาะ id นี้ (ครั้งล่าสุดที่บันทึกเอง · ตกลง 29 ต.ค. 2026) */ deletableValuation?: string | null;
 }) {
   const supabase = await createClient();
   const [{ data: moves }, { data: saleVal }, { data: lastVal }, { data: parts }] = await Promise.all([
@@ -160,9 +161,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
             {change(v)}
             <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
             <td className="pl-2 text-right">
-              {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && valuations.length > 1}
-                fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
-                  { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
+              {canDelete && v.id === deletableValuation && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete canEdit={false} fields={[]} />}
             </td>
           </tr>) })),
       ];
