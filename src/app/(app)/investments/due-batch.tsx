@@ -10,6 +10,7 @@ import { defaultIncomeAccount, INCOME_GROUP, incomeAccountOptions } from "@/lib/
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
+import Flash from "@/components/Flash";
 
 // แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
@@ -201,7 +202,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
           {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
           {lines.length > 0 && !pending && <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </form>
       )}
     </div>

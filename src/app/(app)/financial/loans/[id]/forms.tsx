@@ -7,6 +7,7 @@ import { closeLoan, disburseMore, receivePayment, updateLoanInfo, type ActionSta
 import { ROW_BTN, numOrZero as num, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -15,7 +16,7 @@ type Bank = { asset_id: string; name: string; currency: string };
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 
@@ -86,7 +87,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
       </div>
     ));
   }
-  if (state.ok && small && !open) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok && small && !open) return <Flash on={state} className="text-xs text-emerald-700" />;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">
@@ -207,7 +208,7 @@ export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
         <StatusSlot />
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
       </div>
       {state.ok && state.rateChanged && hasOpenSchedule && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-slate-700 md:col-span-2">

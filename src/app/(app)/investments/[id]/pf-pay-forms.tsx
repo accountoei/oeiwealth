@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { money } from "@/lib/format";
 import { addExpense, addMovement } from "../../income-expenses/actions";
+import Flash from "@/components/Flash";
 
 /**
  * จ่ายออกจากบัญชีเงินฝากในพอร์ต: ค่าใช้จ่าย · จ่ายบัตรเครดิต
@@ -23,7 +24,7 @@ const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hove
 const lbl = "block text-sm text-slate-700";
 function Msg({ s }: { s: St }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 const defAcc = (ctx: PfPayCtx, fixed?: string) =>

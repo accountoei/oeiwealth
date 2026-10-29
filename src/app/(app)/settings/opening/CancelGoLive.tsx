@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { thDate } from "@/lib/format";
 import { cancelGoLive, type GoLiveState } from "./actions";
+import Flash from "@/components/Flash";
 
 /** ปุ่ม "ยกเลิก Go-live" (ADMIN · หลัง LIVE) → pop up ใส่เหตุผล · ต้อง Reopen ทุกเดือนก่อน */
 export default function CancelGoLive({ goLive, finalMonths }: { goLive: string; finalMonths: number }) {
@@ -44,7 +45,7 @@ export default function CancelGoLive({ goLive, finalMonths }: { goLive: string; 
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+      <Flash on={state} as="p" className="text-sm text-emerald-700" />
     </form>
   ));
 }

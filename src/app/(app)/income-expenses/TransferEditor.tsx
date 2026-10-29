@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DeleteSlot } from "@/components/RowActions";
 import { updateTransfer, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
@@ -38,7 +39,7 @@ export default function TransferEditor({ id, banks, values }: {
         {pending ? "กำลังบันทึก…" : "บันทึก"}</button>
       <DeleteSlot />
       {state.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
-      {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
+      <Flash on={state} as="span" className="text-xs text-emerald-700" />
     </form>
   );
 }

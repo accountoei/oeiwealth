@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { createClient } from "@/lib/supabase/client";
+import Flash from "@/components/Flash";
 
 type Factor = { id: string; friendly_name?: string; status: string; created_at: string };
 const box = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
@@ -79,7 +80,7 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
         <input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="ยืนยันรหัสผ่านใหม่" className={`block w-full ${input}`} />
         <button disabled={busy} className={btn}>เปลี่ยนรหัสผ่าน</button>
         {pwMsg.error && <p className="text-sm text-red-600">{pwMsg.error}</p>}
-        {pwMsg.ok && <p className="text-sm text-emerald-700">{pwMsg.ok}</p>}
+        <Flash on={pwMsg} as="p" className="text-sm text-emerald-700" />
       </form>
 
       <div className={box}>
@@ -112,7 +113,7 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
           </form>
         )}
         {mfaMsg.error && <p className="text-sm text-red-600">{mfaMsg.error}</p>}
-        {mfaMsg.ok && <p className="text-sm text-emerald-700">{mfaMsg.ok}</p>}
+        <Flash on={mfaMsg} as="p" className="text-sm text-emerald-700" />
         <p className="text-xs text-slate-500">เปลี่ยนมือถือ: เพิ่มอุปกรณ์ใหม่ก่อน แล้วค่อยลบอันเก่า · ทำมือถือหาย: ให้ผู้ดูแลระบบกด &ldquo;รีเซ็ต MFA&rdquo; ที่หน้า Users<br />สงสัยว่ามีคนอื่นใช้บัญชี: เปลี่ยนรหัสผ่าน แล้วกด &ldquo;ออกจากระบบทุกอุปกรณ์&rdquo;</p>
       </div>
     </div>

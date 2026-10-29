@@ -11,6 +11,7 @@ import SecNavPicker from "@/components/SecNavPicker";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
 import { defaultIncomeAccount, groupIncomeOptions, incomeAccountOptions } from "@/lib/income-account";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -20,7 +21,7 @@ type Bank = { asset_id: string; name: string; currency: string };
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <span className="text-sm text-red-600">{s.error}</span>;
-  if (s.ok) return <span className="text-sm text-emerald-700">{s.ok}</span>;
+  if (s.ok) return <Flash on={s} as="span" className="text-sm text-emerald-700" />;
   return null;
 }
 
@@ -234,7 +235,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
       </div>
     </form>
   );
@@ -252,7 +253,7 @@ export function ConvertUnitsForm({ assetId, holdingId, isFund, lump, symbol, ope
   const [lumpState, lumpAction, lumpPending] = useActionState<RecState, FormData>(updateRecord, {});
   const [units, setUnits] = useState("");
   const [nav, setNav] = useState<number | null>(null);
-  if (state.ok || lumpState.ok) return <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{state.ok ?? lumpState.ok}</div>;
+  if (state.ok || lumpState.ok) return <Flash on={state.ok ? state : lumpState} as="div" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800" />;
   const u = Number(units.replace(/,/g, "")) || 0;
   // กองทุน 1 หน่วย = มักใส่มูลค่ารวมแทนจำนวน → แสดงเด่น · อย่างอื่น (มูลค่าก้อนเดียว / 1 หน่วยจริง) = ลิงก์เล็กกดเปิด
   const prominent = isFund && !lump;

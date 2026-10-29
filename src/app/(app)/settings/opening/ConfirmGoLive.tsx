@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { confirmGoLive, type GoLiveState } from "./actions";
+import Flash from "@/components/Flash";
 
 export default function ConfirmGoLive({ missing, warn, goLive }: { missing: number; warn: number; goLive: string }) {
   const [state, action, pending] = useActionState<GoLiveState, FormData>(confirmGoLive, {});
@@ -27,7 +28,7 @@ export default function ConfirmGoLive({ missing, warn, goLive }: { missing: numb
       </button>
       {blocked && <p className="text-sm text-red-600">ยังกดไม่ได้: ต้องแก้รายการ “ยังขาด” ให้หมดก่อน ({missing} รายการ)</p>}
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+      <Flash on={state} as="p" className="text-sm text-emerald-700" />
     </form>
   );
 }

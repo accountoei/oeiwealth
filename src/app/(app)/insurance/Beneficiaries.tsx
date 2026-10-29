@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { saveBeneficiaries, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 type Row = { person_id: string; name: string; percent: string };
 
@@ -55,7 +56,7 @@ export default function BeneficiaryEditor({ policyId, persons, current, startOpe
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">บันทึก</button>
         {!startOpen && <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>}
         {state.error && <span className="text-xs text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-xs text-emerald-700" />
       </div>
     </form>
   ));

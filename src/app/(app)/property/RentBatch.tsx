@@ -7,6 +7,7 @@ import { money, thDate, thMonth } from "@/lib/format";
 import { batchRent, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
+import Flash from "@/components/Flash";
 
 export type RentRow = {
   key: string; leaseId: string; assetId: string; property: string; tenant: string; period: string; due: string | null;
@@ -113,7 +114,7 @@ export default function RentBatch({ rows, banks, defaultDate, today, ym, canWrit
           </button>
           {chosen.length > 0 && !pending && <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
       <p className="text-xs text-slate-500">ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่ใช่ค่าเช่า) · กรอกยอดเฉพาะสัญญาที่ได้รับแล้ว (ช่องว่าง = ไม่บันทึก) · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · ยกเว้นงวด / แก้ไขรายการ ทำที่หน้าของทรัพย์สิน</p>

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { batchValuations, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type UpdateRow = {
   id: string; pf: string; pfName: string; name: string; symbol: string | null; type: string; currency: string; qty: number;
@@ -140,7 +141,7 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
             <button type="button" onClick={() => { setPrice({}); setMv({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
           )}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
     </form>

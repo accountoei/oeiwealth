@@ -7,13 +7,14 @@ import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateB
 import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
 import BankSelect from "@/components/BankSelect";
 import { StatusSlot } from "@/components/StatusSelect";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 
@@ -132,7 +133,7 @@ export function EditInfoForm({ acc }: { acc: Acc }) {
 /** ปุ่ม "ลงเป็นก้อนรอแยก" (ยอดล่าสุดไม่ตรง และยังไม่มีก้อน) */
 export function SettleLatestButton({ assetId }: { assetId: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(settleLatest, {});
-  if (state.ok) return <span className="text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-emerald-700" />;
   return (
     <form action={action} className="inline">
       <input type="hidden" name="asset_id" value={assetId} />

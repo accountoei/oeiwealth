@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { confirmRecon, finalizeMonth, prepareRecon, reopenMonth, settleRecon, type ActionState } from "./actions";
 import { money } from "@/lib/format";
+import Flash from "@/components/Flash";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const sbtn = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50";
@@ -11,7 +12,7 @@ const btn = "rounded-md bg-blue-600 px-5 py-2 text-sm text-white hover:bg-blue-7
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 

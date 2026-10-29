@@ -6,6 +6,7 @@ import ModalButton from "@/components/ModalButton";
 import { useNavPending } from "@/components/HeaderBar";
 import { TAX_FORM_LABEL, TAX_METHOD_LABEL, TAX_SETTLEMENT_LABEL, money } from "@/lib/format";
 import { amendReturn, createReturn, deleteReturn, refreshReturn, saveLine, saveSettlement, setStatus, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const primary = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -19,7 +20,7 @@ function useAct(act: Act) {
   return { state, action, pending };
 }
 function Msg({ state }: { state: ActionState }) {
-  return <>{state.error && <span className="text-sm text-red-600">{state.error}</span>}{state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}</>;
+  return <>{state.error && <span className="text-sm text-red-600">{state.error}</span>}<Flash on={state} as="span" className="text-sm text-emerald-700" /></>;
 }
 
 /** ปุ่มคำสั่งเดียว (ส่ง id + ค่าซ่อน) */

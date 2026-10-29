@@ -7,6 +7,7 @@ import { BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type InsLine = {
   id: string; policyId: string; policy: string; person: string | null; no: number; due: string; remaining: number;
@@ -139,7 +140,7 @@ export default function InsuranceBatch({ kind, rows, pays, today, defaultDate = 
           </button>
           {chosen.length > 0 && !pending && <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
       <p className="text-xs text-slate-500">

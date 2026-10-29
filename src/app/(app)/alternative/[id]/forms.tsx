@@ -5,6 +5,7 @@ import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, GRAM_PER_GOLD_BAHT } from "@/lib/form
 import { addGoldValuation, updateAlternativeInfo, type ActionState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { StatusSlot } from "@/components/StatusSelect";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const dv = (v: number | string | null | undefined) => (v == null ? "" : String(v));
@@ -100,7 +101,7 @@ export function AltInfoForm({ assetId, code, catName, unitLocked = false, defaul
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
         <StatusSlot />
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+        <Flash on={state} as="p" className="text-sm text-emerald-700" />
       </div>
     </form>
   );
@@ -147,7 +148,7 @@ export function GoldValuationForm({ assetId, today, minDate, paths, qtyBaht, pur
           </p>
           <div className="w-full">
             {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-            {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+            <Flash on={state} as="p" className="text-sm text-emerald-700" />
           </div>
         </form>
       )}

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveCostItem, type ActionState } from "./actions";
 import { DeleteSlot } from "@/components/RowActions";
+import Flash from "@/components/Flash";
 
 export type CostLot = {
   asset_id: string; source: string; item_id: string | null; movement_id: string | null; lot_date: string; amount: number;
@@ -45,7 +46,7 @@ export default function CostItemForm({ assetId, currency, today, edit }: {
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกต้นทุน"}</button>
         {edit?.item_id && <DeleteSlot />}
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+        <Flash on={state} as="p" className="text-sm text-emerald-700" />
       </div>
     </form>
   );

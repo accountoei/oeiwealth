@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { addAssetValuation, type RecState } from "@/lib/records";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 
@@ -26,7 +27,7 @@ export default function AssetValuationForm({ assetId, currency, today, minDate, 
       <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึกมูลค่า"}</button>
       <div className="w-full">
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+        <Flash on={state} as="p" className="text-sm text-emerald-700" />
       </div>
     </form>
   );

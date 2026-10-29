@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { undoWhole, type UndoState } from "@/lib/undo-actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import Flash from "@/components/Flash";
 
 /** ปุ่ม "ยกเลิกทั้งก้อน" · ถามยืนยันก่อน · ฐานข้อมูลย้อนทุกส่วนพร้อมกัน */
 export default function UndoButton({ kind, id, paths = [], label = "ยกเลิกทั้งก้อน", confirmText }: {
@@ -10,7 +11,7 @@ export default function UndoButton({ kind, id, paths = [], label = "ยกเล
 }) {
   const [state, action, pending] = useActionState<UndoState, FormData>(undoWhole, {});
   const cf = useConfirmSubmit();
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   return (
     <form action={action} onSubmit={cf.guard(confirmText, { danger: true })} className="inline-flex flex-col items-end">
       <input type="hidden" name="kind" value={kind} />

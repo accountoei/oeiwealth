@@ -4,6 +4,7 @@ import Modal from "@/components/Modal";
 
 import { useActionState, useState } from "react";
 import { addCategory, moveCategory, renameCategory, toggleCategory, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type Cat = { id: string; name: string; active: boolean; used: number };
 
@@ -65,7 +66,7 @@ function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boo
                 <button disabled={renaming} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{renaming ? "กำลังบันทึก…" : "บันทึก"}</button>
                 <button type="button" data-close onClick={() => setEditing(false)} className="text-sm text-slate-500">ยกเลิก</button>
                 {rs.error && <span className="text-sm text-red-600">{rs.error}</span>}
-                {rs.ok && <span className="text-sm text-emerald-700">{rs.ok}</span>}
+                <Flash on={rs} as="span" className="text-sm text-emerald-700" />
               </div>
             </form>
           </Modal>
@@ -105,7 +106,7 @@ function AddForm({ kind, unit }: { kind: string; unit: string }) {
       <input type="hidden" name="kind" value={kind} />
       <input name="name" required placeholder={`ชื่อ${unit}ใหม่`} className={`w-56 ${small}`} />
       <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "…" : `+ เพิ่ม${unit}`}</button>
-      {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
+      <Flash on={state} as="span" className="text-xs text-emerald-700" />
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
   );

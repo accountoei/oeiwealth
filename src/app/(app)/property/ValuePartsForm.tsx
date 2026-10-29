@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { savePropertyValuation, type ActionState } from "./actions";
 import { diffText, money, numOrZero } from "@/lib/format";
 import { partsSum, splitByArea, type ValuePart } from "./valueParts";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -144,7 +145,7 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending || negLand || mismatch || (!touched && !totalTyped)} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกมูลค่า"}</button>
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+        <Flash on={state} as="p" className="text-sm text-emerald-700" />
       </div>
     </form>
   );

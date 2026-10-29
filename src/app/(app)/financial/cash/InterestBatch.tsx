@@ -8,6 +8,7 @@ import { batchInterest, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
+import Flash from "@/components/Flash";
 
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
@@ -138,7 +139,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
             <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
           )}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
       <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · กดยอด &ldquo;รับแล้ว …&rdquo; เพื่อแก้ / ลบ (หรือที่หน้า Income &amp; Expenses)

@@ -7,6 +7,7 @@ import OwnerShares from "@/components/OwnerShares";
 import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { useCostValueMirror } from "@/components/useCostValueMirror";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -78,7 +79,7 @@ export default function NewAlternativeForm(props: {
                   <button type="button" onClick={() => setNewCat(false)} className="text-xs text-slate-500">ปิด</button>
                 </div>
                 {cs.error && <p className="mt-1 text-xs text-red-600">{cs.error}</p>}
-                {cs.ok && <p className="mt-1 text-xs text-emerald-700">{cs.ok}</p>}
+                <Flash on={cs} as="p" className="mt-1 text-xs text-emerald-700" />
               </div>
             )}
           </div>

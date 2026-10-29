@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { resolvePendingPrice, type PendingState } from "@/lib/pending-price-actions";
 import { money, thDate } from "@/lib/format";
+import Flash from "@/components/Flash";
 
 /** ราคาอัตโนมัติที่ระบบยังไม่บันทึก (เก็บใน price_pending โดย Job ราคา) */
 export type Pending = {
@@ -21,7 +22,7 @@ export default function PendingPrice({ kind, id, pending, currency, canResolve, 
   const [state, action, busy] = useActionState<PendingState, FormData>(resolvePendingPrice, {});
   const main = kind === "holding" ? pending.price : pending.value;
   const chg = pending.previous && main ? (main / Number(pending.previous) - 1) * 100 : null;
-  if (state.ok) return <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{state.ok}</div>;
+  if (state.ok) return <Flash on={state} as="div" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800" />;
   return (
     <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
       <div className="font-medium text-amber-900">ราคาอัตโนมัติรอยืนยัน</div>

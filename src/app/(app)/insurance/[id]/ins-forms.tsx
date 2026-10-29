@@ -10,6 +10,7 @@ import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate, numOrZero a
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -23,7 +24,7 @@ type Person = { id: string; name: string };
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <span className="text-sm text-red-600">{s.error}</span>;
-  if (s.ok) return <span className="text-sm text-emerald-700">{s.ok}</span>;
+  if (s.ok) return <Flash on={s} as="span" className="text-sm text-emerald-700" />;
   return null;
 }
 
@@ -181,9 +182,9 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
   const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<PayState, FormData>(payPremium, {});
   if (state.ok) {
-    const done = <span className="text-xs text-emerald-700">{state.ok}</span>;
+    const done = <Flash on={state} className="text-xs text-emerald-700" />;
     // ลงตามตารางในสัญญาให้แล้ว หรือไม่มีมูลค่าเวนคืน → จบ · ไม่งั้นถามอัปเดตมูลค่าเวนคืนต่อ (กดข้ามได้)
-    if (state.cv && state.cv.added > 0) return <span className="text-xs text-emerald-700">{state.ok} · มูลค่าเวนคืนตามสัญญา {money(state.cv.value)} (ปีที่ {state.cv.policy_year})</span>;
+    if (state.cv && state.cv.added > 0) return <Flash on={state} className="text-xs text-emerald-700">{state.ok} · มูลค่าเวนคืนตามสัญญา {money(state.cv.value)} (ปีที่ {state.cv.policy_year})</Flash>;
     if (!cashValue || !open) return done;
     const sug = cashValue.suggest;
     return present(done, (
@@ -245,7 +246,7 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [outcome, setOutcome] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(receiveBenefit, {});
-  if (state.ok && isSmall) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok && isSmall) return <Flash on={state} className="text-xs text-emerald-700" />;
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(isSmall ? ROW_BTN : obtn)}>{button}</button>;
   if (!open) return trigger;
   const sameBanks = banks.filter((b) => b.currency === currency);

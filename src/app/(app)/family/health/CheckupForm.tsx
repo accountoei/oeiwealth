@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addCheckup, type ActionState } from "./actions";
 import { METRICS } from "./metrics";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const cell = "w-full rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -71,7 +72,7 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
       </div>
     </form>
   ));

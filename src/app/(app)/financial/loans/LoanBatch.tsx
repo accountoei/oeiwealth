@@ -7,6 +7,7 @@ import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
@@ -173,7 +174,7 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
           </button>
           {chosen.length > 0 && !pending && <button type="button" onClick={() => { setTot({}); setPr({}); setInt({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
       {state.ok && over.length > 0 && (

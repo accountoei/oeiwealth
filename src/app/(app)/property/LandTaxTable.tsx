@@ -8,6 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { useOnMainTab } from "../income-expenses/tabs";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./[id]/LandTax";
 import { copyTaxYearAll, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type TaxLineRow = TaxLine & { total_value: number; taxable_value: number; tax_amount: number };
 export type TaxPropRow = {
@@ -170,7 +171,7 @@ function CopyAll({ from, to, ids }: { from: number; to: number; ids: string[] })
         <button disabled={pending} className="rounded-md border border-blue-600 px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50">
           {pending ? "กำลังคัดลอก…" : `คัดลอกจากปี ${from + 543} (ทุกรายการ · ${ids.length})`}</button>
         {state.error && <span className="text-xs text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-xs text-emerald-700" />
       </form>
     </>
   );

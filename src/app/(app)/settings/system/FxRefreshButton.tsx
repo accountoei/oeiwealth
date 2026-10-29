@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { refreshFxNow, type FxState } from "./actions";
+import Flash from "@/components/Flash";
 
 /** ปุ่มคำสั่งของกล่องอัตราแลกเปลี่ยน (อัปเดต / เปลี่ยนแหล่ง / Override) — ขนาดเท่ากัน */
 export const FX_BTN = "inline-flex w-44 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50";
@@ -15,7 +16,7 @@ export default function FxRefreshButton() {
         {pending ? "กำลังสั่ง…" : "อัปเดตอัตราตอนนี้"}
       </button>
       {state.error && <span className="max-w-72 text-right text-xs text-red-600">{state.error}</span>}
-      {state.ok && <span className="max-w-72 text-right text-xs text-emerald-700">{state.ok}</span>}
+      <Flash on={state} as="span" className="max-w-72 text-right text-xs text-emerald-700" />
     </form>
   );
 }
