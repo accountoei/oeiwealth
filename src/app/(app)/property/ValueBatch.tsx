@@ -168,7 +168,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
                 </tr>
                 {open[r.id] && r.parts.map((p) => (
                   <tr key={p.id} className="bg-slate-50/60 text-xs">
-                    <td className="py-1.5 pl-8 pr-3">{p.label}<span className="text-slate-400"> · {p.type === "LAND" ? "ที่ดิน" : p.type === "BUILDING" ? "อาคาร" : "สิ่งปลูกสร้างอื่น"}
+                    <td className="py-1.5 pl-8 pr-3">{p.label}<span className="text-slate-400"> · {p.type === "LAND" ? "ที่ดิน" : "สิ่งปลูกสร้าง"}
                       {p.area != null && ` · ${p.area.toLocaleString("en-US")} ตร.ว.`}</span></td>
                     <td className="px-3 text-right tabular-nums text-slate-600">{p.value != null ? money(p.value, undefined, 0) : "-"}</td>
                     <td className="px-3 py-1 text-right">

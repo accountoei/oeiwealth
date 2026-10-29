@@ -16,7 +16,8 @@ export const COMPONENT_FIELDS = "id,sort_order,component_type,label,title_type,t
 
 export const END_REASON_LABEL: Record<"SOLD" | "DEMOLISHED", string> = { SOLD: "ขายแล้ว", DEMOLISHED: "รื้อถอนแล้ว" };
 
-export const COMP_TYPE_LABEL: Record<CompType, string> = { LAND: "ที่ดิน", BUILDING: "อาคาร", OTHER: "สิ่งปลูกสร้างอื่น" };
+/** อาคาร + สิ่งปลูกสร้างอื่น แสดงเป็น "สิ่งปลูกสร้าง" ชนิดเดียว (ตกลง 29 ต.ค. 2026 · แถวใหม่บันทึกเป็น BUILDING) */
+export const COMP_TYPE_LABEL: Record<CompType, string> = { LAND: "ที่ดิน", BUILDING: "สิ่งปลูกสร้าง", OTHER: "สิ่งปลูกสร้าง" };
 
 /** ชื่อที่แสดงของแต่ละแถว */
 export function compName(c: Pick<Component, "component_type" | "label" | "title_type" | "title_deed_no" | "land_no">, i = 0): string {

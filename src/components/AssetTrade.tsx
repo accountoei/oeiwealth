@@ -245,7 +245,8 @@ export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, 
 
 /** ส่วนประกอบของ Property ที่ให้เลือกในฟอร์มจ่าย (ที่ดิน / อาคาร / สิ่งปลูกสร้างอื่น) */
 export type CompOpt = { id: string; label: string; type: "LAND" | "BUILDING" | "OTHER" };
-const TYPE_TEXT: Record<CompOpt["type"], string> = { LAND: "ที่ดิน", BUILDING: "อาคาร", OTHER: "สิ่งปลูกสร้างอื่น" };
+// อาคาร + สิ่งปลูกสร้างอื่น = "สิ่งปลูกสร้าง" กลุ่มเดียว (ตกลง 29 ต.ค. 2026)
+const TYPE_GROUPS: [string, CompOpt["type"][]][] = [["ที่ดิน", ["LAND"]], ["สิ่งปลูกสร้าง", ["BUILDING", "OTHER"]]];
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 /** ช่องเพิ่มของ Property (ใช้ทั้งตอนจ่ายและตอนแก้รายการจ่าย · ตกลง 28–29 ต.ค. 2026)
@@ -268,16 +269,15 @@ export function PropertyPayExtras({ addValue = true, showAddValue = true, compon
           <label className="flex items-center gap-2">เป็นของ *
             <select name="component" required value={pick} onChange={(e) => setPick(e.target.value)} className={small}>
               <option value="" disabled>— เลือกแถว —</option>
-              {(["LAND", "BUILDING", "OTHER"] as const).map((t) => components.some((c) => c.type === t) && (
-                <optgroup key={t} label={TYPE_TEXT[t]}>
-                  {components.filter((c) => c.type === t).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              {TYPE_GROUPS.map(([label, ts]) => components.some((c) => ts.includes(c.type)) && (
+                <optgroup key={label} label={label}>
+                  {components.filter((c) => ts.includes(c.type)).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                 </optgroup>
               ))}
               {allowNew && (
                 <optgroup label="แถวใหม่">
                   <option value="new:LAND">+ ซื้อที่ดินเพิ่ม (โฉนดใหม่)</option>
-                  <option value="new:BUILDING">+ อาคารใหม่</option>
-                  <option value="new:OTHER">+ สิ่งปลูกสร้างอื่นใหม่</option>
+                  <option value="new:BUILDING">+ สิ่งปลูกสร้างใหม่</option>
                 </optgroup>
               )}
             </select></label>
@@ -290,21 +290,21 @@ export function PropertyPayExtras({ addValue = true, showAddValue = true, compon
           <span className="text-xs text-slate-500">เนื้อที่</span>
           <input name="nc_rai" placeholder="ไร่" aria-label="ไร่" inputMode="numeric" data-plain className={`w-16 ${small}`} />
           <input name="nc_ngan" placeholder="งาน" aria-label="งาน" inputMode="numeric" data-plain className={`w-16 ${small}`} />
-          <input name="nc_wa" placeholder="ตร.ว." aria-label="ตารางวา" inputMode="decimal" data-plain className={`w-20 ${small}`} />
+          <input name="nc_wa" placeholder="ตร.ว." aria-label="ตารางวา" inputMode="decimal" data-money="off" className={`w-20 ${small}`} />
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <input name="nc_label" required placeholder={newType === "BUILDING" ? "ชื่ออาคาร เช่น บ้านหลังเล็ก" : "เช่น รั้ว · สระว่ายน้ำ"} aria-label="ชื่อ"
+          <input name="nc_label" required placeholder="เช่น บ้านหลังเล็ก · รั้ว · สระว่ายน้ำ" aria-label="ชื่อ"
             className={`w-64 ${small}`} />
-          {newType === "BUILDING" && <><input name="nc_area" placeholder="พื้นที่ใช้สอย" aria-label="พื้นที่ใช้สอย (ตร.ม.)" inputMode="decimal" data-plain
-            className={`w-28 ${small}`} /><span className="text-xs text-slate-500">ตร.ม.</span></>}
+          <input name="nc_area" placeholder="พื้นที่ใช้สอย" aria-label="พื้นที่ใช้สอย (ตร.ม.)" inputMode="decimal" data-money="off"
+            className={`w-28 ${small}`} /><span className="text-xs text-slate-500">ตร.ม.</span>
           <span className="text-xs text-slate-500">อายุใช้งาน</span>
           <input name="nc_years" defaultValue="20" aria-label="อายุใช้งาน (ปี)" inputMode="numeric" data-plain className={`w-16 text-right ${small}`} />
           <span className="text-xs text-slate-500">ปี</span>
         </div>
       ))}
       {pick && <p className="text-xs text-slate-500">ต้นทุนและมูลค่าที่เพิ่มเข้าแถวที่เลือก{isNew && " (แถวใหม่ วันที่ได้มา = วันที่จ่าย · แก้รายละเอียดได้ที่ปุ่มแก้ไขของทรัพย์สิน)"}
-        {pickType && pickType !== "LAND" && " · อาคาร / สิ่งปลูกสร้างหักค่าเสื่อมตามอายุของแถวนั้น"}</p>}
+        {pickType && pickType !== "LAND" && " · สิ่งปลูกสร้างหักค่าเสื่อมตามอายุของแถวนั้น"}</p>}
     </div>
   );
 }
