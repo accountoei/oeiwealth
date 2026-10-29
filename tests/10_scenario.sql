@@ -3732,6 +3732,48 @@ SELECT t.ok((SELECT bool_and(ended_date IS NULL) FROM public.property_deeds WHER
             'ยกเลิก: แถวกลับมาถืออยู่ · มูลค่า / ราคาที่ได้มา / เงินเข้า / กำไร-ขาดทุน กลับเป็นเดิม');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz26. Property: แถวผูกเงินลบ / แก้ต้นทุนไม่ได้ · แถวที่จบแล้วแก้ไม่ได้ · เหลืออย่างน้อย 1 แถว · จ่ายต้องเลือกแถว (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT d.id AS deed_g FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT land_area_sq_wa AS area_g FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT t.fails(format($$SELECT public.pay_property('%s', '%s', current_date, 1000, null, 'x', false, null, null)$$, t.a('บ้าน A'), t.a('KBank ออมทรัพย์')),
+               'เลือกแถว', 'จ่ายซื้อ / จ่ายเพิ่ม: ต้องเลือกแถว');
+SELECT ids[2] AS bld_g, ids[3] AS oth_g FROM (SELECT public.save_property_components(t.a('บ้าน A'),
+  format('[{"id":"%s","type":"LAND","land_area_sq_wa":"%s"},{"type":"BUILDING","label":"บ้าน","acq_cost":"500000"},{"type":"OTHER","label":"รั้ว"}]',
+         :'deed_g', :'area_g')::jsonb, '{}', null) AS ids) x \gset
+SELECT public.pay_property(t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), current_date, 1000, null, 'ซ่อม', false, :'bld_g', null) AS mv8 \gset
+SELECT t.fails(format($$SELECT public.save_property_components('%s', '[{"id":"%s","type":"LAND","land_area_sq_wa":"%s"},{"id":"%s","type":"OTHER","label":"รั้ว"}]', ARRAY['%s']::uuid[], null)$$,
+               t.a('บ้าน A'), :'deed_g', :'area_g', :'oth_g', :'bld_g'), 'ผูกกับรายการจ่าย', 'แถวที่มีรายการจ่ายผูกอยู่ลบไม่ได้');
+SELECT t.fails(format($$SELECT public.save_property_components('%s', '[{"id":"%s","type":"BUILDING","label":"บ้าน","acq_cost":"600000"}]', '{}', null)$$,
+               t.a('บ้าน A'), :'bld_g'), 'แก้ต้นทุน', 'แถวที่มีรายการจ่ายผูกอยู่แก้ต้นทุนไม่ได้');
+SELECT public.save_property_components(t.a('บ้าน A'), format('[{"id":"%s","type":"BUILDING","label":"บ้านใหญ่","acq_cost":"500000.00","notes":"แก้ชื่อได้"}]', :'bld_g')::jsonb, '{}', null);
+SELECT t.ok((SELECT label = 'บ้านใหญ่' FROM public.property_deeds WHERE id = :'bld_g'), 'แถวที่มีรายการจ่ายผูกอยู่: แก้ข้อความได้');
+SELECT public.save_property_components(t.a('บ้าน A'),
+  format('[{"type":"LAND","title_deed_no":"S-1","land_area_sq_wa":"100"},{"type":"LAND","title_deed_no":"S-2","land_area_sq_wa":"%s"},{"id":"%s","type":"BUILDING","label":"บ้านใหญ่","acq_cost":"500000"}]',
+         :'area_g'::numeric - 100, :'bld_g')::jsonb, ARRAY[:'deed_g', :'oth_g']::uuid[], null);
+SELECT t.ok((SELECT count(*) = 3 FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+              WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL)
+            AND (SELECT land_area_sq_wa = :'area_g'::numeric FROM public.property_details WHERE asset_id = t.a('บ้าน A')),
+            'แยกโฉนด: ลบแถวเดิม + เพิ่มแถวใหม่ในการบันทึกครั้งเดียวได้ (เนื้อที่รวมเท่าเดิม)');
+UPDATE public.cash_movements SET deleted_at = now() WHERE id = :'mv8';
+SELECT id AS s1_g FROM public.property_deeds WHERE title_deed_no = 'S-1' AND deleted_at IS NULL \gset
+SELECT id AS s2_g FROM public.property_deeds WHERE title_deed_no = 'S-2' AND deleted_at IS NULL \gset
+SAVEPOINT keep1;
+SET CONSTRAINTS ALL IMMEDIATE;
+SELECT t.fails(format($$SELECT public.save_property_components('%s', '[]', ARRAY['%s','%s','%s']::uuid[], null)$$,
+               t.a('บ้าน A'), :'s1_g', :'s2_g', :'bld_g'), 'อย่างน้อย 1 แถว', 'ต้องเหลือส่วนประกอบอย่างน้อย 1 แถว');
+ROLLBACK TO SAVEPOINT keep1;
+SET CONSTRAINTS ALL DEFERRED;
+SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'s2_g']::uuid[], current_date, 100000, null, t.a('KBank ออมทรัพย์'), 50000) AS ev3 \gset
+SELECT t.fails(format($$UPDATE public.property_deeds SET notes = 'x' WHERE id = '%s'$$, :'s2_g'), 'แก้ไขไม่ได้', 'แถวที่ขายแล้วแก้ข้อมูลไม่ได้');
+SELECT t.fails(format($$SELECT public.pay_property('%s', '%s', current_date, 1000, null, 'x', false, '%s', null)$$, t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), :'s2_g'),
+               'รื้อถอนแล้ว', 'จ่ายเพิ่มเข้าแถวที่ขายแล้วไม่ได้');
+SELECT public.undo_property_component_event(:'ev3');
+SELECT t.ok((SELECT ended_date IS NULL FROM public.property_deeds WHERE id = :'s2_g'), 'ยกเลิกการขาย: แถวกลับมาแก้ได้ตามปกติ');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
