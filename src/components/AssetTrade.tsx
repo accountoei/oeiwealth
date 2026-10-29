@@ -1,13 +1,86 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { demolishComponents, payForAsset, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
-import { money } from "@/lib/format";
+import { money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
+/** บัตรเครดิตที่ใช้จ่ายค่าใช้จ่ายในการขาย / รื้อถอนได้ */
+export type CardOpt = { id: string; label: string; currency: string };
+
+const COST_SUGGEST = ["ค่าธรรมเนียมการโอน", "ภาษีธุรกิจเฉพาะ / อากรแสตมป์", "ภาษีหัก ณ ที่จ่าย", "ค่านายหน้า", "ค่ารื้อถอน", "ค่าขนย้าย"];
+const cellCls = "w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+
+/** ตารางรับเงิน (หลายบัญชี) + ค่าใช้จ่าย (หลายรายการ · หักจากเงินที่ได้รับ / จ่ายจากบัญชี / บัตร) — ตกลง 29 ต.ค. 2026
+ *  ส่งออกช่องซ่อน receipts / costs (JSON) · ราคาขาย = เงินรับรวม + ค่าใช้จ่ายที่หักจากเงินที่ได้รับ */
+function SaleLines({ currency, banks, cards = [], demolish = false }: { currency: string; banks: Bank[]; cards?: CardOpt[]; demolish?: boolean }) {
+  const seq = useRef(0);
+  const key = () => `k${++seq.current}`;   // เรียกเฉพาะตอนกดเพิ่มแถว
+  const [rec, setRec] = useState<{ key: string; bank: string; amount: string; note: string }[]>(
+    demolish ? [] : [{ key: "k0", bank: banks[0]?.asset_id ?? "", amount: "", note: "" }]);
+  const [cost, setCost] = useState<{ key: string; label: string; amount: string; pay: string }[]>([]);
+  const received = rec.reduce((t, r) => t + numOrZero(r.amount), 0);
+  const deducted = cost.filter((c) => c.pay === "DEDUCT").reduce((t, c) => t + numOrZero(c.amount), 0);
+  const paid = cost.filter((c) => c.pay !== "DEDUCT").reduce((t, c) => t + numOrZero(c.amount), 0);
+  const setR = (k: string, p: Partial<(typeof rec)[number]>) => setRec((rs) => rs.map((r) => (r.key === k ? { ...r, ...p } : r)));
+  const setC = (k: string, p: Partial<(typeof cost)[number]>) => setCost((cs) => cs.map((c) => (c.key === k ? { ...c, ...p } : c)));
+  const cardList = cards.filter((c) => c.currency === currency);
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <input type="hidden" name="receipts" value={JSON.stringify(rec)} />
+      <input type="hidden" name="costs" value={JSON.stringify(cost)} />
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium text-slate-800">{demolish ? "เงินที่ได้รับ (ขายเศษวัสดุ · ถ้ามี)" : "เงินที่ได้รับ"}</h4>
+        {rec.map((r) => (
+          <div key={r.key} className="grid grid-cols-[1fr_8rem_auto] gap-2">
+            <select value={r.bank} onChange={(e) => setR(r.key, { bank: e.target.value })} aria-label="บัญชีที่รับเงิน" className={cellCls}>
+              <option value="" disabled>— บัญชีที่รับเงิน —</option>
+              {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            </select>
+            <input value={r.amount} onChange={(e) => setR(r.key, { amount: e.target.value })} inputMode="decimal" aria-label="จำนวนเงินที่รับ"
+              placeholder="จำนวน" className={`${cellCls} text-right`} />
+            <button type="button" onClick={() => setRec((rs) => rs.filter((x) => x.key !== r.key))} className="text-xs text-red-600 hover:underline">ลบ</button>
+            <input value={r.note} onChange={(e) => setR(r.key, { note: e.target.value })} aria-label="หมายเหตุของเงินที่รับ"
+              placeholder="หมายเหตุ เช่น มัดจำ / ส่วนที่เหลือ" data-plain className={`col-span-2 ${cellCls}`} />
+          </div>
+        ))}
+        <button type="button" onClick={() => setRec((rs) => [...rs, { key: key(), bank: banks[0]?.asset_id ?? "", amount: "", note: "" }])}
+          className="text-sm text-blue-700 hover:underline">+ {rec.length ? "รับเงินอีกบัญชี" : demolish ? "ขายเศษวัสดุได้" : "เงินที่ได้รับ"}</button>
+        {banks.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
+      </div>
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium text-slate-800">{demolish ? "ค่าใช้จ่าย (ค่ารื้อถอน ฯลฯ)" : "ค่าใช้จ่ายในการขาย"}</h4>
+        <datalist id="sale-cost-suggest">{COST_SUGGEST.map((x) => <option key={x} value={x} />)}</datalist>
+        {cost.map((c) => (
+          <div key={c.key} className="grid grid-cols-[1fr_8rem_auto] gap-2">
+            <input value={c.label} onChange={(e) => setC(c.key, { label: e.target.value })} list="sale-cost-suggest" aria-label="รายการค่าใช้จ่าย"
+              placeholder="รายการ เช่น ค่าโอน / นายหน้า" data-plain className={cellCls} />
+            <input value={c.amount} onChange={(e) => setC(c.key, { amount: e.target.value })} inputMode="decimal" aria-label="จำนวนค่าใช้จ่าย"
+              placeholder="จำนวน" className={`${cellCls} text-right`} />
+            <button type="button" onClick={() => setCost((cs) => cs.filter((x) => x.key !== c.key))} className="text-xs text-red-600 hover:underline">ลบ</button>
+            <select value={c.pay} onChange={(e) => setC(c.key, { pay: e.target.value })} aria-label="จ่ายอย่างไร" className={`col-span-2 ${cellCls}`}>
+              {(!demolish || rec.length > 0) && <option value="DEDUCT">หักจากเงินที่ได้รับ</option>}
+              <optgroup label="จ่ายจากบัญชี">{banks.map((b) => <option key={b.asset_id} value={`a:${b.asset_id}`}>จ่ายจาก {b.name}</option>)}</optgroup>
+              {cardList.length > 0 && <optgroup label="จ่ายด้วยบัตรเครดิต">{cardList.map((x) => <option key={x.id} value={`c:${x.id}`}>บัตร {x.label}</option>)}</optgroup>}
+            </select>
+          </div>
+        ))}
+        <button type="button" onClick={() => setCost((cs) => [...cs, { key: key(), label: "", amount: "",
+          pay: !demolish || rec.length > 0 ? "DEDUCT" : banks[0] ? `a:${banks[0].asset_id}` : "DEDUCT" }])}
+          className="text-sm text-blue-700 hover:underline">+ ค่าใช้จ่าย</button>
+      </div>
+      <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm md:col-span-2">
+        <span>เงินที่ได้รับรวม <b className="tabular-nums">{money(received, currency, 2)}</b></span>
+        {deducted > 0 && <span> · ค่าใช้จ่ายที่หักจากเงินที่ได้รับ <span className="tabular-nums">{money(deducted, currency, 2)}</span></span>}
+        {!demolish && <span> · ราคาขาย <b className="tabular-nums">{money(received + deducted, currency, 2)}</b></span>}
+        {paid > 0 && <span> · จ่ายจากบัญชี / บัตร <span className="tabular-nums">{money(paid, currency, 2)}</span> (ลงเป็นค่าใช้จ่าย)</span>}
+      </div>
+    </div>
+  );
+}
 
 function Box({ title, label, children, action, pending, state, danger }: {
   title: string; label: string; children: React.ReactNode; action: (f: FormData) => void; pending: boolean; state: TradeState; danger?: boolean;
@@ -36,7 +109,7 @@ function Box({ title, label, children, action, pending, state, danger }: {
 export type SaleComp = { id: string; label: string; type: "LAND" | "BUILDING" | "OTHER"; value: number | null };
 
 /** เลือกแถวที่ขาย / รื้อถอน + มูลค่าเดิมของแถวที่เลือก (มูลค่าล่าสุดไม่แยกรายแถว → ผู้ใช้ใส่) */
-function CompPicker({ comps, currency }: { comps: SaleComp[]; currency: string }) {
+function CompPicker({ comps, currency, sale = false }: { comps: SaleComp[]; currency: string; /** ขาย: ติ๊กครบ = ขายทั้งทรัพย์สิน */ sale?: boolean }) {
   const [sel, setSel] = useState<string[]>([]);
   const known = comps.every((c) => c.value != null);
   const book = comps.filter((c) => sel.includes(c.id)).reduce((t, c) => t + (c.value ?? 0), 0);
@@ -51,7 +124,9 @@ function CompPicker({ comps, currency }: { comps: SaleComp[]; currency: string }
           </label>
         ))}
       </div>
-      {known ? (sel.length > 0 && <p className="mt-1 text-xs text-slate-600">มูลค่าเดิมของแถวที่เลือก <span className="tabular-nums">{money(book, currency, 0)}</span> (ตามมูลค่าล่าสุดรายแถว)</p>) : (
+      {sale && sel.length === comps.length && <input type="hidden" name="all_rows" value="1" />}
+      {sale && sel.length === comps.length ? <p className="mt-1 text-xs font-medium text-amber-700">ติ๊กครบทุกแถว = ขายทั้งทรัพย์สิน (ทุกแถว &ldquo;ขายแล้ว&rdquo; · สถานะทรัพย์สินเป็น &ldquo;ขายแล้ว&rdquo; · มูลค่า ณ วันขาย = ราคาขาย)</p>
+        : known ? (sel.length > 0 && <p className="mt-1 text-xs text-slate-600">มูลค่าเดิมของแถวที่เลือก <span className="tabular-nums">{money(book, currency, 0)}</span> (ตามมูลค่าล่าสุดรายแถว)</p>) : (
         <label className="mt-2 block text-sm">มูลค่าเดิมของแถวที่เลือก ({currency}) *
           <input name="book_value" required inputMode="decimal" className={`${input} md:w-60`} />
           <span className="text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว ใส่ว่าแถวที่เลือกมีมูลค่าเท่าไรในยอดนั้น</span>
@@ -61,8 +136,8 @@ function CompPicker({ comps, currency }: { comps: SaleComp[]; currency: string }
   );
 }
 
-export function SellAssetForm({ assetId, currency, banks, today, minDate, paths, hasLease, quantity, unit, components }: {
-  assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; hasLease?: boolean;
+export function SellAssetForm({ assetId, currency, banks, cards, today, minDate, paths, hasLease, quantity, unit, components }: {
+  assetId: string; currency: string; banks: Bank[]; cards?: CardOpt[]; today: string; minDate: string; paths: string[]; hasLease?: boolean;
   /** Alternative: จำนวนที่ถืออยู่ → ขายบางส่วนได้ (ไม่ส่ง = ขายทั้งรายการเท่านั้น) */
   quantity?: number | null; unit?: string | null;
   /** Property: แถวส่วนประกอบที่ยังถืออยู่ (2 แถวขึ้นไป → ขายบางแถวได้) */
@@ -83,7 +158,7 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
             <label className="flex items-center gap-2"><input type="radio" name="scope" value="all" checked={!part} onChange={() => setPart(false)} /> ขายทั้งทรัพย์สิน</label>
             <label className="flex items-center gap-2"><input type="radio" name="scope" value="part" checked={part} onChange={() => setPart(true)} /> ขายบางแถว (เช่น ที่ดินบางแปลง)</label>
           </div>
-          {part && <CompPicker comps={components!} currency={currency} />}
+          {part && <CompPicker comps={components!} currency={currency} sale />}
         </div>
       )}
       {quantity ? (
@@ -97,18 +172,12 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
       ) : null}
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">วันที่ขาย *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">ราคาขาย ({currency}) *<input name="price" required inputMode="decimal" className={input} /></label>
-        <label className="text-sm">ค่าใช้จ่ายในการขาย<input name="fee" inputMode="decimal" placeholder="ค่าโอน / นายหน้า / ภาษี" className={input} /></label>
-        <label className="text-sm">เงินเข้าบัญชี
-          <select name="bank_asset_id" defaultValue={list[0]?.asset_id ?? ""} className={input}>
-            <option value="">— ไม่ผ่านบัญชี (เช่น แลกเปลี่ยน) —</option>
-            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
-          </select>
-        </label>
-        <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
+        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
       </div>
+      <SaleLines currency={currency} banks={list} cards={cards} />
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
-        <li>เงินเข้าบัญชี = ราคาขาย − ค่าใช้จ่าย · กำไร / ขาดทุน = เงินเข้าบัญชี − {part ? "มูลค่าเดิมของแถวที่ขาย" : "มูลค่าล่าสุด"} → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ขาดทุนไม่มีเงินออกจากบัญชี)</li>
+        <li>ใส่เงินที่เข้าแต่ละบัญชีจริง · ค่าใช้จ่ายที่ถูกหักไปก่อนเงินเข้า เลือก &ldquo;หักจากเงินที่ได้รับ&rdquo; · จ่ายแยกจากบัญชี / บัตร → ลงเป็นค่าใช้จ่ายหมวด &ldquo;ค่าใช้จ่ายในการขาย / รื้อถอนทรัพย์สิน&rdquo; ของเจ้าของตามสัดส่วน · ทุกรายการลงวันเดียวกับวันขาย</li>
+        <li>กำไร / ขาดทุน = เงินที่ได้รับรวม − {part ? "มูลค่าเดิมของแถวที่ขาย" : "มูลค่าล่าสุด"} → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ขาดทุนไม่มีเงินออกจากบัญชี)</li>
         {part ? <li>ขายบางแถว: แถวที่ขายเป็น &ldquo;ขายแล้ว&rdquo; (ยังเห็นในประวัติ) · มูลค่าใหม่ = มูลค่าเดิม − ส่วนที่ขาย · ราคาที่ได้มาลดตามต้นทุนของแถวนั้น · ทรัพย์สินยังถืออยู่</li>
           : <li>{quantity ? "ขายทั้งรายการ: " : ""}บันทึกมูลค่า ณ วันขาย = ราคาขาย แล้วเปลี่ยนสถานะเป็น &ldquo;ขายแล้ว&rdquo; (ไม่นับใน Net Worth หลังวันขาย)</li>}
         {quantity ? <li>ขายบางส่วน: มูลค่าส่วนที่ขาย = มูลค่าล่าสุด × จำนวนที่ขาย ÷ {qtyText} · ขายตามสัดส่วนเจ้าของทุกคน · จำนวน / มูลค่า / ราคาทุนที่เหลือลดตามสัดส่วน</li> : null}
@@ -120,8 +189,8 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
 }
 
 /** Property: รื้อถอนอาคาร / สิ่งปลูกสร้าง → แถวเป็น "รื้อถอนแล้ว" · มูลค่าของแถวออก · ขาดทุนเท่ามูลค่าเดิม (ตกลง 29 ต.ค. 2026) */
-export function DemolishForm({ assetId, currency, banks, today, minDate, paths, components }: {
-  assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; components: SaleComp[];
+export function DemolishForm({ assetId, currency, banks, cards, today, minDate, paths, components }: {
+  assetId: string; currency: string; banks: Bank[]; cards?: CardOpt[]; today: string; minDate: string; paths: string[]; components: SaleComp[];
 }) {
   const [state, action, pending] = useActionState<TradeState, FormData>(demolishComponents, {});
   const list = banks.filter((b) => b.currency === currency);
@@ -132,19 +201,12 @@ export function DemolishForm({ assetId, currency, banks, today, minDate, paths, 
       <CompPicker comps={components} currency={currency} />
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">วันที่รื้อถอน *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">ขายเศษวัสดุได้ ({currency})<input name="price" inputMode="decimal" placeholder="ถ้ามี" className={input} /></label>
-        <label className="text-sm">ค่าใช้จ่ายที่หักจากเงินนั้น<input name="fee" inputMode="decimal" className={input} /></label>
-        <label className="text-sm">เงินเข้าบัญชี
-          <select name="bank_asset_id" defaultValue="" className={input}>
-            <option value="">— ไม่มีเงินเข้า —</option>
-            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
-          </select>
-        </label>
-        <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" placeholder="เหตุผล / ผู้รับเหมา" className={input} /></label>
+        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="เหตุผล / ผู้รับเหมา" className={input} /></label>
       </div>
+      <SaleLines currency={currency} banks={list} cards={cards} demolish />
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
         <li>มูลค่าของแถวที่รื้อออกจากมูลค่าทรัพย์สิน · ขาดทุน = มูลค่าเดิม − เงินขายเศษวัสดุ → ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ไม่มีเงินออกจากบัญชี)</li>
-        <li>ค่าจ้างรื้อถอนที่จ่ายจริง ให้บันทึกเป็นค่าใช้จ่ายแยก · สร้างหลังใหม่ใช้ &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; → อาคารใหม่</li>
+        <li>ค่าจ้างรื้อถอนที่จ่ายจากบัญชี / บัตร ใส่ในค่าใช้จ่าย → ลงเป็นค่าใช้จ่ายหมวด &ldquo;ค่าใช้จ่ายในการขาย / รื้อถอนทรัพย์สิน&rdquo; · สร้างหลังใหม่ใช้ &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; → อาคารใหม่</li>
       </ul>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่ารื้อถอนแล้วจริง</label>
     </Box>
