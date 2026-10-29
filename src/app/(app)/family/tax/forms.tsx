@@ -54,7 +54,7 @@ export function CreateReturn({ personId, year }: { personId: string; year: numbe
 }
 
 /** บันทึกว่ายื่นแล้ว (ล็อกยอดที่ยื่น) */
-export function FileReturn({ id, today }: { id: string; today: string }) {
+export function FileReturn({ id, today, result }: { id: string; today: string; result: number }) {
   const { state, action, pending } = useAct(setStatus);
   return (
     <ModalButton label="บันทึกว่ายื่นแล้ว" title="บันทึกว่ายื่นแบบแล้ว" primary>
@@ -65,9 +65,10 @@ export function FileReturn({ id, today }: { id: string; today: string }) {
           <label className="text-sm">วันที่ยื่น *<input name="filed_date" type="date" required defaultValue={today} max={today} className={input} /></label>
           <label className="text-sm">เลขอ้างอิงการยื่น<input name="reference_no" autoComplete="off" className={input} /></label>
           <label className="text-sm">ผลภาษีตามแบบ
-            <select name="result_sign" defaultValue="pay" className={input}><option value="pay">ชำระเพิ่ม</option><option value="refund">ขอคืน</option></select>
+            <select name="result_sign" defaultValue={result < 0 ? "refund" : "pay"} className={input}><option value="pay">ชำระเพิ่ม</option><option value="refund">ขอคืน</option></select>
           </label>
-          <label className="text-sm">จำนวน (บาท)<input name="tax_result" inputMode="decimal" className={`${input} text-right`} /></label>
+          <label className="text-sm">จำนวน (บาท)<input name="tax_result" inputMode="decimal" defaultValue={result ? Math.abs(result).toFixed(2) : ""} className={`${input} text-right`} />
+            <span className="mt-1 block text-xs text-slate-500">เติมจากส่วนที่ 5 · แก้ให้ตรงกับแบบที่ยื่นจริง</span></label>
           <label className="text-sm">สถานะการชำระ / คืน
             <select name="settlement_status" defaultValue="" className={input}>
               <option value="">— ยังไม่ระบุ —</option>
