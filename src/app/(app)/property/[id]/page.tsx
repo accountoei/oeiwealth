@@ -18,7 +18,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import { WithStatus } from "@/components/StatusSelect";
-import { PayAssetForm, SellAssetForm, UndoComponentEvent, type CompOpt, type SaleComp } from "@/components/AssetTrade";
+import { PropertyPayForm, SellAssetForm, UndoComponentEvent, type CompOpt, type SaleComp } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import MarketBox from "../MarketBox";
 import TargetBox, { CostLotsSection, type TargetPrice } from "../TargetBox";
@@ -318,7 +318,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </div>
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
-              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts}
+              <PropertyPayForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} components={compOpts}
                 cards={cards} persons={persons ?? []} />
               <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0}
                 cards={cards} components={saleComps} demolishable={canDelete && demolishable.length > 0 && comps.length > 1 ? demolishable : undefined} />

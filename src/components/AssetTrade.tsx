@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { demolishComponents, payForAsset, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
+import { demolishComponents, payForAsset, payPropertyLines, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
 import { money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 
@@ -222,55 +222,124 @@ function DemolishFields({ comps, currency, banks, cards, today, minDate }: {
   </>);
 }
 
-export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม", property = false, components = [], cards = [], persons = [] }: {
+export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม" }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; label?: string;
-  /** Property: จ่ายด้วยบัตรเครดิต / เงินสด ได้ด้วย (ตกลง 29 ต.ค. 2026) */ cards?: CardOpt[]; persons?: { id: string; name: string }[];
-  /** Property: ติ๊ก "เพิ่มมูลค่าตามยอดนี้" (ค่าตั้งต้น) + "อาคาร / สิ่งปลูกสร้าง" (หักค่าเสื่อม · ราคาขายขั้นต่ำที่คุ้ม) */ property?: boolean;
-  /** Property: ส่วนประกอบที่เลือกได้ (จ่ายเพิ่มของแถวไหน) */ components?: CompOpt[];
 }) {
   const [state, action, pending] = useActionState<TradeState, FormData>(payForAsset, {});
   const list = banks.filter((b) => b.currency === currency);
-  const cardList = cards.filter((c) => c.currency === currency);
-  const [via, setVia] = useState<"bank" | "card" | "cash">(list.length || !property ? "bank" : cardList.length ? "card" : "cash");
   return (
-    <Box title={property ? "จ่ายเงินซื้อ / จ่ายเพิ่ม" : "จ่ายเงินซื้อ / จ่ายเพิ่มจากบัญชี"} label={label} action={action} pending={pending} state={state}>
+    <Box title="จ่ายเงินซื้อ / จ่ายเพิ่มจากบัญชี" label={label} action={action} pending={pending} state={state}>
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="paths" value={paths.join(",")} />
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        {property && (
-          <label className="text-sm">จ่ายด้วย *
-            <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value as typeof via)} className={input}>
-              <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
-            </select></label>
-        )}
-        {via === "bank" && (
-          <label className="text-sm">จ่ายจากบัญชี *
-            <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
-          </label>
-        )}
-        {via === "card" && (
-          <label className="text-sm">บัตร *
-            <select name="card_id" required className={input}>{cardList.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
-          </label>
-        )}
-        {via === "cash" && (
-          <label className="text-sm">ผู้จ่าย *
-            <select name="person_id" required className={input}>{persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-          </label>
-        )}
+        <label className="text-sm">จ่ายจากบัญชี *
+          <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
+        </label>
         <label className="text-sm">จำนวนเงิน ({currency}) *<input name="amount" required inputMode="decimal" className={input} /></label>
-        {via === "bank" && <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>}
-        {via === "bank" && <BalanceGuard amount={["amount", "fee"]} />}
-        <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ซื้อที่ดินเพิ่ม / ต่อเติมห้องครัว" className={input} /></label>
-        {property && <PropertyPayExtras components={components} allowNew />}
+        <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>
+        <BalanceGuard amount={["amount", "fee"]} />
+        <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ซื้อเพิ่ม / ค่าปรับปรุง" className={input} /></label>
       </div>
-      {via === "bank" && list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
-      {via === "card" && cardList.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัตรสกุล {currency} ที่ใช้งานอยู่</p>}
-      <p className="text-xs text-slate-500">{via === "card" ? "ยอดบัตรค้างจ่ายเพิ่ม (หนี้) และเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย)"
-        : via === "cash" ? "เงินสดไม่ผ่านบัญชี (ไม่มีบัญชีไหนลด) · เป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย)" : "เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย)"} · {property
-        ? "เป็นต้นทุน (ราคาที่ได้มา) และมูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (แก้ / ลบรายการจ่ายแล้วมูลค่าปรับตาม) · ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า ให้บันทึกที่ \"+ ค่าใช้จ่าย\" ด้านล่างของหน้า"
-        : "มูลค่าทรัพย์สินไม่เปลี่ยนเอง ให้อัปเดตมูลค่าหลังบันทึก"}</p>
+      {list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
+      <p className="text-xs text-slate-500">เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย) · มูลค่าทรัพย์สินไม่เปลี่ยนเอง ให้อัปเดตมูลค่าหลังบันทึก</p>
+    </Box>
+  );
+}
+
+export type PayVia = "bank" | "card" | "cash";
+type PayRow = { key: string; via: PayVia; id: string; amount: string };
+
+/** บรรทัด "จ่ายด้วย · บัญชี / บัตร / ผู้จ่าย · จำนวนเงิน" + เพิ่มบรรทัด (ให้ยอดตรงกับ statement · ตกลง 29 ต.ค. 2026)
+ *  ส่งช่องซ้ำ pl_via · pl_id · pl_amount (อ่านด้วย payLinesFromForm) · multi = false → บรรทัดเดียว
+ *  เตือนยอดบัญชีติดลบ: ตรวจบัญชีของบรรทัดแรกที่จ่ายจากบัญชี (รวมทุกบรรทัดของบัญชีนั้น) */
+export function PayLines({ currency, banks, cards = [], persons = [], multi = true, defaultVia, defaultId, defaultAmount = "" }: {
+  currency: string; banks: Bank[]; cards?: CardOpt[]; persons?: { id: string; name: string }[]; multi?: boolean;
+  defaultVia?: PayVia; defaultId?: string | null; defaultAmount?: string;
+}) {
+  const list = banks.filter((b) => b.currency === currency);
+  const cardList = cards.filter((c) => c.currency === currency);
+  const opts = (via: PayVia) => via === "bank" ? list.map((b) => ({ id: b.asset_id, name: b.name }))
+    : via === "card" ? cardList.map((c) => ({ id: c.id, name: c.label })) : persons;
+  const firstVia: PayVia = defaultVia ?? (list.length ? "bank" : cardList.length ? "card" : "cash");
+  const pickId = (via: PayVia, want?: string | null) => (want && opts(via).some((o) => o.id === want) ? want : opts(via)[0]?.id ?? "");
+  const seq = useRef(0);
+  const [rows, setRows] = useState<PayRow[]>([{ key: "k0", via: firstVia, id: pickId(firstVia, defaultId), amount: defaultAmount }]);
+  const set = (key: string, patch: Partial<PayRow>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const sum = rows.reduce((t, r) => t + numOrZero(r.amount), 0);
+  const guard = rows.find((r) => r.via === "bank" && r.id);
+  const guardAmount = guard ? rows.filter((r) => r.via === "bank" && r.id === guard.id).reduce((t, r) => t + numOrZero(r.amount), 0) : 0;
+  return (
+    <div className="space-y-2">
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-xs text-slate-500">
+          <th className="pb-1 pr-2 font-normal">จ่ายด้วย</th><th className="pb-1 pr-2 font-normal">บัญชี / บัตร / ผู้จ่าย</th>
+          <th className="pb-1 pr-2 text-right font-normal">จำนวนเงิน ({currency})</th>{multi && <th className="w-8" />}
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key}>
+              <td className="py-1 pr-2 align-top">
+                <select name="pl_via" value={r.via} aria-label="จ่ายด้วย" className={cellCls}
+                  onChange={(e) => { const via = e.target.value as PayVia; set(r.key, { via, id: pickId(via) }); }}>
+                  <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
+                </select>
+              </td>
+              <td className="py-1 pr-2 align-top">
+                <select name="pl_id" value={r.id} aria-label="บัญชี / บัตร / ผู้จ่าย" onChange={(e) => set(r.key, { id: e.target.value })} className={cellCls}>
+                  {opts(r.via).length === 0 && <option value="">{r.via === "bank" ? `ไม่มีบัญชีสกุล ${currency}` : r.via === "card" ? `ไม่มีบัตรสกุล ${currency}` : "ไม่มีรายชื่อ"}</option>}
+                  {opts(r.via).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </td>
+              <td className="py-1 pr-2 align-top">
+                <input name="pl_amount" inputMode="decimal" value={r.amount} aria-label="จำนวนเงิน" onChange={(e) => set(r.key, { amount: e.target.value })}
+                  className={`${cellCls} text-right`} />
+              </td>
+              {multi && <td className="py-1 align-top">
+                {rows.length > 1 && <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
+                  className="px-1 py-1.5 text-slate-400 hover:text-red-600" title="ลบบรรทัดนี้" aria-label="ลบบรรทัดนี้">✕</button>}
+              </td>}
+            </tr>
+          ))}
+        </tbody>
+        {multi && <tfoot><tr>
+          <td colSpan={2} className="pt-1">
+            <button type="button" onClick={() => { const via = rows[rows.length - 1]?.via ?? firstVia; setRows((rs) => [...rs, { key: `k${++seq.current}`, via, id: pickId(via), amount: "" }]); }}
+              className="text-xs text-blue-700 hover:underline">+ เพิ่มบรรทัด</button>
+          </td>
+          <td className="pr-2 pt-1 text-right text-xs text-slate-600">{rows.length > 1 && <>รวม <span className="font-medium tabular-nums text-slate-900">{money(sum)}</span></>}</td>
+          <td />
+        </tr></tfoot>}
+      </table>
+      <input type="hidden" name="guard_bank" value={guard?.id ?? ""} />
+      <input type="hidden" name="guard_amount" value={guardAmount ? String(guardAmount) : ""} />
+      <BalanceGuard bank="guard_bank" amount="guard_amount" />
+    </div>
+  );
+}
+
+/** Property: จ่ายเงินซื้อ / จ่ายเพิ่ม (ต้นทุนอย่างเดียว · ไม่มีค่าธรรมเนียม · หลายบรรทัด · ตกลง 29 ต.ค. 2026)
+ *  หัว: วันที่ · เป็นของ · รายละเอียด → บรรทัด: จ่ายด้วย · บัญชี / บัตร / ผู้จ่าย · จำนวนเงิน
+ *  ค่าธรรมเนียม / ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า → "+ ค่าใช้จ่าย" ในกล่องค่าใช้จ่าย */
+export function PropertyPayForm({ assetId, currency, banks, cards = [], persons = [], today, minDate, paths, components = [], label = "+ จ่ายซื้อ / จ่ายเพิ่ม" }: {
+  assetId: string; currency: string; banks: Bank[]; cards?: CardOpt[]; persons?: { id: string; name: string }[];
+  today: string; minDate: string; paths: string[]; components?: CompOpt[]; label?: string;
+}) {
+  const [state, action, pending] = useActionState<TradeState, FormData>(payPropertyLines, {});
+  const [pick, setPick] = useState("");
+  return (
+    <Box title="จ่ายเงินซื้อ / จ่ายเพิ่ม" label={label} action={action} pending={pending} state={state}>
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="paths" value={paths.join(",")} />
+      <div className="grid gap-3 md:grid-cols-[10rem_16rem_1fr]">
+        <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">เป็นของ *<ComponentSelect components={components} value={pick} onChange={setPick} allowNew className={input} /></label>
+        <label className="text-sm">รายละเอียด<input name="description" placeholder="เช่น ซื้อที่ดินเพิ่ม / ต่อเติมห้องครัว" className={input} /></label>
+      </div>
+      <NewComponentFields pick={pick} />
+      <PayLines currency={currency} banks={banks} cards={cards} persons={persons} />
+      <p className="text-xs text-slate-500">ทุกบรรทัดเป็นต้นทุน (ราคาที่ได้มา) ของแถวที่เลือก และมูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (แก้ / ลบรายการจ่ายแล้วมูลค่าปรับตาม)
+        · บัตร: ยอดบัตรค้างจ่ายเพิ่ม · เงินสด: ไม่ผ่านบัญชี · ค่าธรรมเนียม / ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า บันทึกที่ &ldquo;+ ค่าใช้จ่าย&rdquo; ในกล่องค่าใช้จ่าย</p>
     </Box>
   );
 }
@@ -284,38 +353,51 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 /** ช่องเพิ่มของ Property (ใช้ทั้งตอนจ่ายและตอนแก้รายการจ่าย · ตกลง 28–29 ต.ค. 2026)
  *  เพิ่มมูลค่าตามยอดนี้เสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · เป็นของส่วนประกอบไหน (ต้องเลือก · หรือแถวใหม่: ซื้อที่ดินเพิ่ม / อาคาร / สิ่งปลูกสร้าง · เฉพาะตอนจ่าย)
  *  อาคาร / สิ่งปลูกสร้าง = ตามชนิดของแถวที่เลือก (หักค่าเสื่อมตามอายุของแถวนั้น · ไม่มีติ๊กอาคารแยก ตกลง 29 ต.ค. 2026) */
-export function PropertyPayExtras({ addValue = true, components = [], component = "", allowNew = false }: {
+export function PropertyPayExtras({ addValue = true, components = [], component = "" }: {
   /** false = รายการเก่าที่ไม่ได้เพิ่มมูลค่า (คงไว้ตามเดิม) */ addValue?: boolean;
-  components?: CompOpt[]; /** แถวที่เลือกไว้ (แก้รายการจ่าย) */ component?: string; /** ตอนจ่าย: สร้างแถวใหม่ได้ */ allowNew?: boolean;
+  components?: CompOpt[]; /** แถวที่เลือกไว้ (แก้รายการจ่าย) */ component?: string;
 }) {
   const [pick, setPick] = useState(component);
-  const isNew = pick.startsWith("new:");
-  const newType = pick.slice(4) as CompOpt["type"];
-  const pickType = isNew ? newType : components.find((c) => c.id === pick)?.type;
+  const pickType = components.find((c) => c.id === pick)?.type;
   return (
     <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-sm md:col-span-4">
-      <input type="hidden" name="property" value="1" />
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        {addValue && <input type="hidden" name="add_value" value="on" />}
-        {(components.length > 0 || allowNew) && (
-          <label className="flex items-center gap-2">เป็นของ *
-            <select name="component" required value={pick} onChange={(e) => setPick(e.target.value)} className={small}>
-              <option value="" disabled>— เลือกแถว —</option>
-              {TYPE_GROUPS.map(([label, ts]) => components.some((c) => ts.includes(c.type)) && (
-                <optgroup key={label} label={label}>
-                  {components.filter((c) => ts.includes(c.type)).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </optgroup>
-              ))}
-              {allowNew && (
-                <optgroup label="แถวใหม่">
-                  <option value="new:LAND">+ ซื้อที่ดินเพิ่ม (โฉนดใหม่)</option>
-                  <option value="new:BUILDING">+ สิ่งปลูกสร้างใหม่</option>
-                </optgroup>
-              )}
-            </select></label>
-        )}
-      </div>
-      {isNew && (newType === "LAND" ? (
+      {addValue && <input type="hidden" name="add_value" value="on" />}
+      {components.length > 0 && (
+        <label className="flex items-center gap-2">เป็นของ *<ComponentSelect components={components} value={pick} onChange={setPick} className={small} /></label>
+      )}
+      {pick && <p className="text-xs text-slate-500">ต้นทุนและมูลค่าที่เพิ่มเข้าแถวที่เลือก{pickType && pickType !== "LAND" && " · สิ่งปลูกสร้างหักค่าเสื่อมตามอายุของแถวนั้น"}</p>}
+    </div>
+  );
+}
+
+/** ตัวเลือก "เป็นของ" แถวไหน (ที่ดิน / สิ่งปลูกสร้าง · allowNew: แถวใหม่ "new:LAND" / "new:BUILDING") · ช่อง component */
+function ComponentSelect({ components, value, onChange, allowNew = false, className }: {
+  components: CompOpt[]; value: string; onChange: (v: string) => void; allowNew?: boolean; className: string;
+}) {
+  return (
+    <select name="component" required value={value} onChange={(e) => onChange(e.target.value)} className={className}>
+      <option value="" disabled>— เลือกแถว —</option>
+      {TYPE_GROUPS.map(([label, ts]) => components.some((c) => ts.includes(c.type)) && (
+        <optgroup key={label} label={label}>
+          {components.filter((c) => ts.includes(c.type)).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </optgroup>
+      ))}
+      {allowNew && (
+        <optgroup label="แถวใหม่">
+          <option value="new:LAND">+ ซื้อที่ดินเพิ่ม (โฉนดใหม่)</option>
+          <option value="new:BUILDING">+ สิ่งปลูกสร้างใหม่</option>
+        </optgroup>
+      )}
+    </select>
+  );
+}
+
+/** แถวใหม่ (ซื้อที่ดินเพิ่ม / สิ่งปลูกสร้างใหม่): ช่อง nc_* · วันที่ได้มา = วันที่จ่าย */
+function NewComponentFields({ pick }: { pick: string }) {
+  if (!pick.startsWith("new:")) return null;
+  return (
+    <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+      {pick === "new:LAND" ? (
         <div className="flex flex-wrap items-center gap-2">
           <input name="nc_title_deed_no" placeholder="เลขที่โฉนด" aria-label="เลขที่โฉนด" data-plain className={`w-32 ${small}`} />
           <input name="nc_land_no" placeholder="เลขที่ดิน" aria-label="เลขที่ดิน" data-plain className={`w-28 ${small}`} />
@@ -326,17 +408,15 @@ export function PropertyPayExtras({ addValue = true, components = [], component 
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <input name="nc_label" required placeholder="เช่น บ้านหลังเล็ก · รั้ว · สระว่ายน้ำ" aria-label="ชื่อ"
-            className={`w-64 ${small}`} />
+          <input name="nc_label" required placeholder="เช่น บ้านหลังเล็ก · รั้ว · สระว่ายน้ำ" aria-label="ชื่อ" className={`w-64 ${small}`} />
           <input name="nc_area" placeholder="พื้นที่ใช้สอย" aria-label="พื้นที่ใช้สอย (ตร.ม.)" inputMode="decimal" data-money="off"
             className={`w-28 ${small}`} /><span className="text-xs text-slate-500">ตร.ม.</span>
           <span className="text-xs text-slate-500">อายุใช้งาน</span>
           <input name="nc_years" defaultValue="20" aria-label="อายุใช้งาน (ปี)" inputMode="numeric" data-plain className={`w-16 text-right ${small}`} />
           <span className="text-xs text-slate-500">ปี</span>
         </div>
-      ))}
-      {pick && <p className="text-xs text-slate-500">ต้นทุนและมูลค่าที่เพิ่มเข้าแถวที่เลือก{isNew && " (แถวใหม่ วันที่ได้มา = วันที่จ่าย · แก้รายละเอียดได้ที่ปุ่มแก้ไขของทรัพย์สิน)"}
-        {pickType && pickType !== "LAND" && " · สิ่งปลูกสร้างหักค่าเสื่อมตามอายุของแถวนั้น"}</p>}
+      )}
+      <p className="text-xs text-slate-500">แถวใหม่ วันที่ได้มา = วันที่จ่าย · แก้รายละเอียดได้ที่ปุ่มแก้ไขของทรัพย์สิน{pick !== "new:LAND" && " · สิ่งปลูกสร้างหักค่าเสื่อมตามอายุ"}</p>
     </div>
   );
 }

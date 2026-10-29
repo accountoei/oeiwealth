@@ -1,7 +1,7 @@
 // node scripts/money-endpoint.test.mjs — ทดสอบการอ่าน / แปลงช่องทางเงิน (src/lib/money-endpoint.ts · รหัสสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { bankId, cardId, endpointFromForm, endpointValue, holdingId, missingEndpoint, paidFromColumns, parseEndpoint } from "../src/lib/money-endpoint.ts";
+import { bankId, cardId, endpointFromForm, endpointValue, holdingId, missingEndpoint, paidFromColumns, parseEndpoint, payLinesFromForm } from "../src/lib/money-endpoint.ts";
 
 const form = (o) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 
@@ -46,5 +46,14 @@ assert.equal(missingEndpoint({ kind: "card", id: null }), "กรุณาเล
 assert.equal(missingEndpoint({ kind: "portfolio", id: null }), "กรุณาเลือกบัญชีเงินฝากในพอร์ต");
 assert.equal(missingEndpoint({ kind: "cash", id: null }), null);
 assert.equal(missingEndpoint({ kind: "bank", id: "A1" }), null);
+
+// หลายบรรทัด (pl_via · pl_id · pl_amount)
+const lines = (rows) => { const f = new FormData(); for (const [v, id, a] of rows) { f.append("pl_via", v); f.append("pl_id", id); f.append("pl_amount", a); } return f; };
+assert.deepEqual(payLinesFromForm(lines([["bank", "A1", "1,000.50"], ["card", "C1", "200"], ["cash", "P1", "50"], ["bank", "A2", ""]])),
+  [{ kind: "bank", id: "A1", amount: 1000.5 }, { kind: "card", id: "C1", amount: 200 }, { kind: "cash", id: "P1", amount: 50 }]);
+assert.deepEqual(payLinesFromForm(lines([["bank", "A1", "0"]])), { error: "บรรทัดที่ 1 · จำนวนเงินต้องเป็นตัวเลขมากกว่า 0" });
+assert.deepEqual(payLinesFromForm(lines([["bank", "A1", "10"], ["cash", "", "5"]])), { error: "บรรทัดที่ 2 · กรุณาเลือกผู้จ่าย" });
+assert.deepEqual(payLinesFromForm(lines([["bank", "A1", " "]])), { error: "กรุณาใส่จำนวนเงินอย่างน้อย 1 บรรทัด" });
+assert.equal(payLinesFromForm(lines([["bank", "A1", "abc"]])).error, "บรรทัดที่ 1 · จำนวนเงินต้องเป็นตัวเลขมากกว่า 0");
 
 console.log("money-endpoint: ALL TESTS PASSED");
