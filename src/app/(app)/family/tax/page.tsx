@@ -4,6 +4,7 @@ import DocumentUpload from "@/components/docs/DocumentUpload";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { INCOME_TYPE_LABEL, TAX_FORM_LABEL, TAX_METHOD_LABEL, TAX_RETURN_STATUS_LABEL, TAX_SETTLEMENT_LABEL, money, thDate, todayBangkok } from "@/lib/format";
+import { calcTax } from "@/lib/tax";
 import { ActButton, AmendReturn, CreateReturn, DeleteReturn, FileReturn, LineEditor, SettlementForm, TaxFilters, type LineV } from "./forms";
 
 type Ret = {
@@ -15,7 +16,7 @@ type Line = LineV & { sort_order: number; detail: Record<string, unknown> | null
 const STATUS_CLS: Record<string, string> = { DRAFT: "bg-slate-100 text-slate-700", REVIEWED: "bg-blue-50 text-blue-700", FILED: "bg-emerald-50 text-emerald-700" };
 const SECTIONS: { key: string; title: string; note?: string }[] = [
   { key: "INCOME", title: "2. เงินได้พึงประเมิน ม.40(1)–(8)", note: "ยอดจากระบบ = รายได้ที่บันทึกไว้ใน Income & Expenses ของปีภาษี (1 ม.ค. – 31 ธ.ค.) เป็นบาท ก่อนหักภาษี" },
-  { key: "EXPENSE", title: "3. ค่าใช้จ่าย", note: "ค่าใช้จ่าย 40(5) จากระบบ = รายจ่ายของทรัพย์สินกลุ่มอสังหาฯ (ใช้เมื่อเลือกหักตามจริง) · ยอดหักแบบเหมาคำนวณในขั้นถัดไป" },
+  { key: "EXPENSE", title: "3. ค่าใช้จ่าย", note: "ค่าใช้จ่าย 40(5) จากระบบ = รายจ่ายของทรัพย์สินกลุ่มอสังหาฯ (ใช้เมื่อเลือกหักตามจริง) · ยอดหักแบบเหมาคำนวณในส่วนที่ 5" },
   { key: "DEDUCTION", title: "4. ค่าลดหย่อน", note: "จำนวนคนจากข้อมูลสมาชิก (คู่สมรส · บุตร · บิดามารดาอายุ 60+) · เบี้ยประกันจากงวดเบี้ยที่จ่ายแล้ว · ดอกเบี้ยบ้านจากหนี้ประเภทสินเชื่อบ้าน · อื่น ๆ กรอกเอง" },
   { key: "DONATION", title: "4. เงินบริจาค", note: "จากแท็บ Donations: เฉพาะรายการที่ผู้ใช้สิทธิเป็นคนนี้และสถานะ “ใช้สิทธิได้”" },
   { key: "CREDIT", title: "4. ภาษีที่ชำระแล้ว / เครดิตภาษี", note: "ภาษีหัก ณ ที่จ่ายจากรายได้ที่บันทึกไว้ · ตรวจกับหนังสือรับรอง 50 ทวิ" },
@@ -49,9 +50,9 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   const thisYear = Number(today.slice(0, 4));
 
   const { data: persons } = isAdmin
-    ? await supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order").order("created_at")
-    : me.person_id ? await supabase.from("persons").select("id,name").eq("id", me.person_id) : { data: [] };
-  const people = (persons ?? []) as { id: string; name: string }[];
+    ? await supabase.from("persons").select("id,name,birth_date").is("deleted_at", null).order("sort_order").order("created_at")
+    : me.person_id ? await supabase.from("persons").select("id,name,birth_date").eq("id", me.person_id) : { data: [] };
+  const people = (persons ?? []) as { id: string; name: string; birth_date: string | null }[];
   const info = <PageInfo>ภาษีเงินได้บุคคลธรรมดารายปีของสมาชิกแต่ละคน · ยอดดึงจากรายได้ / รายจ่าย / ประกัน / หนี้ / การบริจาคที่บันทึกไว้แล้ว (ไม่ต้องกรอกซ้ำ) ·
     แก้ยอดใช้ยื่นได้พร้อมเหตุผล · ยื่นแล้วล็อกยอดตามที่ยื่น · ADMIN เห็นทุกคน บทบาทอื่นเห็นเฉพาะของตัวเอง</PageInfo>;
   if (people.length === 0) {
@@ -91,7 +92,11 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
     lines.filter((l) => l.section === sec && l.code !== skip).reduce((s, l) => s + (f(l) ?? 0), 0);
   const review = lines.find((l) => l.code === "REVIEW");
   const changed = lines.filter((l) => l.filed_amount != null && l.system_amount != null && Number(l.filed_amount) !== Number(l.system_amount)).length;
-  const personName = people.find((x) => x.id === p)?.name ?? "";
+  const person = people.find((x) => x.id === p);
+  const personName = person?.name ?? "";
+  // อายุ ณ 31 ธ.ค. ของปีภาษี (ยกเว้นเงินได้ผู้มีอายุ 65 ปีขึ้นไป)
+  const age = person?.birth_date ? y - Number(person.birth_date.slice(0, 4)) : null;
+  const calc = calcTax(lines, y, { age });
 
   return (
     <div className="space-y-6">
@@ -115,7 +120,7 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
         {editable && <ActButton act="refresh" id={cur.id} label="ดึงยอดจากระบบใหม่" />}
         {editable && cur.status === "DRAFT" && <ActButton act="status" id={cur.id} label="ตรวจแล้ว" extra={{ status: "REVIEWED" }} />}
         {editable && cur.status === "REVIEWED" && <ActButton act="status" id={cur.id} label="กลับเป็นฉบับร่าง" extra={{ status: "DRAFT" }} />}
-        {editable && <FileReturn id={cur.id} today={today} />}
+        {editable && <FileReturn id={cur.id} today={today} result={calc.result} />}
         {editable && canDelete && <DeleteReturn id={cur.id} />}
         {cur?.status === "FILED" && canWrite && <SettlementForm id={cur.id} v={cur} />}
         {cur?.status === "FILED" && canWrite && <AmendReturn id={cur.id} />}
@@ -127,7 +132,7 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatBox label="เงินได้พึงประเมินรวม" value={money(sum("INCOME", eff, "REVIEW"))} unit="บาท" sub={cur ? "ตามยอดใช้ยื่น" : "ยอดจากระบบ"} />
           <StatBox label="ภาษีหัก ณ ที่จ่าย / ชำระแล้ว" value={money(sum("CREDIT"))} unit="บาท" />
-          <StatBox label="ค่าลดหย่อน + บริจาค (ก่อนเพดาน)" value={money(sum("DEDUCTION") + sum("DONATION"))} unit="บาท" sub="ยอดเงิน (ไม่รวมลดหย่อนรายคน) · เพดานตามกฎหมายคำนวณในขั้นถัดไป" />
+          <StatBox label="ค่าลดหย่อน + บริจาค (ก่อนเพดาน)" value={money(sum("DEDUCTION") + sum("DONATION"))} unit="บาท" sub="ยอดเงิน (ไม่รวมลดหย่อนรายคน) · หลังเพดานดูส่วนที่ 5" />
           <StatBox label="รายได้รอตรวจสอบ" value={money(n(review?.system_amount) ?? 0)} unit="บาท" sub="ยังไม่รวมคำนวณ · ตรวจแล้วใส่ในช่อง ม.40 ที่ถูกต้อง"
             subClass={n(review?.system_amount) ? "text-amber-700" : undefined} />
         </div>
@@ -170,8 +175,51 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
         );
       })}
 
-      <section className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-        5. คำนวณภาษี (หักค่าใช้จ่ายแบบเหมา · เพดานค่าลดหย่อนตามปีภาษี · อัตราภาษีขั้นบันได) — อยู่ในขั้นถัดไป
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold text-slate-900">5. คำนวณภาษี (ประมาณการ)</h2>
+        {calc.warning && <p className="text-sm text-amber-700">{calc.warning}</p>}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {calc.steps.map((st, i) => (
+                  <tr key={i} className={st.strong ? "bg-slate-50 font-medium" : ""}>
+                    <td className="px-4 py-2">{st.label}{st.note && <div className="text-xs font-normal text-slate-500">{st.note}</div>}</td>
+                    <td className={`whitespace-nowrap px-4 py-2 text-right tabular-nums ${st.amount < 0 ? "text-slate-600" : ""}`}>{money(st.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="space-y-4">
+            <StatBox label={calc.result < 0 ? "ประมาณการขอคืนภาษี" : "ประมาณการชำระภาษีเพิ่ม"} value={money(Math.abs(calc.result))} unit="บาท"
+              valueClass={calc.result < 0 ? "text-emerald-700" : undefined}
+              sub={`ภาษีทั้งปี ${money(calc.tax)} บาท · เงินได้สุทธิ ${money(calc.taxable)} บาท${calc.assessable ? ` · อัตราเฉลี่ย ${(calc.tax / calc.assessable * 100).toFixed(2)}% ของเงินได้` : ""}`} />
+            {calc.brackets.length > 0 && (
+              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">เงินได้สุทธิ</th><th className="px-4 text-right">อัตรา</th><th className="px-4 text-right">ภาษี</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {calc.brackets.map((b) => (
+                      <tr key={b.from}><td className="px-4 py-1.5 tabular-nums">{money(b.from)} – {Number.isFinite(b.to) ? money(b.to) : "ขึ้นไป"}</td>
+                        <td className="px-4 text-right">{b.rate}%</td><td className="px-4 text-right tabular-nums">{money(b.tax)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {calc.capped.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+                <div className="mb-1 font-medium text-amber-800">ใช้สิทธิได้ไม่เต็มยอด (ติดเพดาน)</div>
+                <ul className="space-y-1 text-amber-900">
+                  {calc.capped.map((x) => <li key={x.code}>{x.label}: {money(x.claimed)} → ใช้ได้ {money(x.allowed)} <span className="text-xs text-amber-700">({x.note})</span></li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">ประมาณการตามอัตราและเพดานของปีภาษี {calc.rulesYear + 543} จากยอดใช้ยื่นด้านบน · ไม่รวม &ldquo;รอตรวจสอบ&rdquo; ·
+          บุตรคนที่ 2 ขึ้นไปที่เกิดตั้งแต่ปี 2561 ได้ 60,000 / ค่าเช่าที่ดิน / 40(8) บางประเภทมีอัตราเหมาต่างกัน — แก้ยอดในรายการด้านบน · ยอดจริงให้ยึดตามแบบที่ยื่นกับกรมสรรพากร</p>
       </section>
 
       {cur && (
