@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { thDate, thMonth } from "@/lib/format";
 import { changeGoLiveDate, type GoLiveState } from "./actions";
+import Flash from "@/components/Flash";
 
 const addDay = (d: string, n: number) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 
@@ -55,7 +56,7 @@ export default function ChangeGoLive({ current }: { current: string }) {
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+      <Flash on={state} as="p" className="text-sm text-emerald-700" />
     </form>
   ));
 }

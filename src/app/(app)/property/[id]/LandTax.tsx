@@ -6,6 +6,7 @@ import { landParts, landTaxCalc, money } from "@/lib/format";
 import { useActionSlot } from "@/components/ActionBar";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { copyTaxYear, deleteTaxLine, saveTaxLine, type ActionState } from "../actions";
+import Flash from "@/components/Flash";
 
 export type TaxLine = {
   id: string; sort_order: number; description: string | null; land_sq_wa: number | null; land_price_per_sq_wa: number | null;
@@ -20,7 +21,7 @@ const s = (v: number | null | undefined) => (v == null ? "" : String(v));
 
 function Msg({ st }: { st: ActionState }) {
   if (st.error) return <p className="text-sm text-red-600">{st.error}</p>;
-  if (st.ok) return <p className="text-sm text-emerald-700">{st.ok}</p>;
+  if (st.ok) return <Flash on={st} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 

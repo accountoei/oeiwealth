@@ -7,6 +7,7 @@ import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchPayDebts, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
@@ -154,7 +155,7 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
           </button>
           {chosen.length > 0 && !pending && <button type="button" onClick={() => { setPr({}); setInt({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
       <p className="text-xs text-slate-500">เงินต้นลดยอดหนี้ · ดอกเบี้ยลงค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; · จ่ายบัตรไม่เปลี่ยนยอด Statement (ยอดปัจจุบันลดตามการจ่าย) · จ่ายบัตรจากบัญชีเงินฝากในพอร์ต / อัปเดตยอดตาม Statement ทำที่หน้าบัตร / หน้าเงินกู้ · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</p>

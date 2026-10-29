@@ -15,6 +15,7 @@ import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
 import type { PfCash } from "@/lib/pf-cash";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
+import Flash from "@/components/Flash";
 
 export type Bank = { asset_id: string; name: string; currency: string };
 export type Card = { id: string; label: string; currency: string; outstanding_balance: number };
@@ -30,7 +31,7 @@ const lbl = "block text-sm text-slate-700";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
@@ -136,7 +137,7 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfC
       </button>
       <DeleteSlot />
       {state.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
-      {state.ok && <span className="w-full text-xs text-emerald-700">{state.ok}</span>}
+      <Flash on={state} as="span" className="w-full text-xs text-emerald-700" />
     </form>
   );
 }
@@ -216,7 +217,7 @@ export function ExpectedActions(props: {
   const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [rs, recordAction, recording] = useActionState<ActionState, FormData>(addIncome, {});
   const [ds, dismissAction, dismissing] = useActionState<ActionState, FormData>(dismissExpected, {});
-  if (rs.ok || ds.ok) return <span className="text-xs text-emerald-700">{rs.ok ?? ds.ok}</span>;
+  if (rs.ok || ds.ok) return <Flash on={rs.ok ? rs : ds} className="text-xs text-emerald-700" />;
   const list = banks.filter((b) => b.currency === currency);
   const trigger = <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกรับ</button>;
   if (!open) return trigger;
@@ -417,7 +418,7 @@ export function DismissCostForm({ sourceType, sourceId, period, onBack, onClose 
 }) {
   const [ds, action, pending] = useActionState<ActionState, FormData>(dismissExpense, {});
   useRefreshOnOk(ds);
-  if (ds.ok) return <span className="text-xs text-emerald-700">{ds.ok}</span>;
+  if (ds.ok) return <Flash on={ds} as="span" className="text-xs text-emerald-700" />;
   return (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
       <input type="hidden" name="source_type" value={sourceType} />
@@ -438,7 +439,7 @@ export function DismissCostForm({ sourceType, sourceId, period, onBack, onClose 
 export function UndoDismissButton({ id }: { id: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(undoDismissExpense, {});
   useRefreshOnOk(state);
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   return (
     <form action={action} className="inline">
       <input type="hidden" name="id" value={id} />
@@ -461,7 +462,7 @@ export function RecurringPayActions(props: {
   const sameCards = cards.filter((c) => c.currency === currency);
   const [via, setVia] = useState(payVia === "CARD" && sameCards.length ? "card" : payVia === "BANK" && sameBanks.length ? "bank" : "cash");
   const [rs, action, pending] = useActionState<ActionState, FormData>(payRecurringExpense, {});
-  if (rs.ok) return <span className="text-xs text-emerald-700">{rs.ok}</span>;
+  if (rs.ok) return <Flash on={rs} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
   if (!open) return trigger;
   const close = () => setOpen(false);
@@ -644,7 +645,7 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, c
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState("bank");
   const [state, action, pending] = useActionState<ActionState, FormData>(addReimbursement, {});
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-800 underline")}>บันทึกเงินคืน</button>;
   if (!open) return trigger;
   return present(trigger, (
@@ -799,7 +800,7 @@ export function AutopayConfirmForm({ cardId, bankId, holdId = null, currency, du
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(confirmCardPayment, {});
-  if (state.ok) return <p className="text-xs text-emerald-700">{state.ok}</p>;
+  if (state.ok) return <Flash on={state} as="p" className="text-xs text-emerald-700" />;
   if (!open) return <button type="button" onClick={() => setOpen(true)} className={sbtn}>ยืนยันว่าตัดแล้ว</button>;
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">

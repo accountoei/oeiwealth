@@ -8,6 +8,7 @@ import { generateSchedule, MAX_PERIODS, parseScheduleRows, parseScheduleText, PA
 import { money, thDate, numOrZero as num } from "@/lib/format";
 import { DayCountFields } from "./day-count";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -216,7 +217,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
           {pending ? "กำลังบันทึก…" : `บันทึกตารางผ่อน (${lines.length} งวด)`}
         </button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
         <span className="text-xs text-slate-500">เงินต้นตามตารางควรรวมเท่ากับยอดเงินต้นของสัญญา (ใช้คำนวณว่างวดไหนรับแล้ว)</span>
       </form>
     </div>

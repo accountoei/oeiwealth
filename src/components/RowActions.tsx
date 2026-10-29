@@ -6,6 +6,7 @@ import { deleteRecord, updateRecord, type RecState } from "@/lib/records";
 import { useRowPanel } from "@/components/RowPanel";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Modal from "@/components/Modal";
+import Flash from "@/components/Flash";
 
 export type FieldSpec = {
   name: string; label: string; type?: "text" | "number" | "date" | "select";
@@ -117,7 +118,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
         {canDelete && delInline && delButton}
         {deleteControl}
         {es.error && <span className="text-sm text-red-600">{es.error}</span>}
-        {es.ok && <span className="text-sm text-emerald-700">{es.ok}</span>}
+        <Flash on={es} as="span" className="text-sm text-emerald-700" />
       </div>
     </form>
   );

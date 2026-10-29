@@ -3,6 +3,7 @@
 import { createContext, useActionState, useContext, useId, type ReactNode } from "react";
 import { updateRecord, type RecState } from "@/lib/records";
 import { useStatusDelete, type RemoveOpt } from "./DeleteEntity";
+import Flash from "@/components/Flash";
 
 type Props = {
   table: string; id: string; value: string; options: [string, string][]; paths: string[]; field?: string; label?: string;
@@ -25,7 +26,7 @@ function useStatusControl(p: Props | undefined) {
         {del.option}
       </select>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
-      {state.ok && <span className="text-xs text-emerald-700">✓</span>}
+      <Flash on={state} className="text-xs text-emerald-700">✓</Flash>
     </span>
   );
   const form = (

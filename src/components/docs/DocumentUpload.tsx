@@ -6,6 +6,7 @@ import { callDrive } from "./drive";
 import Modal from "@/components/Modal";
 import { createClient } from "@/lib/supabase/client";
 import { DOC_MODULE_LABEL, DOC_TYPES_BY_CATEGORY, ENTITY_MODULE, docCategory, thDate } from "@/lib/format";
+import Flash from "@/components/Flash";
 
 type Cand = { id: string; title: string; expiry_date: string | null; created_at: string };
 type Pending = { file: File; meta: Record<string, unknown>; cands: Cand[]; picked: string[] };
@@ -56,7 +57,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
       <button type="button" onClick={() => { setOpen(true); setMsg({}); }}
         className={supersedes ? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-50"
           : primary ? "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
-      {msg.ok && <span className="text-xs text-emerald-700">{msg.ok}</span>}
+      <Flash on={msg} as="span" className="text-xs text-emerald-700" />
     </span>
   );
   if (!open) return trigger;

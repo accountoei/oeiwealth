@@ -8,6 +8,7 @@ import ModalButton from "@/components/ModalButton";
 import { useNavPending } from "@/components/HeaderBar";
 import { DONATION_FORM_LABEL, DONATION_TAX_KIND_LABEL, DONATION_TAX_STATUS_LABEL, DONEE_TYPE_LABEL } from "@/lib/format";
 import { saveDonation, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 export type Opt = { id: string; name: string };
@@ -100,7 +101,7 @@ function Buttons({ pending, state, del }: { pending: boolean; state: ActionState
       <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
       {del && <DeleteSlot />}
       {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-      {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+      <Flash on={state} as="span" className="text-sm text-emerald-700" />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
 import { StatusSlot } from "@/components/StatusSelect";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -24,7 +25,7 @@ const link = "text-xs text-slate-700 underline";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 
@@ -97,7 +98,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordRent, {});
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกรับ</button>;
   if (!open) return trigger;
   const sameCcy = banks.filter((b) => b.currency === currency);
@@ -155,7 +156,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
   const [asIncome, setAsIncome] = useState(true);
   const [state, action, pending] = useActionState<ActionState, FormData>(settleDeposit, {});
   const deduct = deposit - (Number(refund.replace(/,/g, "")) || 0);
-  if (state.ok) return <p className="text-xs text-emerald-700">{state.ok}</p>;
+  if (state.ok) return <Flash on={state} as="p" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>คืน / หักเงินประกัน</button>;
   if (!open) return trigger;
   const sameCcy = banks.filter((b) => b.currency === currency);
@@ -387,12 +388,12 @@ type CostFormProps = {
 /** บันทึกแล้ว → ปิดหน้าต่าง ขึ้นข้อความสั้น ๆ และปุ่มกดได้อีกโดยไม่ต้อง refresh (ฟอร์มใหม่ทุกครั้ง · ตกลง 29 ต.ค. 2026) */
 export function RecordCostForm(props: CostFormProps) {
   const [n, setN] = useState(0);
-  const [done, setDone] = useState("");
-  return <RecordCostInner key={n} {...props} done={done} onDone={(m) => { setDone(m); setN((x) => x + 1); }} />;
+  const [done, setDone] = useState<{ ok?: string } | null>(null);
+  return <RecordCostInner key={n} {...props} done={done} onDone={(m) => { setDone({ ok: m }); setN((x) => x + 1); }} />;
 }
 
 function RecordCostInner({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, minDate, defaultBank, defaultCard, rebillLeases = [], done, onDone }: CostFormProps & {
-  done: string; onDone: (msg: string) => void;
+  done: { ok?: string } | null; onDone: (msg: string) => void;
 }) {
   const [rebill, setRebill] = useState(rebillLeases.length > 0);
   const { open, setOpen, present, activeCls } = useActionSlot();
@@ -404,7 +405,7 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
   const button = utilityId
     ? <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>
     : <button type="button" onClick={() => setOpen(!open)} className={activeCls(BOX_BTN)}>+ ค่าใช้จ่าย</button>;
-  const trigger = done && !open ? <span className="inline-flex items-center gap-2">{button}<span className="text-xs text-emerald-700">{done}</span></span> : button;
+  const trigger = done?.ok && !open ? <span className="inline-flex items-center gap-2">{button}<Flash on={done} className="text-xs text-emerald-700" /></span> : button;
   if (!open) return trigger;
   if (mode === "dismiss" && utilityId && period) return present(trigger,
     <DismissCostForm sourceType="PROPERTY" sourceId={utilityId} period={period} onBack={() => setMode("record")} onClose={() => setOpen(false)} />);
@@ -459,7 +460,7 @@ export function ReceiveChargeForm({ assetId, chargeId, amount, currency, banks, 
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(receiveUtilityCharge, {});
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกรับ</button>;
   if (!open) return trigger;
   const sameCcy = banks.filter((b) => b.currency === currency);

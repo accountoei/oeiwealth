@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { saveMarketValuation, type ActionState } from "./actions";
 import { MARKET_CONFIDENCE_LABEL, MARKET_METHOD_LABEL, MARKET_PRICE_TYPE_LABEL, MARKET_UNIT_LABEL, money, numOrZero } from "@/lib/format";
 import { DeleteSlot } from "@/components/RowActions";
+import Flash from "@/components/Flash";
 
 export type MarketValuation = {
   id: string; valuation_date: string; unit_basis: string; unit_price: number | null; area: number | null; market_value: number;
@@ -94,7 +95,7 @@ export default function MarketValuationForm({ assetId, currency, today, defaultU
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกราคาตลาด"}</button>
         {edit && <DeleteSlot />}
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-        {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+        <Flash on={state} as="p" className="text-sm text-emerald-700" />
       </div>
     </form>
   );

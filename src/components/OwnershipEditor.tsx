@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { setOwnership, type RecState } from "@/lib/records";
+import Flash from "@/components/Flash";
 
 /** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability) */
 export default function OwnershipEditor({ kind, id, persons, current, paths, today, startOpen = false, unit = "percent", totalShares }: {
@@ -67,7 +68,7 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
         <button disabled={pending || over} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50">{pending ? "…" : "บันทึก"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
         {state.error && <span className="text-xs text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-xs text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-xs text-emerald-700" />
       </div>
     </form>
   ));

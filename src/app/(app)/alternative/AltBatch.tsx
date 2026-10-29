@@ -7,6 +7,7 @@ import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchAltIncome, batchAltValues, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean;
   /** ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -17,7 +18,7 @@ const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 const METHODS: [string, string][] = [["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน / ร้าน"], ["LATEST_TRANSACTION", "ราคาตลาดล่าสุด"]];
 
 function Result({ s }: { s: ActionState }) {
-  return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}{s.ok && <span className="text-sm text-emerald-700">{s.ok}</span>}</>;
+  return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}<Flash on={s} as="span" className="text-sm text-emerald-700" /></>;
 }
 
 /**

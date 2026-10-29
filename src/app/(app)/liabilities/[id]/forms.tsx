@@ -7,13 +7,14 @@ import { addLiabilityBalance, payLiability, updateLiabilityInfo, type ActionStat
 import DropPrompt from "../DropPrompt";
 import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 import BalanceGuard from "@/components/BalanceGuard";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 

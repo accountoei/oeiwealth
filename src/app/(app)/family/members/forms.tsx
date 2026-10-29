@@ -6,13 +6,14 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addPerson, updateFamily, type ActionState } from "./actions";
 import { familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
 import { resizePhoto } from "./[id]/details-form";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
 const btn = "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <span className="text-xs text-red-600">{s.error}</span>;
-  if (s.ok) return <span className="text-xs text-emerald-700">{s.ok}</span>;
+  if (s.ok) return <Flash on={s} as="span" className="text-xs text-emerald-700" />;
   return null;
 }
 

@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { demolishComponents, payForAsset, payPropertyLines, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
 import { money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -99,7 +100,7 @@ function Box({ title, label, children, action, pending, state, danger }: {
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
       </div>
     </form>
   ));

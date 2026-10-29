@@ -9,6 +9,7 @@ import { splitPending, type ActionState } from "./actions";
 import { INCOME_TYPE_LABEL, money } from "@/lib/format";
 import type { SplitMove } from "@/lib/split-moves";
 import { findHint, type ExpHint } from "@/lib/category-hints";
+import Flash from "@/components/Flash";
 
 type Line = { description: string; amount: string; cat: string; person_id: string; move: string; to: string; auto?: boolean };
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -42,7 +43,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   const isOpen = rowClick ? row.open : open;
   const close = () => { if (rowClick) row.setOpen(false); else setOpen(false); setLines([blank()]); };
   if (rowClick && !isOpen) return row.render(null);
-  if (state.ok && !isOpen) return <p className="text-xs text-emerald-700">{state.ok}</p>;
+  if (state.ok && !isOpen) return <Flash on={state} as="p" className="text-xs text-emerald-700" />;
   if (!isOpen) return <button type="button" onClick={() => setOpen(true)} className={buttonCls ?? "rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"}>{label}</button>;
   const sum = lines.reduce((t, l) => t + n(l.amount), 0);
   const left = Math.round((amount - sum) * 100) / 100;
@@ -123,7 +124,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
       <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)
         {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
     </form>
-    {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+    <Flash on={state} as="p" className="text-sm text-emerald-700" />
   </>);
   if (rowClick) return row.render(body, label, "lg");
   return <Modal title={label} size="lg" onClose={() => setOpen(false)}>{body}</Modal>;

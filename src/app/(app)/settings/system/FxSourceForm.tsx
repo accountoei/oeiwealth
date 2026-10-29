@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { FX_BBL_RATE_LABEL } from "@/lib/format";
 import { setFxSource, type FxState } from "./actions";
 import { FX_BTN } from "./FxRefreshButton";
+import Flash from "@/components/Flash";
 
 /** ADMIN เลือกแหล่งอัตราแลกเปลี่ยน — มีผลตั้งแต่วันนี้ · อัตราที่บันทึกไว้แล้วไม่เปลี่ยน */
 export default function FxSourceForm({ source, bblRate }: { source: string; bblRate: string }) {
@@ -42,7 +43,7 @@ export default function FxSourceForm({ source, bblRate }: { source: string; bblR
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+      <Flash on={state} as="p" className="text-sm text-emerald-700" />
     </form>
   ));
 }

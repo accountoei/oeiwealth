@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { overrideFx, type FxState } from "./actions";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { FX_BTN } from "./FxRefreshButton";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 
@@ -31,7 +32,7 @@ export default function OverrideForm({ today }: { today: string }) {
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
+      <Flash on={state} as="p" className="text-sm text-emerald-700" />
     </form>
   ));
 }

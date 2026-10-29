@@ -6,6 +6,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import {
   inviteUser, resendInvite, resetMfa, resetPasswordLink, setUserRole, setUserStatus, type ActionState, type InviteState,
 } from "./actions";
+import Flash from "@/components/Flash";
 
 const ROLES: Record<string, string> = { ADMIN: "ผู้ดูแลระบบ", EDITOR: "ผู้แก้ไข", CONTRIBUTOR: "ผู้บันทึก", VIEWER: "ผู้ดู" };
 
@@ -14,7 +15,7 @@ const btn = "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <span className="text-xs text-red-600">{s.error}</span>;
-  if (s.ok) return <span className="text-xs text-emerald-700">{s.ok}</span>;
+  if (s.ok) return <Flash on={s} as="span" className="text-xs text-emerald-700" />;
   return null;
 }
 

@@ -7,6 +7,7 @@ import { money, qty, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
   /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -36,7 +37,7 @@ export default function BusinessBatch({ rows, banks, today, defaultDate = today,
 }
 
 function Result({ s }: { s: ActionState }) {
-  return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}{s.ok && <span className="text-sm text-emerald-700">{s.ok}</span>}</>;
+  return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}<Flash on={s} as="span" className="text-sm text-emerald-700" /></>;
 }
 
 function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; banks: BizBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {

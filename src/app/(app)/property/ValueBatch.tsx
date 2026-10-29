@@ -8,6 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import ModalButton from "@/components/ModalButton";
 import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm";
 import { batchPropertyValues, type ActionState } from "./actions";
+import Flash from "@/components/Flash";
 
 export type ValueRow = {
   id: string; name: string; typeLabel: string; currency: string; value: number | null; date: string | null;
@@ -217,7 +218,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
           )}
           {incomplete.length > 0 && <span className="text-sm text-amber-700">{incomplete.map((r) => r.name).join(", ")}: ครั้งก่อนไม่มีมูลค่ารายแถว ต้องกรอกให้ครบทุกแถว</span>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </form>
       )}
     </div>

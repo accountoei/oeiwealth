@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { money, thDate } from "@/lib/format";
 import { payFromDrop, type ActionState, type Drop } from "./actions";
 import BalanceGuard from "@/components/BalanceGuard";
+import Flash from "@/components/Flash";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
@@ -17,7 +18,7 @@ export default function DropPrompt({ drop, currency, banks }: {
   const [closed, setClosed] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(payFromDrop, {});
   if (closed) return null;
-  if (state.ok) return <p className="w-full text-sm text-emerald-700">{state.ok}</p>;
+  if (state.ok) return <Flash on={state} as="p" className="w-full text-sm text-emerald-700" />;
   const what = drop.kind === "CARD" ? "ยอดบัตร" : "ยอดหนี้";
   return (
     <form action={action} className="w-full space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">

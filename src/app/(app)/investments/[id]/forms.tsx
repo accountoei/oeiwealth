@@ -15,6 +15,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { PfCardPayBody, PfExpenseBody, type PfPayCtx } from "./pf-pay-forms";
 import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
 import { defaultIncomeAccount, groupIncomeOptions, incomeAccountOptions } from "@/lib/income-account";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -51,7 +52,7 @@ export function CashAccountSelect({ accounts, currency, name = "cash_holding_id"
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
@@ -664,7 +665,7 @@ export function MaturityForm({ assetId, portfolioName = "", holding, banks, cash
   const cf = useConfirmSubmit();
   const [mode, setMode] = useState("cash");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordMaturity, {});
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
+  if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={label ? ROW_BTN : activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>{label ?? "บันทึกรับเงินต้น"}</button>;
   if (!open) return trigger;
   const list = banks.filter((b) => b.currency === holding.currency);

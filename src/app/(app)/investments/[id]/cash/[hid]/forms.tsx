@@ -3,13 +3,14 @@
 import { useActionState } from "react";
 import { saveValuations, setDefaultCash, type ActionState } from "../../../actions";
 import { updateRecord, type RecState } from "@/lib/records";
+import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
-  if (s.ok) return <p className="text-sm text-emerald-700">{s.ok}</p>;
+  if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
 
@@ -53,7 +54,7 @@ export function CashInfoForm({ id, name, purpose, interestRate, paths }: {
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">บันทึกแล้ว</span>}
+        <Flash on={state}>บันทึกแล้ว</Flash>
       </div>
     </form>
   );

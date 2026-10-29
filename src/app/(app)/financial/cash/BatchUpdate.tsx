@@ -7,6 +7,7 @@ import { money, thDate } from "@/lib/format";
 import { batchUpdate, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import Flash from "@/components/Flash";
 
 export type BatchRow = {
   id: string; name: string; bank: string; currency: string;
@@ -140,7 +141,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
             <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
           )}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+          <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
     </form>

@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { updatePersonDetails, type ActionState } from "../actions";
 import { EDUCATION_LEVEL_LABEL, GENDER_LABEL, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
+import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -186,7 +187,7 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-        {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
       </div>
     </form>
   ));
