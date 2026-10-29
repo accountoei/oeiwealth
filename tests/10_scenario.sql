@@ -3677,6 +3677,61 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.property_deeds WHERE source_movemen
             'จ่ายเพิ่ม: ลบรายการจ่าย → แถวใหม่ที่สร้างพร้อมรายการนั้นถูกลบด้วย');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz25. Property: ขายบางแถว / รื้อถอน · ยกเลิกครั้งล่าสุด (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+UPDATE public.assets SET acquisition_cost = 5000000, acquisition_date = '2020-01-01' WHERE id = t.a('บ้าน A');
+SELECT d.id AS deed_f FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT land_area_sq_wa AS area_f FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT ids[2] AS land2_f, ids[3] AS bld_f FROM (SELECT public.save_property_components(t.a('บ้าน A'),
+  format('[{"id":"%s","type":"LAND","land_area_sq_wa":"%s","value":"6000000"},{"type":"LAND","title_deed_no":"N-2","land_area_sq_wa":"100","acq_cost":"400000","value":"1000000"},{"type":"BUILDING","label":"บ้าน","acq_cost":"1000000","acquired_date":"2020-01-01","value":"2000000"}]',
+         :'deed_f', :'area_f')::jsonb, '{}', format('{"date":"%s","method":"APPRAISAL"}', current_date - 3)::jsonb) AS ids) x \gset
+SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'land2_f']::uuid[], current_date - 2, 1250000, 50000,
+  t.a('KBank ออมทรัพย์'), null, 'ขายแปลงข้าง') AS ev1 \gset
+SELECT t.ok((SELECT end_reason = 'SOLD' AND ended_date = current_date - 2 FROM public.property_deeds WHERE id = :'land2_f')
+            AND (SELECT current_value = 8000000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT count(*) = 2 AND sum(p.value) = 8000000 AND bool_and(p.deed_id <> :'land2_f')
+                   FROM public.asset_valuation_parts p JOIN public.property_component_events e ON e.valuation_id = p.valuation_id
+                  WHERE e.id = :'ev1' AND p.deleted_at IS NULL),
+            'ขายบางแถว: แถวเป็น "ขายแล้ว" · มูลค่าใหม่ = เดิม − มูลค่าของแถวนั้น (รายแถวที่เหลือคงเดิม)');
+SELECT t.ok((SELECT gain = 200000 AND book_value = 1000000 AND cost_removed = 400000 FROM public.property_component_events WHERE id = :'ev1')
+            AND (SELECT amount = 200000 FROM public.income_transactions i JOIN public.property_component_events e ON e.income_id = i.id WHERE e.id = :'ev1')
+            AND (SELECT amount = 1000000 FROM public.cash_movements m JOIN public.property_component_events e ON e.movement_id = m.id WHERE e.id = :'ev1'),
+            'ขายบางแถว: เงินขายสุทธิ 1.2 ล้าน = ทุนคืน 1 ล้าน + กำไร 2 แสน (รายได้)');
+SELECT t.ok((SELECT acquisition_cost = 4600000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT land_area_sq_wa = :'area_f'::numeric FROM public.property_details WHERE asset_id = t.a('บ้าน A'))
+            AND NOT EXISTS (SELECT 1 FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A') AND description LIKE '%N-2%'),
+            'ขายบางแถว: ราคาที่ได้มาลดตามต้นทุนของแถว · เนื้อที่รวมไม่นับแปลงที่ขาย · ต้นทุนรายก้อนไม่นับแถวนั้น');
+SELECT t.fails(format($$SELECT public.batch_property_values(current_date, 'APPRAISAL', null, '[{"asset_id":"%s","parts":[{"deed_id":"%s","value":6000000},{"deed_id":"%s","value":2000000},{"deed_id":"%s","value":1}]}]')$$,
+               t.a('บ้าน A'), :'deed_f', :'bld_f', :'land2_f'), 'ขาย / รื้อถอนแล้ว', 'ใส่มูลค่าให้แถวที่ขายแล้วไม่ได้');
+SELECT t.fails(format($$UPDATE public.property_deeds SET deleted_at = now() WHERE id = '%s'$$, :'land2_f'), 'ลบไม่ได้',
+               'แถวที่ขายแล้วลบไม่ได้');
+SELECT t.fails(format($$UPDATE public.property_deeds SET ended_date = NULL, end_reason = NULL, end_event_id = NULL WHERE id = '%s'$$, :'land2_f'),
+               'ยกเลิกรายการนั้น', 'ล้างสถานะ "ขายแล้ว" ตรง ๆ ไม่ได้');
+SELECT t.fails(format($$SELECT public.end_property_components('%s', 'DEMOLISH', ARRAY['%s']::uuid[], current_date)$$, t.a('บ้าน A'), :'deed_f'),
+               'เฉพาะอาคาร', 'รื้อถอนที่ดินไม่ได้');
+SELECT t.fails(format($$SELECT public.end_property_components('%s', 'SELL', ARRAY['%s','%s']::uuid[], current_date, 100, null, '%s')$$,
+                      t.a('บ้าน A'), :'deed_f', :'bld_f', t.a('KBank ออมทรัพย์')), 'ครบทุกแถว', 'ขายครบทุกแถวต้องใช้ขายทั้งทรัพย์สิน');
+SELECT public.end_property_components(t.a('บ้าน A'), 'DEMOLISH', ARRAY[:'bld_f']::uuid[], current_date - 1) AS ev2 \gset
+SELECT t.ok((SELECT end_reason = 'DEMOLISHED' FROM public.property_deeds WHERE id = :'bld_f')
+            AND (SELECT current_value = 6000000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT gain = -2000000 AND movement_id IS NULL AND cardinality(expense_ids) = 2 FROM public.property_component_events WHERE id = :'ev2')
+            AND (SELECT sum(amount) = 2000000 FROM public.expense_items WHERE id = ANY ((SELECT expense_ids FROM public.property_component_events WHERE id = :'ev2')::uuid[])),
+            'รื้อถอน: มูลค่าอาคารออก · ขาดทุนเท่ามูลค่าเดิม แบ่งตามเจ้าของ (ไม่มีเงินออกจากบัญชี)');
+SELECT t.fails(format($$SELECT public.undo_property_component_event('%s')$$, :'ev1'), 'รายการล่าสุด', 'ยกเลิกได้เฉพาะครั้งล่าสุด');
+SELECT public.undo_property_component_event(:'ev2');
+SELECT public.undo_property_component_event(:'ev1');
+SELECT t.ok((SELECT bool_and(ended_date IS NULL) FROM public.property_deeds WHERE id IN (:'land2_f', :'bld_f'))
+            AND (SELECT current_value = 9000000 AND acquisition_cost = 5000000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT bool_and(deleted_at IS NOT NULL) FROM public.property_component_events WHERE id IN (:'ev1', :'ev2'))
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions i JOIN public.property_component_events e ON e.income_id = i.id
+                             WHERE e.id = :'ev1' AND i.deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.expense_items x WHERE x.deleted_at IS NULL
+                             AND x.id = ANY ((SELECT expense_ids FROM public.property_component_events WHERE id = :'ev2')::uuid[])),
+            'ยกเลิก: แถวกลับมาถืออยู่ · มูลค่า / ราคาที่ได้มา / เงินเข้า / กำไร-ขาดทุน กลับเป็นเดิม');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

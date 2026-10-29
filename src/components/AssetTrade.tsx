@@ -2,7 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { payForAsset, sellAsset, type TradeState } from "@/lib/asset-trade";
+import { demolishComponents, payForAsset, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
+import { money } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -31,18 +32,60 @@ function Box({ title, label, children, action, pending, state, danger }: {
   ));
 }
 
-export function SellAssetForm({ assetId, currency, banks, today, minDate, paths, hasLease, quantity, unit }: {
+/** Property: แถวส่วนประกอบที่ยังถืออยู่ + มูลค่าในมูลค่าล่าสุด (null = มูลค่าล่าสุดยังไม่แยกรายแถว) */
+export type SaleComp = { id: string; label: string; type: "LAND" | "BUILDING" | "OTHER"; value: number | null };
+
+/** เลือกแถวที่ขาย / รื้อถอน + มูลค่าเดิมของแถวที่เลือก (มูลค่าล่าสุดไม่แยกรายแถว → ผู้ใช้ใส่) */
+function CompPicker({ comps, currency }: { comps: SaleComp[]; currency: string }) {
+  const [sel, setSel] = useState<string[]>([]);
+  const known = comps.every((c) => c.value != null);
+  const book = comps.filter((c) => sel.includes(c.id)).reduce((t, c) => t + (c.value ?? 0), 0);
+  const toggle = (id: string, on: boolean) => setSel(on ? [...sel, id] : sel.filter((x) => x !== id));
+  return (
+    <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+      <div className="flex flex-wrap gap-x-5 gap-y-1">
+        {comps.map((c) => (
+          <label key={c.id} className="flex items-center gap-2">
+            <input type="checkbox" name="comp" value={c.id} checked={sel.includes(c.id)} onChange={(e) => toggle(c.id, e.target.checked)} />
+            {c.label}{c.value != null && <span className="text-xs tabular-nums text-slate-500">มูลค่า {money(c.value, undefined, 0)}</span>}
+          </label>
+        ))}
+      </div>
+      {known ? (sel.length > 0 && <p className="mt-1 text-xs text-slate-600">มูลค่าเดิมของแถวที่เลือก <span className="tabular-nums">{money(book, currency, 0)}</span> (ตามมูลค่าล่าสุดรายแถว)</p>) : (
+        <label className="mt-2 block text-sm">มูลค่าเดิมของแถวที่เลือก ({currency}) *
+          <input name="book_value" required inputMode="decimal" className={`${input} md:w-60`} />
+          <span className="text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว ใส่ว่าแถวที่เลือกมีมูลค่าเท่าไรในยอดนั้น</span>
+        </label>
+      )}
+    </div>
+  );
+}
+
+export function SellAssetForm({ assetId, currency, banks, today, minDate, paths, hasLease, quantity, unit, components }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; hasLease?: boolean;
   /** Alternative: จำนวนที่ถืออยู่ → ขายบางส่วนได้ (ไม่ส่ง = ขายทั้งรายการเท่านั้น) */
   quantity?: number | null; unit?: string | null;
+  /** Property: แถวส่วนประกอบที่ยังถืออยู่ (2 แถวขึ้นไป → ขายบางแถวได้) */
+  components?: SaleComp[];
 }) {
   const [state, action, pending] = useActionState<TradeState, FormData>(sellAsset, {});
+  const [part, setPart] = useState(false);
   const list = banks.filter((b) => b.currency === currency);
   const qtyText = quantity ? quantity.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "";
+  const canPart = (components?.length ?? 0) > 1;
   return (
     <Box title="บันทึกการขาย" label="ขายทรัพย์สินนี้" action={action} pending={pending} state={state} danger>
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="paths" value={paths.join(",")} />
+      {canPart && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-5 text-sm">
+            <label className="flex items-center gap-2"><input type="radio" name="scope" value="all" checked={!part} onChange={() => setPart(false)} /> ขายทั้งทรัพย์สิน</label>
+            <label className="flex items-center gap-2"><input type="radio" name="scope" value="part" checked={part} onChange={() => setPart(true)} /> ขายบางแถว (เช่น ที่ดินบางแปลง)</label>
+          </div>
+          {part && <CompPicker comps={components!} currency={currency} />}
+        </div>
+      )}
       {quantity ? (
         <div className="grid gap-3 md:grid-cols-4">
           <input type="hidden" name="total_quantity" value={String(quantity)} />
@@ -65,12 +108,45 @@ export function SellAssetForm({ assetId, currency, banks, today, minDate, paths,
         <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
       </div>
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
-        <li>เงินเข้าบัญชี = ราคาขาย − ค่าใช้จ่าย · กำไร / ขาดทุน = เงินเข้าบัญชี − มูลค่าล่าสุด → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ขาดทุนไม่มีเงินออกจากบัญชี)</li>
-        <li>{quantity ? "ขายทั้งรายการ: " : ""}บันทึกมูลค่า ณ วันขาย = ราคาขาย แล้วเปลี่ยนสถานะเป็น &ldquo;ขายแล้ว&rdquo; (ไม่นับใน Net Worth หลังวันขาย)</li>
+        <li>เงินเข้าบัญชี = ราคาขาย − ค่าใช้จ่าย · กำไร / ขาดทุน = เงินเข้าบัญชี − {part ? "มูลค่าเดิมของแถวที่ขาย" : "มูลค่าล่าสุด"} → ลงเป็นรายได้ / ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ขาดทุนไม่มีเงินออกจากบัญชี)</li>
+        {part ? <li>ขายบางแถว: แถวที่ขายเป็น &ldquo;ขายแล้ว&rdquo; (ยังเห็นในประวัติ) · มูลค่าใหม่ = มูลค่าเดิม − ส่วนที่ขาย · ราคาที่ได้มาลดตามต้นทุนของแถวนั้น · ทรัพย์สินยังถืออยู่</li>
+          : <li>{quantity ? "ขายทั้งรายการ: " : ""}บันทึกมูลค่า ณ วันขาย = ราคาขาย แล้วเปลี่ยนสถานะเป็น &ldquo;ขายแล้ว&rdquo; (ไม่นับใน Net Worth หลังวันขาย)</li>}
         {quantity ? <li>ขายบางส่วน: มูลค่าส่วนที่ขาย = มูลค่าล่าสุด × จำนวนที่ขาย ÷ {qtyText} · ขายตามสัดส่วนเจ้าของทุกคน · จำนวน / มูลค่า / ราคาทุนที่เหลือลดตามสัดส่วน</li> : null}
-        {hasLease && <li className="text-amber-700">ถ้ายังมีสัญญาเช่าที่มีผลหลังวันขาย ต้องบันทึกเลิกสัญญา / คืนเงินประกันก่อน</li>}
+        {hasLease && !part && <li className="text-amber-700">ถ้ายังมีสัญญาเช่าที่มีผลหลังวันขาย ต้องบันทึกเลิกสัญญา / คืนเงินประกันก่อน</li>}
       </ul>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่าขายแล้วจริง</label>
+    </Box>
+  );
+}
+
+/** Property: รื้อถอนอาคาร / สิ่งปลูกสร้าง → แถวเป็น "รื้อถอนแล้ว" · มูลค่าของแถวออก · ขาดทุนเท่ามูลค่าเดิม (ตกลง 29 ต.ค. 2026) */
+export function DemolishForm({ assetId, currency, banks, today, minDate, paths, components }: {
+  assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; components: SaleComp[];
+}) {
+  const [state, action, pending] = useActionState<TradeState, FormData>(demolishComponents, {});
+  const list = banks.filter((b) => b.currency === currency);
+  return (
+    <Box title="บันทึกการรื้อถอน" label="รื้อถอน" action={action} pending={pending} state={state} danger>
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="paths" value={paths.join(",")} />
+      <CompPicker comps={components} currency={currency} />
+      <div className="grid gap-3 md:grid-cols-4">
+        <label className="text-sm">วันที่รื้อถอน *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">ขายเศษวัสดุได้ ({currency})<input name="price" inputMode="decimal" placeholder="ถ้ามี" className={input} /></label>
+        <label className="text-sm">ค่าใช้จ่ายที่หักจากเงินนั้น<input name="fee" inputMode="decimal" className={input} /></label>
+        <label className="text-sm">เงินเข้าบัญชี
+          <select name="bank_asset_id" defaultValue="" className={input}>
+            <option value="">— ไม่มีเงินเข้า —</option>
+            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" placeholder="เหตุผล / ผู้รับเหมา" className={input} /></label>
+      </div>
+      <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
+        <li>มูลค่าของแถวที่รื้อออกจากมูลค่าทรัพย์สิน · ขาดทุน = มูลค่าเดิม − เงินขายเศษวัสดุ → ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ไม่มีเงินออกจากบัญชี)</li>
+        <li>ค่าจ้างรื้อถอนที่จ่ายจริง ให้บันทึกเป็นค่าใช้จ่ายแยก · สร้างหลังใหม่ใช้ &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; → อาคารใหม่</li>
+      </ul>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่ารื้อถอนแล้วจริง</label>
     </Box>
   );
 }
@@ -172,5 +248,23 @@ export function PropertyPayExtras({ addValue = true, building = false, years = 2
       {pick && <p className="text-xs text-slate-500">ต้นทุนและมูลค่าที่เพิ่มเข้าแถวที่เลือก{isNew && " (แถวใหม่ วันที่ได้มา = วันที่จ่าย · แก้รายละเอียดได้ที่ปุ่มแก้ไขของทรัพย์สิน)"}
         {pickType && pickType !== "LAND" && " · อาคาร / สิ่งปลูกสร้างหักค่าเสื่อมตามอายุของแถวนั้น"}</p>}
     </div>
+  );
+}
+
+/** Property: ยกเลิกการขายบางแถว / รื้อถอน (เฉพาะครั้งล่าสุด) · กด 2 ครั้งเพื่อยืนยัน */
+export function UndoComponentEvent({ eventId, paths }: { eventId: string; paths: string[] }) {
+  const [state, action, pending] = useActionState<TradeState, FormData>(undoComponentEvent, {});
+  const [ask, setAsk] = useState(false);
+  return (
+    <form action={action} className="inline-flex flex-wrap items-center gap-2">
+      <input type="hidden" name="event_id" value={eventId} />
+      <input type="hidden" name="paths" value={paths.join(",")} />
+      {ask ? <>
+        <button disabled={pending} className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-50">
+          {pending ? "กำลังยกเลิก…" : "ยืนยันยกเลิก"}</button>
+        <button type="button" onClick={() => setAsk(false)} className="text-xs text-slate-500">ไม่ใช่</button>
+      </> : <button type="button" onClick={() => setAsk(true)} className="text-xs text-slate-500 underline hover:text-slate-700">ยกเลิกรายการนี้</button>}
+      {state.error && <span className="text-xs text-red-600">{state.error}</span>}
+    </form>
   );
 }
