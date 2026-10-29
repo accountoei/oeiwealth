@@ -122,7 +122,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     ids.length ? supabase.from("v_property_target_price").select("asset_id,min_price").in("asset_id", ids) : none,
     // ส่วนประกอบ + มูลค่าครั้งล่าสุด → แท็บอัปเดตมูลค่ากางรายแถว
     ids.length ? supabase.from("property_deeds").select("id,property_id,sort_order,created_at,component_type,label,title_type,title_deed_no,land_no,land_area_sq_wa")
-      .in("property_id", allProps.map((p) => p.id)).is("deleted_at", null).order("sort_order").order("created_at") : none,
+      .in("property_id", allProps.map((p) => p.id)).is("deleted_at", null).is("ended_date", null).order("sort_order").order("created_at") : none,
     ids.length ? supabase.from("asset_valuations").select("id,asset_id").in("asset_id", ids).is("deleted_at", null)
       .order("valuation_date", { ascending: false }).order("created_at", { ascending: false }) : none,
   ]);

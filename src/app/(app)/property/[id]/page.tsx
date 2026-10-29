@@ -18,13 +18,13 @@ import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import { WithStatus } from "@/components/StatusSelect";
-import { PayAssetForm, SellAssetForm, type CompOpt } from "@/components/AssetTrade";
+import { DemolishForm, PayAssetForm, SellAssetForm, UndoComponentEvent, type CompOpt, type SaleComp } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import MarketBox from "../MarketBox";
 import TargetBox, { CostLotsSection, type TargetPrice } from "../TargetBox";
 import PropertyPaymentForm from "../PropertyPaymentForm";
 import ValuePartsForm, { type DeedOpt } from "../ValuePartsForm";
-import { COMPONENT_FIELDS, COMP_TYPE_LABEL, compName, type Component } from "../components";
+import { COMPONENT_FIELDS, COMP_TYPE_LABEL, END_REASON_LABEL, compName, type Component } from "../components";
 import type { ValuePart } from "../valueParts";
 import type { CostLot } from "../CostItemForm";
 import type { MarketValuation } from "../MarketValuationForm";
@@ -73,7 +73,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
-    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }] = await Promise.all([
+    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("property_details").select(`*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
@@ -99,6 +99,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // มูลค่าแยกตามโฉนด / อาคาร (รายละเอียดของมูลค่าแต่ละครั้ง · Net Worth ใช้ยอดรวม)
     supabase.from("asset_valuation_parts").select("valuation_id,part_type,deed_id,label,value,sort_order,source_movement_id")
       .eq("asset_id", id).is("deleted_at", null).order("sort_order"),
+    // ขายบางแถว / รื้อถอน (ยกเลิกได้เฉพาะครั้งล่าสุด)
+    supabase.from("property_component_events").select("id,event_type,event_date,price,fee,book_value,gain,created_at")
+      .eq("asset_id", id).is("deleted_at", null).order("event_date", { ascending: false }).order("created_at", { ascending: false }),
   ]);
   if (!a || !pd) notFound();
 
@@ -123,12 +126,18 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const stale = !a.current_value_date || a.current_value_date < addDays(today, -90);
   const utilities = ((pd.property_utilities ?? []) as Util[]).filter((u) => !u.deleted_at);
   // ส่วนประกอบ: ที่ดิน (โฉนด) · อาคาร · สิ่งปลูกสร้างอื่น (ตกลง 29 ต.ค. 2026) · เนื้อที่ของทรัพย์สิน = ผลรวมแถวที่ดิน
-  const comps = ((pd.property_deeds ?? []) as (Component & { sort_order: number; created_at: string; deleted_at: string | null })[])
+  //   ขาย / รื้อถอนแล้ว → แสดงท้ายตารางเป็นประวัติ ไม่นับในเนื้อที่ ต้นทุน มูลค่า และไม่ให้เลือกในฟอร์ม
+  const allComps = ((pd.property_deeds ?? []) as (Component & { sort_order: number; created_at: string; deleted_at: string | null })[])
     .filter((d) => !d.deleted_at).sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at));
+  const comps = allComps.filter((c) => !c.ended_date);
+  const endedComps = allComps.filter((c) => c.ended_date).sort((x, y) => (y.ended_date ?? "").localeCompare(x.ended_date ?? ""));
+  type CompEvent = { id: string; event_type: "SELL" | "DEMOLISH"; event_date: string; price: number; fee: number; book_value: number | null; gain: number | null };
+  const events = new Map(((eventRows ?? []) as CompEvent[]).map((e) => [e.id, e]));
+  const lastEventId = (eventRows ?? [])[0]?.id as string | undefined;
   const lands = comps.filter((c) => c.component_type === "LAND");
-  const compLabel = new Map(comps.map((c, i) => [c.id, compName(c, i)]));
-  const compOpts: CompOpt[] = comps.map((c, i) => ({ id: c.id, label: compName(c, i), type: c.component_type }));
-  const deedOpts: DeedOpt[] = comps.map((c, i) => ({ id: c.id, label: compName(c, i), type: c.component_type,
+  const compLabel = new Map(allComps.map((c, i) => [c.id, compName(c, i)]));
+  const compOpts: CompOpt[] = comps.map((c) => ({ id: c.id, label: compLabel.get(c.id) ?? "", type: c.component_type }));
+  const deedOpts: DeedOpt[] = comps.map((c) => ({ id: c.id, label: compLabel.get(c.id) ?? "", type: c.component_type,
     area: c.land_area_sq_wa != null ? Number(c.land_area_sq_wa) : null }));
   const partsKey = `${comps.map((d) => d.id).join(",")}|${vals?.[0]?.id ?? ""}`;   // เพิ่มส่วนประกอบ / มูลค่าใหม่ → ตั้งแถวฟอร์มใหม่
   const partText = (vid: string) => allParts.filter((p) => p.valuation_id === vid)
@@ -143,6 +152,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // มูลค่าล่าสุดรายแถว (จ่ายเพิ่มที่ผูกกับแถวเดียวกัน = รวมกัน)
   const latestByComp = latestParts.reduce<Record<string, number>>((m, p) => (p.deed_id ? { ...m, [p.deed_id]: (m[p.deed_id] ?? 0) + p.value } : m), {});
   const hasLatest = Object.keys(latestByComp).length > 0;
+  const saleComps: SaleComp[] = comps.map((c) => ({ id: c.id, label: compLabel.get(c.id) ?? "", type: c.component_type,
+    value: hasLatest ? latestByComp[c.id] ?? 0 : null }));
+  const demolishable = saleComps.filter((c) => c.type !== "LAND");
   const cards = (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string,
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const yearly = utilities.filter((u) => u.frequency && u.active)
@@ -218,9 +230,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 <th className="text-right">ต้นทุน</th><th className="text-right">มูลค่าล่าสุด</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {comps.map((c, i) => (
+              {comps.map((c) => (
                 <tr key={c.id} className="align-top">
-                  <td className="py-1.5">{compName(c, i)}<span className="block text-xs text-slate-400">{COMP_TYPE_LABEL[c.component_type]}</span></td>
+                  <td className="py-1.5">{compLabel.get(c.id)}<span className="block text-xs text-slate-400">{COMP_TYPE_LABEL[c.component_type]}</span></td>
                   <td className="text-xs text-slate-600">{(c.component_type === "LAND"
                     ? [c.land_no && `เลขที่ดิน ${c.land_no}`, c.deed_book && `เล่ม ${c.deed_book}`, c.deed_page && `หน้า ${c.deed_page}`, c.map_sheet && `ระวาง ${c.map_sheet}`,
                        c.survey_page && `หน้าสำรวจ ${c.survey_page}`]
@@ -242,6 +254,23 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 <td className="pl-3 text-right tabular-nums">{money(a.current_value, undefined, 0)}</td></tr>
             </tfoot>
           </table>
+          {endedComps.length > 0 && (
+            <div className="mt-3">
+              <div className="mb-1 text-xs font-medium text-slate-500">ขาย / รื้อถอนแล้ว (ไม่นับในเนื้อที่ ต้นทุน และมูลค่า)</div>
+              <ul className="divide-y divide-slate-100 text-sm text-slate-500">
+                {endedComps.map((c) => { const e = c.end_event_id ? events.get(c.end_event_id) : undefined; return (
+                  <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-1.5">
+                    <span className="text-slate-700 line-through decoration-slate-300">{compLabel.get(c.id)}</span>
+                    <span className="rounded bg-slate-100 px-1.5 text-xs">{c.end_reason ? END_REASON_LABEL[c.end_reason] : ""} {thDate(c.ended_date)}</span>
+                    {e && <span className="text-xs tabular-nums">
+                      {e.event_type === "SELL" || Number(e.price) > 0 ? `ราคา ${money(e.price, undefined, 0)} · ` : ""}มูลค่าเดิม {money(e.book_value, undefined, 0)}
+                      {e.gain != null && Number(e.gain) !== 0 && <span className={Number(e.gain) > 0 ? "text-emerald-700" : "text-red-700"}>
+                        {" · "}{Number(e.gain) > 0 ? "กำไร" : "ขาดทุน"} {money(Math.abs(Number(e.gain)), undefined, 0)}</span>}</span>}
+                    {canDelete && a.status === "ACTIVE" && e && e.id === lastEventId && <UndoComponentEvent eventId={e.id} paths={paths} />}
+                  </li>); })}
+              </ul>
+            </div>
+          )}
           {!hasLatest && <p className="mt-1 text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว · แยกรายแถวได้ที่ปุ่มแก้ไข หรือ &ldquo;มูลค่าและต้นทุน&rdquo;</p>}
         </div>
       )}
@@ -263,7 +292,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
               <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts} />
-              <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
+              <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0}
+                components={saleComps} />
+              {canDelete && demolishable.length > 0 && comps.length > 1 &&
+                <DemolishForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} components={demolishable} />}
             </ActionBar>
           )}
         </div>
