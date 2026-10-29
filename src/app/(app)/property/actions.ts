@@ -8,6 +8,7 @@ import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
 import { partsSum, type ValuePart } from "./valueParts";
+import type { CompInput } from "./components";
 
 /** created = สร้างรายการแล้วแต่บันทึกเงินออกไม่สำเร็จ → ลิงก์ไปหน้ารายการ (ไม่ให้กดบันทึกซ้ำ) */
 export type ActionState = FormState & { created?: string };
@@ -37,41 +38,26 @@ async function setRentAccount(supabase: Awaited<ReturnType<typeof createClient>>
   return error ? `ตั้งบัญชีรับค่าเช่า / ค่าน้ำไฟไม่ได้ (${friendlyError(error.message)}) — ตั้งใหม่ที่ปุ่มแก้ไขของสัญญา` : null;
 }
 
-/** ค่าอาคารในราคาที่ได้มา (บ้าน / คอนโดที่ซื้อพร้อมอาคาร · หักค่าเสื่อมเฉพาะส่วนนี้ · ตกลง 28 ต.ค. 2026) */
-function acqBuildingFromForm(form: FormData): { cost: number | null; years: number } | { error: string } {
-  const cost = num(form.get("acq_building_cost"));
-  if (cost !== null && (Number.isNaN(cost) || cost < 0)) return { error: "ค่าอาคารต้องเป็นตัวเลขไม่ติดลบ" };
+/** ตารางส่วนประกอบจากฟอร์ม (ComponentTable · JSON) → แถวสำหรับ save_property_components + id ที่ลบ */
+function componentsFromForm(form: FormData): { rows: CompInput[]; removed: string[] } | { error: string } {
+  let rows: unknown, removed: unknown;
+  try {
+    rows = JSON.parse(String(form.get("components") ?? "[]"));
+    removed = JSON.parse(String(form.get("removed") ?? "[]"));
+  } catch { return { error: "ข้อมูลส่วนประกอบไม่ถูกต้อง" }; }
+  if (!Array.isArray(rows) || !Array.isArray(removed)) return { error: "ข้อมูลส่วนประกอบไม่ถูกต้อง" };
+  const list = rows as CompInput[];
+  const bad = (v: string | undefined) => v != null && v !== "" && !(Number(v) >= 0);
+  for (const [i, r] of list.entries()) {
+    if (bad(r.land_area_sq_wa) || bad(r.building_area_sqm)) return { error: `แถวที่ ${i + 1}: เนื้อที่ / พื้นที่ต้องเป็นตัวเลข` };
+    if (bad(r.acq_cost) || bad(r.value)) return { error: `แถวที่ ${i + 1}: ต้นทุน / มูลค่าต้องเป็นตัวเลขไม่ติดลบ` };
+    const y = r.useful_life_years ? Number(r.useful_life_years) : null;
+    if (y !== null && !(Number.isInteger(y) && y >= 1 && y <= 100)) return { error: `แถวที่ ${i + 1}: อายุใช้งานต้องเป็นจำนวนปี 1–100` };
+  }
+  const sum = list.reduce((t, r) => t + (Number(r.acq_cost) || 0), 0);
   const acq = num(form.get("acquisition_cost"));
-  if (cost !== null && cost > 0 && (acq === null || cost > acq)) return { error: "ค่าอาคารต้องไม่เกินราคาที่ได้มา" };
-  const years = num(form.get("acq_building_years")) ?? 20;
-  if (!Number.isInteger(years) || years < 1 || years > 100) return { error: "อายุอาคารต้องเป็นจำนวนปี 1–100" };
-  return { cost: cost || null, years };
-}
-
-/** โฉนดใบที่ 2 เป็นต้นไป จากฟอร์มเพิ่มทรัพย์สิน (ใบแรกระบบสร้างจากช่องหลักให้) */
-function extraDeedsFromForm(form: FormData) {
-  const col = (k: string) => form.getAll(`x_${k}`).map((v) => String(v));
-  const types = col("title_type"), nos = col("title_deed_no"), lands = col("land_no"), rai = col("land_rai"), ngan = col("land_ngan"), wa = col("land_wa");
-  const vals = col("part_value");
-  return types.map((t, i) => {
-    const f = new FormData();
-    f.set("land_rai", rai[i] ?? ""); f.set("land_ngan", ngan[i] ?? ""); f.set("land_wa", wa[i] ?? "");
-    return { title_type: str(t), title_deed_no: str(nos[i] ?? null), land_no: str(lands[i] ?? null), land_area_sq_wa: sqwaFromForm(f),
-      value: num(vals[i] ?? null) };
-  });
-}
-const hasDeedInfo = (d: { title_type: string | null; title_deed_no: string | null; land_no: string | null; land_area_sq_wa: number | null }) =>
-  !!(d.title_type || d.title_deed_no || d.land_no || d.land_area_sq_wa != null);
-
-/** ฟอร์มเพิ่มทรัพย์สิน: มูลค่ารายโฉนด (ใบแรก + ใบอื่น ตามลำดับแถว) + แถวอาคาร / อื่น ๆ */
-function newPartsFromForm(form: FormData, extra: ReturnType<typeof extraDeedsFromForm>) {
-  const first = { title_type: str(form.get("title_type")), title_deed_no: str(form.get("title_deed_no")), land_no: str(form.get("land_no")),
-    land_area_sq_wa: sqwaFromForm(form), value: num(form.get("part_value")) };
-  const deedRows = [first, ...extra];
-  const labels = form.getAll("b_label").map(String), bvals = form.getAll("b_value").map((v) => num(v)), btypes = form.getAll("b_type").map(String);
-  const others = labels.map((l, i) => ({ type: (btypes[i] === "OTHER" ? "OTHER" : "BUILDING") as ValuePart["type"], label: str(l), value: bvals[i] }))
-    .filter((o) => o.value !== null);
-  return { deedRows, others };
+  if (sum > 0 && (acq === null || acq < sum - 0.005)) return { error: "ราคาที่ได้มารวมต้องไม่น้อยกว่าผลรวมต้นทุนรายแถว" };
+  return { rows: list, removed: (removed as unknown[]).map(String) };
 }
 
 function revalidateProperty(assetId?: string) {
@@ -89,19 +75,9 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
   const lease = usage === "RENTAL" ? leaseFromForm(form) : null;
   const pay = payFromForm(form);
   if (pay && "error" in pay) return { error: pay.error };
-  const acqB = acqBuildingFromForm(form);
-  if ("error" in acqB) return { error: acqB.error };
-  const extra = extraDeedsFromForm(form);
-  const deeds = extra.filter(hasDeedInfo).map(({ value: _v, ...d }) => d);   // eslint-disable-line @typescript-eslint/no-unused-vars
-  if (deeds.some((d) => d.land_area_sq_wa != null && !(d.land_area_sq_wa >= 0))) return { error: "เนื้อที่ของโฉนดต้องเป็นตัวเลข" };
-  // มูลค่าแยกตามโฉนด / อาคาร (ไม่บังคับ) · ใส่แล้วยอดรวมต้องเท่า "มูลค่า"
-  const { deedRows, others } = newPartsFromForm(form, extra);
-  const withValue = deedRows.filter((d) => d.value !== null);
-  if ([...withValue, ...others].some((d) => Number.isNaN(d.value) || (d.value as number) < 0)) return { error: "มูลค่ารายส่วนต้องเป็นตัวเลขไม่ติดลบ" };
-  if (withValue.some((d) => !hasDeedInfo(d))) return { error: "ใส่มูลค่าของโฉนดที่ยังไม่มีข้อมูลไม่ได้ (ใส่เลขที่โฉนด / เลขที่ดิน / เนื้อที่ก่อน)" };
-  const partTotal = partsSum([...withValue, ...others].map((d) => ({ value: d.value as number })));
-  if ((withValue.length || others.length) && Math.abs(partTotal - value) > 0.005)
-    return { error: `ยอดรวมรายส่วน (${partTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}) ไม่เท่ามูลค่า` };
+  const comps = componentsFromForm(form);
+  if ("error" in comps) return { error: comps.error };
+  const withValue = comps.rows.some((r) => r.value);
   const { data, error } = await supabase.rpc("create_property", {
     p_name: str(form.get("name")),
     p_property_type: str(form.get("property_type")) ?? "HOUSE",
@@ -115,40 +91,30 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
     p_acquisition_cost: num(form.get("acquisition_cost")),
     p_location_group: str(form.get("location_group")),
     p_address: str(form.get("address")),
-    p_land_area_sq_wa: sqwaFromForm(form),
-    p_title_type: str(form.get("title_type")),
-    p_title_deed_no: str(form.get("title_deed_no")),
-    p_land_no: str(form.get("land_no")),
+    // เนื้อที่ / โฉนด = จากตารางส่วนประกอบ (บันทึกต่อด้านล่าง · ระบบรวมเนื้อที่ให้)
+    p_land_area_sq_wa: null,
+    p_title_type: null,
+    p_title_deed_no: null,
+    p_land_no: null,
     p_owners: ownersFromForm(form),
     p_lease: lease?.tenant_name ? lease : null,
     p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty();
-  // ค่าอาคารในราคาที่ได้มา + โฉนดใบอื่น (ซื้อหลายโฉนดเป็นแปลงเดียว · เนื้อที่รวมให้อัตโนมัติ)
-  if (acqB.cost !== null || acqB.years !== 20 || deeds.length) {
-    const { data: pd, error: e0 } = await supabase.from("property_details").select("id").eq("asset_id", String(data)).is("deleted_at", null).single();
-    let e3 = e0?.message ?? null;
-    if (!e3 && (acqB.cost !== null || acqB.years !== 20))
-      e3 = (await supabase.from("property_details").update({ acq_building_cost: acqB.cost, acq_building_years: acqB.years }).eq("id", pd!.id)).error?.message ?? null;
-    if (!e3 && deeds.length)
-      e3 = (await supabase.from("property_deeds").insert(deeds.map((d, i) => ({ ...d, property_id: pd!.id, sort_order: i + 1 })))).error?.message ?? null;
-    if (e3) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกค่าอาคาร / โฉนดใบอื่นไม่สำเร็จ (${friendlyError(e3)}) — แก้ต่อที่หน้าทรัพย์สิน`, created: `/property/${data}` };
-  }
-  if (withValue.length || others.length) {
-    // โฉนดที่ระบบสร้าง (ใบแรก sort 0 + ใบอื่น sort 1…) เรียงตามแถวในฟอร์มที่มีข้อมูล → จับคู่มูลค่า
-    const { data: dl } = await supabase.from("property_deeds").select("id,property_details!inner(asset_id)")
-      .eq("property_details.asset_id", String(data)).is("deleted_at", null).order("sort_order").order("created_at");
-    const { data: val } = await supabase.from("asset_valuations").select("id").eq("asset_id", String(data)).is("deleted_at", null)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const ids = (dl ?? []).map((d) => d.id as string);
-    const parts: ValuePart[] = [
-      ...deedRows.filter(hasDeedInfo).map((d, i) => ({ d, id: ids[i] })).filter(({ d }) => d.value !== null)
-        .map(({ d, id }) => ({ type: "DEED" as const, deed_id: id, value: d.value as number })),
-      ...others.map((o) => ({ type: o.type, label: o.label, value: o.value as number })),
-    ];
-    const { error: e4 } = val ? await supabase.rpc("set_valuation_parts", { p_valuation_id: val.id, p_parts: parts }) : { error: { message: "ไม่พบมูลค่า" } };
-    if (e4) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกมูลค่าแยกตามโฉนด / อาคารไม่สำเร็จ (${friendlyError(e4.message)}) — ใส่ต่อที่หน้าทรัพย์สิน`, created: `/property/${data}` };
+  // ส่วนประกอบ (ที่ดิน / อาคาร / อื่น ๆ) + มูลค่ารายแถวของมูลค่าแรก
+  if (comps.rows.length) {
+    const { data: ids, error: e3 } = await supabase.rpc("save_property_components", {
+      p_asset_id: String(data), p_rows: comps.rows.map(({ value: _v, ...r }) => r), p_removed: [], p_valuation: null,   // eslint-disable-line @typescript-eslint/no-unused-vars
+    });
+    if (e3) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกส่วนประกอบไม่สำเร็จ (${friendlyError(e3.message)}) — แก้ต่อที่หน้าทรัพย์สิน`, created: `/property/${data}` };
+    if (withValue) {
+      const { data: val } = await supabase.from("asset_valuations").select("id").eq("asset_id", String(data)).is("deleted_at", null)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      const parts = comps.rows.map((r, i) => ({ type: r.type === "LAND" ? "DEED" : r.type, deed_id: (ids as string[])[i], value: num(r.value ?? null) ?? 0 }));
+      const { error: e4 } = val ? await supabase.rpc("set_valuation_parts", { p_valuation_id: val.id, p_parts: parts }) : { error: { message: "ไม่พบมูลค่า" } };
+      if (e4) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกมูลค่ารายแถวไม่สำเร็จ (${friendlyError(e4.message)}) — ใส่ต่อที่หน้าทรัพย์สิน`, created: `/property/${data}` };
+    }
   }
   if (lease?.tenant_name) {
     const { data: ls } = await supabase.from("property_leases").select("id,property_details!inner(asset_id)")
@@ -235,8 +201,20 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
   if (mapUrl && !/^https:\/\//i.test(mapUrl)) return { error: "ลิงก์ Google Maps ต้องขึ้นต้นด้วย https://" };
   const xy = parseCoords(str(form.get("coords")), mapUrl);
   if ("error" in xy) return { error: xy.error };
-  const acqB = form.has("acq_building_cost") ? acqBuildingFromForm(form) : null;
-  if (acqB && "error" in acqB) return { error: acqB.error };
+  // ตารางส่วนประกอบ (+ มูลค่าใหม่ถ้ามูลค่าเปลี่ยน) บันทึกก่อน · ผิดแถวเดียว = ไม่บันทึกอะไรเลย
+  if (form.has("components")) {
+    const comps = componentsFromForm(form);
+    if ("error" in comps) return { error: comps.error };
+    const valuation = form.get("value_changed") ? {
+      date: str(form.get("valuation_date")), method: str(form.get("valuation_method")) ?? "USER_ESTIMATE",
+      notes: str(form.get("valuation_notes")), total: num(form.get("value")),
+    } : null;
+    if (valuation && (valuation.total === null || Number.isNaN(valuation.total))) return { error: "กรุณาใส่มูลค่า" };
+    const { error: e0 } = await supabase.rpc("save_property_components", {
+      p_asset_id: id, p_rows: comps.rows, p_removed: comps.removed, p_valuation: valuation,
+    });
+    if (e0) return { error: friendlyError(e0.message) };
+  }
   const { data: a, error: e1 } = await supabase.from("assets").update({
     name: str(form.get("name")), notes: str(form.get("notes")),
     acquisition_date: str(form.get("acquisition_date")), acquisition_cost: num(form.get("acquisition_cost")),
@@ -251,7 +229,6 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
     subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
     province: str(form.get("province")),
     ...(form.has("opportunity_rate_pct") ? { opportunity_rate_pct: rate } : {}),
-    ...(acqB ? { acq_building_cost: acqB.cost, acq_building_years: acqB.years } : {}),
     encumbrance_type: str(form.get("encumbrance_type")),
     encumbrance_details: ["", "NONE"].includes(str(form.get("encumbrance_type")) ?? "") ? null : str(form.get("encumbrance_details")),
     // ที่ว่าง: ส่งเฉพาะตอนเป็น "ว่าง" (ระบบเติมวันเริ่มว่าง / เก็บประวัติให้เมื่อเปลี่ยนการใช้งาน)
@@ -262,28 +239,6 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
   if (e2) return { error: friendlyError(e2.message) };
   revalidateProperty(id);
   return { ok: "บันทึกข้อมูลแล้ว" };
-}
-
-/** เพิ่ม / แก้โฉนด 1 ใบ (property_deeds) · เนื้อที่ / เลขที่โฉนดของทรัพย์สิน = ระบบรวมจากทุกโฉนดให้ */
-export async function saveDeed(_: ActionState, form: FormData): Promise<ActionState> {
-  const supabase = await createClient();
-  const assetId = String(form.get("asset_id"));
-  const id = str(form.get("id"));
-  const row = {
-    title_type: str(form.get("title_type")), title_deed_no: str(form.get("title_deed_no")), land_no: str(form.get("land_no")),
-    deed_book: str(form.get("deed_book")), deed_page: str(form.get("deed_page")), map_sheet: str(form.get("map_sheet")),
-    survey_page: str(form.get("survey_page")), land_area_sq_wa: sqwaFromForm(form), notes: str(form.get("notes")),
-  };
-  if (!row.title_deed_no && !row.land_no && row.land_area_sq_wa == null) return { error: "กรุณาใส่เลขที่โฉนด เลขที่ดิน หรือเนื้อที่ อย่างน้อย 1 ช่อง" };
-  if (row.land_area_sq_wa != null && !(row.land_area_sq_wa >= 0)) return { error: "เนื้อที่ต้องเป็นตัวเลข" };
-  const q = id
-    ? supabase.from("property_deeds").update(row).eq("id", id).select("id")
-    : supabase.from("property_deeds").insert({ ...row, property_id: String(form.get("property_id")) }).select("id");
-  const { data, error } = await q;
-  if (error) return { error: friendlyError(error.message) };
-  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
-  revalidateProperty(assetId);
-  return { ok: id ? "บันทึกโฉนดแล้ว" : "เพิ่มโฉนดแล้ว" };
 }
 
 /** ราคาตลาด (อ้างอิง · ไม่นับเข้า Net Worth): เพิ่ม / แก้ 1 ครั้ง · ราคาต่อหน่วย × เนื้อที่ → ระบบคำนวณยอดรวม */
