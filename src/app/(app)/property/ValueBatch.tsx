@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { Fragment, useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MARKET_CONFIDENCE_LABEL, addDays, diffText, marketStale, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
@@ -14,6 +14,8 @@ export type ValueRow = {
   defaultUnit: string; areaSqWa: number | null; market: MarketValuation | null;
   /** อัตราเป็นบาท × สัดส่วนของสมาชิกที่เลือก → ยอดรวมท้ายตาราง */ factor: number;
   /** ราคาขายขั้นต่ำที่คุ้ม (ต้นทุน + ดอกเบี้ย − ค่าเสื่อม + ค่าใช้จ่ายขาย) · null = ยังไม่มีต้นทุน */ minPrice: number | null;
+  /** ส่วนประกอบ + มูลค่าครั้งล่าสุดรายแถว (null = ครั้งล่าสุดเป็นยอดรวมอย่างเดียว) */
+  parts: { id: string; label: string; type: "LAND" | "BUILDING" | "OTHER"; area: number | null; value: number | null }[];
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -23,6 +25,8 @@ const filled = (s: string | undefined) => (s ?? "").trim() !== "";
 /**
  * แท็บ อัปเดตมูลค่า (ตกลง 28 ต.ค. 2026) — มูลค่าใน Net Worth ของทุกทรัพย์สินในตารางเดียว + ราคาตลาด (อ้างอิง · ไม่นับใน Net Worth)
  *   กรอกมูลค่าใหม่เฉพาะแถวที่เปลี่ยน (ช่องว่าง = ไม่บันทึก) · วันที่ / วิธีเดียวทั้งชุด · ปุ่ม "ราคาตลาด" ของแต่ละแถวบันทึกแยก
+ *   ทรัพย์สินที่มีส่วนประกอบ (29 ต.ค. 2026): กด "รายแถว" กางที่ดิน / อาคารในตาราง · กรอกเฉพาะแถวที่เปลี่ยน (ว่าง = เท่าเดิม)
+ *   หรือกรอกยอดรวม → ระบบแบ่งตามสัดส่วนครั้งก่อน
  */
 export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }: {
   rows: ValueRow[]; today: string; minDate: string; canWrite: boolean; shareNote: string | null;
@@ -33,13 +37,29 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
   const [method, setMethod] = useState("USER_ESTIMATE");
   const [notes, setNotes] = useState("");
   const [nv, setNv] = useState<Record<string, string>>({});
+  const [pv, setPv] = useState<Record<string, Record<string, string>>>({});   // asset → ส่วนประกอบ → มูลค่าใหม่
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, form) => {
     const r = await batchPropertyValues(prev, form);
-    if (r.ok) { setNv({}); setNotes(""); router.refresh(); }
+    if (r.ok) { setNv({}); setPv({}); setNotes(""); router.refresh(); }
     return r;
   }, {});
 
-  const chosen = rows.filter((r) => filled(nv[r.id]));
+  // รายแถว: กรอกบางแถว → แถวที่ว่างใช้มูลค่าเดิม (ต้องมีมูลค่าเดิมรายแถว) · ยอดรวม = ผลรวม
+  const subOf = (r: ValueRow) => Object.entries(pv[r.id] ?? {}).filter(([, v]) => filled(v));
+  const subTotal = (r: ValueRow) => {
+    const sub = pv[r.id] ?? {};
+    if (!subOf(r).length) return null;
+    if (r.parts.some((p) => !filled(sub[p.id]) && p.value == null)) return NaN;
+    return Math.round(r.parts.reduce((t, p) => t + (filled(sub[p.id]) ? n(sub[p.id]) : Number(p.value)), 0) * 100) / 100;
+  };
+  const newOf = (r: ValueRow) => { const st = subTotal(r); return st !== null ? String(st) : nv[r.id] ?? ""; };
+  const chosen = rows.filter((r) => filled(newOf(r)));
+  const incomplete = rows.filter((r) => Number.isNaN(subTotal(r)));
+  const payload = chosen.map((r) => (subOf(r).length
+    ? { asset_id: r.id, parts: r.parts.map((p) => ({ deed_id: p.id, value: filled(pv[r.id]?.[p.id]) ? n(pv[r.id][p.id]) : Number(p.value) })) }
+    : { asset_id: r.id, value: nv[r.id] }));
+  const setSub = (r: ValueRow, pid: string, v: string) => setPv({ ...pv, [r.id]: { ...(pv[r.id] ?? {}), [pid]: v } });
   const onSubmit = cf.guard(`บันทึกมูลค่าใหม่ ${chosen.length} รายการ ณ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   // ยอดรวม (บาท · ตามสัดส่วนของสมาชิกที่เลือก) · ราคาตลาดรวมเฉพาะรายการที่ประเมินแล้ว
   const nwTotal = rows.reduce((t, r) => t + Number(r.value ?? 0) * r.factor, 0);
@@ -93,20 +113,32 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
               const v = Number(r.value ?? 0);
               const nwStale = !r.date || r.date < addDays(today, -365);
               return (
-                <tr key={r.id} className={`align-top ${filled(nv[r.id]) ? "bg-blue-50/40" : ""}`}>
+                <Fragment key={r.id}>
+                <tr className={`align-top ${filled(newOf(r)) ? "bg-blue-50/40" : ""}`}>
                   <td className="px-3 py-2">
                     <Link href={`/property/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
                     <div className="text-xs text-slate-500">{r.typeLabel} · {r.currency}</div>
+                    {r.parts.length > 1 && (
+                      <button type="button" onClick={() => setOpen({ ...open, [r.id]: !open[r.id] })} className="mt-1 text-xs text-blue-700 hover:underline">
+                        {open[r.id] ? "▾ ซ่อนรายแถว" : `▸ รายแถว (${r.parts.length})`}</button>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                     {r.value == null ? "-" : money(r.value, r.currency, 0)}
                     <div className={`text-xs ${nwStale ? "text-amber-700" : "text-slate-400"}`}>{r.date ? thDate(r.date) : "ยังไม่มีมูลค่า"}{nwStale && r.date && " · เกิน 12 เดือน"}</div>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <input inputMode="decimal" value={nv[r.id] ?? ""} disabled={!canWrite} placeholder={r.currency} aria-label={`มูลค่าใหม่ ${r.name}`}
-                      onChange={(e) => setNv({ ...nv, [r.id]: e.target.value })} className={`w-36 text-right ${small}`} />
-                    {filled(nv[r.id]) && r.value != null && !Number.isNaN(n(nv[r.id])) && (
-                      <div className={`text-xs tabular-nums ${n(nv[r.id]) >= v ? "text-emerald-700" : "text-red-700"}`}>{diffText(n(nv[r.id]) - v, v)}</div>
+                    {subOf(r).length ? (
+                      <div className="w-36 py-1 text-right font-medium tabular-nums">{Number.isNaN(subTotal(r)) ? "-" : money(subTotal(r), undefined, 2)}</div>
+                    ) : (
+                      <input inputMode="decimal" value={nv[r.id] ?? ""} disabled={!canWrite} placeholder={r.currency} aria-label={`มูลค่าใหม่ ${r.name}`}
+                        onChange={(e) => setNv({ ...nv, [r.id]: e.target.value })} className={`w-36 text-right ${small}`} />
+                    )}
+                    {filled(newOf(r)) && r.value != null && !Number.isNaN(n(newOf(r))) && (
+                      <div className={`text-xs tabular-nums ${n(newOf(r)) >= v ? "text-emerald-700" : "text-red-700"}`}>{diffText(n(newOf(r)) - v, v)}</div>
+                    )}
+                    {!subOf(r).length && filled(nv[r.id]) && r.parts.some((p) => p.value != null) && (
+                      <div className="text-xs text-slate-400">แบ่งรายแถวตามสัดส่วนเดิม</div>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
@@ -134,6 +166,20 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
                     )}
                   </td>
                 </tr>
+                {open[r.id] && r.parts.map((p) => (
+                  <tr key={p.id} className="bg-slate-50/60 text-xs">
+                    <td className="py-1.5 pl-8 pr-3">{p.label}<span className="text-slate-400"> · {p.type === "LAND" ? "ที่ดิน" : p.type === "BUILDING" ? "อาคาร" : "สิ่งปลูกสร้างอื่น"}
+                      {p.area != null && ` · ${p.area.toLocaleString("en-US")} ตร.ว.`}</span></td>
+                    <td className="px-3 text-right tabular-nums text-slate-600">{p.value != null ? money(p.value, undefined, 0) : "-"}</td>
+                    <td className="px-3 py-1 text-right">
+                      <input inputMode="decimal" value={pv[r.id]?.[p.id] ?? ""} disabled={!canWrite || filled(nv[r.id])}
+                        placeholder={p.value != null ? "เท่าเดิม" : "ต้องกรอก"} aria-label={`มูลค่าใหม่ ${r.name} ${p.label}`}
+                        onChange={(e) => setSub(r, p.id, e.target.value)} className={`w-36 text-right ${small}`} />
+                    </td>
+                    <td colSpan={5}></td>
+                  </tr>
+                ))}
+                </Fragment>
               );
             })}
           </tbody>
@@ -162,13 +208,14 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
           <input type="hidden" name="date" value={date} />
           <input type="hidden" name="valuation_method" value={method} />
           <input type="hidden" name="notes" value={notes} />
-          <input type="hidden" name="rows" value={JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: nv[r.id] })))} />
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+          <button disabled={pending || chosen.length === 0 || incomplete.length > 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
             {pending ? "กำลังบันทึก…" : `บันทึกมูลค่า ${chosen.length} รายการ ณ ${thDate(date)}`}
           </button>
           {chosen.length > 0 && !pending && (
-            <button type="button" onClick={() => setNv({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
+            <button type="button" onClick={() => { setNv({}); setPv({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
           )}
+          {incomplete.length > 0 && <span className="text-sm text-amber-700">{incomplete.map((r) => r.name).join(", ")}: ครั้งก่อนไม่มีมูลค่ารายแถว ต้องกรอกให้ครบทุกแถว</span>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
           {state.ok && <span className="text-sm text-emerald-700">{state.ok}</span>}
         </form>

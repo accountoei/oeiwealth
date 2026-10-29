@@ -58,20 +58,44 @@ export async function payForAsset(_: TradeState, form: FormData): Promise<TradeS
   const building = buildingFromForm(form);
   if ("error" in building) return { error: building.error };
   const assetId = String(form.get("asset_id"));
-  const { data: mv, error } = await supabase.from("cash_movements").insert({
-    movement_date: str(form.get("date")), movement_type: "ASSET_PURCHASE", from_asset_id: bank,
-    to_asset_id: assetId, amount, fee: num(form.get("fee")), currency: b?.currency ?? "THB",
-    description: str(form.get("description")) ?? "จ่ายซื้อทรัพย์สิน",
-    // Property: มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (trigger a70_property_pay_value)
-    ...(addValue ? { metadata: { add_value: true } } : {}),
-  }).select("id").single();
-  if (error) return { error: friendlyError(error.message) };
+  const pick = property ? componentFromForm(form) : null;
+  if (pick && "error" in pick) return { error: pick.error };
+  // Property: pay_property = รายการจ่าย (+ แถวส่วนประกอบใหม่) ในคราวเดียว · มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (trigger a70_property_pay_value)
+  const { data: mv, error } = property
+    ? await supabase.rpc("pay_property", {
+        p_asset_id: assetId, p_bank_asset_id: bank, p_date: str(form.get("date")), p_amount: amount, p_fee: num(form.get("fee")),
+        p_description: str(form.get("description")), p_add_value: addValue, p_component_id: pick?.id ?? null, p_new_component: pick?.create ?? null,
+      }).then((r) => ({ data: r.data ? { id: String(r.data) } : null, error: r.error }))
+    : await supabase.from("cash_movements").insert({
+        movement_date: str(form.get("date")), movement_type: "ASSET_PURCHASE", from_asset_id: bank,
+        to_asset_id: assetId, amount, fee: num(form.get("fee")), currency: b?.currency ?? "THB",
+        description: str(form.get("description")) ?? "จ่ายซื้อทรัพย์สิน",
+      }).select("id").single();
+  if (error || !mv) return { error: friendlyError(error?.message ?? "บันทึกไม่สำเร็จ") };
   refresh(form);
-  if (property && building.isBuilding) {
+  if (property && !pick?.id && !pick?.create && building.isBuilding) {
     const e2 = await setPaymentBuilding(supabase, assetId, mv.id, building, str(form.get("description")));
     if (e2) return { error: `บันทึกการจ่ายแล้ว แต่ตั้งเป็นอาคารไม่สำเร็จ (${e2}) — แก้ที่รายการจ่ายได้` };
   }
   return { ok: addValue ? "บันทึกการจ่ายเงิน + เพิ่มมูลค่าแล้ว" : "บันทึกการจ่ายเงินแล้ว · ถ้ามูลค่าทรัพย์สินเปลี่ยน ให้อัปเดตมูลค่าด้วย" };
+}
+
+/** Property: รายการจ่ายนี้เป็นของส่วนประกอบไหน (id) หรือสร้างแถวใหม่ (create) · ไม่ระบุ = {} */
+function componentFromForm(form: FormData): { id?: string; create?: Record<string, string | number | null> } | { error: string } {
+  const pick = str(form.get("component"));
+  if (!pick) return {};
+  if (!pick.startsWith("new:")) return { id: pick };
+  const type = pick.slice(4);
+  const g = (k: string) => str(form.get(`nc_${k}`))?.replace(/,/g, "") ?? null;
+  if (type === "LAND") {
+    const rai = g("rai"), ngan = g("ngan"), wa = g("wa");
+    const area = rai || ngan || wa ? (Number(rai) || 0) * 400 + (Number(ngan) || 0) * 100 + (Number(wa) || 0) : null;
+    if (area !== null && !(area >= 0)) return { error: "เนื้อที่ต้องเป็นตัวเลข" };
+    return { create: { type, title_deed_no: g("title_deed_no"), land_no: g("land_no"), land_area_sq_wa: area } };
+  }
+  const years = g("years") ? Number(g("years")) : 20;
+  if (!Number.isInteger(years) || years < 1 || years > 100) return { error: "อายุใช้งานต้องเป็นจำนวนปีเต็ม 1–100" };
+  return { create: { type, label: str(form.get("nc_label")), building_area_sqm: g("area"), useful_life_years: years } };
 }
 
 type Building = { isBuilding: boolean; years: number };
@@ -112,12 +136,15 @@ export async function updatePropertyPayment(_: TradeState, form: FormData): Prom
   const { data: cur } = await supabase.from("cash_movements").select("metadata").eq("id", id).maybeSingle();
   const meta = { ...((cur?.metadata as Record<string, unknown> | null) ?? {}) };
   if (form.get("add_value") === "on") meta.add_value = true; else delete meta.add_value;
+  // เปลี่ยนแถวของรายการจ่าย (มูลค่ารายแถวที่ระบบเพิ่มให้ย้ายตามในฐานข้อมูล)
+  if (form.has("component")) { const c = str(form.get("component")); if (c && !c.startsWith("new:")) meta.component_id = c; else delete meta.component_id; }
   const { data, error } = await supabase.from("cash_movements").update({ movement_date: date, amount, description, metadata: meta })
     .eq("id", id).eq("movement_type", "ASSET_PURCHASE").select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   refresh(form);
-  const e2 = await setPaymentBuilding(supabase, String(form.get("asset_id")), id, building, description);
+  // เลือกแถวแล้ว = อาคาร / ไม่ใช่อาคาร ตามแถวนั้น (ไม่ใช้ติ๊กอาคารแบบเดิม)
+  const e2 = await setPaymentBuilding(supabase, String(form.get("asset_id")), id, meta.component_id ? { isBuilding: false, years: 20 } : building, description);
   if (e2) return { error: `บันทึกรายการจ่ายแล้ว แต่ตั้งอาคารไม่สำเร็จ (${e2})` };
   return { ok: "บันทึกรายการจ่ายแล้ว" };
 }

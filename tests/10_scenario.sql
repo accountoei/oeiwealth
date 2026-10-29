@@ -3636,6 +3636,47 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.property_deeds WHERE source_movemen
             'ส่วนประกอบ: เอาติ๊กเพิ่มมูลค่าออก → แถวที่ระบบสร้างให้ถูกลบด้วย');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz24. Property: จ่ายเพิ่มเลือกแถว / แถวใหม่ · อัปเดตมูลค่าหลายรายการ (แบ่งตามสัดส่วนครั้งก่อน) (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT d.id AS deed_e FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT land_area_sq_wa AS area_e FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT (public.save_property_components(t.a('บ้าน A'),
+  format('[{"id":"%s","type":"LAND","land_area_sq_wa":"%s","value":"6000000"},{"type":"BUILDING","label":"บ้าน","useful_life_years":"25","value":"2000000"}]',
+         :'deed_e', :'area_e')::jsonb, '{}', format('{"date":"%s","method":"APPRAISAL"}', current_date - 3)::jsonb))[2] AS bld_e \gset
+SELECT public.batch_property_values(current_date - 2, 'APPRAISAL', null, format('[{"asset_id":"%s","value":"10000000"}]', t.a('บ้าน A'))::jsonb) AS n_b \gset
+SELECT t.ok((SELECT current_value = 10000000 FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT sum(p.value) FILTER (WHERE p.deed_id = :'deed_e') = 7500000 AND sum(p.value) FILTER (WHERE p.deed_id = :'bld_e') = 2500000
+                   FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+                  WHERE v.asset_id = t.a('บ้าน A') AND v.valuation_date = current_date - 2 AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'อัปเดตมูลค่าหลายรายการ: ใส่ยอดรวม → แบ่งตามสัดส่วนครั้งก่อน (75 : 25)');
+SELECT public.batch_property_values(current_date - 1, 'APPRAISAL', null,
+  format('[{"asset_id":"%s","parts":[{"deed_id":"%s","value":7500000},{"deed_id":"%s","value":3000000}]}]', t.a('บ้าน A'), :'deed_e', :'bld_e')::jsonb) AS n_c \gset
+SELECT t.ok((SELECT current_value = 10500000 FROM public.assets WHERE id = t.a('บ้าน A')),
+            'อัปเดตมูลค่าหลายรายการ: ใส่รายแถว → ยอดรวม = ผลรวมรายแถว');
+SELECT public.pay_property(t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), current_date, 300000, null, 'ซื้อที่ดินแปลงข้าง', true, null,
+  '{"type":"LAND","title_deed_no":"N-9","land_area_sq_wa":"50"}') AS mv6 \gset
+SELECT id AS land_new FROM public.property_deeds WHERE source_movement_id = :'mv6' AND deleted_at IS NULL \gset
+SELECT t.ok((SELECT component_type = 'LAND' AND land_area_sq_wa = 50 FROM public.property_deeds WHERE id = :'land_new')
+            AND (SELECT land_area_sq_wa = :'area_e'::numeric + 50 FROM public.property_details WHERE asset_id = t.a('บ้าน A'))
+            AND (SELECT sum(p.value) FILTER (WHERE p.deed_id = :'land_new') = 300000 AND sum(p.value) = 10800000
+                   FROM public.asset_valuation_parts p JOIN public.asset_valuations v ON v.id = p.valuation_id
+                  WHERE v.source_movement_id = :'mv6' AND v.deleted_at IS NULL AND p.deleted_at IS NULL),
+            'จ่ายเพิ่ม: ซื้อที่ดินเพิ่ม → แถวที่ดินใหม่ + เนื้อที่รวมเพิ่ม + มูลค่าของแถวนั้น');
+UPDATE public.cash_movements SET metadata = metadata || jsonb_build_object('component_id', :'bld_e') WHERE id = :'mv6';
+SELECT t.ok((SELECT bool_and(p.deed_id = :'bld_e') FROM public.asset_valuation_parts p WHERE p.source_movement_id = :'mv6' AND p.deleted_at IS NULL)
+            AND (SELECT deleted_at IS NOT NULL FROM public.property_deeds WHERE id = :'land_new'),
+            'จ่ายเพิ่ม: เปลี่ยนแถวของรายการจ่าย → มูลค่าย้ายตาม · แถวที่สร้างจากรายการนี้ถูกลบ');
+SELECT t.ok((SELECT is_building AND depreciation_years = 25 FROM public.v_property_cost_lots WHERE movement_id = :'mv6'),
+            'ต้นทุนรายก้อน: รายการจ่ายที่ผูกกับอาคาร → หักค่าเสื่อมตามอายุของอาคารนั้น');
+SELECT public.pay_property(t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), current_date, 80000, null, 'ศาลา', false, null,
+  '{"type":"OTHER","label":"ศาลาริมน้ำ"}') AS mv7 \gset
+UPDATE public.cash_movements SET deleted_at = now() WHERE id = :'mv7';
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.property_deeds WHERE source_movement_id = :'mv7' AND deleted_at IS NULL),
+            'จ่ายเพิ่ม: ลบรายการจ่าย → แถวใหม่ที่สร้างพร้อมรายการนั้นถูกลบด้วย');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
