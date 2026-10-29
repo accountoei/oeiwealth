@@ -80,7 +80,7 @@ export default function MfaPage() {
         {mode === "verify" && <p className="text-sm text-slate-700">กรอกรหัส 6 หลักจากแอป Authenticator</p>}
         {mode !== "loading" && (
           <>
-            <input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoFocus value={code}
+            <input inputMode="numeric" data-code pattern="[0-9]{6}" maxLength={6} required autoFocus value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="123456"
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-center tracking-widest text-lg" />
             <button type="submit" disabled={busy || code.length !== 6}

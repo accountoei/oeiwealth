@@ -2,100 +2,129 @@
 
 import { useActionState, useState } from "react";
 import { savePropertyValuation, type ActionState } from "./actions";
-import { money, numOrZero } from "@/lib/format";
+import { diffText, money, numOrZero } from "@/lib/format";
 import { partsSum, splitByArea, type ValuePart } from "./valueParts";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
-export type DeedOpt = { id: string; label: string; area: number | null; type: "LAND" | "BUILDING" | "OTHER" };
-type Row = { key: string; type: ValuePart["type"]; deed_id?: string; label: string; value: string; source_movement_id?: string | null };
+export type DeedOpt = { id: string; label: string; area: number | null; type: "LAND" | "BUILDING" | "OTHER";
+  /** ราคาที่ได้มาของแถว (ต้นทุน + จ่ายเพิ่มที่เพิ่มมูลค่า) · null = ไม่ได้แยกรายแถว */ cost?: number | null };
+type Row = { key: string; type: ValuePart["type"]; deed_id?: string; label: string; area: number; cost: number | null;
+  /** มูลค่าในครั้งล่าสุด · null = ครั้งล่าสุดไม่ได้แยกรายแถว */ last: number | null; value: string; source_movement_id?: string | null };
 
-const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const pct = (d: number, base: number) => diffText(d, base);
 
 /**
- * ตีราคาใหม่ของ Property รายส่วนประกอบ (ตกลง 28–29 ต.ค. 2026) — Net Worth ใช้ยอดรวม
- *   แถว = ส่วนประกอบทุกแถว (ที่ดิน / อาคาร / อื่น ๆ · เพิ่มแถวที่ปุ่มแก้ไขของทรัพย์สิน)
- *   ใส่รายแถว → ระบบรวมให้ · หรือใส่ยอดรวมแล้วกด "เฉลี่ยตามเนื้อที่" (หักอาคาร / อื่น ๆ ที่ใส่เองก่อน)
- *   ไม่ใส่รายแถวเลย = มูลค่ารวมอย่างเดียว · ตั้งต้นจากมูลค่าล่าสุดของแต่ละแถว
+ * ปรับมูลค่าของ Property รายส่วนประกอบ (ตกลง 28–29 ต.ค. 2026) — Net Worth ใช้ยอดรวม
+ *   แถว = ส่วนประกอบทุกแถว · คอลัมน์ ราคาที่ได้มา · มูลค่าล่าสุด · มูลค่าใหม่ · ผลต่างจากราคาที่ได้มา (บาท / %)
+ *   มูลค่าใหม่ว่าง = ใช้มูลค่าล่าสุด · ใส่ยอดรวม → หักสิ่งปลูกสร้าง (ยอดใหม่ หรือยอดล่าสุด) แล้วแบ่งที่เหลือให้ที่ดินตามเนื้อที่ทันที (ไม่ต้องกดปุ่ม)
+ *   มูลค่าเดิมที่ไม่ได้ผูกแถว แต่ชื่อตรงกับแถวสิ่งปลูกสร้าง → รวมเข้าแถวนั้น (ข้อมูลจากบั๊กก่อน 29 ต.ค. 2026)
  */
-export default function ValuePartsForm({ assetId, currency, today, minDate, deeds, latest }: {
+export default function ValuePartsForm({ assetId, currency, today, minDate, deeds, latest, acqTotal = null, currentValue = null }: {
   assetId: string; currency: string; today: string; minDate: string; deeds: DeedOpt[];
   /** รายละเอียดของมูลค่าล่าสุด (ค่าตั้งต้นของแถว) */ latest: ValuePart[];
+  /** ราคาที่ได้มารวม (ใช้เมื่อไม่ได้แยกรายแถว) */ acqTotal?: number | null; /** มูลค่าล่าสุดรวม */ currentValue?: number | null;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(savePropertyValuation, {});
+  const hasLatest = latest.length > 0;
+  const ownerOf = (x: ValuePart) => x.deed_id && deeds.some((d) => d.id === x.deed_id) ? x.deed_id
+    : deeds.find((d) => d.type !== "LAND" && x.type !== "DEED" && !!x.label && d.label === x.label)?.id ?? null;
   const init = (): Row[] => [
     ...deeds.map((d) => {
-      const own = latest.filter((x) => x.deed_id === d.id);
-      const v = own.reduce((t, x) => t + x.value, 0);
-      return { key: `d${d.id}`, type: d.type === "LAND" ? "DEED" as const : d.type, deed_id: d.id, label: d.label, value: own.length ? fmt(v) : "" };
+      const own = latest.filter((x) => ownerOf(x) === d.id);
+      return { key: `d${d.id}`, type: d.type === "LAND" ? "DEED" as const : d.type, deed_id: d.id, label: d.label, area: d.area ?? 0,
+        cost: d.cost ?? null, last: hasLatest ? round2(own.reduce((t, x) => t + x.value, 0)) : null, value: "" };
     }),
-    // รายส่วนเดิมที่ยังไม่ผูกกับแถวใด (ถ้ามี) → คงไว้ให้แก้ได้
-    ...latest.filter((x) => !x.deed_id || !deeds.some((d) => d.id === x.deed_id)).map((x, i) => ({ key: `x${i}`, type: x.type, label: x.label ?? "",
-      value: fmt(x.value), source_movement_id: x.source_movement_id ?? null })),
+    // รายส่วนเดิมที่ยังไม่ผูกกับแถวใด (ถ้ามี) → คงไว้ให้แก้ / ลบได้
+    ...latest.filter((x) => !ownerOf(x)).map((x, i) => ({ key: `x${i}`, type: x.type, label: x.label ?? "", area: 0, cost: null, last: x.value,
+      value: "", source_movement_id: x.source_movement_id ?? null })),
   ];
   const [rows, setRows] = useState<Row[]>(init);
   const [total, setTotal] = useState("");
   const set = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const filled = rows.filter((r) => r.value.trim() !== "");
-  const sum = partsSum(filled.map((r) => ({ value: numOrZero(r.value) })));
-  const hasParts = filled.length > 0;
-  const deedRows = rows.filter((r) => r.type === "DEED");
-  const fixed = (r: Row) => !!r.deed_id;
-  const spread = () => {
-    const others = partsSum(rows.filter((r) => r.type !== "DEED").map((r) => ({ value: numOrZero(r.value) })));   // อาคาร / อื่น ๆ ใส่เอง
-    const vals = splitByArea(numOrZero(total) - others, deedRows.map((r) => deeds.find((d) => d.id === r.deed_id)?.area ?? 0));
-    setRows((rs) => rs.map((r) => { const i = deedRows.findIndex((x) => x.key === r.key); return i >= 0 ? { ...r, value: fmt(vals[i]) } : r; }));
-  };
-  const parts: ValuePart[] = filled.map((r) => ({ type: r.type, deed_id: r.deed_id ?? null, label: r.label || null, value: numOrZero(r.value),
-    source_movement_id: r.source_movement_id ?? null }));
+
+  const typed = (r: Row) => r.value.trim() !== "";
+  const totalTyped = total.trim() !== "";
+  // แถวที่รับส่วนที่เหลือของยอดรวม: ที่ดิน (แบ่งตามเนื้อที่) · ไม่มีที่ดิน → แถวเดียวที่ไม่ได้ใส่ยอด
+  const landRows = rows.filter((r) => r.type === "DEED");
+  const lands = landRows.length > 0 ? landRows : rows.filter((r) => !typed(r)).length === 1 ? rows.filter((r) => !typed(r)) : [];
+  const byTotal = totalTyped && lands.length > 0;
+  // มูลค่าใหม่ของแต่ละแถว: ใส่เอง > (ใส่ยอดรวม → ที่ดินเฉลี่ยตามเนื้อที่) > มูลค่าล่าสุด
+  const eff: Record<string, number | null> = {};
+  for (const r of rows) eff[r.key] = typed(r) ? numOrZero(r.value) : r.last;
+  if (byTotal) {
+    const others = round2(rows.filter((r) => !lands.includes(r)).reduce((t, r) => t + (eff[r.key] ?? 0), 0));
+    const share = splitByArea(round2(numOrZero(total) - others), lands.map((r) => r.area));
+    lands.forEach((r, i) => { eff[r.key] = share[i]; });
+  }
+  const touched = totalTyped || rows.some(typed);
+  // ใส่ยอดรวมแต่แบ่งให้แถวไม่ได้ (ไม่มีที่ดิน และไม่ได้ใส่หลายแถว) → ยอดรวมอย่างเดียว ไม่ส่งรายแถว
+  const complete = rows.length > 0 && rows.every((r) => eff[r.key] != null) && !(totalTyped && !byTotal && rows.some((r) => !typed(r)));
+  // ส่งรายแถวเมื่อทุกแถวมียอด · ไม่ครบ (ครั้งก่อนเป็นยอดรวม และใส่ไม่ครบ) = ยอดรวมอย่างเดียว
+  const parts: ValuePart[] = complete ? rows.map((r) => ({ type: r.type, deed_id: r.deed_id ?? null, label: r.label || null, value: eff[r.key]!,
+    source_movement_id: r.source_movement_id ?? null })) : [];
+  const newTotal = complete ? partsSum(parts) : totalTyped ? numOrZero(total) : null;
+  const mismatch = totalTyped && complete && !byTotal && Math.abs(numOrZero(total) - (newTotal ?? 0)) > 0.005;
+  const costTotal = rows.some((r) => r.cost != null) ? round2(rows.reduce((t, r) => t + (r.cost ?? 0), 0)) : acqTotal;
+  const negLand = byTotal && lands.some((r) => (eff[r.key] ?? 0) < 0);
+  const diffCell = (v: number | null, cost: number | null) => (v == null || !cost ? <td className="text-right text-slate-400">-</td> : (
+    <td className={`text-right text-xs tabular-nums ${v >= cost ? "text-emerald-700" : "text-red-600"}`}>{pct(v - cost, cost)}</td>));
 
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="parts" value={JSON.stringify(parts)} />
-      {hasParts && <input type="hidden" name="value" value={String(sum)} />}
+      {newTotal != null && <input type="hidden" name="value" value={String(newTotal)} />}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[30rem] text-sm">
-          <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">ส่วนประกอบ</th><th className="w-48 text-right">มูลค่า ({currency})</th><th className="w-12"></th></tr></thead>
+        <table className="w-full min-w-[46rem] text-sm">
+          <thead className="text-left text-xs text-slate-500">
+            <tr><th className="py-1">ส่วนประกอบ</th><th className="w-32 text-right">ราคาที่ได้มา</th><th className="w-32 text-right">มูลค่าล่าสุด</th>
+              <th className="w-40 pl-2 text-right">มูลค่าใหม่ ({currency})</th><th className="w-40 text-right">ผลต่างจากราคาที่ได้มา</th><th className="w-10"></th></tr>
+          </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map((r) => (
-              <tr key={r.key}>
-                <td className="py-1.5 pr-2">
-                  {fixed(r) ? <>{r.label}{(() => { const a = deeds.find((d) => d.id === r.deed_id)?.area; return a ? <span className="text-xs text-slate-400"> · {a.toLocaleString("en-US")} ตร.ว.</span> : null; })()}</>
-                    : <input value={r.label} onChange={(e) => set(r.key, { label: e.target.value })} aria-label="ชื่อส่วน" className={`w-full ${input}`} />}
-                  {r.type !== "DEED" && <span className="block text-xs text-slate-400">{"สิ่งปลูกสร้าง"}</span>}
-                </td>
-                <td><input value={r.value} onChange={(e) => set(r.key, { value: e.target.value })} onBlur={(e) => e.target.value.trim() && set(r.key, { value: fmt(numOrZero(e.target.value)) })}
-                  inputMode="decimal" data-plain aria-label="มูลค่า" className={`w-full text-right tabular-nums ${input}`} /></td>
-                <td className="pl-2 text-right">{!fixed(r) &&
-                  <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="text-xs text-red-600 hover:underline">ลบ</button>}</td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const auto = byTotal && lands.includes(r);
+              return (
+                <tr key={r.key}>
+                  <td className="py-1.5 pr-2">
+                    {r.deed_id ? <>{r.label}{r.area > 0 && <span className="text-xs text-slate-400"> · {r.area.toLocaleString("en-US")} ตร.ว.</span>}</>
+                      : <input value={r.label} onChange={(e) => set(r.key, { label: e.target.value })} aria-label="ชื่อส่วน" className={`w-full ${input}`} />}
+                    {r.type !== "DEED" && <span className="block text-xs text-slate-400">สิ่งปลูกสร้าง{!r.deed_id && " · ยังไม่ผูกแถว"}</span>}
+                  </td>
+                  <td className="text-right tabular-nums text-slate-600">{r.cost != null ? money(r.cost, undefined, 0) : "-"}</td>
+                  <td className="text-right tabular-nums text-slate-600">{r.last != null ? money(r.last, undefined, 0) : "-"}</td>
+                  <td className="pl-2">{auto
+                    ? <div className="px-3 py-2 text-right tabular-nums text-blue-700">{money(eff[r.key], undefined, 2)}</div>
+                    : <input value={r.value} onChange={(e) => set(r.key, { value: e.target.value })} inputMode="decimal" aria-label="มูลค่าใหม่"
+                        placeholder={r.last != null ? money(r.last, undefined, 2) : ""} className={`w-full ${input}`} />}</td>
+                  {diffCell(eff[r.key], r.cost)}
+                  <td className="pl-2 text-right">{!r.deed_id &&
+                    <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="text-xs text-red-600 hover:underline">ลบ</button>}</td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot className="border-t-2 border-slate-200">
-            <tr><td className="py-2 font-medium">มูลค่ารวม (นับใน Net Worth)</td>
-              <td className="text-right">{hasParts
-                ? <span className="font-semibold tabular-nums">{money(sum, currency)}</span>
-                : <input name="value" required value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" data-plain aria-label="มูลค่ารวม"
-                    className={`w-full text-right tabular-nums ${input}`} />}</td><td></td></tr>
+            <tr className="align-top">
+              <td className="py-2 font-medium">มูลค่ารวม (นับใน Net Worth)</td>
+              <td className="py-2 text-right tabular-nums">{costTotal != null ? money(costTotal, undefined, 0) : "-"}</td>
+              <td className="py-2 text-right tabular-nums">{currentValue != null ? money(currentValue, undefined, 0) : "-"}</td>
+              <td className="pl-2 pt-1">
+                <input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" aria-label="มูลค่ารวมใหม่" required={!touched || !complete}
+                  placeholder={complete && !byTotal ? money(newTotal, undefined, 2) : "ใส่ยอดรวม"} className={`w-full font-semibold ${input}`} />
+              </td>
+              {diffCell(newTotal, costTotal)}
+              <td></td>
+            </tr>
           </tfoot>
         </table>
       </div>
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        {deedRows.length > 0 && (
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-500">ใส่ยอดรวม</span>
-            <input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" data-plain aria-label="ยอดรวมสำหรับเฉลี่ย"
-              className={`w-40 text-right tabular-nums ${input}`} />
-            <button type="button" onClick={spread} disabled={!numOrZero(total)} className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">
-              เฉลี่ยให้โฉนดตามเนื้อที่</button>
-          </span>
-        )}
-        {hasParts && <button type="button" onClick={() => setRows((rs) => rs.filter(fixed).map((r) => ({ ...r, value: "" })))}
-          className="text-xs text-slate-500 underline">ล้างรายแถว (ใส่ยอดรวมอย่างเดียว)</button>}
-      </div>
-      <p className="text-xs text-slate-500">ใส่ทีละแถวแล้วระบบรวมให้ หรือใส่ยอดรวมแล้วกดเฉลี่ย (หักอาคาร / สิ่งปลูกสร้างที่ใส่เองก่อน ที่เหลือแบ่งให้ที่ดินตามเนื้อที่ · แก้รายแถวได้) · ไม่ใส่รายแถว = มูลค่ารวมอย่างเดียว · เพิ่มที่ดิน / อาคารที่ปุ่ม &ldquo;แก้ไข&rdquo; ของทรัพย์สิน</p>
+      <p className="text-xs text-slate-500">ใส่มูลค่าใหม่รายแถว (ว่าง = เท่ามูลค่าล่าสุด) แล้วระบบรวมให้ · หรือใส่ยอดรวม → หักสิ่งปลูกสร้าง (ยอดใหม่ที่ใส่ หรือยอดล่าสุด) ที่เหลือแบ่งให้ที่ดินตามเนื้อที่ทันที (ตัวเลขสีน้ำเงิน)
+        · ผลต่าง = มูลค่าใหม่ − ราคาที่ได้มา (% ของราคาที่ได้มา)</p>
+      {mismatch && <p className="text-sm text-amber-700">ยอดรวมที่ใส่ ({money(numOrZero(total), undefined, 2)}) ไม่เท่าผลรวมรายแถว ({money(newTotal, undefined, 2)}) · ระบบจะใช้ผลรวมรายแถว — แก้ยอดรวมหรือล้างช่องยอดรวม</p>}
+      {negLand && <p className="text-sm text-amber-700">ยอดรวมน้อยกว่ามูลค่าสิ่งปลูกสร้าง · ที่ดินติดลบ — ใส่มูลค่าสิ่งปลูกสร้างใหม่ หรือแก้ยอดรวม</p>}
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">ณ วันที่<input name="valuation_date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block w-full ${input}`} /></label>
         <label className="text-sm">วิธีประเมิน
@@ -107,7 +136,7 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
         <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" className={`mt-1 block w-full ${input}`} /></label>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกมูลค่า"}</button>
+        <button disabled={pending || negLand || mismatch || (!touched && !totalTyped)} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกมูลค่า"}</button>
         {state.error && <p className="text-sm text-red-600">{state.error}</p>}
         {state.ok && <p className="text-sm text-emerald-700">{state.ok}</p>}
       </div>

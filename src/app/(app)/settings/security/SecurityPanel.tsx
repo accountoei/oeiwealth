@@ -105,7 +105,7 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
             <img src={enroll.qr} alt="QR Code" className="h-44 w-44 rounded border border-slate-200" />
             <p className="break-all text-xs text-slate-500">ถ้าสแกนไม่ได้ ใส่รหัสนี้ในแอป: {enroll.secret}</p>
             <div className="flex gap-2">
-              <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" placeholder="รหัส 6 หลัก" className={input} />
+              <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" data-code placeholder="รหัส 6 หลัก" className={input} />
               <button disabled={busy} className={btn}>ยืนยัน</button>
               <button type="button" onClick={() => setEnroll(null)} className="text-sm text-slate-500">ยกเลิก</button>
             </div>

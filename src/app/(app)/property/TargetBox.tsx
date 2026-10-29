@@ -42,8 +42,9 @@ export default function TargetBox({ currency, target, unit, nwValue, lots }: {
           {line(`ดอกเบี้ย ${Number(t!.rate_pct ?? 0)}% ต่อปี${t!.rate_source === "ASSET" ? " (แปลงนี้)" : t!.rate_source === "FAMILY" ? " (ครอบครัว)" : ""}`, `+${money(t!.interest_total)}`)}
           {Number(t!.depreciation_total) > 0 && line("หักค่าเสื่อมสิ่งปลูกสร้าง", `−${money(t!.depreciation_total)}`)}
           {carrying != null && min - carrying > 0.005 && line("ค่าใช้จ่ายขาย (จากราคาตลาดครั้งล่าสุด)", `+${money(min - carrying)}`)}
-          {line(nwValue >= min ? "มูลค่าล่าสุดสูงกว่าราคาขายขั้นต่ำ" : "มูลค่าล่าสุดต่ำกว่าราคาขายขั้นต่ำ", diffText(nwValue - min, min),
-            nwValue >= min ? "text-emerald-700 font-medium" : "text-red-600 font-medium")}
+          {/* เทียบกับมูลค่าล่าสุด: ราคาขายขั้นต่ำสูง / ต่ำกว่ามูลค่าล่าสุดกี่ % (ตกลง 29 ต.ค. 2026) */}
+          {nwValue > 0 && line(min > nwValue ? "ราคาขายขั้นต่ำสูงกว่ามูลค่าล่าสุด" : "ราคาขายขั้นต่ำต่ำกว่ามูลค่าล่าสุด", diffText(min - nwValue, nwValue),
+            min > nwValue ? "text-red-600 font-medium" : "text-emerald-700 font-medium")}
           {line("รายได้ − ค่าใช้จ่ายที่บันทึกแล้ว (ไม่หัก)", `${Number(t!.net_income_thb) < 0 ? "−" : ""}${money(Math.abs(Number(t!.net_income_thb)), "THB")}`, "text-slate-600")}
         </dl>
       </>)}

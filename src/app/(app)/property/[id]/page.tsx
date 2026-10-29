@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  UTIL_LABEL, addDays, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
+  UTIL_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -100,7 +100,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("asset_valuation_parts").select("valuation_id,part_type,deed_id,label,value,sort_order,source_movement_id")
       .eq("asset_id", id).is("deleted_at", null).order("sort_order"),
     // ขายบางแถว / รื้อถอน (ยกเลิกได้เฉพาะครั้งล่าสุด)
-    supabase.from("property_component_events").select("id,event_type,event_date,price,fee,book_value,gain,whole,created_at")
+    supabase.from("property_component_events").select("id,event_type,event_date,price,fee,book_value,gain,whole,valuation_id,created_at")
       .eq("asset_id", id).is("deleted_at", null).order("event_date", { ascending: false }).order("created_at", { ascending: false }),
   ]);
   if (!a || !pd) notFound();
@@ -137,6 +137,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const lands = comps.filter((c) => c.component_type === "LAND");
   const compLabel = new Map(allComps.map((c, i) => [c.id, compName(c, i)]));
   const compOpts: CompOpt[] = comps.map((c) => ({ id: c.id, label: compLabel.get(c.id) ?? "", type: c.component_type }));
+  // (ราคาที่ได้มารายแถว ใส่หลังโหลดรายการจ่ายเพิ่ม · ดู deedOptsCost)
   const deedOpts: DeedOpt[] = comps.map((c) => ({ id: c.id, label: compLabel.get(c.id) ?? "", type: c.component_type,
     area: c.land_area_sq_wa != null ? Number(c.land_area_sq_wa) : null }));
   const partsKey = `${comps.map((d) => d.id).join(",")}|${vals?.[0]?.id ?? ""}`;   // เพิ่มส่วนประกอบ / มูลค่าใหม่ → ตั้งแถวฟอร์มใหม่
@@ -166,7 +167,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const vacancyHistory = ((pd.vacancy_history ?? []) as { from: string; to: string; plan: string | null }[]).slice().reverse();
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }] = await Promise.all([
+  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -179,15 +180,37 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
     supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
       .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
-    // จ่ายเพิ่มที่ผูกกับส่วนประกอบ → แสดงใต้ต้นทุนของแถวนั้น
-    supabase.from("cash_movements").select("amount,currency,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
-      .is("deleted_at", null).not("metadata->>component_id", "is", null),
+    // จ่ายเพิ่ม (ซื้อ / ต่อเติม) → ราคาที่ได้มา · ผูกส่วนประกอบ → แสดงใต้ต้นทุนของแถวนั้น
+    supabase.from("cash_movements").select("amount,currency,movement_date,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
+      .is("deleted_at", null),
+    // ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026)
+    supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes")
+      .eq("related_asset_id", id).is("property_utility_id", null).is("source_fee_side", null).is("insurance_schedule_line_id", null)
+      .is("liability_id", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
   ]);
-  const paidByComp = ((payRows ?? []) as { amount: number; currency: string; metadata: { component_id?: string } | null }[])
-    .filter((p) => p.currency === a.currency && p.metadata?.component_id)
+  type PayRow = { amount: number; currency: string; movement_date: string; metadata: { component_id?: string; add_value?: boolean | string } | null };
+  // จ่ายเพิ่มเป็นต้นทุนเสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · รายการเก่าที่ไม่ได้ติ๊ก = ไม่นับเป็นต้นทุน
+  const addPays = ((payRows ?? []) as PayRow[]).filter((p) => p.currency === a.currency && String(p.metadata?.add_value) === "true");
+  const paidByComp = addPays.filter((p) => p.metadata?.component_id)
     .reduce<Record<string, number>>((m, p) => ({ ...m, [p.metadata!.component_id!]: (m[p.metadata!.component_id!] ?? 0) + Number(p.amount) }), {});
   // แถวที่มีรายการจ่ายผูกอยู่ (ทุกสกุล) → ลบ / แก้ต้นทุนในฟอร์มแก้ไขไม่ได้ (ตกลง 29 ต.ค. 2026)
-  const paidComp = new Set(((payRows ?? []) as { metadata: { component_id?: string } | null }[]).map((p) => p.metadata?.component_id).filter(Boolean));
+  const paidComp = new Set(((payRows ?? []) as PayRow[]).map((p) => p.metadata?.component_id).filter(Boolean));
+  const deedOptsCost: DeedOpt[] = deedOpts.map((d) => {
+    const c = comps.find((x) => x.id === d.id);
+    const v = (c?.acq_cost != null ? Number(c.acq_cost) : 0) + (paidByComp[d.id] ?? 0);
+    return { ...d, cost: c?.acq_cost != null || paidByComp[d.id] != null ? v : null };
+  });
+  // ราคาที่ได้มา (ณ วันที่ได้มา + จ่ายเพิ่ม) · ค่าใช้จ่ายสะสม (ครั้งเดียว + ประจำ) ในกล่องมูลค่า
+  const acqAll = a.acquisition_cost != null || addPays.length > 0 ? Number(a.acquisition_cost ?? 0) + addPays.reduce((t, p) => t + Number(p.amount), 0) : null;
+  const oneOff = (oneOffRows ?? []) as { id: string; date: string; description: string | null; amount: number; currency: string;
+    paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; notes: string | null }[];
+  const spent = [...oneOff, ...((costPaid ?? []) as { date: string; amount: number; currency: string }[])].filter((e) => e.currency === a.currency);
+  const spentSum = spent.reduce((t, e) => t + Number(e.amount), 0);
+  const spentLast = spent.reduce((d, e) => (e.date > d ? e.date : d), "");
+  // ประวัติมูลค่า: แก้ไม่ได้ · ลบได้เฉพาะครั้งล่าสุดที่บันทึกเอง (ไม่ใช่จากจ่ายเพิ่ม / ขาย / รื้อถอน) และไม่ใช่มูลค่าเดียว
+  const eventVals = new Set(((eventRows ?? []) as { valuation_id: string | null }[]).map((e) => e.valuation_id).filter(Boolean));
+  const v0 = vals?.[0];
+  const deletableVal = v0 && (vals?.length ?? 0) > 1 && !v0.source_movement_id && v0.notes !== "ราคาขาย" && !eventVals.has(v0.id) ? v0.id as string : null;
   type LeaseExtra = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
@@ -312,17 +335,24 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
               ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}
             </div>
-            {a.acquisition_cost != null && (
-              <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
+            {acqAll != null && (
+              <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(acqAll, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}
+                {acqAll > 0 && Number(a.current_value ?? 0) > 0 && <span> · {diffText(Number(a.current_value) - acqAll, acqAll)}</span>}</div>
+            )}
+            {spentSum > 0 && (
+              <div className="mt-0.5 text-xs text-slate-500"><a href="#expenses" className="hover:underline">ค่าใช้จ่ายสะสม {money(spentSum, undefined, 0)}</a>
+                {spentLast && ` (ล่าสุด ${thDate(spentLast)})`}</div>
             )}
             {/* ปุ่มเดียว "ปรับมูลค่า / ประวัติ": อัปเดตมูลค่า + ประวัติตารางเดียว (เงินจ่าย / รับ · มูลค่าเปลี่ยน · ตกลง 29 ต.ค. 2026) */}
             <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
               paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="ปรับมูลค่า / ประวัติ" flow={Object.fromEntries(compLabel)}
+              deletableValuation={deletableVal}
               paymentEditor={(m) => (
                 <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value} components={compOpts} />)}
               valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value), detail: partText(v.id) || null }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
               valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
-              valuationForm={canWrite && a.status === "ACTIVE" ? <ValuePartsForm key={partsKey} assetId={id} currency={a.currency} today={today} minDate={goLive} deeds={deedOpts} latest={latestParts} /> : undefined} />
+              valuationForm={canWrite && a.status === "ACTIVE" ? <ValuePartsForm key={partsKey} assetId={id} currency={a.currency} today={today} minDate={goLive} deeds={deedOptsCost} latest={latestParts}
+                acqTotal={acqAll} currentValue={a.current_value != null ? Number(a.current_value) : null} /> : undefined} />
             {/* ราคาขายขั้นต่ำที่คุ้ม (เทียบมูลค่าล่าสุด) ก่อนราคาตลาด (เทียบราคาขายขั้นต่ำ) · ตกลง 29 ต.ค. 2026 */}
             <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null} nwValue={Number(a.current_value ?? 0)}
               unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)}
@@ -645,17 +675,49 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         )}
       </section>
 
-      {/* ---------------- ค่าใช้จ่ายประจำ / สาธารณูปโภค ---------------- */}
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+      {/* ---------------- ค่าใช้จ่ายของทรัพย์สินนี้: ครั้งเดียว (ซ่อม / ปรับปรุง) + ประจำ / สาธารณูปโภค ---------------- */}
+      <section id="expenses" className="scroll-mt-20 space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ / สาธารณูปโภค</h2>
+            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายของทรัพย์สินนี้</h2>
+            <p className="text-xs text-slate-500">ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า และค่าใช้จ่ายประจำ · เข้าหน้า Income &amp; Expenses ไม่เพิ่มราคาที่ได้มา</p>
             {[...yearly.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
               <p key={ccy} className="text-xs text-slate-500">ประมาณการต่อปี <span className="font-medium tabular-nums text-slate-700">{money(v, ccy, 0)}</span></p>
             ))}
           </div>
-          {canWrite && <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} />}
+          {canWrite && <div className="flex flex-wrap items-start gap-2">
+            {a.status === "ACTIVE" && <RecordCostForm assetId={id} label="" expected={0} currency={a.currency} category="บ้าน / สาธารณูปโภค"
+              banks={bankList} cards={cards} persons={persons ?? []} today={today} minDate={goLive} />}
+            <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} />
+          </div>}
         </div>
+        {oneOff.length > 0 && (
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-slate-700">ค่าใช้จ่ายครั้งเดียว</h3>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1">วันที่จ่าย</th><th>รายการ</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {oneOff.map((e) => (
+                  <tr key={e.id} className="align-top">
+                    <td className="py-1.5">{thDate(e.date)}</td>
+                    <td>{e.description || "-"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
+                    <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
+                    <td className="pl-4 text-xs text-slate-600">
+                      {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
+                    </td>
+                    <td className="pl-2 text-right">
+                      {canWrite && <RowActions table="expense_items" id={e.id} paths={paths} canDelete={canDelete}
+                        fields={[{ name: "description", label: "รายการ", value: e.description, width: "w-48" }, ...propertyCostFields(e)]} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <h3 className="text-sm font-medium text-slate-700">ค่าใช้จ่ายประจำ / สาธารณูปโภค</h3>
         {utilities.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล · เพิ่มค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ พร้อมยอดประมาณเพื่อติดตามการจ่าย</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">

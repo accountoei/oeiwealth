@@ -373,9 +373,10 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
 type Card = { id: string; label: string; currency: string };
 type Person = { id: string; name: string };
 
-/** บันทึกจ่ายค่าใช้จ่ายประจำ 1 งวด (ใช้ทั้งหน้ารายละเอียดและหน้ารวม) */
-export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, defaultBank, defaultCard, rebillLeases = [] }: {
-  assetId: string; utilityId: string; period: string; label: string; expected: number; currency: string; category: string;
+/** บันทึกจ่ายค่าใช้จ่ายประจำ 1 งวด (ใช้ทั้งหน้ารายละเอียดและหน้ารวม)
+ *  ไม่มี utilityId = ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (เช่น ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026) */
+export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, minDate, defaultBank, defaultCard, rebillLeases = [] }: {
+  assetId: string; utilityId?: string; period?: string; label: string; expected: number; currency: string; category: string; minDate?: string;
   banks: Bank[]; cards: Card[]; persons: Person[]; today: string;
   /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ */ defaultBank?: string | null; defaultCard?: string | null;
   /** สัญญาเช่าที่ "เราจ่ายแล้วเรียกเก็บ" (มี → ติ๊กเรียกเก็บผู้เช่าไว้ให้) */ rebillLeases?: { id: string; label: string }[];
@@ -387,25 +388,31 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
   const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
   if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
+  const trigger = utilityId
+    ? <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>
+    : <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50")}>+ ค่าใช้จ่าย</button>;
   if (!open) return trigger;
-  if (mode === "dismiss") return present(trigger,
+  if (mode === "dismiss" && utilityId && period) return present(trigger,
     <DismissCostForm sourceType="PROPERTY" sourceId={utilityId} period={period} onBack={() => setMode("record")} onClose={() => setOpen(false)} />);
   const sameBanks = banks.filter((b) => b.currency === currency);
   const sameCards = cards.filter((c) => c.currency === currency);
   return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="utility_id" value={utilityId} />
-      <input type="hidden" name="cost_period" value={period} />
+      {utilityId && <input type="hidden" name="utility_id" value={utilityId} />}
+      {period && <input type="hidden" name="cost_period" value={period} />}
       <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="expense_category" value={category} />
-      <input type="hidden" name="description" value={label} />
+      {utilityId ? <input type="hidden" name="description" value={label} /> : (
+        <label className="text-xs">รายการ
+          <input name="description" required placeholder="เช่น ทำห้องน้ำ / ซ่อมหลังคา" className={`mt-1 block w-48 ${small}`} />
+        </label>
+      )}
       <label className="text-xs">ยอดที่จ่าย
         <input name="amount" required inputMode="decimal" defaultValue={expected > 0 ? String(expected) : ""} className={`mt-1 block w-28 ${small}`} />
       </label>
       <label className="text-xs">วันที่จ่าย
-        <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
+        <input name="date" type="date" required defaultValue={today} min={minDate || undefined} max={today} className={`mt-1 block ${small}`} />
       </label>
       <label className="text-xs">จ่ายจาก
         <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={`mt-1 block ${small}`}>
@@ -449,7 +456,7 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <BalanceGuard />
       <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
-      <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
+      {utilityId && <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>}
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));

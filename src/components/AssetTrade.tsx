@@ -241,12 +241,12 @@ export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, 
         <label className="text-sm">จำนวนเงิน ({currency}) *<input name="amount" required inputMode="decimal" className={input} /></label>
         <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>
         <BalanceGuard amount={["amount", "fee"]} />
-        <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ผ่อนดาวน์งวด 3 / ต่อเติมห้องครัว" className={input} /></label>
+        <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ซื้อที่ดินเพิ่ม / ต่อเติมห้องครัว" className={input} /></label>
         {property && <PropertyPayExtras components={components} allowNew />}
       </div>
       {list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
       <p className="text-xs text-slate-500">เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย) · {property
-        ? "ติ๊กเพิ่มมูลค่า → มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (แก้ / ลบรายการจ่ายแล้วมูลค่าปรับตาม)"
+        ? "เป็นต้นทุน (ราคาที่ได้มา) และมูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (แก้ / ลบรายการจ่ายแล้วมูลค่าปรับตาม) · ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า ให้บันทึกที่ \"+ ค่าใช้จ่าย\" ด้านล่างของหน้า"
         : "มูลค่าทรัพย์สินไม่เปลี่ยนเอง ให้อัปเดตมูลค่าหลังบันทึก"}</p>
     </Box>
   );
@@ -259,10 +259,10 @@ const TYPE_GROUPS: [string, CompOpt["type"][]][] = [["ที่ดิน", ["LAN
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 /** ช่องเพิ่มของ Property (ใช้ทั้งตอนจ่ายและตอนแก้รายการจ่าย · ตกลง 28–29 ต.ค. 2026)
- *  เพิ่มมูลค่าตามยอดนี้ · เป็นของส่วนประกอบไหน (ต้องเลือก · หรือแถวใหม่: ซื้อที่ดินเพิ่ม / อาคาร / สิ่งปลูกสร้าง · เฉพาะตอนจ่าย)
+ *  เพิ่มมูลค่าตามยอดนี้เสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · เป็นของส่วนประกอบไหน (ต้องเลือก · หรือแถวใหม่: ซื้อที่ดินเพิ่ม / อาคาร / สิ่งปลูกสร้าง · เฉพาะตอนจ่าย)
  *  อาคาร / สิ่งปลูกสร้าง = ตามชนิดของแถวที่เลือก (หักค่าเสื่อมตามอายุของแถวนั้น · ไม่มีติ๊กอาคารแยก ตกลง 29 ต.ค. 2026) */
-export function PropertyPayExtras({ addValue = true, showAddValue = true, components = [], component = "", allowNew = false }: {
-  addValue?: boolean; showAddValue?: boolean;
+export function PropertyPayExtras({ addValue = true, components = [], component = "", allowNew = false }: {
+  /** false = รายการเก่าที่ไม่ได้เพิ่มมูลค่า (คงไว้ตามเดิม) */ addValue?: boolean;
   components?: CompOpt[]; /** แถวที่เลือกไว้ (แก้รายการจ่าย) */ component?: string; /** ตอนจ่าย: สร้างแถวใหม่ได้ */ allowNew?: boolean;
 }) {
   const [pick, setPick] = useState(component);
@@ -273,7 +273,7 @@ export function PropertyPayExtras({ addValue = true, showAddValue = true, compon
     <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-sm md:col-span-4">
       <input type="hidden" name="property" value="1" />
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        {showAddValue && <label className="flex items-center gap-2"><input type="checkbox" name="add_value" defaultChecked={addValue} /> เพิ่มมูลค่าทรัพย์สินตามยอดนี้</label>}
+        {addValue && <input type="hidden" name="add_value" value="on" />}
         {(components.length > 0 || allowNew) && (
           <label className="flex items-center gap-2">เป็นของ *
             <select name="component" required value={pick} onChange={(e) => setPick(e.target.value)} className={small}>
