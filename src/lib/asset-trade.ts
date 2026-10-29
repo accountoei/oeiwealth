@@ -12,26 +12,66 @@ function refresh(form: FormData) {
   revalidatePath("/financial/cash", "layout");
 }
 
-/** ขายทรัพย์สิน (อสังหาฯ / สินทรัพย์อื่น / ธุรกิจ) → เงินเข้าบัญชี + สถานะขายแล้ว · Alternative ขายบางส่วนได้ (จำนวนน้อยกว่าที่ถือ) */
+type Receipt = { bank_asset_id: string; amount: number; note: string | null };
+type Cost = { label: string; amount: number; pay: "DEDUCT" | "BANK" | "CARD"; bank_asset_id?: string; card_id?: string };
+
+/** รับเงิน / ค่าใช้จ่ายหลายรายการจากฟอร์มขาย / รื้อถอน (ช่องซ่อน receipts / costs เป็น JSON · ตกลง 29 ต.ค. 2026)
+ *  ค่าใช้จ่าย pay: "DEDUCT" = หักจากเงินที่ได้รับ · "a:<id>" = จ่ายจากบัญชี · "c:<id>" = จ่ายจากบัตร */
+function linesFromForm(form: FormData): { receipts: Receipt[]; costs: Cost[] } | { error: string } {
+  const parse = (k: string): Record<string, unknown>[] | null => {
+    try { const v = JSON.parse(String(form.get(k) ?? "[]")); return Array.isArray(v) ? v : null; } catch { return null; }
+  };
+  const rs = parse("receipts"), cs = parse("costs");
+  if (!rs || !cs) return { error: "รายการรับเงิน / ค่าใช้จ่ายไม่ถูกต้อง" };
+  const amt = (v: unknown) => num(String(v ?? ""));
+  const receipts: Receipt[] = [];
+  for (const [i, r] of rs.entries()) {
+    const a = amt(r.amount);
+    if (!r.bank && (a === null || a === 0)) continue;   // แถวว่าง
+    if (a === null || Number.isNaN(a) || a <= 0) return { error: `รับเงินแถวที่ ${i + 1}: ใส่จำนวนเงินมากกว่า 0` };
+    if (!r.bank) return { error: `รับเงินแถวที่ ${i + 1}: เลือกบัญชีที่รับเงิน` };
+    receipts.push({ bank_asset_id: String(r.bank), amount: a, note: str(String(r.note ?? "")) });
+  }
+  const costs: Cost[] = [];
+  for (const [i, c] of cs.entries()) {
+    const a = amt(c.amount);
+    const label = String(c.label ?? "").trim();
+    if (!label && (a === null || a === 0)) continue;
+    if (a === null || Number.isNaN(a) || a <= 0) return { error: `ค่าใช้จ่ายแถวที่ ${i + 1}: ใส่จำนวนเงินมากกว่า 0` };
+    if (!label) return { error: `ค่าใช้จ่ายแถวที่ ${i + 1}: ใส่รายการ` };
+    const pay = String(c.pay ?? "DEDUCT");
+    if (pay.startsWith("a:")) costs.push({ label, amount: a, pay: "BANK", bank_asset_id: pay.slice(2) });
+    else if (pay.startsWith("c:")) costs.push({ label, amount: a, pay: "CARD", card_id: pay.slice(2) });
+    else costs.push({ label, amount: a, pay: "DEDUCT" });
+  }
+  return { receipts, costs };
+}
+const total = (xs: { amount: number }[]) => Math.round(xs.reduce((t, x) => t + x.amount, 0) * 100) / 100;
+
+/** ขายทรัพย์สิน (อสังหาฯ / สินทรัพย์อื่น / ธุรกิจ) → เงินเข้าบัญชี + สถานะขายแล้ว · Alternative ขายบางส่วนได้ (จำนวนน้อยกว่าที่ถือ)
+ *  รับเงินได้หลายบัญชี · ค่าใช้จ่ายหลายรายการ (หักจากเงินที่ได้รับ / จ่ายจากบัญชี / บัตร) */
 export async function sellAsset(_: TradeState, form: FormData): Promise<TradeState> {
-  const price = num(form.get("price"));
-  if (price === null || Number.isNaN(price) || price < 0) return { error: "กรุณาใส่ราคาขายเป็นตัวเลข" };
-  const fee = num(form.get("fee"));
-  if (fee !== null && (Number.isNaN(fee) || fee < 0 || fee > price)) return { error: "ค่าใช้จ่ายในการขายไม่ถูกต้อง" };
+  const lines = linesFromForm(form);
+  if ("error" in lines) return { error: lines.error };
+  const deducted = total(lines.costs.filter((c) => c.pay === "DEDUCT"));
+  const price = total(lines.receipts) + deducted;
+  if (price <= 0) return { error: "กรุณาใส่เงินที่ได้รับจากการขาย" };
   if (form.get("confirm") !== "on") return { error: "กรุณาติ๊กยืนยันการขาย" };
   const supabase = await createClient();
-  // Property: ขายบางแถว (ที่ดินบางแปลง / อาคาร) → end_property_components · แถวที่เหลือยังถืออยู่
-  if (form.get("scope") === "part") return endComponents(supabase, form, "SELL", price, fee);
+  // Property: ขายบางแถว (ที่ดินบางแปลง / อาคาร) → end_property_components · ติ๊กครบทุกแถว = ขายทั้งทรัพย์สิน
+  if (form.get("scope") === "part") return endComponents(supabase, form, "SELL", lines);
   // Alternative ที่มีจำนวน: ขายน้อยกว่าที่ถือ = ขายบางส่วน · เท่ากับที่ถือ = ขายทั้งรายการ
-  const total = num(form.get("total_quantity"));
-  if (total !== null && total > 0) {
+  const totalQty = num(form.get("total_quantity"));
+  if (totalQty !== null && totalQty > 0) {
     const qty = num(form.get("quantity"));
     if (qty === null || Number.isNaN(qty) || qty <= 0) return { error: "กรุณาใส่จำนวนที่ขาย" };
-    if (qty > total) return { error: "ขายเกินจำนวนที่ถืออยู่ไม่ได้" };
-    if (qty < total) {
+    if (qty > totalQty) return { error: "ขายเกินจำนวนที่ถืออยู่ไม่ได้" };
+    if (qty < totalQty) {
+      if (lines.receipts.length > 1 || lines.costs.some((c) => c.pay !== "DEDUCT"))
+        return { error: "ขายบางส่วน: รับเงินได้บัญชีเดียว และค่าใช้จ่ายต้องหักจากเงินที่ได้รับ (จ่ายจากบัญชีอื่นให้บันทึกเป็นค่าใช้จ่ายแยก)" };
       const { error } = await supabase.rpc("sell_alternative_part", {
         p_asset_id: String(form.get("asset_id")), p_date: str(form.get("date")), p_quantity: qty, p_price: price,
-        p_fee: fee, p_bank_asset_id: str(form.get("bank_asset_id")), p_notes: str(form.get("notes")),
+        p_fee: deducted || null, p_bank_asset_id: lines.receipts[0]?.bank_asset_id ?? null, p_notes: str(form.get("notes")),
       });
       if (error) return { error: friendlyError(error.message) };
       refresh(form);
@@ -39,37 +79,35 @@ export async function sellAsset(_: TradeState, form: FormData): Promise<TradeSta
     }
   }
   const { error } = await supabase.rpc("sell_asset", {
-    p_asset_id: String(form.get("asset_id")), p_date: str(form.get("date")), p_price: price,
-    p_bank_asset_id: str(form.get("bank_asset_id")), p_fee: fee, p_notes: str(form.get("notes")),
+    p_asset_id: String(form.get("asset_id")), p_date: str(form.get("date")), p_receipts: lines.receipts, p_costs: lines.costs,
+    p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
   refresh(form);
   return { ok: "บันทึกการขายแล้ว" };
 }
 
-/** Property: รื้อถอนอาคาร / สิ่งปลูกสร้าง (ขาดทุนเท่ามูลค่าเดิม · ขายเศษวัสดุได้) */
+/** Property: รื้อถอนอาคาร / สิ่งปลูกสร้าง (ขาดทุนเท่ามูลค่าเดิม · ขายเศษวัสดุได้ · ค่าจ้างรื้อถอนจ่ายจากบัญชี / บัตรได้) */
 export async function demolishComponents(_: TradeState, form: FormData): Promise<TradeState> {
-  const price = num(form.get("price")) ?? 0;
-  if (Number.isNaN(price) || price < 0) return { error: "ราคาขายเศษวัสดุไม่ถูกต้อง" };
-  const fee = num(form.get("fee"));
-  if (fee !== null && (Number.isNaN(fee) || fee < 0 || fee > price)) return { error: "ค่าใช้จ่ายไม่ถูกต้อง (ต้องไม่เกินราคาขายเศษวัสดุ)" };
+  const lines = linesFromForm(form);
+  if ("error" in lines) return { error: lines.error };
   if (form.get("confirm") !== "on") return { error: "กรุณาติ๊กยืนยันการรื้อถอน" };
-  return endComponents(await createClient(), form, "DEMOLISH", price, fee);
+  return endComponents(await createClient(), form, "DEMOLISH", lines);
 }
 
 async function endComponents(supabase: Awaited<ReturnType<typeof createClient>>, form: FormData, kind: "SELL" | "DEMOLISH",
-  price: number, fee: number | null): Promise<TradeState> {
+  lines: { receipts: Receipt[]; costs: Cost[] }): Promise<TradeState> {
   const ids = form.getAll("comp").map(String).filter(Boolean);
   if (ids.length === 0) return { error: kind === "SELL" ? "เลือกแถวที่ขายอย่างน้อย 1 แถว" : "เลือกอาคาร / สิ่งปลูกสร้างที่รื้อถอน" };
   const book = form.has("book_value") ? num(form.get("book_value")) : null;
   if (form.has("book_value") && (book === null || Number.isNaN(book) || book < 0)) return { error: "กรุณาใส่มูลค่าเดิมของแถวที่เลือก" };
   const { error } = await supabase.rpc("end_property_components", {
-    p_asset_id: String(form.get("asset_id")), p_kind: kind, p_component_ids: ids, p_date: str(form.get("date")), p_price: price,
-    p_fee: fee, p_bank_asset_id: str(form.get("bank_asset_id")), p_book_value: book, p_notes: str(form.get("notes")),
+    p_asset_id: String(form.get("asset_id")), p_kind: kind, p_component_ids: ids, p_date: str(form.get("date")),
+    p_receipts: lines.receipts, p_costs: lines.costs, p_book_value: book, p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
   refresh(form);
-  return { ok: kind === "SELL" ? "บันทึกการขายบางแถวแล้ว" : "บันทึกการรื้อถอนแล้ว" };
+  return { ok: kind === "DEMOLISH" ? "บันทึกการรื้อถอนแล้ว" : form.get("all_rows") === "1" ? "บันทึกการขายทั้งทรัพย์สินแล้ว" : "บันทึกการขายบางแถวแล้ว" };
 }
 
 /** Property: ยกเลิกการขายบางแถว / รื้อถอน (เฉพาะครั้งล่าสุด) */

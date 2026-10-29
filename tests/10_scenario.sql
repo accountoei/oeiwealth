@@ -2029,7 +2029,8 @@ INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency, ac
   SELECT id, 'ALTERNATIVE', 'COLLECTIBLE', 'ของสะสมขายกำไร', 'THB', current_date - 2, 1000 FROM public.families;
 INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES (t.a('ของสะสมขายกำไร'), current_date - 2, 5000, 'USER_ESTIMATE', 'USER');
 SELECT public.set_asset_ownership(t.a('ของสะสมขายกำไร'), jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'percent',50), jsonb_build_object('person_id',t.p('คุณแม่'),'percent',50)), 'CORRECT', NULL);
-SELECT public.sell_asset(t.a('ของสะสมขายกำไร'), current_date, 8000, t.a('KBank ออมทรัพย์'), 500, NULL);
+SELECT public.sell_asset(t.a('ของสะสมขายกำไร'), current_date, jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 7500)),
+  '[{"label":"ค่านายหน้า","amount":500,"pay":"DEDUCT"}]', NULL);
 SELECT t.ok((SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ของสะสมขายกำไร') AND deleted_at IS NULL) = 5000
             AND (SELECT amount FROM public.income_transactions WHERE asset_id = t.a('ของสะสมขายกำไร') AND income_subtype = 'กำไรจากการขายทรัพย์สิน' AND deleted_at IS NULL) = 2500
             AND (SELECT sum(amount_share) FROM public.v_income_by_person v JOIN public.income_transactions i ON i.id = v.income_id
@@ -2039,7 +2040,7 @@ INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency, ac
   SELECT id, 'ALTERNATIVE', 'COLLECTIBLE', 'ของสะสมขายขาดทุน', 'THB', current_date - 2, 1000 FROM public.families;
 INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source) VALUES (t.a('ของสะสมขายขาดทุน'), current_date - 2, 5000, 'USER_ESTIMATE', 'USER');
 SELECT public.set_asset_ownership(t.a('ของสะสมขายขาดทุน'), jsonb_build_array(jsonb_build_object('person_id',t.p('คุณพ่อ'),'percent',60), jsonb_build_object('person_id',t.p('คุณแม่'),'percent',40)), 'CORRECT', NULL);
-SELECT public.sell_asset(t.a('ของสะสมขายขาดทุน'), current_date, 4000, t.a('KBank ออมทรัพย์'), NULL, NULL);
+SELECT public.sell_asset(t.a('ของสะสมขายขาดทุน'), current_date, jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 4000)));
 SELECT t.ok((SELECT sum(amount) FROM public.expense_items WHERE related_asset_id = t.a('ของสะสมขายขาดทุน') AND expense_category = 'ขาดทุนจากการขายทรัพย์สิน' AND deleted_at IS NULL) = 1000
             AND (SELECT amount FROM public.expense_items WHERE related_asset_id = t.a('ของสะสมขายขาดทุน') AND person_id = t.p('คุณพ่อ') AND deleted_at IS NULL) = 600
             AND (SELECT amount FROM public.cash_movements WHERE movement_type = 'ASSET_SALE' AND from_asset_id = t.a('ของสะสมขายขาดทุน') AND deleted_at IS NULL) = 4000,
@@ -3687,8 +3688,9 @@ SELECT land_area_sq_wa AS area_f FROM public.property_details WHERE asset_id = t
 SELECT ids[2] AS land2_f, ids[3] AS bld_f FROM (SELECT public.save_property_components(t.a('บ้าน A'),
   format('[{"id":"%s","type":"LAND","land_area_sq_wa":"%s","value":"6000000"},{"type":"LAND","title_deed_no":"N-2","land_area_sq_wa":"100","acq_cost":"400000","value":"1000000"},{"type":"BUILDING","label":"บ้าน","acq_cost":"1000000","acquired_date":"2020-01-01","value":"2000000"}]',
          :'deed_f', :'area_f')::jsonb, '{}', format('{"date":"%s","method":"APPRAISAL"}', current_date - 3)::jsonb) AS ids) x \gset
-SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'land2_f']::uuid[], current_date - 2, 1250000, 50000,
-  t.a('KBank ออมทรัพย์'), null, 'ขายแปลงข้าง') AS ev1 \gset
+SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'land2_f']::uuid[], current_date - 2,
+  jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 1200000)), '[{"label":"ค่าธรรมเนียมโอน","amount":50000,"pay":"DEDUCT"}]',
+  null, 'ขายแปลงข้าง') AS ev1 \gset
 SELECT t.ok((SELECT end_reason = 'SOLD' AND ended_date = current_date - 2 FROM public.property_deeds WHERE id = :'land2_f')
             AND (SELECT current_value = 8000000 FROM public.assets WHERE id = t.a('บ้าน A'))
             AND (SELECT count(*) = 2 AND sum(p.value) = 8000000 AND bool_and(p.deed_id <> :'land2_f')
@@ -3696,8 +3698,8 @@ SELECT t.ok((SELECT end_reason = 'SOLD' AND ended_date = current_date - 2 FROM p
                   WHERE e.id = :'ev1' AND p.deleted_at IS NULL),
             'ขายบางแถว: แถวเป็น "ขายแล้ว" · มูลค่าใหม่ = เดิม − มูลค่าของแถวนั้น (รายแถวที่เหลือคงเดิม)');
 SELECT t.ok((SELECT gain = 200000 AND book_value = 1000000 AND cost_removed = 400000 FROM public.property_component_events WHERE id = :'ev1')
-            AND (SELECT amount = 200000 FROM public.income_transactions i JOIN public.property_component_events e ON e.income_id = i.id WHERE e.id = :'ev1')
-            AND (SELECT amount = 1000000 FROM public.cash_movements m JOIN public.property_component_events e ON e.movement_id = m.id WHERE e.id = :'ev1'),
+            AND (SELECT amount = 200000 FROM public.income_transactions i JOIN public.property_component_events e ON i.id = ANY (e.income_ids) WHERE e.id = :'ev1')
+            AND (SELECT amount = 1000000 FROM public.cash_movements m JOIN public.property_component_events e ON m.id = ANY (e.movement_ids) WHERE e.id = :'ev1'),
             'ขายบางแถว: เงินขายสุทธิ 1.2 ล้าน = ทุนคืน 1 ล้าน + กำไร 2 แสน (รายได้)');
 SELECT t.ok((SELECT acquisition_cost = 4600000 FROM public.assets WHERE id = t.a('บ้าน A'))
             AND (SELECT land_area_sq_wa = :'area_f'::numeric FROM public.property_details WHERE asset_id = t.a('บ้าน A'))
@@ -3711,8 +3713,6 @@ SELECT t.fails(format($$UPDATE public.property_deeds SET ended_date = NULL, end_
                'ยกเลิกรายการนั้น', 'ล้างสถานะ "ขายแล้ว" ตรง ๆ ไม่ได้');
 SELECT t.fails(format($$SELECT public.end_property_components('%s', 'DEMOLISH', ARRAY['%s']::uuid[], current_date)$$, t.a('บ้าน A'), :'deed_f'),
                'เฉพาะอาคาร', 'รื้อถอนที่ดินไม่ได้');
-SELECT t.fails(format($$SELECT public.end_property_components('%s', 'SELL', ARRAY['%s','%s']::uuid[], current_date, 100, null, '%s')$$,
-                      t.a('บ้าน A'), :'deed_f', :'bld_f', t.a('KBank ออมทรัพย์')), 'ครบทุกแถว', 'ขายครบทุกแถวต้องใช้ขายทั้งทรัพย์สิน');
 SELECT public.end_property_components(t.a('บ้าน A'), 'DEMOLISH', ARRAY[:'bld_f']::uuid[], current_date - 1) AS ev2 \gset
 SELECT t.ok((SELECT end_reason = 'DEMOLISHED' FROM public.property_deeds WHERE id = :'bld_f')
             AND (SELECT current_value = 6000000 FROM public.assets WHERE id = t.a('บ้าน A'))
@@ -3725,7 +3725,7 @@ SELECT public.undo_property_component_event(:'ev1');
 SELECT t.ok((SELECT bool_and(ended_date IS NULL) FROM public.property_deeds WHERE id IN (:'land2_f', :'bld_f'))
             AND (SELECT current_value = 9000000 AND acquisition_cost = 5000000 FROM public.assets WHERE id = t.a('บ้าน A'))
             AND (SELECT bool_and(deleted_at IS NOT NULL) FROM public.property_component_events WHERE id IN (:'ev1', :'ev2'))
-            AND NOT EXISTS (SELECT 1 FROM public.income_transactions i JOIN public.property_component_events e ON e.income_id = i.id
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions i JOIN public.property_component_events e ON i.id = ANY (e.income_ids)
                              WHERE e.id = :'ev1' AND i.deleted_at IS NULL)
             AND NOT EXISTS (SELECT 1 FROM public.expense_items x WHERE x.deleted_at IS NULL
                              AND x.id = ANY ((SELECT expense_ids FROM public.property_component_events WHERE id = :'ev2')::uuid[])),
@@ -3766,12 +3766,84 @@ SELECT t.fails(format($$SELECT public.save_property_components('%s', '[]', ARRAY
                t.a('บ้าน A'), :'s1_g', :'s2_g', :'bld_g'), 'อย่างน้อย 1 แถว', 'ต้องเหลือส่วนประกอบอย่างน้อย 1 แถว');
 ROLLBACK TO SAVEPOINT keep1;
 SET CONSTRAINTS ALL DEFERRED;
-SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'s2_g']::uuid[], current_date, 100000, null, t.a('KBank ออมทรัพย์'), 50000) AS ev3 \gset
+SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'s2_g']::uuid[], current_date,
+  jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 100000)), '[]', 50000) AS ev3 \gset
 SELECT t.fails(format($$UPDATE public.property_deeds SET notes = 'x' WHERE id = '%s'$$, :'s2_g'), 'แก้ไขไม่ได้', 'แถวที่ขายแล้วแก้ข้อมูลไม่ได้');
 SELECT t.fails(format($$SELECT public.pay_property('%s', '%s', current_date, 1000, null, 'x', false, '%s', null)$$, t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), :'s2_g'),
                'รื้อถอนแล้ว', 'จ่ายเพิ่มเข้าแถวที่ขายแล้วไม่ได้');
 SELECT public.undo_property_component_event(:'ev3');
 SELECT t.ok((SELECT ended_date IS NULL FROM public.property_deeds WHERE id = :'s2_g'), 'ยกเลิกการขาย: แถวกลับมาแก้ได้ตามปกติ');
+RESET ROLE;
+ROLLBACK;
+\echo '== 13zz27. ขาย / รื้อถอน: รับเงินหลายบัญชี · ค่าใช้จ่ายหลายรายการ · ติ๊กครบทุกแถว = ขายทั้งทรัพย์สิน (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT a.id AS bank2 FROM public.assets a JOIN public.bank_accounts b ON b.asset_id = a.id
+ WHERE a.currency = 'THB' AND a.status = 'ACTIVE' AND a.deleted_at IS NULL AND a.id <> t.a('KBank ออมทรัพย์') ORDER BY a.name LIMIT 1 \gset
+SELECT d.id AS deed_h FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT land_area_sq_wa AS area_h FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT ids[2] AS land2_h, ids[3] AS bld_h FROM (SELECT public.save_property_components(t.a('บ้าน A'),
+  format('[{"id":"%s","type":"LAND","land_area_sq_wa":"%s","value":"6000000"},{"type":"LAND","title_deed_no":"N-3","land_area_sq_wa":"100","acq_cost":"400000","value":"1000000"},{"type":"BUILDING","label":"บ้าน","acq_cost":"1000000","value":"2000000"}]',
+         :'deed_h', :'area_h')::jsonb, '{}', format('{"date":"%s","method":"APPRAISAL"}', current_date - 3)::jsonb) AS ids) x \gset
+SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'land2_h']::uuid[], current_date - 2,
+  jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 300000, 'note', 'มัดจำ'),
+                    jsonb_build_object('bank_asset_id', :'bank2', 'amount', 900000)),
+  jsonb_build_array(jsonb_build_object('label', 'ค่าธรรมเนียมโอน', 'amount', 40000, 'pay', 'DEDUCT'),
+                    jsonb_build_object('label', 'ค่านายหน้า', 'amount', 30000, 'pay', 'BANK', 'bank_asset_id', t.a('KBank ออมทรัพย์')))) AS ev4 \gset
+SELECT t.ok((SELECT price = 1240000 AND fee = 70000 AND gain = 200000 AND cardinality(movement_ids) = 2 AND cardinality(income_ids) = 1
+               FROM public.property_component_events WHERE id = :'ev4')
+            AND (SELECT sum(m.amount) = 1000000 FROM public.cash_movements m JOIN public.property_component_events e ON m.id = ANY (e.movement_ids) WHERE e.id = :'ev4')
+            AND (SELECT i.amount = 200000 AND i.received_to_asset_id = :'bank2' FROM public.income_transactions i
+                   JOIN public.property_component_events e ON i.id = ANY (e.income_ids) WHERE e.id = :'ev4'),
+            'ขายบางแถว 2 บัญชี: ราคาขาย = เงินรับ 1.2 ล้าน + ค่าโอนที่หัก 4 หมื่น · ทุนคืน 1 ล้าน + กำไร 2 แสน (ลงที่แถวท้าย)');
+SELECT t.ok((SELECT sum(x.amount) = 30000 AND bool_and(x.paid_from_asset_id = t.a('KBank ออมทรัพย์'))
+               AND bool_and(x.expense_category = 'ค่าใช้จ่ายในการขาย / รื้อถอนทรัพย์สิน')
+               FROM public.expense_items x JOIN public.property_component_events e ON x.id = ANY (e.expense_ids) WHERE e.id = :'ev4'),
+            'ค่านายหน้าที่จ่ายจากบัญชี → ค่าใช้จ่ายหมวดขาย / รื้อถอน จ่ายจากบัญชีนั้น');
+SELECT public.end_property_components(t.a('บ้าน A'), 'DEMOLISH', ARRAY[:'bld_h']::uuid[], current_date - 1, '[]',
+  jsonb_build_array(jsonb_build_object('label', 'ค่ารื้อถอน', 'amount', 50000, 'pay', 'BANK', 'bank_asset_id', :'bank2'))) AS ev5 \gset
+SELECT t.ok((SELECT gain = -2000000 AND cardinality(movement_ids) = 0 FROM public.property_component_events WHERE id = :'ev5')
+            AND (SELECT sum(x.amount) FILTER (WHERE x.expense_category = 'ขาดทุนจากการรื้อถอน') = 2000000
+                    AND sum(x.amount) FILTER (WHERE x.expense_category = 'ค่าใช้จ่ายในการขาย / รื้อถอนทรัพย์สิน' AND x.paid_from_asset_id = :'bank2') = 50000
+                   FROM public.expense_items x JOIN public.property_component_events e ON x.id = ANY (e.expense_ids) WHERE e.id = :'ev5'),
+            'รื้อถอนมีแต่ค่าจ้าง: ขาดทุนเท่ามูลค่าอาคาร (ไม่มีเงินออก) + ค่ารื้อถอนจ่ายจากบัญชี');
+SELECT t.fails(format($$SELECT public.end_property_components('%s', 'SELL', ARRAY['%s']::uuid[], current_date, '[{"bank_asset_id":"%s","amount":0}]')$$,
+               t.a('บ้าน A'), :'deed_h', t.a('KBank ออมทรัพย์')), 'มากกว่า 0', 'รับเงินต้องมากกว่า 0');
+RESET ROLE;   -- สัญญาเช่าของบ้าน A ต้องจบก่อนขายทั้งทรัพย์สิน (ในหัวข้อนี้เท่านั้น)
+UPDATE public.property_leases SET deleted_at = now() WHERE property_id = (SELECT id FROM public.property_details WHERE asset_id = t.a('บ้าน A'));
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.end_property_components(t.a('บ้าน A'), 'SELL', ARRAY[:'deed_h']::uuid[], current_date,
+  jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 6500000))) AS ev6 \gset
+SELECT t.ok((SELECT status = 'SOLD' FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT whole AND gain = 500000 FROM public.property_component_events WHERE id = :'ev6')
+            AND (SELECT count(*) = 0 FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+                  WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL AND d.ended_date IS NULL)
+            AND (SELECT value = 6500000 FROM public.asset_valuations WHERE asset_id = t.a('บ้าน A') AND valuation_date = current_date
+                  AND notes = 'ราคาขาย' AND deleted_at IS NULL),
+            'ติ๊กครบทุกแถวที่เหลือ = ขายทั้งทรัพย์สิน: สถานะขายแล้ว · ทุกแถวขายแล้ว · มูลค่า ณ วันขาย = ราคาขาย');
+SELECT public.undo_property_component_event(:'ev6');
+SELECT t.ok((SELECT status = 'ACTIVE' FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND (SELECT ended_date IS NULL FROM public.property_deeds WHERE id = :'deed_h')
+            AND NOT EXISTS (SELECT 1 FROM public.asset_valuations WHERE asset_id = t.a('บ้าน A') AND notes = 'ราคาขาย' AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements m JOIN public.property_component_events e ON m.id = ANY (e.movement_ids)
+                             WHERE e.id = :'ev6' AND m.deleted_at IS NULL),
+            'ยกเลิกขายทั้งทรัพย์สิน: สถานะกลับเป็นถืออยู่ · แถวกลับมา · มูลค่าราคาขายและเงินเข้าถูกลบ');
+SELECT public.undo_property_component_event(:'ev5');
+SELECT public.undo_property_component_event(:'ev4');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items x JOIN public.property_component_events e ON x.id = ANY (e.expense_ids)
+                         WHERE e.id IN (:'ev4', :'ev5') AND x.deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements m JOIN public.property_component_events e ON m.id = ANY (e.movement_ids)
+                             WHERE e.id = :'ev4' AND m.deleted_at IS NULL),
+            'ยกเลิก: ลบเงินเข้าทุกบัญชี + ค่าใช้จ่ายที่จ่ายจากบัญชีพร้อมกัน');
+SELECT public.sell_asset(t.a('บ้าน A'), current_date, jsonb_build_array(jsonb_build_object('bank_asset_id', t.a('KBank ออมทรัพย์'), 'amount', 9000000)));
+SELECT t.ok((SELECT status = 'SOLD' FROM public.assets WHERE id = t.a('บ้าน A'))
+            AND EXISTS (SELECT 1 FROM public.property_component_events WHERE asset_id = t.a('บ้าน A') AND whole AND deleted_at IS NULL),
+            'ขายทั้งทรัพย์สิน (ปุ่มเดิม) ของ Property ที่มีส่วนประกอบ → ขายทุกแถว ยกเลิกได้');
+INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description, metadata)
+  VALUES (current_date, 'ASSET_PURCHASE', t.a('KBank ออมทรัพย์'), t.a('บ้าน A'), 123456, 'THB', 'เงินดาวน์', '{"acquisition": true}') RETURNING id AS mv9 \gset
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_property_cost_lots WHERE movement_id = :'mv9'),
+            'ต้นทุนรายก้อน: เงินดาวน์ตอนเพิ่มทรัพย์สิน อยู่ในราคาที่ได้มาแล้ว ไม่นับซ้ำ');
 RESET ROLE;
 ROLLBACK;
 \echo '== 14. Views'

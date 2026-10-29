@@ -34,6 +34,8 @@ export async function recordAssetPurchase(supabase: Awaited<ReturnType<typeof cr
   const { error } = await supabase.from("cash_movements").insert({
     movement_date: pay.date, movement_type: "ASSET_PURCHASE", from_asset_id: pay.bank, to_asset_id: assetId,
     amount: pay.amount, currency: b?.currency ?? "THB", description: "จ่ายซื้อทรัพย์สิน",
+    // เงินออกตอนเพิ่มทรัพย์สิน = ส่วนหนึ่งของราคาที่ได้มา (เช่น เงินดาวน์) → ต้นทุนรายก้อนไม่นับซ้ำ
+    metadata: { acquisition: true },
   });
   return error ? friendlyError(error.message) : null;
 }

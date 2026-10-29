@@ -100,7 +100,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("asset_valuation_parts").select("valuation_id,part_type,deed_id,label,value,sort_order,source_movement_id")
       .eq("asset_id", id).is("deleted_at", null).order("sort_order"),
     // ขายบางแถว / รื้อถอน (ยกเลิกได้เฉพาะครั้งล่าสุด)
-    supabase.from("property_component_events").select("id,event_type,event_date,price,fee,book_value,gain,created_at")
+    supabase.from("property_component_events").select("id,event_type,event_date,price,fee,book_value,gain,whole,created_at")
       .eq("asset_id", id).is("deleted_at", null).order("event_date", { ascending: false }).order("created_at", { ascending: false }),
   ]);
   if (!a || !pd) notFound();
@@ -131,7 +131,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     .filter((d) => !d.deleted_at).sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at));
   const comps = allComps.filter((c) => !c.ended_date);
   const endedComps = allComps.filter((c) => c.ended_date).sort((x, y) => (y.ended_date ?? "").localeCompare(x.ended_date ?? ""));
-  type CompEvent = { id: string; event_type: "SELL" | "DEMOLISH"; event_date: string; price: number; fee: number; book_value: number | null; gain: number | null };
+  type CompEvent = { id: string; event_type: "SELL" | "DEMOLISH"; event_date: string; price: number; fee: number; book_value: number | null; gain: number | null; whole: boolean };
   const events = new Map(((eventRows ?? []) as CompEvent[]).map((e) => [e.id, e]));
   const lastEventId = (eventRows ?? [])[0]?.id as string | undefined;
   const lands = comps.filter((c) => c.component_type === "LAND");
@@ -221,10 +221,28 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const leaseName = new Map(leases.map((l) => [l.id, [l.unit_label, l.tenant_name].filter(Boolean).join(" · ")]));
 
   const costSum = comps.reduce((t, c) => t + Number(c.acq_cost ?? 0) + (paidByComp[c.id] ?? 0), 0);
+  const endedList = endedComps.length > 0 && (
+    <div className="mt-3">
+      <div className="mb-1 text-xs font-medium text-slate-500">ขาย / รื้อถอนแล้ว (ไม่นับในเนื้อที่ ต้นทุน และมูลค่า)</div>
+      <ul className="divide-y divide-slate-100 text-sm text-slate-500">
+        {endedComps.map((c) => { const e = c.end_event_id ? events.get(c.end_event_id) : undefined; return (
+          <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-1.5">
+            <span className="text-slate-700 line-through decoration-slate-300">{compLabel.get(c.id)}</span>
+            <span className="rounded bg-slate-100 px-1.5 text-xs">{c.end_reason ? END_REASON_LABEL[c.end_reason] : ""} {thDate(c.ended_date)}</span>
+            {e && <span className="text-xs tabular-nums">
+              {e.event_type === "SELL" || Number(e.price) > 0 ? `ราคา ${money(e.price, undefined, 0)} · ` : ""}มูลค่าเดิม {money(e.book_value, undefined, 0)}
+              {e.gain != null && Number(e.gain) !== 0 && <span className={Number(e.gain) > 0 ? "text-emerald-700" : "text-red-700"}>
+                {" · "}{Number(e.gain) > 0 ? "กำไร" : "ขาดทุน"} {money(Math.abs(Number(e.gain)), undefined, 0)}</span>}</span>}
+            {canDelete && (a.status === "ACTIVE" || (a.status === "SOLD" && e?.whole)) && e && e.id === lastEventId && <UndoComponentEvent eventId={e.id} paths={paths} />}
+          </li>); })}
+      </ul>
+    </div>
+  );
   const compTable = (
     <div className="mt-4 border-t border-slate-100 pt-3">
       <h3 className="mb-2 text-sm font-medium text-slate-800">ส่วนประกอบ {comps.length > 0 && <span className="font-normal text-slate-500">({comps.length})</span>}</h3>
-      {comps.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูลที่ดิน / อาคาร · กด &ldquo;แก้ไข&rdquo; แล้วเพิ่มแถวละโฉนด / หลัง</p> : (
+      {comps.length === 0 && endedList}
+      {comps.length === 0 ? (endedComps.length > 0 ? null : <p className="text-sm text-slate-500">ยังไม่มีข้อมูลที่ดิน / อาคาร · กด &ldquo;แก้ไข&rdquo; แล้วเพิ่มแถวละโฉนด / หลัง</p>) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[44rem] text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -256,23 +274,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 <td className="pl-3 text-right tabular-nums">{money(a.current_value, undefined, 0)}</td></tr>
             </tfoot>
           </table>
-          {endedComps.length > 0 && (
-            <div className="mt-3">
-              <div className="mb-1 text-xs font-medium text-slate-500">ขาย / รื้อถอนแล้ว (ไม่นับในเนื้อที่ ต้นทุน และมูลค่า)</div>
-              <ul className="divide-y divide-slate-100 text-sm text-slate-500">
-                {endedComps.map((c) => { const e = c.end_event_id ? events.get(c.end_event_id) : undefined; return (
-                  <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-1.5">
-                    <span className="text-slate-700 line-through decoration-slate-300">{compLabel.get(c.id)}</span>
-                    <span className="rounded bg-slate-100 px-1.5 text-xs">{c.end_reason ? END_REASON_LABEL[c.end_reason] : ""} {thDate(c.ended_date)}</span>
-                    {e && <span className="text-xs tabular-nums">
-                      {e.event_type === "SELL" || Number(e.price) > 0 ? `ราคา ${money(e.price, undefined, 0)} · ` : ""}มูลค่าเดิม {money(e.book_value, undefined, 0)}
-                      {e.gain != null && Number(e.gain) !== 0 && <span className={Number(e.gain) > 0 ? "text-emerald-700" : "text-red-700"}>
-                        {" · "}{Number(e.gain) > 0 ? "กำไร" : "ขาดทุน"} {money(Math.abs(Number(e.gain)), undefined, 0)}</span>}</span>}
-                    {canDelete && a.status === "ACTIVE" && e && e.id === lastEventId && <UndoComponentEvent eventId={e.id} paths={paths} />}
-                  </li>); })}
-              </ul>
-            </div>
-          )}
+          {endedList}
           {!hasLatest && <p className="mt-1 text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว · แยกรายแถวได้ที่ปุ่มแก้ไข หรือ &ldquo;มูลค่าและต้นทุน&rdquo;</p>}
         </div>
       )}
@@ -295,9 +297,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <ActionBar>
               <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts} />
               <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0}
-                components={saleComps} />
+                cards={cards} components={saleComps} />
               {canDelete && demolishable.length > 0 && comps.length > 1 &&
-                <DemolishForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} components={demolishable} />}
+                <DemolishForm assetId={id} currency={a.currency} banks={bankList} cards={cards} today={today} minDate={goLive} paths={paths} components={demolishable} />}
             </ActionBar>
           )}
         </div>
