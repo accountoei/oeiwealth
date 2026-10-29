@@ -3980,6 +3980,32 @@ SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.ok((SELECT count(*) FROM public.tax_returns) = 0, 'ภาษี: VIEWER ที่ไม่ผูกสมาชิกไม่เห็นแบบภาษี');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz30. ประเภทค่าใช้จ่ายทรัพย์สิน + รายละเอียดโฉนดตอนซื้อที่ดินเพิ่ม (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT id AS pct_util, utility_type AS pct_utype FROM public.property_utilities WHERE deleted_at IS NULL LIMIT 1 \gset
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ค่างวดประจำ', 'amount', 100,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'expense_category', 'บ้าน / สาธารณูปโภค', 'property_utility_id', :'pct_util')) AS pct_e1 \gset
+SELECT t.ok((SELECT property_cost_type = :'pct_utype' FROM public.expense_items WHERE id = :'pct_e1'),
+            'ประเภทค่าใช้จ่าย: บันทึกจ่ายค่าใช้จ่ายประจำ → ประเภทตามรายการประจำ');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ซ่อมหลังคา', 'amount', 2500,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'expense_category', 'บ้าน / สาธารณูปโภค', 'related_asset_id', t.a('บ้าน A'),
+  'property_cost_type', 'repair')) AS pct_e2 \gset
+SELECT t.ok((SELECT property_cost_type = 'REPAIR' FROM public.expense_items WHERE id = :'pct_e2'), 'ประเภทค่าใช้จ่าย: เลือกเอง (ซ่อมแซม) เก็บได้');
+SELECT t.ok(public.batch_add_property_expenses(jsonb_build_array(jsonb_build_object('date', current_date, 'description', 'ค่าโอน',
+  'amount', 300, 'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'related_asset_id', t.a('บ้าน A'), 'expense_category', 'บ้าน / สาธารณูปโภค',
+  'property_cost_type', 'TRANSFER_FEE'))) = 1, 'ประเภทค่าใช้จ่าย: บันทึกหลายรายการ');
+SELECT t.ok(EXISTS (SELECT 1 FROM public.expense_items WHERE description = 'ค่าโอน' AND property_cost_type = 'TRANSFER_FEE'),
+  'ประเภทค่าใช้จ่าย: บันทึกหลายรายการส่งประเภทต่อ');
+SELECT t.fails(format($$SELECT public.add_expense('{"date": "%s", "description": "x", "amount": 1, "property_cost_type": "FOO"}')$$, current_date),
+               'ประเภทค่าใช้จ่ายไม่ถูกต้อง', 'ประเภทค่าใช้จ่าย: ค่าที่ไม่รู้จักบันทึกไม่ได้');
+SELECT public.pay_property(t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), current_date, 1000, null, 'ซื้อที่ดินแปลงข้าง', true, null,
+  '{"type": "LAND", "title_type": "น.ส.3", "title_deed_no": "D-1", "land_no": "L-1", "deed_book": "B-2", "deed_page": "P-3", "map_sheet": "M-4", "survey_page": "S-5", "land_area_sq_wa": 100}') AS pct_mv \gset
+SELECT t.ok((SELECT title_type = 'น.ส.3' AND deed_book = 'B-2' AND deed_page = 'P-3' AND map_sheet = 'M-4' AND survey_page = 'S-5'
+               FROM public.property_deeds WHERE source_movement_id = :'pct_mv'),
+            'ซื้อที่ดินเพิ่ม: เก็บประเภทเอกสาร · เล่ม · หน้า · ระวาง · หน้าสำรวจ');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

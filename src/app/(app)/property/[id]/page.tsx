@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  UTIL_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
+  PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -184,7 +184,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("cash_movements").select("amount,currency,movement_date,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
       .is("deleted_at", null),
     // ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026)
-    supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes")
+    supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes,property_cost_type")
       .eq("related_asset_id", id).is("property_utility_id", null).is("source_fee_side", null).is("insurance_schedule_line_id", null)
       .is("liability_id", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
   ]);
@@ -203,7 +203,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // ราคาที่ได้มา (ณ วันที่ได้มา + จ่ายเพิ่ม) · ค่าใช้จ่ายสะสม (ครั้งเดียว + ประจำ) ในกล่องมูลค่า
   const acqAll = a.acquisition_cost != null || addPays.length > 0 ? Number(a.acquisition_cost ?? 0) + addPays.reduce((t, p) => t + Number(p.amount), 0) : null;
   const oneOff = (oneOffRows ?? []) as { id: string; date: string; description: string | null; amount: number; currency: string;
-    paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; notes: string | null }[];
+    paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; notes: string | null; property_cost_type: string | null }[];
   const spent = [...oneOff, ...((costPaid ?? []) as { date: string; amount: number; currency: string }[])].filter((e) => e.currency === a.currency);
   const spentSum = spent.reduce((t, e) => t + Number(e.amount), 0);
   const spentLast = spent.reduce((d, e) => (e.date > d ? e.date : d), "");
@@ -700,12 +700,13 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <h3 className="mb-1 text-sm font-medium text-slate-700">ค่าใช้จ่ายครั้งเดียว</h3>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500">
-                <tr><th className="py-1">วันที่จ่าย</th><th>รายการ</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
+                <tr><th className="py-1">วันที่จ่าย</th><th>ประเภท</th><th>รายการ</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {oneOff.map((e) => (
                   <tr key={e.id} className="align-top">
                     <td className="py-1.5">{thDate(e.date)}</td>
+                    <td className="text-xs text-slate-600">{PROPERTY_COST_TYPE_LABEL[e.property_cost_type ?? ""] ?? "-"}</td>
                     <td>{e.description || "-"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
                     <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
                     <td className="pl-4 text-xs text-slate-600">
@@ -713,7 +714,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     </td>
                     <td className="pl-2 text-right">
                       {canWrite && <RowActions table="expense_items" id={e.id} paths={paths} canDelete={canDelete}
-                        fields={[{ name: "description", label: "รายการ", value: e.description, width: "w-48" }, ...propertyCostFields(e)]} />}
+                        fields={[{ name: "property_cost_type", label: "ประเภท", type: "select" as const, value: e.property_cost_type,
+                          options: [["", "— ไม่ระบุ —"] as [string, string], ...Object.entries(PROPERTY_COST_TYPE_LABEL)] },
+                          { name: "description", label: "รายการ", value: e.description, width: "w-48" }, ...propertyCostFields(e)]} />}
                     </td>
                   </tr>
                 ))}

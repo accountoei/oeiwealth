@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
+import { HOME_CATEGORY, friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, endpointValue, missingEndpoint, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 
 export type ActionState = FormState;
@@ -150,6 +150,7 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
+    property_cost_type: str(form.get("property_cost_type")),
     ...paidFromColumns(pay),
     person_id: str(form.get("person_id")),
     is_reimbursable: reimb, expected_reimbursement_amount: reimb ? num(form.get("expected_reimbursement_amount")) : null,
@@ -331,8 +332,9 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   const id = String(form.get("id"));
   const { data: cur } = kind === "INCOME"
     ? await supabase.from("income_transactions").select("date,received_to_asset_id").eq("id", id).maybeSingle()
-    : await supabase.from("expense_items").select("date,paid_from_asset_id,paid_from_credit_card_id").eq("id", id).maybeSingle();
-  const old = (cur ?? {}) as { date?: string; received_to_asset_id?: string | null; paid_from_asset_id?: string | null; paid_from_credit_card_id?: string | null };
+    : await supabase.from("expense_items").select("date,paid_from_asset_id,paid_from_credit_card_id,property_cost_type").eq("id", id).maybeSingle();
+  const old = (cur ?? {}) as { date?: string; received_to_asset_id?: string | null; paid_from_asset_id?: string | null; paid_from_credit_card_id?: string | null;
+    property_cost_type?: string | null };
   const newDate = (fields.date as string | null) ?? old.date ?? null;
   const accs: LumpAcc[] = [
     { kind: "BANK", id: old.received_to_asset_id ?? old.paid_from_asset_id }, { kind: "CARD", id: old.paid_from_credit_card_id },
@@ -343,6 +345,12 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
     p_income_type: kind === "INCOME" ? str(form.get("income_type")) : null,
   });
   if (error) return { error: friendlyError(error.message) };
+  // ประเภทค่าใช้จ่ายทรัพย์สิน: มีช่อง = ตามที่เลือก · เปลี่ยนเป็นหมวดอื่น = ล้าง (ตกลง 29 ต.ค. 2026)
+  const ctype = form.has("f_property_cost_type") && fields.expense_category === HOME_CATEGORY ? str(form.get("f_property_cost_type")) : null;
+  if (kind === "EXPENSE" && form.has("f_expense_category") && ctype !== (old.property_cost_type ?? null)) {
+    const { error: e2 } = await supabase.from("expense_items").update({ property_cost_type: ctype }).eq("id", id);
+    if (e2) return { error: `บันทึกแล้ว แต่แก้ประเภทไม่ได้ (${friendlyError(e2.message)})` };
+  }
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
   const note = lumpNote(before, await lumpSnap(supabase, accs, newDate), accs, null);
   return done((warn ? "บันทึกแล้ว · บัญชีนี้อัปเดตยอดคงเหลือเดือนนี้ไปแล้ว ก้อนรอแยกปรับตามให้เอง ตรวจได้ที่หน้า Cash & Bank Accounts" : "บันทึกแล้ว") + note,
@@ -401,6 +409,7 @@ export async function payRecurringExpense(_: ActionState, form: FormData): Promi
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
+    property_cost_type: str(form.get("property_cost_type")),
     ...paidFromColumns(pay),
     person_id: str(form.get("person_id")),
     recurring_expense_id: str(form.get("template_id")), cost_period: str(form.get("cost_period")),

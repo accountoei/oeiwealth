@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { COST_STATUS, money, thDate, thMonth } from "@/lib/format";
+import { COST_STATUS, PROPERTY_COST_TYPE_LABEL, money, thDate, thMonth } from "@/lib/format";
 import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
@@ -17,7 +17,7 @@ export type CostRow = {
   /** ที่จ่ายแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
 };
 export type PayOpt = { value: string; label: string; currency: string };
-type Extra = { id: number; asset: string; description: string; amount: string; pay: string };
+type Extra = { id: number; asset: string; ctype: string; description: string; amount: string; pay: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,7 +37,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
   const [vals, setVals] = useState<Record<string, string>>({});
   const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key,
     r.pay && pays.some((p) => p.value === r.pay && p.currency === r.currency) ? r.pay : firstPay(r.currency)])));
-  const blank = (id: number): Extra => ({ id, asset: "", description: "", amount: "", pay: firstPay("THB") });
+  const blank = (id: number): Extra => ({ id, asset: "", ctype: "", description: "", amount: "", pay: firstPay("THB") });
   const [extra, setExtra] = useState<Extra[]>([blank(1)]);
   const [rebill, setRebill] = useState<Record<string, boolean>>({});
   const rebillOn = (r: CostRow) => !!r.rebillLease && rebill[r.key] !== false;
@@ -54,13 +54,13 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
     ...chosen.map((r) => ({ date, description: r.label, amount: vals[r.key], pay: pay[r.key] ?? "", currency: r.currency,
       expense_category: r.category, property_utility_id: r.utilityId, cost_period: r.period,
       ...(rebillOn(r) ? { rebill_lease_id: r.rebillLease } : {}) })),
-    ...extras.map((x) => ({ date, description: x.description, amount: x.amount, pay: x.pay, related_asset_id: x.asset, expense_category: OTHER_CATEGORY })),
+    ...extras.map((x) => ({ date, description: x.description, amount: x.amount, pay: x.pay, related_asset_id: x.asset, expense_category: OTHER_CATEGORY, property_cost_type: x.ctype })),
   ];
   const name = new Map(props.map((p) => [p.id, p.name]));
   const count = payload.length;
   const onSubmit = cf.guard(`บันทึกค่าใช้จ่าย ${count} รายการ วันที่ ${thDate(date)} ?\n${[
     ...chosen.map((r) => `• ${r.property} · ${r.label} ${vals[r.key]}${rebillOn(r) ? " (เรียกเก็บผู้เช่า)" : ""}`),
-    ...extras.map((x) => `• ${name.get(x.asset) ?? "(ยังไม่เลือกทรัพย์สิน)"} · ${x.description || "(ไม่มีรายการ)"} ${x.amount}`),
+    ...extras.map((x) => `• ${name.get(x.asset) ?? "(ยังไม่เลือกทรัพย์สิน)"} · ${PROPERTY_COST_TYPE_LABEL[x.ctype] ?? "(ยังไม่เลือกประเภท)"} · ${x.description || "(ไม่มีรายการ)"} ${x.amount}`),
   ].join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   const setX = (id: number, patch: Partial<Extra>) => setExtra(extra.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const PaySelect = ({ value, onChange, ccy }: { value: string; onChange: (v: string) => void; ccy?: string }) => (
@@ -150,7 +150,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
           <h2 className="px-4 pt-4 font-medium text-slate-900">ค่าใช้จ่ายอื่นของทรัพย์สิน <span className="text-xs font-normal text-slate-500">(ซ่อมแซม · ประกันอัคคีภัย · ค่านายหน้า ฯลฯ)</span></h2>
           <table className="mt-3 w-full min-w-[52rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3">รายการ</th><th className="px-3 text-right">ยอดที่จ่าย (THB)</th><th className="px-3">จ่ายจาก</th><th className="px-3"></th></tr>
+              <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3">ประเภท</th><th className="px-3">รายการ</th><th className="px-3 text-right">ยอดที่จ่าย (THB)</th><th className="px-3">จ่ายจาก</th><th className="px-3"></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {extra.map((x) => (
@@ -159,6 +159,12 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
                     <select value={x.asset} onChange={(e) => setX(x.id, { asset: e.target.value })} className={`max-w-[14rem] ${small}`}>
                       <option value="">— เลือกทรัพย์สิน —</option>
                       {props.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3">
+                    <select value={x.ctype} onChange={(e) => setX(x.id, { ctype: e.target.value })} aria-label="ประเภท" className={small}>
+                      <option value="">— เลือกประเภท —</option>
+                      {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </td>
                   <td className="px-3"><input value={x.description} onChange={(e) => setX(x.id, { description: e.target.value })} placeholder="เช่น ซ่อมหลังคา" className={`w-56 ${small}`} /></td>

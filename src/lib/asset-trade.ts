@@ -185,7 +185,9 @@ function componentFromForm(form: FormData): { id?: string; create?: Record<strin
     const rai = g("rai"), ngan = g("ngan"), wa = g("wa");
     const area = rai || ngan || wa ? (Number(rai) || 0) * 400 + (Number(ngan) || 0) * 100 + (Number(wa) || 0) : null;
     if (area !== null && !(area >= 0)) return { error: "เนื้อที่ต้องเป็นตัวเลข" };
-    return { create: { type, title_deed_no: g("title_deed_no"), land_no: g("land_no"), land_area_sq_wa: area } };
+    const t = (k: string) => str(form.get(`nc_${k}`));
+    return { create: { type, title_type: t("title_type"), title_deed_no: t("title_deed_no"), land_no: t("land_no"), deed_book: t("deed_book"),
+      deed_page: t("deed_page"), map_sheet: t("map_sheet"), survey_page: t("survey_page"), land_area_sq_wa: area } };
   }
   const years = g("years") ? Number(g("years")) : 20;
   if (!Number.isInteger(years) || years < 1 || years > 100) return { error: "อายุใช้งานต้องเป็นจำนวนปีเต็ม 1–100" };

@@ -477,7 +477,7 @@ export async function recordPropertyCost(_: ActionState, form: FormData): Promis
       paid_from_asset_id: l.kind === "bank" ? l.id : null, paid_from_credit_card_id: l.kind === "card" ? l.id : null,
       person_id: l.kind === "cash" ? l.id : null,
       property_utility_id: utilityId, cost_period: str(form.get("cost_period")),
-      related_asset_id: utilityId ? null : assetId,
+      related_asset_id: utilityId ? null : assetId, property_cost_type: str(form.get("property_cost_type")),
       notes: str(form.get("notes")),
     } });
     if (error) {
@@ -542,6 +542,7 @@ export async function batchPropertyExpenses(_: BatchState, form: FormData): Prom
   }));
   if (!clean.every((r) => isPositive(r.amount))) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
   if (clean.some((r) => !r.description.trim())) return { error: "กรุณาใส่รายการ (รายละเอียด) ทุกแถว" };
+  if (rows.some((r) => !r.property_utility_id && !r.property_cost_type)) return { error: "กรุณาเลือกประเภททุกแถวของค่าใช้จ่ายอื่น" };
   const { data, error } = await supabase.rpc("batch_add_property_expenses", { p_rows: clean });
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   revalidateProperty();
