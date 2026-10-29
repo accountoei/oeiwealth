@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import ComponentTable from "../ComponentTable";
 import type { Component } from "../components";
 import { useActionSlot } from "@/components/ActionBar";
@@ -18,6 +18,7 @@ const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const sbtn = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50";
+const BOX_BTN = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50";
 const link = "text-xs text-slate-700 underline";
 
 function Msg({ s }: { s: ActionState }) {
@@ -289,8 +290,9 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
 export type PropertyPick = { id: string; assetId: string; name: string; currency: string };
 
 /** เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค · หน้ารายละเอียดทรัพย์สินส่ง propertyId มา · หน้า Income & Expenses ส่งรายการทรัพย์สินให้เลือก */
-export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false, pays }: {
+export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false, pays, asButton = false }: {
   assetId?: string; propertyId?: string; currency?: string; properties?: PropertyPick[]; label?: string; tracked?: boolean;
+  /** แสดงเป็นปุ่ม (กล่องค่าใช้จ่ายของทรัพย์สิน) แทนลิงก์ */ asButton?: boolean;
   /** ตัวเลือก "จ่ายจาก" ค่าตั้งต้น [ค่า (a:/c:), ชื่อ] */ pays?: [string, string][];
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
@@ -298,7 +300,7 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
   const [type, setType] = useState("COMMON_FEE");
   const [pick, setPick] = useState(properties?.[0]?.id ?? "");
   const [state, action, pending] = useActionState<ActionState, FormData>(addUtility, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>{label}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(asButton ? BOX_BTN : link)}>{label}</button>;
   if (!open) return trigger;
   const meter = type === "ELECTRICITY" || type === "WATER";
   const chosen = properties?.find((x) => x.id === pick);
@@ -375,11 +377,21 @@ type Person = { id: string; name: string };
 
 /** บันทึกจ่ายค่าใช้จ่ายประจำ 1 งวด (ใช้ทั้งหน้ารายละเอียดและหน้ารวม)
  *  ไม่มี utilityId = ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (เช่น ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026) */
-export function RecordCostForm({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, minDate, defaultBank, defaultCard, rebillLeases = [] }: {
+type CostFormProps = {
   assetId: string; utilityId?: string; period?: string; label: string; expected: number; currency: string; category: string; minDate?: string;
   banks: Bank[]; cards: Card[]; persons: Person[]; today: string;
   /** "จ่ายจาก" ที่ตั้งไว้ในรายการค่าใช้จ่ายประจำ */ defaultBank?: string | null; defaultCard?: string | null;
   /** สัญญาเช่าที่ "เราจ่ายแล้วเรียกเก็บ" (มี → ติ๊กเรียกเก็บผู้เช่าไว้ให้) */ rebillLeases?: { id: string; label: string }[];
+};
+/** บันทึกแล้ว → ปิดหน้าต่าง ขึ้นข้อความสั้น ๆ และปุ่มกดได้อีกโดยไม่ต้อง refresh (ฟอร์มใหม่ทุกครั้ง · ตกลง 29 ต.ค. 2026) */
+export function RecordCostForm(props: CostFormProps) {
+  const [n, setN] = useState(0);
+  const [done, setDone] = useState("");
+  return <RecordCostInner key={n} {...props} done={done} onDone={(m) => { setDone(m); setN((x) => x + 1); }} />;
+}
+
+function RecordCostInner({ assetId, utilityId, period, label, expected, currency, category, banks, cards, persons, today, minDate, defaultBank, defaultCard, rebillLeases = [], done, onDone }: CostFormProps & {
+  done: string; onDone: (msg: string) => void;
 }) {
   const [rebill, setRebill] = useState(rebillLeases.length > 0);
   const { open, setOpen, present, activeCls } = useActionSlot();
@@ -387,10 +399,11 @@ export function RecordCostForm({ assetId, utilityId, period, label, expected, cu
     : defaultBank && banks.some((b) => b.asset_id === defaultBank) ? "bank" : banks.length ? "bank" : cards.length ? "card" : "cash");
   const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
-  if (state.ok) return <span className="text-xs text-emerald-700">{state.ok}</span>;
-  const trigger = utilityId
+  useEffect(() => { if (state.ok) { setOpen(false); onDone(state.ok); } }, [state.ok]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const button = utilityId
     ? <button type="button" onClick={() => { setMode("record"); setOpen(!open); }} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>
-    : <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50")}>+ ค่าใช้จ่าย</button>;
+    : <button type="button" onClick={() => setOpen(!open)} className={activeCls(BOX_BTN)}>+ ค่าใช้จ่าย</button>;
+  const trigger = done && !open ? <span className="inline-flex items-center gap-2">{button}<span className="text-xs text-emerald-700">{done}</span></span> : button;
   if (!open) return trigger;
   if (mode === "dismiss" && utilityId && period) return present(trigger,
     <DismissCostForm sourceType="PROPERTY" sourceId={utilityId} period={period} onBack={() => setMode("record")} onClose={() => setOpen(false)} />);

@@ -141,7 +141,9 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
     setConfirmKey(null);
   };
   // ลบได้เมื่อยังเหลืออย่างน้อย 1 แถว และแถวนั้นไม่ผูกกับรายการเงิน
-  const canRemove = (r: Row) => !(r.id && lockedSet.has(r.id)) && (isEmpty(r) || live.length > 1);
+  //   ที่ดินแถวเดียว → ลบไม่ได้ (เปลี่ยนที่ดินใช้ "ขาย / รื้อถอน" · ตกลง 29 ต.ค. 2026)
+  const onlyLand = (r: Row) => r.type === "LAND" && !isEmpty(r) && live.filter((x) => x.type === "LAND" && !isEmpty(x)).length === 1;
+  const canRemove = (r: Row) => !(r.id && lockedSet.has(r.id)) && !onlyLand(r) && (isEmpty(r) || live.length > 1);
   // ช่องเงิน: คอมมาตอนพิมพ์ / .00 ตอนออกจากช่อง ใช้ตัวจัดรูปกลาง (NumberInputs)
   const money2 = (r: Row, col: "acq_cost" | "value", readOnly = false) => (
     <input value={r[col]} onChange={(e) => (col === "acq_cost" ? setCost(r.key, e.target.value) : setValue(r.key, e.target.value))}
@@ -189,8 +191,9 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
                       <span><button type="button" onClick={() => remove(r)} className="text-red-600 hover:underline">ยืนยันลบ</button>
                         <button type="button" onClick={() => setConfirmKey(null)} className="ml-2 text-slate-500 hover:underline">ไม่</button></span></span>
                   : <button type="button" onClick={() => (isEmpty(r) ? remove(r) : setConfirmKey(r.key))} className="text-red-600 hover:underline">ลบ</button>)
-                  : <span className="text-slate-400" title={r.id && lockedSet.has(r.id) ? "ผูกกับรายการจ่าย — ลบ / ย้ายรายการจ่ายก่อน" : "ต้องเหลืออย่างน้อย 1 แถว"}>
-                      {r.id && lockedSet.has(r.id) ? "ผูกรายการจ่าย" : "แถวสุดท้าย"}</span>} />
+                  : <span className="text-slate-400" title={r.id && lockedSet.has(r.id) ? "ผูกกับรายการจ่าย — ลบ / ย้ายรายการจ่ายก่อน"
+                      : onlyLand(r) ? "ที่ดินแถวเดียว — ถ้าขาย / เปลี่ยนที่ดิน ใช้ปุ่ม “ขาย / รื้อถอน”" : "ต้องเหลืออย่างน้อย 1 แถว"}>
+                      {r.id && lockedSet.has(r.id) ? "ผูกรายการจ่าย" : onlyLand(r) ? "" : "แถวสุดท้าย"}</span>} />
             ))}
             {rows.length === 0 && <tr><td colSpan={7} className="py-3 text-sm text-slate-500">ยังไม่มีส่วนประกอบ · เพิ่มที่ดิน / สิ่งปลูกสร้างด้านล่าง (หรือใส่ยอดรวมที่แถวรวมอย่างเดียว)</td></tr>}
           </tbody>

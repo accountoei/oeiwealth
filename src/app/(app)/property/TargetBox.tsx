@@ -44,8 +44,8 @@ export default function TargetBox({ currency, target, unit, nwValue, lots }: {
           {carrying != null && min - carrying > 0.005 && line("ค่าใช้จ่ายขาย (จากราคาตลาดครั้งล่าสุด)", `+${money(min - carrying)}`)}
           {/* เทียบกับมูลค่าล่าสุด: ราคาขายขั้นต่ำสูง / ต่ำกว่ามูลค่าล่าสุดกี่ % (ตกลง 29 ต.ค. 2026) */}
           {nwValue > 0 && line(min > nwValue ? "ราคาขายขั้นต่ำสูงกว่ามูลค่าล่าสุด" : "ราคาขายขั้นต่ำต่ำกว่ามูลค่าล่าสุด", diffText(min - nwValue, nwValue),
-            min > nwValue ? "text-red-600 font-medium" : "text-emerald-700 font-medium")}
-          {line("รายได้ − ค่าใช้จ่ายที่บันทึกแล้ว (ไม่หัก)", `${Number(t!.net_income_thb) < 0 ? "−" : ""}${money(Math.abs(Number(t!.net_income_thb)), "THB")}`, "text-slate-600")}
+            min > nwValue ? "text-emerald-700 font-medium" : "text-red-600 font-medium")}
+          {Number(t!.net_income_thb) !== 0 && line("ค่าเช่า − ค่าใช้จ่ายที่บันทึกแล้ว (ดูประกอบ · ไม่หัก)", `${Number(t!.net_income_thb) < 0 ? "−" : ""}${money(Math.abs(Number(t!.net_income_thb)), "THB")}`, "text-slate-600")}
         </dl>
       </>)}
       {lots && <div className="mt-2"><ModalButton label="ดูวิธีคิด (ต้นทุนรายก้อน)" title="ราคาขายขั้นต่ำที่คุ้ม: ต้นทุน + ดอกเบี้ย − ค่าเสื่อม" size="lg">{lots}</ModalButton></div>}
