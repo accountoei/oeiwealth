@@ -30,7 +30,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
 }) {
   const supabase = await createClient();
   const [{ data: moves }, { data: saleVal }, { data: lastVal }, { data: parts }] = await Promise.all([
-    supabase.from("cash_movements").select("id,movement_date,movement_type,amount,fee,currency,description,metadata")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,amount,fee,currency,description,metadata,from_credit_card_id")
       .or(`from_asset_id.eq.${assetId},to_asset_id.eq.${assetId}`).in("movement_type", ["ASSET_PURCHASE", "ASSET_SALE"])
       .is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("asset_valuations").select("valuation_date,value").eq("asset_id", assetId).eq("notes", "ราคาขาย")
@@ -56,7 +56,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
 
   const moveLabel = (m: (typeof list)[number]) => m.movement_type === "ASSET_SALE"
     ? `${isPart(m) ? "ขายบางส่วน · " : ""}${(m.metadata as { gain?: number } | null)?.gain != null ? "เงินขาย (ทุนคืน) เข้าบัญชี" : "เงินขาย (สุทธิ) เข้าบัญชี"}`
-    : "จ่ายซื้อ / จ่ายเพิ่ม";
+    : `จ่ายซื้อ / จ่ายเพิ่ม${m.from_credit_card_id ? " (บัตรเครดิต)" : (m.metadata as { paid_via?: string } | null)?.paid_via === "cash" ? " (เงินสด)" : ""}`;
   const moveActions = (m: (typeof list)[number]) => canWrite && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete && !isPart(m)} canEdit={m.movement_type === "ASSET_PURCHASE"}
     editor={paymentEditor && m.movement_type === "ASSET_PURCHASE"
       ? paymentEditor({ id: m.id, movement_date: m.movement_date, amount: Number(m.amount), description: m.description,

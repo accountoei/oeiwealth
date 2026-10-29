@@ -222,30 +222,53 @@ function DemolishFields({ comps, currency, banks, cards, today, minDate }: {
   </>);
 }
 
-export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม", property = false, components = [] }: {
+export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม", property = false, components = [], cards = [], persons = [] }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string; paths: string[]; label?: string;
+  /** Property: จ่ายด้วยบัตรเครดิต / เงินสด ได้ด้วย (ตกลง 29 ต.ค. 2026) */ cards?: CardOpt[]; persons?: { id: string; name: string }[];
   /** Property: ติ๊ก "เพิ่มมูลค่าตามยอดนี้" (ค่าตั้งต้น) + "อาคาร / สิ่งปลูกสร้าง" (หักค่าเสื่อม · ราคาขายขั้นต่ำที่คุ้ม) */ property?: boolean;
   /** Property: ส่วนประกอบที่เลือกได้ (จ่ายเพิ่มของแถวไหน) */ components?: CompOpt[];
 }) {
   const [state, action, pending] = useActionState<TradeState, FormData>(payForAsset, {});
   const list = banks.filter((b) => b.currency === currency);
+  const cardList = cards.filter((c) => c.currency === currency);
+  const [via, setVia] = useState<"bank" | "card" | "cash">(list.length || !property ? "bank" : cardList.length ? "card" : "cash");
   return (
-    <Box title="จ่ายเงินซื้อ / จ่ายเพิ่มจากบัญชี" label={label} action={action} pending={pending} state={state}>
+    <Box title={property ? "จ่ายเงินซื้อ / จ่ายเพิ่ม" : "จ่ายเงินซื้อ / จ่ายเพิ่มจากบัญชี"} label={label} action={action} pending={pending} state={state}>
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="paths" value={paths.join(",")} />
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm">จ่ายจากบัญชี *
-          <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
-        </label>
+        {property && (
+          <label className="text-sm">จ่ายด้วย *
+            <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value as typeof via)} className={input}>
+              <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
+            </select></label>
+        )}
+        {via === "bank" && (
+          <label className="text-sm">จ่ายจากบัญชี *
+            <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
+          </label>
+        )}
+        {via === "card" && (
+          <label className="text-sm">บัตร *
+            <select name="card_id" required className={input}>{cardList.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+          </label>
+        )}
+        {via === "cash" && (
+          <label className="text-sm">ผู้จ่าย *
+            <select name="person_id" required className={input}>{persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          </label>
+        )}
         <label className="text-sm">จำนวนเงิน ({currency}) *<input name="amount" required inputMode="decimal" className={input} /></label>
-        <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>
-        <BalanceGuard amount={["amount", "fee"]} />
+        {via === "bank" && <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>}
+        {via === "bank" && <BalanceGuard amount={["amount", "fee"]} />}
         <label className="text-sm md:col-span-4">รายละเอียด<input name="description" placeholder="เช่น ซื้อที่ดินเพิ่ม / ต่อเติมห้องครัว" className={input} /></label>
         {property && <PropertyPayExtras components={components} allowNew />}
       </div>
-      {list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
-      <p className="text-xs text-slate-500">เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย) · {property
+      {via === "bank" && list.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
+      {via === "card" && cardList.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัตรสกุล {currency} ที่ใช้งานอยู่</p>}
+      <p className="text-xs text-slate-500">{via === "card" ? "ยอดบัตรค้างจ่ายเพิ่ม (หนี้) และเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย)"
+        : via === "cash" ? "เงินสดไม่ผ่านบัญชี (ไม่มีบัญชีไหนลด) · เป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย)" : "เงินออกจากบัญชีไปเป็นทรัพย์สิน (ไม่ใช่ค่าใช้จ่าย)"} · {property
         ? "เป็นต้นทุน (ราคาที่ได้มา) และมูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (แก้ / ลบรายการจ่ายแล้วมูลค่าปรับตาม) · ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า ให้บันทึกที่ \"+ ค่าใช้จ่าย\" ด้านล่างของหน้า"
         : "มูลค่าทรัพย์สินไม่เปลี่ยนเอง ให้อัปเดตมูลค่าหลังบันทึก"}</p>
     </Box>

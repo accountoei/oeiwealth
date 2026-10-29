@@ -33,7 +33,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   // รายการบัตร ตั้งแต่ Statement ก่อนหน้า (หรือยอดล่าสุด) ถึงวันนี้
   const statements = hist ?? [];
   const from = statements[1]?.statement_date ?? c.balance_date ?? "1900-01-01";
-  const [{ data: exps }, { data: pays }, { data: reimbs }, { data: incs }, { data: pfPays }, pfAll] = await Promise.all([
+  const [{ data: exps }, { data: pays }, { data: reimbs }, { data: incs }, { data: pfPays }, pfAll, { data: buys }] = await Promise.all([
     supabase.from("expense_items").select("id,date,description,amount,pending_split").eq("paid_from_credit_card_id", id)
       .is("deleted_at", null).gt("date", from),
     supabase.from("cash_movements").select("id,movement_date,amount,description").eq("to_credit_card_id", id).eq("movement_type", "CARD_PAYMENT")
@@ -46,6 +46,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
     supabase.from("investment_transactions").select("id,transaction_date,amount,notes,cash_holding_id").eq("to_credit_card_id", id)
       .eq("transaction_type", "PAYMENT").is("deleted_at", null).gt("transaction_date", from),
     loadPfCash(supabase),
+    // ซื้อ / จ่ายเพิ่มทรัพย์สินด้วยบัตร (แก้ / ลบที่หน้าทรัพย์สินนั้น)
+    supabase.from("cash_movements").select("id,movement_date,amount,description,to_asset_id,assets:to_asset_id(name)").eq("from_credit_card_id", id)
+      .eq("movement_type", "ASSET_PURCHASE").is("deleted_at", null).gt("movement_date", from),
   ]);
   const pfCash = pfAll.filter((h) => h.currency === c.currency);
   const pfName = new Map(pfAll.map((h) => [h.id, h.label]));
@@ -63,6 +66,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   const lines: Line[] = [
     ...(exps ?? []).map((e) => ({ key: `e${e.id}`, id: e.id as string, table: "expense_items" as const, date: e.date as string, kind: "รูดบัตร", text: e.description as string,
       amount: Number(e.amount), pending: !!e.pending_split })),
+    ...(buys ?? []).map((m) => ({ key: `b${m.id}`, id: m.id as string, table: "" as const, date: m.movement_date as string, kind: "ซื้อทรัพย์สิน",
+      text: [(Array.isArray(m.assets) ? m.assets[0]?.name : (m.assets as { name: string } | null)?.name), m.description as string | null].filter(Boolean).join(" · "),
+      amount: Number(m.amount), pending: false })),
     ...(pays ?? []).map((m) => ({ key: `m${m.id}`, id: m.id as string, table: "" as const, date: m.movement_date as string, kind: "จ่ายบัตร", text: (m.description as string | null) ?? "",
       amount: -Number(m.amount), pending: false })),
     ...(pfPays ?? []).map((t) => ({ key: `t${t.id}`, id: t.id as string, table: "" as const, date: t.transaction_date as string, kind: "จ่ายบัตร",
