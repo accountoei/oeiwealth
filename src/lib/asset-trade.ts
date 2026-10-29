@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
-import { endpointFromForm, missingEndpoint } from "@/lib/money-endpoint";
+import { payLinesFromForm } from "@/lib/money-endpoint";
 
 export type TradeState = { error?: string; ok?: string };
 
@@ -121,39 +121,57 @@ export async function undoComponentEvent(_: TradeState, form: FormData): Promise
 }
 
 /** จ่ายเงินซื้อ / จ่ายเพิ่ม (เงินออกจากบัญชีไปเป็นทรัพย์สิน — ไม่ใช่ค่าใช้จ่าย) */
+/** จ่ายซื้อ / จ่ายเพิ่มจากบัญชี (ทรัพย์สินอื่นที่ไม่ใช่ Property) · มูลค่าไม่เปลี่ยนเอง */
 export async function payForAsset(_: TradeState, form: FormData): Promise<TradeState> {
   const amount = num(form.get("amount"));
   if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const property = form.get("property") === "1";
-  // Property: จ่ายจากบัญชี / บัตรเครดิต / เงินสด (ตกลง 29 ต.ค. 2026) · อื่น ๆ: บัญชีเท่านั้น
-  const pay = property ? endpointFromForm(form) : { kind: "bank" as const, id: str(form.get("bank_asset_id")) };
-  const missing = missingEndpoint(pay);
-  if (missing) return { error: missing };
-  const bank = pay.kind === "bank" ? pay.id : null;
-  const cashPerson = pay.kind === "cash" ? str(form.get("person_id")) : null;
-  if (pay.kind === "cash" && !cashPerson) return { error: "กรุณาเลือกผู้จ่าย" };
+  const bank = str(form.get("bank_asset_id"));
+  if (!bank) return { error: "กรุณาเลือกบัญชี" };
   const supabase = await createClient();
-  const { data: b } = bank ? await supabase.from("assets").select("currency").eq("id", bank).maybeSingle() : { data: null };
-  const addValue = property && form.get("add_value") === "on";
-  const assetId = String(form.get("asset_id"));
-  const pick = property ? componentFromForm(form) : null;
-  if (pick && "error" in pick) return { error: pick.error };
-  if (pick && !pick.id && !pick.create) return { error: "กรุณาเลือกแถวของรายการจ่าย (ที่ดิน / อาคาร / แถวใหม่)" };
-  // Property: pay_property = รายการจ่าย (+ แถวส่วนประกอบใหม่) ในคราวเดียว · มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (trigger a70_property_pay_value)
-  const { data: mv, error } = property
-    ? await supabase.rpc("pay_property", {
-        p_asset_id: assetId, p_bank_asset_id: bank, p_date: str(form.get("date")), p_amount: amount, p_fee: bank ? num(form.get("fee")) : null,
-        p_description: str(form.get("description")), p_add_value: addValue, p_component_id: pick?.id ?? null, p_new_component: pick?.create ?? null,
-        p_card_id: pay.kind === "card" ? pay.id : null, p_cash_person_id: cashPerson,
-      }).then((r) => ({ data: r.data ? { id: String(r.data) } : null, error: r.error }))
-    : await supabase.from("cash_movements").insert({
-        movement_date: str(form.get("date")), movement_type: "ASSET_PURCHASE", from_asset_id: bank,
-        to_asset_id: assetId, amount, fee: num(form.get("fee")), currency: b?.currency ?? "THB",
-        description: str(form.get("description")) ?? "จ่ายซื้อทรัพย์สิน",
-      }).select("id").single();
-  if (error || !mv) return { error: friendlyError(error?.message ?? "บันทึกไม่สำเร็จ") };
+  const { data: b } = await supabase.from("assets").select("currency").eq("id", bank).maybeSingle();
+  const { error } = await supabase.from("cash_movements").insert({
+    movement_date: str(form.get("date")), movement_type: "ASSET_PURCHASE", from_asset_id: bank,
+    to_asset_id: String(form.get("asset_id")), amount, fee: num(form.get("fee")), currency: b?.currency ?? "THB",
+    description: str(form.get("description")) ?? "จ่ายซื้อทรัพย์สิน",
+  });
+  if (error) return { error: friendlyError(error.message) };
   refresh(form);
-  return { ok: addValue ? "บันทึกการจ่ายเงิน + เพิ่มมูลค่าแล้ว" : "บันทึกการจ่ายเงินแล้ว · ถ้ามูลค่าทรัพย์สินเปลี่ยน ให้อัปเดตมูลค่าด้วย" };
+  return { ok: "บันทึกการจ่ายเงินแล้ว · ถ้ามูลค่าทรัพย์สินเปลี่ยน ให้อัปเดตมูลค่าด้วย" };
+}
+
+/** Property: จ่ายซื้อ / จ่ายเพิ่มหลายบรรทัด (บัญชี / บัตร / เงินสด · ไม่มีค่าธรรมเนียม · ตกลง 29 ต.ค. 2026)
+ *  วันที่ · เป็นของ · รายละเอียด เดียวกัน · 1 บรรทัด = 1 รายการจ่าย = ต้นทุน + มูลค่าเพิ่มเท่ายอด
+ *  บันทึกทีละบรรทัด (คนละคำขอ → มูลค่าต่อกันตามลำดับ) · แถวใหม่สร้างจากบรรทัดแรก บรรทัดถัดไปเข้าแถวเดียวกัน */
+export async function payPropertyLines(_: TradeState, form: FormData): Promise<TradeState> {
+  const lines = payLinesFromForm(form);
+  if ("error" in lines) return { error: lines.error };
+  const date = str(form.get("date"));
+  if (!date) return { error: "กรุณาใส่วันที่" };
+  const pick = componentFromForm(form);
+  if ("error" in pick) return { error: pick.error };
+  if (!pick.id && !pick.create) return { error: "กรุณาเลือกแถวของรายการจ่าย (ที่ดิน / อาคาร / แถวใหม่)" };
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  let component = pick.id ?? null;
+  for (const [i, l] of lines.entries()) {
+    const { data: mv, error } = await supabase.rpc("pay_property", {
+      p_asset_id: assetId, p_bank_asset_id: l.kind === "bank" ? l.id : null, p_date: date, p_amount: l.amount, p_fee: null,
+      p_description: str(form.get("description")), p_add_value: true, p_component_id: component, p_new_component: component ? null : pick.create,
+      p_card_id: l.kind === "card" ? l.id : null, p_cash_person_id: l.kind === "cash" ? l.id : null,
+    });
+    if (error || !mv) {
+      if (i > 0) refresh(form);
+      const msg = friendlyError(error?.message ?? "บันทึกไม่สำเร็จ");
+      return { error: i === 0 ? msg : `บันทึกแล้ว ${i} บรรทัดแรก · บรรทัดที่ ${i + 1} ไม่สำเร็จ (${msg}) — ตรวจแล้วบันทึกบรรทัดที่เหลือใหม่` };
+    }
+    if (!component) {
+      const { data: m } = await supabase.from("cash_movements").select("metadata").eq("id", String(mv)).maybeSingle();
+      component = (m?.metadata as { component_id?: string } | null)?.component_id ?? null;
+      if (!component && i < lines.length - 1) { refresh(form); return { error: "บันทึกบรรทัดแรกแล้ว แต่หาแถวใหม่ไม่พบ — บันทึกบรรทัดที่เหลือโดยเลือกแถวนั้น" }; }
+    }
+  }
+  refresh(form);
+  return { ok: lines.length > 1 ? `บันทึกการจ่ายเงิน ${lines.length} บรรทัด + เพิ่มมูลค่าแล้ว` : "บันทึกการจ่ายเงิน + เพิ่มมูลค่าแล้ว" };
 }
 
 /** Property: รายการจ่ายนี้เป็นของส่วนประกอบไหน (id) หรือสร้างแถวใหม่ (create) · ไม่ระบุ = {} */

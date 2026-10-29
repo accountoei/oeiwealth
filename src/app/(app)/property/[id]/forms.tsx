@@ -12,6 +12,7 @@ import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
 import { ENCUMBRANCE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
+import { PayLines } from "@/components/AssetTrade";
 import { StatusSlot } from "@/components/StatusSelect";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -395,8 +396,8 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
 }) {
   const [rebill, setRebill] = useState(rebillLeases.length > 0);
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [via, setVia] = useState(defaultCard && cards.some((c) => c.id === defaultCard) ? "card"
-    : defaultBank && banks.some((b) => b.asset_id === defaultBank) ? "bank" : banks.length ? "bank" : cards.length ? "card" : "cash");
+  const defVia = defaultCard && cards.some((c) => c.id === defaultCard && c.currency === currency) ? "card"
+    : defaultBank && banks.some((b) => b.asset_id === defaultBank) ? "bank" : undefined;
   const [mode, setMode] = useState<"record" | "dismiss">("record");
   const [state, action, pending] = useActionState<ActionState, FormData>(recordPropertyCost, {});
   useEffect(() => { if (state.ok) { setOpen(false); onDone(state.ok); } }, [state.ok]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -407,53 +408,29 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
   if (!open) return trigger;
   if (mode === "dismiss" && utilityId && period) return present(trigger,
     <DismissCostForm sourceType="PROPERTY" sourceId={utilityId} period={period} onBack={() => setMode("record")} onClose={() => setOpen(false)} />);
-  const sameBanks = banks.filter((b) => b.currency === currency);
-  const sameCards = cards.filter((c) => c.currency === currency);
+  // หน้าตาเดียวกับ "จ่ายเงินซื้อ / จ่ายเพิ่ม": หัว วันที่ · รายการ · หมายเหตุ → บรรทัด จ่ายด้วย · บัญชี / บัตร / ผู้จ่าย · จำนวนเงิน (ตกลง 29 ต.ค. 2026)
+  //   ครั้งเดียว: เพิ่มบรรทัดได้ (1 บรรทัด = 1 รายการค่าใช้จ่าย) · ค่าใช้จ่ายประจำ: บรรทัดเดียว (งวดละ 1 รายการ)
   return present(trigger, (
-    <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">
+    <form action={action} className="mt-2 w-full space-y-2 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
       {utilityId && <input type="hidden" name="utility_id" value={utilityId} />}
       {period && <input type="hidden" name="cost_period" value={period} />}
       <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="expense_category" value={category} />
-      {utilityId ? <input type="hidden" name="description" value={label} /> : (
-        <label className="text-xs">รายการ
-          <input name="description" required placeholder="เช่น ทำห้องน้ำ / ซ่อมหลังคา" className={`mt-1 block w-48 ${small}`} />
+      <div className="grid gap-2 sm:grid-cols-[10rem_1fr_12rem]">
+        <label className="text-xs">วันที่จ่าย
+          <input name="date" type="date" required defaultValue={today} min={minDate || undefined} max={today} className={`mt-1 block w-full ${small}`} />
         </label>
-      )}
-      <label className="text-xs">ยอดที่จ่าย
-        <input name="amount" required inputMode="decimal" defaultValue={expected > 0 ? String(expected) : ""} className={`mt-1 block w-28 ${small}`} />
-      </label>
-      <label className="text-xs">วันที่จ่าย
-        <input name="date" type="date" required defaultValue={today} min={minDate || undefined} max={today} className={`mt-1 block ${small}`} />
-      </label>
-      <label className="text-xs">จ่ายจาก
-        <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={`mt-1 block ${small}`}>
-          <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
-        </select>
-      </label>
-      {via === "bank" && (
-        <label className="text-xs">บัญชี
-          <select name="bank_asset_id" required defaultValue={sameBanks.find((b) => b.asset_id === defaultBank)?.asset_id} className={`mt-1 block ${small}`}>
-            {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
-          </select>
-        </label>
-      )}
-      {via === "card" && (
-        <label className="text-xs">บัตร
-          <select name="card_id" required defaultValue={sameCards.find((c) => c.id === defaultCard)?.id} className={`mt-1 block ${small}`}>
-            {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-        </label>
-      )}
-      {via === "cash" && (
-        <label className="text-xs">ผู้จ่าย
-          <select name="person_id" required className={`mt-1 block ${small}`}>
-            {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-      )}
-      <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-32 ${small}`} /></label>
+        {utilityId ? <><input type="hidden" name="description" value={label} /><div className="self-end pb-1 text-xs text-slate-600">{label}</div></> : (
+          <label className="text-xs">รายการ
+            <input name="description" required placeholder="เช่น ค่าธรรมเนียมโอน / ทำห้องน้ำ / ซ่อมหลังคา" className={`mt-1 block w-full ${small}`} />
+          </label>
+        )}
+        <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-full ${small}`} /></label>
+      </div>
+      <PayLines currency={currency} banks={banks} cards={cards} persons={persons} multi={!utilityId}
+        defaultVia={defVia} defaultId={defVia === "card" ? defaultCard : defVia === "bank" ? defaultBank : null}
+        defaultAmount={expected > 0 ? String(expected) : ""} />
       {rebillLeases.length > 0 && (
         <div className="flex w-full flex-wrap items-end gap-2 rounded-md bg-amber-50 px-2 py-1.5">
           <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" name="rebill" checked={rebill} onChange={(e) => setRebill(e.target.checked)} />
@@ -466,11 +443,12 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
           </>}
         </div>
       )}
-      <button disabled={pending} className={sbtn}>บันทึก</button>
-      <BalanceGuard />
-      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
-      {utilityId && <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>}
-      <div className="w-full"><Msg s={state} /></div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button disabled={pending} className={sbtn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+        {utilityId && <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>}
+      </div>
+      <Msg s={state} />
     </form>
   ));
 }

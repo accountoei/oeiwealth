@@ -63,3 +63,27 @@ export function missingEndpoint(e: Endpoint): string | null {
   if (e.kind === "cash" || e.id) return null;
   return e.kind === "bank" ? "กรุณาเลือกบัญชี" : e.kind === "card" ? "กรุณาเลือกบัตร" : "กรุณาเลือกบัญชีเงินฝากในพอร์ต";
 }
+
+/** 1 บรรทัดของ "จ่ายด้วย" แบบหลายบรรทัด (Property: จ่ายซื้อ / จ่ายเพิ่ม · ค่าใช้จ่าย) · เงินสด: id = ผู้จ่าย */
+export type PayLine = { kind: "bank" | "card" | "cash"; id: string; amount: number };
+
+/**
+ * อ่านหลายบรรทัดจากช่องซ้ำ pl_via (bank | card | cash) · pl_id · pl_amount (ตกลง 29 ต.ค. 2026 · ให้ยอดตรงกับ statement)
+ * บรรทัดที่ไม่มียอด = ข้าม · ยอดผิด / ไม่ได้เลือกบัญชี → { error } บอกเลขบรรทัด
+ */
+export function payLinesFromForm(form: FormData): PayLine[] | { error: string } {
+  const via = form.getAll("pl_via"), ids = form.getAll("pl_id"), amounts = form.getAll("pl_amount");
+  const out: PayLine[] = [];
+  for (let i = 0; i < via.length; i++) {
+    const raw = clean(amounts[i])?.replace(/,/g, "") ?? null;
+    if (raw === null) continue;
+    const amount = Number(raw);
+    if (!(amount > 0)) return { error: `บรรทัดที่ ${i + 1} · จำนวนเงินต้องเป็นตัวเลขมากกว่า 0` };
+    const v = String(via[i]);
+    const kind: PayLine["kind"] = v === "card" ? "card" : v === "cash" ? "cash" : "bank";
+    const id = clean(ids[i]);
+    if (!id) return { error: `บรรทัดที่ ${i + 1} · กรุณาเลือก${kind === "cash" ? "ผู้จ่าย" : kind === "card" ? "บัตร" : "บัญชี"}` };
+    out.push({ kind, id, amount });
+  }
+  return out.length ? out : { error: "กรุณาใส่จำนวนเงินอย่างน้อย 1 บรรทัด" };
+}

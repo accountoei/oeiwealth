@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
-import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
+import { bankId, cardId, parseEndpoint, payLinesFromForm } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
 import { partsSum, type ValuePart } from "./valueParts";
 import type { CompInput } from "./components";
@@ -460,31 +460,41 @@ export async function addUtility(_: ActionState, form: FormData): Promise<Action
 export async function recordPropertyCost(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const assetId = str(form.get("asset_id"));
-  const amount = num(form.get("amount"));
-  if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const pay = endpointFromForm(form);
+  // หลายบรรทัด (จ่ายด้วย · บัญชี / บัตร / ผู้จ่าย · ยอด) · 1 บรรทัด = 1 รายการค่าใช้จ่าย (ตกลง 29 ต.ค. 2026)
+  const lines = payLinesFromForm(form);
+  if ("error" in lines) return { error: lines.error };
+  const utilityId = str(form.get("utility_id"));
+  if (utilityId && lines.length > 1) return { error: "ค่าใช้จ่ายประจำบันทึกได้งวดละ 1 บรรทัด" };
   const rebillLease = form.get("rebill") === "on" ? str(form.get("rebill_lease_id")) : null;
   const rebillAmount = rebillLease ? num(form.get("rebill_amount")) : null;
   if (rebillLease && rebillAmount != null && (Number.isNaN(rebillAmount) || rebillAmount <= 0)) return { error: "ยอดเรียกเก็บผู้เช่าต้องมากกว่า 0" };
-  const { data: expenseId, error } = await supabase.rpc("add_expense", { p: {
-    date: str(form.get("date")), description: str(form.get("description")), amount,
-    currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
-    ...paidFromColumns(pay),
-    person_id: pay.kind === "cash" ? str(form.get("person_id")) : null,
-    property_utility_id: str(form.get("utility_id")), cost_period: str(form.get("cost_period")),
-    related_asset_id: str(form.get("utility_id")) ? null : assetId,
-    notes: str(form.get("notes")),
-  } });
-  if (error) return { error: friendlyError(error.message) };
-  revalidateProperty(assetId ?? undefined);
-  revalidatePath("/income-expenses");
-  revalidatePath("/financial/cash", "layout");
-  if (rebillLease && expenseId) {
-    const { error: e2 } = await supabase.rpc("add_utility_charge", { p_expense_item_id: String(expenseId), p_lease_id: rebillLease, p_amount: rebillAmount });
-    if (e2) return { error: `บันทึกจ่ายแล้ว แต่ตั้งยอดเรียกเก็บผู้เช่าไม่ได้ (${friendlyError(e2.message)})` };
-    return { ok: "บันทึกจ่ายแล้ว · ตั้งยอดเรียกเก็บผู้เช่าแล้ว" };
+  const done = () => { revalidateProperty(assetId ?? undefined); revalidatePath("/income-expenses"); revalidatePath("/financial/cash", "layout"); };
+  let expenseId: string | null = null;
+  for (const [i, l] of lines.entries()) {
+    const { data, error } = await supabase.rpc("add_expense", { p: {
+      date: str(form.get("date")), description: str(form.get("description")), amount: l.amount,
+      currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
+      paid_from_asset_id: l.kind === "bank" ? l.id : null, paid_from_credit_card_id: l.kind === "card" ? l.id : null,
+      person_id: l.kind === "cash" ? l.id : null,
+      property_utility_id: utilityId, cost_period: str(form.get("cost_period")),
+      related_asset_id: utilityId ? null : assetId,
+      notes: str(form.get("notes")),
+    } });
+    if (error) {
+      if (i > 0) done();
+      const msg = friendlyError(error.message);
+      return { error: i === 0 ? msg : `บันทึกแล้ว ${i} บรรทัดแรก · บรรทัดที่ ${i + 1} ไม่สำเร็จ (${msg}) — ตรวจแล้วบันทึกบรรทัดที่เหลือใหม่` };
+    }
+    expenseId ??= data ? String(data) : null;
   }
-  return { ok: "บันทึกจ่ายแล้ว" };
+  done();
+  const saved = lines.length > 1 ? `บันทึกจ่ายแล้ว ${lines.length} บรรทัด` : "บันทึกจ่ายแล้ว";
+  if (rebillLease && expenseId) {
+    const { error: e2 } = await supabase.rpc("add_utility_charge", { p_expense_item_id: expenseId, p_lease_id: rebillLease, p_amount: rebillAmount });
+    if (e2) return { error: `บันทึกจ่ายแล้ว แต่ตั้งยอดเรียกเก็บผู้เช่าไม่ได้ (${friendlyError(e2.message)})` };
+    return { ok: `${saved} · ตั้งยอดเรียกเก็บผู้เช่าแล้ว` };
+  }
+  return { ok: saved };
 }
 
 export type BatchState = { error?: string; ok?: string };
