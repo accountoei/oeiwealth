@@ -136,22 +136,35 @@ function CompPicker({ comps, currency, sale = false }: { comps: SaleComp[]; curr
   );
 }
 
-export function SellAssetForm({ assetId, currency, banks, cards, today, minDate, paths, hasLease, quantity, unit, components }: {
+/** ขายทรัพย์สิน · Property ส่ง demolishable → ปุ่มเดียว "ขาย / รื้อถอน" เลือกที่หัวฟอร์ม (ตกลง 29 ต.ค. 2026) */
+export function SellAssetForm({ assetId, currency, banks, cards, today, minDate, paths, hasLease, quantity, unit, components, demolishable }: {
   assetId: string; currency: string; banks: Bank[]; cards?: CardOpt[]; today: string; minDate: string; paths: string[]; hasLease?: boolean;
   /** Alternative: จำนวนที่ถืออยู่ → ขายบางส่วนได้ (ไม่ส่ง = ขายทั้งรายการเท่านั้น) */
   quantity?: number | null; unit?: string | null;
   /** Property: แถวส่วนประกอบที่ยังถืออยู่ (2 แถวขึ้นไป → ขายบางแถวได้) */
   components?: SaleComp[];
+  /** Property: แถวที่รื้อถอนได้ (สิ่งปลูกสร้าง · ADMIN / EDITOR) → มีตัวเลือก "รื้อถอน" ในฟอร์มเดียวกัน */ demolishable?: SaleComp[];
 }) {
-  const [state, action, pending] = useActionState<TradeState, FormData>(sellAsset, {});
+  const [kind, setKind] = useState<"sell" | "demolish">("sell");
+  const [state, action, pending] = useActionState<TradeState, FormData>(
+    (s, f) => (f.get("kind") === "demolish" ? demolishComponents(s, f) : sellAsset(s, f)), {});
   const [part, setPart] = useState(false);
   const list = banks.filter((b) => b.currency === currency);
   const qtyText = quantity ? quantity.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "";
   const canPart = (components?.length ?? 0) > 1;
   return (
-    <Box title="บันทึกการขาย" label="ขายทรัพย์สินนี้" action={action} pending={pending} state={state} danger>
+    <Box title={demolishable ? "บันทึกการขาย / รื้อถอน" : "บันทึกการขาย"} label={demolishable ? "ขาย / รื้อถอน" : "ขายทรัพย์สินนี้"}
+      action={action} pending={pending} state={state} danger>
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="paths" value={paths.join(",")} />
+      <input type="hidden" name="kind" value={kind} />
+      {demolishable && (
+        <div className="flex flex-wrap gap-5 border-b border-slate-100 pb-2 text-sm font-medium">
+          <label className="flex items-center gap-2"><input type="radio" checked={kind === "sell"} onChange={() => setKind("sell")} /> ขาย</label>
+          <label className="flex items-center gap-2"><input type="radio" checked={kind === "demolish"} onChange={() => setKind("demolish")} /> รื้อถอนสิ่งปลูกสร้าง</label>
+        </div>
+      )}
+      {kind === "demolish" && demolishable ? <DemolishFields comps={demolishable} currency={currency} banks={list} cards={cards} today={today} minDate={minDate} /> : <>
       {canPart && (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-5 text-sm">
@@ -184,33 +197,29 @@ export function SellAssetForm({ assetId, currency, banks, cards, today, minDate,
         {hasLease && !part && <li className="text-amber-700">ถ้ายังมีสัญญาเช่าที่มีผลหลังวันขาย ต้องบันทึกเลิกสัญญา / คืนเงินประกันก่อน</li>}
       </ul>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่าขายแล้วจริง</label>
+      </>}
     </Box>
   );
 }
 
-/** Property: รื้อถอนอาคาร / สิ่งปลูกสร้าง → แถวเป็น "รื้อถอนแล้ว" · มูลค่าของแถวออก · ขาดทุนเท่ามูลค่าเดิม (ตกลง 29 ต.ค. 2026) */
-export function DemolishForm({ assetId, currency, banks, cards, today, minDate, paths, components }: {
-  assetId: string; currency: string; banks: Bank[]; cards?: CardOpt[]; today: string; minDate: string; paths: string[]; components: SaleComp[];
+/** Property: รื้อถอนสิ่งปลูกสร้าง → แถวเป็น "รื้อถอนแล้ว" · มูลค่าของแถวออก · ขาดทุนเท่ามูลค่าเดิม (ตกลง 29 ต.ค. 2026)
+ *  อยู่ในฟอร์ม "ขาย / รื้อถอน" (เลือก "รื้อถอนสิ่งปลูกสร้าง") */
+function DemolishFields({ comps, currency, banks, cards, today, minDate }: {
+  comps: SaleComp[]; currency: string; banks: Bank[]; cards?: CardOpt[]; today: string; minDate: string;
 }) {
-  const [state, action, pending] = useActionState<TradeState, FormData>(demolishComponents, {});
-  const list = banks.filter((b) => b.currency === currency);
-  return (
-    <Box title="บันทึกการรื้อถอน" label="รื้อถอน" action={action} pending={pending} state={state} danger>
-      <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="paths" value={paths.join(",")} />
-      <CompPicker comps={components} currency={currency} />
-      <div className="grid gap-3 md:grid-cols-4">
-        <label className="text-sm">วันที่รื้อถอน *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
-        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="เหตุผล / ผู้รับเหมา" className={input} /></label>
-      </div>
-      <SaleLines currency={currency} banks={list} cards={cards} demolish />
-      <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
-        <li>มูลค่าของแถวที่รื้อออกจากมูลค่าทรัพย์สิน · ขาดทุน = มูลค่าเดิม − เงินขายเศษวัสดุ → ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ไม่มีเงินออกจากบัญชี)</li>
-        <li>ค่าจ้างรื้อถอนที่จ่ายจากบัญชี / บัตร ใส่ในค่าใช้จ่าย → ลงเป็นค่าใช้จ่ายหมวด &ldquo;ค่าใช้จ่ายในการขาย / รื้อถอนทรัพย์สิน&rdquo; · สร้างหลังใหม่ใช้ &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; → อาคารใหม่</li>
-      </ul>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่ารื้อถอนแล้วจริง</label>
-    </Box>
-  );
+  return (<>
+    <CompPicker comps={comps} currency={currency} />
+    <div className="grid gap-3 md:grid-cols-4">
+      <label className="text-sm">วันที่รื้อถอน *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+      <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" placeholder="เหตุผล / ผู้รับเหมา" className={input} /></label>
+    </div>
+    <SaleLines currency={currency} banks={banks} cards={cards} demolish />
+    <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-500">
+      <li>มูลค่าของแถวที่รื้อออกจากมูลค่าทรัพย์สิน · ขาดทุน = มูลค่าเดิม − เงินขายเศษวัสดุ → ค่าใช้จ่ายของเจ้าของตามสัดส่วน (ไม่มีเงินออกจากบัญชี)</li>
+      <li>ค่าจ้างรื้อถอนที่จ่ายจากบัญชี / บัตร ใส่ในค่าใช้จ่าย → ลงเป็นค่าใช้จ่ายหมวด &ldquo;ค่าใช้จ่ายในการขาย / รื้อถอนทรัพย์สิน&rdquo; · สร้างใหม่ใช้ &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; → สิ่งปลูกสร้างใหม่</li>
+    </ul>
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" /> ยืนยันว่ารื้อถอนแล้วจริง</label>
+  </>);
 }
 
 export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, label = "+ จ่ายซื้อ / จ่ายเพิ่ม", property = false, components = [] }: {

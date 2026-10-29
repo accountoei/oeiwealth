@@ -18,7 +18,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import { WithStatus } from "@/components/StatusSelect";
-import { DemolishForm, PayAssetForm, SellAssetForm, UndoComponentEvent, type CompOpt, type SaleComp } from "@/components/AssetTrade";
+import { PayAssetForm, SellAssetForm, UndoComponentEvent, type CompOpt, type SaleComp } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import MarketBox from "../MarketBox";
 import TargetBox, { CostLotsSection, type TargetPrice } from "../TargetBox";
@@ -78,7 +78,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("property_details").select(`*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
-    supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes")
+    supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes,source_movement_id")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("v_lease_status").select("*").eq("property_asset_id", id).order("start_date", { ascending: false }),
     supabase.from("v_lease_rent_tracking").select("*").eq("property_asset_id", id)
@@ -275,7 +275,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             </tfoot>
           </table>
           {endedList}
-          {!hasLatest && <p className="mt-1 text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว · แยกรายแถวได้ที่ปุ่มแก้ไข หรือ &ldquo;มูลค่าและต้นทุน&rdquo;</p>}
+          {!hasLatest && <p className="mt-1 text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว · แยกรายแถวได้ที่ปุ่มแก้ไข หรือ &ldquo;ปรับมูลค่า / ประวัติ&rdquo;</p>}
         </div>
       )}
     </div>
@@ -297,9 +297,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <ActionBar>
               <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts} />
               <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0}
-                cards={cards} components={saleComps} />
-              {canDelete && demolishable.length > 0 && comps.length > 1 &&
-                <DemolishForm assetId={id} currency={a.currency} banks={bankList} cards={cards} today={today} minDate={goLive} paths={paths} components={demolishable} />}
+                cards={cards} components={saleComps} demolishable={canDelete && demolishable.length > 0 && comps.length > 1 ? demolishable : undefined} />
             </ActionBar>
           )}
         </div>
@@ -317,20 +315,22 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             {a.acquisition_cost != null && (
               <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(a.acquisition_cost, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
             )}
-            {/* ปุ่มเดียว "มูลค่าและต้นทุน": อัปเดตมูลค่า + ประวัติซื้อ / ขาย / มูลค่า + ต้นทุนรายก้อน (ตกลง 28 ต.ค. 2026) */}
+            {/* ปุ่มเดียว "ปรับมูลค่า / ประวัติ": อัปเดตมูลค่า + ประวัติตารางเดียว (เงินจ่าย / รับ · มูลค่าเปลี่ยน · ตกลง 29 ต.ค. 2026) */}
             <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-              paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="มูลค่าและต้นทุน"
+              paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="ปรับมูลค่า / ประวัติ" flow={Object.fromEntries(compLabel)}
               paymentEditor={(m) => (
                 <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value} components={compOpts} />)}
-              extra={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />}
               valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value), detail: partText(v.id) || null }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
               valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
               valuationForm={canWrite && a.status === "ACTIVE" ? <ValuePartsForm key={partsKey} assetId={id} currency={a.currency} today={today} minDate={goLive} deeds={deedOpts} latest={latestParts} /> : undefined} />
+            {/* ราคาขายขั้นต่ำที่คุ้ม (เทียบมูลค่าล่าสุด) ก่อนราคาตลาด (เทียบราคาขายขั้นต่ำ) · ตกลง 29 ต.ค. 2026 */}
+            <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null} nwValue={Number(a.current_value ?? 0)}
+              unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)}
+              lots={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />} />
             <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
               areaSqWa={pd.land_area_sq_wa != null ? Number(pd.land_area_sq_wa) : null} nwValue={Number(a.current_value ?? 0)}
+              minPrice={(targetRow as TargetPrice | null)?.min_price != null ? Number((targetRow as TargetPrice).min_price) : null}
               history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
-            <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null}
-              unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)} />
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
