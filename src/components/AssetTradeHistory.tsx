@@ -20,7 +20,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
   valuations?: ValRow[]; valuationForm?: ReactNode; valuationHint?: string; sourceLabel?: Record<string, string>;
   methodLabel?: Record<string, string>; perUnit?: (v: number, date: string) => number | null; unit?: string | null; perUnitDigits?: number;
   /** Property: ฟอร์มแก้รายการจ่ายซื้อ / จ่ายเพิ่ม (ติ๊กอาคารได้) แทนฟอร์มกลาง */
-  paymentEditor?: (m: { id: string; movement_date: string; amount: number; description: string | null; add_value: boolean }) => ReactNode;
+  paymentEditor?: (m: { id: string; movement_date: string; amount: number; description: string | null; add_value: boolean; component_id: string | null }) => ReactNode;
   /** Property: ส่วนต่อท้ายในหน้าต่างเดียวกัน (ต้นทุนรายก้อน + เพิ่มต้นทุน) */ extra?: ReactNode;
   /** มีค่า = ปุ่มเดียว (อัปเดตมูลค่า + ประวัติ + extra ในหน้าต่างเดียว · ตกลง 28 ต.ค. 2026) */ singleLabel?: string;
 }) {
@@ -56,7 +56,8 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
   const moveActions = (m: (typeof list)[number]) => canWrite && <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete && !isPart(m)} canEdit={m.movement_type === "ASSET_PURCHASE"}
     editor={paymentEditor && m.movement_type === "ASSET_PURCHASE"
       ? paymentEditor({ id: m.id, movement_date: m.movement_date, amount: Number(m.amount), description: m.description,
-        add_value: (m.metadata as { add_value?: boolean } | null)?.add_value === true }) : undefined}
+        add_value: (m.metadata as { add_value?: boolean } | null)?.add_value === true,
+        component_id: (m.metadata as { component_id?: string } | null)?.component_id ?? null }) : undefined}
     deleteNote={m.movement_type === "ASSET_SALE" ? `ลบเฉพาะเงินขายที่เข้าบัญชี — สถานะ / มูลค่าราคาขาย ต้องแก้เอง${merged ? "" : "ด้านล่าง"}` : undefined}
     fields={[{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "จำนวน", type: "number", value: m.amount },
       { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />;

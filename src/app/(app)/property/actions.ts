@@ -307,23 +307,24 @@ export async function saveCostItem(_: ActionState, form: FormData): Promise<Acti
   return { ok: "บันทึกต้นทุนแล้ว (ไม่นับใน Net Worth)" };
 }
 
-/** แท็บ อัปเดตมูลค่า: มูลค่าใน Net Worth ของหลายทรัพย์สินพร้อมกัน (วันที่ / วิธีเดียวกันทั้งชุด) · บันทึกครั้งเดียว ผิดแถวเดียว = ไม่บันทึกเลย */
+/** แท็บ อัปเดตมูลค่า: มูลค่าใน Net Worth ของหลายทรัพย์สินพร้อมกัน (วันที่ / วิธีเดียวกันทั้งชุด) · บันทึกครั้งเดียว ผิดแถวเดียว = ไม่บันทึกเลย
+ *  แถวที่กรอกรายส่วนประกอบ → ตามนั้น · กรอกยอดรวม + ครั้งก่อนมีรายแถว → ฐานข้อมูลแบ่งตามสัดส่วนครั้งก่อน (batch_property_values) */
 export async function batchPropertyValues(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const date = str(form.get("date"));
   if (!date) return { error: "กรุณาใส่วันที่ของมูลค่า" };
   const method = str(form.get("valuation_method")) ?? "USER_ESTIMATE";
-  let input: { asset_id: string; value: string }[];
+  let input: { asset_id: string; value?: string; parts?: { deed_id: string; value: number }[] }[];
   try { input = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
   if (!Array.isArray(input)) return { error: "ข้อมูลไม่ถูกต้อง" };
-  const rows = input.map((r) => ({ asset_id: String(r.asset_id), value: num(r.value) }));
+  const rows = input.map((r) => (Array.isArray(r.parts) && r.parts.length
+    ? { asset_id: String(r.asset_id), parts: r.parts.map((p) => ({ deed_id: String(p.deed_id), value: Number(p.value) })) }
+    : { asset_id: String(r.asset_id), value: num(r.value ?? null) }));
   if (!rows.length) return { error: "ยังไม่ได้กรอกมูลค่าใหม่เลย" };
-  if (rows.some((r) => r.value === null || Number.isNaN(r.value) || r.value < 0)) return { error: "มูลค่าต้องเป็นตัวเลขไม่ติดลบทุกแถวที่กรอก" };
-  const notes = str(form.get("notes"));
-  const { error } = await supabase.from("asset_valuations").insert(rows.map((r) => ({
-    asset_id: r.asset_id, valuation_date: date, value: r.value, valuation_method: method,
-    source: method === "APPRAISAL" ? "APPRAISAL" : "USER", notes,
-  })));
+  if (rows.some((r) => ("parts" in r
+    ? r.parts!.some((p) => !Number.isFinite(p.value) || p.value < 0)
+    : r.value === null || Number.isNaN(r.value) || r.value < 0))) return { error: "มูลค่าต้องเป็นตัวเลขไม่ติดลบทุกแถวที่กรอก" };
+  const { error } = await supabase.rpc("batch_property_values", { p_date: date, p_method: method, p_notes: str(form.get("notes")), p_rows: rows });
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   rows.forEach((r) => revalidateProperty(r.asset_id));
   revalidateProperty();

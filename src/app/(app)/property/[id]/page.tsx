@@ -18,7 +18,7 @@ import DeleteEntity from "@/components/DeleteEntity";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import { WithStatus } from "@/components/StatusSelect";
-import { PayAssetForm, SellAssetForm } from "@/components/AssetTrade";
+import { PayAssetForm, SellAssetForm, type CompOpt } from "@/components/AssetTrade";
 import AssetTradeHistory from "@/components/AssetTradeHistory";
 import MarketBox from "../MarketBox";
 import TargetBox, { CostLotsSection, type TargetPrice } from "../TargetBox";
@@ -127,6 +127,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     .filter((d) => !d.deleted_at).sort((x, y) => x.sort_order - y.sort_order || x.created_at.localeCompare(y.created_at));
   const lands = comps.filter((c) => c.component_type === "LAND");
   const compLabel = new Map(comps.map((c, i) => [c.id, compName(c, i)]));
+  const compOpts: CompOpt[] = comps.map((c, i) => ({ id: c.id, label: compName(c, i), type: c.component_type }));
   const deedOpts: DeedOpt[] = comps.map((c, i) => ({ id: c.id, label: compName(c, i), type: c.component_type,
     area: c.land_area_sq_wa != null ? Number(c.land_area_sq_wa) : null }));
   const partsKey = `${comps.map((d) => d.id).join(",")}|${vals?.[0]?.id ?? ""}`;   // เพิ่มส่วนประกอบ / มูลค่าใหม่ → ตั้งแถวฟอร์มใหม่
@@ -153,7 +154,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const vacancyHistory = ((pd.vacancy_history ?? []) as { from: string; to: string; plan: string | null }[]).slice().reverse();
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }] = await Promise.all([
+  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -166,7 +167,13 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
     supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
       .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
+    // จ่ายเพิ่มที่ผูกกับส่วนประกอบ → แสดงใต้ต้นทุนของแถวนั้น
+    supabase.from("cash_movements").select("amount,currency,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
+      .is("deleted_at", null).not("metadata->>component_id", "is", null),
   ]);
+  const paidByComp = ((payRows ?? []) as { amount: number; currency: string; metadata: { component_id?: string } | null }[])
+    .filter((p) => p.currency === a.currency && p.metadata?.component_id)
+    .reduce<Record<string, number>>((m, p) => ({ ...m, [p.metadata!.component_id!]: (m[p.metadata!.component_id!] ?? 0) + Number(p.amount) }), {});
   type LeaseExtra = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
@@ -199,7 +206,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const utilById = new Map(utilities.map((u) => [u.id, u]));
   const leaseName = new Map(leases.map((l) => [l.id, [l.unit_label, l.tenant_name].filter(Boolean).join(" · ")]));
 
-  const costSum = comps.reduce((t, c) => t + Number(c.acq_cost ?? 0), 0);
+  const costSum = comps.reduce((t, c) => t + Number(c.acq_cost ?? 0) + (paidByComp[c.id] ?? 0), 0);
   const compTable = (
     <div className="mt-4 border-t border-slate-100 pt-3">
       <h3 className="mb-2 text-sm font-medium text-slate-800">ส่วนประกอบ {comps.length > 0 && <span className="font-normal text-slate-500">({comps.length})</span>}</h3>
@@ -222,7 +229,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="text-right text-xs tabular-nums">{c.component_type === "LAND" ? (c.land_area_sq_wa != null ? landText(c.land_area_sq_wa) : "-")
                     : c.building_area_sqm != null ? `${Number(c.building_area_sqm).toLocaleString("en-US")} ตร.ม.` : "-"}</td>
                   <td className="pl-3 text-xs">{c.acquired_date ? thDate(c.acquired_date) : "-"}</td>
-                  <td className="text-right tabular-nums">{c.acq_cost != null ? money(c.acq_cost, undefined, 0) : "-"}</td>
+                  <td className="text-right tabular-nums">{c.acq_cost != null ? money(c.acq_cost, undefined, 0) : paidByComp[c.id] ? "" : "-"}
+                    {paidByComp[c.id] != null && <div className="text-xs text-slate-500">{c.acq_cost != null && "+ "}จ่าย {money(paidByComp[c.id], undefined, 0)}</div>}</td>
                   <td className="pl-3 text-right tabular-nums">{latestByComp[c.id] != null ? money(latestByComp[c.id], undefined, 0) : "-"}</td>
                 </tr>
               ))}
@@ -254,7 +262,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </div>
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
-              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property />
+              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts} />
               <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0} />
             </ActionBar>
           )}
@@ -278,7 +286,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="มูลค่าและต้นทุน"
               paymentEditor={(m) => { const lot = lots.find((l) => l.source === "PAYMENT" && l.movement_id === m.id); return (
                 <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value}
-                  building={!!lot?.is_building} years={lot?.depreciation_years ?? 20} />); }}
+                  building={!!lot?.is_building} years={lot?.depreciation_years ?? 20} components={compOpts} />); }}
               extra={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />}
               valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value), detail: partText(v.id) || null }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
               valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
