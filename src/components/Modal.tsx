@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 const TOAST_EVENT = "fwv-toast";
 const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: Esc ปิดเฉพาะบนสุด
+const InModal = createContext(false);
+/** อยู่ในหน้าต่าง pop up หรือไม่ (Flash ใช้: ในหน้าต่าง = ข้อความในฟอร์ม · นอกหน้าต่าง = แจ้งมุมจอ) */
+export const useInModal = () => useContext(InModal);
+/** แจ้งข้อความมุมขวาล่าง (ขึ้นแล้วหายเอง) — แสดงโดย Toaster ใน layout หลัก */
+export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: msg }));
 
 /**
  * หน้าต่าง pop up ของฟอร์มที่เปิดจากปุ่ม (ใช้ผ่าน useActionSlot ใน ActionBar.tsx)
@@ -59,7 +64,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
       if (!fresh && !(armed.busy && g.length)) return;
       if (hasError()) { armed = null; return; }                // บันทึกไม่สำเร็จ → หน้าต่างยังเปิด
       armed = null;
-      window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: fresh ?? g[0] }));
+      toast(fresh ?? g[0]);
       close.current();
       routerRef.current.refresh();                             // ดึงข้อมูลหน้านี้ใหม่ทันที (ไม่ต้องกดรีเฟรชเอง) + ล้างหน้าที่จำไว้
     });
@@ -76,7 +81,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
         {title && <h2 className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}
         {/* กรอบ / พื้นหลังของฟอร์มเดิมไม่ต้องซ้อนในหน้าต่าง · ซ่อนปุ่ม ปิด / ยกเลิก ของฟอร์ม */}
         <div ref={body} className="[&_[data-close]]:hidden [&>*:first-child]:mt-0 [&>*:first-child]:rounded-none [&>*:first-child]:border-0 [&>*:first-child]:bg-transparent [&>*:first-child]:p-0">
-          {children}
+          <InModal.Provider value>{children}</InModal.Provider>
         </div>
       </div>
     </div>,
@@ -84,7 +89,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
   );
 }
 
-/** ข้อความแจ้งมุมจอ หลังหน้าต่างปิดเพราะบันทึกสำเร็จ (วางไว้ที่ layout หลัก) */
+/** ข้อความแจ้งมุมจอ หลังบันทึกสำเร็จ (หน้าต่างปิดเอง หรือ Flash นอกหน้าต่าง · วางไว้ที่ layout หลัก) */
 export function Toaster() {
   const [msg, setMsg] = useState<string | null>(null);
   useEffect(() => {

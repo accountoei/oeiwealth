@@ -554,13 +554,13 @@ export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate
               onChange={(e) => onDesc(e.target.value)} placeholder="เช่น ค่าใช้จ่ายทั่วไปประจำเดือน" className={input} />
               {guess && <span className="mt-1 block text-xs text-blue-700">เดาจากรายการเดิม: หมวด {guess.c}{accName ? ` · ${guess.via === "card" ? "บัตร" : "บัญชี"} ${accName}` : guess.via === "cash" ? " · เงินสด" : ""} (เปลี่ยนเองได้)</span>}
             </label>
-            <label className={lbl}>จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
             <label className={lbl}>หมวด *
               <select name="expense_category" required value={cat} onChange={(e) => { touched.current.cat = true; setCat(e.target.value); }} className={input}>
                 <option value="" disabled>— เลือกหมวด —</option>
                 {categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
+            <label className={lbl}>จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
             <div className={lbl}>จ่ายด้วย
               <div className="mt-2 flex flex-wrap gap-3">
                 <label className="flex items-center gap-1"><input type="radio" name="pay_via" value="bank" checked={via === "bank"} onChange={() => { touched.current.acc = true; setVia("bank"); }} /> บัญชี</label>
