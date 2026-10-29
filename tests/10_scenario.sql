@@ -3920,6 +3920,66 @@ SELECT t.fails($$INSERT INTO public.donation_records(donation_date, donor_kind, 
                'row-level security', 'บริจาค: VIEWER เพิ่มไม่ได้');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz30. แบบภาษีรายปี (tax_returns · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+UPDATE public.app_users SET person_id = t.p('คุณแม่') WHERE auth_user_id = '00000000-0000-0000-0000-00000000000e';
+UPDATE public.app_users SET person_id = t.p('คุณพ่อ') WHERE auth_user_id = '00000000-0000-0000-0000-00000000000a';
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT system_amount AS tx_sal, (SELECT sum((v->>'amount')::numeric) FROM jsonb_each(detail->'by_type') e(k, v)) AS tx_sal_d,
+       (detail->'by_type'->'SALARY'->>'amount')::numeric AS tx_salary
+  FROM public.tax_system_lines(t.p('คุณพ่อ'), 2026) WHERE code = '40(1)' \gset
+SELECT t.ok(:tx_salary >= 100000 AND :tx_sal = :tx_sal_d, 'ภาษี: เงินเดือนเข้า 40(1) จากรายได้เดิม (ไม่กรอกซ้ำ)');
+SELECT t.ok((SELECT system_amount >= 5000 FROM public.tax_system_lines(t.p('คุณพ่อ'), 2026) WHERE code = 'WHT'), 'ภาษี: ภาษีหัก ณ ที่จ่ายรวมเป็นเครดิต');
+SELECT t.ok((SELECT qty = 1 FROM public.tax_system_lines(t.p('คุณพ่อ'), 2026) WHERE code = 'PERSONAL'), 'ภาษี: ลดหย่อนผู้มีเงินได้ 1');
+INSERT INTO public.donation_records(donation_date, donor_kind, donor_person_id, claimant_person_id, donee_name, amount, tax_status, tax_kind)
+  VALUES ('2026-08-01', 'PERSON', t.p('คุณพ่อ'), t.p('คุณพ่อ'), 'โรงพยาบาลทดสอบ', 3000, 'ELIGIBLE', 'DOUBLE'),
+         ('2026-08-02', 'PERSON', t.p('คุณพ่อ'), t.p('คุณพ่อ'), 'วัดรอเอกสาร', 500, 'PENDING', 'DOUBLE');
+SELECT t.ok((SELECT system_amount = 3000 AND (detail->>'pending')::int = 1 FROM public.tax_system_lines(t.p('คุณพ่อ'), 2026) WHERE code = 'DON_DOUBLE'),
+            'ภาษี: บริจาคจากแท็บ Donations (นับเฉพาะใช้สิทธิได้ · แจ้งรายการรอเอกสาร)');
+SELECT public.tax_create_return(t.p('คุณพ่อ'), 2026) AS tr1 \gset
+SELECT t.ok((SELECT count(*) FROM public.tax_return_lines WHERE return_id = :'tr1') = (SELECT count(*) FROM public.tax_system_lines(t.p('คุณพ่อ'), 2026)),
+            'ภาษี: สร้างแบบร่างพร้อมรายการทั้งหมด');
+SELECT t.fails(format($$SELECT public.tax_create_return('%s', 2026)$$, t.p('คุณพ่อ')), 'มีแบบภาษีของปีนี้อยู่แล้ว', 'ภาษี: ปีเดียวกันสร้างซ้ำไม่ได้');
+SELECT t.fails(format($$UPDATE public.tax_return_lines SET filed_amount = 1 WHERE return_id = '%s' AND code = '40(1)'$$, :'tr1'),
+               'กรุณาใส่เหตุผล', 'ภาษี: ยอดใช้ยื่นต่างจากระบบต้องมีเหตุผล');
+UPDATE public.tax_return_lines SET filed_amount = 123456, reason = 'ตามหนังสือรับรอง 50 ทวิ' WHERE return_id = :'tr1' AND code = '40(1)';
+UPDATE public.tax_return_lines SET filed_amount = 15000, reason = 'ตามใบเสร็จ' WHERE return_id = :'tr1' AND code = 'SSF';
+SELECT public.tax_refresh_return(:'tr1');
+SELECT t.ok((SELECT filed_amount = 123456 AND system_amount = :tx_sal FROM public.tax_return_lines WHERE return_id = :'tr1' AND code = '40(1)'),
+            'ภาษี: ดึงยอดระบบใหม่ไม่ทับยอดที่แก้เอง');
+SELECT t.fails(format($$UPDATE public.tax_returns SET status = 'FILED', filed_date = current_date WHERE id = '%s'$$, :'tr1'),
+               'บันทึกยื่นแบบผ่านปุ่ม', 'ภาษี: เปลี่ยนเป็นยื่นแล้วต้องผ่านคำสั่ง');
+SELECT t.fails(format($$SELECT public.tax_set_status('%s', 'FILED', '{}')$$, :'tr1'), 'วันที่ยื่น', 'ภาษี: ยื่นแล้วต้องมีวันที่ยื่น');
+SELECT public.tax_set_status(:'tr1', 'REVIEWED');
+SELECT public.tax_set_status(:'tr1', 'FILED', jsonb_build_object('filed_date', current_date, 'reference_no', 'REF-1', 'tax_result', -2000));
+SELECT t.ok((SELECT status = 'FILED' AND jsonb_array_length(filed_snapshot->'lines') > 30 FROM public.tax_returns WHERE id = :'tr1'),
+            'ภาษี: ยื่นแล้วเก็บยอดที่ยื่นคงสภาพ');
+SELECT t.fails(format($$UPDATE public.tax_return_lines SET filed_amount = 1, reason = 'x' WHERE return_id = '%s' AND code = '40(1)'$$, :'tr1'),
+               'LOCKED', 'ภาษี: แบบที่ยื่นแล้วแก้รายการไม่ได้');
+SELECT t.fails(format($$UPDATE public.tax_returns SET tax_result = 1 WHERE id = '%s'$$, :'tr1'), 'LOCKED', 'ภาษี: แบบที่ยื่นแล้วแก้ยอดไม่ได้');
+SELECT t.fails(format($$SELECT public.tax_refresh_return('%s')$$, :'tr1'), 'LOCKED', 'ภาษี: แบบที่ยื่นแล้วดึงยอดใหม่ไม่ได้');
+SELECT t.fails(format($$SELECT public.tax_delete_return('%s')$$, :'tr1'), 'LOCKED', 'ภาษี: แบบที่ยื่นแล้วลบไม่ได้');
+UPDATE public.tax_returns SET settlement_status = 'REFUNDED', settled_date = current_date WHERE id = :'tr1';
+SELECT t.ok((SELECT settlement_status = 'REFUNDED' FROM public.tax_returns WHERE id = :'tr1'), 'ภาษี: ยื่นแล้วยังบันทึกผลรับคืนได้');
+SELECT public.tax_amend_return(:'tr1', 'ลืมใส่ดอกเบี้ย') AS tr2 \gset
+SELECT t.ok((SELECT version = 2 AND status = 'DRAFT' AND supersedes_id = :'tr1' FROM public.tax_returns WHERE id = :'tr2')
+            AND (SELECT filed_amount = 123456 FROM public.tax_return_lines WHERE return_id = :'tr2' AND code = '40(1)')
+            AND (SELECT status = 'FILED' FROM public.tax_returns WHERE id = :'tr1'),
+            'ภาษี: ยื่นเพิ่มเติม = ฉบับใหม่ (คัดลอกยอด · ฉบับเดิมคงไว้)');
+SELECT t.fails(format($$SELECT public.tax_amend_return('%s', 'ซ้ำ')$$, :'tr1'), 'ใหม่กว่า', 'ภาษี: ยื่นเพิ่มเติมจากฉบับเก่าซ้ำไม่ได้');
+-- สิทธิ์: EDITOR (ผูกกับคุณแม่) เห็น / แก้เฉพาะของตัวเอง
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT count(*) FROM public.tax_returns) = 0 AND (SELECT count(*) FROM public.tax_return_lines) = 0, 'ภาษี: EDITOR ไม่เห็นแบบภาษีของคนอื่น');
+SELECT t.fails(format($$SELECT * FROM public.tax_system_lines('%s', 2026)$$, t.p('คุณพ่อ')), 'PERMISSION_DENIED', 'ภาษี: EDITOR ดูยอดภาษีของคนอื่นไม่ได้');
+SELECT t.fails(format($$SELECT public.tax_create_return('%s', 2026)$$, t.p('คุณพ่อ')), 'PERMISSION_DENIED', 'ภาษี: EDITOR สร้างแบบของคนอื่นไม่ได้');
+SELECT public.tax_create_return(t.p('คุณแม่'), 2026) AS tr3 \gset
+SELECT t.ok((SELECT count(*) FROM public.tax_returns) = 1, 'ภาษี: EDITOR สร้าง / เห็นแบบของตัวเอง');
+SELECT public.tax_delete_return(:'tr3');
+SELECT t.ok((SELECT count(*) FROM public.tax_returns WHERE deleted_at IS NULL) = 0, 'ภาษี: ลบแบบร่างได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.tax_returns) = 0, 'ภาษี: VIEWER ที่ไม่ผูกสมาชิกไม่เห็นแบบภาษี');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

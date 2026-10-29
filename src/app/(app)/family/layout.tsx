@@ -8,6 +8,7 @@ export default function FamilyLayout({ children }: { children: React.ReactNode }
         { href: "/family/members", label: "Members" },
         { href: "/family/memberships", label: "Membership & Points" },
         { href: "/family/health", label: "Health" },
+        { href: "/family/tax", label: "Tax" },
         { href: "/family/donations", label: "Donations" },
         { href: "/family/documents", label: "Documents" },
       ]} />

@@ -67,6 +67,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     : { data: [] };
   (dons ?? []).forEach((x) => label.set(`DONATION:${x.id}`, { name: `บริจาค ${x.donee_name} (${thDate(x.donation_date)})`,
     href: `/family/donations?y=${x.donation_date.slice(0, 4)}` }));
+  // แบบภาษีรายปี (แท็บ Tax · RLS: เห็นเฉพาะของตัวเอง / ADMIN ทุกคน)
+  const taxIds = [...new Set((links ?? []).filter((l) => l.entity_type === "TAX_RETURN").map((l) => l.entity_id))];
+  const { data: taxes } = taxIds.length
+    ? await supabase.from("tax_returns").select("id,person_id,tax_year,persons(name)").in("id", taxIds)
+    : { data: [] };
+  (taxes ?? []).forEach((x) => label.set(`TAX_RETURN:${x.id}`, { name: `ภาษีปี ${x.tax_year + 543} · ${one(x.persons as unknown as { name: string } | null)?.name ?? ""}`,
+    href: `/family/tax?p=${x.person_id}&y=${x.tax_year}` }));
   const byDoc = new Map<string, { id: string; key: string }[]>();
   (links ?? []).forEach((l) => byDoc.set(l.document_id, [...(byDoc.get(l.document_id) ?? []), { id: l.id, key: `${l.entity_type}:${l.entity_id}` }]));
   // หมวดเอกสาร = ตามหน้าที่แนบ (รายการที่ผูกรายการแรก) · ไม่ผูก = ตามหมวดเดิม (module)

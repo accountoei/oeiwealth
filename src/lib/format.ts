@@ -321,7 +321,7 @@ export const DOC_TYPES: Record<string, string[]> = {
 /** หมวดเอกสาร = หน้าที่แนบ (ตั้งอัตโนมัติจากรายการที่ผูก) · ประเภทเลือกจากรายการของหมวด + "อื่น ๆ" พิมพ์เอง */
 export const DOC_CATEGORY_LABEL: Record<string, string> = {
   BANK: "บัญชีธนาคาร", LOAN: "เงินให้กู้", BUSINESS: "กิจการ", LIABILITY: "หนี้สิน", CARD: "บัตรเครดิต", INVESTMENT: "การลงทุน",
-  PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น", INSURANCE: "ประกัน", PERSON: "สมาชิก", DONATION: "การบริจาค", OTHER: "อื่น ๆ / ยังไม่ผูก",
+  PROPERTY: "อสังหาฯ", ALTERNATIVE: "สินทรัพย์อื่น", INSURANCE: "ประกัน", PERSON: "สมาชิก", DONATION: "การบริจาค", TAX: "ภาษี", OTHER: "อื่น ๆ / ยังไม่ผูก",
 };
 export const DOC_TYPES_BY_CATEGORY: Record<string, string[]> = {
   BANK: ["Statement", "สมุดบัญชี", "เอกสารเปิด / ปิดบัญชี", "ใบฝากประจำ"],
@@ -335,6 +335,7 @@ export const DOC_TYPES_BY_CATEGORY: Record<string, string[]> = {
   INSURANCE: ["กรมธรรม์", "ใบเสร็จเบี้ยประกัน", "เอกสารเคลม", "สลักหลังกรมธรรม์"],
   PERSON: ["บัตรประชาชน", "ทะเบียนบ้าน", "สูติบัตร", "ทะเบียนสมรส", "หนังสือเดินทาง", "พินัยกรรม", "หนังสือมอบอำนาจ"],
   DONATION: ["ใบอนุโมทนาบัตร / ใบรับบริจาค", "สลิปโอนเงิน", "รายการ e-Donation", "รูปถ่าย"],
+  TAX: ["แบบ ภ.ง.ด. ที่ยื่น", "หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)", "ใบเสร็จ / หนังสือรับรองค่าลดหย่อน", "หลักฐานชำระ / รับคืนภาษี"],
   OTHER: [],
 };
 /** หมวดของเอกสารจากรายการที่ผูก (entity_type + ประเภทสินทรัพย์) · ไม่ผูก = ตามหมวดเดิม (module) */
@@ -344,6 +345,7 @@ export function docCategory(entityType: string | null | undefined, assetType?: s
   if (entityType === "INSURANCE_POLICY") return "INSURANCE";
   if (entityType === "PERSON") return "PERSON";
   if (entityType === "DONATION") return "DONATION";
+  if (entityType === "TAX_RETURN") return "TAX";
   if (entityType === "ASSET") {
     if (assetType === "BANK_ACCOUNT") return "BANK";
     if (assetType === "LOAN_RECEIVABLE") return "LOAN";
@@ -358,7 +360,7 @@ export function docCategory(entityType: string | null | undefined, assetType?: s
 }
 export const ENTITY_MODULE: Record<string, string> = {
   FINANCIAL: "FINANCIAL", INVESTMENT: "INVESTMENT", PROPERTY: "PROPERTY", ALTERNATIVE: "ALTERNATIVE",
-  LIABILITY: "FINANCIAL", INSURANCE_POLICY: "INSURANCE", PERSON: "FAMILY", CREDIT_CARD: "CARD_MEMBERSHIP", DONATION: "FAMILY",
+  LIABILITY: "FINANCIAL", INSURANCE_POLICY: "INSURANCE", PERSON: "FAMILY", CREDIT_CARD: "CARD_MEMBERSHIP", DONATION: "FAMILY", TAX_RETURN: "FAMILY",
 };
 
 // ---------- การบริจาค (Family → Donations) ----------
@@ -370,6 +372,12 @@ export const DONATION_TAX_KIND_LABEL: Record<string, string> = {
   GENERAL: "ทั่วไป (1 เท่า)", DOUBLE: "การศึกษา / โรงพยาบาลรัฐ ฯลฯ (2 เท่า)", POLITICAL: "พรรคการเมือง",
 };
 export const DONATION_FORM_LABEL: Record<string, string> = { CASH: "เงิน", IN_KIND: "สิ่งของ" };
+
+// ---------- ภาษีเงินได้บุคคลธรรมดา (Family → Tax) ----------
+export const TAX_RETURN_STATUS_LABEL: Record<string, string> = { DRAFT: "ฉบับร่าง", REVIEWED: "ตรวจแล้ว", FILED: "ยื่นแล้ว" };
+export const TAX_FORM_LABEL: Record<string, string> = { PND90: "ภ.ง.ด.90", PND91: "ภ.ง.ด.91", PND94: "ภ.ง.ด.94 (ครึ่งปี)" };
+export const TAX_SETTLEMENT_LABEL: Record<string, string> = { PAID: "ชำระแล้ว", WAIT_REFUND: "รอคืนภาษี", REFUNDED: "ได้รับคืนแล้ว", NONE: "ไม่มีชำระ / คืน" };
+export const TAX_METHOD_LABEL: Record<string, string> = { FLAT: "หักแบบเหมา", ACTUAL: "หักตามจริง", NONE: "ไม่หัก" };
 export function fileSize(n: number | null | undefined) {
   if (n == null) return "";
   return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
