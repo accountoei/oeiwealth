@@ -394,19 +394,32 @@ function ComponentSelect({ components, value, onChange, allowNew = false, classN
 }
 
 /** แถวใหม่ (ซื้อที่ดินเพิ่ม / สิ่งปลูกสร้างใหม่): ช่อง nc_* · วันที่ได้มา = วันที่จ่าย */
+const TITLE_TYPES = ["โฉนด", "น.ส.3 ก.", "น.ส.3", "อื่น ๆ"];
 function NewComponentFields({ pick }: { pick: string }) {
   if (!pick.startsWith("new:")) return null;
   return (
     <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
       {/* key: สลับที่ดิน ↔ สิ่งปลูกสร้าง แล้วช่องไม่ค้างค่าเดิม (เช่น 20 ปี ไปโผล่ในช่องงาน) */}
       {pick === "new:LAND" ? (
-        <div key="land" className="flex flex-wrap items-center gap-2">
-          <input name="nc_title_deed_no" placeholder="เลขที่โฉนด" aria-label="เลขที่โฉนด" data-plain className={`w-32 ${small}`} />
-          <input name="nc_land_no" placeholder="เลขที่ดิน" aria-label="เลขที่ดิน" data-plain className={`w-28 ${small}`} />
-          <span className="text-xs text-slate-500">เนื้อที่</span>
-          <input name="nc_rai" placeholder="ไร่" aria-label="ไร่" inputMode="numeric" data-plain className={`w-16 ${small}`} />
-          <input name="nc_ngan" placeholder="งาน" aria-label="งาน" inputMode="numeric" data-plain className={`w-16 ${small}`} />
-          <input name="nc_wa" placeholder="ตร.ว." aria-label="ตารางวา" inputMode="decimal" data-money="off" className={`w-20 ${small}`} />
+        <div key="land" className="space-y-1">
+          {/* รายละเอียดโฉนดครบเหมือนตารางส่วนประกอบ (ตกลง 29 ต.ค. 2026) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <select name="nc_title_type" aria-label="ประเภทเอกสาร" defaultValue="โฉนด" className={small}>
+              {TITLE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input name="nc_title_deed_no" placeholder="เลขที่" aria-label="เลขที่โฉนด" data-plain className={`w-28 ${small}`} />
+            <input name="nc_land_no" placeholder="เลขที่ดิน" aria-label="เลขที่ดิน" data-plain className={`w-24 ${small}`} />
+            <input name="nc_deed_book" placeholder="เล่ม" aria-label="เล่ม" data-plain className={`w-16 ${small}`} />
+            <input name="nc_deed_page" placeholder="หน้า" aria-label="หน้า" data-plain className={`w-16 ${small}`} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input name="nc_map_sheet" placeholder="ระวาง" aria-label="ระวาง" data-plain className={`w-28 ${small}`} />
+            <input name="nc_survey_page" placeholder="หน้าสำรวจ" aria-label="หน้าสำรวจ" data-plain className={`w-24 ${small}`} />
+            <span className="text-xs text-slate-500">เนื้อที่</span>
+            <input name="nc_rai" placeholder="ไร่" aria-label="ไร่" inputMode="numeric" data-plain className={`w-16 ${small}`} />
+            <input name="nc_ngan" placeholder="งาน" aria-label="งาน" inputMode="numeric" data-plain className={`w-16 ${small}`} />
+            <input name="nc_wa" placeholder="ตร.ว." aria-label="ตารางวา" inputMode="decimal" data-money="off" className={`w-20 ${small}`} />
+          </div>
         </div>
       ) : (
         <div key="building" className="flex flex-wrap items-center gap-2">

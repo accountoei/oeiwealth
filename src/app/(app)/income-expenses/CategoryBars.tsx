@@ -1,7 +1,8 @@
 import { money, thDate } from "@/lib/format";
 
 export type CatItem = { name: string; date: string; value: number };
-export type CatRow = { label: string; value: number; items: CatItem[]; pending?: boolean };
+export type CatRow = { label: string; value: number; items: CatItem[]; pending?: boolean;
+  /** ยอดแยกย่อยในหมวด (เช่น ประเภทค่าใช้จ่ายบ้าน / สาธารณูปโภค) */ subs?: { label: string; value: number }[] };
 
 const SHADES: Record<"income" | "expense", string[]> = {
   income: ["#047857", "#059669", "#10b981", "#34d399", "#6ee7b7", "#a7f3d0"],
@@ -48,6 +49,13 @@ export default function CategoryBars({ title, note, kind, rows, empty }: {
                     <span className="hidden text-slate-400 transition-transform group-open:rotate-90 sm:block">▸</span>
                   </div>
                 </summary>
+                {r.subs && r.subs.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 sm:ml-[1.125rem]">
+                    {[...r.subs].sort((a, b) => b.value - a.value).map((x) => (
+                      <span key={x.label}>{x.label} <span className="tabular-nums font-medium text-slate-800">{money(x.value, undefined, 0)}</span></span>
+                    ))}
+                  </div>
+                )}
                 <ul className="mt-2 space-y-1 rounded-lg bg-slate-50 px-3 py-2 sm:ml-[1.125rem] sm:mr-7">
                   {[...r.items].sort((a, b) => b.value - a.value).map((it, k) => (
                     <li key={k} className="flex justify-between gap-3">

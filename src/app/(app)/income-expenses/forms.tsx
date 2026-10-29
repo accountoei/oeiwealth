@@ -9,7 +9,7 @@ import {
   payRecurringExpense, saveEntry, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
   type ActionState,
 } from "./actions";
-import { INCOME_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
+import { HOME_CATEGORY, INCOME_TYPE_LABEL, PROPERTY_COST_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { findHint, type ExpHint } from "@/lib/category-hints";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -50,6 +50,8 @@ export type EntryValues = {
   expected_reimbursement_amount?: number | string | null; bank?: string | null; card?: string | null;
   /** จ่ายจากบัญชีเงินฝากในพอร์ต */
   hold?: string | null;
+  /** ประเภทค่าใช้จ่ายของทรัพย์สิน (หมวดบ้าน / สาธารณูปโภค) */
+  property_cost_type?: string | null;
 };
 export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfCash = [], persons, categories = [], subtypes = [],
   accountEditable = true, reimbursable = false, personFallback }: {
@@ -67,6 +69,7 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfC
   const samePf = income ? [] : pfCash.filter((h) => h.currency === currency || h.id === values.hold);
   const [via, setVia] = useState(values.card ? "card" : values.bank ? "bank" : values.hold ? "portfolio" : "cash");
   const [itype, setItype] = useState(values.income_type ?? "OTHER");
+  const [ecat, setEcat] = useState(values.category ?? "");
   const keep = (list: string[], cur?: string | null) => (cur && !list.includes(cur) ? [cur, ...list] : list);
   const who = personFallback ?? (via === "card" ? "ตามเจ้าของบัตร" : via === "bank" ? "ตามเจ้าของบัญชี" : via === "portfolio" ? "ตามเจ้าของพอร์ต" : "ส่วนกลาง");
   const f = (label: string, el: React.ReactNode) => <label className="text-xs text-slate-600">{label}{el}</label>;
@@ -80,9 +83,15 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfC
       {f(income ? "Gross" : "จำนวน", <input name="f_amount" inputMode="decimal" required defaultValue={String(values.amount ?? "")} className={`${cls} w-32`} />)}
       {income && f("ภาษี", <input name="f_tax" inputMode="decimal" defaultValue={values.tax == null ? "" : String(values.tax)} className={`${cls} w-28`} />)}
       {!income && f("หมวด", (
-        <select name="f_expense_category" required defaultValue={values.category ?? ""} className={cls}>
+        <select name="f_expense_category" required value={ecat} onChange={(e) => setEcat(e.target.value)} className={cls}>
           {!values.category && <option value="" disabled>— เลือกหมวด —</option>}
           {keep(categories, values.category).map((c) => <option key={c} value={c}>{c === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : c}</option>)}
+        </select>
+      ))}
+      {!income && ecat === HOME_CATEGORY && f("ประเภท", (
+        <select name="f_property_cost_type" defaultValue={values.property_cost_type ?? ""} className={cls}>
+          <option value="">— ไม่ระบุ —</option>
+          {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       ))}
       {income && accountEditable && f("ประเภท", (
@@ -560,6 +569,15 @@ export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate
                 {categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
+            {/* หมวดบ้าน / สาธารณูปโภค → เลือกประเภท (ตกลง 29 ต.ค. 2026) */}
+            {cat === HOME_CATEGORY && (
+              <label className={lbl}>ประเภท *
+                <select name="property_cost_type" required defaultValue="" className={input}>
+                  <option value="" disabled>— เลือกประเภท —</option>
+                  {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+            )}
             <label className={lbl}>จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
             <div className={lbl}>จ่ายด้วย
               <div className="mt-2 flex flex-wrap gap-3">

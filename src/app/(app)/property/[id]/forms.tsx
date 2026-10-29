@@ -9,7 +9,7 @@ import {
   updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
-import { ENCUMBRANCE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
+import { ENCUMBRANCE_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -418,10 +418,19 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
       {period && <input type="hidden" name="cost_period" value={period} />}
       <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="expense_category" value={category} />
-      <div className="grid gap-2 sm:grid-cols-[10rem_1fr_12rem]">
+      <div className={`grid gap-2 ${utilityId ? "sm:grid-cols-[10rem_1fr_12rem]" : "sm:grid-cols-[10rem_11rem_1fr_12rem]"}`}>
         <label className="text-xs">วันที่จ่าย
           <input name="date" type="date" required defaultValue={today} min={minDate || undefined} max={today} className={`mt-1 block w-full ${small}`} />
         </label>
+        {/* หมวดหลัก "บ้าน / สาธารณูปโภค" เสมอ (ไม่ต้องเลือก) · เลือกเฉพาะประเภท · ค่าใช้จ่ายประจำได้ประเภทตามรายการเอง (ตกลง 29 ต.ค. 2026) */}
+        {!utilityId && (
+          <label className="text-xs">ประเภท
+            <select name="property_cost_type" required defaultValue="" className={`mt-1 block w-full ${small}`}>
+              <option value="" disabled>— เลือกประเภท —</option>
+              {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </label>
+        )}
         {utilityId ? <><input type="hidden" name="description" value={label} /><div className="self-end pb-1 text-xs text-slate-600">{label}</div></> : (
           <label className="text-xs">รายการ
             <input name="description" required placeholder="เช่น ค่าธรรมเนียมโอน / ทำห้องน้ำ / ซ่อมหลังคา" className={`mt-1 block w-full ${small}`} />

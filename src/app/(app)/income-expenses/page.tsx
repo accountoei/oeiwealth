@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import RowActions from "@/components/RowActions";
 import {
-  COST_STATUS, INCOME_TYPE_LABEL, PERIODS_PER_YEAR, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthOptions, monthRange, scheduleText,
+  COST_STATUS, INCOME_TYPE_LABEL, HOME_CATEGORY, PERIODS_PER_YEAR, PROPERTY_COST_TYPE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthOptions, monthRange, scheduleText,
   thDate, thMonth, todayBangkok,
 } from "@/lib/format";
 import { RecordCostForm } from "../property/[id]/forms";
@@ -84,7 +84,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
       .is("deleted_at", null).order("name"),
     supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
+    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
       .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
     supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
     supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
@@ -511,7 +511,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       const cap = Number(i.expected_reimbursement_amount ?? i.full_amount);   // เงินคืนคิดจากยอดเต็มของรายการ
       const remaining = cap - Number(r?.reimbursed_amount ?? 0);
       const src = i.pending_split ? null : expSource(i);
-      const cat = i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category;
+      const cat = [i.expense_category === "BANK_FEE" ? "ค่าธรรมเนียมธนาคาร" : i.expense_category,
+        i.property_cost_type && PROPERTY_COST_TYPE_LABEL[i.property_cost_type]].filter(Boolean).join(" · ");
       const title = i.pending_split ? stripPending(i.description) : i.description;
       return {
         key: `e-${i.id}`, date: i.date, source: expLabel(i), status: "DONE", split: !!i.pending_split, currency: i.currency,
@@ -582,11 +583,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     perYear: Number(u.expected_amount) * (PERIODS_PER_YEAR[u.frequency] ?? 0),
   }));
   // ภาพรวมตามประเภท / หมวด (บาท · ตามสัดส่วนเมื่อดูรายบุคคล)
-  const group = (rows: { label: string; pending: boolean; name: string; date: string; value: number }[]) => {
+  const group = (rows: { label: string; pending: boolean; name: string; date: string; value: number; sub?: string | null }[]) => {
     const m = new Map<string, CatRow>();
     for (const r of rows) {
       const g = m.get(r.label) ?? { label: r.label, value: 0, items: [], pending: r.pending };
       g.value += r.value; g.items.push({ name: r.name, date: r.date, value: r.value }); m.set(r.label, g);
+      if (r.sub) {
+        const x = (g.subs ??= []).find((y) => y.label === r.sub);
+        if (x) x.value += r.value; else g.subs.push({ label: r.sub, value: r.value });
+      }
     }
     return [...m.values()];
   };
@@ -597,7 +602,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   }));
   const expenseCats = group(itemList.map((i) => ({
     label: i.pending_split ? "รอแยกรายละเอียด" : i.expense_category || "ไม่ระบุหมวด", pending: !!i.pending_split, date: i.date,
-    name: i.description, value: Number(i.base_amount ?? 0) * i.share })));
+    // หมวดบ้าน / สาธารณูปโภค: แยกย่อยตามประเภท (ตกลง 29 ต.ค. 2026)
+    name: [i.property_cost_type && PROPERTY_COST_TYPE_LABEL[i.property_cost_type], i.description].filter(Boolean).join(" · "),
+    sub: i.pending_split ? null : i.expense_category === HOME_CATEGORY ? PROPERTY_COST_TYPE_LABEL[i.property_cost_type ?? ""] ?? "ไม่ระบุประเภท" : null,
+    value: Number(i.base_amount ?? 0) * i.share })));
 
   return (
     <TabsProvider initial={tab}>

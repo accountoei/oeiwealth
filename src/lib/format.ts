@@ -178,6 +178,12 @@ export const FREQ_LABEL: Record<string, string> = {
 export const UTIL_LABEL: Record<string, string> = {
   ELECTRICITY: "ไฟฟ้า", WATER: "ประปา", COMMON_FEE: "ค่าส่วนกลาง", LAND_TAX: "ภาษีที่ดิน", OTHER: "อื่น ๆ",
 };
+/** ประเภทค่าใช้จ่ายของทรัพย์สิน (expense_items.property_cost_type · ตกลง 29 ต.ค. 2026) — ใช้กับหมวด "บ้าน / สาธารณูปโภค" */
+export const HOME_CATEGORY = "บ้าน / สาธารณูปโภค";
+export const PROPERTY_COST_TYPE_LABEL: Record<string, string> = {
+  ELECTRICITY: "ไฟฟ้า", WATER: "ประปา", COMMON_FEE: "ค่าส่วนกลาง", LAND_TAX: "ภาษีที่ดิน",
+  REPAIR: "ซ่อมแซม / ปรับปรุง", TRANSFER_FEE: "ค่าธรรมเนียม / ภาษีโอน", OTHER: "อื่น ๆ",
+};
 /** หมวดที่ใช้ตอนบันทึกเป็นค่าใช้จ่าย */
 export const UTIL_EXPENSE_CATEGORY: Record<string, string> = {
   ELECTRICITY: "บ้าน / สาธารณูปโภค", WATER: "บ้าน / สาธารณูปโภค", COMMON_FEE: "บ้าน / สาธารณูปโภค", LAND_TAX: "บ้าน / สาธารณูปโภค", OTHER: "บ้าน / สาธารณูปโภค",
