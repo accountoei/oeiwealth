@@ -398,8 +398,9 @@ function NewComponentFields({ pick }: { pick: string }) {
   if (!pick.startsWith("new:")) return null;
   return (
     <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+      {/* key: สลับที่ดิน ↔ สิ่งปลูกสร้าง แล้วช่องไม่ค้างค่าเดิม (เช่น 20 ปี ไปโผล่ในช่องงาน) */}
       {pick === "new:LAND" ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div key="land" className="flex flex-wrap items-center gap-2">
           <input name="nc_title_deed_no" placeholder="เลขที่โฉนด" aria-label="เลขที่โฉนด" data-plain className={`w-32 ${small}`} />
           <input name="nc_land_no" placeholder="เลขที่ดิน" aria-label="เลขที่ดิน" data-plain className={`w-28 ${small}`} />
           <span className="text-xs text-slate-500">เนื้อที่</span>
@@ -408,7 +409,7 @@ function NewComponentFields({ pick }: { pick: string }) {
           <input name="nc_wa" placeholder="ตร.ว." aria-label="ตารางวา" inputMode="decimal" data-money="off" className={`w-20 ${small}`} />
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
+        <div key="building" className="flex flex-wrap items-center gap-2">
           <input name="nc_label" required placeholder="เช่น บ้านหลังเล็ก · รั้ว · สระว่ายน้ำ" aria-label="ชื่อ" className={`w-64 ${small}`} />
           <input name="nc_area" placeholder="พื้นที่ใช้สอย" aria-label="พื้นที่ใช้สอย (ตร.ม.)" inputMode="decimal" data-money="off"
             className={`w-28 ${small}`} /><span className="text-xs text-slate-500">ตร.ม.</span>

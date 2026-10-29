@@ -69,7 +69,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 
 - UI text is **Thai**. Dates use `thDate`, money uses `money` from `src/lib/format.ts` (always thousands separators + 2 decimals; unit prices may pass `digits = 4`).
 - Number inputs: use `inputMode="decimal"` — `src/components/NumberInputs.tsx` formats them globally (commas while typing, `.00` on blur; names matching quantity/percent/rate/level/day get no `.00`; `data-money="off"` opts out of `.00`, `data-plain` opts out entirely). Server actions must strip commas before `Number()` (use `numOrNull`); client-side running totals use `numOrZero`. Server actions return `FormState` (extend it per page) from `src/lib/format.ts`.
-- Success messages: render with `<Flash on={state} />` (`src/components/Flash.tsx`, hides after 4 s; errors stay) — not `{state.ok && <p>…</p>}`.
+- Success messages: render with `<Flash on={state} />` (`src/components/Flash.tsx`, hides after 4 s; errors stay; outside a `Modal` it shows as a bottom-right toast instead — `toast()` / `useInModal()` in `src/components/Modal.tsx`) — not `{state.ok && <p>…</p>}`.
 - Theme lives in `src/app/globals.css` (`@theme` overrides): primary buttons `bg-blue-600 hover:bg-blue-700`, cards `rounded-xl border border-slate-200 bg-white`.
 - `"use client"` files must not export constants used by server components — put shared constants/labels in `src/lib/format.ts`.
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.
