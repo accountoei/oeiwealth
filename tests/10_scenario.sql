@@ -3846,6 +3846,43 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_property_cost_lots WHERE movement
             'ต้นทุนรายก้อน: เงินดาวน์ตอนเพิ่มทรัพย์สิน อยู่ในราคาที่ได้มาแล้ว ไม่นับซ้ำ');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz28. Property: จ่ายซื้อ / จ่ายเพิ่มด้วยบัตรเครดิต หรือเงินสด (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT d.id AS deed_k FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL AND d.ended_date IS NULL LIMIT 1 \gset
+SELECT id AS card_k FROM public.credit_cards WHERE card_last4 = '7788' \gset
+SELECT current_balance AS card_k0 FROM public.v_card_balances WHERE card_id = :'card_k' \gset
+SELECT current_value AS val_k0 FROM public.assets WHERE id = t.a('บ้าน A') \gset
+SELECT public.pay_property(t.a('บ้าน A'), null, current_date, 15000, null, 'ซื้อแอร์ (บัตร)', true, :'deed_k', null, :'card_k', null) AS mv_card \gset
+SELECT t.ok((SELECT from_asset_id IS NULL AND from_credit_card_id = :'card_k' AND fee IS NULL FROM public.cash_movements WHERE id = :'mv_card')
+            AND (SELECT current_balance FROM public.v_card_balances WHERE card_id = :'card_k') = :card_k0 + 15000
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('บ้าน A')) = :val_k0 + 15000,
+            'จ่ายเพิ่มด้วยบัตร: ยอดบัตรค้างจ่ายเพิ่ม · มูลค่าทรัพย์สินเพิ่มเท่ากัน (Net Worth ไม่เปลี่ยน)');
+SELECT t.ok(EXISTS (SELECT 1 FROM public.v_property_cost_lots WHERE movement_id = :'mv_card'), 'จ่ายด้วยบัตร: เป็นต้นทุนรายก้อน');
+UPDATE public.cash_movements SET amount = 12000 WHERE id = :'mv_card';
+SELECT t.ok((SELECT current_balance FROM public.v_card_balances WHERE card_id = :'card_k') = :card_k0 + 12000,
+            'แก้ยอดรายการจ่ายด้วยบัตร → ยอดบัตรปรับตาม');
+SELECT t.fails(format($$SELECT public.delete_credit_card('%s', 'ทดสอบ')$$, :'card_k'), 'ผูกอยู่', 'บัตรที่มีรายการซื้อทรัพย์สินลบไม่ได้');
+UPDATE public.cash_movements SET deleted_at = now() WHERE id = :'mv_card';
+SELECT t.ok((SELECT current_balance FROM public.v_card_balances WHERE card_id = :'card_k') = :card_k0
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('บ้าน A')) = :val_k0,
+            'ลบรายการจ่ายด้วยบัตร → ยอดบัตรและมูลค่ากลับเท่าเดิม');
+SELECT public.pay_property(t.a('บ้าน A'), null, current_date, 5000, null, 'ซื้อรั้ว (เงินสด)', true, :'deed_k', null, null, t.p('คุณพ่อ')) AS mv_cash \gset
+SELECT t.ok((SELECT from_asset_id IS NULL AND from_credit_card_id IS NULL AND metadata->>'paid_via' = 'cash'
+                    AND metadata->>'person_id' = t.p('คุณพ่อ')::text FROM public.cash_movements WHERE id = :'mv_cash')
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('บ้าน A')) = :val_k0 + 5000,
+            'จ่ายเพิ่มด้วยเงินสด: ไม่ผ่านบัญชี · มูลค่าเพิ่ม');
+SELECT t.fails(format($$SELECT public.pay_property('%s', null, current_date, 5000, 100, 'x', true, '%s', null, null, '%s')$$,
+               t.a('บ้าน A'), :'deed_k', t.p('คุณพ่อ')), 'ค่าธรรมเนียม', 'จ่ายด้วยเงินสด / บัตร: ไม่มีค่าธรรมเนียม');
+SELECT t.fails(format($$SELECT public.pay_property('%s', '%s', current_date, 5000, null, 'x', true, '%s', null, '%s', null)$$,
+               t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), :'deed_k', :'card_k'), 'อย่างใดอย่างหนึ่ง', 'จ่ายได้จากต้นทางเดียว');
+SELECT t.fails(format($$INSERT INTO public.cash_movements(movement_date, movement_type, to_asset_id, amount, currency) VALUES (current_date, 'ASSET_PURCHASE', '%s', 1, 'THB')$$,
+               t.a('บ้าน A')), 'cm_direction', 'ซื้อทรัพย์สินต้องมีต้นทาง (บัญชี / บัตร / เงินสด)');
+SELECT t.fails(format($$INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, from_credit_card_id, amount, currency) VALUES (current_date, 'OTHER_OUT', '%s', '%s', 1, 'THB')$$,
+               t.a('KBank ออมทรัพย์'), :'card_k'), 'cm_from_card', 'บัตรเป็นต้นทางได้เฉพาะซื้อทรัพย์สิน');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

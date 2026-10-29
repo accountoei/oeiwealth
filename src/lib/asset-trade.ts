@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
+import { endpointFromForm, missingEndpoint } from "@/lib/money-endpoint";
 
 export type TradeState = { error?: string; ok?: string };
 
@@ -123,11 +124,16 @@ export async function undoComponentEvent(_: TradeState, form: FormData): Promise
 export async function payForAsset(_: TradeState, form: FormData): Promise<TradeState> {
   const amount = num(form.get("amount"));
   if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
-  const bank = str(form.get("bank_asset_id"));
-  if (!bank) return { error: "กรุณาเลือกบัญชีที่จ่าย" };
-  const supabase = await createClient();
-  const { data: b } = await supabase.from("assets").select("currency").eq("id", bank).maybeSingle();
   const property = form.get("property") === "1";
+  // Property: จ่ายจากบัญชี / บัตรเครดิต / เงินสด (ตกลง 29 ต.ค. 2026) · อื่น ๆ: บัญชีเท่านั้น
+  const pay = property ? endpointFromForm(form) : { kind: "bank" as const, id: str(form.get("bank_asset_id")) };
+  const missing = missingEndpoint(pay);
+  if (missing) return { error: missing };
+  const bank = pay.kind === "bank" ? pay.id : null;
+  const cashPerson = pay.kind === "cash" ? str(form.get("person_id")) : null;
+  if (pay.kind === "cash" && !cashPerson) return { error: "กรุณาเลือกผู้จ่าย" };
+  const supabase = await createClient();
+  const { data: b } = bank ? await supabase.from("assets").select("currency").eq("id", bank).maybeSingle() : { data: null };
   const addValue = property && form.get("add_value") === "on";
   const assetId = String(form.get("asset_id"));
   const pick = property ? componentFromForm(form) : null;
@@ -136,8 +142,9 @@ export async function payForAsset(_: TradeState, form: FormData): Promise<TradeS
   // Property: pay_property = รายการจ่าย (+ แถวส่วนประกอบใหม่) ในคราวเดียว · มูลค่าใหม่ = มูลค่าล่าสุด + ยอดจ่าย (trigger a70_property_pay_value)
   const { data: mv, error } = property
     ? await supabase.rpc("pay_property", {
-        p_asset_id: assetId, p_bank_asset_id: bank, p_date: str(form.get("date")), p_amount: amount, p_fee: num(form.get("fee")),
+        p_asset_id: assetId, p_bank_asset_id: bank, p_date: str(form.get("date")), p_amount: amount, p_fee: bank ? num(form.get("fee")) : null,
         p_description: str(form.get("description")), p_add_value: addValue, p_component_id: pick?.id ?? null, p_new_component: pick?.create ?? null,
+        p_card_id: pay.kind === "card" ? pay.id : null, p_cash_person_id: cashPerson,
       }).then((r) => ({ data: r.data ? { id: String(r.data) } : null, error: r.error }))
     : await supabase.from("cash_movements").insert({
         movement_date: str(form.get("date")), movement_type: "ASSET_PURCHASE", from_asset_id: bank,

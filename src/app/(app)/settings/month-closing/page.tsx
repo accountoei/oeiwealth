@@ -147,7 +147,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const { data: cardsRaw } = await supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,status")
     .is("deleted_at", null).eq("status", "ACTIVE").order("issuer");
   const cardIds = (cardsRaw ?? []).map((c) => c.id as string);
-  const [{ data: stmts }, { data: cExp }, { data: cPay }, { data: cRe }, { data: cInc }] = cardIds.length ? await Promise.all([
+  const [{ data: stmts }, { data: cExp }, { data: cPay }, { data: cRe }, { data: cInc }, { data: cBuy }] = cardIds.length ? await Promise.all([
     supabase.from("credit_card_statements").select("credit_card_id,statement_date,balance").in("credit_card_id", cardIds)
       .is("deleted_at", null).lte("statement_date", asOf).order("statement_date", { ascending: false }),
     supabase.from("expense_items").select("paid_from_credit_card_id,date,amount").in("paid_from_credit_card_id", cardIds)
@@ -158,12 +158,16 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
       .is("deleted_at", null).lte("received_date", asOf),
     supabase.from("income_transactions").select("received_to_credit_card_id,date,amount,tax").in("received_to_credit_card_id", cardIds)
       .is("deleted_at", null).lte("date", asOf),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+    // ซื้อทรัพย์สินด้วยบัตร (นับเป็นยอดรูด)
+    supabase.from("cash_movements").select("from_credit_card_id,movement_date,amount").eq("movement_type", "ASSET_PURCHASE")
+      .in("from_credit_card_id", cardIds).is("deleted_at", null).lte("movement_date", asOf),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
   const cardRows = (cardsRaw ?? []).map((c) => {
     const st = (stmts ?? []).find((x) => x.credit_card_id === c.id);
     if (!st) return null;
     const after = (d: string) => d > st.statement_date;
-    const spend = (cExp ?? []).filter((x) => x.paid_from_credit_card_id === c.id && after(x.date)).reduce((t, x) => t + Number(x.amount), 0);
+    const spend = (cExp ?? []).filter((x) => x.paid_from_credit_card_id === c.id && after(x.date)).reduce((t, x) => t + Number(x.amount), 0)
+      + (cBuy ?? []).filter((x) => x.from_credit_card_id === c.id && after(x.movement_date)).reduce((t, x) => t + Number(x.amount), 0);
     const paid = (cPay ?? []).filter((x) => x.to_credit_card_id === c.id && after(x.movement_date)).reduce((t, x) => t + Number(x.amount), 0);
     const back = (cRe ?? []).filter((x) => x.received_to_credit_card_id === c.id && after(x.received_date)).reduce((t, x) => t + Number(x.amount), 0)
       + (cInc ?? []).filter((x) => x.received_to_credit_card_id === c.id && after(x.date)).reduce((t, x) => t + Number(x.amount) - Number(x.tax ?? 0), 0);

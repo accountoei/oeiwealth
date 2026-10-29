@@ -318,7 +318,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </div>
           {canWrite && a.status === "ACTIVE" && (
             <ActionBar>
-              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts} />
+              <PayAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} property components={compOpts}
+                cards={cards} persons={persons ?? []} />
               <SellAssetForm assetId={id} currency={a.currency} banks={bankList} today={today} minDate={goLive} paths={paths} hasLease={liveLeases.length > 0}
                 cards={cards} components={saleComps} demolishable={canDelete && demolishable.length > 0 && comps.length > 1 ? demolishable : undefined} />
             </ActionBar>
