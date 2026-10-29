@@ -7,10 +7,11 @@ import {
 
 /**
  * ราคาตลาด (อ้างอิง · ไม่นับใน Net Worth · ตกลง 28 ต.ค. 2026) — อยู่ในกล่องมูลค่าล่าสุดของหน้าทรัพย์สิน
- *   ครั้งล่าสุด = วันที่ประเมินใหม่ที่สุด · ส่วนต่างเทียบมูลค่าใน Net Worth · ถ้าขายได้สุทธิ ก่อน / หลังปิดหนี้ที่ผูกกับทรัพย์สินนี้
+ *   ครั้งล่าสุด = วันที่ประเมินใหม่ที่สุด · เทียบราคาขายขั้นต่ำที่คุ้ม (ไม่มี → เทียบมูลค่าใน Net Worth · ตกลง 29 ต.ค. 2026) · ถ้าขายได้สุทธิ ก่อน / หลังปิดหนี้
  */
-export default function MarketBox({ assetId, currency, today, propertyType, areaSqWa, nwValue, history, debt, canWrite, canDelete, paths }: {
+export default function MarketBox({ assetId, currency, today, propertyType, areaSqWa, nwValue, minPrice, history, debt, canWrite, canDelete, paths }: {
   assetId: string; currency: string; today: string; propertyType: string; areaSqWa: number | null; nwValue: number;
+  /** ราคาขายขั้นต่ำที่คุ้ม · null = ยังไม่มีต้นทุน */ minPrice: number | null;
   /** ใหม่ → เก่า */ history: MarketValuation[];
   /** หนี้คงค้างที่ผูกกับทรัพย์สินนี้ (สกุลเดียวกัน) · null = ไม่มี */ debt: number | null;
   canWrite: boolean; canDelete: boolean; paths: string[];
@@ -39,8 +40,10 @@ export default function MarketBox({ assetId, currency, today, propertyType, area
           <div className="text-xs text-slate-500">{money(last.unit_price, undefined, 0)} / {MARKET_UNIT_LABEL[last.unit_basis]} × {Number(last.area).toLocaleString("en-US")} {MARKET_UNIT_LABEL[last.unit_basis]}</div>
         )}
         <dl className="mt-2 space-y-0.5 text-xs">
-          <div className="flex justify-between gap-2"><dt className="text-slate-500">ส่วนต่างจากมูลค่าใน Net Worth</dt>
-            <dd className={`tabular-nums ${Number(last.market_value) >= nwValue ? "text-emerald-700" : "text-red-600"}`}>{diffText(Number(last.market_value) - nwValue, nwValue)}</dd></div>
+          {(() => { const mk = Number(last.market_value), base = minPrice ?? nwValue, ok = mk >= base; return (
+            <div className="flex justify-between gap-2"><dt className="text-slate-500">{minPrice != null
+              ? (ok ? "สูงกว่าราคาขายขั้นต่ำ → ขายตอนนี้คุ้ม" : "ต่ำกว่าราคาขายขั้นต่ำ → ยังไม่คุ้ม") : "ส่วนต่างจากมูลค่าใน Net Worth"}</dt>
+              <dd className={`tabular-nums ${minPrice != null ? "font-medium " : ""}${ok ? "text-emerald-700" : "text-red-600"}`}>{diffText(mk - base, base)}</dd></div>); })()}
           {Number(last.selling_cost) > 0 && (
             <div className="flex justify-between gap-2"><dt className="text-slate-500">ค่าใช้จ่ายขายโดยประมาณ</dt><dd className="tabular-nums">−{money(last.selling_cost)}</dd></div>
           )}
