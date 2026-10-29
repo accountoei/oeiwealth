@@ -60,6 +60,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   const cardName = (c: { issuer: string; card_name: string | null; card_last4: string | null }) =>
     [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ");
   (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: `/liabilities/cards/${c.id}` }));
+  // ใบอนุโมทนา / หลักฐานการบริจาค (แท็บ Donations)
+  const donIds = [...new Set((links ?? []).filter((l) => l.entity_type === "DONATION").map((l) => l.entity_id))];
+  const { data: dons } = donIds.length
+    ? await supabase.from("donation_records").select("id,donee_name,donation_date").in("id", donIds).is("deleted_at", null)
+    : { data: [] };
+  (dons ?? []).forEach((x) => label.set(`DONATION:${x.id}`, { name: `บริจาค ${x.donee_name} (${thDate(x.donation_date)})`,
+    href: `/family/donations?y=${x.donation_date.slice(0, 4)}` }));
   const byDoc = new Map<string, { id: string; key: string }[]>();
   (links ?? []).forEach((l) => byDoc.set(l.document_id, [...(byDoc.get(l.document_id) ?? []), { id: l.id, key: `${l.entity_type}:${l.entity_id}` }]));
   // หมวดเอกสาร = ตามหน้าที่แนบ (รายการที่ผูกรายการแรก) · ไม่ผูก = ตามหมวดเดิม (module)

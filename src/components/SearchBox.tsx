@@ -20,6 +20,7 @@ const PAGES: { label: string; href: string; words?: string }[] = [
   { label: "Members", href: "/family/members", words: "สมาชิก" },
   { label: "Membership & Points", href: "/family/memberships", words: "สมาชิก แต้ม" },
   { label: "Health", href: "/family/health", words: "สุขภาพ" },
+  { label: "Donations", href: "/family/donations", words: "บริจาค การกุศล ใบอนุโมทนา" },
   { label: "Documents", href: "/family/documents", words: "เอกสาร" },
   { label: "Month Closing", href: "/settings/month-closing", words: "ปิดเดือน" },
   { label: "FX & Prices", href: "/settings/system", words: "อัตราแลกเปลี่ยน ราคา" },

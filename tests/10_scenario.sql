@@ -3883,6 +3883,43 @@ SELECT t.fails(format($$INSERT INTO public.cash_movements(movement_date, movemen
                t.a('KBank ออมทรัพย์'), :'card_k'), 'cm_from_card', 'บัตรเป็นต้นทางได้เฉพาะซื้อทรัพย์สิน');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz29. ประวัติการบริจาค (donation_records · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'FINANCIAL', 'PRIVATE_BUSINESS', 'บริษัทบริจาค', 'THB' FROM public.families;
+SELECT count(*) AS nw_don0 FROM public.cash_movements \gset
+INSERT INTO public.donation_records(donation_date, donor_kind, donor_person_id, claimant_person_id, donee_name, donee_type, amount, tax_status, tax_kind)
+  VALUES ('2015-03-01', 'PERSON', t.p('คุณพ่อ'), t.p('คุณพ่อ'), '  วัดทดสอบ ', 'TEMPLE', 1000, 'ELIGIBLE', 'GENERAL') RETURNING id AS don1 \gset
+SELECT t.ok((SELECT donee_name = 'วัดทดสอบ' FROM public.donation_records WHERE id = :'don1')
+            AND (SELECT count(*) FROM public.cash_movements) = :nw_don0,
+            'บริจาค: บันทึกย้อนก่อน Go-live ได้ · ไม่สร้างเงินออก');
+INSERT INTO public.donation_records(donation_date, donor_kind, donor_asset_id, donee_name, donation_form, amount)
+  VALUES ('2018-05-04', 'BUSINESS', t.a('บริษัทบริจาค'), 'โรงเรียนทดสอบ', 'IN_KIND', 28000);
+INSERT INTO public.donation_records(donation_date, year_only, donor_kind, donor_name, donee_name, amount)
+  VALUES ('1999-12-31', true, 'GROUP', 'กลุ่มทดสอบ', 'รวมทั้งปี', 5000);
+SELECT t.fails($$INSERT INTO public.donation_records(donation_date, year_only, donor_kind, donee_name, amount) VALUES ('1999-06-30', true, 'GROUP', 'x', 1)$$,
+               'don_year_only', 'บริจาค: ยอดรวมทั้งปีต้องลงวันที่ 31 ธ.ค.');
+SELECT t.fails(format($$INSERT INTO public.donation_records(donation_date, donor_kind, donor_asset_id, donee_name, amount) VALUES (current_date, 'BUSINESS', '%s', 'x', 1)$$,
+               t.a('KBank ออมทรัพย์')), 'Private Business', 'บริจาค: ผู้บริจาคกิจการต้องเป็น Private Business');
+SELECT t.fails(format($$INSERT INTO public.donation_records(donation_date, donor_kind, donor_asset_id, claimant_person_id, donee_name, amount) VALUES (current_date, 'BUSINESS', '%s', '%s', 'x', 1)$$,
+               t.a('บริษัทบริจาค'), t.p('คุณพ่อ')), 'don_claimant', 'บริจาค: ในนามกิจการ ไม่มีผู้ใช้สิทธิลดหย่อนบุคคล');
+SELECT t.fails($$INSERT INTO public.donation_records(donation_date, donor_kind, donee_name, amount) VALUES (current_date, 'PERSON', 'x', 1)$$,
+               'don_donor', 'บริจาค: ผู้บริจาคบุคคลต้องเลือกสมาชิก');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'บริจาควัด', 'amount', 700, 'expense_category', 'บริจาค',
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'))) AS exp_don \gset
+INSERT INTO public.donation_records(donation_date, donor_kind, donor_person_id, donee_name, amount, expense_item_id)
+  VALUES (current_date, 'PERSON', t.p('คุณพ่อ'), 'วัดจากรายจ่าย', 700, :'exp_don');
+SELECT t.fails(format($$INSERT INTO public.donation_records(donation_date, donor_kind, donor_person_id, donee_name, amount, expense_item_id) VALUES (current_date, 'PERSON', '%s', 'ซ้ำ', 700, '%s')$$,
+               t.p('คุณพ่อ'), :'exp_don'), 'donation_records_expense_uq', 'บริจาค: รายจ่าย 1 รายการผูกได้ 1 รายการบริจาค (ไม่นับซ้ำ)');
+UPDATE public.donation_records SET deleted_at = now() WHERE id = :'don1';
+SELECT t.ok((SELECT deleted_by IS NOT NULL FROM public.donation_records WHERE id = :'don1'), 'บริจาค: ลบแบบ Soft Delete');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.donation_records) >= 3, 'บริจาค: VIEWER อ่านได้');
+SELECT t.fails($$INSERT INTO public.donation_records(donation_date, donor_kind, donee_name, amount) VALUES (current_date, 'GROUP', 'x', 1)$$,
+               'row-level security', 'บริจาค: VIEWER เพิ่มไม่ได้');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
