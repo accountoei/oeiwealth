@@ -9,9 +9,10 @@ export type Component = {
   building_area_sqm: number | null; useful_life_years: number | null; acquired_date: string | null; acq_cost: number | null; notes: string | null;
   /** ขาย / รื้อถอนแล้ว (ตกลง 29 ต.ค. 2026) · ยังอยู่ในประวัติ ไม่นับในเนื้อที่ / ต้นทุน / มูลค่า */
   ended_date: string | null; end_reason: "SOLD" | "DEMOLISHED" | null; end_event_id: string | null;
+  /** แถวที่ระบบสร้างจากรายการจ่ายเพิ่ม */ source_movement_id?: string | null;
 };
 
-export const COMPONENT_FIELDS = "id,sort_order,component_type,label,title_type,title_deed_no,land_no,deed_book,deed_page,map_sheet,survey_page,land_area_sq_wa,building_area_sqm,useful_life_years,acquired_date,acq_cost,notes,ended_date,end_reason,end_event_id,created_at,deleted_at";
+export const COMPONENT_FIELDS = "id,sort_order,component_type,label,title_type,title_deed_no,land_no,deed_book,deed_page,map_sheet,survey_page,land_area_sq_wa,building_area_sqm,useful_life_years,acquired_date,acq_cost,notes,ended_date,end_reason,end_event_id,source_movement_id,created_at,deleted_at";
 
 export const END_REASON_LABEL: Record<"SOLD" | "DEMOLISHED", string> = { SOLD: "ขายแล้ว", DEMOLISHED: "รื้อถอนแล้ว" };
 

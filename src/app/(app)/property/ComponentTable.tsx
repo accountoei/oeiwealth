@@ -12,9 +12,9 @@ const plain = (s: string) => s.replace(/,/g, "").trim();
 const filled = (s: string) => plain(s) !== "";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type Row = CompInput & { key: string; rai: string; ngan: string; wa: string; open: boolean; value: string };
+type Row = CompInput & { key: string; rai: string; ngan: string; wa: string; value: string };
 
-function toRow(c: Component, value: number | undefined): Row {
+function toRow(c: Component, value: number | undefined, defaultDate: string): Row {
   const w = c.land_area_sq_wa != null ? Number(c.land_area_sq_wa) : null;
   const s = (v: string | number | null) => (v == null ? "" : String(v));
   return {
@@ -22,14 +22,14 @@ function toRow(c: Component, value: number | undefined): Row {
     land_no: s(c.land_no), deed_book: s(c.deed_book), deed_page: s(c.deed_page), map_sheet: s(c.map_sheet), survey_page: s(c.survey_page),
     land_area_sq_wa: s(w), rai: w != null ? String(Math.floor(w / 400)) : "", ngan: w != null ? String(Math.floor((w % 400) / 100)) : "",
     wa: w != null ? String(+(w % 100).toFixed(2)) : "", building_area_sqm: s(c.building_area_sqm), useful_life_years: s(c.useful_life_years),
-    acquired_date: s(c.acquired_date), acq_cost: c.acq_cost != null ? fmt(Number(c.acq_cost)) : "", notes: s(c.notes),
-    value: value != null ? fmt(value) : "", open: false,
+    acquired_date: c.acquired_date ?? defaultDate, acq_cost: c.acq_cost != null ? fmt(Number(c.acq_cost)) : "", notes: s(c.notes),
+    value: value != null ? fmt(value) : "",
   };
 }
 const blank = (type: CompType): Row => ({
   key: `n${Math.random().toString(36).slice(2)}`, type, label: "", title_type: type === "LAND" ? "โฉนด" : "", title_deed_no: "", land_no: "",
   deed_book: "", deed_page: "", map_sheet: "", survey_page: "", land_area_sq_wa: "", rai: "", ngan: "", wa: "", building_area_sqm: "",
-  useful_life_years: type === "LAND" ? "" : "20", acquired_date: "", acq_cost: "", notes: "", value: "", open: false,
+  useful_life_years: type === "LAND" ? "" : "20", acquired_date: "", acq_cost: "", notes: "", value: "",
 });
 const sqwa = (r: Row) => (filled(r.rai) || filled(r.ngan) || filled(r.wa)
   ? numOrZero(r.rai) * 400 + numOrZero(r.ngan) * 100 + numOrZero(r.wa) : null);
@@ -44,19 +44,23 @@ const isEmpty = (r: Row) => !r.id && ![r.label, r.title_deed_no, r.land_no, r.ra
  *   ส่งออกเป็นช่องซ่อน: components (JSON) · removed (JSON) · acquisition_cost · value · value_changed
  */
 export default function ComponentTable({ mode, currency, initial = [], latest = {}, acquisitionCost = null, currentValue = null, today, minDate,
-  onValueFromCost }: {
+  defaultDate = "", locked = [], onEarliest }: {
   mode: "new" | "edit"; currency: string; initial?: Component[];
   /** มูลค่าล่าสุดรายแถว (id → ยอด) */ latest?: Record<string, number>;
   acquisitionCost?: number | null; currentValue?: number | null;
   /** ฟอร์มแก้ไข: ช่วงวันที่ของมูลค่าใหม่ */ today?: string; minDate?: string;
-  /** ฟอร์มเพิ่มใหม่: มูลค่าใช้ยอดเดียวกับต้นทุน (เปลี่ยนวิธีประเมินเป็น "ราคาทุน") */ onValueFromCost?: (on: boolean) => void;
+  /** ฟอร์มแก้ไข: แถวเดิมที่ยังไม่มีวันที่ได้มา → ใช้วันที่ได้มาของทรัพย์สิน */ defaultDate?: string;
+  /** ฟอร์มแก้ไข: แถวที่ผูกกับรายการเงิน (สร้างจาก / มีรายการจ่าย) → ลบไม่ได้ · แก้ต้นทุนในแถวไม่ได้ */ locked?: string[];
+  /** วันที่ได้มาเก่าสุดของทุกแถว (ฟอร์มเพิ่มใหม่ใช้ตัดสินว่าเป็นยอดตั้งต้นก่อน Go-live หรือไม่) */ onEarliest?: (date: string) => void;
 }) {
-  const init = useMemo(() => initial.map((c) => toRow(c, latest[c.id])), []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const init = useMemo(() => initial.map((c) => toRow(c, latest[c.id], defaultDate)), []);   // eslint-disable-line react-hooks/exhaustive-deps
   const [rows, setRows] = useState<Row[]>(() => (init.length || mode === "edit" ? init : [blank("LAND")]));
   const [removed, setRemoved] = useState<string[]>([]);
   const [costTotal, setCostTotal] = useState(mode === "edit" && acquisitionCost != null ? fmt(Number(acquisitionCost)) : "");
   const [valueTotal, setValueTotal] = useState("");
   const [spreadTotal, setSpreadTotal] = useState("");
+  const [addOpen, setAddOpen] = useState(mode === "new");
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const set = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   const live = rows.filter((r) => !isEmpty(r));
@@ -72,7 +76,10 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
   // ฟอร์มเพิ่มใหม่: ไม่ได้ใส่มูลค่าเลย → ใช้ยอดเดียวกับต้นทุน
   const fromCost = mode === "new" && !valueTyped && !!cost;
   const value = fromCost ? cost : valueTyped;
-  useEffect(() => { onValueFromCost?.(fromCost); }, [fromCost, onValueFromCost]);
+  // วันที่ได้มาของทรัพย์สิน = วันที่เก่าสุดของแถว (ตกลง 29 ต.ค. 2026 · ไม่มีช่องแยก)
+  const earliest = rows.map((r) => r.acquired_date).filter(Boolean).sort()[0] ?? "";
+  useEffect(() => { onEarliest?.(earliest); }, [earliest, onEarliest]);
+  const lockedSet = new Set(locked);
   const areaSum = live.filter((r) => r.type === "LAND").reduce((t, r) => t + (sqwa(r) ?? 0), 0);
   // ฟอร์มแก้ไข: มูลค่าเปลี่ยน (แก้รายแถว / ลบแถวที่มีมูลค่า / ใส่ยอดรวมใหม่) → บันทึกมูลค่าใหม่
   const valueChanged = mode === "edit" && (
@@ -101,10 +108,14 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
   const remove = (r: Row) => {
     setRows((rs) => rs.filter((x) => x.key !== r.key));
     if (r.id) setRemoved((ids) => [...ids, r.id!]);
+    setConfirmKey(null);
   };
-  const money2 = (key: string, col: "acq_cost" | "value", v: string) => (
+  // ลบได้เมื่อยังเหลืออย่างน้อย 1 แถว และแถวนั้นไม่ผูกกับรายการเงิน
+  const canRemove = (r: Row) => !(r.id && lockedSet.has(r.id)) && (isEmpty(r) || live.length > 1);
+  const money2 = (key: string, col: "acq_cost" | "value", v: string, readOnly = false) => (
     <input value={v} onChange={(e) => set(key, { [col]: e.target.value })} onBlur={(e) => filled(e.target.value) && set(key, { [col]: fmt(numOrZero(e.target.value)) })}
-      inputMode="decimal" data-plain aria-label={col === "acq_cost" ? "ต้นทุนที่ได้มา" : "มูลค่า"} className={num} />
+      inputMode="decimal" data-plain aria-label={col === "acq_cost" ? "ต้นทุนที่ได้มา" : "มูลค่า"} readOnly={readOnly}
+      title={readOnly ? "แถวนี้ผูกกับรายการจ่าย — แก้ยอดที่รายการจ่าย" : undefined} className={`${num} ${readOnly ? "bg-slate-50 text-slate-500" : ""}`} />
   );
 
   return (
@@ -113,6 +124,8 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       <input type="hidden" name="removed" value={JSON.stringify(removed)} />
       <input type="hidden" name="acquisition_cost" value={cost} />
       <input type="hidden" name="value" value={value} />
+      <input type="hidden" name="acquisition_date" value={earliest || defaultDate} />
+      {mode === "new" && <input type="hidden" name="valuation_method" value={fromCost ? "BOOK_VALUE" : "USER_ESTIMATE"} />}
       {valueChanged && <input type="hidden" name="value_changed" value="1" />}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[56rem] text-sm">
@@ -122,9 +135,16 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
               <th className="w-36 text-right">ต้นทุนที่ได้มา</th><th className="w-36 text-right">มูลค่า ({currency})</th><th className="w-20"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {rows.map((r) => (
-              <RowView key={r.key} r={r} set={set} remove={remove} money2={money2} />
+              <RowView key={r.key} r={r} set={set} money2={money2} lockedRow={!!r.id && lockedSet.has(r.id)}
+                del={canRemove(r) ? (confirmKey === r.key
+                  ? <span className="flex flex-col items-end gap-1"><span className="text-slate-600">ลบแถวนี้?</span>
+                      <span><button type="button" onClick={() => remove(r)} className="text-red-600 hover:underline">ยืนยันลบ</button>
+                        <button type="button" onClick={() => setConfirmKey(null)} className="ml-2 text-slate-500 hover:underline">ไม่</button></span></span>
+                  : <button type="button" onClick={() => (isEmpty(r) ? remove(r) : setConfirmKey(r.key))} className="text-red-600 hover:underline">ลบ</button>)
+                  : <span className="text-slate-400" title={r.id && lockedSet.has(r.id) ? "ผูกกับรายการจ่าย — ลบ / ย้ายรายการจ่ายก่อน" : "ต้องเหลืออย่างน้อย 1 แถว"}>
+                      {r.id && lockedSet.has(r.id) ? "ผูกรายการจ่าย" : "แถวสุดท้าย"}</span>} />
             ))}
             {rows.length === 0 && <tr><td colSpan={7} className="py-3 text-sm text-slate-500">ยังไม่มีส่วนประกอบ · เพิ่มที่ดิน / อาคารด้านล่าง (หรือใส่ยอดรวมที่แถวรวมอย่างเดียว)</td></tr>}
           </tbody>
@@ -150,6 +170,11 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
           </tfoot>
         </table>
       </div>
+      {/* ฟอร์มแก้ไข: เพิ่มแถวได้เฉพาะ "กรอกตกหล่น / แยกโฉนด" (ไม่มีเงินเข้าออก) · ซื้อเพิ่ม / สร้างใหม่ ใช้ปุ่ม "จ่ายซื้อ / จ่ายเพิ่ม" */}
+      {!addOpen ? (
+        <button type="button" onClick={() => setAddOpen(true)} className="text-xs text-slate-500 underline hover:text-slate-700">
+          + เพิ่มแถวที่กรอกตกหล่น / แยกโฉนด (ไม่มีเงินเข้าออก)</button>
+      ) : (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         <button type="button" onClick={() => setRows((rs) => [...rs, blank("LAND")])} className="text-blue-700 hover:underline">+ ที่ดิน (โฉนด)</button>
         <button type="button" onClick={() => setRows((rs) => [...rs, blank("BUILDING")])} className="text-blue-700 hover:underline">+ อาคาร</button>
@@ -165,7 +190,9 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
               className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50">เฉลี่ยเป็นมูลค่าที่ดินตามเนื้อที่</button>
           </span>
         )}
+        {mode === "edit" && <span className="basis-full text-xs text-slate-500">ใช้แก้ข้อมูลที่กรอกตกหล่น / แยกโฉนดที่รวมอยู่ในแถวเดียว · ซื้อที่ดินเพิ่ม / สร้างอาคารใหม่ ให้ใช้ปุ่ม &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; (บันทึกเงินออกจากบัญชีด้วย)</span>}
       </div>
+      )}
       <p className="text-xs text-slate-500">
         ซื้อหลายโฉนดเป็นแปลงเดียว: เพิ่มแถวละใบ แล้วใส่ยอดรวมกดเฉลี่ย (หักอาคาร / สิ่งปลูกสร้างที่ใส่เองก่อน ที่เหลือแบ่งให้ที่ดินตามเนื้อที่ · แก้รายแถวได้)
         · อาคารแต่ละหลังมีต้นทุน มูลค่า และอายุใช้งานของตัวเอง (ใช้หักค่าเสื่อมในราคาขายขั้นต่ำที่คุ้ม)
@@ -175,7 +202,9 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       {partial && <p className="text-sm text-amber-700">ใส่มูลค่าให้ครบทุกแถว หรือลบมูลค่ารายแถวออกให้หมดแล้วใส่ยอดรวม</p>}
       {valueChanged && (
         <div className="grid gap-3 rounded-lg bg-blue-50 p-3 md:grid-cols-4">
-          <p className="text-xs text-blue-800 md:col-span-4">มูลค่าเปลี่ยน → บันทึกเป็นมูลค่าครั้งใหม่ (เก็บประวัติ ไม่ทับของเดิม)</p>
+          <p className="text-xs text-blue-800 md:col-span-4">มูลค่าเปลี่ยน → บันทึกเป็นมูลค่าครั้งใหม่ (เก็บประวัติ ไม่ทับของเดิม)
+            {currentValue != null && value !== "" && <> · มูลค่ารวม <span className="tabular-nums">{money(currentValue, undefined, 2)}</span> → <b className="tabular-nums">{money(numOrZero(value), undefined, 2)}</b>
+              {Math.abs(numOrZero(value) - currentValue) < 0.005 ? " (ยอดรวมเท่าเดิม · Net Worth ไม่เปลี่ยน)" : " (Net Worth เปลี่ยนตาม)"}</>}</p>
           <label className="text-sm">มูลค่า ณ วันที่<input name="valuation_date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${cell}`} /></label>
           <label className="text-sm">วิธีประเมิน
             <select name="valuation_method" defaultValue="USER_ESTIMATE" className={`mt-1 block ${cell}`}>
@@ -190,9 +219,9 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
   );
 }
 
-function RowView({ r, set, remove, money2 }: {
-  r: Row; set: (key: string, patch: Partial<Row>) => void; remove: (r: Row) => void;
-  money2: (key: string, col: "acq_cost" | "value", v: string) => ReactNode;
+function RowView({ r, set, money2, lockedRow, del }: {
+  r: Row; set: (key: string, patch: Partial<Row>) => void; lockedRow: boolean; del: ReactNode;
+  money2: (key: string, col: "acq_cost" | "value", v: string, readOnly?: boolean) => ReactNode;
 }) {
   const t = (k: keyof Row, placeholder: string, extra = "") => (
     <input value={String(r[k] ?? "")} onChange={(e) => set(r.key, { [k]: e.target.value })} placeholder={placeholder} aria-label={placeholder}
@@ -201,19 +230,19 @@ function RowView({ r, set, remove, money2 }: {
   return (
     <>
       <tr className="align-top">
-        <td className="py-1.5 pr-2">
+        <td className="pt-1.5 pr-2">
           {r.type === "LAND" ? <span className="inline-block pt-1.5 text-sm">{COMP_TYPE_LABEL.LAND}</span> : (
             <select value={r.type} onChange={(e) => set(r.key, { type: e.target.value as CompType })} aria-label="ชนิด" className={cell}>
               <option value="BUILDING">{COMP_TYPE_LABEL.BUILDING}</option><option value="OTHER">{COMP_TYPE_LABEL.OTHER}</option>
             </select>
           )}
         </td>
-        <td className="py-1.5 pr-2">
+        <td className="pt-1.5 pr-2">
           {r.type === "LAND" ? (
             <div className="grid grid-cols-3 gap-1">{t("title_type", "ประเภท")}{t("title_deed_no", "เลขที่โฉนด")}{t("land_no", "เลขที่ดิน")}</div>
           ) : t("label", r.type === "BUILDING" ? "เช่น บ้านเดี่ยว 2 ชั้น" : "เช่น รั้ว · สระว่ายน้ำ · ระบบไฟ")}
         </td>
-        <td className="py-1.5 pr-2">
+        <td className="pt-1.5 pr-2">
           {r.type === "LAND" ? (
             <div className="flex gap-1">
               <input value={r.rai} onChange={(e) => set(r.key, { rai: e.target.value })} inputMode="numeric" data-plain placeholder="ไร่" aria-label="ไร่" className={cell} />
@@ -227,32 +256,27 @@ function RowView({ r, set, remove, money2 }: {
             </div>
           ) : null}
         </td>
-        <td className="py-1.5 pr-2"><input type="date" value={r.acquired_date} onChange={(e) => set(r.key, { acquired_date: e.target.value })}
-          aria-label="วันที่ได้มา" title="ว่าง = วันที่ได้มาของทรัพย์สิน" className={cell} /></td>
-        <td className="py-1.5 pr-2">{money2(r.key, "acq_cost", r.acq_cost)}</td>
-        <td className="py-1.5 pr-2">{money2(r.key, "value", r.value)}</td>
-        <td className="whitespace-nowrap py-1.5 text-right text-xs">
-          <button type="button" onClick={() => set(r.key, { open: !r.open })} className="text-slate-600 hover:underline">{r.open ? "ย่อ" : "เพิ่มเติม"}</button>
-          <button type="button" onClick={() => remove(r)} className="ml-2 text-red-600 hover:underline">ลบ</button>
+        <td className="pt-1.5 pr-2"><input type="date" value={r.acquired_date} onChange={(e) => set(r.key, { acquired_date: e.target.value })}
+          required={!isEmpty(r)} aria-label="วันที่ได้มา" className={cell} /></td>
+        <td className="pt-1.5 pr-2">{money2(r.key, "acq_cost", r.acq_cost, lockedRow)}</td>
+        <td className="pt-1.5 pr-2">{money2(r.key, "value", r.value)}</td>
+        <td className="whitespace-nowrap pt-1.5 text-right text-xs">{del}</td>
+      </tr>
+      <tr className="border-b border-slate-100">
+        <td></td>
+        <td colSpan={6} className="pb-2 pt-1">
+          <div className="grid gap-1 md:grid-cols-6">
+            {r.type === "LAND" ? (<>
+              {t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}{t("survey_page", "หน้าสำรวจ")}
+            </>) : (
+              <label className="flex items-center gap-1 text-xs text-slate-600">อายุใช้งาน
+                <input value={r.useful_life_years} onChange={(e) => set(r.key, { useful_life_years: e.target.value })} inputMode="numeric" data-plain
+                  aria-label="อายุใช้งาน (ปี)" className={`${cell} w-16`} />ปี</label>
+            )}
+            <div className={r.type === "LAND" ? "md:col-span-2" : "md:col-span-5"}>{t("notes", "หมายเหตุ")}</div>
+          </div>
         </td>
       </tr>
-      {r.open && (
-        <tr>
-          <td></td>
-          <td colSpan={6} className="pb-2">
-            <div className="grid gap-2 rounded-lg bg-slate-50 p-2 md:grid-cols-5">
-              {r.type === "LAND" ? (<>
-                {t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}{t("survey_page", "หน้าสำรวจ")}
-              </>) : (
-                <label className="flex items-center gap-1 text-xs text-slate-600">อายุใช้งาน
-                  <input value={r.useful_life_years} onChange={(e) => set(r.key, { useful_life_years: e.target.value })} inputMode="numeric" data-plain
-                    aria-label="อายุใช้งาน (ปี)" className={`${cell} w-16`} />ปี</label>
-              )}
-              <div className={r.type === "LAND" ? "" : "md:col-span-4"}>{t("notes", "หมายเหตุ")}</div>
-            </div>
-          </td>
-        </tr>
-      )}
     </>
   );
 }

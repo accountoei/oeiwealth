@@ -77,6 +77,9 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
   if (pay && "error" in pay) return { error: pay.error };
   const comps = componentsFromForm(form);
   if ("error" in comps) return { error: comps.error };
+  if (!str(form.get("acquisition_date"))) return { error: "กรุณาใส่วันที่ได้มาในตารางส่วนประกอบ" };
+  const credit = creditFromForm(form);
+  if (credit && "error" in credit) return { error: credit.error };
   const withValue = comps.rows.some((r) => r.value);
   const { data, error } = await supabase.rpc("create_property", {
     p_name: str(form.get("name")),
@@ -127,7 +130,30 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
     revalidatePath("/financial/cash", "layout");
     if (e2) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกเงินออกจากบัญชีไม่สำเร็จ (${e2}) — เปิดหน้าทรัพย์สินแล้วใช้ปุ่ม "+ จ่ายซื้อ / จ่ายเพิ่ม"`, created: `/property/${data}` };
   }
+  // ยังจ่ายไม่ครบ / ผ่อนกับผู้ขาย → หนี้ "ค้างจ่ายค่าซื้อ" (ไม่มีเงินเข้า) · จ่ายงวดที่หน้าหนี้สิน (ตกลง 29 ต.ค. 2026)
+  if (credit) {
+    const { error: e5 } = await supabase.rpc("create_liability", {
+      p_liability_type: "OTHER", p_name: `ค้างจ่ายค่าซื้อ ${str(form.get("name")) ?? ""}`.trim(), p_currency: str(form.get("currency")) ?? "THB",
+      p_balance: credit.balance, p_balance_date: credit.date, p_is_opening: false, p_lender: str(form.get("seller")),
+      p_original_amount: credit.balance, p_start_date: credit.date, p_linked_asset_id: String(data),
+      p_owners: ownersFromForm(form).filter((o) => o.percent != null).map((o) => ({ person_id: o.person_id, percent: o.percent })),
+      p_notes: "ส่วนที่ยังไม่จ่ายของราคาซื้อ (สร้างจากฟอร์มเพิ่มทรัพย์สิน)",
+    });
+    revalidatePath("/liabilities");
+    if (e5) return { error: `บันทึกทรัพย์สินแล้ว แต่สร้างหนี้ "ค้างจ่ายค่าซื้อ" ไม่สำเร็จ (${friendlyError(e5.message)}) — เพิ่มเองที่หน้าหนี้สิน`, created: `/property/${data}` };
+  }
   redirect(`/property/${data}`);
+}
+
+/** ฟอร์มเพิ่มทรัพย์สิน · pay_mode = CREDIT: ยอดค้างจ่าย = ราคาที่ได้มา − เงินดาวน์ (ต้องมากกว่า 0) */
+function creditFromForm(form: FormData): { balance: number; date: string } | { error: string } | null {
+  if (form.get("is_opening") === "on" || str(form.get("pay_mode")) !== "CREDIT") return null;
+  const cost = num(form.get("acquisition_cost"));
+  if (cost === null || Number.isNaN(cost) || cost <= 0) return { error: "ยังจ่ายไม่ครบ: กรุณาใส่ต้นทุนที่ได้มา (ใช้คำนวณยอดค้างจ่าย)" };
+  const down = num(form.get("down_payment")) ?? 0;
+  const balance = Math.round((cost - down) * 100) / 100;
+  if (Number.isNaN(balance) || balance <= 0) return { error: "เงินดาวน์ต้องน้อยกว่าต้นทุนที่ได้มา (ถ้าจ่ายครบให้เลือก \"จ่ายครบแล้ว\")" };
+  return { balance, date: String(form.get("acquisition_date")) };
 }
 
 /** รายละเอียดมูลค่าแยกส่วนจากฟอร์ม (JSON) · ตรวจรูปแบบ / ยอดไม่ติดลบ */

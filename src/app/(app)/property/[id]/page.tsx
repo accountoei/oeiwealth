@@ -186,6 +186,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const paidByComp = ((payRows ?? []) as { amount: number; currency: string; metadata: { component_id?: string } | null }[])
     .filter((p) => p.currency === a.currency && p.metadata?.component_id)
     .reduce<Record<string, number>>((m, p) => ({ ...m, [p.metadata!.component_id!]: (m[p.metadata!.component_id!] ?? 0) + Number(p.amount) }), {});
+  // แถวที่มีรายการจ่ายผูกอยู่ (ทุกสกุล) → ลบ / แก้ต้นทุนในฟอร์มแก้ไขไม่ได้ (ตกลง 29 ต.ค. 2026)
+  const paidComp = new Set(((payRows ?? []) as { metadata: { component_id?: string } | null }[]).map((p) => p.metadata?.component_id).filter(Boolean));
   type LeaseExtra = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
@@ -316,9 +318,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             {/* ปุ่มเดียว "มูลค่าและต้นทุน": อัปเดตมูลค่า + ประวัติซื้อ / ขาย / มูลค่า + ต้นทุนรายก้อน (ตกลง 28 ต.ค. 2026) */}
             <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
               paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="มูลค่าและต้นทุน"
-              paymentEditor={(m) => { const lot = lots.find((l) => l.source === "PAYMENT" && l.movement_id === m.id); return (
-                <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value}
-                  building={!!lot?.is_building} years={lot?.depreciation_years ?? 20} components={compOpts} />); }}
+              paymentEditor={(m) => (
+                <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value} components={compOpts} />)}
               extra={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />}
               valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value), detail: partText(v.id) || null }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
               valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
@@ -390,7 +391,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   remove: canDelete && !hasHistory ? { kind: "asset", id, redirectTo: "/property", paths: ["/property"], label: "ลบทรัพย์สินนี้", hint: "สัญญาเช่า มูลค่า และสาธารณูปโภคจะถูกลบด้วย · ลบไม่ได้ถ้ามีค่าเช่า / เงินประกันที่บันทึกแล้ว" } : undefined }}>
                   <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
                     acquisition_cost: a.acquisition_cost, asset_id: id }} components={comps} latest={latestByComp} currency={a.currency}
-                    currentValue={a.current_value != null ? Number(a.current_value) : null} today={today} minDate={goLive} />
+                    currentValue={a.current_value != null ? Number(a.current_value) : null} today={today} minDate={goLive}
+                    locked={comps.filter((c) => c.source_movement_id || paidComp.has(c.id)).map((c) => c.id)} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>

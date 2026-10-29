@@ -212,8 +212,9 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   acq_building_cost?: number | null; acq_building_years?: number | null };
 
 /** แก้ข้อมูลทรัพย์สิน + ตารางส่วนประกอบ (ข้อมูล · ต้นทุน · มูลค่ารายแถว) ในฟอร์มเดียว ปุ่มบันทึกปุ่มเดียว (ตกลง 29 ต.ค. 2026) */
-export function EditPropertyForm({ p, components, latest, currency, currentValue, today, minDate }: {
+export function EditPropertyForm({ p, components, latest, currency, currentValue, today, minDate, locked }: {
   p: Info; components: Component[]; latest: Record<string, number>; currency: string; currentValue: number | null; today: string; minDate: string;
+  /** แถวที่ผูกกับรายการเงิน (ลบ / แก้ต้นทุนไม่ได้) */ locked: string[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
   const [usage, setUsage] = useState(p.usage_type);
@@ -270,10 +271,8 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
       <div className="space-y-1 md:col-span-2">
         <h3 className="text-sm font-medium text-slate-800">ส่วนประกอบ · ต้นทุน · มูลค่า</h3>
         <ComponentTable mode="edit" currency={currency} initial={components} latest={latest} acquisitionCost={p.acquisition_cost}
-          currentValue={currentValue} today={today} minDate={minDate} />
+          currentValue={currentValue} today={today} minDate={minDate} defaultDate={p.acquisition_date ?? ""} locked={locked} />
       </div>
-      <label className="text-sm">วันที่ได้มา<input name="acquisition_date" type="date" defaultValue={p.acquisition_date ?? ""} className={f} />
-        <span className="text-xs text-slate-500">แถวที่ไม่ได้ใส่วันที่ได้มา ใช้วันที่นี้</span></label>
       <label className="text-sm">อัตราดอกเบี้ยเทียบของแปลงนี้ (% ต่อปี)
         <input name="opportunity_rate_pct" inputMode="decimal" data-money="off" defaultValue={p.opportunity_rate_pct ?? ""} placeholder="ว่าง = ใช้อัตราครอบครัว" className={f} />
         <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับใน Net Worth) · อัตราครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>

@@ -187,13 +187,12 @@ const TYPE_TEXT: Record<CompOpt["type"], string> = { LAND: "ที่ดิน",
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 /** ช่องเพิ่มของ Property (ใช้ทั้งตอนจ่ายและตอนแก้รายการจ่าย · ตกลง 28–29 ต.ค. 2026)
- *  เพิ่มมูลค่าตามยอดนี้ · เป็นของส่วนประกอบไหน (หรือแถวใหม่: ซื้อที่ดินเพิ่ม / อาคาร / สิ่งปลูกสร้าง · เฉพาะตอนจ่าย)
- *  ไม่ระบุแถว → ติ๊กอาคาร / สิ่งปลูกสร้าง + อายุ ได้แบบเดิม (แถวอาคาร = หักค่าเสื่อมตามอายุของแถวนั้นเอง) */
-export function PropertyPayExtras({ addValue = true, building = false, years = 20, showAddValue = true, components = [], component = "", allowNew = false }: {
-  addValue?: boolean; building?: boolean; years?: number; showAddValue?: boolean;
+ *  เพิ่มมูลค่าตามยอดนี้ · เป็นของส่วนประกอบไหน (ต้องเลือก · หรือแถวใหม่: ซื้อที่ดินเพิ่ม / อาคาร / สิ่งปลูกสร้าง · เฉพาะตอนจ่าย)
+ *  อาคาร / สิ่งปลูกสร้าง = ตามชนิดของแถวที่เลือก (หักค่าเสื่อมตามอายุของแถวนั้น · ไม่มีติ๊กอาคารแยก ตกลง 29 ต.ค. 2026) */
+export function PropertyPayExtras({ addValue = true, showAddValue = true, components = [], component = "", allowNew = false }: {
+  addValue?: boolean; showAddValue?: boolean;
   components?: CompOpt[]; /** แถวที่เลือกไว้ (แก้รายการจ่าย) */ component?: string; /** ตอนจ่าย: สร้างแถวใหม่ได้ */ allowNew?: boolean;
 }) {
-  const [b, setB] = useState(building);
   const [pick, setPick] = useState(component);
   const isNew = pick.startsWith("new:");
   const newType = pick.slice(4) as CompOpt["type"];
@@ -204,9 +203,9 @@ export function PropertyPayExtras({ addValue = true, building = false, years = 2
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         {showAddValue && <label className="flex items-center gap-2"><input type="checkbox" name="add_value" defaultChecked={addValue} /> เพิ่มมูลค่าทรัพย์สินตามยอดนี้</label>}
         {(components.length > 0 || allowNew) && (
-          <label className="flex items-center gap-2">เป็นของ
-            <select name="component" value={pick} onChange={(e) => setPick(e.target.value)} className={small}>
-              <option value="">— ไม่ระบุแถว —</option>
+          <label className="flex items-center gap-2">เป็นของ *
+            <select name="component" required value={pick} onChange={(e) => setPick(e.target.value)} className={small}>
+              <option value="" disabled>— เลือกแถว —</option>
               {(["LAND", "BUILDING", "OTHER"] as const).map((t) => components.some((c) => c.type === t) && (
                 <optgroup key={t} label={TYPE_TEXT[t]}>
                   {components.filter((c) => c.type === t).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -221,9 +220,6 @@ export function PropertyPayExtras({ addValue = true, building = false, years = 2
               )}
             </select></label>
         )}
-        {!pick && <label className="flex items-center gap-2"><input type="checkbox" name="is_building" checked={b} onChange={(e) => setB(e.target.checked)} /> อาคาร / สิ่งปลูกสร้าง (หักค่าเสื่อม)</label>}
-        {!pick && b && <label className="flex items-center gap-2">อายุ<input name="depreciation_years" inputMode="numeric" data-plain defaultValue={String(years)}
-          className={`w-16 text-right ${small}`} />ปี</label>}
       </div>
       {isNew && (newType === "LAND" ? (
         <div className="flex flex-wrap items-center gap-2">
