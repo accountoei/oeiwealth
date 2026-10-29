@@ -336,14 +336,17 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
               ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}
             </div>
+            {/* ราคาที่ได้มา · ค่าใช้จ่าย · มูลค่าล่าสุดเทียบราคาที่ได้มา (บวก = เขียว · ลบ = แดง · ตกลง 29 ต.ค. 2026) */}
             {acqAll != null && (
-              <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(acqAll, undefined, 0)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}
-                {acqAll > 0 && Number(a.current_value ?? 0) > 0 && <span> · {diffText(Number(a.current_value) - acqAll, acqAll)}</span>}</div>
+              <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(acqAll)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
             )}
-            {spentSum > 0 && (
-              <div className="mt-0.5 text-xs text-slate-500"><a href="#expenses" className="hover:underline">ค่าใช้จ่ายสะสม {money(spentSum, undefined, 0)}</a>
-                {spentLast && ` (ล่าสุด ${thDate(spentLast)})`}</div>
-            )}
+            <div className="mt-0.5 text-xs text-slate-500"><a href="#expenses" className="hover:underline">ค่าใช้จ่าย {money(spentSum)} บาท</a>
+              {spentLast && ` (ล่าสุด ${thDate(spentLast)})`}</div>
+            {acqAll != null && acqAll > 0 && a.current_value != null && (() => {
+              const d = Number(a.current_value) - acqAll;
+              return <div className={`mt-0.5 text-xs font-medium ${d >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                มูลค่าล่าสุด{d >= 0 ? "สูงกว่า" : "ต่ำกว่า"}ราคาที่ได้มา {diffText(d, acqAll)}</div>;
+            })()}
             {/* ปุ่มเดียว "ปรับมูลค่า / ประวัติ": อัปเดตมูลค่า + ประวัติตารางเดียว (เงินจ่าย / รับ · มูลค่าเปลี่ยน · ตกลง 29 ต.ค. 2026) */}
             <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
               paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="ปรับมูลค่า / ประวัติ" flow={Object.fromEntries(compLabel)}
@@ -689,7 +692,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {canWrite && <div className="flex flex-wrap items-start gap-2">
             {a.status === "ACTIVE" && <RecordCostForm assetId={id} label="" expected={0} currency={a.currency} category="บ้าน / สาธารณูปโภค"
               banks={bankList} cards={cards} persons={persons ?? []} today={today} minDate={goLive} />}
-            <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} />
+            <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} label="+ ค่าใช้จ่ายประจำ" asButton />
           </div>}
         </div>
         {oneOff.length > 0 && (
