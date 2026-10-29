@@ -11,7 +11,8 @@ const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-7
 export type DeedOpt = { id: string; label: string; area: number | null; type: "LAND" | "BUILDING" | "OTHER";
   /** ราคาที่ได้มาของแถว (ต้นทุน + จ่ายเพิ่มที่เพิ่มมูลค่า) · null = ไม่ได้แยกรายแถว */ cost?: number | null };
 type Row = { key: string; type: ValuePart["type"]; deed_id?: string; label: string; area: number; cost: number | null;
-  /** มูลค่าในครั้งล่าสุด · null = ครั้งล่าสุดไม่ได้แยกรายแถว */ last: number | null; value: string; source_movement_id?: string | null };
+  /** มูลค่าในครั้งล่าสุด · null = ไม่รู้ */ last: number | null; value: string; source_movement_id?: string | null;
+  /** last เป็นค่าประมาณ (ครั้งล่าสุดไม่ได้แยกรายแถว → แบ่งยอดรวมตามสัดส่วนราคาที่ได้มา) */ est?: boolean };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const pct = (d: number, base: number) => diffText(d, base);
@@ -31,11 +32,14 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
   const hasLatest = latest.length > 0;
   const ownerOf = (x: ValuePart) => x.deed_id && deeds.some((d) => d.id === x.deed_id) ? x.deed_id
     : deeds.find((d) => d.type !== "LAND" && x.type !== "DEED" && !!x.label && d.label === x.label)?.id ?? null;
+  // ครั้งล่าสุดเป็นยอดรวมอย่างเดียว → ประมาณรายแถวตามสัดส่วนราคาที่ได้มา (ตกลง 29 ต.ค. 2026) · ไม่มีราคาที่ได้มารายแถว = ไม่รู้
+  const est = !hasLatest && currentValue != null && deeds.some((d) => (d.cost ?? 0) > 0)
+    ? splitByArea(currentValue, deeds.map((d) => d.cost ?? 0)) : null;
   const init = (): Row[] => [
-    ...deeds.map((d) => {
+    ...deeds.map((d, i) => {
       const own = latest.filter((x) => ownerOf(x) === d.id);
       return { key: `d${d.id}`, type: d.type === "LAND" ? "DEED" as const : d.type, deed_id: d.id, label: d.label, area: d.area ?? 0,
-        cost: d.cost ?? null, last: hasLatest ? round2(own.reduce((t, x) => t + x.value, 0)) : null, value: "" };
+        cost: d.cost ?? null, last: hasLatest ? round2(own.reduce((t, x) => t + x.value, 0)) : est ? est[i] : null, est: !!est, value: "" };
     }),
     // รายส่วนเดิมที่ยังไม่ผูกกับแถวใด (ถ้ามี) → คงไว้ให้แก้ / ลบได้
     ...latest.filter((x) => !ownerOf(x)).map((x, i) => ({ key: `x${i}`, type: x.type, label: x.label ?? "", area: 0, cost: null, last: x.value,
@@ -94,7 +98,8 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
                     {r.type !== "DEED" && <span className="block text-xs text-slate-400">สิ่งปลูกสร้าง{!r.deed_id && " · ยังไม่ผูกแถว"}</span>}
                   </td>
                   <td className="text-right tabular-nums text-slate-600">{r.cost != null ? money(r.cost, undefined, 0) : "-"}</td>
-                  <td className="text-right tabular-nums text-slate-600">{r.last != null ? money(r.last, undefined, 0) : "-"}</td>
+                  <td className={`text-right tabular-nums ${r.est ? "italic text-slate-400" : "text-slate-600"}`}
+                    title={r.est ? "ประมาณจากสัดส่วนราคาที่ได้มา (ครั้งล่าสุดบันทึกเป็นยอดรวมอย่างเดียว)" : undefined}>{r.last != null ? money(r.last, undefined, 0) : "-"}</td>
                   <td className="pl-2">{auto
                     ? <div className="px-3 py-2 text-right tabular-nums text-blue-700">{money(eff[r.key], undefined, 2)}</div>
                     : <input value={r.value} onChange={(e) => set(r.key, { value: e.target.value })} inputMode="decimal" aria-label="มูลค่าใหม่"
@@ -123,6 +128,7 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
       </div>
       <p className="text-xs text-slate-500">ใส่มูลค่าใหม่รายแถว (ว่าง = เท่ามูลค่าล่าสุด) แล้วระบบรวมให้ · หรือใส่ยอดรวม → หักสิ่งปลูกสร้าง (ยอดใหม่ที่ใส่ หรือยอดล่าสุด) ที่เหลือแบ่งให้ที่ดินตามเนื้อที่ทันที (ตัวเลขสีน้ำเงิน)
         · ผลต่าง = มูลค่าใหม่ − ราคาที่ได้มา (% ของราคาที่ได้มา)</p>
+      {rows.some((r) => r.est) && <p className="text-xs text-slate-500"><span className="italic text-slate-400">ตัวเลขเอียงสีเทา</span> = มูลค่าล่าสุดรายแถวโดยประมาณ (ครั้งล่าสุดบันทึกเป็นยอดรวม จึงแบ่งตามสัดส่วนราคาที่ได้มา) · บันทึกครั้งนี้แล้วจะเก็บตัวเลขรายแถวจริง</p>}
       {mismatch && <p className="text-sm text-amber-700">ยอดรวมที่ใส่ ({money(numOrZero(total), undefined, 2)}) ไม่เท่าผลรวมรายแถว ({money(newTotal, undefined, 2)}) · ระบบจะใช้ผลรวมรายแถว — แก้ยอดรวมหรือล้างช่องยอดรวม</p>}
       {negLand && <p className="text-sm text-amber-700">ยอดรวมน้อยกว่ามูลค่าสิ่งปลูกสร้าง · ที่ดินติดลบ — ใส่มูลค่าสิ่งปลูกสร้างใหม่ หรือแก้ยอดรวม</p>}
       <div className="grid gap-3 md:grid-cols-4">
