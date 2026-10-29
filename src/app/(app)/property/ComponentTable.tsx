@@ -12,7 +12,8 @@ const plain = (s: string) => s.replace(/,/g, "").trim();
 const filled = (s: string) => plain(s) !== "";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type Row = CompInput & { key: string; rai: string; ngan: string; wa: string; value: string };
+type Row = CompInput & { key: string; rai: string; ngan: string; wa: string; value: string;
+  /** ฟอร์มเพิ่มใหม่: แก้มูลค่าแถวนี้เองแล้ว (มูลค่าไม่ตามต้นทุนอีก) */ vTouched?: boolean };
 
 function toRow(c: Component, value: number | undefined, defaultDate: string): Row {
   const w = c.land_area_sq_wa != null ? Number(c.land_area_sq_wa) : null;
@@ -39,53 +40,78 @@ const isEmpty = (r: Row) => !r.id && ![r.label, r.title_deed_no, r.land_no, r.ra
 
 /**
  * ตารางส่วนประกอบของทรัพย์สิน (ตกลง 29 ต.ค. 2026) — ใช้ทั้งฟอร์มเพิ่มใหม่และฟอร์มแก้ไข
- *   แต่ละแถว = ที่ดิน 1 โฉนด / อาคาร 1 หลัง / สิ่งปลูกสร้างอื่น · ข้อมูลตัวทรัพย์ + วันที่ได้มา + ต้นทุนที่ได้มา + มูลค่า
- *   ราคาที่ได้มา / มูลค่าของทรัพย์สิน = ผลรวมรายแถว (หรือใส่ยอดรวมที่แถวรวม) · ใส่ยอดรวมแล้วเฉลี่ยให้ที่ดินตามเนื้อที่ได้ (หักอาคารที่ใส่เองก่อน)
+ *   แต่ละแถว = ที่ดิน 1 โฉนด / สิ่งปลูกสร้าง 1 รายการ · ข้อมูลตัวทรัพย์ + วันที่ได้มา + ต้นทุนที่ได้มา + มูลค่า
+ *   ราคาที่ได้มา / มูลค่าของทรัพย์สิน = ผลรวมรายแถว (หรือใส่ยอดรวมที่แถวรวม) · ใส่ยอดรวมแล้วเฉลี่ยให้ที่ดินตามเนื้อที่ได้ (หักสิ่งปลูกสร้างที่ใส่เองก่อน)
+ *   ต้นทุนต้องใส่ (รายแถว หรือยอดรวม) · ฟอร์มเพิ่มใหม่: มูลค่าขึ้นตามต้นทุนเอง แก้ทับได้ (ตกลง 29 ต.ค. 2026)
+ *   ฟอร์มแก้ไข: มูลค่าแสดงอย่างเดียว (ปรับที่ปุ่ม "มูลค่าและต้นทุน") · เพิ่มแถวแยกโฉนด / ลบแถวที่มีมูลค่า → ระบบแบ่งมูลค่ารายแถวใหม่ ยอดรวมเท่าเดิม
  *   ส่งออกเป็นช่องซ่อน: components (JSON) · removed (JSON) · acquisition_cost · value · value_changed
  */
-export default function ComponentTable({ mode, currency, initial = [], latest = {}, acquisitionCost = null, currentValue = null, today, minDate,
+export default function ComponentTable({ mode, currency, initial = [], latest = {}, acquisitionCost = null, currentValue = null, today,
   defaultDate = "", locked = [], onEarliest }: {
   mode: "new" | "edit"; currency: string; initial?: Component[];
   /** มูลค่าล่าสุดรายแถว (id → ยอด) */ latest?: Record<string, number>;
   acquisitionCost?: number | null; currentValue?: number | null;
-  /** ฟอร์มแก้ไข: ช่วงวันที่ของมูลค่าใหม่ */ today?: string; minDate?: string;
+  /** ฟอร์มแก้ไข: วันที่ของมูลค่าที่แบ่งรายแถวใหม่ */ today?: string; minDate?: string;
   /** ฟอร์มแก้ไข: แถวเดิมที่ยังไม่มีวันที่ได้มา → ใช้วันที่ได้มาของทรัพย์สิน */ defaultDate?: string;
   /** ฟอร์มแก้ไข: แถวที่ผูกกับรายการเงิน (สร้างจาก / มีรายการจ่าย) → ลบไม่ได้ · แก้ต้นทุนในแถวไม่ได้ */ locked?: string[];
   /** วันที่ได้มาเก่าสุดของทุกแถว (ฟอร์มเพิ่มใหม่ใช้ตัดสินว่าเป็นยอดตั้งต้นก่อน Go-live หรือไม่) */ onEarliest?: (date: string) => void;
 }) {
+  const isNew = mode === "new";
   const init = useMemo(() => initial.map((c) => toRow(c, latest[c.id], defaultDate)), []);   // eslint-disable-line react-hooks/exhaustive-deps
-  const [rows, setRows] = useState<Row[]>(() => (init.length || mode === "edit" ? init : [blank("LAND")]));
+  const [rows, setRows] = useState<Row[]>(() => (init.length || !isNew ? init : [blank("LAND")]));
   const [removed, setRemoved] = useState<string[]>([]);
-  const [costTotal, setCostTotal] = useState(mode === "edit" && acquisitionCost != null ? fmt(Number(acquisitionCost)) : "");
+  const [costTotal, setCostTotal] = useState(!isNew && acquisitionCost != null ? fmt(Number(acquisitionCost)) : "");
   const [valueTotal, setValueTotal] = useState("");
+  const [totalTouched, setTotalTouched] = useState(false);
   const [spreadTotal, setSpreadTotal] = useState("");
-  const [addOpen, setAddOpen] = useState(mode === "new");
+  const [addOpen, setAddOpen] = useState(isNew);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const set = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  // ฟอร์มเพิ่มใหม่: แก้ต้นทุน → มูลค่าตาม (ถ้ายังไม่ได้แก้มูลค่าแถวนั้นเอง)
+  const setCost = (key: string, v: string) => setRows((rs) => rs.map((r) => (r.key !== key ? r
+    : { ...r, acq_cost: v, ...(isNew && !r.vTouched ? { value: v } : {}) })));
+  const setValue = (key: string, v: string) => set(key, { value: v, vTouched: true });
 
   const live = rows.filter((r) => !isEmpty(r));
   const costRows = live.filter((r) => filled(r.acq_cost));
-  const valueRows = live.filter((r) => filled(r.value));
   const costSum = round2(costRows.reduce((t, r) => t + numOrZero(r.acq_cost), 0));
-  const valueSum = round2(valueRows.reduce((t, r) => t + numOrZero(r.value), 0));
   // ต้นทุน: ครบทุกแถว = ผลรวม · ใส่บางแถว = ยอดรวมที่แถวรวม (ส่วนที่เหลือ = "ยังไม่แยก") หรือผลรวมถ้าไม่ใส่ยอดรวม
   const allCost = live.length > 0 && costRows.length === live.length;
   const cost = allCost ? String(costSum) : filled(costTotal) ? plain(costTotal) : costRows.length ? String(costSum) : "";
   const costShort = !allCost && costRows.length > 0 && filled(costTotal) && numOrZero(costTotal) < costSum - 0.005;
-  const valueTyped = valueRows.length ? String(valueSum) : plain(valueTotal);
-  // ฟอร์มเพิ่มใหม่: ไม่ได้ใส่มูลค่าเลย → ใช้ยอดเดียวกับต้นทุน
-  const fromCost = mode === "new" && !valueTyped && !!cost;
-  const value = fromCost ? cost : valueTyped;
   // วันที่ได้มาของทรัพย์สิน = วันที่เก่าสุดของแถว (ตกลง 29 ต.ค. 2026 · ไม่มีช่องแยก)
   const earliest = rows.map((r) => r.acquired_date).filter(Boolean).sort()[0] ?? "";
   useEffect(() => { onEarliest?.(earliest); }, [earliest, onEarliest]);
   const lockedSet = new Set(locked);
   const areaSum = live.filter((r) => r.type === "LAND").reduce((t, r) => t + (sqwa(r) ?? 0), 0);
-  // ฟอร์มแก้ไข: มูลค่าเปลี่ยน (แก้รายแถว / ลบแถวที่มีมูลค่า / ใส่ยอดรวมใหม่) → บันทึกมูลค่าใหม่
-  const valueChanged = mode === "edit" && (
-    rows.some((r) => plain(r.value) !== plain(init.find((x) => x.key === r.key)?.value ?? ""))
-    || removed.some((id) => latest[id] != null) || (!valueRows.length && filled(valueTotal)));
-  const partial = valueRows.length > 0 && valueRows.length < live.length;
+
+  // ---- มูลค่า ----
+  // ฟอร์มเพิ่มใหม่: ไม่ได้แก้มูลค่าเลย = ใช้ยอดเดียวกับต้นทุน (ราคาทุน) · แก้เองแล้ว = ต้องครบทุกแถว หรือใส่ยอดรวม
+  const touched = isNew && (totalTouched || rows.some((r) => r.vTouched));
+  const valueRows = live.filter((r) => filled(r.value));
+  const allValue = live.length > 0 && valueRows.length === live.length;
+  const valueSum = round2(valueRows.reduce((t, r) => t + numOrZero(r.value), 0));
+  const newValue = !touched ? cost : allValue ? String(valueSum) : plain(valueTotal);
+  const partial = touched && valueRows.length > 0 && !allValue;
+  // ฟอร์มแก้ไข: แยกโฉนด (เพิ่มแถว) / ลบแถวที่มีมูลค่า → แบ่งมูลค่ารายแถวใหม่ ยอดรวมเท่าเดิม (Net Worth ไม่เปลี่ยน)
+  const hasParts = Object.keys(latest).length > 0;
+  const freed = round2(removed.reduce((t, id) => t + (latest[id] ?? 0), 0));
+  const added = live.filter((r) => !r.id);
+  const resplit = !isNew && hasParts && (freed > 0 || added.length > 0);
+  const editValues: Record<string, number> = {};
+  if (!isNew) {
+    for (const r of live) editValues[r.key] = r.id ? latest[r.id] ?? 0 : 0;
+    if (resplit) {
+      const lands = live.filter((r) => r.type === "LAND");
+      const newLand = lands.some((r) => !r.id);
+      const pool = freed + (newLand ? lands.reduce((t, r) => t + editValues[r.key], 0) : 0);
+      if (lands.length) {
+        const share = splitByArea(round2(pool), lands.map((r) => sqwa(r) ?? 0));
+        lands.forEach((r, i) => { editValues[r.key] = round2((newLand ? 0 : editValues[r.key]) + share[i]); });
+      } else if (live.length) editValues[live[0].key] = round2(editValues[live[0].key] + freed);
+    }
+  }
+  const editTotal = round2(Object.values(editValues).reduce((t, v) => t + v, 0));
 
   const payload = live.map((r) => {
     const out: CompInput = {
@@ -94,16 +120,20 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       land_area_sq_wa: r.type === "LAND" ? String(sqwa(r) ?? "") : "", building_area_sqm: plain(r.building_area_sqm),
       useful_life_years: plain(r.useful_life_years), acquired_date: r.acquired_date, acq_cost: plain(r.acq_cost), notes: r.notes,
     };
-    if (valueRows.length) out.value = plain(r.value);
+    if (isNew ? allValue : resplit) out.value = isNew ? plain(r.value) : String(editValues[r.key]);
     return out;
   });
 
-  const spread = (col: "acq_cost" | "value") => {
-    const lands = rows.filter((r) => r.type === "LAND");
+  // ซื้อรวมหลายโฉนด: ยอดรวม − สิ่งปลูกสร้างที่ใส่เอง → เฉลี่ยให้ที่ดินตามเนื้อที่ (แถวที่ผูกรายการจ่ายไม่ถูกเปลี่ยน)
+  const spread = () => {
+    const lands = rows.filter((r) => r.type === "LAND" && !(r.id && lockedSet.has(r.id)));
     if (!lands.length) return;
-    const others = round2(rows.filter((r) => r.type !== "LAND").reduce((t, r) => t + numOrZero(r[col]), 0));
+    const others = round2(rows.filter((r) => !lands.includes(r)).reduce((t, r) => t + numOrZero(r.acq_cost), 0));
     const out = splitByArea(numOrZero(spreadTotal) - others, lands.map((r) => sqwa(r) ?? 0));
-    setRows((rs) => rs.map((r) => { const i = lands.findIndex((x) => x.key === r.key); return i >= 0 ? { ...r, [col]: fmt(out[i]) } : r; }));
+    setRows((rs) => rs.map((r) => {
+      const i = lands.findIndex((x) => x.key === r.key);
+      return i < 0 ? r : { ...r, acq_cost: fmt(out[i]), ...(isNew && !r.vTouched ? { value: fmt(out[i]) } : {}) };
+    }));
   };
   const remove = (r: Row) => {
     setRows((rs) => rs.filter((x) => x.key !== r.key));
@@ -112,32 +142,48 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
   };
   // ลบได้เมื่อยังเหลืออย่างน้อย 1 แถว และแถวนั้นไม่ผูกกับรายการเงิน
   const canRemove = (r: Row) => !(r.id && lockedSet.has(r.id)) && (isEmpty(r) || live.length > 1);
-  const money2 = (key: string, col: "acq_cost" | "value", v: string, readOnly = false) => (
-    <input value={v} onChange={(e) => set(key, { [col]: e.target.value })} onBlur={(e) => filled(e.target.value) && set(key, { [col]: fmt(numOrZero(e.target.value)) })}
-      inputMode="decimal" data-plain aria-label={col === "acq_cost" ? "ต้นทุนที่ได้มา" : "มูลค่า"} readOnly={readOnly}
+  // ช่องเงิน: คอมมาตอนพิมพ์ / .00 ตอนออกจากช่อง ใช้ตัวจัดรูปกลาง (NumberInputs)
+  const money2 = (r: Row, col: "acq_cost" | "value", readOnly = false) => (
+    <input value={r[col]} onChange={(e) => (col === "acq_cost" ? setCost(r.key, e.target.value) : setValue(r.key, e.target.value))}
+      inputMode="decimal" aria-label={col === "acq_cost" ? "ต้นทุนที่ได้มา" : "มูลค่า"} readOnly={readOnly}
+      required={col === "acq_cost" && !readOnly && !r.id && !isEmpty(r) && (!isNew || !filled(costTotal))}
       title={readOnly ? "แถวนี้ผูกกับรายการจ่าย — แก้ยอดที่รายการจ่าย" : undefined} className={`${num} ${readOnly ? "bg-slate-50 text-slate-500" : ""}`} />
   );
+  const valueCell = (r: Row) => (isNew ? money2(r, "value") : (
+    <div className={`px-2 py-1.5 text-right tabular-nums ${resplit && Math.abs(editValues[r.key] - (r.id ? latest[r.id] ?? 0 : 0)) > 0.005 ? "text-blue-700" : "text-slate-600"}`}>
+      {hasParts || resplit ? money(editValues[r.key] ?? 0, undefined, 2) : "-"}</div>
+  ));
 
   return (
     <div className="space-y-2">
       <input type="hidden" name="components" value={JSON.stringify(payload)} />
       <input type="hidden" name="removed" value={JSON.stringify(removed)} />
       <input type="hidden" name="acquisition_cost" value={cost} />
-      <input type="hidden" name="value" value={value} />
       <input type="hidden" name="acquisition_date" value={earliest || defaultDate} />
-      {mode === "new" && <input type="hidden" name="valuation_method" value={fromCost ? "BOOK_VALUE" : "USER_ESTIMATE"} />}
-      {valueChanged && <input type="hidden" name="value_changed" value="1" />}
+      {isNew && <>
+        <input type="hidden" name="value" value={newValue} />
+        <input type="hidden" name="valuation_method" value={touched ? "USER_ESTIMATE" : "BOOK_VALUE"} />
+      </>}
+      {resplit && <>
+        <input type="hidden" name="value_changed" value="1" /><input type="hidden" name="value" value={String(editTotal)} />
+        <input type="hidden" name="valuation_date" value={today ?? ""} /><input type="hidden" name="valuation_method" value="USER_ESTIMATE" />
+        <input type="hidden" name="valuation_notes" value="แบ่งมูลค่ารายแถวใหม่ (แยก / ลบแถว · ยอดรวมเท่าเดิม)" />
+      </>}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[56rem] text-sm">
+        <table className="w-full min-w-[56rem] table-fixed text-sm">
+          <colgroup>
+            <col className="w-28" /><col /><col className="w-48" /><col className="w-40" /><col className="w-40" /><col className="w-40" /><col className="w-24" />
+          </colgroup>
           <thead className="text-left text-xs text-slate-500">
             <tr>
-              <th className="w-28 py-1">ชนิด</th><th>ส่วนประกอบ</th><th className="w-44">เนื้อที่ / พื้นที่</th><th className="w-36">วันที่ได้มา</th>
-              <th className="w-36 text-right">ต้นทุนที่ได้มา</th><th className="w-36 text-right">มูลค่า ({currency})</th><th className="w-20"></th>
+              <th className="py-1">ชนิด</th><th>ส่วนประกอบ</th><th>เนื้อที่ / พื้นที่</th><th>วันที่ได้มา</th>
+              <th className="pr-2 text-right">ต้นทุนที่ได้มา <span className="text-red-600">*</span></th>
+              <th className="pr-2 text-right">มูลค่า ({currency}){!isNew && <span className="font-normal"> · ล่าสุด</span>}</th><th></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <RowView key={r.key} r={r} set={set} money2={money2} lockedRow={!!r.id && lockedSet.has(r.id)}
+              <RowView key={r.key} r={r} set={set} cost={money2(r, "acq_cost", !!r.id && lockedSet.has(r.id))} value={valueCell(r)}
                 del={canRemove(r) ? (confirmKey === r.key
                   ? <span className="flex flex-col items-end gap-1"><span className="text-slate-600">ลบแถวนี้?</span>
                       <span><button type="button" onClick={() => remove(r)} className="text-red-600 hover:underline">ยืนยันลบ</button>
@@ -146,25 +192,26 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
                   : <span className="text-slate-400" title={r.id && lockedSet.has(r.id) ? "ผูกกับรายการจ่าย — ลบ / ย้ายรายการจ่ายก่อน" : "ต้องเหลืออย่างน้อย 1 แถว"}>
                       {r.id && lockedSet.has(r.id) ? "ผูกรายการจ่าย" : "แถวสุดท้าย"}</span>} />
             ))}
-            {rows.length === 0 && <tr><td colSpan={7} className="py-3 text-sm text-slate-500">ยังไม่มีส่วนประกอบ · เพิ่มที่ดิน / อาคารด้านล่าง (หรือใส่ยอดรวมที่แถวรวมอย่างเดียว)</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="py-3 text-sm text-slate-500">ยังไม่มีส่วนประกอบ · เพิ่มที่ดิน / สิ่งปลูกสร้างด้านล่าง (หรือใส่ยอดรวมที่แถวรวมอย่างเดียว)</td></tr>}
           </tbody>
           <tfoot className="border-t-2 border-slate-200">
             <tr className="align-top">
               <td className="py-2 font-medium" colSpan={2}>รวมทั้งทรัพย์สิน <span className="font-normal text-xs text-slate-500">(มูลค่ารวมนับใน Net Worth)</span></td>
-              <td className="py-2 text-xs tabular-nums text-slate-600">{areaSum > 0 ? `${areaSum.toLocaleString("en-US", { maximumFractionDigits: 2 })} ตร.ว.` : ""}</td>
+              <td className="py-2 pr-2 text-xs tabular-nums text-slate-600">{areaSum > 0 ? `${areaSum.toLocaleString("en-US", { maximumFractionDigits: 2 })} ตร.ว.` : ""}</td>
               <td></td>
-              <td className="py-1 text-right">{allCost
-                ? <span className="font-semibold tabular-nums">{money(costSum, undefined, 2)}</span>
-                : <input value={costTotal} onChange={(e) => setCostTotal(e.target.value)} onBlur={(e) => filled(e.target.value) && setCostTotal(fmt(numOrZero(e.target.value)))}
-                    inputMode="decimal" data-plain aria-label="ราคาที่ได้มารวม" placeholder={costRows.length ? fmt(costSum) : "ยอดรวม"} className={num} />}
+              <td className="py-1 pr-2 text-right">{allCost
+                ? <div className="px-2 py-1.5 font-semibold tabular-nums">{money(costSum, undefined, 2)}</div>
+                : <input value={costTotal} onChange={(e) => { setCostTotal(e.target.value); if (!totalTouched) setValueTotal(e.target.value); }}
+                    inputMode="decimal" aria-label="ราคาที่ได้มารวม" required={isNew && !costRows.length}
+                    placeholder={costRows.length ? fmt(costSum) : "ยอดรวม"} className={num} />}
                 {!allCost && costRows.length > 0 && filled(costTotal) && !costShort && numOrZero(costTotal) - costSum > 0.005 &&
                   <span className="mt-1 block text-xs font-normal text-slate-500">ยังไม่แยก {money(numOrZero(costTotal) - costSum, undefined, 2)}</span>}</td>
-              <td className="py-1 text-right">{valueRows.length
-                ? <span className="font-semibold tabular-nums">{money(valueSum, undefined, 2)}</span>
-                : <input value={valueTotal} onChange={(e) => setValueTotal(e.target.value)} onBlur={(e) => filled(e.target.value) && setValueTotal(fmt(numOrZero(e.target.value)))}
-                    inputMode="decimal" data-plain aria-label="มูลค่ารวม" required={mode === "new" && !cost}
-                    placeholder={mode === "edit" && currentValue != null ? money(currentValue, undefined, 2) : fromCost ? fmt(numOrZero(cost)) : "ยอดรวม"}
-                    className={num} />}</td>
+              <td className="py-1 pr-2 text-right">{!isNew
+                ? <div className="px-2 py-1.5 font-semibold tabular-nums">{money(currentValue ?? 0, undefined, 2)}</div>
+                : allValue
+                ? <div className="px-2 py-1.5 font-semibold tabular-nums">{money(valueSum, undefined, 2)}</div>
+                : <input value={totalTouched ? valueTotal : costTotal} onChange={(e) => { setValueTotal(e.target.value); setTotalTouched(true); }}
+                    inputMode="decimal" aria-label="มูลค่ารวม" required={touched && !valueRows.length} placeholder="ยอดรวม" className={num} />}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -175,109 +222,91 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
         <button type="button" onClick={() => setAddOpen(true)} className="text-xs text-slate-500 underline hover:text-slate-700">
           + เพิ่มแถวที่กรอกตกหล่น / แยกโฉนด (ไม่มีเงินเข้าออก)</button>
       ) : (
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <button type="button" onClick={() => setRows((rs) => [...rs, blank("LAND")])} className="text-blue-700 hover:underline">+ ที่ดิน (โฉนด)</button>
-        <button type="button" onClick={() => setRows((rs) => [...rs, blank("BUILDING")])} className="text-blue-700 hover:underline">+ อาคาร</button>
-        <button type="button" onClick={() => setRows((rs) => [...rs, blank("OTHER")])} className="text-blue-700 hover:underline">+ สิ่งปลูกสร้างอื่น</button>
-        {rows.some((r) => r.type === "LAND") && (
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-500">ซื้อรวม: ยอดรวม</span>
-            <input value={spreadTotal} onChange={(e) => setSpreadTotal(e.target.value)} inputMode="decimal" data-plain aria-label="ยอดรวมสำหรับเฉลี่ย"
-              className="w-36 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm tabular-nums" />
-            <button type="button" onClick={() => spread("acq_cost")} disabled={!numOrZero(spreadTotal)}
+      <div className="space-y-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <button type="button" onClick={() => setRows((rs) => [...rs, blank("LAND")])} className="text-blue-700 hover:underline">+ ที่ดิน (โฉนด)</button>
+          <button type="button" onClick={() => setRows((rs) => [...rs, blank("BUILDING")])} className="text-blue-700 hover:underline">+ สิ่งปลูกสร้าง</button>
+          {!isNew && <span className="text-xs text-slate-500">ใช้แก้ข้อมูลที่กรอกตกหล่น / แยกโฉนดที่รวมอยู่ในแถวเดียว · ซื้อที่ดินเพิ่ม / สร้างใหม่ ให้ใช้ปุ่ม &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; (บันทึกเงินออกจากบัญชีด้วย)</span>}
+        </div>
+        {rows.filter((r) => r.type === "LAND").length > 1 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-500">ซื้อรวมหลายโฉนด: ยอดรวม</span>
+            <input value={spreadTotal} onChange={(e) => setSpreadTotal(e.target.value)} inputMode="decimal" aria-label="ยอดรวมสำหรับเฉลี่ย"
+              className="w-40 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm tabular-nums" />
+            <button type="button" onClick={spread} disabled={!numOrZero(spreadTotal)}
               className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50">เฉลี่ยเป็นต้นทุนที่ดินตามเนื้อที่</button>
-            <button type="button" onClick={() => spread("value")} disabled={!numOrZero(spreadTotal)}
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50">เฉลี่ยเป็นมูลค่าที่ดินตามเนื้อที่</button>
-          </span>
+            <span className="text-xs text-slate-500">หักสิ่งปลูกสร้างที่ใส่เองก่อน ที่เหลือแบ่งให้ที่ดินตามเนื้อที่ · แก้รายแถวได้</span>
+          </div>
         )}
-        {mode === "edit" && <span className="basis-full text-xs text-slate-500">ใช้แก้ข้อมูลที่กรอกตกหล่น / แยกโฉนดที่รวมอยู่ในแถวเดียว · ซื้อที่ดินเพิ่ม / สร้างอาคารใหม่ ให้ใช้ปุ่ม &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; (บันทึกเงินออกจากบัญชีด้วย)</span>}
       </div>
       )}
       <p className="text-xs text-slate-500">
-        ซื้อหลายโฉนดเป็นแปลงเดียว: เพิ่มแถวละใบ แล้วใส่ยอดรวมกดเฉลี่ย (หักอาคาร / สิ่งปลูกสร้างที่ใส่เองก่อน ที่เหลือแบ่งให้ที่ดินตามเนื้อที่ · แก้รายแถวได้)
-        · อาคารแต่ละหลังมีต้นทุน มูลค่า และอายุใช้งานของตัวเอง (ใช้หักค่าเสื่อมในราคาขายขั้นต่ำที่คุ้ม)
-        · ไม่ใส่รายแถว = ใส่ยอดรวมที่แถวรวมอย่างเดียว{mode === "new" && " · ไม่ใส่มูลค่า = ใช้ยอดเดียวกับต้นทุน"}
+        สิ่งปลูกสร้างแต่ละรายการมีต้นทุน มูลค่า และอายุใช้งานของตัวเอง (ใช้หักค่าเสื่อมในราคาขายขั้นต่ำที่คุ้ม) · ไม่ใส่ต้นทุนรายแถว = ใส่ยอดรวมที่แถวรวม
+        {isNew ? " · มูลค่าขึ้นตามต้นทุนเอง แก้ได้ถ้ามูลค่าวันนี้ไม่เท่าต้นทุน" : " · ปรับมูลค่าที่ปุ่ม “มูลค่าและต้นทุน”"}
       </p>
       {costShort && <p className="text-sm text-amber-700">ต้นทุนรวมน้อยกว่าผลรวมต้นทุนรายแถว ({money(costSum, undefined, 2)})</p>}
       {partial && <p className="text-sm text-amber-700">ใส่มูลค่าให้ครบทุกแถว หรือลบมูลค่ารายแถวออกให้หมดแล้วใส่ยอดรวม</p>}
-      {valueChanged && (
-        <div className="grid gap-3 rounded-lg bg-blue-50 p-3 md:grid-cols-4">
-          <p className="text-xs text-blue-800 md:col-span-4">มูลค่าเปลี่ยน → บันทึกเป็นมูลค่าครั้งใหม่ (เก็บประวัติ ไม่ทับของเดิม)
-            {currentValue != null && value !== "" && <> · มูลค่ารวม <span className="tabular-nums">{money(currentValue, undefined, 2)}</span> → <b className="tabular-nums">{money(numOrZero(value), undefined, 2)}</b>
-              {Math.abs(numOrZero(value) - currentValue) < 0.005 ? " (ยอดรวมเท่าเดิม · Net Worth ไม่เปลี่ยน)" : " (Net Worth เปลี่ยนตาม)"}</>}</p>
-          <label className="text-sm">มูลค่า ณ วันที่<input name="valuation_date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${cell}`} /></label>
-          <label className="text-sm">วิธีประเมิน
-            <select name="valuation_method" defaultValue="USER_ESTIMATE" className={`mt-1 block ${cell}`}>
-              <option value="USER_ESTIMATE">ประมาณเอง</option>
-              <option value="APPRAISAL">ผู้ประเมิน / ธนาคาร / ราชการ</option>
-              <option value="LATEST_TRANSACTION">ราคาซื้อขายล่าสุด</option>
-            </select></label>
-          <label className="text-sm md:col-span-2">หมายเหตุของมูลค่า<input name="valuation_notes" className={`mt-1 block ${cell}`} /></label>
-        </div>
+      {resplit && (
+        <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-800">แยก / ลบแถว → ระบบแบ่งมูลค่ารายแถวใหม่ (ตัวเลขสีน้ำเงิน · ที่ดินเฉลี่ยตามเนื้อที่) ·
+          ยอดรวมเท่าเดิม <span className="tabular-nums">{money(editTotal, undefined, 2)}</span> · Net Worth ไม่เปลี่ยน · ถ้ามูลค่าจริงต่างจากนี้ ปรับที่ปุ่ม &ldquo;มูลค่าและต้นทุน&rdquo; หลังบันทึก</p>
       )}
     </div>
   );
 }
 
-function RowView({ r, set, money2, lockedRow, del }: {
-  r: Row; set: (key: string, patch: Partial<Row>) => void; lockedRow: boolean; del: ReactNode;
-  money2: (key: string, col: "acq_cost" | "value", v: string, readOnly?: boolean) => ReactNode;
+function RowView({ r, set, cost, value, del }: {
+  r: Row; set: (key: string, patch: Partial<Row>) => void; cost: ReactNode; value: ReactNode; del: ReactNode;
 }) {
   const t = (k: keyof Row, placeholder: string, extra = "") => (
     <input value={String(r[k] ?? "")} onChange={(e) => set(r.key, { [k]: e.target.value })} placeholder={placeholder} aria-label={placeholder}
       data-plain className={`${cell} ${extra}`} />
   );
+  const land = r.type === "LAND";
+  // 2 บรรทัดต่อแถว · บรรทัดที่ 2 ตรงคอลัมน์บรรทัดแรก: เล่ม หน้า ระวาง ใต้ส่วนประกอบ · หน้าสำรวจ / อายุใช้งาน ใต้เนื้อที่ · หมายเหตุ ใต้วันที่ → มูลค่า
   return (
     <>
       <tr className="align-top">
-        <td className="pt-1.5 pr-2">
-          {r.type === "LAND" ? <span className="inline-block pt-1.5 text-sm">{COMP_TYPE_LABEL.LAND}</span> : (
-            <select value={r.type} onChange={(e) => set(r.key, { type: e.target.value as CompType })} aria-label="ชนิด" className={cell}>
-              <option value="BUILDING">{COMP_TYPE_LABEL.BUILDING}</option><option value="OTHER">{COMP_TYPE_LABEL.OTHER}</option>
-            </select>
-          )}
-        </td>
-        <td className="pt-1.5 pr-2">
-          {r.type === "LAND" ? (
+        <td className="pt-2 pr-2"><span className="inline-block pt-1.5 text-sm">{COMP_TYPE_LABEL[r.type]}</span></td>
+        <td className="pt-2 pr-2">
+          {land ? (
             <div className="grid grid-cols-3 gap-1">{t("title_type", "ประเภท")}{t("title_deed_no", "เลขที่โฉนด")}{t("land_no", "เลขที่ดิน")}</div>
-          ) : t("label", r.type === "BUILDING" ? "เช่น บ้านเดี่ยว 2 ชั้น" : "เช่น รั้ว · สระว่ายน้ำ · ระบบไฟ")}
+          ) : t("label", "เช่น บ้านเดี่ยว 2 ชั้น · รั้ว · สระว่ายน้ำ")}
         </td>
-        <td className="pt-1.5 pr-2">
-          {r.type === "LAND" ? (
-            <div className="flex gap-1">
+        <td className="pt-2 pr-2">
+          {land ? (
+            <div className="grid grid-cols-3 gap-1">
               <input value={r.rai} onChange={(e) => set(r.key, { rai: e.target.value })} inputMode="numeric" data-plain placeholder="ไร่" aria-label="ไร่" className={cell} />
               <input value={r.ngan} onChange={(e) => set(r.key, { ngan: e.target.value })} inputMode="numeric" data-plain placeholder="งาน" aria-label="งาน" className={cell} />
-              <input value={r.wa} onChange={(e) => set(r.key, { wa: e.target.value })} inputMode="decimal" data-plain placeholder="ตร.ว." aria-label="ตารางวา" className={cell} />
+              <input value={r.wa} onChange={(e) => set(r.key, { wa: e.target.value })} inputMode="decimal" data-money="off" placeholder="ตร.ว." aria-label="ตารางวา" className={cell} />
             </div>
-          ) : r.type === "BUILDING" ? (
+          ) : (
             <div className="flex items-center gap-1">
-              <input value={r.building_area_sqm} onChange={(e) => set(r.key, { building_area_sqm: e.target.value })} inputMode="decimal" data-plain
+              <input value={r.building_area_sqm} onChange={(e) => set(r.key, { building_area_sqm: e.target.value })} inputMode="decimal" data-money="off"
                 placeholder="พื้นที่ใช้สอย" aria-label="พื้นที่ใช้สอย (ตร.ม.)" className={cell} /><span className="text-xs text-slate-500">ตร.ม.</span>
             </div>
-          ) : null}
+          )}
         </td>
-        <td className="pt-1.5 pr-2"><input type="date" value={r.acquired_date} onChange={(e) => set(r.key, { acquired_date: e.target.value })}
+        <td className="pt-2 pr-2"><input type="date" value={r.acquired_date} onChange={(e) => set(r.key, { acquired_date: e.target.value })}
           required={!isEmpty(r)} aria-label="วันที่ได้มา" className={cell} /></td>
-        <td className="pt-1.5 pr-2">{money2(r.key, "acq_cost", r.acq_cost, lockedRow)}</td>
-        <td className="pt-1.5 pr-2">{money2(r.key, "value", r.value)}</td>
-        <td className="whitespace-nowrap pt-1.5 text-right text-xs">{del}</td>
+        <td className="pt-2 pr-2">{cost}</td>
+        <td className="pt-2 pr-2">{value}</td>
+        <td className="whitespace-nowrap pt-3 text-right text-xs">{del}</td>
       </tr>
-      <tr className="border-b border-slate-100">
+      <tr className="border-b border-slate-100 align-top">
         <td></td>
-        <td colSpan={6} className="pb-2 pt-1">
-          <div className="grid gap-1 md:grid-cols-6">
-            {r.type === "LAND" ? (<>
-              {t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}{t("survey_page", "หน้าสำรวจ")}
-            </>) : (
-              <label className="flex items-center gap-1 text-xs text-slate-600">อายุใช้งาน
-                <input value={r.useful_life_years} onChange={(e) => set(r.key, { useful_life_years: e.target.value })} inputMode="numeric" data-plain
-                  aria-label="อายุใช้งาน (ปี)" className={`${cell} w-16`} />ปี</label>
-            )}
-            <div className={r.type === "LAND" ? "md:col-span-2" : "md:col-span-5"}>{t("notes", "หมายเหตุ")}</div>
-          </div>
+        <td className="pb-2 pr-2 pt-1">
+          {land && <div className="grid grid-cols-3 gap-1">{t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}</div>}
         </td>
+        <td className="pb-2 pr-2 pt-1">
+          {land ? t("survey_page", "หน้าสำรวจ") : (
+            <label className="flex items-center gap-1 whitespace-nowrap text-xs text-slate-600">อายุใช้งาน
+              <input value={r.useful_life_years} onChange={(e) => set(r.key, { useful_life_years: e.target.value })} inputMode="numeric" data-plain
+                aria-label="อายุใช้งาน (ปี)" className={`${cell} !w-14 text-right`} />ปี</label>
+          )}
+        </td>
+        <td colSpan={3} className="pb-2 pr-2 pt-1">{t("notes", "หมายเหตุ")}</td>
+        <td></td>
       </tr>
     </>
   );
 }
-

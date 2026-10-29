@@ -69,6 +69,9 @@ function revalidateProperty(assetId?: string) {
 
 export async function createProperty(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
+  // ต้นทุนที่ได้มาต้องใส่ (รายแถว หรือยอดรวม · ตกลง 29 ต.ค. 2026)
+  const acq = num(form.get("acquisition_cost"));
+  if (acq === null || Number.isNaN(acq) || acq < 0) return { error: "กรุณาใส่ต้นทุนที่ได้มา (รายแถว หรือยอดรวมที่แถวรวม)" };
   const value = num(form.get("value"));
   if (value === null || Number.isNaN(value) || value < 0) return { error: "กรุณาใส่มูลค่าเป็นตัวเลข" };
   const usage = str(form.get("usage_type")) ?? "OWNER_OCCUPIED";

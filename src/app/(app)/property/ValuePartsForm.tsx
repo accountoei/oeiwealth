@@ -64,7 +64,7 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
                 <td className="py-1.5 pr-2">
                   {fixed(r) ? <>{r.label}{(() => { const a = deeds.find((d) => d.id === r.deed_id)?.area; return a ? <span className="text-xs text-slate-400"> · {a.toLocaleString("en-US")} ตร.ว.</span> : null; })()}</>
                     : <input value={r.label} onChange={(e) => set(r.key, { label: e.target.value })} aria-label="ชื่อส่วน" className={`w-full ${input}`} />}
-                  {r.type !== "DEED" && <span className="block text-xs text-slate-400">{r.type === "BUILDING" ? "อาคาร" : "สิ่งปลูกสร้างอื่น"}</span>}
+                  {r.type !== "DEED" && <span className="block text-xs text-slate-400">{"สิ่งปลูกสร้าง"}</span>}
                 </td>
                 <td><input value={r.value} onChange={(e) => set(r.key, { value: e.target.value })} onBlur={(e) => e.target.value.trim() && set(r.key, { value: fmt(numOrZero(e.target.value)) })}
                   inputMode="decimal" data-plain aria-label="มูลค่า" className={`w-full text-right tabular-nums ${input}`} /></td>
