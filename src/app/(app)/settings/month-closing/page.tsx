@@ -2,7 +2,8 @@ import Link from "next/link";
 import { PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { addDays, money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { TabActions } from "@/components/TabActions";
 import { FinalizeForm, ReopenForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
 import { StatBox } from "@/components/Boxes";
@@ -136,6 +137,13 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const blocked = checks.filter((c) => c.status === "BLOCKED");
   const warnings = checks.reduce((s, c) => s + c.issues.filter((i) => i.severity === "REVIEW").length, 0);
   const canClose = me.role === "ADMIN" || me.role === "EDITOR";
+  // เหตุที่ยังปิดเดือนไม่ได้ (แสดงใน pop up ของปุ่มปิดเดือน) · ฐานข้อมูลตรวจซ้ำตอนปิดเสมอ
+  const closeBlockers = [
+    ...(!ended ? [`ยังไม่สิ้นเดือน — ปิดเดือน ${thMonth(start)} ได้ตั้งแต่ ${thDate(addDays(end, 1))}`] : []),
+    ...blocked.flatMap((c) => c.issues.filter((i) => i.code !== "MONTH_NOT_ENDED" && i.severity === "BLOCKED")
+      .map((i) => `${CAT[c.category] ?? c.category}: ${i.message}`)),
+    ...blocked.filter((c) => !c.issues.some((i) => i.severity === "BLOCKED")).map((c) => `${CAT[c.category] ?? c.category} เป็น BLOCKED`),
+  ];
   const canWrite = me.role !== "VIEWER";
   const reconBy = new Map((recons ?? []).map((r) => [r.bank_asset_id, r]));
   const isLatestFinal = isFinal && lastFinal === ym;
@@ -186,27 +194,26 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   return (
     <div className="space-y-6">
       <PageInfo>ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</PageInfo>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-wrap items-start gap-2">
-          <div className="flex items-center gap-2 text-sm">
-            <Link href={`/settings/month-closing?m=${prev}`} scroll={false} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนก่อน">←</Link>
-            <span className="min-w-28 text-center font-medium">{thMonth(start)}</span>
-            <Link href={`/settings/month-closing?m=${next}`} scroll={false} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนถัดไป">→</Link>
-          </div>
-          {canWrite && !isFinal && (
-            <Link href={`/financial/cash?tab=update&d=${ended ? end : today}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">อัปเดตยอดคงเหลือ</Link>
-          )}
-          {!isFinal && canClose && blocked.length === 0 && (
-            <ActionBar>
-              <FinalizeForm month={start} warnings={warnings} label={`ปิดเดือน ${thMonth(start)}`}
-                summary={<>จะบันทึก Net Worth <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
-                  {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}
-                  {!ended && <span className="block text-xs text-amber-700">เดือนนี้ยังไม่สิ้นเดือน — ยอดเป็นยอด ณ วันนี้</span>}</>} />
-            </ActionBar>
-          )}
-          {isFinal && me.role === "ADMIN" && isLatestFinal && <ActionBar><ReopenForm month={start} /></ActionBar>}
+      {/* อัปเดตยอด · ปิดเดือน / Reopen · เลือกเดือน (ขวาสุด) อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026)
+          ปุ่มปิดเดือนขึ้นเสมอ · ถ้ายังปิดไม่ได้ (ยังไม่สิ้นเดือน / มีข้อ BLOCKED) กดแล้วบอกเหตุผล ไม่มีปุ่มยืนยัน */}
+      <TabActions>
+        {canWrite && !isFinal && (
+          <Link href={`/financial/cash?tab=update&d=${ended ? end : today}`} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">อัปเดตยอดคงเหลือ</Link>
+        )}
+        {!isFinal && canClose && (
+          <ActionBar>
+            <FinalizeForm month={start} warnings={warnings} label={`ปิดเดือน ${thMonth(start)}`} blockers={closeBlockers}
+              summary={<>จะบันทึก Net Worth <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
+                {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}</>} />
+          </ActionBar>
+        )}
+        {isFinal && me.role === "ADMIN" && isLatestFinal && <ActionBar><ReopenForm month={start} /></ActionBar>}
+        <div className="flex items-center gap-1 text-sm">
+          <Link href={`/settings/month-closing?m=${prev}`} scroll={false} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนก่อน">←</Link>
+          <span className="min-w-24 text-center font-medium">{thMonth(start)}</span>
+          <Link href={`/settings/month-closing?m=${next}`} scroll={false} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50" aria-label="เดือนถัดไป">→</Link>
         </div>
-      </div>
+      </TabActions>
 
       {(checkErr || prevErr) && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {checkErr?.message ?? prevErr?.message}</p>}
 

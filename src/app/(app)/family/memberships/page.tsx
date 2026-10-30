@@ -51,16 +51,16 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
   return (
     <div className="space-y-6">
       <PageInfo>สมาชิกภาพ / สิทธิประโยชน์ และแต้มสะสม / ไมล์ ของสมาชิกในครอบครัว</PageInfo>
-      {canWrite && (
-        <TabActions>
+      {/* ตัวเลือกคนอยู่แถวแท็บ ขวาสุดต่อจากปุ่ม (ตกลง 30 ต.ค. 2026) */}
+      <TabActions>
+        {canWrite && (
           <ActionBar>
             <MembershipForm persons={persons ?? []} />
             <PointsForm persons={persons ?? []} today={today} links={pointLinks} />
           </ActionBar>
-        </TabActions>
-      )}
-      {/* ตัวเลือกคนอยู่ในหน้า (เหมือนแท็บ Health) ไม่ขึ้นแถบบน — ตกลง 28 ต.ค. 2026 */}
-      <div className="flex justify-end"><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></div>
+        )}
+        <PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} />
+      </TabActions>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

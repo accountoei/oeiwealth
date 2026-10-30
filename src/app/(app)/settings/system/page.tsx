@@ -6,6 +6,7 @@ import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, HOLDING_TYPE_LABEL, addDays, money,
 import ExpandRows, { type ExpandRow } from "./ExpandRows";
 import FxSourceForm from "./FxSourceForm";
 import { ActionBar } from "@/components/ActionBar";
+import { TabActions } from "@/components/TabActions";
 import OverrideForm from "./OverrideForm";
 import FxRefreshButton from "./FxRefreshButton";
 import OpportunityRateForm from "./OpportunityRateForm";
@@ -130,6 +131,8 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-6">
       <PageInfo>สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}</PageInfo>
+      {/* ปุ่ม FX 3 ปุ่ม อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
+      {isAdmin && <TabActions><ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /><OverrideForm today={todayBangkok()} /></ActionBar></TabActions>}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -140,7 +143,6 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
               {family?.fx_source_since && <span className="text-slate-500"> · ตั้งแต่ {thDate(family.fx_source_since)}</span>}
             </p>
           </div>
-          {isAdmin && <ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /><OverrideForm today={todayBangkok()} /></ActionBar>}
         </div>
         <p className="mb-3 mt-1 text-xs text-slate-500">
           ดึงอัตราทุกวันราว 09:15 · 14:15 · 19:15 (GitHub อาจเริ่มช้ากว่านี้ได้) · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน

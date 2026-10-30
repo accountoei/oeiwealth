@@ -14,7 +14,8 @@ import {
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { makeEntryKit, pname, type Move } from "./entry-kit";
-import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabPanelActions, TabsProvider } from "./tabs";
+import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
+import { TabActions } from "@/components/TabActions";
 import MonthTable, { type MonthRow } from "./MonthTable";
 import PropertyCostTable, { type PropCostRow } from "./PropertyCostTable";
 import CategoryBars, { type CatRow } from "./CategoryBars";
@@ -622,6 +623,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       {canWrite && !inMonth && <p className="text-sm text-slate-500">เดือนนี้อยู่นอกช่วงที่บันทึกได้ (ก่อน Go-live หรือเป็นเดือนในอนาคต)</p>}
 
       {/* ============================================================ ภาพรวม */}
+      {/* ปุ่มบันทึก 3 ปุ่ม ขวาสุดของแถวแท็บ · ขึ้นทุกแท็บ (ตกลง 30 ต.ค. 2026) */}
+      {canWrite && inMonth && (
+        <TabActions>
+          <MovementForm banks={banks} cards={cards} pfCash={pfCash} liabilities={liabs} today={maxDate} minDate={minDate} />
+          <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} />
+          <ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} />
+        </TabActions>
+      )}
       <TabPanel id="overview">
           {autopayPending.length > 0 && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -649,14 +658,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               note={`ยอดก่อนหักเงินคืน (บาท)${reimbThb ? ` · ได้เงินคืน ${money(reimbThb, undefined, 0)}` : ""} · กดที่หมวดเพื่อดูรายการ`}
               empty="ยังไม่ได้บันทึกค่าใช้จ่าย" />
           </section>
-          {/* เงินเข้า–ออกบัญชี (เดิมเป็นแท็บแยก) · ปุ่มโอน / จ่ายบัตร / จ่ายหนี้ มุมขวาบน */}
+          {/* เงินเข้า–ออกบัญชี (เดิมเป็นแท็บแยก) · ปุ่มโอน / จ่ายบัตร / จ่ายหนี้ อยู่แถวแท็บ */}
           <section id="moves" className="scroll-mt-4 space-y-4 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
                 <p className="text-xs text-slate-500">ทุกบัญชีธนาคารในระบบ · ยอดสรุปไม่นับโอนระหว่างบัญชีตัวเอง · {moveSum.count} รายการ</p>
               </div>
-              {canWrite && inMonth && <MovementForm banks={banks} cards={cards} pfCash={pfCash} liabilities={liabs} today={maxDate} minDate={minDate} />}
             </div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm tabular-nums">
               {moveSum.count === 0 ? <span className="text-slate-500">ยังไม่มีเงินเข้า–ออกในเดือนนี้</span> : <>
@@ -706,14 +714,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ รายได้ */}
       <TabPanel id="income">
-            {canWrite && inMonth && <TabPanelActions tab="income"><IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} /></TabPanelActions>}
             <MonthTable kind="income" rows={incRows} focus={sp.hl} empty="ยังไม่มีรายได้ หรือรายการที่คาดไว้ในเดือนนี้" initialSource={sp.it === "split" ? "split" : ""} />
             <p className="text-xs text-slate-500">รายการที่คาดไว้มาจากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กดปุ่ม &ldquo;บันทึกรับ&rdquo; ในช่องสถานะด้วยยอดจริง</p>
       </TabPanel>
 
       {/* ============================================================ ค่าใช้จ่าย */}
       <TabPanel id="expense">
-            {canWrite && inMonth && <TabPanelActions tab="expense"><ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /></TabPanelActions>}
             <MonthTable kind="expense" rows={expRows} focus={sp.hl} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
               empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"} />
             <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้
@@ -724,10 +730,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       {/* ============================================================ ตั้งค่า: รายได้ประจำ · ค่าใช้จ่ายประจำ · ประเภท / หมวด */}
       <TabPanel id="settings">
           <SubTabs param="st" initial={setTab} tabs={[["income", "รายได้ประจำ"], ["expense", "ค่าใช้จ่ายประจำ"], ["types", "ประเภท / หมวด"]]}
-            actions={canWrite ? {
-              income: <TemplateForm banks={banks} persons={persons ?? []} today={today} />,
-              expense: <ExpenseTemplateForm banks={banks} cards={cards} persons={persons ?? []} categories={expCats} today={today} />,
-            } : {}}>
+            actions={canWrite ? Object.fromEntries(["income", "expense", "types"].map((k) => [k, <Fragment key={k}>
+              <TemplateForm banks={banks} persons={persons ?? []} today={today} />
+              <ExpenseTemplateForm banks={banks} cards={cards} persons={persons ?? []} categories={expCats} today={today} />
+            </Fragment>])) : {}}>
           <SubPanel id="income">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>

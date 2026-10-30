@@ -105,8 +105,11 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
     <div className="space-y-6">
       <PageInfo>ประวัติการบริจาคของครอบครัว ทั้งในนามบุคคลและในนามกิจการ ทั้งที่ใช้และไม่ใช้สิทธิลดหย่อนภาษี · บันทึกย้อนหลังก่อน Go-live ได้ ·
         หน้านี้ไม่ตัดเงินจากบัญชี (เงินจ่ายจริงบันทึกเป็นรายจ่ายหมวด &ldquo;บริจาค&rdquo; ที่ Income &amp; Expenses แล้วผูกรายละเอียดที่นี่)</PageInfo>
-      {canWrite && <TabActions><ActionBar><DonationAdd persons={people} businesses={businesses} today={today} /></ActionBar></TabActions>}
-      <DonationFilters years={years} persons={people} businesses={businesses} y={y} d={d} />
+      {/* ปุ่ม · ผู้บริจาค · ปี (ขวาสุด) อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
+      <TabActions>
+        {canWrite && <ActionBar><DonationAdd persons={people} businesses={businesses} today={today} /></ActionBar>}
+        <DonationFilters years={years} persons={people} businesses={businesses} y={y} d={d} />
+      </TabActions>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error}</p>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

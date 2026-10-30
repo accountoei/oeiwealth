@@ -70,29 +70,27 @@ export default async function OpeningSetup() {
   const count = (s: string) => list.filter((r) => r.status === s).length;
   const order = { MISSING: 0, WARN: 1, READY: 2, NOT_REQUIRED: 3 } as Record<string, number>;
   const isLive = family.system_status === "LIVE";
+  // วัน Go-live + วันของยอดตั้งต้น → อยู่ในกล่อง Confirm Go-live (ตกลง 30 ต.ค. 2026)
+  const goLiveLine = <p className="text-sm">Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}</p>;
 
   return (
     <div className="space-y-6">
       <PageInfo>ตรวจยอดตั้งต้นก่อน Go-live · ยอดตั้งต้น = ยอด ณ สิ้นวันก่อน Go-live</PageInfo>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">
-          Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}
-        </p>
-        {me.role === "ADMIN" && (
-          <TabActions>
-            <ActionBar>
-              {isLive
-                ? <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />
-                : <ChangeGoLive current={family.go_live_date} />}
-            </ActionBar>
-          </TabActions>
-        )}
-      </div>
+      {me.role === "ADMIN" && (
+        <TabActions>
+          <ActionBar>
+            {isLive
+              ? <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />
+              : <ChangeGoLive current={family.go_live_date} />}
+          </ActionBar>
+        </TabActions>
+      )}
 
       {isLive ? (
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
-          ระบบ LIVE แล้ว (ยืนยันเมื่อ {thDate(family.go_live_confirmed_at)}) · ยอดตั้งต้นถูกล็อก แก้ได้เฉพาะ ADMIN พร้อมเหตุผล
-          {me.role === "ADMIN" && " · ถ้าต้องแก้ยอดตั้งต้นมาก ๆ หรือเปลี่ยนวัน Go-live ใช้ปุ่ม “ยกเลิก Go-live” ด้านบน"}
+          {goLiveLine}
+          <div className="mt-1">ระบบ LIVE แล้ว (ยืนยันเมื่อ {thDate(family.go_live_confirmed_at)}) · ยอดตั้งต้นถูกล็อก แก้ได้เฉพาะ ADMIN พร้อมเหตุผล
+          {me.role === "ADMIN" && " · ถ้าต้องแก้ยอดตั้งต้นมาก ๆ หรือเปลี่ยนวัน Go-live ใช้ปุ่ม “ยกเลิก Go-live” ด้านบน"}</div>
         </section>
       ) : (
         <section className="grid gap-3 sm:grid-cols-3">
@@ -140,7 +138,8 @@ export default async function OpeningSetup() {
 
       {!isLive && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">Confirm Go-live</h2>
+          <h2 className="font-medium text-slate-900">Confirm Go-live</h2>
+          <div className="mb-2 text-slate-600">{goLiveLine}</div>
           {me.role === "ADMIN"
             ? <ConfirmGoLive missing={count("MISSING")} warn={count("WARN")} goLive={thDate(family.go_live_date)} />
             : <p className="text-sm text-slate-500">เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่ Confirm Go-live ได้</p>}

@@ -51,8 +51,11 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-6">
       <PageInfo>ผลตรวจสุขภาพประจำปีของสมาชิก · ข้อมูลอ่อนไหว ผู้ใช้ทุกคนในระบบเห็นได้ตามสิทธิ์</PageInfo>
-      {canWrite && <TabActions><ActionBar><CheckupForm personId={pid} today={todayBangkok()} /></ActionBar></TabActions>}
-      <div className="flex justify-end"><PersonPicker persons={list} value={pid} /></div>
+      {/* ตัวเลือกคนอยู่แถวแท็บ ขวาสุดต่อจากปุ่ม (ตกลง 30 ต.ค. 2026) */}
+      <TabActions>
+        {canWrite && <ActionBar><CheckupForm personId={pid} today={todayBangkok()} /></ActionBar>}
+        <PersonPicker persons={list} value={pid} />
+      </TabActions>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">

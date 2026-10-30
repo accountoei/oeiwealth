@@ -1,6 +1,6 @@
 "use client";
 
-import { TabActions, TabActionsSlot } from "@/components/TabActions";
+import { TabActionsSlot } from "@/components/TabActions";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -66,12 +66,6 @@ export function TabPanel({ id, children }: { id: string; children: ReactNode }) 
   return <div hidden={active !== id} className="space-y-6">{children}</div>;
 }
 
-/** ปุ่ม "+ บันทึก…" ของแท็บ → ขวาสุดของแถวแท็บหลัก · ขึ้นเฉพาะตอนเปิดแท็บนั้น (ตกลง 30 ต.ค. 2026) */
-export function TabPanelActions({ tab, children }: { tab: string; children: ReactNode }) {
-  const { active } = useContext(Ctx);
-  return active === tab ? <TabActions>{children}</TabActions> : null;
-}
-
 /** ลิงก์ไปแท็บอื่นในหน้านี้ · สลับแท็บทันที (ไม่ต้องรอโหลด / Refresh) */
 export function TabLink({ tab, href, className, anchor, sub, children }: {
   tab: string; href: string; className?: string;
@@ -106,7 +100,7 @@ const SubCtx = createContext<{ active: string; pick: (k: string) => void }>({ ac
 
 export function SubTabs({ param, initial, home, tabs, actions = {}, children }: {
   param: string; initial: string; tabs: [string, string][]; children: ReactNode;
-  /** ปุ่มของแต่ละแท็บย่อย → ขวาสุดของแถวแท็บย่อย · ขึ้นเฉพาะแท็บย่อยที่เปิดอยู่ */
+  /** ปุ่มของแต่ละแท็บย่อย → ขวาสุดของแถวแท็บย่อย (ใส่ปุ่มเดียวกันทุกแท็บย่อยได้) */
   actions?: Record<string, ReactNode>;
   /** แท็บย่อยที่เปิดเมื่อกดเปลี่ยนแท็บหลัก (ค่าเริ่มต้น = แท็บแรก) */
   home?: string;
