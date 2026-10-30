@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, Suspense, use, useContext, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -8,6 +7,7 @@ import {
   Landmark, LayoutDashboard, ListChecks, LogOut, Settings, ShieldCheck, TrendingUp, Users, type LucideIcon,
 } from "lucide-react";
 import { clampNavWidth, NAV_COLLAPSED_COOKIE, NAV_HREFS, NAV_ORDER_COOKIE, NAV_WIDTH_COOKIE, NAV_PINNED_FIRST, NAV_PINNED_LAST, orderNav, type NavGroup } from "./nav";
+import IntentLink from "./IntentLink";
 import { NAV_RESET_EVENT } from "./NavReset";
 import { familyInitials } from "@/lib/format";
 
@@ -21,10 +21,6 @@ export type TodoCount = { total: number; red: number };
 
 // เมนูที่เพิ่งกด → ไฮไลต์ทันทีไม่ต้องรอหน้าใหม่ (ใช้จนกว่า URL จะเปลี่ยน)
 const PendingCtx = createContext<{ path: string; setPending: (href: string) => void }>({ path: "", setPending: () => {} });
-
-// Link ของ Next.js 16 รองรับ unstable_dynamicOnHover (โหลดทั้งหน้าเมื่อเอาเมาส์วาง / แตะ) แต่ type ที่ export ยังไม่มี
-// ทุกเมนูรวม Dashboard: โหลดทั้งหน้าเมื่อชี้เมาส์ / แตะเท่านั้น (30 ต.ค. 2026 เลิกโหลด Dashboard ล่วงหน้าตลอด · ลดงาน Supabase แผนฟรี)
-const HOVER_FULL_PREFETCH = { unstable_dynamicOnHover: true } as object;
 
 /** cookie ของเครื่องนี้ 1 ปี (ลำดับเมนู / ยุบแถบ) — Server อ่านตอนสร้างหน้า → ไม่กระพริบ */
 function setCookie(name: string, value: string | null) {
@@ -58,8 +54,8 @@ function NavLink({ g, dot, collapsed, todo }: { g: NavGroup; dot?: boolean; coll
     }
   };
   return (
-    // ไม่หน่วง: เอาเมาส์วาง (หรือแตะ) → โหลดข้อมูลหน้านั้นล่วงหน้าทั้งหน้า · กดแล้วไฮไลต์ทันที + โครงหน้า (loading.tsx) ระหว่างรอ
-    <Link href={href} {...HOVER_FULL_PREFETCH} onClick={onClick} title={collapsed ? g.label : undefined} aria-label={collapsed ? g.label : undefined}
+    // ไม่หน่วง: ชี้เมาส์ค้าง (หรือแตะ) → โหลดข้อมูลหน้านั้นล่วงหน้าทั้งหน้า (IntentLink · ทุกเมนูรวม Dashboard) · กดแล้วไฮไลต์ทันที + โครงหน้า (loading.tsx) ระหว่างรอ
+    <IntentLink href={href} onClick={onClick} title={collapsed ? g.label : undefined} aria-label={collapsed ? g.label : undefined}
       className={`relative flex items-center gap-2.5 rounded-lg py-[7px] text-sm ${collapsed ? "justify-center px-2" : "px-3"} ${
         active ? "bg-blue-50 font-semibold text-blue-700 ring-1 ring-blue-100" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}>
       <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-blue-600" : "text-slate-500"}`} aria-hidden strokeWidth={1.9} />
@@ -67,7 +63,7 @@ function NavLink({ g, dot, collapsed, todo }: { g: NavGroup; dot?: boolean; coll
       {collapsed && dot && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}
       {todo && <Suspense fallback={null}><TodoBadge todo={todo} collapsed={collapsed} /></Suspense>}
       {!g.ready && !collapsed && <span className="text-[11px] text-slate-400">เร็ว ๆ นี้</span>}
-    </Link>
+    </IntentLink>
   );
 }
 

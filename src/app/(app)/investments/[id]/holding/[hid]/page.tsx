@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
 import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
@@ -39,14 +40,14 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("investment_valuations").select("id,valuation_date,price,quantity,market_value,source").eq("holding_id", hid)
       .is("deleted_at", null).order("valuation_date", { ascending: false }).limit(60),
-    supabase.rpc("investment_returns", { p_portfolio_asset_id: id }),
+    cachedRpc<Ret[]>("investment_returns", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // ผลเดียวกับหน้ารวม (จำไว้ / จนมีการบันทึก)
     supabase.from("fcn_details").select("*, fcn_underlyings(id,symbol,name,initial_price,strike_price,barrier_price,deleted_at)")
       .eq("holding_id", hid).is("deleted_at", null).maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_holdings_active").select("id,name,currency,is_default_cash").eq("portfolio_asset_id", id)
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
-    supabase.rpc("investment_returns_local", { p_portfolio_asset_id: id }),
+    cachedRpc<RetLocal[]>("investment_returns_local", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // คู่กับบรรทัดบน (ตารางเดียวกัน → ตัวเลขชุดเดียวกัน)
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
     supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode,face_value,interest_rate,coupon_frequency,income_cash_holding_id,income_bank_asset_id").eq("id", hid).maybeSingle(),
   ]);
