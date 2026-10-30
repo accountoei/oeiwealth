@@ -29,7 +29,7 @@ export type MonthRow = {
 type Opt = { id: string; label: string };
 const SPLIT = "รอแยกรายละเอียด";
 
-export default function MonthTable({ kind, rows, empty, banks = [], cards = [], actions, initialSource = "" }: {
+export default function MonthTable({ kind, rows, empty, banks = [], cards = [], actions, initialSource = "", focus }: {
   kind: "income" | "expense"; rows: MonthRow[]; empty: string;
   /** "split" = เปิดตัวกรอง "รอแยกรายละเอียด" ไว้ก่อน (ลิงก์จากหน้าอื่น) */
   initialSource?: string;
@@ -37,14 +37,20 @@ export default function MonthTable({ kind, rows, empty, banks = [], cards = [], 
   banks?: Opt[]; cards?: Opt[];
   /** ปุ่มมุมขวาบน (บันทึกรายได้ / ค่าใช้จ่าย) */
   actions?: ReactNode;
+  /** บรรทัดที่เปิดมาจากช่องค้นหา (?hl=) → แสดงทุกสถานะ ไม่ให้ตัวกรอง "ยังไม่ได้บันทึก" ซ่อนบรรทัดนั้น */
+  focus?: string;
 }) {
   const inc = kind === "income";
   const split0 = initialSource === "split";
-  const [status, setStatus] = useState<"" | "DONE" | "OPEN">(split0 ? "" : "OPEN");
+  const hasFocus = !!focus && rows.some((r) => r.key === focus);
+  const [status, setStatus] = useState<"" | "DONE" | "OPEN">(split0 || hasFocus ? "" : "OPEN");
   const [source, setSource] = useState(split0 ? SPLIT : "");
   const [pay, setPay] = useState("");
   const [asc, setAsc] = useState(true);
   useOnMainTab(() => { setStatus("OPEN"); setSource(""); setPay(""); });
+  // เปิดผลค้นหาอีกครั้งขณะอยู่หน้านี้ (ตารางไม่ได้สร้างใหม่) → ล้างตัวกรองให้เห็นบรรทัดนั้น
+  const [seen, setSeen] = useState(focus);
+  if (focus !== seen) { setSeen(focus); if (hasFocus) { setStatus(""); setSource(""); setPay(""); } }
 
   const payOk = (r: MonthRow) => !pay || (!!r.pay && (pay === "bank" || pay === "card" ? r.pay.startsWith(`${pay}:`) : r.pay === pay));
   const srcOk = (r: MonthRow) => !source || (source === SPLIT ? !!r.split : r.source === source);
