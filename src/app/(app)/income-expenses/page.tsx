@@ -14,7 +14,7 @@ import {
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
 import { makeEntryKit, pname, type Move } from "./entry-kit";
-import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
+import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabPanelActions, TabsProvider } from "./tabs";
 import MonthTable, { type MonthRow } from "./MonthTable";
 import PropertyCostTable, { type PropCostRow } from "./PropertyCostTable";
 import CategoryBars, { type CatRow } from "./CategoryBars";
@@ -706,16 +706,16 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ รายได้ */}
       <TabPanel id="income">
-            <MonthTable kind="income" rows={incRows} empty="ยังไม่มีรายได้ หรือรายการที่คาดไว้ในเดือนนี้" initialSource={sp.it === "split" ? "split" : ""}
-              actions={canWrite && inMonth ? <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} /> : undefined} />
+            {canWrite && inMonth && <TabPanelActions tab="income"><IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} /></TabPanelActions>}
+            <MonthTable kind="income" rows={incRows} empty="ยังไม่มีรายได้ หรือรายการที่คาดไว้ในเดือนนี้" initialSource={sp.it === "split" ? "split" : ""} />
             <p className="text-xs text-slate-500">รายการที่คาดไว้มาจากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กดปุ่ม &ldquo;บันทึกรับ&rdquo; ในช่องสถานะด้วยยอดจริง</p>
       </TabPanel>
 
       {/* ============================================================ ค่าใช้จ่าย */}
       <TabPanel id="expense">
+            {canWrite && inMonth && <TabPanelActions tab="expense"><ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /></TabPanelActions>}
             <MonthTable kind="expense" rows={expRows} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
-              empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"}
-              actions={canWrite && inMonth ? <ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /> : undefined} />
+              empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"} />
             <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้
               · รายการที่คาดไว้มาจากค่าใช้จ่ายประจำ (ทั่วไป และของทรัพย์สิน) และตารางเบี้ยประกัน กดปุ่ม &ldquo;บันทึกจ่าย&rdquo; ในช่องสถานะด้วยยอดจริง
               · เงินคืนไม่ใช่รายได้ และไม่แก้ยอดค่าใช้จ่ายเดิม (รายงานแสดง ค่าใช้จ่าย − เงินคืน = ค่าใช้จ่ายสุทธิ)</p>
@@ -723,7 +723,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
 
       {/* ============================================================ ตั้งค่า: รายได้ประจำ · ค่าใช้จ่ายประจำ · ประเภท / หมวด */}
       <TabPanel id="settings">
-          <SubTabs param="st" initial={setTab} tabs={[["income", "รายได้ประจำ"], ["expense", "ค่าใช้จ่ายประจำ"], ["types", "ประเภท / หมวด"]]}>
+          <SubTabs param="st" initial={setTab} tabs={[["income", "รายได้ประจำ"], ["expense", "ค่าใช้จ่ายประจำ"], ["types", "ประเภท / หมวด"]]}
+            actions={canWrite ? {
+              income: <TemplateForm banks={banks} persons={persons ?? []} today={today} />,
+              expense: <ExpenseTemplateForm banks={banks} cards={cards} persons={persons ?? []} categories={expCats} today={today} />,
+            } : {}}>
           <SubPanel id="income">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
@@ -761,7 +765,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               </div>
             )}
             {canWrite && templateList.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ</p>}
-            {canWrite && <TemplateForm banks={banks} persons={persons ?? []} today={today} />}
           </section>
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -821,7 +824,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               </div>
             )}
             {canWrite && rexpTpl.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / หยุดใช้ / ลบ · เปลี่ยนบัญชีที่จ่ายประจำ: หยุดใช้รายการเดิมแล้วเพิ่มใหม่ (ตอนบันทึกจ่ายเลือกบัญชีอื่นได้ทุกครั้ง)</p>}
-            {canWrite && <ExpenseTemplateForm banks={banks} cards={cards} persons={persons ?? []} categories={expCats} today={today} />}
           </section>
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
