@@ -26,28 +26,53 @@ const amt = (v?: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigi
  * บันทึกรับชำระ · ใช้จากตารางผ่อนได้ (เติมเงินต้น / ดอกเบี้ยของงวดให้ แก้ได้ถ้ารับจริงไม่เท่า)
  * interestOwed: ดอกเบี้ยค้างตามตาราง → มีช่อง "ยอดรวมที่รับ" แบ่งให้เอง: หักดอกเบี้ยค้างก่อน ที่เหลือเป็นเงินต้น
  * principalDue: เงินต้นที่ถึงกำหนดตามตาราง → บันทึกแล้วถ้ารับเงินต้นเกิน / ขาด ถามต่อว่าจะคำนวณงวดที่เหลือใหม่ไหม
+ * due (ตกลง 30 ต.ค. 2026): งวดที่ยังค้างในตาราง → ยอดที่ถึงกำหนด = งวดที่ครบถึง "วันที่ได้รับ" (อย่างน้อยถึงงวด from)
+ *   เปลี่ยนวันที่: ยังไม่ได้แก้ยอด → เติมต้น / ดอกของงวดที่ครบถึงวันนั้นใหม่ · แก้ยอดแล้ว → ยอดรวมเดิม แบ่งใหม่ (หักดอกที่ครบถึงวันนั้นก่อน)
  */
-export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, principalDue, title, outstanding,
+export function PaymentForm({ assetId, currency, banks, today, minDate, principal, interest, interestOwed, principalDue, title, outstanding, due,
   button = "บันทึกรับชำระ", small = false }: {
   assetId: string; currency: string; banks: Bank[]; today: string; minDate: string;
   principal?: number; interest?: number; interestOwed?: number; principalDue?: number; title?: string; button?: string; small?: boolean;
   /** เงินต้นคงเหลือก่อนรับ → รับครบแล้วถามต่อว่าจะปิดสัญญาไหม */
   outstanding?: number;
+  /** งวดที่ยังค้าง (คงเหลือต่องวด) · from = วันครบกำหนดของงวดที่เติมให้อย่างน้อย (งวดที่เลยกำหนดล่าสุด หรืองวดถัดไป) */
+  due?: { lines: { no: number; due: string; p: number; i: number }[]; from: string };
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
-  const [p, setP] = useState(amt(principal));
-  const [i, setI] = useState(amt(interest));
-  const [total, setTotal] = useState(amt((principal ?? 0) + (interest ?? 0)));
+  const [date, setDate] = useState(today);
+  const owed = (d: string) => {
+    const upTo = due && d < due.from ? due.from : d;
+    const ls = (due?.lines ?? []).filter((x) => x.due <= upTo);
+    return { p: Math.round(ls.reduce((s, x) => s + x.p, 0) * 100) / 100, i: Math.round(ls.reduce((s, x) => s + x.i, 0) * 100) / 100,
+      nos: ls.map((x) => x.no) };
+  };
+  const now = due ? owed(date) : null;
+  const owedI = now ? now.i : interestOwed, dueP = now ? now.p : principalDue;
+  const [p, setP] = useState(amt(now ? now.p : principal));
+  const [i, setI] = useState(amt(now ? now.i : interest));
+  const [total, setTotal] = useState(amt(now ? now.p + now.i : (principal ?? 0) + (interest ?? 0)));
+  // ผู้ใช้พิมพ์ยอดเองแล้วหรือยัง (ไม่นับ event ที่ NumberInputs ส่งเองตอนจัดรูปแบบตัวเลข: isTrusted = false)
+  const [typed, setTyped] = useState(false);
+  const mark = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.nativeEvent.isTrusted) setTyped(true); };
   const list = banks.filter((b) => b.currency === currency);
-  const split = (v: string) => {
+  const split = (v: string, oi = owedI) => {
     setTotal(v);
     const t = num(v);
-    const ii = Math.min(t, Math.max(0, interestOwed ?? 0));
+    const ii = Math.min(t, Math.max(0, oi ?? 0));
     setI(amt(Math.round(ii * 100) / 100)); setP(amt(Math.round((t - ii) * 100) / 100));
   };
   const sumOf = (pp: string, iv: string) => setTotal(amt(num(pp) + num(iv)));
-  const extra = principalDue != null ? Math.round((num(p) - principalDue) * 100) / 100 : 0;
+  const onDate = (d: string) => {
+    setDate(d);
+    if (!due || !d) return;
+    const o = owed(d);
+    // ยังไม่ได้แก้ยอด → เติมของวันใหม่ · แก้แล้ว → ยอดรวมเดิม แบ่งใหม่
+    if (typed && total.trim() !== "") split(total, o.i);
+    else { setP(amt(o.p)); setI(amt(o.i)); setTotal(amt(o.p + o.i)); }
+  };
+  const range = now && now.nos.length ? (now.nos.length === 1 ? `งวด ${now.nos[0]}` : `งวด ${now.nos[0]}–${now.nos.at(-1)}`) : "";
+  const extra = dueP != null ? Math.round((num(p) - dueP) * 100) / 100 : 0;
   const [dismissed, setDismissed] = useState(false);
   const [closeState, closeAction, closing] = useActionState<ActionState, FormData>(closeLoan, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)}
@@ -94,23 +119,24 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">{title ?? "รับชำระเงินกู้"}</h3>
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="text-sm">วันที่ได้รับ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
+        <label className="text-sm">วันที่ได้รับ *<input name="date" type="date" required value={date} onChange={(e) => onDate(e.target.value)} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">เข้าบัญชี *
           <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
         </label>
         <span />
-        {interestOwed != null && (
+        {owedI != null && (
           <label className="text-sm md:col-span-3">ยอดรวมที่รับ (ตาม Statement)
-            <input value={total} onChange={(e) => split(e.target.value)} inputMode="decimal" data-money="off" className={`${input} md:w-1/3`} />
+            <input value={total} onChange={(e) => { mark(e); split(e.target.value); }} inputMode="decimal" data-money="off" className={`${input} md:w-1/3`} />
             <span className="mt-1 block text-xs text-slate-500">
-              แบ่งให้เอง: หักดอกเบี้ยค้าง {amt(interestOwed) || "0.00"} ก่อน ที่เหลือเป็นเงินต้น · แก้ 2 ช่องด้านล่างเองได้
+              {now && <>ถึงกำหนดถึงวันที่ได้รับ: {range || "ไม่มีงวด"} · ต้น {amt(now.p) || "0.00"} · ดอก {amt(now.i) || "0.00"} · </>}
+              แบ่งให้เอง: หักดอกเบี้ยค้าง {amt(owedI) || "0.00"} ก่อน ที่เหลือเป็นเงินต้น · แก้ 2 ช่องด้านล่างเองได้{due && " · เปลี่ยนวันที่ = ยอดเปลี่ยนตาม"}
             </span>
           </label>
         )}
         <label className="text-sm">ส่วนเงินต้น<input name="principal" inputMode="decimal" value={p}
-          onChange={(e) => { setP(e.target.value); sumOf(e.target.value, i); }} className={input} /></label>
+          onChange={(e) => { mark(e); setP(e.target.value); sumOf(e.target.value, i); }} className={input} /></label>
         <label className="text-sm">ส่วนดอกเบี้ย (Gross)<input name="interest" inputMode="decimal" value={i}
-          onChange={(e) => { setI(e.target.value); sumOf(p, e.target.value); }} className={input} /></label>
+          onChange={(e) => { mark(e); setI(e.target.value); sumOf(p, e.target.value); }} className={input} /></label>
         <label className="text-sm">ภาษีหัก ณ ที่จ่ายของดอกเบี้ย<input name="interest_tax" inputMode="decimal" className={input} /></label>
         <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" className={input} /></label>
       </div>

@@ -57,8 +57,11 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const nextDue = open.find((x) => x.status !== "OVERDUE");
   const overdue = open.filter((x) => x.status === "OVERDUE");
   const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
-  // ปุ่ม "บันทึกรับชำระ" (ปุ่มเดียว · ตกลง 27 ต.ค. 2026): เติมยอดงวดปัจจุบันให้ = งวดที่เลยกำหนด + งวดถัดไป (แก้ได้)
-  const payTo = nextDue ?? overdue.at(-1);
+  // ปุ่ม "บันทึกรับชำระ" (ปุ่มเดียว): มีงวดเลยกำหนด → เติมเฉพาะงวดที่เลยกำหนด (ไม่รวมงวดที่ยังไม่ถึง · ตกลง 30 ต.ค. 2026)
+  //   ไม่มี → งวดถัดไป · ในหน้าต่าง ยอดเปลี่ยนตาม "วันที่ได้รับ" (งวดที่ครบถึงวันนั้น)
+  const payTo = overdue.at(-1) ?? nextDue;
+  const dueLines = { lines: open.map((x) => ({ no: x.installment_no, due: x.due_date, p: Number(x.principal_remaining), i: Number(x.interest_remaining) })),
+    from: payTo?.due_date ?? today };
   // ดอกเบี้ยค้างสะสมถึงงวดนั้น (ใช้แบ่งยอดรวมที่รับ: หักดอกก่อน ที่เหลือเป็นต้น)
   const interestOwedUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.interest_remaining), 0);
   const principalDueUpTo = (date: string) => sched.filter((x) => x.due_date <= date).reduce((s, x) => s + Number(x.principal_remaining), 0);
@@ -278,10 +281,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
           )}
           {canWrite && loanOpen && (payTo ? (
             <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} outstanding={leftP}
-              title={`รับชำระงวดที่ ${payTo.installment_no} (ครบ ${thDate(payTo.due_date)})${overdue.filter((x) => x.id !== payTo.id).length
-                ? ` · รวมงวดที่เลยกำหนด ${overdue.filter((x) => x.id !== payTo.id).length} งวด` : ""} · เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน`}
-              principal={principalDueUpTo(payTo.due_date)} interest={interestOwedUpTo(payTo.due_date)}
-              interestOwed={interestOwedUpTo(payTo.due_date)} principalDue={principalDueUpTo(payTo.due_date)} />
+              title={`${overdue.length > 1 ? `รับชำระงวดที่เลยกำหนด (งวดที่ ${overdue[0].installment_no}–${payTo.installment_no})`
+                : `รับชำระงวดที่ ${payTo.installment_no} (ครบ ${thDate(payTo.due_date)})`} · เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน`}
+              due={dueLines} />
           ) : (
             <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} outstanding={leftP}
               interestOwed={sched.length ? interestOwedUpTo(today) : undefined} principalDue={sched.length ? principalDueUpTo(today) : undefined} />
@@ -290,7 +292,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
         </div>
         {sched.length > 0 && <ScheduleTable rows={schedRows} currency={l.currency} />}
         {sched.length > 0 && <p className="text-xs text-slate-500">
-          ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดปัจจุบัน (รวมงวดที่เลยกำหนด) ให้ แก้ยอดได้ตามที่รับจริง ·
+          ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดที่เลยกำหนด (ไม่มี = งวดถัดไป) ให้ · เปลี่ยนวันที่ได้รับ = ยอดเปลี่ยนตามงวดที่ครบถึงวันนั้น · แก้ยอดได้ตามที่รับจริง ·
           ลบการรับชำระที่บันทึกผิดได้ที่ประวัติด้านล่าง (ตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "ตั้ง / แก้ตารางผ่อน"}&rdquo; ·
           สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
           ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
