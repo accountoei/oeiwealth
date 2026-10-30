@@ -454,7 +454,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                             : -(Number(tm.amount) + (tm.counter_currency ? Number(tm.fee ?? 0) : 0))) : Number(t.net_cash))
                           : Number(t.net_cash);
                       return (
-                        <tr key={t.id} className="align-top" data-tx="" data-m={t.transaction_date.slice(0, 7)} data-type={t.transaction_type}
+                        <tr key={t.id} className="align-top" data-row={`x-${t.id}`} data-tx="" data-m={t.transaction_date.slice(0, 7)} data-type={t.transaction_type}
                           data-h={[t.holding_id, t.cash_holding_id, t.counter_cash_holding_id].filter(Boolean).join(" ")}>
                           <td className="py-1.5">{thDate(t.transaction_date)}</td>
                           <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>

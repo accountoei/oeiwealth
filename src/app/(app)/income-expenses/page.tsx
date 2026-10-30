@@ -43,7 +43,7 @@ const EXP_STATUS: Record<string, { text: string; cls: string }> = {
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" }, DISMISSED: { text: "เดือนนี้ไม่ได้รับ", cls: "bg-slate-100 text-slate-500" },
 };
 
-type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; st?: string }>;
+type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; st?: string; hl?: string }>;
 
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -698,7 +698,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 </div>
               </div>
             )}
-            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} statements={statements} monthStart={start} limit={20} />
+            <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} statements={statements} monthStart={start} limit={sp.hl?.startsWith("m-") ? undefined : 20} />
             <p className="text-xs text-slate-500">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;
               · โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           </section>

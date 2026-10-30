@@ -4013,4 +4013,14 @@ SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS l
 SELECT liability_source, name, amount, derived_status FROM public.v_liabilities_all ORDER BY 1, 2;
 SELECT name, to_char(income_period, 'YYYY-MM') AS period, status FROM public.v_expected_income ORDER BY 1, 2;
 SELECT name, confirmed_balance, calculated_balance, balance_label FROM public.v_bank_balance_current;
+-- ค้นหารายการเงิน (30 ต.ค. 2026): VIEWER ค้นได้ตามสิทธิ์ · ไม่ซ้ำกับเงินเข้า–ออกที่ระบบสร้าง · ไม่แสดงรายการที่ลบแล้ว
+SELECT t.ok((SELECT count(*) = 1 AND bool_and(kind = 'EXPENSE') FROM public.search_money('ค่ากาแฟ')),
+            'ค้นหา: เจอค่าใช้จ่ายครั้งเดียว (ไม่ซ้ำกับเงินออกที่ระบบสร้าง)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.search_money('รูดบัตรที่ลืม', 50) s JOIN public.expense_items e ON e.id = s.id WHERE e.deleted_at IS NOT NULL),
+            'ค้นหา: ไม่แสดงรายการที่ลบแล้ว');
+SELECT t.ok((SELECT count(*) > 0 AND bool_and(amount = 1500 OR kind IN ('MOVE', 'INVEST')) FROM public.search_money('1,500')),
+            'ค้นหา: พิมพ์ 1,500 เจอยอด 1,500');
+SELECT t.ok((SELECT count(*) = 0 FROM public.search_money('ค')), 'ค้นหา: สั้นกว่า 2 ตัวอักษร = ไม่ค้น');
+SELECT t.ok((SELECT count(*) <= 50 FROM public.search_money('a', 999)) AND NOT has_function_privilege('anon', 'public.search_money(text, int)', 'EXECUTE'),
+            'ค้นหา: ผลไม่เกิน 50 · anon เรียกไม่ได้');
 \echo 'ALL SCENARIO TESTS PASSED'

@@ -261,7 +261,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       } rows={[
         ...txList.map((t) => ({ date: t.transaction_date, h: {
           key: `t${t.id}`, auto: false, row: (
-            <tr className="align-top">
+            <tr className="align-top" data-row={`x-${t.id}`}>
               <td className="py-1.5">{thDate(t.transaction_date)}</td>
               <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
               <td className="text-right tabular-nums text-slate-600">{t.quantity != null ? qty(t.quantity) : ""}</td>
