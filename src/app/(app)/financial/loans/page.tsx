@@ -128,7 +128,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     (byLoan.get(loan) ?? []).filter((y) => y.due_date <= d).reduce((t, y) => t + Number(y[k]), 0);
   const months = monthOptions(family?.go_live_date, today, 3, ym);
   const goLive = family?.go_live_date ?? "";
-  // แท็บรับชำระ: 1 แถวต่อสัญญาที่ยังไม่ปิด · ยอดที่ถึงกำหนด = ยังไม่ได้รับของทุกงวดถึงสิ้นเดือน
+  // แท็บรับชำระ: 1 แถวต่อสัญญาที่ยังไม่ปิด · ยอดที่ถึงกำหนด = งวดที่ค้างที่ครบถึงวันที่ได้รับ (คิดในหน้าจอจาก owe / from)
   const bankList = (banks ?? []).map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
   // รับชำระแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเงินต้น / ดอกเบี้ยเพื่อแก้ · ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) ลบทั้งก้อน (ตกลง 28 ต.ค. 2026)
   const pMonth = (pMoves ?? []).filter((m) => m.movement_date >= start && m.movement_date <= end);
@@ -157,6 +157,10 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
       remaining: Number(x.total_remaining), status: x.status, statusText: LOAN_SCHED_STATUS[x.status]?.text ?? x.status,
       statusCls: LOAN_SCHED_STATUS[x.status]?.cls ?? "", carried: x.due_date < start })),
     dueP: Math.round(upTo(r.asset_id, end, "principal_remaining") * 100) / 100, dueI: Math.round(upTo(r.asset_id, end, "interest_remaining") * 100) / 100,
+    owe: (byLoan.get(r.asset_id) ?? []).filter((y) => Number(y.total_remaining) > 0.005)
+      .map((y) => ({ due: y.due_date, p: Number(y.principal_remaining), i: Number(y.interest_remaining) })),
+    from: (byLoan.get(r.asset_id) ?? []).filter((y) => y.status === "OVERDUE").at(-1)?.due_date
+      ?? monthLines.find((y) => y.loan_asset_id === r.asset_id && Number(y.total_remaining) > 0.005)?.due_date,
     defaultBank: [lastBank.get(r.asset_id)].find((b) => b && bankList.some((x) => x.id === b && x.currency === r.currency))
       ?? bankList.find((x) => x.currency === r.currency)?.id ?? "",
   });

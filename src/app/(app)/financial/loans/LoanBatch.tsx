@@ -13,8 +13,9 @@ export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
   /** งวดในเดือนที่เลือก + งวดที่ค้างจากเดือนก่อน */
   lines: { no: number; due: string; total: number; remaining: number; status: string; statusText: string; statusCls: string; carried: boolean }[];
-  /** ยอดที่ถึงกำหนดถึงสิ้นเดือน (ยังไม่ได้รับ) */
+  /** ยอดที่ถึงกำหนด (ยังไม่ได้รับ) = งวดที่ค้างที่ครบถึง "วันที่ได้รับ" (อย่างน้อยถึงงวด from) · คิดใหม่เมื่อเปลี่ยนวันที่ (ตกลง 30 ต.ค. 2026) */
   dueP: number; dueI: number; defaultBank: string;
+  owe?: { due: string; p: number; i: number }[]; from?: string;
   /** รับชำระแล้วในเดือน (เงินต้น / ดอกเบี้ย ทีละครั้ง · กดเพื่อแก้ / ลบ) */
   edits?: Recorded[];
 };
@@ -31,7 +32,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
  *   เงินต้นที่รับไม่เท่าที่ถึงกำหนด (เกิน / ขาด) → หลังบันทึกถาม: ตารางเดิม หรือ "คำนวณงวดที่เหลือใหม่" ของสัญญานั้น
  */
-export default function LoanBatch({ rows, others, banks, today, minDate, canWrite }: {
+export default function LoanBatch({ rows: rows0, others: others0, banks, today, minDate, canWrite }: {
   rows: LoanRow[]; others: LoanRow[]; banks: BankOpt[]; today: string; minDate: string; canWrite: boolean;
 }) {
   const router = useRouter();
@@ -42,6 +43,13 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
   const [pr, setPr] = useState<Record<string, string>>({});
   const [int, setInt] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
+  // ยอดที่ถึงกำหนดตามวันที่ได้รับ: งวดที่ค้างที่ครบถึงวันนั้น (ไม่ก่อนงวด from = งวดที่เลยกำหนดล่าสุด / งวดแรกของเดือน)
+  const dueAt = (r: LoanRow, d: string): LoanRow => {
+    if (!r.owe) return r;
+    const upTo = r.from && d < r.from ? r.from : d, ls = r.owe.filter((x) => x.due <= upTo);
+    return { ...r, dueP: r2(ls.reduce((t, x) => t + x.p, 0)), dueI: r2(ls.reduce((t, x) => t + x.i, 0)) };
+  };
+  const rows = rows0.map((r) => dueAt(r, date)), others = others0.map((r) => dueAt(r, date));
   const all = [...rows, ...others];
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(all.map((r) => [r.id, r.defaultBank])));
   const [state, action, pending] = useActionState<ActionState, FormData>(batchReceiveLoans, {});
@@ -64,6 +72,16 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
     if (v.trim() === "") { setPr({ ...pr, [r.id]: "" }); setInt({ ...int, [r.id]: "" }); return; }
     const t = n(v), i = r2(Math.min(t, Math.max(r.dueI, 0)));
     setInt({ ...int, [r.id]: fmt(i) || (r.dueI > 0 ? "0.00" : "") }); setPr({ ...pr, [r.id]: fmt(r2(t - i)) });
+  };
+  // เปลี่ยนวันที่: แถวที่ใส่ยอดรวมไว้ → แบ่งใหม่ (หักดอกที่ครบถึงวันใหม่ก่อน)
+  const onDate = (d: string) => {
+    setDate(d);
+    const p = { ...pr }, i = { ...int };
+    all.filter((r) => (tot[r.id] ?? "").trim() !== "").forEach((r) => {
+      const t = n(tot[r.id]), dI = dueAt(r, d).dueI, ii = r2(Math.min(t, Math.max(dI, 0)));
+      i[r.id] = fmt(ii) || (dI > 0 ? "0.00" : ""); p[r.id] = fmt(r2(t - ii));
+    });
+    setPr(p); setInt(i);
   };
   const fill = (list: LoanRow[]) => {
     const p = { ...pr }, i = { ...int }, t = { ...tot };
@@ -141,7 +159,7 @@ export default function LoanBatch({ rows, others, banks, today, minDate, canWrit
       {canWrite && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
           <label className="flex items-center gap-2">วันที่ได้รับ
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
+            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && onDate(e.target.value)} className={small} />
           </label>
           <span className="text-xs text-slate-500">ใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</span>
         </div>
