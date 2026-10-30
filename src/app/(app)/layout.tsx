@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Toaster } from "@/components/Modal";
 import KeepHeight from "@/components/KeepHeight";
 import { monthToClose } from "@/lib/closing";
-import { getAttention } from "@/lib/attention";
+import { getTodoCount } from "@/lib/attention";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
@@ -23,10 +23,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     user.person_id ? supabase.from("persons").select("name").eq("id", user.person_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("families").select("name,photo").maybeSingle(),
   ]);
-  // จำนวนงานค้างที่เมนู "สิ่งที่ต้องทำ": ไม่รอ (ส่งเป็น Promise → ตัวเลขขึ้นเมื่อคำนวณเสร็จ หน้าไม่ช้าลง)
-  const todo: Promise<TodoCount | null> = getAttention()
-    .then((a) => ({ total: a.length, red: a.filter((x) => x.tone === "red").length }))
-    .catch(() => null);
+  // จำนวนงานค้างที่เมนู "สิ่งที่ต้องทำ": ไม่รอ (ส่งเป็น Promise → ตัวเลขขึ้นเมื่อคำนวณเสร็จ หน้าไม่ช้าลง) · จำไว้ 5 นาที / จนมีการบันทึก
+  const todo: Promise<TodoCount | null> = getTodoCount().catch(() => null);
   const order = decodeURIComponent(jar.get(NAV_ORDER_COOKIE)?.value ?? "").split("|").filter(Boolean);
   return (
     <div className="flex min-h-screen">

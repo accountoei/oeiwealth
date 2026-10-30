@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";

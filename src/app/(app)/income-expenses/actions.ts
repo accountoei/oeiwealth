@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { createClient } from "@/lib/supabase/server";
 import { HOME_CATEGORY, friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, endpointValue, missingEndpoint, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";

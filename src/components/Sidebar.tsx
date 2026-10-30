@@ -23,9 +23,8 @@ export type TodoCount = { total: number; red: number };
 const PendingCtx = createContext<{ path: string; setPending: (href: string) => void }>({ path: "", setPending: () => {} });
 
 // Link ของ Next.js 16 รองรับ unstable_dynamicOnHover (โหลดทั้งหน้าเมื่อเอาเมาส์วาง / แตะ) แต่ type ที่ export ยังไม่มี
+// ทุกเมนูรวม Dashboard: โหลดทั้งหน้าเมื่อชี้เมาส์ / แตะเท่านั้น (30 ต.ค. 2026 เลิกโหลด Dashboard ล่วงหน้าตลอด · ลดงาน Supabase แผนฟรี)
 const HOVER_FULL_PREFETCH = { unstable_dynamicOnHover: true } as object;
-// Dashboard: โหลดล่วงหน้าทั้งหน้าเสมอ (ตกลง 27 ต.ค. 2026 · เฉพาะหน้านี้ เพื่อไม่ให้ Supabase แผนฟรีหนัก) · เบราว์เซอร์จำไว้ ~5 นาที / จนมีการบันทึก
-const DASHBOARD_PREFETCH = { prefetch: true };
 
 /** cookie ของเครื่องนี้ 1 ปี (ลำดับเมนู / ยุบแถบ) — Server อ่านตอนสร้างหน้า → ไม่กระพริบ */
 function setCookie(name: string, value: string | null) {
@@ -60,7 +59,7 @@ function NavLink({ g, dot, collapsed, todo }: { g: NavGroup; dot?: boolean; coll
   };
   return (
     // ไม่หน่วง: เอาเมาส์วาง (หรือแตะ) → โหลดข้อมูลหน้านั้นล่วงหน้าทั้งหน้า · กดแล้วไฮไลต์ทันที + โครงหน้า (loading.tsx) ระหว่างรอ
-    <Link href={href} {...(href === "/" ? DASHBOARD_PREFETCH : HOVER_FULL_PREFETCH)} onClick={onClick} title={collapsed ? g.label : undefined} aria-label={collapsed ? g.label : undefined}
+    <Link href={href} {...HOVER_FULL_PREFETCH} onClick={onClick} title={collapsed ? g.label : undefined} aria-label={collapsed ? g.label : undefined}
       className={`relative flex items-center gap-2.5 rounded-lg py-[7px] text-sm ${collapsed ? "justify-center px-2" : "px-3"} ${
         active ? "bg-blue-50 font-semibold text-blue-700 ring-1 ring-blue-100" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}>
       <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-blue-600" : "text-slate-500"}`} aria-hidden strokeWidth={1.9} />

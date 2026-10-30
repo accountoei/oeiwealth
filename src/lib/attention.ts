@@ -1,18 +1,29 @@
 import { cache } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { cachedData } from "@/lib/data-cache";
 import { money, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { monthToClose } from "@/lib/closing";
 
 export type AttentionItem = { text: string; href: string; tone: "red" | "amber" | "slate" };
 
 /** งานที่ต้องทำ ณ วันนี้ (หน้า "สิ่งที่ต้องทำ" + ตัวเลขที่เมนูซ้าย) — ปิดเดือนอยู่บนสุด · cache() → ใน 1 คำขอคำนวณครั้งเดียว */
-export const getAttention = cache(async (): Promise<AttentionItem[]> => {
-  const supabase = await createClient();
+export const getAttention = cache(async (): Promise<AttentionItem[]> => buildAttention(await createClient(), await monthToClose()));
+
+/** ตัวเลขที่เมนูซ้าย: จำไว้ 5 นาที / จนมีการบันทึก (ทุกหน้าไม่ต้องยิง ~13 คำสั่งทุกคลิก) · หน้า To-Do List ยังใช้ getAttention() สด */
+export const getTodoCount = cache(async (): Promise<{ total: number; red: number }> => {
+  const toClose = await monthToClose();
+  return cachedData(["todo-count", toClose], async (supabase) => {
+    const a = await buildAttention(supabase, toClose);
+    return { total: a.length, red: a.filter((x) => x.tone === "red").length };
+  }, 300);
+});
+
+async function buildAttention(supabase: SupabaseClient, toClose: string | null): Promise<AttentionItem[]> {
   const today = todayBangkok();
   const { data: family } = await supabase.from("families").select("system_status").maybeSingle();
   const isSetup = family?.system_status === "SETUP";
-  const [toClose, { data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }, { data: pendH }, { data: pendG }] = await Promise.all([
-    monthToClose(),
+  const [{ data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }, { data: pendH }, { data: pendG }] = await Promise.all([
     isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
     supabase.from("v_fx_status").select("currency,latest_rate_date,is_stale"),
     supabase.from("v_expected_income").select("name,income_period,status").eq("status", "OVERDUE"),
@@ -67,4 +78,4 @@ export const getAttention = cache(async (): Promise<AttentionItem[]> => {
   (leases ?? []).forEach((l) => attention.push({ text: `สัญญาเช่า ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} หมด ${thDate(l.end_date)}`, href: `/property/${l.property_asset_id}`, tone: "slate" }));
 
   return attention;
-});
+}

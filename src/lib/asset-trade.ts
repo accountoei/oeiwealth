@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
 import { payLinesFromForm } from "@/lib/money-endpoint";
