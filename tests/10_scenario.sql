@@ -4023,4 +4023,30 @@ SELECT t.ok((SELECT count(*) > 0 AND bool_and(amount = 1500 OR kind IN ('MOVE', 
 SELECT t.ok((SELECT count(*) = 0 FROM public.search_money('ค')), 'ค้นหา: สั้นกว่า 2 ตัวอักษร = ไม่ค้น');
 SELECT t.ok((SELECT count(*) <= 50 FROM public.search_money('a', 999)) AND NOT has_function_privilege('anon', 'public.search_money(text, int)', 'EXECUTE'),
             'ค้นหา: ผลไม่เกิน 50 · anon เรียกไม่ได้');
+\echo '== 15. RLS: เช็กสิทธิ์ครั้งเดียวต่อคำสั่ง (30 ต.ค. 2026)'
+-- Policy ต้องห่อ has_role / app_role / app_user_id / auth.uid ด้วย (SELECT …) → คำนวณครั้งเดียวต่อคำสั่ง ไม่ใช่ทุกแถว
+-- (ฟังก์ชันที่ขึ้นกับแถว เช่น private.tax_can_read(r.person_id) ห่อไม่ได้ จึงไม่อยู่ในรายชื่อที่ตรวจ)
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+              AND (coalesce(qual, '') || ' ' || coalesce(with_check, ''))
+                  ~ '(?<!SELECT )(private\.(has_role|app_role|app_user_id)|auth\.(uid|jwt))\('),
+            'RLS: ทุก Policy เช็กสิทธิ์ครั้งเดียวต่อคำสั่ง (ห่อด้วย SELECT)');
+-- สิทธิ์อ่านเหมือนเดิม: ทุก Role เห็นเท่า ADMIN · Audit / งานระบบ = ADMIN เท่านั้น · app_users = เฉพาะตัวเอง · DISABLED ไม่เห็น
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT (SELECT count(*) FROM public.fx_rates) AS rls_fx, (SELECT count(*) FROM public.families) AS rls_fam,
+       (SELECT count(*) FROM public.net_worth_snapshots) AS rls_snap, (SELECT count(*) FROM public.net_worth_snapshot_items) AS rls_items,
+       (SELECT count(*) FROM public.net_worth_snapshot_lines) AS rls_lines, (SELECT count(*) FROM public.net_worth_month_auto) AS rls_auto,
+       (SELECT count(*) FROM public.data_completeness_rules) AS rls_rules \gset
+SELECT t.ok(:rls_fx > 0 AND :rls_fam = 1 AND :rls_snap > 0 AND (SELECT count(*) FROM public.app_users) > 1
+            AND (SELECT count(*) FROM public.audit_logs) > 0, 'RLS: ADMIN เห็น FX / ครอบครัว / Snapshot / ผู้ใช้ทุกคน / Audit');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.fx_rates) = :rls_fx AND (SELECT count(*) FROM public.families) = :rls_fam
+            AND (SELECT count(*) FROM public.net_worth_snapshots) = :rls_snap AND (SELECT count(*) FROM public.net_worth_snapshot_items) = :rls_items
+            AND (SELECT count(*) FROM public.net_worth_snapshot_lines) = :rls_lines AND (SELECT count(*) FROM public.net_worth_month_auto) = :rls_auto
+            AND (SELECT count(*) FROM public.data_completeness_rules) = :rls_rules,
+            'RLS: VIEWER เห็น FX / ครอบครัว / Snapshot / กฎความครบถ้วน เท่ากับ ADMIN');
+SELECT t.ok((SELECT count(*) FROM public.audit_logs) = 0 AND (SELECT count(*) FROM public.system_job_runs) = 0
+            AND (SELECT count(*) FROM public.app_users) = 1, 'RLS: VIEWER ไม่เห็น Audit / งานระบบ · เห็นผู้ใช้เฉพาะตัวเอง');
+SELECT t.login('00000000-0000-0000-0000-00000000000d');
+SELECT t.ok((SELECT count(*) FROM public.fx_rates) = 0 AND (SELECT count(*) FROM public.families) = 0
+            AND (SELECT count(*) FROM public.net_worth_snapshots) = 0, 'RLS: ผู้ใช้ที่ปิดแล้ว (DISABLED) ไม่เห็น FX / ครอบครัว / Snapshot');
 \echo 'ALL SCENARIO TESTS PASSED'
