@@ -52,13 +52,16 @@ export type EntryValues = {
   hold?: string | null;
   /** ประเภทค่าใช้จ่ายของทรัพย์สิน (หมวดบ้าน / สาธารณูปโภค) */
   property_cost_type?: string | null;
+  /** บ้าน / ที่ดินของค่าใช้จ่ายนี้ */
+  related_asset_id?: string | null;
 };
 export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfCash = [], persons, categories = [], subtypes = [],
-  accountEditable = true, reimbursable = false, personFallback }: {
+  accountEditable = true, reimbursable = false, personFallback, properties = [] }: {
   kind: "INCOME" | "EXPENSE"; id: string; currency: string; values: EntryValues; banks: Bank[]; cards?: Card[]; pfCash?: PfCash[]; persons: Person[];
   categories?: string[]; subtypes?: string[]; accountEditable?: boolean; reimbursable?: boolean;
   /** ข้อความ "ของใคร" เมื่อไม่ได้เลือกคน (ถ้าไม่ส่ง ระบบเลือกตามบัญชี / บัตรที่เลือก) */
   personFallback?: string;
+  properties?: { id: string; name: string }[];
 }) {
   const income = kind === "INCOME";
   const [state, action, pending] = useActionState<ActionState, FormData>(saveEntry, {});
@@ -92,6 +95,12 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfC
         <select name="f_property_cost_type" defaultValue={values.property_cost_type ?? ""} className={cls}>
           <option value="">— ไม่ระบุ —</option>
           {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      ))}
+      {!income && ecat === HOME_CATEGORY && properties.length > 0 && f("ทรัพย์สิน", (
+        <select name="f_related_asset_id" defaultValue={values.related_asset_id ?? ""} className={`${cls} max-w-48`}>
+          <option value="">— ไม่ระบุ —</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       ))}
       {income && accountEditable && f("ประเภท", (
@@ -526,8 +535,9 @@ export function RecurringPayActions(props: {
 }
 
 /* ================================================================== ค่าใช้จ่าย */
-export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate, categories, hints = [] }:
-  { banks: Bank[]; cards: Card[]; pfCash?: PfCash[]; persons: Person[]; today: string; minDate: string; categories: string[]; hints?: ExpHint[] }) {
+export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate, categories, hints = [], properties = [] }:
+  { banks: Bank[]; cards: Card[]; pfCash?: PfCash[]; persons: Person[]; today: string; minDate: string; categories: string[]; hints?: ExpHint[];
+    /** บ้าน / ที่ดิน (หมวดบ้าน / สาธารณูปโภค เลือกได้ · ไม่บังคับ) */ properties?: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addExpense, {});
   const [via, setVia] = useState(banks.length ? "bank" : "cash");
   const [reimb, setReimb] = useState(false);
@@ -575,6 +585,14 @@ export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate
                 <select name="property_cost_type" required defaultValue="" className={input}>
                   <option value="" disabled>— เลือกประเภท —</option>
                   {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+            )}
+            {cat === HOME_CATEGORY && properties.length > 0 && (
+              <label className={lbl}>ทรัพย์สิน
+                <select name="related_asset_id" defaultValue="" className={input}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </label>
             )}
