@@ -150,7 +150,7 @@ export async function addExpense(_: ActionState, form: FormData): Promise<Action
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount,
     currency: str(form.get("currency")), expense_category: str(form.get("expense_category")),
-    property_cost_type: str(form.get("property_cost_type")),
+    property_cost_type: str(form.get("property_cost_type")), related_asset_id: str(form.get("related_asset_id")),
     ...paidFromColumns(pay),
     person_id: str(form.get("person_id")),
     is_reimbursable: reimb, expected_reimbursement_amount: reimb ? num(form.get("expected_reimbursement_amount")) : null,
@@ -332,9 +332,9 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   const id = String(form.get("id"));
   const { data: cur } = kind === "INCOME"
     ? await supabase.from("income_transactions").select("date,received_to_asset_id").eq("id", id).maybeSingle()
-    : await supabase.from("expense_items").select("date,paid_from_asset_id,paid_from_credit_card_id,property_cost_type").eq("id", id).maybeSingle();
+    : await supabase.from("expense_items").select("date,paid_from_asset_id,paid_from_credit_card_id,property_cost_type,related_asset_id").eq("id", id).maybeSingle();
   const old = (cur ?? {}) as { date?: string; received_to_asset_id?: string | null; paid_from_asset_id?: string | null; paid_from_credit_card_id?: string | null;
-    property_cost_type?: string | null };
+    property_cost_type?: string | null; related_asset_id?: string | null };
   const newDate = (fields.date as string | null) ?? old.date ?? null;
   const accs: LumpAcc[] = [
     { kind: "BANK", id: old.received_to_asset_id ?? old.paid_from_asset_id }, { kind: "CARD", id: old.paid_from_credit_card_id },
@@ -347,9 +347,14 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   if (error) return { error: friendlyError(error.message) };
   // ประเภทค่าใช้จ่ายทรัพย์สิน: มีช่อง = ตามที่เลือก · เปลี่ยนเป็นหมวดอื่น = ล้าง (ตกลง 29 ต.ค. 2026)
   const ctype = form.has("f_property_cost_type") && fields.expense_category === HOME_CATEGORY ? str(form.get("f_property_cost_type")) : null;
-  if (kind === "EXPENSE" && form.has("f_expense_category") && ctype !== (old.property_cost_type ?? null)) {
-    const { error: e2 } = await supabase.from("expense_items").update({ property_cost_type: ctype }).eq("id", id);
-    if (e2) return { error: `บันทึกแล้ว แต่แก้ประเภทไม่ได้ (${friendlyError(e2.message)})` };
+  const extra: Record<string, string | null> = {};
+  if (kind === "EXPENSE" && form.has("f_expense_category") && ctype !== (old.property_cost_type ?? null)) extra.property_cost_type = ctype;
+  // บ้าน / ที่ดิน: มีช่องเมื่อหมวดบ้าน / สาธารณูปโภค · หมวดอื่นไม่แตะของเดิม
+  if (kind === "EXPENSE" && form.has("f_related_asset_id") && str(form.get("f_related_asset_id")) !== (old.related_asset_id ?? null))
+    extra.related_asset_id = str(form.get("f_related_asset_id"));
+  if (Object.keys(extra).length) {
+    const { error: e2 } = await supabase.from("expense_items").update(extra).eq("id", id);
+    if (e2) return { error: `บันทึกแล้ว แต่แก้ประเภท / ทรัพย์สินไม่ได้ (${friendlyError(e2.message)})` };
   }
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
   const note = lumpNote(before, await lumpSnap(supabase, accs, newDate), accs, null);

@@ -276,10 +276,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const bankIds = new Set(banks.map((b) => b.asset_id));
   const incById = new Map((incomes ?? []).map((i) => [i.id as string, i]));
   const expById = new Map((items ?? []).map((i) => [i.id as string, i]));
+  // บ้าน / ที่ดินที่ถืออยู่ (ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค เลือกทรัพย์สินได้ · ตกลง 30 ต.ค. 2026)
+  const { data: propRows } = await supabase.from("property_details").select("asset_id,assets!inner(name,status,deleted_at)").is("deleted_at", null);
+  const properties = ((propRows ?? []) as unknown as { asset_id: string; assets: { name: string; status: string; deleted_at: string | null } }[])
+    .filter((p) => !p.assets.deleted_at && p.assets.status === "ACTIVE").map((p) => ({ id: p.asset_id, name: p.assets.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "th"));
   // ชุดคำสั่งกลาง (แก้ไข / ลบ / แยกก้อน / แถวเงินเข้า–ออก) — ใช้ร่วมกับหน้ารายละเอียดบัญชี
   const kit = makeEntryKit({ ym, personId: pv.personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons: persons ?? [],
     pfCash, incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets: (otherAssets ?? []) as { id: string; name: string; asset_type: string }[],
-    tabLinks: true });
+    tabLinks: true, properties });
   const { incSource, expSource, incEdit, expEdit, incSplit, expSplit } = kit;
   const moveRows = (withActions: boolean): MoveRow[] => kit.buildMoveRows(moveList as Move[], withActions);
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
@@ -628,7 +633,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         <TabActions>
           <MovementForm banks={banks} cards={cards} pfCash={pfCash} liabilities={liabs} today={maxDate} minDate={minDate} />
           <IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} />
-          <ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} />
+          <ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} properties={properties} />
         </TabActions>
       )}
       <TabPanel id="overview">

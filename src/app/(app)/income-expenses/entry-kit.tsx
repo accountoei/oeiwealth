@@ -83,6 +83,8 @@ export type KitCtx = {
   otherAssets: { id: string; name: string; asset_type: string }[];
   /** หน้า Income & Expenses: ลิงก์สลับแท็บในหน้า · หน้าบัญชี: ไม่มี */
   tabLinks: boolean;
+  /** บ้าน / ที่ดิน ให้เลือกตอนแก้ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค */
+  properties?: { id: string; name: string }[];
 };
 
 export function makeEntryKit(c: KitCtx) {
@@ -205,8 +207,8 @@ export function makeEntryKit(c: KitCtx) {
     return (
       <RowActions table="expense_items" id={i.id} paths={PATHS} canDelete={canDelete} button={button} deleteEffect={expDeleteEffect(i)}
         editor={<EntryEditor kind="EXPENSE" id={i.id} currency={i.currency} banks={banks} cards={cards} pfCash={c.pfCash} persons={persons}
-          categories={expCats} reimbursable={!!i.is_reimbursable}
-          values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category, property_cost_type: i.property_cost_type,
+          categories={expCats} reimbursable={!!i.is_reimbursable} properties={c.properties}
+          values={{ date: i.date, amount: i.full_amount, description: i.description, category: i.expense_category, property_cost_type: i.property_cost_type, related_asset_id: i.related_asset_id,
             person_id: i.person_id, notes: i.notes, expected_reimbursement_amount: i.expected_reimbursement_amount,
             bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, hold: i.paid_from_cash_holding_id }} />} />
     );
