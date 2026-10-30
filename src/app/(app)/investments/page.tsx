@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
 import { ADD_BTN, HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
@@ -65,9 +66,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     thb_value: p.thb_value == null ? null : Number(p.thb_value) * sh(p.asset_id),
     in_transit_thb: p.in_transit_thb == null ? null : Number(p.in_transit_thb) * sh(p.asset_id) }));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
+  // ผลตอบแทนรายพอร์ต (คำนวณหนัก · ทุกพอร์ตทุกครั้งที่เปิด) → จำผลไว้ 10 นาที / จนมีการบันทึก (src/lib/data-cache.ts)
   const retRows = await Promise.all(list.map(async (p) => {
-    const { data } = await supabase.rpc("investment_returns", { p_portfolio_asset_id: p.asset_id });
-    const rs = (data as R[] | null) ?? [];
+    const rs = (await cachedRpc<R[]>("investment_returns", { p_portfolio_asset_id: p.asset_id })) ?? [];
     const sum = (k: keyof R) => rs.reduce((t, r) => t + Number(r[k] ?? 0), 0);
     const k = sh(p.asset_id);
     return { asset_id: p.asset_id, name: p.name, unreal: sum("unrealized_thb") * k, unrealFx: sum("unrealized_fx_thb") * k, real: sum("realized_thb") * k,

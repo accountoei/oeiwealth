@@ -1,13 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import IntentLink from "./IntentLink";
 import { TabActionsSlot } from "./TabActions";
 
 /**
  * แถบแท็บของเมนูที่รวมหลายหน้า (Family & Documents · Settings) — แต่ละแท็บเป็นหน้าของตัวเอง
- *   ไม่หน่วง: โหลดข้อมูลของแท็บอื่นล่วงหน้า (prefetch) · กดแล้วแท็บเปลี่ยนสีทันที + โครงหน้า (loading.tsx) ระหว่างรอ
+ *   ไม่หน่วง: ชี้เมาส์ค้างที่แท็บ → โหลดข้อมูลแท็บนั้นล่วงหน้า (IntentLink) · กดแล้วแท็บเปลี่ยนสีทันที + โครงหน้า (loading.tsx) ระหว่างรอ
+ *   (30 ต.ค. 2026 เลิกโหลดทุกแท็บพร้อมกันตอนเปิดหน้า — เดิมเปิด Family = โหลดอีก 5 หน้า, Settings = อีก 3 หน้า แย่ง Supabase กับหน้าที่เปิดจริง)
  */
 export default function SectionTabs({ tabs }: { tabs: { href: string; label: string; dot?: boolean }[] }) {
   const pathname = usePathname();
@@ -20,12 +21,12 @@ export default function SectionTabs({ tabs }: { tabs: { href: string; label: str
       {tabs.map((t) => {
         const active = current === t.href || current.startsWith(`${t.href}/`);
         return (
-          <Link key={t.href} href={t.href} prefetch aria-current={active ? "page" : undefined}
+          <IntentLink key={t.href} href={t.href} aria-current={active ? "page" : undefined}
             onClick={() => setPending({ href: t.href, from: pathname })}
             className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 ${active ? "border-blue-600 font-medium text-blue-700" : "border-transparent text-slate-600 hover:text-slate-900"}`}>
             {t.label}
             {t.dot && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}
-          </Link>
+          </IntentLink>
         );
       })}
     </nav>
