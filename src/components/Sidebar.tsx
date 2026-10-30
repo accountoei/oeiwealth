@@ -184,7 +184,7 @@ export default function Sidebar({ dots = [], user, familyName = "", familyPhoto 
             </div>
           </div>
         ) : (
-          <nav className={`flex-1 space-y-0.5 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`} onClick={() => setOpen(false)}>
+          <nav className={`flex-1 space-y-0.5 overflow-y-auto pb-1 pt-1.5 ${collapsed ? "px-2" : "px-3"}`} onClick={() => setOpen(false)}>
             {nav.map((g) => (
               <NavLink key={g.href} g={g} collapsed={collapsed} dot={dots.includes(g.href!)} todo={g.href === "/todo" ? todo : undefined} />
             ))}
