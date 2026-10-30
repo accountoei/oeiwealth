@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense, cache, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
 import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
@@ -43,27 +44,28 @@ const GROUP_FIELD: Record<string, string> = { FINANCIAL: "financial", LOANS: "lo
   PROPERTY: "property", ALTERNATIVE: "alternative", INSURANCE: "insurance" };
 
 // ---------------------------------------------------------------------------
-// โหลดข้อมูลส่วนที่ช้า (คำนวณ Net Worth) ผ่าน cache() → เริ่มยิงตั้งแต่ต้นหน้า แล้วการ์ดหลายใบใช้ผลเดียวกันได้
+// โหลดข้อมูลส่วนที่ช้า (คำนวณ Net Worth) ผ่าน cachedRpc() → จำผลไว้ข้ามคำขอ 10 นาที / จนมีการบันทึก (src/lib/data-cache.ts)
+// และผ่าน cache() → เริ่มยิงตั้งแต่ต้นหน้า แล้วการ์ดหลายใบใช้ผลเดียวกันได้
 // โดยไม่เรียกซ้ำ · แต่ละการ์ดอยู่ใน <Suspense> ของตัวเอง → ส่วนที่เสร็จก่อนขึ้นก่อน ไม่ต้องรอทั้งหน้า
 // ---------------------------------------------------------------------------
 const getMonth = cache(async (start: string) =>
-  ((await (await createClient()).rpc("dashboard_month", { p_month: start })).data ?? null) as DM | null);
+  cachedRpc<DM>("dashboard_month", { p_month: start }));
 const getPreview = cache(async (start: string) =>
-  ((await (await createClient()).rpc("month_net_worth_preview", { p_month: start })).data ?? null) as Preview | null);
+  cachedRpc<Preview>("month_net_worth_preview", { p_month: start }));
 const getHistory = cache(async () =>
-  ((await (await createClient()).rpc("net_worth_history")).data ?? null) as Hist | null);
+  cachedRpc<Hist>("net_worth_history"));
 const getItems = cache(async (start: string, person: string) =>
-  ((await (await createClient()).rpc("month_person_items", { p_month: start, p_person: person })).data ?? null) as Item[] | null);
+  cachedRpc<Item[]>("month_person_items", { p_month: start, p_person: person }));
 const getFamilyItems = cache(async (start: string) =>
-  ((await (await createClient()).rpc("month_family_items", { p_month: start })).data ?? null) as Item[] | null);
+  cachedRpc<Item[]>("month_family_items", { p_month: start }));
 const getPersonDash = cache(async (start: string, person: string) =>
-  ((await (await createClient()).rpc("person_dashboard", { p_month: start, p_person: person })).data ?? null) as PersonDash | null);
+  cachedRpc<PersonDash>("person_dashboard", { p_month: start, p_person: person }));
 /** ฐานเทียบของ 3 การ์ดเมื่อเลือกรายคน (ปิดเดือนก่อน → สิ้นเดือนก่อน อัตโนมัติ → ยอดตั้งต้น) */
 const getPersonBase = cache(async (start: string, person: string) =>
-  ((await (await createClient()).rpc("dashboard_person_base", { p_month: start, p_person: person })).data ?? null) as Base | null);
+  cachedRpc<Base>("dashboard_person_base", { p_month: start, p_person: person }));
 /** กำไร / ขาดทุนเงินลงทุนของเดือน (ครอบครัว หรือ รายคน) · แยกออกจาก "มูลค่าเปลี่ยน / อื่น ๆ" */
 const getInvGain = cache(async (start: string, person: string) =>
-  ((await (await createClient()).rpc("month_investment_gain", { p_month: start, p_person: person || null })).data ?? null) as InvGain | null);
+  cachedRpc<InvGain>("month_investment_gain", { p_month: start, p_person: person || null }));
 const getTrack = cache(async (start: string) => {
   const { data } = await (await createClient()).from("monthly_expenses").select("tracking_status")
     .eq("year_month", start).is("deleted_at", null).maybeSingle();

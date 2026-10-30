@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/revalidate";
 import { createClient } from "@/lib/supabase/server";
 import { EDUCATION_LEVEL_LABEL, friendlyError as friendly, RELATIONSHIP_LABEL, type FormState } from "@/lib/format";
 
