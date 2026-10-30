@@ -58,6 +58,22 @@ export function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * ช่องวันที่ที่พิมพ์ปี พ.ศ. มา (ปี > 2400) → ปี ค.ศ. (ลบ 543) · รับ YYYY-MM-DD และ YYYY-MM
+ * ปีปกติ / ค่าว่าง = null (ไม่ต้องแปลง) · ok: false = ปี พ.ศ. แต่วันนั้นไม่มีในปี ค.ศ. (เช่น 29 ก.พ.)
+ */
+export function beToCe(value: string): { ok: true; value: string; be: number } | { ok: false; be: number } | null {
+  const m = /^(\d{4,6})-(\d{2})(?:-(\d{2}))?$/.exec(value.trim());
+  if (!m) return null;
+  const be = Number(m[1]);
+  if (be <= 2400) return null;
+  const y = be - 543, mo = Number(m[2]);
+  if (!m[3]) return { ok: true, value: `${y}-${m[2]}`, be };
+  const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  if (Number(m[3]) > last) return { ok: false, be };
+  return { ok: true, value: `${y}-${m[2]}-${m[3]}`, be };
+}
+
 /** แปลง Error จากฐานข้อมูลเป็นข้อความที่อ่านเข้าใจ */
 export function friendlyError(message: string): string {
   if (/row-level security|permission denied/i.test(message)) return "คุณไม่มีสิทธิ์ทำรายการนี้";
