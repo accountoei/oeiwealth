@@ -184,7 +184,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
               const d = dir(r);
               const meta = metaOf.get(r.key)!;
               return (
-                <tr key={r.key} className="align-top">
+                <tr key={r.key} data-row={`m-${r.key}`} className="align-top">
                   <td className="whitespace-nowrap py-2 pr-2">{thDate(r.date)}</td>
                   <td className="pr-2"><MoveBadge label={meta.label} tone={meta.tone} /></td>
                   <td className="pr-2">{meta.pending

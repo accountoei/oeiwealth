@@ -101,3 +101,7 @@ a.underline, button.underline { text-underline-offset: 3px; }
 
 /* แถบโหลดใต้แถบบน (HeaderBar PendingBar) */
 @keyframes pending { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+
+/* บรรทัดที่เปิดมาจากช่องค้นหา (RowHighlight) — เหลืองจาง ๆ แล้วค่อย ๆ หาย */
+@keyframes row-hl { 0%, 40% { background-color: #fef08a; } 100% { background-color: transparent; } }
+.row-hl > td { animation: row-hl 3s ease-out; }

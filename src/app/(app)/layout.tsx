@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import Sidebar, { type TodoCount } from "@/components/Sidebar";
 import SearchBox from "@/components/SearchBox";
 import NavReset from "@/components/NavReset";
+import RowHighlight from "@/components/RowHighlight";
 import { HEADER_INFO_ID, HEADER_SLOT_ID, HeaderTitle, NavPendingProvider, PendingArea, PendingBar } from "@/components/HeaderBar";
 import { NAV_COLLAPSED_COOKIE, NAV_ORDER_COOKIE, NAV_WIDTH_COOKIE } from "@/components/nav";
 import { requireAppUser, ROLE_LABEL } from "@/lib/auth";
@@ -42,7 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <PendingBar />
         </header>
         <main className="mx-auto max-w-7xl p-4 md:p-8"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>
-          <Suspense><NavReset><PendingArea>{children}</PendingArea></NavReset></Suspense>
+          <Suspense><NavReset><PendingArea>{children}</PendingArea></NavReset><RowHighlight /></Suspense>
         </CurrencyProvider></KeepHeight></main>
         <Toaster />
       </div></NavPendingProvider>
