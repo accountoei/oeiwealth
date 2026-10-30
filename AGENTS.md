@@ -44,6 +44,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 - **Never edit a migration that has already been run.** Always add a new file with the next timestamp, e.g. `20261005001500_short_name.sql`. Use `CREATE OR REPLACE`, `ADD COLUMN IF NOT EXISTS`, `DROP FUNCTION IF EXISTS` so re-running is safe.
 - When changing a function signature, `DROP FUNCTION IF EXISTS old_signature` first and re-grant.
 - New tables must get RLS (see `20261004001600_rls_grants.sql` for the standard policy set) and the generic META / soft-delete triggers.
+- In policies, wrap per-user functions in a sub-select so they run once per query, not once per row: `(SELECT private.has_role('ADMIN'))`, `(SELECT private.app_user_id())`, `(SELECT auth.uid())`. Only functions that take a column of the row (e.g. `private.tax_can_read(r.person_id)`) stay unwrapped. `tests/10_scenario.sql` section 15 fails otherwise.
 - Business rules are enforced in the database (triggers for period lock, go-live lock, derived-record locks, cache guards). Do not re-implement them only in the UI, and do not weaken them to make a UI work.
 - Money engine: cash movements are the central layer; income / expense / investment transactions / reimbursements create **derived** movements that clients cannot edit. Net worth comes from `private.net_worth_items(...)`; FINAL months read from snapshots.
 
@@ -51,7 +52,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ```bash
 service postgresql start
-DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (935 checks)
+DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (940 checks)
 node scripts/fx-fetch.test.mjs && node scripts/price-fetch.test.mjs && node scripts/money-endpoint.test.mjs && node scripts/batch-entry.test.mjs && node scripts/form-input.test.mjs && node scripts/tax-calc.test.mjs
 ```
 
