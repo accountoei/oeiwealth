@@ -1,5 +1,6 @@
 import { PageInfo } from "@/components/HeaderBar";
 import { StatBox } from "@/components/Boxes";
+import { TabActions } from "@/components/TabActions";
 import DocumentUpload from "@/components/docs/DocumentUpload";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -101,7 +102,8 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   return (
     <div className="space-y-6">
       {info}
-      <TaxFilters persons={people} years={years} p={p} y={y} />
+      {/* ตัวกรองผู้เสียภาษี / ปีภาษี อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
+      <TabActions><TaxFilters persons={people} years={years} p={p} y={y} /></TabActions>
 
       <section className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="mr-auto">

@@ -190,7 +190,7 @@ export function TaxFilters({ persons, years, p, y }: { persons: { id: string; na
   };
   const cls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm";
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    <div className="flex items-center gap-2">
       {persons.length > 1 && (
         <select aria-label="ผู้เสียภาษี" value={p} onChange={(e) => go("p", e.target.value)} className={cls}>
           {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}

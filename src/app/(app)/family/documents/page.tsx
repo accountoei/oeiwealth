@@ -125,7 +125,12 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   return (
     <div className="space-y-6">
       <PageInfo>ไฟล์เก็บใน Google Drive ของระบบ · เปิดได้เฉพาะผู้ใช้ในระบบ (ทุกการเปิดบันทึกใน Audit Log)</PageInfo>
-      {canWrite && st.connected && <TabActions><ActionBar><DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" primary /></ActionBar></TabActions>}
+      {/* ปุ่มอัปโหลด · เปิดโฟลเดอร์ (ขวาสุด) อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
+      <TabActions>
+        {canWrite && st.connected && <ActionBar><DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" primary /></ActionBar>}
+        {isAdmin && st.connected && st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">เปิดโฟลเดอร์</a>}
+      </TabActions>
 
       {sp.drive === "connected" && <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">เชื่อม Google Drive เรียบร้อยแล้ว</p>}
       {sp.drive_error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">เชื่อม Google Drive ไม่สำเร็จ: {sp.drive_error}</p>}
@@ -140,8 +145,6 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
               <div className="text-xs text-slate-500">ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
               {isAdmin && (
                 <div className="mt-2 flex flex-wrap items-center gap-3">
-                  {st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
-                    className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">เปิดโฟลเดอร์</a>}
                   <ConnectDrive link label="เปลี่ยนบัญชี"
                     ask={"เปลี่ยนบัญชี / เชื่อม Google Drive ใหม่?\n\nระบบจะพาไปหน้า Google ให้เข้าสู่ระบบและกดอนุญาตอีกครั้ง\nใช้เมื่อต้องการเปลี่ยนบัญชีที่เก็บเอกสาร หรือเมื่อเปิด / อัปโหลดไฟล์แล้วแจ้งว่าการเชื่อมถูกยกเลิก\nถ้าใช้บัญชีอื่น เอกสารเดิมยังอยู่ในบัญชีเดิม"} />
                 </div>

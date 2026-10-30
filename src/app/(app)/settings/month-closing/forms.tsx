@@ -85,11 +85,24 @@ export function ConfirmReconForm({ id, calculated, currency, canConfirm }:
   );
 }
 
-export function FinalizeForm({ month, warnings, label, summary }: { month: string; warnings: number; label: string; summary: React.ReactNode }) {
+/** ปุ่มปิดเดือน · blockers ไม่ว่าง = ยังปิดไม่ได้ → pop up บอกเหตุผล ไม่มีปุ่มยืนยัน */
+export function FinalizeForm({ month, warnings, label, summary, blockers = [] }: {
+  month: string; warnings: number; label: string; summary: React.ReactNode; blockers?: string[];
+}) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(finalizeMonth, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>{label}</button>;
   if (!open) return trigger;
+  if (blockers.length > 0) return present(trigger, (
+    <div className="space-y-3">
+      <h2 className="font-medium text-slate-900">{label}</h2>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="font-medium">ยังปิดเดือนนี้ไม่ได้</p>
+        <ul className="mt-1 space-y-0.5">{blockers.map((b, k) => <li key={k}>• {b}</li>)}</ul>
+      </div>
+      <button type="button" data-close onClick={() => setOpen(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ปิด</button>
+    </div>
+  ));
   return present(trigger, (
     <form action={action} className="space-y-3">
       <input type="hidden" name="month" value={month} />

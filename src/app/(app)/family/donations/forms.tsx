@@ -166,18 +166,19 @@ export function DonationFilters({ years, persons, businesses, y, d }: { years: n
   };
   const cls = (on: boolean) => `rounded-md border px-3 py-1.5 text-sm ${on ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-300 bg-white"}`;
   return (
-    <div className="flex flex-wrap justify-end gap-2">
-      <select aria-label="ปี" value={y} onChange={(e) => go("y", e.target.value)} className={cls(!!y)}>
-        <option value="">ทุกปี (สรุปรายปี)</option>
-        {years.map((x) => <option key={x} value={x}>ปี {x + 543}</option>)}
-      </select>
+    <div className="flex items-center gap-2">
       <select aria-label="ผู้บริจาค" value={d} onChange={(e) => go("d", e.target.value)} className={cls(!!d)}>
         <option value="">ผู้บริจาคทั้งหมด</option>
         <option value="persons">เฉพาะบุคคล</option>
         {persons.map((p) => <option key={p.id} value={`p:${p.id}`}>· {p.name}</option>)}
         {businesses.length > 0 && <option value="business">เฉพาะในนามกิจการ</option>}
-        {businesses.map((b) => <option key={b.id} value={`b:${b.id}`}>· {b.name}</option>)}
+        {/* ชื่อย่อกิจการเท่านั้น ("OEI · บริษัท …" → "OEI") ให้ช่องไม่ยาวเกิน */}
+        {businesses.map((b) => <option key={b.id} value={`b:${b.id}`}>· {b.name.split(" · ")[0]}</option>)}
         <option value="g">ไม่ระบุ / กลุ่ม</option>
+      </select>
+      <select aria-label="ปี" value={y} onChange={(e) => go("y", e.target.value)} className={cls(!!y)}>
+        <option value="">ทุกปี (สรุปรายปี)</option>
+        {years.map((x) => <option key={x} value={x}>ปี {x + 543}</option>)}
       </select>
     </div>
   );
