@@ -5,10 +5,8 @@ type HV = { id: string; portfolio_asset_id: string; holding_type: string; name: 
   quantity: number | null; current_price: number | null; current_value: number | null; current_value_date: string | null;
   status: string; is_default_cash: boolean; sort_order: number | null };
 
-/** แท็บ "อัปเดตยอดคงเหลือ": ราคา / ยอดตาม Statement ทุกพอร์ต (แบบเดียวกับแท็บอัปเดตยอดคงเหลือของ Cash & Bank) */
-export async function UpdateTab({ today, date, goLive, portfolios, canWrite }: {
-  today: string; date?: string; goLive: string; portfolios: { asset_id: string; name: string }[]; canWrite: boolean;
-}) {
+/** ข้อมูลของแท็บ "อัปเดตยอดคงเหลือ" — หน้า Investments ดึงทันทีที่รู้รายชื่อพอร์ต พร้อมกับข้อมูลภาพรวม (30 ต.ค. 2026 · เดิมแท็บเริ่มดึงหลังภาพรวมเสร็จ) */
+export async function loadUpdate(portfolios: { asset_id: string }[]) {
   const supabase = await createClient();
   const ids = portfolios.map((p) => p.asset_id);
   const { data: hs } = ids.length
@@ -20,6 +18,14 @@ export async function UpdateTab({ today, date, goLive, portfolios, canWrite }: {
   const { data: extra } = list.length
     ? await supabase.from("investment_holdings").select("id,auto_price,valuation_mode").in("id", list.map((h) => h.id))
     : { data: [] };
+  return { list, extra };
+}
+
+/** แท็บ "อัปเดตยอดคงเหลือ": ราคา / ยอดตาม Statement ทุกพอร์ต (แบบเดียวกับแท็บอัปเดตยอดคงเหลือของ Cash & Bank) · data = ผลของ loadUpdate(portfolios) */
+export function UpdateTab({ data, today, date, goLive, portfolios, canWrite }: {
+  data: Awaited<ReturnType<typeof loadUpdate>>; today: string; date?: string; goLive: string; portfolios: { asset_id: string; name: string }[]; canWrite: boolean;
+}) {
+  const { list, extra } = data;
   const ex = new Map(((extra ?? []) as { id: string; auto_price: boolean | null; valuation_mode: string | null }[]).map((x) => [x.id, x]));
   const order = new Map(portfolios.map((p, i) => [p.asset_id, i]));
   const name = new Map(portfolios.map((p) => [p.asset_id, p.name]));

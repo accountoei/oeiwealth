@@ -50,35 +50,56 @@ type HRow = { id: string; name: string; holding_type: string; currency: string; 
 type Fcn = { holding_id: string; principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
 type Tx = { id: string; holding_id: string; transaction_type: string; transaction_date: string; amount: number | null;
   tax: number | null; notes: string | null; cash_movement_id: string | null };
+type CRow = { id: string; name: string; currency: string; is_default_cash: boolean; interest_rate: number | null; current_value: number | null;
+  investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
 
-/** แท็บ "บันทึกรับผลตอบแทน" */
-export async function DueTab({ month, today, goLive, showAsset, canWrite, canDelete }: {
-  month: string; today: string; goLive: string; showAsset: (assetId: string) => boolean; canWrite: boolean; canDelete: boolean;
+/** ข้อมูลของแท็บ "บันทึกรับผลตอบแทน" — หน้า Investments ดึงพร้อมกับข้อมูลภาพรวม (30 ต.ค. 2026)
+ *  เดิมแท็บเริ่มดึงหลังภาพรวมเสร็จ แล้วรอต่อกันอีก 3 ทอด → ตอนนี้ 2 สายดึงพร้อมกัน สายละ 2 ทอด:
+ *  ตราสารที่มีวันครบกำหนด → ข้อมูล FCN + รายการรับ · บัญชีเงินฝากในพอร์ต → ดอกเบี้ยที่รับแล้วในเดือนที่เลือก */
+export async function loadDue(month: string, canWrite: boolean, showAsset: (assetId: string) => boolean) {
+  const supabase = await createClient();
+  const none = Promise.resolve({ data: [] as never[] });
+  const { start, end } = monthRange(month);
+  const [{ holdings, fcns, txs }, { cashRows, cashInt }, { data: banks }] = await Promise.all([
+    (async () => {
+      const { data: hs } = await supabase.from("investment_holdings")
+        .select("id,name,holding_type,currency,status,maturity_date,current_value,face_value,interest_rate,coupon_frequency,income_cash_holding_id,income_bank_asset_id,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
+        .in("holding_type", ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"]).not("maturity_date", "is", null)
+        .is("deleted_at", null).is("investment_portfolios.deleted_at", null);
+      const holdings = ((hs as unknown as HRow[] | null) ?? []).filter((h) => h.investment_portfolios && showAsset(h.investment_portfolios.asset_id));
+      const ids = holdings.map((h) => h.id);
+      const [{ data: fcns }, { data: txs }] = await Promise.all([
+        ids.length ? supabase.from("fcn_details").select("holding_id,principal,coupon_rate,coupon_frequency,issue_date,trade_date").in("holding_id", ids).is("deleted_at", null) : none,
+        ids.length ? supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,notes,cash_movement_id").in("holding_id", ids)
+          .in("transaction_type", ["OPENING_BALANCE", "BUY", "COUPON", "INTEREST", "MATURITY"]).is("deleted_at", null) : none,
+      ]);
+      return { holdings, fcns, txs };
+    })(),
+    // ดอกเบี้ยเงินฝากในพอร์ต: รับแล้วในเดือนที่เลือก (สุทธิหลังภาษี)
+    (async () => {
+      const { data: cash } = await supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,current_value,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
+        .eq("holding_type", "CASH").eq("status", "ACTIVE").is("deleted_at", null).is("investment_portfolios.deleted_at", null).order("created_at");
+      const cashRows = ((cash as unknown as CRow[] | null) ?? []).filter((c) => c.investment_portfolios && showAsset(c.investment_portfolios.asset_id));
+      const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,fee,notes,cash_movement_id")
+        .in("holding_id", cashRows.map((c) => c.id)).eq("transaction_type", "INTEREST").gte("transaction_date", start).lte("transaction_date", end).is("deleted_at", null)
+        : { data: [] as (Tx & { fee: number | null })[] };
+      return { cashRows, cashInt };
+    })(),
+    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
+  ]);
+  return { holdings, fcns, txs, cashRows, cashInt, banks };
+}
+
+/** แท็บ "บันทึกรับผลตอบแทน" (data = ผลของ loadDue) */
+export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
+  data: Awaited<ReturnType<typeof loadDue>>; month: string; today: string; goLive: string; canWrite: boolean; canDelete: boolean;
 }) {
   // วันที่ตั้งต้นของฟอร์มบันทึกรับ = วันรับตามตาราง (ยังไม่ถึง → วันนี้ · ก่อน Go-live → วัน Go-live) · แก้ได้ในฟอร์ม
   const dueDefault = (due: string) => (due > today ? today : due < goLive ? goLive : due);
-  const supabase = await createClient();
-  const { data: hs } = await supabase.from("investment_holdings")
-    .select("id,name,holding_type,currency,status,maturity_date,current_value,face_value,interest_rate,coupon_frequency,income_cash_holding_id,income_bank_asset_id,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
-    .in("holding_type", ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"]).not("maturity_date", "is", null)
-    .is("deleted_at", null).is("investment_portfolios.deleted_at", null);
-  const holdings = ((hs as unknown as HRow[] | null) ?? []).filter((h) => h.investment_portfolios && showAsset(h.investment_portfolios.asset_id));
-  const ids = holdings.map((h) => h.id);
-  const none = Promise.resolve({ data: [] as never[] });
-  const [{ data: fcns }, { data: txs }, { data: banks }, { data: cash }] = await Promise.all([
-    ids.length ? supabase.from("fcn_details").select("holding_id,principal,coupon_rate,coupon_frequency,issue_date,trade_date").in("holding_id", ids).is("deleted_at", null) : none,
-    ids.length ? supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,notes,cash_movement_id").in("holding_id", ids)
-      .in("transaction_type", ["OPENING_BALANCE", "BUY", "COUPON", "INTEREST", "MATURITY"]).is("deleted_at", null) : none,
-    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
-    supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,current_value,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
-      .eq("holding_type", "CASH").eq("status", "ACTIVE").is("deleted_at", null).is("investment_portfolios.deleted_at", null).order("created_at"),
-  ]);
+  const { holdings, fcns, txs, cashRows, cashInt, banks } = data;
   const fcnOf = new Map(((fcns as Fcn[] | null) ?? []).map((f) => [f.holding_id, f]));
   const txOf = new Map<string, Tx[]>();
   ((txs as Tx[] | null) ?? []).forEach((t) => txOf.set(t.holding_id, [...(txOf.get(t.holding_id) ?? []), t]));
-  type CRow = { id: string; name: string; currency: string; is_default_cash: boolean; interest_rate: number | null; current_value: number | null;
-    investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
-  const cashRows = ((cash as unknown as CRow[] | null) ?? []).filter((c) => c.investment_portfolios && showAsset(c.investment_portfolios.asset_id));
 
   const { start, end } = monthRange(month);
   const curMonth = today.slice(0, 7);
@@ -121,9 +142,6 @@ export async function DueTab({ month, today, goLive, showAsset, canWrite, canDel
     holding: { id: h.id, name: h.name, holding_type: h.holding_type, currency: h.currency, status: h.status,
       income_cash_holding_id: h.income_cash_holding_id, income_bank_asset_id: h.income_bank_asset_id } })) }));
   // ดอกเบี้ยเงินฝากในพอร์ต: รับแล้วในเดือนที่เลือก (สุทธิหลังภาษี)
-  const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,fee,notes,cash_movement_id")
-    .in("holding_id", cashRows.map((c) => c.id)).eq("transaction_type", "INTEREST").gte("transaction_date", start).lte("transaction_date", end).is("deleted_at", null)
-    : { data: [] as (Tx & { fee: number | null })[] };
   const gotOf = new Map<string, number>();
   (cashInt ?? []).forEach((t) => gotOf.set(t.holding_id, (gotOf.get(t.holding_id) ?? 0) + Number(t.amount ?? 0) - Number(t.tax ?? 0) - Number(t.fee ?? 0)));
   const pfCash: PfCash[] = cashRows.map((c) => ({ id: c.id, name: c.name, currency: c.currency, is_default_cash: c.is_default_cash,

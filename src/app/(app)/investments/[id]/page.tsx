@@ -49,44 +49,59 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const tab = sp.tab === "ret" || sp.tab === "tx" ? sp.tab : "hold";   // แท็บ ถือครอง | ผลตอบแทน | รายการ
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
-    { data: unsettled }, { data: persons }] = await Promise.all([
-    supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
-    supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-    supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name"),
-    supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+  const canWrite = me.role !== "VIEWER";
+  // ดึงข้อมูลพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอต่อกัน 4 ทอด (ข้อมูลพอร์ต → รายการล่าสุด → รายการทั้งหมด → หมวด / บัตร)
+  //   ชุดที่ใช้รหัสแถวพอร์ต (pf.id) เริ่มทันทีที่ได้แถวพอร์ต · ไม่พบพอร์ต → ไม่ดึงชุดนั้น และขึ้นหน้าไม่พบเหมือนเดิม
+  const pfQ = supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle().then((r) => r);
+  const [[{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
+    { data: unsettled }, { data: persons }], [{ data: lastTx }, { data: txs }, { data: autoRows }],
+    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
+    Promise.all([
+      supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
+      pfQ,
+      supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
+      supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name"),
+      supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
+      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+      supabase.from("families").select("go_live_date,system_status").maybeSingle(),
+      supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
+      supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+    ]),
+    pfQ.then(async ({ data: p }) => p ? Promise.all([
+      // แท็บรายการ: เดือนเริ่มต้น = เดือนล่าสุดที่มีรายการ
+      supabase.from("investment_transactions").select("transaction_date").eq("portfolio_id", p.id)
+        .is("deleted_at", null).order("transaction_date", { ascending: false }).limit(1).maybeSingle(),
+      // โหลดรายการทั้งหมดของพอร์ตครั้งเดียว → กรองในเบราว์เซอร์ (ไม่โหลดหน้าใหม่)
+      supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", p.id)
+        .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(5000),
+      supabase.from("investment_holdings").select("id,auto_price,valuation_mode").eq("portfolio_id", p.id).is("deleted_at", null),
+    ]) : [{ data: null }, { data: null }, { data: null }] as const),
+    Promise.all([
+      supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
+        .not("source_transaction_id", "is", null).is("deleted_at", null),
+      cachedRpc<Ret[]>("investment_returns", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // ผลเดียวกับหน้ารวม (จำไว้ / จนมีการบันทึก)
+      cachedRpc<RetLocal[]>("investment_returns_local", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // คู่กับบรรทัดบน (ตารางเดียวกัน → ตัวเลขชุดเดียวกัน)
+      // รายการโอน ธนาคาร ↔ พอร์ต (แก้ไข / ใส่ยอดที่เข้าทีหลัง)
+      supabase.from("cash_movements")
+        .select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,fee,counter_amount,counter_currency,counter_fee,cash_holding_id,description")
+        .eq("is_derived", false).is("deleted_at", null)
+        .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
+        .order("movement_date", { ascending: false }).limit(2000),
+    ]),
+    // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
+    canWrite ? Promise.all([
+      supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
+      supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
+      supabase.from("v_card_balances").select("card_id,current_balance"),
+    ]) : [{ data: [] }, { data: [] }, { data: [] }] as const,
   ]);
   if (!a || !pf) notFound();
   // แท็บรายการ: กรองเดือน (เริ่มที่เดือนล่าสุดที่มีรายการ) / ประเภท / หลักทรัพย์-บัญชี
-  const { data: lastTx } = await supabase.from("investment_transactions").select("transaction_date").eq("portfolio_id", pf.id)
-    .is("deleted_at", null).order("transaction_date", { ascending: false }).limit(1).maybeSingle();
   const txMonth = sp.m === "all" || /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string)
     : (lastTx?.transaction_date ?? todayBangkok()).slice(0, 7);
   const txType = sp.type && /^[A-Z_]+$/.test(sp.type) ? sp.type : "";
   const txHolding = sp.h && (hs ?? []).some((x: { id: string }) => x.id === sp.h) ? sp.h : "";
-  // โหลดรายการทั้งหมดของพอร์ตครั้งเดียว → กรองในเบราว์เซอร์ (ไม่โหลดหน้าใหม่)
-  const txq = supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id);
-  const [{ data: txs }, { data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: autoRows }] = await Promise.all([
-    txq.order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(5000),
-    supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
-      .not("source_transaction_id", "is", null).is("deleted_at", null),
-    cachedRpc<Ret[]>("investment_returns", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // ผลเดียวกับหน้ารวม (จำไว้ / จนมีการบันทึก)
-    cachedRpc<RetLocal[]>("investment_returns_local", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // คู่กับบรรทัดบน (ตารางเดียวกัน → ตัวเลขชุดเดียวกัน)
-    // รายการโอน ธนาคาร ↔ พอร์ต (แก้ไข / ใส่ยอดที่เข้าทีหลัง)
-    supabase.from("cash_movements")
-      .select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,fee,counter_amount,counter_currency,counter_fee,cash_holding_id,description")
-      .eq("is_derived", false).is("deleted_at", null)
-      .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
-      .order("movement_date", { ascending: false }).limit(2000),
-    supabase.from("investment_holdings").select("id,auto_price,valuation_mode").eq("portfolio_id", pf.id).is("deleted_at", null),
-  ]);
 
-  const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const paths = [`/investments/${id}`, "/investments", "/financial/cash", "/income-expenses"];
   const today = todayBangkok();
@@ -139,12 +154,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   }
   const cashThb = shownCash.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const multiCash = [...cashByCcy.values()].some((x) => x.count > 1);
-  // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
-  const [{ data: catRows }, { data: cardRows }, { data: cardBal }] = canWrite ? await Promise.all([
-    supabase.from("ie_categories").select("name").eq("kind", "EXPENSE").eq("active", true).is("deleted_at", null).order("sort_order").order("name"),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
-    supabase.from("v_card_balances").select("card_id,current_balance"),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }];
   const curBal = new Map((cardBal ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
   const pay: PfPayCtx = {
     accounts: cashAccounts, categories: (catRows ?? []).map((c) => c.name as string), persons: persons ?? [],
