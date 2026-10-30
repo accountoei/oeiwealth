@@ -707,14 +707,14 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       {/* ============================================================ รายได้ */}
       <TabPanel id="income">
             {canWrite && inMonth && <TabPanelActions tab="income"><IncomeForm banks={banks} persons={persons ?? []} today={maxDate} minDate={minDate} subtypes={incSubs} /></TabPanelActions>}
-            <MonthTable kind="income" rows={incRows} empty="ยังไม่มีรายได้ หรือรายการที่คาดไว้ในเดือนนี้" initialSource={sp.it === "split" ? "split" : ""} />
+            <MonthTable kind="income" rows={incRows} focus={sp.hl} empty="ยังไม่มีรายได้ หรือรายการที่คาดไว้ในเดือนนี้" initialSource={sp.it === "split" ? "split" : ""} />
             <p className="text-xs text-slate-500">รายการที่คาดไว้มาจากรายได้ประจำ สัญญาเช่า ตารางผ่อนเงินให้กู้ และผลประโยชน์ประกัน · ระบบไม่สร้างรายได้เอง กดปุ่ม &ldquo;บันทึกรับ&rdquo; ในช่องสถานะด้วยยอดจริง</p>
       </TabPanel>
 
       {/* ============================================================ ค่าใช้จ่าย */}
       <TabPanel id="expense">
             {canWrite && inMonth && <TabPanelActions tab="expense"><ExpenseForm banks={banks} cards={cards} pfCash={pfCash} persons={persons ?? []} today={maxDate} minDate={minDate} categories={expCats} hints={expHints} /></TabPanelActions>}
-            <MonthTable kind="expense" rows={expRows} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
+            <MonthTable kind="expense" rows={expRows} focus={sp.hl} banks={payBanks} cards={payCards} initialSource={sp.et === "split" ? "split" : ""}
               empty={track === "NOT_TRACKED" ? "ยังไม่ได้บันทึกค่าใช้จ่าย และไม่มีรายการที่คาดไว้ในเดือนนี้" : "ยังไม่มีค่าใช้จ่ายในเดือนนี้"} />
             <p className="text-xs text-slate-500">ไม่บังคับบันทึก · บันทึกก้อนเดียว เช่น &ldquo;ค่าใช้จ่ายทั่วไปประจำเดือน&rdquo; ต่อบัญชีที่จ่าย แล้วแยกเฉพาะรายการสำคัญก็ได้
               · รายการที่คาดไว้มาจากค่าใช้จ่ายประจำ (ทั่วไป และของทรัพย์สิน) และตารางเบี้ยประกัน กดปุ่ม &ldquo;บันทึกจ่าย&rdquo; ในช่องสถานะด้วยยอดจริง

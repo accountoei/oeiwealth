@@ -21,7 +21,8 @@ export function HeaderTitle() {
   const match = (h: string) => (h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(`${h}/`));
   const best = NAV_HREFS.filter(match).sort((a, b) => b.length - a.length)[0];
   const group = NAV.find((g) => (g.match ?? g.href) === best);
-  return <div className="truncate text-lg font-semibold text-slate-900">{group?.label ?? ""}</div>;
+  const label = group?.label ?? (pathname === "/search" ? "ผลการค้นหา" : "");
+  return <div className="truncate text-lg font-semibold text-slate-900">{label}</div>;
 }
 
 const noSubscribe = () => () => {};
