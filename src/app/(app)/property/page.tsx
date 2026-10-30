@@ -61,80 +61,112 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   const { start, end } = monthRange(ym);
   const yearStart = `${ym.slice(0, 4)}-01-01`;
-  const pv = await loadPersonView(sp.p);
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const paths = ["/property"];
 
   const canWrite = me.role !== "VIEWER";
-  const [{ data, error }, { data: leases }, { data: fx }, { data: family }, sortMap, { data: rentTrack }, { data: costTrack },
-    { data: bankRows }, { data: cardRows }] = await Promise.all([
-    supabase.from("property_details")
-      .select("id,asset_id,property_type,usage_type,vacant_since,location_group,land_area_sq_wa,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
-      .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
-    supabase.from("v_lease_status").select("id,property_asset_id,tenant_name,unit_label,rent_amount,rent_currency,payment_frequency,start_date,end_date,lease_status")
-      .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]),
-    supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("families").select("go_live_date").maybeSingle(),
-    loadSortMap("assets"),
-    supabase.from("v_lease_rent_tracking").select("lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status").eq("income_period", start),
-    supabase.from("v_property_cost_tracking").select("utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status")
-      .eq("cost_period", start).order("utility_type"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+  // ดึงข้อมูลเป็น 2 รอบ (30 ต.ค. 2026) — เดิมรอทีละชุดต่อกันราว 9 ทอด → ช้ามากเมื่อ Supabase เพิ่งตื่น
+  //   รอบแรก = ทุกชุดที่ไม่ต้องรอใคร · รอบสอง = ชุดที่ต้องใช้รายชื่อทรัพย์สิน (ชุดที่ต้องรอกันอีกทอดอยู่ในวงเล็บของตัวเอง)
+  const [pv, [{ data, error }, { data: leases }, { data: fx }, { data: family }, sortMap, { data: rentTrack }, { data: costTrack },
+    { data: bankRows }, { data: cardRows }], [{ data: rentToRows }, { data: chargeRaw }]] = await Promise.all([
+    loadPersonView(sp.p),
+    Promise.all([
+      supabase.from("property_details")
+        .select("id,asset_id,property_type,usage_type,vacant_since,location_group,land_area_sq_wa,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
+        .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
+      supabase.from("v_lease_status").select("id,property_asset_id,tenant_name,unit_label,rent_amount,rent_currency,payment_frequency,start_date,end_date,lease_status")
+        .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]),
+      supabase.from("v_fx_status").select("currency,rate_to_thb"),
+      supabase.from("families").select("go_live_date").maybeSingle(),
+      loadSortMap("assets"),
+      supabase.from("v_lease_rent_tracking").select("lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status").eq("income_period", start),
+      supabase.from("v_property_cost_tracking").select("utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status")
+        .eq("cost_period", start).order("utility_type"),
+      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+      supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    ]),
+    // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน
+    Promise.all([
+      supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").is("deleted_at", null),
+      supabase.from("v_lease_utility_charges").select("id,lease_id,property_asset_id,name,cost_period,description,amount,currency").eq("status", "PENDING").order("cost_period"),
+    ]),
   ]);
   const allProps = (data as unknown as Prop[] | null) ?? [];
   const ids = allProps.map((p) => p.asset_id);
   const none = Promise.resolve({ data: [] as never[] });
-  const { data: utils } = allProps.length
-    ? await supabase.from("property_utilities").select("id,property_id,paid_from_asset_id,paid_from_credit_card_id").in("property_id", allProps.map((p) => p.id))
-    : { data: [] as { id: string; property_id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[] };
+  const props = bySort(allProps.filter((p) => pv.showAsset(p.asset_id)), (p) => p.asset_id, sortMap);
+  const shown = new Set(props.map((p) => p.asset_id));
+  type RT = { lease_id: string; property_asset_id: string; name: string; income_period: string; due_date: string | null; expected_amount: number; received_amount: number | null; currency: string; status: string };
+  const leaseIds = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.lease_id))];
+  const utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
+  const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
+  const [{ utils, utilProp, expU }, { taxDataYears, taxYears, taxYear, taxRaw }, { latestVal, partRaw },
+    [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }]] = await Promise.all([
+    // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของเดือนที่ผูกกับรายการเหล่านั้น
+    (async () => {
+      const { data: utils } = allProps.length
+        ? await supabase.from("property_utilities").select("id,property_id,paid_from_asset_id,paid_from_credit_card_id").in("property_id", allProps.map((p) => p.id))
+        : { data: [] as { id: string; property_id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[] };
+      const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
+        .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
+      const { data: expU } = utilProp.size
+        ? await supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", start).lte("date", end).is("deleted_at", null)
+        : await none;
+      return { utils, utilProp, expU };
+    })(),
+    // ภาษีที่ดิน: ปีที่เลือก (?ty=) · ค่าเริ่มต้น = ปีของเดือนที่เลือก → รายการภาษีของปีนั้น + ปีก่อน
+    (async () => {
+      const { data: taxYearRows } = ids.length ? await supabase.from("property_tax_lines").select("tax_year").in("asset_id", ids).is("deleted_at", null) : { data: [] };
+      const taxDataYears = [...new Set((taxYearRows ?? []).map((r) => Number(r.tax_year)))];
+      const taxYears = landTaxYears(today, taxDataYears);
+      const taxYear = taxYears.includes(Number(sp.ty)) ? Number(sp.ty)
+        : taxYears.includes(Number(ym.slice(0, 4))) ? Number(ym.slice(0, 4)) : Number(today.slice(0, 4));
+      const { data: taxRaw } = ids.length
+        ? await supabase.from("v_property_tax_lines").select("*").in("asset_id", ids).in("tax_year", [taxYear, taxYear - 1]).order("sort_order").order("created_at")
+        : await none;
+      return { taxDataYears, taxYears, taxYear, taxRaw };
+    })(),
+    // มูลค่าครั้งล่าสุดของแต่ละทรัพย์สิน → มูลค่าแยกตามส่วนประกอบของครั้งนั้น (แท็บอัปเดตมูลค่ากางรายแถว)
+    (async () => {
+      const { data: valRaw } = ids.length
+        ? await supabase.from("asset_valuations").select("id,asset_id").in("asset_id", ids).is("deleted_at", null)
+          .order("valuation_date", { ascending: false }).order("created_at", { ascending: false })
+        : await none;
+      const latestVal = new Map<string, string>();
+      ((valRaw ?? []) as { id: string; asset_id: string }[]).forEach((v) => { if (!latestVal.has(v.asset_id)) latestVal.set(v.asset_id, v.id); });
+      const { data: partRaw } = latestVal.size
+        ? await supabase.from("asset_valuation_parts").select("valuation_id,deed_id,value").in("valuation_id", [...latestVal.values()]).is("deleted_at", null)
+        : { data: [] as never[] };
+      return { latestVal, partRaw };
+    })(),
+    Promise.all([
+      ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split")
+        .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
+      ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
+      // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
+      ids.length ? supabase.from("v_property_market_latest").select("*").in("asset_id", ids) : none,
+      ids.length ? supabase.from("v_property_target_price").select("asset_id,min_price").in("asset_id", ids) : none,
+      // ส่วนประกอบ → แท็บอัปเดตมูลค่ากางรายแถว
+      ids.length ? supabase.from("property_deeds").select("id,property_id,sort_order,created_at,component_type,label,title_type,title_deed_no,land_no,land_area_sq_wa")
+        .in("property_id", allProps.map((p) => p.id)).is("deleted_at", null).is("ended_date", null).order("sort_order").order("created_at") : none,
+      // รับแล้ว / จ่ายแล้วของงวดที่เลือก (กดยอดเพื่อแก้ / ลบ · ด้านล่าง)
+      leaseIds.length ? supabase.from("income_transactions").select("id,lease_id,income_period,date,amount,tax,notes,currency").in("lease_id", leaseIds)
+        .eq("income_type", "RENT").eq("income_period", start).is("deleted_at", null).order("date") : none,
+      utilIds.length ? supabase.from("expense_items").select("id,property_utility_id,cost_period,date,amount,notes,currency,related_asset_id").in("property_utility_id", utilIds)
+        .eq("cost_period", start).is("deleted_at", null).order("date") : none,
+    ]),
+  ]);
   // "จ่ายจาก" ที่ตั้งไว้ในแต่ละรายการค่าใช้จ่ายประจำ → ค่าตั้งต้นของแท็บบันทึกค่าใช้จ่าย
   const utilPay = new Map(((utils ?? []) as { id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[])
     .map((u) => [u.id, u.paid_from_credit_card_id ? endpointValue({ kind: "card", id: u.paid_from_credit_card_id })
       : u.paid_from_asset_id ? endpointValue({ kind: "bank", id: u.paid_from_asset_id }) : ""]));
-  // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า
-  const [{ data: rentToRows }, { data: chargeRaw }] = await Promise.all([
-    supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").is("deleted_at", null),
-    supabase.from("v_lease_utility_charges").select("id,lease_id,property_asset_id,name,cost_period,description,amount,currency").eq("status", "PENDING").order("cost_period"),
-  ]);
   type LX = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
   const rentTo = new Map(((rentToRows ?? []) as LX[]).filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
   const rebillLeases = new Set(((rentToRows ?? []) as LX[]).filter((r) => r.utilities_billing === "REBILL").map((r) => r.id));
-  const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
-    .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
-  const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
-  // ภาษีที่ดิน: ปีที่เลือก (?ty=) · ค่าเริ่มต้น = ปีของเดือนที่เลือก
-  const { data: taxYearRows } = ids.length ? await supabase.from("property_tax_lines").select("tax_year").in("asset_id", ids).is("deleted_at", null) : { data: [] };
-  const taxDataYears = [...new Set((taxYearRows ?? []).map((r) => Number(r.tax_year)))];
-  const taxYears = landTaxYears(today, taxDataYears);
-  const taxYear = taxYears.includes(Number(sp.ty)) ? Number(sp.ty)
-    : taxYears.includes(Number(ym.slice(0, 4))) ? Number(ym.slice(0, 4)) : Number(today.slice(0, 4));
-  const [{ data: incRaw }, { data: expA }, { data: expU }, { data: taxRaw }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: valRaw }] = await Promise.all([
-    ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split")
-      .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
-    ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
-    utilProp.size ? supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", start).lte("date", end).is("deleted_at", null) : none,
-    ids.length ? supabase.from("v_property_tax_lines").select("*").in("asset_id", ids).in("tax_year", [taxYear, taxYear - 1])
-      .order("sort_order").order("created_at") : none,
-    // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
-    ids.length ? supabase.from("v_property_market_latest").select("*").in("asset_id", ids) : none,
-    ids.length ? supabase.from("v_property_target_price").select("asset_id,min_price").in("asset_id", ids) : none,
-    // ส่วนประกอบ + มูลค่าครั้งล่าสุด → แท็บอัปเดตมูลค่ากางรายแถว
-    ids.length ? supabase.from("property_deeds").select("id,property_id,sort_order,created_at,component_type,label,title_type,title_deed_no,land_no,land_area_sq_wa")
-      .in("property_id", allProps.map((p) => p.id)).is("deleted_at", null).is("ended_date", null).order("sort_order").order("created_at") : none,
-    ids.length ? supabase.from("asset_valuations").select("id,asset_id").in("asset_id", ids).is("deleted_at", null)
-      .order("valuation_date", { ascending: false }).order("created_at", { ascending: false }) : none,
-  ]);
-  const latestVal = new Map<string, string>();
-  ((valRaw ?? []) as { id: string; asset_id: string }[]).forEach((v) => { if (!latestVal.has(v.asset_id)) latestVal.set(v.asset_id, v.id); });
-  const { data: partRaw } = latestVal.size
-    ? await supabase.from("asset_valuation_parts").select("valuation_id,deed_id,value").in("valuation_id", [...latestVal.values()]).is("deleted_at", null)
-    : { data: [] as never[] };
 
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
-  const props = bySort(allProps.filter((p) => pv.showAsset(p.asset_id)), (p) => p.asset_id, sortMap);
   const share = (id: string) => pv.assetShare(id);
   const valueOf = (p: Prop) => (p.assets.current_value == null ? null : thb(p.assets.current_value, p.assets.currency) * share(p.asset_id));
   const active = props.filter((p) => p.assets.status === "ACTIVE");
@@ -145,7 +177,6 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const byProp = new Map<string, Lease[]>();
   ((leases as Lease[] | null) ?? []).forEach((l) => byProp.set(l.property_asset_id, [...(byProp.get(l.property_asset_id) ?? []), l]));
   const propName = new Map(allProps.map((p) => [p.asset_id, p.assets.name]));
-  const shown = new Set(props.map((p) => p.asset_id));
 
   // ---------------------------------------------------------------- รายได้ / ค่าใช้จ่าย (ส่วนของสมาชิกที่เลือก = ตามสัดส่วนความเป็นเจ้าของทรัพย์สิน)
   const baseOf = (x: { base_amount: number | null; amount: number; currency: string }) => (x.base_amount != null ? Number(x.base_amount) : thb(x.amount, x.currency));
@@ -229,7 +260,6 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const banks = ((bankRows ?? []) as { asset_id: string; name: string; currency: string }[]).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }));
   const lastBank = new Map<string, string>();
   [...incAll].sort((a, b) => a.date.localeCompare(b.date)).forEach((x) => { if (x.lease_id && x.received_to_asset_id) lastBank.set(x.lease_id, x.received_to_asset_id); });
-  type RT = { lease_id: string; property_asset_id: string; name: string; income_period: string; due_date: string | null; expected_amount: number; received_amount: number | null; currency: string; status: string };
   const rentRows: RentRow[] = ((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => ({
     key: `${r.lease_id}:${r.income_period}`, leaseId: r.lease_id, assetId: r.property_asset_id, property: propName.get(r.property_asset_id) ?? "",
     tenant: r.name, period: r.income_period, due: r.due_date, expected: Number(r.expected_amount), received: Number(r.received_amount ?? 0),
@@ -238,13 +268,6 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       ?? banks.find((b) => b.currency === r.currency)?.id ?? "",
   })).sort((a, b) => a.property.localeCompare(b.property, "th"));
   // รับแล้ว / จ่ายแล้วของงวดที่เลือก → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้าทรัพย์สิน · ตกลง 28 ต.ค. 2026)
-  const leaseIds = [...new Set(rentRows.map((r) => r.leaseId))], utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
-  const [{ data: rentGot }, { data: costPaid }] = await Promise.all([
-    leaseIds.length ? supabase.from("income_transactions").select("id,lease_id,income_period,date,amount,tax,notes,currency").in("lease_id", leaseIds)
-      .eq("income_type", "RENT").eq("income_period", start).is("deleted_at", null).order("date") : none,
-    utilIds.length ? supabase.from("expense_items").select("id,property_utility_id,cost_period,date,amount,notes,currency,related_asset_id").in("property_utility_id", utilIds)
-      .eq("cost_period", start).is("deleted_at", null).order("date") : none,
-  ]);
   type GotRow = { id: string; lease_id: string; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
   type PaidRow = { id: string; property_utility_id: string; date: string; amount: number; notes: string | null; currency: string; related_asset_id: string | null };
   rentRows.forEach((r) => {

@@ -75,6 +75,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 - `"use client"` files must not export constants used by server components — put shared constants/labels in `src/lib/format.ts`.
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.
 - Every page calls `requireAppUser()` and hides write controls for `VIEWER`; the database still enforces permissions.
+- Page data (after `requireAppUser()`): start every independent query in one `Promise.all`; a query that needs another's result chains on that one promise (`.then(...)` or an `(async () => { … })()` inside the same `Promise.all`), never a separate `await` round after it. Each extra round costs a full trip to Supabase, much slower when it has just woken up. A supabase-js query re-sends on every `.then`, so wrap one you reuse in `.then((r) => r)` first. Async tab components get their data from the page (see `loadDue` / `loadUpdate` in `investments/`), otherwise they only start after the page has finished.
 - Large files (documents) go **browser → `drive` Edge Function** directly (Vercel has a 4.5 MB body limit). Do not route uploads through server actions.
 - Session refresh + redirect-to-login lives in `src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; the exported function is `proxy`).
 - Keep `supabase/functions` excluded from `tsconfig`; type-check Edge Functions with `deno check`.

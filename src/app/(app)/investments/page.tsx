@@ -14,8 +14,8 @@ import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
-import { DueTab } from "./due";
-import { UpdateTab } from "./update";
+import { DueTab, loadDue } from "./due";
+import { UpdateTab, loadUpdate } from "./update";
 
 const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตยอดคงเหลือ"], ["due", "บันทึกรับผลตอบแทน"]] as const;
 
@@ -31,31 +31,58 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const tab = sp.tab === "due" || sp.tab === "update" ? sp.tab : "overview";
   const me = await requireAppUser();
   const supabase = await createClient();
-  const pv = await loadPersonView(sp.p);
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
-  const sortMap = await loadSortMap("assets");
-  const [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }] = await Promise.all([
-    supabase.from("v_portfolio_values").select("*").order("name"),
-    supabase.from("investment_portfolios").select("asset_id,institution,status,portfolio_type").is("deleted_at", null),
-    supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
-    supabase.from("families").select("go_live_date").maybeSingle(),
-    supabase.from("investment_transactions")
-      .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
-      .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(pv.personId ? 60 : 10),
-  ]);
-  const goLive = family?.go_live_date ?? "";
+  const canWrite = me.role !== "VIEWER";
   // เดือนที่เลือก (แถบบน · ตกลง 28 ต.ค. 2026): แท็บรับผลตอบแทน = เดือนนั้น · แท็บอัปเดตยอด = เริ่มที่สิ้นเดือนนั้น (ไม่เกินวันนี้) · ภาพรวม = ยอดล่าสุด
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  // ดึงข้อมูลพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอต่อกันหลายทอด (สมาชิก → ลำดับ → ข้อมูลพอร์ต → รายได้ → ผลตอบแทน → แท็บอัปเดตยอด / รับผลตอบแทน)
+  //   ชุดที่ต้องใช้ผลของอีกชุดเริ่มทันทีที่ชุดนั้นเสร็จ: รายการล่าสุด / แท็บรับผลตอบแทน ← สมาชิกที่เลือก · รายได้ลงทุน ← สมาชิก + วัน Go-live
+  //   ผลตอบแทน / แท็บอัปเดตยอด ← พอร์ตที่แสดง (สมาชิก + รายชื่อพอร์ต)
+  const pvQ = loadPersonView(sp.p);
+  const familyQ = supabase.from("families").select("go_live_date").maybeSingle().then((r) => r);
+  const pvsQ = supabase.from("v_portfolio_values").select("*").order("name").then((r) => r);
+  const pfsQ = supabase.from("investment_portfolios").select("asset_id,institution,status,portfolio_type").is("deleted_at", null).then((r) => r);
+  // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
+  const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
+  type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
+  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }], { data: income }, rets,
+    [openPfs, updateData], dueData] = await Promise.all([
+    pvQ,
+    loadSortMap("assets"),
+    Promise.all([
+      pvsQ,
+      pfsQ,
+      supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
+      familyQ,
+      pvQ.then(async (v) => await supabase.from("investment_transactions")
+        .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
+        .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(v.personId ? 60 : 10)),
+    ]),
+    // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
+    Promise.all([pvQ, familyQ]).then(async ([v, { data: f }]) => {
+      const since = f?.go_live_date || "1900-01-01";
+      return v.personId
+        ? await supabase.from("v_income_by_person").select("base_amount:base_amount_share").eq("person_id", v.personId)
+            .eq("is_investment_income", true).gte("date", since)
+        : await supabase.from("income_transactions").select("base_amount")
+            .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", since);
+    }),
+    // ผลตอบแทนรายพอร์ต (คำนวณหนัก · ทุกพอร์ตทุกครั้งที่เปิด) → จำผลไว้ 10 นาที / จนมีการบันทึก (src/lib/data-cache.ts)
+    shownQ.then((ps) => Promise.all(ps.map(async (p) =>
+      [p.asset_id, (await cachedRpc<R[]>("investment_returns", { p_portfolio_asset_id: p.asset_id })) ?? []] as const))),
+    // แท็บอัปเดตยอด: พอร์ตที่แสดง ยกเว้นพอร์ตที่ปิดแล้ว
+    Promise.all([shownQ, pfsQ]).then(async ([ps, { data }]) => {
+      const status = new Map((data ?? []).map((p) => [p.asset_id, p.status as string]));
+      const open = ps.filter((p) => status.get(p.asset_id) !== "CLOSED").map((p) => ({ asset_id: p.asset_id, name: p.name }));
+      return [open, await loadUpdate(open)] as const;
+    }),
+    pvQ.then((v) => loadDue(ym, canWrite, v.showAsset)),
+  ]);
+  const goLive = family?.go_live_date ?? "";
   const monthEnd = monthRange(ym).end;
   const months = monthOptions(goLive, today, 12, ym);
-  // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
-  const { data: income } = pv.personId
-    ? await supabase.from("v_income_by_person").select("base_amount:base_amount_share").eq("person_id", pv.personId)
-        .eq("is_investment_income", true).gte("date", goLive || "1900-01-01")
-    : await supabase.from("income_transactions").select("base_amount")
-        .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", goLive || "1900-01-01");
 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน · มูลค่า × สัดส่วน
   const sh = (assetId: string) => pv.assetShare(assetId);
@@ -65,16 +92,15 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     display_value: p.portfolio_value == null ? null : (Number(p.portfolio_value) + Number(p.in_transit ?? 0)) * sh(p.asset_id),
     thb_value: p.thb_value == null ? null : Number(p.thb_value) * sh(p.asset_id),
     in_transit_thb: p.in_transit_thb == null ? null : Number(p.in_transit_thb) * sh(p.asset_id) }));
-  type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  // ผลตอบแทนรายพอร์ต (คำนวณหนัก · ทุกพอร์ตทุกครั้งที่เปิด) → จำผลไว้ 10 นาที / จนมีการบันทึก (src/lib/data-cache.ts)
-  const retRows = await Promise.all(list.map(async (p) => {
-    const rs = (await cachedRpc<R[]>("investment_returns", { p_portfolio_asset_id: p.asset_id })) ?? [];
+  const retOf = new Map<string, R[]>(rets);
+  const retRows = list.map((p) => {
+    const rs = retOf.get(p.asset_id) ?? [];
     const sum = (k: keyof R) => rs.reduce((t, r) => t + Number(r[k] ?? 0), 0);
     const k = sh(p.asset_id);
     return { asset_id: p.asset_id, name: p.name, unreal: sum("unrealized_thb") * k, unrealFx: sum("unrealized_fx_thb") * k, real: sum("realized_thb") * k,
       realFx: sum("realized_fx_thb") * k, income: (sum("income_thb") - sum("fees_thb")) * k, total: sum("total_thb") * k,
       cost: rs.filter((x) => x.status === "ACTIVE").reduce((t, x) => t + Number(x.cost_thb ?? 0), 0) * k };
-  }));
+  });
   const recent = (txs ?? []).filter((t) => {
     const pa = (Array.isArray(t.investment_portfolios) ? t.investment_portfolios[0] : t.investment_portfolios) as { asset_id: string } | null;
     return !pa || pv.showAsset(pa.asset_id);
@@ -198,13 +224,12 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       </TabPanel>
 
       <TabPanel id="update">
-        <UpdateTab today={today} date={sp.d ?? (monthEnd < today ? monthEnd : undefined)} goLive={goLive} canWrite={me.role !== "VIEWER"}
-          portfolios={list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").map((p) => ({ asset_id: p.asset_id, name: p.name }))} />
+        <UpdateTab data={updateData} today={today} date={sp.d ?? (monthEnd < today ? monthEnd : undefined)} goLive={goLive} canWrite={canWrite}
+          portfolios={openPfs} />
       </TabPanel>
 
       <TabPanel id="due">
-        <DueTab month={ym} today={today} goLive={goLive}
-          showAsset={(x) => pv.showAsset(x)} canWrite={me.role !== "VIEWER"} canDelete={canOrder} />
+        <DueTab data={dueData} month={ym} today={today} goLive={goLive} canWrite={canWrite} canDelete={canOrder} />
       </TabPanel>
     </div>
     </TabsProvider>

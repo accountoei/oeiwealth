@@ -57,80 +57,108 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const { start, end } = monthRange(ym);
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
-  const pv = await loadPersonView(sp.p, { liabilities: true });
-  // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (กติกาเดียวกับ Dashboard)
-  //   ระบุคนเอง → 100% · ไม่ระบุ: ค่าใช้จ่าย = เจ้าของบัตร / เจ้าของบัญชีที่จ่าย · รายได้ = เจ้าของทรัพย์สิน / เจ้าของบัญชีที่รับ
-  const [{ data: incShares }, { data: expShares }] = pv.personId ? await Promise.all([
-    supabase.from("v_income_by_person").select("income_id,share_percent,amount_share,tax_share,base_amount_share")
-      .eq("person_id", pv.personId).gte("date", start).lte("date", end),
-    supabase.from("v_expense_by_person").select("expense_item_id,share_percent,amount_share,base_amount_share")
-      .eq("person_id", pv.personId).gte("date", start).lte("date", end),
-  ]) : [{ data: null }, { data: null }];
+  // ดึงข้อมูลทุกชุดพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอทีละชุดต่อกันราว 10 ทอด → ช้ามากเมื่อ Supabase เพิ่งตื่น
+  //   ชุดที่ต้องใช้ผลของอีกชุดเริ่มทันทีที่ชุดนั้นเสร็จ: ส่วนแบ่งรายบุคคล ← สมาชิกที่เลือก · ยอดอัปเดตในเดือน ← รายชื่อบัญชี
+  const pvQ = loadPersonView(sp.p, { liabilities: true });
+  const banksQ = supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name").then((r) => r);
+  const [pv, [{ data: incShares }, { data: expShares }],
+    [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
+      { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
+      { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: loanRows }, { data: insRows }],
+    [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc }, { data: rexpRows }, { data: rexpTplRaw }, { data: leaseRaw }],
+    [pfCash, { data: pfCardPays }], { data: hintRows }, { data: propRows }, { data: openRaw }, { data: stmtRaw }] = await Promise.all([
+    pvQ,
+    // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (กติกาเดียวกับ Dashboard)
+    //   ระบุคนเอง → 100% · ไม่ระบุ: ค่าใช้จ่าย = เจ้าของบัตร / เจ้าของบัญชีที่จ่าย · รายได้ = เจ้าของทรัพย์สิน / เจ้าของบัญชีที่รับ
+    pvQ.then(async (v) => v.personId ? Promise.all([
+      supabase.from("v_income_by_person").select("income_id,share_percent,amount_share,tax_share,base_amount_share")
+        .eq("person_id", v.personId).gte("date", start).lte("date", end),
+      supabase.from("v_expense_by_person").select("expense_item_id,share_percent,amount_share,base_amount_share")
+        .eq("person_id", v.personId).gte("date", start).lte("date", end),
+    ]) : [{ data: null }, { data: null }] as const),
+    Promise.all([
+      supabase.from("families").select("go_live_date").maybeSingle(),
+      banksQ,
+      supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_cash_holding_id,autopay_mode")
+        .is("deleted_at", null).neq("status", "CLOSED"),
+      supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
+      supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+      supabase.from("v_fx_status").select("currency,rate_to_thb"),
+      supabase.from("income_transactions").select("id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name)")
+        .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
+      supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
+      supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
+        .is("deleted_at", null).order("name"),
+      supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
+      supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
+        .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
+      supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
+      supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
+      supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id")
+        .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
+      supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons!insurance_policies_person_id_fkey(name))")
+        .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
+      // ค่าใช้จ่ายประจำ (อสังหาฯ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+      supabase.from("v_property_cost_tracking")
+        .select("utility_id,property_asset_id,property_name,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
+        .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
+      supabase.from("property_utilities")
+        .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,property_type,assets!inner(name,status,deleted_at))")
+        .is("deleted_at", null).eq("active", true).not("frequency", "is", null),
+      // งวดเงินให้กู้: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+      supabase.from("v_loan_schedule_status")
+        .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
+        .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
+        .neq("status", "WRITTEN_OFF").order("due_date"),
+      // งวดเบี้ยประกัน / ผลประโยชน์: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+      supabase.from("v_insurance_schedule_status")
+        .select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,remaining,status,insurer,policy_no,person_id,payer_person_id,cash_value_asset_id")
+        .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
+        .neq("status", "CLOSED").order("due_date"),
+    ]),
+    // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
+    Promise.all([
+      supabase.from("v_card_balances").select("card_id,current_balance"),
+      supabase.from("ie_categories").select("id,kind,name,sort_order,active").is("deleted_at", null).order("sort_order").order("name"),
+      supabase.from("expense_items").select("expense_category").is("deleted_at", null).not("expense_category", "is", null),
+      supabase.from("income_transactions").select("income_subtype").is("deleted_at", null).not("income_subtype", "is", null),
+      // ค่าใช้จ่ายประจำทั่วไป: งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
+      supabase.from("v_recurring_expense_tracking")
+        .select("template_id,name,expense_category,person_id,pay_via,pay_from_asset_id,pay_from_credit_card_id,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
+        .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
+      supabase.from("recurring_expense_templates")
+        .select("id,name,expense_category,person_id,expected_amount,currency,frequency,due_day,pay_via,pay_from_asset_id,pay_from_credit_card_id,start_date,end_date,active,notes,persons(name)")
+        .is("deleted_at", null).order("name"),
+      // ค่าเช่าจากสัญญาเช่าที่ยังมีผล (ดูอย่างเดียวในแท็บตั้งค่า · แก้ที่หน้าทรัพย์สิน)
+      supabase.from("v_lease_status")
+        .select("id,property_asset_id,unit_label,tenant_name,rent_amount,rent_currency,payment_frequency,payment_due_day,start_date,end_date,lease_status")
+        .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]).order("end_date"),
+    ]),
+    // บัญชีเงินฝากในพอร์ต (ค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ต) + จ่ายบัตรจากพอร์ตเดือนนี้
+    Promise.all([
+      loadPfCash(supabase),
+      supabase.from("investment_transactions").select("to_credit_card_id").eq("transaction_type", "PAYMENT").not("to_credit_card_id", "is", null)
+        .is("deleted_at", null).gte("transaction_date", start).lte("transaction_date", end),
+    ]),
+    // เดาหมวด / บัญชีจากรายการค่าใช้จ่ายที่เคยบันทึกเอง (ไม่รวมรายการจากหน้าอื่น / ก้อนรอแยก)
+    supabase.from("expense_items")
+      .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
+      .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
+      .is("insurance_schedule_line_id", null).is("property_utility_id", null)
+      .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500),
+    // บ้าน / ที่ดินที่ถืออยู่ (ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค เลือกทรัพย์สินได้ · ตกลง 30 ต.ค. 2026)
+    supabase.from("property_details").select("asset_id,assets!inner(name,status,deleted_at)").is("deleted_at", null),
+    // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี
+    supabase.rpc("bank_balances_at", { p_date: new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10) }),
+    // ยอดอัปเดตคงเหลือของแต่ละบัญชีในเดือนนี้ (เริ่มทันทีที่ได้รายชื่อบัญชี)
+    banksQ.then(async ({ data }) => {
+      const ids = ((data ?? []) as { asset_id: string }[]).map((b) => b.asset_id);
+      return ids.length ? await supabase.from("asset_valuations").select("id,asset_id,valuation_date,value")
+        .in("asset_id", ids).is("deleted_at", null).gte("valuation_date", start).lte("valuation_date", end) : { data: [] };
+    }),
+  ]);
   const incShare = new Map((incShares ?? []).map((r) => [r.income_id as string, r]));
   const expShare = new Map((expShares ?? []).map((r) => [r.expense_item_id as string, r]));
-
-  const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
-    { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-    { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: loanRows }, { data: insRows }] = await Promise.all([
-    supabase.from("families").select("go_live_date").maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_cash_holding_id,autopay_mode")
-      .is("deleted_at", null).neq("status", "CLOSED"),
-    supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
-    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("income_transactions").select("id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name)")
-      .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
-    supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
-    supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
-      .is("deleted_at", null).order("name"),
-    supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-    supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id)")
-      .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
-    supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
-    supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id")
-      .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons!insurance_policies_person_id_fkey(name))")
-      .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
-    // ค่าใช้จ่ายประจำ (อสังหาฯ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-    supabase.from("v_property_cost_tracking")
-      .select("utility_id,property_asset_id,property_name,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
-      .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
-    supabase.from("property_utilities")
-      .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,property_type,assets!inner(name,status,deleted_at))")
-      .is("deleted_at", null).eq("active", true).not("frequency", "is", null),
-    // งวดเงินให้กู้: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-    supabase.from("v_loan_schedule_status")
-      .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
-      .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
-      .neq("status", "WRITTEN_OFF").order("due_date"),
-    // งวดเบี้ยประกัน / ผลประโยชน์: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-    supabase.from("v_insurance_schedule_status")
-      .select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,remaining,status,insurer,policy_no,person_id,payer_person_id,cash_value_asset_id")
-      .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
-      .neq("status", "CLOSED").order("due_date"),
-  ]);
-
-  // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
-  const [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc },
-    { data: rexpRows }, { data: rexpTplRaw }, { data: leaseRaw }] = await Promise.all([
-    supabase.from("v_card_balances").select("card_id,current_balance"),
-    supabase.from("ie_categories").select("id,kind,name,sort_order,active").is("deleted_at", null).order("sort_order").order("name"),
-    supabase.from("expense_items").select("expense_category").is("deleted_at", null).not("expense_category", "is", null),
-    supabase.from("income_transactions").select("income_subtype").is("deleted_at", null).not("income_subtype", "is", null),
-    // ค่าใช้จ่ายประจำทั่วไป: งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-    supabase.from("v_recurring_expense_tracking")
-      .select("template_id,name,expense_category,person_id,pay_via,pay_from_asset_id,pay_from_credit_card_id,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
-      .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
-    supabase.from("recurring_expense_templates")
-      .select("id,name,expense_category,person_id,expected_amount,currency,frequency,due_day,pay_via,pay_from_asset_id,pay_from_credit_card_id,start_date,end_date,active,notes,persons(name)")
-      .is("deleted_at", null).order("name"),
-    // ค่าเช่าจากสัญญาเช่าที่ยังมีผล (ดูอย่างเดียวในแท็บตั้งค่า · แก้ที่หน้าทรัพย์สิน)
-    supabase.from("v_lease_status")
-      .select("id,property_asset_id,unit_label,tenant_name,rent_amount,rent_currency,payment_frequency,payment_due_day,start_date,end_date,lease_status")
-      .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]).order("end_date"),
-  ]);
   // หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเองในแท็บ "ตั้งค่า")
   const useCount = new Map<string, number>();
   (catUseExp ?? []).forEach((r) => { const k = `E:${r.expense_category}`; useCount.set(k, (useCount.get(k) ?? 0) + 1); });
@@ -150,24 +178,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: cardCur.get(c.id) ?? Number(c.outstanding_balance),
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const liabs = (liabRaw as Liab[] | null) ?? [];
-  // บัญชีเงินฝากในพอร์ต (ค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ต) + จ่ายบัตรจากพอร์ตเดือนนี้
-  const [pfCash, { data: pfCardPays }] = await Promise.all([
-    loadPfCash(supabase),
-    supabase.from("investment_transactions").select("to_credit_card_id").eq("transaction_type", "PAYMENT").not("to_credit_card_id", "is", null)
-      .is("deleted_at", null).gte("transaction_date", start).lte("transaction_date", end),
-  ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
   const name = new Map<string, string>([...banks.map((b) => [b.asset_id, b.name] as [string, string]),
     ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string]),
     ...pfCash.map((h) => [h.id, `พอร์ต ${h.label}`] as [string, string])]);
   const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
-  // เดาหมวด / บัญชีจากรายการค่าใช้จ่ายที่เคยบันทึกเอง (ไม่รวมรายการจากหน้าอื่น / ก้อนรอแยก)
-  const { data: hintRows } = await supabase.from("expense_items")
-    .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
-    .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
-    .is("insurance_schedule_line_id", null).is("property_utility_id", null)
-    .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500);
   const expHints = buildHints(hintRows ?? [], expCats);
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
   const claims: Claim[] = (claimsRaw ?? []).map((c) => {
@@ -255,9 +271,17 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     || [m.to_credit_card_id, m.to_liability_id].some((id) => id && pv.showLiability(id)));
   // ชื่อทรัพย์สินอื่นในรายการเงิน (เงินให้กู้ / พอร์ต / ทรัพย์สิน / มูลค่าเวนคืน)
   const otherIds = [...new Set(moveList.flatMap((m) => [m.from_asset_id, m.to_asset_id]).filter((x): x is string => !!x && !name.has(x)))];
-  const { data: otherAssets } = otherIds.length
-    ? await supabase.from("assets").select("id,name,asset_type").in("id", otherIds)
-    : { data: [] as { id: string; name: string; asset_type: string }[] };
+  // สัญญาเช่าที่ยังมีผล (รายบุคคล = ทรัพย์สินที่คนนั้นถือ) → ชื่อ / ประเภททรัพย์สินดึงพร้อมกับชื่อทรัพย์สินอื่นด้านบน
+  type Lease = { id: string; property_asset_id: string; unit_label: string | null; tenant_name: string; rent_amount: number; rent_currency: string;
+    payment_frequency: string; payment_due_day: number | null; start_date: string; end_date: string; lease_status: string };
+  const leases = ((leaseRaw as Lease[] | null) ?? []).filter((l) => pv.showAsset(l.property_asset_id));
+  const leaseIds = [...new Set(leases.map((l) => l.property_asset_id))];
+  const [{ data: otherAssets }, { data: leaseProps }] = await Promise.all([
+    otherIds.length ? supabase.from("assets").select("id,name,asset_type").in("id", otherIds)
+      : { data: [] as { id: string; name: string; asset_type: string }[] },
+    leaseIds.length ? supabase.from("property_details").select("asset_id,property_type,assets!inner(name)").in("asset_id", leaseIds)
+      : { data: [] as { asset_id: string; property_type: string; assets: unknown }[] },
+  ]);
   // บัตรตัดบัญชีอัตโนมัติ: งวดของเดือนนี้ที่ยังไม่มีรายการจ่ายบัตร → ถึงวันครบชำระแล้ว = "รอยืนยัน" · ยังไม่ถึง = "จะตัด"
   const lastDay = Number(end.slice(8, 10));
   const autopay = (cardsRaw ?? [])
@@ -273,11 +297,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     .filter((x) => !x.paid && (!goLive || x.due >= goLive) && (x.minimum || x.balance > 0))
     .sort((a, b) => a.due.localeCompare(b.due));
   const autopayPending = autopay.filter((x) => x.due <= today);
-  const bankIds = new Set(banks.map((b) => b.asset_id));
   const incById = new Map((incomes ?? []).map((i) => [i.id as string, i]));
   const expById = new Map((items ?? []).map((i) => [i.id as string, i]));
   // บ้าน / ที่ดินที่ถืออยู่ (ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค เลือกทรัพย์สินได้ · ตกลง 30 ต.ค. 2026)
-  const { data: propRows } = await supabase.from("property_details").select("asset_id,assets!inner(name,status,deleted_at)").is("deleted_at", null);
   const properties = ((propRows ?? []) as unknown as { asset_id: string; assets: { name: string; status: string; deleted_at: string | null } }[])
     .filter((p) => !p.assets.deleted_at && p.assets.status === "ACTIVE").map((p) => ({ id: p.asset_id, name: p.assets.name }))
     .sort((a, b) => a.name.localeCompare(b.name, "th"));
@@ -289,9 +311,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const moveRows = (withActions: boolean): MoveRow[] => kit.buildMoveRows(moveList as Move[], withActions);
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
   // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี → ยอดคงเหลือหลังแต่ละรายการ เมื่อกรองทีละบัญชี
-  const { data: openRaw } = await supabase.rpc("bank_balances_at", { p_date: new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10) });
-  const { data: stmtRaw } = bankIds.size ? await supabase.from("asset_valuations").select("id,asset_id,valuation_date,value")
-    .in("asset_id", [...bankIds]).is("deleted_at", null).gte("valuation_date", start).lte("valuation_date", end) : { data: [] };
   const statements: Record<string, { key: string; date: string; value: number; label: string }[]> = {};
   (stmtRaw ?? []).forEach((v) => { (statements[v.asset_id as string] ??= []).push({ key: `v${v.id}`, date: v.valuation_date as string, value: Number(v.value), label: "อัปเดตยอดคงเหลือ" }); });
   const openings = Object.fromEntries(((openRaw as { asset_id: string; calculated: number | null }[] | null) ?? [])
@@ -558,13 +577,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     }),
   ];
   // ค่าเช่าจากสัญญาเช่า (ดูอย่างเดียว · แก้ที่หน้าทรัพย์สิน) · รายบุคคล = ทรัพย์สินที่คนนั้นถือ (ยอดตามสัดส่วน)
-  type Lease = { id: string; property_asset_id: string; unit_label: string | null; tenant_name: string; rent_amount: number; rent_currency: string;
-    payment_frequency: string; payment_due_day: number | null; start_date: string; end_date: string; lease_status: string };
-  const leases = ((leaseRaw as Lease[] | null) ?? []).filter((l) => pv.showAsset(l.property_asset_id));
-  const leaseIds = [...new Set(leases.map((l) => l.property_asset_id))];
-  const { data: leaseProps } = leaseIds.length
-    ? await supabase.from("property_details").select("asset_id,property_type,assets!inner(name)").in("asset_id", leaseIds)
-    : { data: [] as { asset_id: string; property_type: string; assets: unknown }[] };
   const propOf = new Map((leaseProps ?? []).map((x) => [x.asset_id as string, { type: x.property_type as string, name: pname(x.assets) ?? "ทรัพย์สิน" }]));
   const leaseRowsView: PropCostRow[] = leases.map((l) => {
     const k = pv.assetShare(l.property_asset_id);
