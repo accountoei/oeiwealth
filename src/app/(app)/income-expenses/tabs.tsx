@@ -1,6 +1,6 @@
 "use client";
 
-import { TabActionsSlot } from "@/components/TabActions";
+import { TabActions, TabActionsSlot } from "@/components/TabActions";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -66,6 +66,12 @@ export function TabPanel({ id, children }: { id: string; children: ReactNode }) 
   return <div hidden={active !== id} className="space-y-6">{children}</div>;
 }
 
+/** ปุ่ม "+ บันทึก…" ของแท็บ → ขวาสุดของแถวแท็บหลัก · ขึ้นเฉพาะตอนเปิดแท็บนั้น (ตกลง 30 ต.ค. 2026) */
+export function TabPanelActions({ tab, children }: { tab: string; children: ReactNode }) {
+  const { active } = useContext(Ctx);
+  return active === tab ? <TabActions>{children}</TabActions> : null;
+}
+
 /** ลิงก์ไปแท็บอื่นในหน้านี้ · สลับแท็บทันที (ไม่ต้องรอโหลด / Refresh) */
 export function TabLink({ tab, href, className, anchor, sub, children }: {
   tab: string; href: string; className?: string;
@@ -98,8 +104,10 @@ export function ScrollToHash({ id }: { id: string }) {
 // แท็บย่อยในแท็บ (เช่น ที่ต้องได้รับ / บันทึกแล้ว / รายได้ประจำ) · จำไว้ใน URL (?it= / ?et=)
 const SubCtx = createContext<{ active: string; pick: (k: string) => void }>({ active: "", pick: () => {} });
 
-export function SubTabs({ param, initial, home, tabs, children }: {
+export function SubTabs({ param, initial, home, tabs, actions = {}, children }: {
   param: string; initial: string; tabs: [string, string][]; children: ReactNode;
+  /** ปุ่มของแต่ละแท็บย่อย → ขวาสุดของแถวแท็บย่อย · ขึ้นเฉพาะแท็บย่อยที่เปิดอยู่ */
+  actions?: Record<string, ReactNode>;
   /** แท็บย่อยที่เปิดเมื่อกดเปลี่ยนแท็บหลัก (ค่าเริ่มต้น = แท็บแรก) */
   home?: string;
 }) {
@@ -130,11 +138,14 @@ export function SubTabs({ param, initial, home, tabs, children }: {
   return (
     <SubCtx.Provider value={{ active, pick }}>
       <div className="space-y-4">
-        <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
-          {tabs.map(([k, l]) => (
-            <button key={k} type="button" onClick={() => pick(k)}
-              className={`rounded-md px-3 py-1.5 text-sm ${active === k ? "bg-white font-medium text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>{l}</button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+            {tabs.map(([k, l]) => (
+              <button key={k} type="button" onClick={() => pick(k)}
+                className={`rounded-md px-3 py-1.5 text-sm ${active === k ? "bg-white font-medium text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>{l}</button>
+            ))}
+          </div>
+          {actions[active] && <div className="ml-auto flex items-center gap-2">{actions[active]}</div>}
         </div>
         {children}
       </div>
