@@ -72,12 +72,15 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
     else { setP(amt(o.p)); setI(amt(o.i)); setTotal(amt(o.p + o.i)); }
   };
   const range = now && now.nos.length ? (now.nos.length === 1 ? `งวด ${now.nos[0]}` : `งวด ${now.nos[0]}–${now.nos.at(-1)}`) : "";
-  const extra = dueP != null ? Math.round((num(p) - dueP) * 100) / 100 : 0;
+  // ยอดที่ถึงกำหนด / เงินต้นคงเหลือ ณ ตอนกดบันทึก — หลังบันทึกหน้าโหลดใหม่ (งวดที่รับแล้วหายจากยอดค้าง) ห้ามเทียบกับยอดใหม่
+  const [sent, setSent] = useState<{ dueP?: number; left?: number } | null>(null);
+  const extra = (sent ? sent.dueP : dueP) != null ? Math.round((num(p) - (sent ? sent.dueP! : dueP!)) * 100) / 100 : 0;
+  const leftAtSave = sent ? sent.left : outstanding;
   const [dismissed, setDismissed] = useState(false);
   const [closeState, closeAction, closing] = useActionState<ActionState, FormData>(closeLoan, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)}
     className={activeCls(small ? ROW_BTN : btn)}>{button}</button>;
-  if (state.ok && outstanding != null && num(p) >= outstanding - 0.005 && !dismissed && open) {
+  if (state.ok && leftAtSave != null && num(p) >= leftAtSave - 0.005 && !dismissed && open) {
     // รับเงินต้นครบ → ถามต่อในหน้าต่างเดิมว่าจะปิดสัญญาไหม (ไม่ปิดเอง)
     return present(trigger, (
       <form action={closeAction} data-keep-open className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left text-sm">
@@ -115,7 +118,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   if (state.ok && small && !open) return <Flash on={state} className="text-xs text-emerald-700" />;
   if (!open) return trigger;
   return present(trigger, (
-    <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">
+    <form action={action} onSubmit={() => setSent({ dueP, left: outstanding })} className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-left">
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">{title ?? "รับชำระเงินกู้"}</h3>
       <div className="grid gap-3 md:grid-cols-3">
