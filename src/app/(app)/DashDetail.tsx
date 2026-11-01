@@ -18,7 +18,7 @@ export function DetailBox({ title, hint, info, children, popupTitle, start, pers
   const [open, setOpen] = useState(false);
   return (
     <>
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4">
         <div className="mb-2 flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-1">
             <h2 className="text-base font-semibold text-slate-900">{title}</h2>

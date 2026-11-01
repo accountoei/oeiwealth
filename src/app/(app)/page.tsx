@@ -3,7 +3,7 @@ import { Suspense, cache, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { baht, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { baht, millions, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { DetailBox } from "./DashDetail";
@@ -116,7 +116,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   if (personId) { void getItems(start, personId); void getPersonDash(start, personId); void getPersonBase(start, personId); } else void getFamilyItems(start);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* ชื่อครอบครัวอยู่มุมซ้ายบนของเมนูแล้ว · คำอธิบายย้ายเป็น ⓘ ข้างชื่อเมนู (ตกลง 28 ต.ค. 2026) */}
       <PageInfo>
         <Suspense fallback={<>ณ {thDate(today)}</>}><AsOf start={start} isCurrent={isCurrent} today={today} /></Suspense>
@@ -125,14 +125,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <HeaderFilters><DashboardFilters persons={persons.map((x) => ({ id: x.id, name: x.name }))} months={months}
         person={personId} month={ym} /></HeaderFilters>
 
-      {/* ------------------------------------------------ การ์ดหลัก: Net Worth (ใหญ่) → สินทรัพย์ → หนี้สิน */}
-      <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} hero={i === 0} />)}</section>}>
+      {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → Net Worth (ขวาสุด · เด่นด้วยพื้นสีอ่อน) */}
+      <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} hero={i === 2} />)}</section>}>
         <TopCards start={start} personId={personId} personName={personName} />
       </Suspense>
 
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ กราฟ */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className={`min-w-0 truncate ${H2}`}>Net Worth {personName || "ทั้งครอบครัว"}</h2>
             <nav className="flex flex-wrap gap-1" aria-label="ช่วงเวลากราฟ">
@@ -158,7 +158,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
           {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
           <DetailBox start={start} personId={personId} ym={ym}
-            title={<>Net Worth เปลี่ยนเพราะอะไร {thMonth(start)}<span className="block text-xs font-normal text-slate-500">{personName || "ทั้งครอบครัว"}</span></>}
+            title={<>Net Worth เปลี่ยนเพราะอะไร<span className="block text-xs font-normal text-slate-500">{thMonth(start)} · {personName || "ทั้งครอบครัว"}</span></>}
             info={<>&ldquo;เงินคงเหลือสุทธิ&rdquo; = รายได้สุทธิ + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ (เป็นยอดย่อย ไม่บวกซ้ำ) ·
               &ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ประเมินใหม่ (อสังหาฯ / ธุรกิจ / ทอง) · อัตราแลกเปลี่ยนนอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก
               {personId ? " · ค่าใช้จ่ายส่วนกลาง (ไม่ได้จ่ายจากบัญชี / บัตรของใคร และไม่ได้ระบุคน) รวมอยู่ใน “อื่น ๆ”" : ""}</>}
@@ -174,7 +174,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <section className="grid gap-4 lg:grid-cols-3">
         {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 lg:col-span-2">
           <div className="mb-3 flex min-w-0 items-center gap-1">
             <h2 className={`truncate ${H2}`}>สัดส่วนสินทรัพย์ตามหมวด · {personName || "ทั้งครอบครัว"}</h2>
             <InfoTip label="คำอธิบายกล่องนี้">% คิดจากสินทรัพย์รวม · กดที่หมวดเพื่อดูรายการ · Net Worth = สินทรัพย์รวม − หนี้สิน (การ์ดบนสุด)</InfoTip>
@@ -185,7 +185,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         {/* ------------------------------------------------ รายบุคคล: Net Worth + % */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4">
           <div className="mb-3 flex items-center gap-1">
             <h2 className={H2}>Net Worth รายบุคคล</h2>
             <InfoTip label="คำอธิบายกล่องนี้">Net Worth ตามสัดส่วนเจ้าของ · % ของ Net Worth ครอบครัว · กดชื่อเพื่อดูของคนนั้น</InfoTip>
@@ -202,10 +202,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 }
 
 // ---------------------------------------------------------------------------- โครงเทาระหว่างรอ
-/** การ์ดบน (ตกลง 1 พ.ย. 2026): Net Worth ใบแรก ใหญ่ (ครึ่งแถวบนจอกว้าง · เต็มแถวบนจอกลาง) · สินทรัพย์ / หนี้สินเป็นใบเล็กข้าง ๆ
- *  มือถือ 1 คอลัมน์ · จอกลาง (รวมแท็บเล็ต / จอคอมเล็กที่มีเมนูซ้าย) 2 คอลัมน์ · จอกว้าง (xl) 4 ช่อง (Net Worth กิน 2) */
-const TOP_GRID = "grid gap-4 sm:grid-cols-2 xl:grid-cols-4";
-const HERO = "sm:col-span-2";
+/** การ์ดบน (ตกลง 1 พ.ย. 2026 รอบ 3): สินทรัพย์ · หนี้สิน · Net Worth (ขวาสุด) กว้างเท่ากันบนจอกว้าง (xl)
+ *  จอเล็กกว่า (มือถือ / แท็บเล็ต / จอคอมเล็กที่มีเมนูซ้าย): สินทรัพย์ + หนี้สินคู่กันแถวบน · Net Worth เต็มแถวด้านล่าง */
+const TOP_GRID = "grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3";
+const HERO = "col-span-2 xl:col-span-1";
 /** หัวกล่อง */
 const H2 = "text-base font-semibold text-slate-900";
 /** ปุ่มช่วงเวลากราฟ: มือถือสูง 36px (นิ้วกดง่าย) · จอใหญ่ 28px */
@@ -213,7 +213,7 @@ const RANGE_BTN = "inline-flex min-h-9 items-center rounded-md px-2.5 text-xs sm
 
 function CardSkeleton({ hero }: { hero?: boolean }) {
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white p-5 animate-pulse ${hero ? HERO : ""}`}>
+    <div className={`rounded-xl border border-slate-200 bg-white p-4 sm:p-5 animate-pulse ${hero ? HERO : ""}`}>
       <div className="h-3 w-28 rounded bg-slate-100" />
       <div className="mt-2 h-7 w-40 rounded bg-slate-200" />
       <div className="mt-2 h-3 w-24 rounded bg-slate-100" />
@@ -254,18 +254,14 @@ async function TopCards({ start, personId, personName }: { start: string; person
   const nw = person ? person.net_worth : dm?.net_worth ?? 0;
   const assets = person ? person.assets : dm?.total_assets ?? 0;
   const liab = person ? person.liabilities : dm?.total_liabilities ?? 0;
-  const unalloc = byPerson.find((x) => !x.person_id);
   return (
     <>
       <section className={TOP_GRID}>
-        <Big label="Net Worth" who={person ? person.name : "ทั้งครอบครัว"} value={nw}
-          base={base ? Number(base.net_worth) : null} baseLabel={base?.label} hero />
         <Big label="สินทรัพย์รวม" who={person ? person.name : "ทั้งครอบครัว"} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
         <Big label="หนี้สินรวม" who={person ? person.name : "ทั้งครอบครัว"} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
+        <Big label="Net Worth" who={person ? person.name : "ทั้งครอบครัว"} value={nw}
+          base={base ? Number(base.net_worth) : null} baseLabel={base?.label} hero />
       </section>
-      {!person && unalloc && Number(unalloc.net_worth) !== 0 && (
-        <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {baht(unalloc.net_worth, "THB")} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
-      )}
     </>
   );
 }
@@ -312,23 +308,24 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
   const sum = (xs: Item[]) => xs.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
   const liabTotal = sum(liabs);
   return (
-    <div className="divide-y divide-slate-100 text-sm">
+    // จอกว้าง (xl): 2 คอลัมน์ คอลัมน์ละ 4 แถว (เรียงลงก่อน) → กล่องเตี้ยลงครึ่งหนึ่ง ทั้งหน้าพอดีจอ · จอเล็กกว่า: แถวเดียวเรียงลง
+    <div className="text-sm xl:grid xl:grid-flow-col xl:grid-rows-4 xl:gap-x-8 [&>*]:border-b [&>*]:border-slate-100">
       {GROUP.map(([k, label]) => {
         const list = byKey[k] ?? [];
         const v = sum(list);
         const pct = total ? (v / total) * 100 : 0;
         const head = <AllocRow color={GROUP_COLOR[k]} label={label} pct={pct} value={v} count={list.length} />;
         // หมวดที่ยังไม่มีรายการ: ตัวหนังสือสีเทา (ไม่ทำจาง) · แสดง — แทนตัวเลข
-        if (!list.length) return <div key={k} className="py-2.5 text-slate-500">{head}</div>;
+        if (!list.length) return <div key={k} className="py-2 text-slate-500">{head}</div>;
         return (
-          <details key={k} className="group py-2.5">
+          <details key={k} className="group py-2">
             <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">{head}</summary>
             <ItemList items={list} showShare={showShare} />
           </details>
         );
       })}
       {liabs.length > 0 && (
-        <details className="group py-2.5">
+        <details className="group py-2">
           <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
             <AllocRow color="#dc2626" label="หนี้สิน" value={-liabTotal} count={liabs.length} />
           </summary>
@@ -342,19 +339,19 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
 function AllocRow({ color, label, pct, value, count }: { color: string; label: string; pct?: number; value: number; count: number }) {
   const pctText = pct == null ? "" : count ? `${pct.toFixed(1)}%` : "—";
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem] xl:grid-cols-[1fr_auto_1rem]">
       <span className="flex items-center gap-2">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />{label}
         <span className="text-xs text-slate-400">{count ? `(${count})` : ""}</span>
       </span>
-      <div className="col-span-2 row-start-2 h-2 overflow-hidden rounded-full bg-slate-100 sm:col-span-1 sm:row-start-auto">
+      <div className="col-span-2 row-start-2 h-1.5 overflow-hidden rounded-full bg-slate-100 sm:col-span-1 sm:row-start-auto sm:h-2 xl:col-span-2 xl:row-start-2 xl:h-1.5">
         {pct != null && pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
       </div>
-      <span className={`hidden text-right tabular-nums sm:block ${count ? "font-medium text-slate-700" : ""}`}>{pctText}</span>
+      <span className={`hidden text-right tabular-nums sm:block xl:hidden ${count ? "font-medium text-slate-700" : ""}`}>{pctText}</span>
       <span className={`text-right tabular-nums ${value < 0 ? "text-red-700" : count ? "text-slate-700" : ""}`}>
-        {count > 0 && <span className="mr-2 font-medium sm:hidden">{pctText}</span>}{count ? baht(value) : "—"}
+        {count > 0 && <span className="mr-2 font-medium sm:hidden xl:inline">{pctText}</span>}{count ? baht(value) : "—"}
       </span>
-      <span className="hidden text-slate-400 transition-transform group-open:rotate-90 sm:block">{count ? "▸" : ""}</span>
+      <span className="hidden text-slate-400 transition-transform group-open:rotate-90 sm:block xl:row-start-1 xl:col-start-3">{count ? "▸" : ""}</span>
     </div>
   );
 }
@@ -394,10 +391,10 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
           <BRow label={personId ? "+ รายได้ลงทุน (ตามสัดส่วนถือ)" : "+ รายได้ลงทุน"} v={p.investment_income} />
           {/* ค่าใช้จ่าย: ชื่อบรรทัดมี "−" แล้ว ตัวเลขจึงไม่ติดลบซ้ำ · ยอดย่อย "เงินคงเหลือสุทธิ" เป็นบรรทัดเล็กสีเทา (ไม่ใช่บรรทัดที่บวกเพิ่ม) */}
           {track === "NOT_TRACKED" && !expense
-            ? <tr><td className="py-1.5 pr-2">− ค่าใช้จ่ายสุทธิ</td><td className="text-right text-xs text-slate-500">ยังไม่ได้บันทึก</td></tr>
+            ? <tr><td className="py-1 pr-2">− ค่าใช้จ่ายสุทธิ</td><td className="text-right text-xs text-slate-500">ยังไม่ได้บันทึก</td></tr>
             : <BRow label={personId ? "− ค่าใช้จ่ายสุทธิ (ที่ระบุชื่อ)" : "− ค่าใช้จ่ายสุทธิ"} v={expense} />}
           <tr className="text-xs text-slate-500">
-            <td className="py-1 pl-3 pr-2">ยอดย่อย: เงินคงเหลือสุทธิ</td>
+            <td className="py-0.5 pl-3 pr-2">ยอดย่อย: เงินคงเหลือสุทธิ</td>
             <td className={`text-right tabular-nums ${net < 0 ? "text-red-700" : ""}`}>{baht(net)}</td>
           </tr>
           <BRow label={personId ? "± กำไร / ขาดทุนเงินลงทุน (ตามสัดส่วนถือ)" : "± กำไร / ขาดทุนเงินลงทุน"} v={dm ? gain : 0} signed
@@ -418,7 +415,6 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
   return (
     // แถวละคน: ชื่อ · % · Net Worth แล้วแท่งสัดส่วนเต็มความกว้างใต้แถว (เดิมเป็นคอลัมน์แท่งในตาราง → กล่องแคบแล้วตัวเลขล้นขอบขวา)
     <div className="text-sm">
-      <div className={`${PROW} pb-1 text-xs font-semibold text-slate-600`}><span>สมาชิก</span><span className="text-right">%</span><span className="text-right">Net Worth</span></div>
       <ul className="divide-y divide-slate-100">
         {rows.map((x) => {
           const v = Number(x.net_worth);
@@ -426,7 +422,7 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
           const color = x.person_id ? "#1f5eff" : "#d97706";   // สีเดียวทุกคน (สีหมวดใช้เฉพาะกล่องหมวด) · ส้ม = ยังไม่ระบุเจ้าของ
           const sel = !!x.person_id && x.person_id === personId;
           return (
-            <li key={x.person_id ?? "none"} className={`py-2 ${x.person_id ? "" : "text-amber-700"} ${sel ? "-mx-2 rounded-md bg-blue-50/60 px-2" : ""}`}>
+            <li key={x.person_id ?? "none"} className={`py-1 ${x.person_id ? "" : "text-amber-700"} ${sel ? "-mx-2 rounded-md bg-blue-50/60 px-2" : ""}`}>
               <div className={PROW}>
                 <span className="flex min-w-0 items-center">
                   {x.person_id
@@ -436,7 +432,7 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
                 <span className={`text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</span>
                 <span className={`text-right font-medium tabular-nums ${v < 0 ? "text-red-700" : ""}`}>{baht(v)}</span>
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
                 {pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
               </div>
             </li>
@@ -453,21 +449,38 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
 /** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · % · Net Worth */
 const PROW = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3";
 
+/** การ์ดตัวเลขบน: ตัวใหญ่เป็น "ล้านบาท" (อ่านเร็ว) + เลขเต็มตัวเล็กใต้ (ตรวจทานได้) · ต่ำกว่า 1 ล้านแสดงเลขเต็มอย่างเดียว
+ *  บรรทัดเปลี่ยนแปลงเป็นป้าย "เพิ่มขึ้น / ลดลง" (เขียว = ดีขึ้น · แดง = แย่ลง · หนี้ลด = ดีขึ้น) แล้วตามด้วย "จาก…" สีเทา */
 function Big({ label, who, value, base, baseLabel, inverse, hero }: { label: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean; hero?: boolean }) {
   // ปัดเป็นบาท (เหมือนตัวเลขที่แสดง) แล้วต่างกัน 0 = "ไม่เปลี่ยนแปลง"
   const diff = base == null ? null : Math.round(Number(value) - base);
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
+  const m = millions(value);
+  const pct = diff && base ? Math.abs((diff / Math.abs(base)) * 100).toFixed(2) : null;
+  // "สิ้นเดือน ต.ค. 2569 (อัตโนมัติ)" → "สิ้นเดือน ต.ค. 2569" (ชื่อเต็มอยู่ใน title เมื่อชี้) → การ์ดไม่ขึ้นบรรทัดใหม่
+  const shortBase = (baseLabel ?? "").replace(/\s*\([^)]*\)\s*$/, "");
   return (
-    <div className={`min-w-0 rounded-xl border bg-white p-5 num-box ${hero ? `${HERO} border-blue-200` : "border-slate-200"}`}>
+    <div className={`num-box min-w-0 rounded-xl border p-4 sm:p-5 xl:p-4 ${hero ? `${HERO} border-blue-200 bg-blue-50/70` : "border-slate-200 bg-white"}`}
+      style={hero ? { boxShadow: "var(--card-shadow)" } : undefined}>
       {/* ชื่อคนบรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง */}
-      <div className={`truncate ${hero ? "text-sm font-medium text-slate-700" : "text-xs text-slate-500"}`} title={`${label} · ${who}`}>{label} · {who}</div>
-      <div className={`mt-1 font-semibold tabular-nums ${hero ? "text-3xl tracking-tight text-slate-950" : "text-xl"}`}>{baht(value, "THB")}</div>
-      {diff != null && (diff === 0
-        ? <div className="mt-1 text-xs text-slate-500">ไม่เปลี่ยนแปลงจาก{baseLabel}</div>
-        : <div className={`mt-1 text-xs ${good ? "text-emerald-700" : "text-red-700"}`}>
-            {diff > 0 ? "▲ +" : "▼ "}{baht(diff)}
-            {base ? ` (${((diff / Math.abs(base)) * 100).toFixed(2).replace("-", "−")}%)` : ""} จาก{baseLabel}
-          </div>
+      <div className={`truncate text-xs ${hero ? "font-semibold text-ink" : "text-slate-500"}`} title={`${label} · ${who}`}>{label} · {who}</div>
+      <div className={`mt-1 whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums text-ink ${hero ? "text-[1.75rem] sm:text-3xl" : "text-xl sm:text-2xl"}`}>
+        {m ?? baht(value)}<span className="ml-1.5 text-sm font-normal tracking-normal text-slate-500">{m ? "ล้านบาท" : "บาท"}</span>
+      </div>
+      {m && <div className="text-xs tabular-nums text-slate-500">{baht(value)} บาท</div>}
+      {diff != null && (
+        <div className="mt-2 text-xs leading-relaxed">
+          {diff === 0
+            ? <span className="text-slate-500" title={`จาก${baseLabel}`}>ไม่เปลี่ยนแปลงจาก{shortBase}</span>
+            : <>
+                <span className={`inline-block rounded-full sm:whitespace-nowrap px-2 py-0.5 font-medium tabular-nums ${good ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
+                  {/* มือถือ การ์ดเล็ก (สินทรัพย์ / หนี้สิน): แสดงแค่ % ให้ป้ายอยู่บรรทัดเดียว · เลขเต็มอยู่ในการ์ดจอใหญ่ */}
+                  {!hero && pct && <span className="sm:hidden">{diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} {pct}%</span>}
+                  <span className={!hero && pct ? "hidden sm:inline" : ""}>{diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} {baht(Math.abs(diff))}{pct ? ` (${pct}%)` : ""}</span>
+                </span>
+                <span className="text-slate-500" title={`จาก${baseLabel}`}> จาก{shortBase}</span>
+              </>}
+        </div>
       )}
     </div>
   );
@@ -477,9 +490,9 @@ function BRow({ label, v, bold, signed, note }: { label: string; v: number; bold
   // ตัวเลขสีดำ · ติดลบเท่านั้นเป็นสีแดง (ตกลง 1 พ.ย. 2026) · signed = บรรทัด ± ใส่ "+" หน้ายอดบวก · note = บรรทัดเล็กใต้ชื่อ (ไม่บวกเพิ่ม)
   return (
     <tr className={bold ? "font-medium" : ""}>
-      <td className="py-1.5 pr-2">{label}
+      <td className="py-1 pr-2 xl:py-0.5">{label}
         {note && <div className="pl-3 text-xs font-normal text-slate-500">{note}</div>}</td>
-      <td className={`text-right align-top pt-1.5 tabular-nums ${!bold && v < 0 ? "text-red-700" : ""}`}>{signed && Math.round(v) > 0 ? "+" : ""}{baht(v)}</td>
+      <td className={`text-right align-top pt-1 xl:pt-0.5 tabular-nums ${bold ? "text-ink" : ""} ${!bold && v < 0 ? "text-red-700" : ""}`}>{signed && Math.round(v) > 0 ? "+" : ""}{baht(v)}</td>
     </tr>
   );
 }
