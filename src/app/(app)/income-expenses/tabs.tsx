@@ -1,6 +1,8 @@
 "use client";
 
 import { TabActionsSlot } from "@/components/TabActions";
+import TabLabel from "@/components/TabLabel";
+import { tabClass } from "@/lib/format";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -53,7 +55,7 @@ export function TabNav({ tabs }: { tabs: [string, string][] }) {
     <nav className="flex gap-1 border-b border-slate-200">
       {tabs.map(([k, l]) => (
         <button key={k} type="button" onClick={() => setActive(k)}
-          className={`-mb-px border-b-2 px-4 py-2 text-sm ${active === k ? "border-slate-900 font-medium text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{l}</button>
+          className={`text-sm ${tabClass(active === k)}`}><TabLabel>{l}</TabLabel></button>
       ))}
       {/* ปุ่ม "+ เพิ่ม…" ของหน้า (TabActions) ชิดขวาสุดของแถวแท็บ */}
       <TabActionsSlot />
@@ -136,7 +138,7 @@ export function SubTabs({ param, initial, home, tabs, actions = {}, children }: 
           <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
             {tabs.map(([k, l]) => (
               <button key={k} type="button" onClick={() => pick(k)}
-                className={`rounded-md px-3 py-1.5 text-sm ${active === k ? "bg-white font-medium text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>{l}</button>
+                className={`rounded-md px-3 py-1.5 text-sm ${active === k ? "bg-white font-medium text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}><TabLabel>{l}</TabLabel></button>
             ))}
           </div>
           {actions[active] && <div className="ml-auto flex items-center gap-2">{actions[active]}</div>}
