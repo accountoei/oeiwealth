@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
+import { InfoTip } from "@/components/HeaderBar";
 import { baht } from "@/lib/format";
 import { loadGroupChanges, loadInvestmentGain, loadMonthFlows, type GroupChange, type InvestmentGain, type MonthFlows, type Row } from "./dashboard-detail";
 
-/** กล่องบน Dashboard ที่กดได้ → pop up รายละเอียด (โหลดตอนกด) */
-export function DetailBox({ title, hint, children, popupTitle, start, personId, ym, bridge }: {
-  title: ReactNode; hint?: string; children: ReactNode; popupTitle: string;
+/** กล่องบน Dashboard · ปุ่ม "ดูรายละเอียด ›" มุมขวาบน → pop up รายละเอียด (โหลดตอนกด)
+ *  (ตกลง 1 พ.ย. 2026: กดได้เฉพาะปุ่ม ไม่ใช่ทั้งกล่อง → ตารางในกล่องอ่านด้วยโปรแกรมอ่านหน้าจอได้ตามปกติ) */
+export function DetailBox({ title, hint, info, children, popupTitle, start, personId, ym, bridge }: {
+  title: ReactNode; hint?: string; info?: ReactNode; children: ReactNode; popupTitle: string;
   start: string; personId: string; ym: string;
   /** กล่องความมั่งคั่ง: บรรทัดสรุปเดียวกับในกล่อง (แสดงบนสุดของ pop up) */
   bridge?: ReactNode;
@@ -16,14 +18,15 @@ export function DetailBox({ title, hint, children, popupTitle, start, personId, 
   const [open, setOpen] = useState(false);
   return (
     <>
-      {/* เหตุการณ์จากใน pop up (portal) ไหลกลับมาที่กล่องนี้ → รับเฉพาะที่เกิดในกล่องจริง */}
-      <div role="button" tabIndex={0} title="กดเพื่อดูรายละเอียด"
-        onClick={(e) => { if (!open && e.currentTarget.contains(e.target as Node)) setOpen(true); }}
-        onKeyDown={(e) => { if (!open && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpen(true); } }}
-        className="block w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-blue-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-        <div className="mb-2 flex items-baseline justify-between gap-2">
-          <h2 className="font-medium text-slate-900">{title}</h2>
-          <span className="shrink-0 text-xs text-blue-700">{hint ?? "ดูรายละเอียด ›"}</span>
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-start gap-1">
+            <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+            {info && <span className="mt-0.5 shrink-0"><InfoTip label="คำอธิบายกล่องนี้">{info}</InfoTip></span>}
+          </div>
+          <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog"
+            className="-mr-2 -mt-1 inline-flex min-h-9 shrink-0 items-center rounded-md px-2 text-xs text-blue-700 hover:bg-blue-50 hover:underline sm:min-h-7">
+            {hint ?? "ดูรายละเอียด ›"}</button>
         </div>
         {children}
       </div>
@@ -121,7 +124,7 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
             </table>
             <p className="mt-1 text-xs text-slate-500">
               &ldquo;เปลี่ยน&rdquo; ของแต่ละหมวดรวมเงินที่ย้ายระหว่างหมวดด้วย (เช่น โอนธนาคาร → พอร์ต 100,000: เงินฝาก −100,000 · การลงทุน +100,000 · รวมเป็น 0) ·
-              หนี้สินเพิ่ม = ความมั่งคั่งลด
+              หนี้สินเพิ่ม = Net Worth ลด
             </p>
           </section>
           {ig && ig.by_portfolio.length > 0 && <GainTable ig={ig} />}

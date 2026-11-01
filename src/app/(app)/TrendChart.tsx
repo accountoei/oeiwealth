@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { baht } from "@/lib/format";
 
 export type TrendPoint = { label: string; date: string; v: number; solid: boolean };
 
-const fmtBaht = (v: number) => `${Math.round(v).toLocaleString("en-US")} บาท`;
+const fmtBaht = (v: number) => `${baht(v)} บาท`;
 
 /**
  * กราฟเส้น Net Worth (SVG) — จุดทึบ = ยอดยืนยันแล้ว, จุดกลวง = ประมาณการ
  * วาดตามความกว้างจริงของกล่อง (ไม่ย่อทั้งภาพ) → ตัวหนังสือแกนขนาดเท่าเดิมทุกจอ (เดิมบนมือถือเหลือ ~4–5px)
  * ชี้ (เมาส์) / แตะ (มือถือ) / ปุ่มลูกศร (คีย์บอร์ด) → กล่องค่าของจุดที่ใกล้ที่สุด
+ * ตกลง 1 พ.ย. 2026: ไม่ระบายพื้นใต้เส้น (แกนไม่เริ่มที่ 0 → พื้นทำให้ดูเปลี่ยนมากเกินจริง) · บอกยอดเปลี่ยนทั้งช่วงเป็นตัวเลขแทน · แกนซ้ายฝั่งเดียว 5 ขีด
  */
 export default function TrendChart({ points, selected }: { points: TrendPoint[]; selected: number }) {
   const box = useRef<HTMLDivElement>(null);
@@ -28,17 +30,16 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
   // ก่อนรู้ความกว้าง (ตอนโหลดหน้า) ใช้ 640 แล้วย่อ / ขยายตามกล่องไปก่อน
   const W = w || 640;
   const narrow = W < 480;
-  // จอแคบ: แกนตัวเลขซ้ายอย่างเดียว · จอกว้าง: ซ้าย + ขวา (ชุดเดียวกัน → อ่านค่าจุดล่าสุดด้านขวาได้ง่าย)
-  const H = narrow ? 200 : 220, L = narrow ? 52 : 70, R = narrow ? 16 : 70, T = 12, B = 28;
+  const H = narrow ? 200 : 220, L = narrow ? 56 : 64, R = 16, T = 12, B = 28;
   const vs = points.map((p) => p.v);
   let lo = Math.min(...vs), hi = Math.max(...vs);
   const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
   lo -= pad; hi += pad;
   const x = (i: number) => L + (i * (W - L - R)) / (points.length - 1);
   const y = (v: number) => T + ((hi - v) * (H - T - B)) / (hi - lo);
-  const ticks = [0, 0.5, 1].map((f) => lo + (hi - lo) * f);
-  // ทศนิยมแกนปรับตามช่วงยอด: ยอดขยับน้อย → แสดงละเอียดขึ้น (กันป้ายซ้ำกัน เช่น 209.4M สามบรรทัด)
-  const step = (hi - lo) / 2;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => lo + (hi - lo) * f);
+  // ทศนิยมแกนปรับตามช่วงยอด: ยอดขยับน้อย → แสดงละเอียดขึ้น (กันป้ายซ้ำกัน เช่น 209.4M หลายบรรทัด)
+  const step = (hi - lo) / 4;
   const fmt = (v: number) => {
     const [div, unit] = Math.abs(v) >= 1e6 ? [1e6, "M"] : Math.abs(v) >= 1e3 ? [1e3, "K"] : [1, ""];
     const d = Math.min(4, Math.max(unit === "M" ? 1 : 0, Math.ceil(-Math.log10(step / div))));
@@ -62,9 +63,18 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
     setActive(Math.min(last, Math.max(0, next)));
   };
   const a = active != null ? points[active] : null;
+  // ยอดเปลี่ยนทั้งช่วง (จุดแรก → จุดสุดท้าย)
+  const first = points[0], last = points[points.length - 1];
+  const chg = last.v - first.v, chgPct = first.v ? (chg / Math.abs(first.v)) * 100 : null;
 
   return (
     <div ref={box} className="relative">
+      <p className="mb-2 text-sm">
+        <span className={`font-semibold tabular-nums ${Math.round(chg) < 0 ? "text-red-700" : Math.round(chg) > 0 ? "text-emerald-700" : "text-slate-700"}`}>
+          {Math.round(chg) > 0 ? "+" : ""}{baht(chg)}{chgPct != null ? ` (${chgPct > 0 ? "+" : ""}${chgPct.toFixed(2).replace("-", "\u2212")}%)` : ""}
+        </span>
+        <span className="text-slate-500"> ตั้งแต่{first.label === "ตั้งต้น" ? "ยอดตั้งต้น" : ` ${first.label}`}</span>
+      </p>
       <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full touch-pan-y select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
         role="img" tabIndex={0}
         aria-label={`กราฟ Net Worth: ${points.map((p) => `${p.label} ${fmtBaht(p.v)}`).join(", ")}`}
@@ -72,20 +82,12 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
         onPointerDown={(e) => setActive(nearest(e))}
         onPointerLeave={(e) => { if (e.pointerType === "mouse") setActive(null); }}
         onKeyDown={onKey} onBlur={() => setActive(null)}>
-        <defs>
-          <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1f5eff" stopOpacity={0.22} />
-            <stop offset="100%" stopColor="#1f5eff" stopOpacity={0} />
-          </linearGradient>
-        </defs>
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e6ecf7" strokeWidth={1} strokeDasharray="3 4" />
             <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize={12} fill="#4b5567">{fmt(t)}</text>
-            {!narrow && <text x={W - R + 8} y={y(t) + 4} textAnchor="start" fontSize={12} fill="#4b5567">{fmt(t)}</text>}
           </g>
         ))}
-        <path d={`${path} L${x(points.length - 1).toFixed(1)},${H - B} L${x(0).toFixed(1)},${H - B} Z`} fill="url(#nwFill)" stroke="none" />
         <path d={path} fill="none" stroke="#1f5eff" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
         {active != null && <line x1={x(active)} x2={x(active)} y1={T} y2={H - B} stroke="#86afff" strokeWidth={1} />}
         {points.map((p, i) => (
