@@ -3010,6 +3010,18 @@ SELECT t.ok((SELECT system_status = 'SETUP' AND go_live_confirmed_at IS NULL FRO
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.net_worth_snapshots WHERE deleted_at IS NULL)
             AND NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto),
             'ยกเลิก Go-live: Snapshot ที่ Reopen แล้วถูกลบ (soft) · ยอดอัตโนมัติถูกล้าง');
+-- ช่วง SETUP ก็มียอดสิ้นเดือนอัตโนมัติ (ตกลง 1 พ.ย. 2026): ทุกเดือนที่จบแล้วตั้งแต่เดือน Go-live
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_refresh_month_auto() >= 1 AS refreshed_setup;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.ok((SELECT count(*) FROM public.net_worth_month_auto a, public.families f
+              WHERE a.snapshot_month >= date_trunc('month', f.go_live_date)::date AND a.snapshot_date < current_date)
+            = (SELECT count(*) FROM public.families f, generate_series(date_trunc('month', f.go_live_date), current_date - 1, interval '1 month') g
+                WHERE (g + interval '1 month - 1 day')::date < current_date)
+            AND NOT EXISTS (SELECT 1 FROM public.net_worth_month_auto a, public.families f WHERE a.snapshot_month < date_trunc('month', f.go_live_date)::date),
+            'SETUP: ยอดสิ้นเดือนอัตโนมัติครบทุกเดือนที่จบแล้วตั้งแต่ Go-live');
+SELECT t.ok((SELECT (public.month_net_worth_preview(date_trunc('month', current_date)::date) ->> 'prev_label') = 'ยอดสิ้นเดือนก่อน (อัตโนมัติ)'),
+            'SETUP: เดือนนี้เทียบกับยอดสิ้นเดือนก่อน (อัตโนมัติ)');
 SELECT t.ok((SELECT count(*) FROM public.audit_logs WHERE action = 'CANCEL_GO_LIVE' AND metadata ->> 'reason' LIKE 'ทดสอบ%') = 1,
             'ยกเลิก Go-live: บันทึก Audit พร้อมเหตุผล');
 SELECT t.fails($$SELECT public.cancel_go_live('ซ้ำ')$$, 'ยังไม่ได้ Go-live', 'ยกเลิก Go-live: กดซ้ำตอน SETUP ไม่ได้');
