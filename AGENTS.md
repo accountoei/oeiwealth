@@ -52,7 +52,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ```bash
 service postgresql start
-DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (942 checks)
+DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (948 checks)
 node scripts/fx-fetch.test.mjs && node scripts/price-fetch.test.mjs && node scripts/money-endpoint.test.mjs && node scripts/batch-entry.test.mjs && node scripts/form-input.test.mjs && node scripts/tax-calc.test.mjs
 ```
 
@@ -76,6 +76,7 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.
 - Every page calls `requireAppUser()` and hides write controls for `VIEWER`; the database still enforces permissions.
 - Page data (after `requireAppUser()`): start every independent query in one `Promise.all`; a query that needs another's result chains on that one promise (`.then(...)` or an `(async () => { … })()` inside the same `Promise.all`), never a separate `await` round after it. Each extra round costs a full trip to Supabase, much slower when it has just woken up. A supabase-js query re-sends on every `.then`, so wrap one you reuse in `.then((r) => r)` first. Async tab components get their data from the page (see `loadDue` / `loadUpdate` in `investments/`), otherwise they only start after the page has finished.
+- Cached results (`cachedRpc` / `cachedData` in `src/lib/data-cache.ts`: Dashboard, portfolio returns, the To-Do count) are kept until data changes, max 1 hour. So every Server Action that saves must import `revalidatePath` from `@/lib/revalidate` (not `next/cache`), and every background job that changes data must write its `system_job_runs` row in the same transaction (the cache key includes `public.data_version()`). Otherwise users see old numbers for up to an hour.
 - Large files (documents) go **browser → `drive` Edge Function** directly (Vercel has a 4.5 MB body limit). Do not route uploads through server actions.
 - Session refresh + redirect-to-login lives in `src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; the exported function is `proxy`).
 - Keep `supabase/functions` excluded from `tsconfig`; type-check Edge Functions with `deno check`.

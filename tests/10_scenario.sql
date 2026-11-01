@@ -4061,4 +4061,24 @@ SELECT t.ok((SELECT count(*) FROM public.audit_logs) = 0 AND (SELECT count(*) FR
 SELECT t.login('00000000-0000-0000-0000-00000000000d');
 SELECT t.ok((SELECT count(*) FROM public.fx_rates) = 0 AND (SELECT count(*) FROM public.families) = 0
             AND (SELECT count(*) FROM public.net_worth_snapshots) = 0, 'RLS: ผู้ใช้ที่ปิดแล้ว (DISABLED) ไม่เห็น FX / ครอบครัว / Snapshot');
+\echo '== 16. ป้ายข้อมูลงานเบื้องหลัง data_version (1 พ.ย. 2026)'
+-- หน้าเว็บใส่ป้ายนี้ในชื่อผลที่จำไว้ → งานอัตรา / ราคา / ยอดสิ้นเดือนเสร็จ ป้ายเปลี่ยน → คำนวณใหม่ทันที
+SELECT t.fails($$SELECT public.data_version()$$, 'PERMISSION_DENIED', 'ป้ายข้อมูล: ผู้ใช้ที่ปิดแล้วอ่านไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT public.data_version() AS dv1 \gset
+SELECT t.ok(:'dv1' ~ '^[0-9]+-[0-9]+-[0-9.]+$' AND :'dv1' NOT LIKE '0-%', 'ป้ายข้อมูล: VIEWER อ่านได้ (ตัวเลขล้วน ไม่เห็นรายละเอียดงาน)');
+SELECT t.ok(public.data_version() = :'dv1', 'ป้ายข้อมูล: ไม่มีงานใหม่ ป้ายเดิม (ใช้ผลที่จำไว้ต่อ)');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.data_version()', 'EXECUTE')
+            AND has_function_privilege('authenticated', 'public.data_version()', 'EXECUTE'), 'ป้ายข้อมูล: anon เรียกไม่ได้');
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_upsert_fx_rates(jsonb_build_array(jsonb_build_object('rate_date', current_date - 1, 'currency', 'EUR', 'rate_to_thb', 38, 'source_reference', 'TEST'))) AS dv_fx;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok(public.data_version() <> :'dv1', 'ป้ายข้อมูล: งานอัตราแลกเปลี่ยนบันทึกแล้ว ป้ายเปลี่ยน (หน้าเว็บคำนวณใหม่)');
+SELECT public.data_version() AS dv2 \gset
+RESET ROLE;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_refresh_month_auto() AS dv_auto;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok(public.data_version() <> :'dv2', 'ป้ายข้อมูล: งานยอดสิ้นเดือนอัตโนมัติเสร็จ ป้ายเปลี่ยน');
 \echo 'ALL SCENARIO TESTS PASSED'
