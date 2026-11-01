@@ -16,13 +16,16 @@ const fmtBaht = (v: number) => `${baht(v)} บาท`;
 export default function TrendChart({ points, selected }: { points: TrendPoint[]; selected: number }) {
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
+  const [vh, setVh] = useState(0);
   const [active, setActive] = useState<number | null>(null);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
+    const ro = new ResizeObserver(([e]) => { setW(Math.round(e.contentRect.width)); setVh(window.innerHeight); });
     ro.observe(el);
-    return () => ro.disconnect();
+    const onResize = () => setVh(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => { ro.disconnect(); window.removeEventListener("resize", onResize); };
   }, []);
 
   if (points.length < 2) return <p className="text-sm text-slate-500">ข้อมูลยังไม่พอแสดงกราฟ</p>;
@@ -30,7 +33,9 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
   // ก่อนรู้ความกว้าง (ตอนโหลดหน้า) ใช้ 640 แล้วย่อ / ขยายตามกล่องไปก่อน
   const W = w || 640;
   const narrow = W < 480;
-  const H = narrow ? 200 : 220, L = narrow ? 56 : 64, R = 16, T = 12, B = 28;
+  // ความสูงกราฟตามความสูงจอ (จอเตี้ย → กราฟเตี้ย ให้การ์ด + กราฟ + กล่อง "เปลี่ยนเพราะอะไร" อยู่ในจอแรก) · 150–220px
+  const H = vh ? Math.round(Math.min(220, Math.max(150, vh * 0.21))) : narrow ? 180 : 200;
+  const L = narrow ? 56 : 64, R = 16, T = 12, B = 28;
   const vs = points.map((p) => p.v);
   let lo = Math.min(...vs), hi = Math.max(...vs);
   const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
