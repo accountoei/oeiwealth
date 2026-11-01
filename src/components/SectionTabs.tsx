@@ -4,6 +4,8 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import IntentLink from "./IntentLink";
 import { TabActionsSlot } from "./TabActions";
+import TabLabel from "./TabLabel";
+import { tabClass } from "@/lib/format";
 
 /**
  * แถบแท็บของเมนูที่รวมหลายหน้า (Family & Documents · Settings) — แต่ละแท็บเป็นหน้าของตัวเอง
@@ -16,15 +18,16 @@ export default function SectionTabs({ tabs }: { tabs: { href: string; label: str
   const [pending, setPending] = useState<{ href: string; from: string } | null>(null);
   const current = pending && pending.from === pathname ? pending.href : pathname;
   return (
-    <div className="mb-6 flex items-end border-b border-slate-200">
+    // เส้นเทาของแถวเป็นเงาด้านใน (ไม่ใช่ border) → เส้นใต้สีน้ำเงินของแท็บทับเส้นเทาได้ เหมือนแถบแท็บแบบอื่น (nav เลื่อนแนวนอนได้ จึงใช้ -mb-px ไม่ได้)
+    <div className="mb-6 flex items-end shadow-[inset_0_-1px_0_var(--color-slate-200)]">
     <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden text-sm [scrollbar-width:none]" aria-label="แท็บ">
       {tabs.map((t) => {
         const active = current === t.href || current.startsWith(`${t.href}/`);
         return (
           <IntentLink key={t.href} href={t.href} aria-current={active ? "page" : undefined}
             onClick={() => setPending({ href: t.href, from: pathname })}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 ${active ? "border-blue-600 font-medium text-blue-700" : "border-transparent text-slate-600 hover:text-slate-900"}`}>
-            {t.label}
+            className={`flex shrink-0 items-center gap-1.5 ${tabClass(active).replace("-mb-px ", "")}`}>
+            <TabLabel>{t.label}</TabLabel>
             {t.dot && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}
           </IntentLink>
         );

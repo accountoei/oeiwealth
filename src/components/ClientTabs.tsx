@@ -1,6 +1,8 @@
 "use client";
 
 import { TabActionsSlot } from "./TabActions";
+import TabLabel from "./TabLabel";
+import { tabClass } from "@/lib/format";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 // แท็บที่สลับในเบราว์เซอร์ทันที (ไม่โหลดหน้าใหม่ · หน้าไม่เด้งขึ้นบน)
@@ -30,8 +32,8 @@ export function TabNav({ tabs }: { tabs: readonly (readonly [string, string])[] 
     <nav className="flex gap-1 text-sm" aria-label="มุมมอง">
       {tabs.map(([k, l]) => (
         <button key={k} type="button" onClick={() => setActive(k)} aria-pressed={active === k}
-          className={`-mb-px border-b-2 px-3 py-2 ${active === k ? "border-blue-600 font-medium text-blue-700" : "border-transparent text-slate-600 hover:text-slate-900"}`}>
-          {l}
+          className={tabClass(active === k)}>
+          <TabLabel>{l}</TabLabel>
         </button>
       ))}
       {/* ปุ่ม "+ เพิ่ม…" ของหน้า (TabActions) ชิดขวาสุดของแถวแท็บ */}

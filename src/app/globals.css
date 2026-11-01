@@ -39,6 +39,15 @@
   --card-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 8px rgb(15 23 42 / 0.05);
 }
 
+/* จองที่ให้แถบเลื่อนเสมอ (1 พ.ย. 2026): เปลี่ยนจากหน้ายาว (มีแถบเลื่อน) ไปหน้าสั้น (ไม่มี) แล้วทั้งหน้าไม่เลื่อนซ้ายขวา
+   (Windows / Mac ที่ต่อเมาส์ · Mac ที่แถบเลื่อนลอยทับไม่มีผล) */
+html { scrollbar-gutter: stable; }
+
+/* ชื่อแท็บ (TabLabel): จองความกว้างของตัวหนาไว้ล่วงหน้า → แท็บที่เลือก (ตัวหนา) ไม่ดันแท็บข้าง ๆ ให้ขยับ
+   ::after = สำเนาตัวหนาที่มองไม่เห็น สูง 0 (โปรแกรมอ่านหน้าจอไม่อ่าน) */
+.tab-label { display: inline-flex; flex-direction: column; align-items: center; }
+.tab-label::after { content: attr(data-label); font-weight: 500; height: 0; overflow: hidden; visibility: hidden; user-select: none; pointer-events: none; }
+
 body {
   background: var(--page-bg);
   color: #0f172a;

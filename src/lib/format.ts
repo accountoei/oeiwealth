@@ -658,6 +658,11 @@ export function qtyUnit(q: number | string | null | undefined, unit: string | nu
 }
 
 /** ปุ่ม "+ เพิ่ม…" ท้ายแถวแท็บ — ขนาดเดียวกันทุกเมนู (ตกลง 28 ต.ค. 2026) */
+/** แถบแท็บ: หน้าตาเดียวกันทุกเมนู (1 พ.ย. 2026 · เดิม Income & Expenses / Cash / Loans / Business / Property ใช้เส้นใต้สีดำ แท็บกว้างกว่า)
+ *  เส้นใต้สีน้ำเงิน 2px ทับเส้นเทาของแถว · ใช้คู่กับ <TabLabel> (ชื่อแท็บไม่ขยับเมื่อเป็นตัวหนา) */
+export const tabClass = (active: boolean) =>
+  `-mb-px border-b-2 px-3 py-2 ${active ? "border-blue-600 font-medium text-blue-700" : "border-transparent text-slate-600 hover:text-slate-900"}`;
+
 export const ADD_BTN = "inline-flex items-center whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700";
 
 /** ชื่อย่อครอบครัว (ไม่มีรูป): หลายคำ (เว้นวรรค / ขีด) = ตัวแรกของ 2 คำแรก · คำเดียว = 2 ตัวแรก · ภาษาไทย = พยัญชนะตัวแรก */
