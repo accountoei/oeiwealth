@@ -18,9 +18,9 @@ export function baht(value: number | string | null | undefined, currency?: strin
 }
 
 /** ยอดหลักล้านเป็น "206.94" (หน่วย ล้าน · ทศนิยม 2) สำหรับการ์ดบน Dashboard · ต่ำกว่า 1 ล้าน → null (ให้แสดงเลขเต็ม) */
-export function millions(value: number | string | null | undefined): string | null {
+export function millions(value: number | string | null | undefined, always = false): string | null {
   const n = Number(value ?? 0);
-  if (!Number.isFinite(n) || Math.abs(n) < 1e6) return null;
+  if (!Number.isFinite(n) || (!always && Math.abs(n) < 1e6)) return null;
   return (n / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace("-", "\u2212");
 }
 
