@@ -69,7 +69,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         : await supabase.from("income_transactions").select("base_amount")
             .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", since);
     }),
-    // ผลตอบแทนรายพอร์ต (คำนวณหนัก · ทุกพอร์ตทุกครั้งที่เปิด) → จำผลไว้ 10 นาที / จนมีการบันทึก (src/lib/data-cache.ts)
+    // ผลตอบแทนรายพอร์ต (คำนวณหนัก · ทุกพอร์ตทุกครั้งที่เปิด) → จำผลไว้จนมีการบันทึก / ราคาอัตโนมัติเข้า (เพดาน 1 ชั่วโมง · src/lib/data-cache.ts)
     shownQ.then((ps) => Promise.all(ps.map(async (p) =>
       [p.asset_id, (await cachedRpc<R[]>("investment_returns", { p_portfolio_asset_id: p.asset_id })) ?? []] as const))),
     // แท็บอัปเดตยอด: พอร์ตที่แสดง ยกเว้นพอร์ตที่ปิดแล้ว

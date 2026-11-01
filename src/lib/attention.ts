@@ -10,13 +10,13 @@ export type AttentionItem = { text: string; href: string; tone: "red" | "amber" 
 /** งานที่ต้องทำ ณ วันนี้ (หน้า "สิ่งที่ต้องทำ" + ตัวเลขที่เมนูซ้าย) — ปิดเดือนอยู่บนสุด · cache() → ใน 1 คำขอคำนวณครั้งเดียว */
 export const getAttention = cache(async (): Promise<AttentionItem[]> => buildAttention(await createClient(), await monthToClose()));
 
-/** ตัวเลขที่เมนูซ้าย: จำไว้ 5 นาที / จนมีการบันทึก (ทุกหน้าไม่ต้องยิง ~13 คำสั่งทุกคลิก) · หน้า To-Do List ยังใช้ getAttention() สด */
+/** ตัวเลขที่เมนูซ้าย: จำไว้จนมีการบันทึก / งานเบื้องหลังเสร็จ (เพดาน 1 ชั่วโมง · ทุกหน้าไม่ต้องยิง ~13 คำสั่งทุกคลิก) · หน้า To-Do List ยังใช้ getAttention() สด */
 export const getTodoCount = cache(async (): Promise<{ total: number; red: number }> => {
   const toClose = await monthToClose();
   return cachedData(["todo-count", toClose], async (supabase) => {
     const a = await buildAttention(supabase, toClose);
     return { total: a.length, red: a.filter((x) => x.tone === "red").length };
-  }, 300);
+  });
 });
 
 async function buildAttention(supabase: SupabaseClient, toClose: string | null): Promise<AttentionItem[]> {
