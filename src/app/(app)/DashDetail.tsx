@@ -7,18 +7,16 @@ import { InfoTip } from "@/components/HeaderBar";
 import { baht } from "@/lib/format";
 import { loadGroupChanges, loadInvestmentGain, loadMonthFlows, type GroupChange, type InvestmentGain, type MonthFlows, type Row } from "./dashboard-detail";
 
-/** กล่องบน Dashboard · ปุ่ม "ดูรายละเอียด ›" มุมขวาบน → pop up รายละเอียด (โหลดตอนกด)
- *  (ตกลง 1 พ.ย. 2026: กดได้เฉพาะปุ่ม ไม่ใช่ทั้งกล่อง → ตารางในกล่องอ่านด้วยโปรแกรมอ่านหน้าจอได้ตามปกติ) */
-export function DetailBox({ title, hint, info, children, popupTitle, start, personId, ym, bridge }: {
-  title: ReactNode; hint?: string; info?: ReactNode; children: ReactNode; popupTitle: string;
-  start: string; personId: string; ym: string;
-  /** กล่องความมั่งคั่ง: บรรทัดสรุปเดียวกับในกล่อง (แสดงบนสุดของ pop up) */
-  bridge?: ReactNode;
+/** กรอบกล่องบน Dashboard · ปุ่ม "ดูรายละเอียด ›" มุมขวาบน → pop up (popup สร้างตอนกดเท่านั้น)
+ *  (ตกลง 1 พ.ย. 2026: กดได้เฉพาะปุ่ม ไม่ใช่ทั้งกล่อง → ตารางในกล่องอ่านด้วยโปรแกรมอ่านหน้าจอได้ตามปกติ)
+ *  ใช้กับกล่อง "Net Worth เปลี่ยนเพราะอะไร" และ "สัดส่วนสินทรัพย์ตามหมวด" (รอบ 4) */
+export function PopupBox({ title, hint, info, children, popupTitle, popup, className = "" }: {
+  title: ReactNode; hint?: string; info?: ReactNode; children: ReactNode; popupTitle: string; popup: ReactNode; className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4">
+      <div className={`rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 ${className}`}>
         <div className="mb-2 flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-1">
             <h2 className="text-base font-semibold text-slate-900">{title}</h2>
@@ -32,13 +30,21 @@ export function DetailBox({ title, hint, info, children, popupTitle, start, pers
       </div>
       {open && (
         <Modal title={popupTitle} size="lg" onClose={() => setOpen(false)}>
-          <div data-keep-open>
-            <ChangeDetail start={start} personId={personId} ym={ym} bridge={bridge} />
-          </div>
+          <div data-keep-open>{popup}</div>
         </Modal>
       )}
     </>
   );
+}
+
+/** กล่อง "Net Worth เปลี่ยนเพราะอะไร": pop up โหลดรายละเอียดตอนกด */
+export function DetailBox({ start, personId, ym, bridge, ...box }: {
+  title: ReactNode; hint?: string; info?: ReactNode; children: ReactNode; popupTitle: string;
+  start: string; personId: string; ym: string;
+  /** กล่องความมั่งคั่ง: บรรทัดสรุปเดียวกับในกล่อง (แสดงบนสุดของ pop up) */
+  bridge?: ReactNode;
+}) {
+  return <PopupBox {...box} popup={<ChangeDetail start={start} personId={personId} ym={ym} bridge={bridge} />} />;
 }
 
 function useLoad<T>(fn: () => Promise<T | { error: string }>) {

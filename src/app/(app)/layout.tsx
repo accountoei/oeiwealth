@@ -40,7 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div id={HEADER_SLOT_ID} className="col-span-2 -ml-24 flex justify-end empty:hidden md:col-span-1 md:ml-0" />
           <PendingBar />
         </header>
-        <main className="mx-auto max-w-7xl p-4 md:p-8"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>
+        <main className="mx-auto max-w-7xl p-4 md:p-8 2xl:max-w-[100rem]"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>
           <Suspense><NavReset><PendingArea>{children}</PendingArea></NavReset><RowHighlight /></Suspense>
         </CurrencyProvider></KeepHeight></main>
         <Toaster />

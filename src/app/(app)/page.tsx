@@ -6,7 +6,7 @@ import { requireAppUser } from "@/lib/auth";
 import { baht, millions, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
-import { DetailBox } from "./DashDetail";
+import { DetailBox, PopupBox } from "./DashDetail";
 import TrendChart from "./TrendChart";
 
 type Preview = {
@@ -38,9 +38,12 @@ type PersonDash = {
 type Family = { name: string; go_live_date: string; system_status: string };
 type InvGain = { gain: number; fx: number };
 
-/** สีหมวด (ตกลง 1 พ.ย. 2026): 7 สีแยกกันชัด ทุกสีเข้มพอบนพื้นขาว (≥ 3:1) · ใช้กับหมวดเท่านั้น (รายบุคคลใช้สีเดียว) · หนี้สิน = แดง */
-const GROUP_COLOR: Record<string, string> = { financial: "#2563eb", loans: "#0891b2", investment: "#7c3aed", business: "#475569",
-  property: "#059669", alternative: "#a16207", insurance: "#db2777" };
+/** สีหมวด (รอบ 4, 1 พ.ย. 2026 · เลือกด้วยวิธีของ Impeccable): ตั้งใน OKLCH ให้ความสว่าง / ความสดใกล้กัน (ไม่มีสีไหนเด่นเกิน)
+ *  ต่างกันที่เฉดสี + ความสว่าง · ทุกสีเข้มพอบนพื้นขาว (≥ 3:1) · ใช้กับหมวดเท่านั้น (รายบุคคลใช้สีเดียว) · มีชื่อหมวด + % กำกับเสมอ (ไม่ใช้สีอย่างเดียว)
+ *  ประกัน = เขียวมะกอกเข้ม (เดิมชมพู ใกล้แดงของหนี้สิน) · หนี้สิน = แดง (สีเดียวในหน้าที่เป็นโทนแดง) */
+const GROUP_COLOR: Record<string, string> = { financial: "#366bd3", loans: "#008c92", investment: "#7a4aba", business: "#586474",
+  property: "#298954", alternative: "#b68028", insurance: "#546316" };
+const LIAB_COLOR = "#c9302d";
 const GROUP: [string, string][] = [["financial", "เงินฝาก / เงินสด"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
 /** item_group ของรายการรายคน → คีย์หมวดบน Dashboard */
@@ -173,16 +176,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · กดแต่ละหมวดเพื่อดูรายการ) */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 lg:col-span-2">
-          <div className="mb-3 flex min-w-0 items-center gap-1">
-            <h2 className={`truncate ${H2}`}>สัดส่วนสินทรัพย์ตามหมวด · {personName || "ทั้งครอบครัว"}</h2>
-            <InfoTip label="คำอธิบายกล่องนี้">% คิดจากสินทรัพย์รวม · กดที่หมวดเพื่อดูรายการ · Net Worth = สินทรัพย์รวม − หนี้สิน (การ์ดบนสุด)</InfoTip>
-          </div>
+        {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · ปุ่ม "ดูรายละเอียด ›" → pop up รายการของแต่ละหมวด · รอบ 4) */}
+        <PopupBox className="lg:col-span-2" title={`สัดส่วนสินทรัพย์ตามหมวด · ${personName || "ทั้งครอบครัว"}`}
+          info="% คิดจากสินทรัพย์รวม · กด ดูรายละเอียด เพื่อดูรายการในแต่ละหมวด · Net Worth = สินทรัพย์รวม − หนี้สิน (การ์ดบนสุด)"
+          popupTitle={`สัดส่วนสินทรัพย์ตามหมวด ${thMonth(start)} · ${personName || "ทั้งครอบครัว"}`}
+          popup={<Suspense fallback={<Lines n={7} />}><AllocationBody start={start} personId={personId} detail /></Suspense>}>
           <Suspense fallback={<Lines n={7} />}>
             <AllocationBody start={start} personId={personId} />
           </Suspense>
-        </div>
+        </PopupBox>
 
         {/* ------------------------------------------------ รายบุคคล: Net Worth + % */}
         <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4">
@@ -292,46 +294,59 @@ async function ChartBody({ start, isCurrent, personId, from }: { start: string; 
   return <TrendChart points={points} selected={points.findIndex((pt) => pt.date === asOf)} />;
 }
 
-async function AllocationBody({ start, personId }: { start: string; personId: string }) {
+/** detail = เนื้อหา pop up (รายการของแต่ละหมวด) · ไม่ใช่ = แถวสรุปในกล่อง · ข้อมูลชุดเดียวกัน (cachedRpc → ดึงครั้งเดียว) */
+async function AllocationBody({ start, personId, detail }: { start: string; personId: string; detail?: boolean }) {
   const items = (personId ? await getItems(start, personId) : await getFamilyItems(start)) ?? [];
-  return <Allocation items={items} showShare={!!personId} />;
+  const g = groupItems(items);
+  return detail ? <AllocationDetail g={g} showShare={!!personId} /> : <Allocation g={g} />;
 }
 
-/** สัดส่วน 7 หมวด แถวละหมวด (% ของสินทรัพย์รวม) · กดหมวดเพื่อกางรายการใต้แถว · ต่อด้วยหนี้สิน (ใช้ทั้งภาพรวมครอบครัวและรายคน)
- *  ไม่มีบรรทัด Net Worth ท้ายกล่องแล้ว (ซ้ำกับการ์ดบนสุด · ตกลง 1 พ.ย. 2026) */
-function Allocation({ items, showShare }: { items: Item[]; showShare: boolean }) {
+type Grouped = { byKey: Record<string, Item[]>; total: number; liabs: Item[]; liabTotal: number };
+const sumItems = (xs: Item[]) => xs.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
+function groupItems(items: Item[]): Grouped {
   const assets = items.filter((i) => i.item_type === "ASSET").sort((a, b) => Number(b.base_value) - Number(a.base_value));
   const liabs = items.filter((i) => i.item_type === "LIABILITY").sort((a, b) => Number(b.base_value) - Number(a.base_value));
-  const total = assets.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
   const byKey: Record<string, Item[]> = {};
   for (const i of assets) (byKey[GROUP_FIELD[i.item_group] ?? "alternative"] ??= []).push(i);
-  const sum = (xs: Item[]) => xs.reduce((t, i) => t + Number(i.base_value ?? 0), 0);
-  const liabTotal = sum(liabs);
+  return { byKey, total: sumItems(assets), liabs, liabTotal: sumItems(liabs) };
+}
+
+/** สัดส่วน 7 หมวด แถวละหมวด (% ของสินทรัพย์รวม) · ต่อด้วยหนี้สิน (ใช้ทั้งภาพรวมครอบครัวและรายคน)
+ *  รอบ 4 (1 พ.ย. 2026): แถวไม่กางแล้ว · รายการของแต่ละหมวดอยู่ใน pop up "ดูรายละเอียด ›" (เหมือนกล่อง Net Worth เปลี่ยนเพราะอะไร)
+ *  ไม่มีบรรทัด Net Worth ท้ายกล่อง (ซ้ำกับการ์ดบนสุด) */
+function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
   return (
     // จอกว้าง (xl): 2 คอลัมน์ คอลัมน์ละ 4 แถว (เรียงลงก่อน) → กล่องเตี้ยลงครึ่งหนึ่ง ทั้งหน้าพอดีจอ · จอเล็กกว่า: แถวเดียวเรียงลง
     <div className="text-sm xl:grid xl:grid-flow-col xl:grid-rows-4 xl:gap-x-8 [&>*]:border-b [&>*]:border-slate-100">
       {GROUP.map(([k, label]) => {
         const list = byKey[k] ?? [];
-        const v = sum(list);
-        const pct = total ? (v / total) * 100 : 0;
-        const head = <AllocRow color={GROUP_COLOR[k]} label={label} pct={pct} value={v} count={list.length} />;
+        const v = sumItems(list);
         // หมวดที่ยังไม่มีรายการ: ตัวหนังสือสีเทา (ไม่ทำจาง) · แสดง — แทนตัวเลข
-        if (!list.length) return <div key={k} className="py-2 text-slate-500">{head}</div>;
         return (
-          <details key={k} className="group py-2">
-            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">{head}</summary>
-            <ItemList items={list} showShare={showShare} />
-          </details>
+          <div key={k} className={`py-2 ${list.length ? "" : "text-slate-500"}`}>
+            <AllocRow color={GROUP_COLOR[k]} label={label} pct={total ? (v / total) * 100 : 0} value={v} count={list.length} />
+          </div>
         );
       })}
       {liabs.length > 0 && (
-        <details className="group py-2">
-          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-            <AllocRow color="#dc2626" label="หนี้สิน" value={-liabTotal} count={liabs.length} />
-          </summary>
-          <ItemList items={liabs} showShare={showShare} negative />
-        </details>
+        <div className="py-2"><AllocRow color={LIAB_COLOR} label="หนี้สิน" value={-liabTotal} count={liabs.length} /></div>
       )}
+    </div>
+  );
+}
+
+/** pop up ของกล่องสัดส่วน: หมวดละตาราง (ชื่อรายการ · % ในหมวด · มูลค่า) + แถวรวมหมวด · หมวดที่ไม่มีรายการไม่แสดง · ต่อด้วยหนี้สิน */
+function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: { g: Grouped; showShare: boolean }) {
+  const groups = GROUP.filter(([k]) => byKey[k]?.length);
+  if (!groups.length && !liabs.length) return <p className="text-sm text-slate-500">ยังไม่มีรายการ</p>;
+  return (
+    <div className="space-y-5">
+      {groups.map(([k, label]) => {
+        const list = byKey[k];
+        const v = sumItems(list);
+        return <ItemTable key={k} color={GROUP_COLOR[k]} label={label} pct={total ? (v / total) * 100 : 0} items={list} sum={v} showShare={showShare} />;
+      })}
+      {liabs.length > 0 && <ItemTable color={LIAB_COLOR} label="หนี้สิน" items={liabs} sum={liabTotal} showShare={showShare} negative />}
     </div>
   );
 }
@@ -339,7 +354,7 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
 function AllocRow({ color, label, pct, value, count }: { color: string; label: string; pct?: number; value: number; count: number }) {
   const pctText = pct == null ? "" : count ? `${pct.toFixed(1)}%` : "—";
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem] xl:grid-cols-[1fr_auto_1rem]">
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[11rem_1fr_3.5rem_8.5rem] xl:grid-cols-[1fr_auto]">
       <span className="flex items-center gap-2">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />{label}
         <span className="text-xs text-slate-400">{count ? `(${count})` : ""}</span>
@@ -351,24 +366,40 @@ function AllocRow({ color, label, pct, value, count }: { color: string; label: s
       <span className={`text-right tabular-nums ${value < 0 ? "text-red-700" : count ? "text-slate-700" : ""}`}>
         {count > 0 && <span className="mr-2 font-medium sm:hidden xl:inline">{pctText}</span>}{count ? baht(value) : "—"}
       </span>
-      <span className="hidden text-slate-400 transition-transform group-open:rotate-90 sm:block xl:row-start-1 xl:col-start-3">{count ? "▸" : ""}</span>
     </div>
   );
 }
 
-function ItemList({ items, showShare, negative }: { items: Item[]; showShare: boolean; negative?: boolean }) {
+function ItemTable({ color, label, pct, items, sum, showShare, negative }: {
+  color: string; label: string; pct?: number; items: Item[]; sum: number; showShare: boolean; negative?: boolean;
+}) {
+  const money = (v: number) => <span className={negative ? "text-red-700" : ""}>{negative ? "\u2212" : ""}{baht(v)}</span>;
   return (
-    <ul className="mt-2 space-y-1 rounded-lg bg-slate-50 px-3 py-2 sm:ml-[1.125rem] sm:mr-7">
-      {items.map((i, k) => (
-        <li key={k} className="flex justify-between gap-3">
-          <span>{i.item_name}{showShare && i.share_note
-            ? <span className="text-xs text-slate-400"> · {i.share_note}</span>
-            : showShare && i.ownership_percent && Number(i.ownership_percent) < 100
-              ? <span className="text-xs text-slate-400"> · ถือ {Number(Number(i.ownership_percent).toFixed(2))}%</span> : null}</span>
-          <span className={`shrink-0 tabular-nums ${negative ? "text-red-700" : ""}`}>{negative ? "−" : ""}{baht(i.base_value)}</span>
-        </li>
-      ))}
-    </ul>
+    <section>
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-800">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />{label}
+        <span className="text-xs font-normal text-slate-400">({items.length}){pct != null ? ` · ${pct.toFixed(1)}% ของสินทรัพย์รวม` : ""}</span>
+      </h3>
+      {/* table-fixed + กว้างคอลัมน์คงที่ → คอลัมน์ % และมูลค่าตรงกันทุกหมวด */}
+      <table className="w-full table-fixed text-sm">
+        <colgroup><col /><col className="w-14 sm:w-24" /><col className="w-[6.5rem] sm:w-36" /></colgroup>
+        <tbody className="divide-y divide-slate-100">
+          {items.map((i, k) => (
+            <tr key={k}>
+              <td className="py-1.5 pr-3 [overflow-wrap:anywhere]">{i.item_name}{showShare && i.share_note
+                ? <span className="text-xs text-slate-400"> · {i.share_note}</span>
+                : showShare && i.ownership_percent && Number(i.ownership_percent) < 100
+                  ? <span className="text-xs text-slate-400"> · ถือ {Number(Number(i.ownership_percent).toFixed(2))}%</span> : null}</td>
+              <td className="py-1.5 pr-3 text-right text-xs tabular-nums text-slate-500">{sum ? `${((Number(i.base_value) * 100) / sum).toFixed(1)}%` : ""}</td>
+              <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(Number(i.base_value))}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className="border-t border-slate-200 font-medium">
+          <tr><td className="py-1.5">รวม{label}</td><td></td><td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(sum)}</td></tr>
+        </tfoot>
+      </table>
+    </section>
   );
 }
 
@@ -439,7 +470,7 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
           );
         })}
       </ul>
-      <div className={`${PROW} border-t-2 border-slate-200 pt-2 font-medium`}>
+      <div className={`${PROW} border-t border-slate-100 pt-2 font-medium`}>
         <span>รวมครอบครัว</span><span className="text-right tabular-nums">100.0%</span><span className="text-right tabular-nums">{baht(total)}</span>
       </div>
     </div>
@@ -449,13 +480,14 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
 /** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · % · Net Worth */
 const PROW = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3";
 
-/** การ์ดตัวเลขบน: ตัวใหญ่เป็น "ล้านบาท" (อ่านเร็ว) + เลขเต็มตัวเล็กใต้ (ตรวจทานได้) · ต่ำกว่า 1 ล้านแสดงเลขเต็มอย่างเดียว
+/** การ์ดตัวเลขบน: ตัวใหญ่เป็น "ล้านบาท" (อ่านเร็ว) + เลขเต็มตัวเล็กใต้ (ตรวจทานได้) · ทุกการ์ดทุกยอด (รอบ 4)
  *  บรรทัดเปลี่ยนแปลงเป็นป้าย "เพิ่มขึ้น / ลดลง" (เขียว = ดีขึ้น · แดง = แย่ลง · หนี้ลด = ดีขึ้น) แล้วตามด้วย "จาก…" สีเทา */
 function Big({ label, who, value, base, baseLabel, inverse, hero }: { label: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean; hero?: boolean }) {
   // ปัดเป็นบาท (เหมือนตัวเลขที่แสดง) แล้วต่างกัน 0 = "ไม่เปลี่ยนแปลง"
   const diff = base == null ? null : Math.round(Number(value) - base);
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
-  const m = millions(value);
+  // รอบ 4: ทุกการ์ดเป็น "ล้านบาท" แม้ต่ำกว่า 1 ล้าน (เช่น หนี้สิน 0.80 ล้านบาท) → 3 การ์ดมีบรรทัดเหมือนกัน
+  const m = millions(value, true);
   const pct = diff && base ? Math.abs((diff / Math.abs(base)) * 100).toFixed(2) : null;
   // "สิ้นเดือน ต.ค. 2569 (อัตโนมัติ)" → "สิ้นเดือน ต.ค. 2569" (ชื่อเต็มอยู่ใน title เมื่อชี้) → การ์ดไม่ขึ้นบรรทัดใหม่
   const shortBase = (baseLabel ?? "").replace(/\s*\([^)]*\)\s*$/, "");
@@ -464,7 +496,9 @@ function Big({ label, who, value, base, baseLabel, inverse, hero }: { label: str
       style={hero ? { boxShadow: "var(--card-shadow)" } : undefined}>
       {/* ชื่อคนบรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง */}
       <div className={`truncate text-xs ${hero ? "font-semibold text-ink" : "text-slate-500"}`} title={`${label} · ${who}`}>{label} · {who}</div>
-      <div className={`mt-1 whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums text-ink ${hero ? "text-[1.75rem] sm:text-3xl" : "text-xl sm:text-2xl"}`}>
+      {/* ขนาดตัวเลขเป็น text-[…] ไม่ใช่ text-xl / text-2xl: globals.css มีกฎ .text-2xl.tabular-nums บังคับสีเกือบดำ (#0b1220)
+          → เดิมการ์ดสินทรัพย์ / หนี้สินเป็นสีดำ ไม่ใช่กรมท่า (เจ้าของเห็นเป็นดำ · รอบ 4) */}
+      <div className={`mt-1 whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums text-ink ${hero ? "text-[1.75rem] sm:text-3xl" : "text-[1.25rem] sm:text-[1.5rem]"}`}>
         {m ?? baht(value)}<span className="ml-1.5 text-sm font-normal tracking-normal text-slate-500">{m ? "ล้านบาท" : "บาท"}</span>
       </div>
       {m && <div className="text-xs tabular-nums text-slate-500">{baht(value)} บาท</div>}
