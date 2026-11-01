@@ -8,12 +8,12 @@ export function money(value: number | string | null | undefined, currency?: stri
   return currency ? `${s} ${currency}` : s;
 }
 
-/** จำนวนเงินปัดเป็นบาท (ไม่มีสตางค์) สำหรับหน้าสรุป เช่น Dashboard · คอมมาคั่นหลักพัน · −0 แสดงเป็น 0 */
+/** จำนวนเงินปัดเป็นบาท (ไม่มีสตางค์) สำหรับหน้าสรุป เช่น Dashboard · คอมมาคั่นหลักพัน · −0 แสดงเป็น 0 · ติดลบใช้เครื่องหมายลบ "−" (ตัวเดียวกันทั้งหน้า) */
 export function baht(value: number | string | null | undefined, currency?: string): string {
   if (value === null || value === undefined || value === "") return "-";
   const n = typeof value === "string" ? Number(String(value).replace(/,/g, "")) : value;
   if (Number.isNaN(n)) return "-";
-  const s = (Math.round(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const s = (Math.round(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 }).replace("-", "\u2212");
   return currency ? `${s} ${currency}` : s;
 }
 

@@ -40,14 +40,23 @@ export function PageInfo({ children }: { children: ReactNode }) {
   return target ? createPortal(<InfoTip>{children}</InfoTip>, target) : null;
 }
 
-function InfoTip({ children }: { children: ReactNode }) {
+/** ไอคอน ⓘ ชี้ / แตะ แล้วแสดงคำอธิบาย · ใช้ที่หัวกล่องได้ด้วย · กล่องคำอธิบายเริ่มที่ไอคอน แล้วเลื่อนซ้ายเองเมื่อทางขวาไม่พอ (ไม่ล้นจอ) */
+export function InfoTip({ children, label = "คำอธิบายหน้านี้" }: { children: ReactNode; label?: string }) {
   const [open, setOpen] = useState(false);
+  const [shift, setShift] = useState(0);
+  const show = (el: HTMLElement, v: boolean) => {
+    if (v) {
+      const r = el.getBoundingClientRect(), w = Math.min(352, window.innerWidth * 0.8);
+      setShift(Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) - r.left);
+    }
+    setOpen(v);
+  };
   return (
-    <span className="relative inline-flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" aria-label="คำอธิบายหน้านี้" aria-expanded={open} onClick={() => setOpen(!open)} onBlur={() => setOpen(false)}
+    <span className="relative inline-flex" onMouseEnter={(e) => show(e.currentTarget, true)} onMouseLeave={() => setOpen(false)}>
+      <button type="button" aria-label={label} aria-expanded={open} onClick={(e) => show(e.currentTarget, !open)} onBlur={() => setOpen(false)}
         className="rounded-full p-0.5 text-slate-400 hover:text-slate-700"><Info className="h-4 w-4" /></button>
       {open && (
-        <span role="tooltip" className="absolute left-0 top-full z-30 mt-1 w-[min(22rem,80vw)] rounded-lg border border-slate-200 bg-white p-3 text-xs font-normal leading-relaxed text-slate-600 shadow-lg">
+        <span role="tooltip" style={{ left: shift }} className={`absolute top-full z-30 mt-1 w-[min(22rem,80vw)] rounded-lg border border-slate-200 bg-white p-3 text-xs font-normal leading-relaxed text-slate-600 shadow-lg`}>
           {children}
         </span>
       )}
