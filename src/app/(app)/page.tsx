@@ -3,10 +3,11 @@ import { Suspense, cache, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { money, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
+import { baht, monthOptions, monthRange, thDate, thMonth, todayBangkok, blueAt } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { DetailBox } from "./DashDetail";
+import TrendChart from "./TrendChart";
 
 type Preview = {
   as_of: string; financial: number; investment: number; property: number; alternative: number;
@@ -119,7 +120,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         person={personId} month={ym} /></HeaderFilters>
 
       {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → ความมั่งคั่งสุทธิ */}
-      <Suspense fallback={<section className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <CardSkeleton key={i} />)}</section>}>
+      <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} wide={i === 2} />)}</section>}>
         <TopCards start={start} personId={personId} personName={personName} />
       </Suspense>
 
@@ -183,9 +184,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 }
 
 // ---------------------------------------------------------------------------- โครงเทาระหว่างรอ
-function CardSkeleton() {
+/** การ์ด 3 ใบบน: มือถือ 1 คอลัมน์ · จอกลาง (รวมแท็บเล็ต / จอคอมเล็กที่มีเมนูซ้าย) 2 คอลัมน์ ใบ Net Worth เต็มแถว · จอกว้าง (xl) 3 ใบเรียง
+ *  (เดิม md:grid-cols-3 → จอ 768–1279px การ์ดแคบจนตัวเลขตกบรรทัด / ชนขอบ) */
+const TOP_GRID = "grid gap-4 sm:grid-cols-2 xl:grid-cols-3";
+const WIDE = "sm:col-span-2 xl:col-span-1";
+
+function CardSkeleton({ wide }: { wide?: boolean }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 animate-pulse">
+    <div className={`rounded-xl border border-slate-200 bg-white p-5 animate-pulse ${wide ? WIDE : ""}`}>
       <div className="h-3 w-28 rounded bg-slate-100" />
       <div className="mt-2 h-7 w-40 rounded bg-slate-200" />
       <div className="mt-2 h-3 w-24 rounded bg-slate-100" />
@@ -229,14 +235,14 @@ async function TopCards({ start, personId, personName }: { start: string; person
   const unalloc = byPerson.find((x) => !x.person_id);
   return (
     <>
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className={TOP_GRID}>
         <Big label="สินทรัพย์รวม" who={person ? person.name : "ทั้งครอบครัว"} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
         <Big label="หนี้สินรวม" who={person ? person.name : "ทั้งครอบครัว"} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
         <Big label="ความมั่งคั่งสุทธิ" who={person ? person.name : "ทั้งครอบครัว"} value={nw}
-          base={base ? Number(base.net_worth) : null} baseLabel={base?.label} />
+          base={base ? Number(base.net_worth) : null} baseLabel={base?.label} wide />
       </section>
       {!person && unalloc && Number(unalloc.net_worth) !== 0 && (
-        <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {money(unalloc.net_worth, "THB", 0)} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
+        <p className="text-xs text-amber-700">มีมูลค่าที่ยังไม่ระบุเจ้าของ {baht(unalloc.net_worth, "THB")} (รวมในยอดครอบครัว แต่ไม่อยู่ในยอดรายบุคคล)</p>
       )}
     </>
   );
@@ -312,7 +318,7 @@ function Allocation({ items, showShare }: { items: Item[]; showShare: boolean })
       <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 border-t-2 border-slate-200 py-2.5 font-medium sm:grid-cols-[11rem_1fr_3.5rem_8.5rem_1rem]">
         <span className="sm:col-span-2">ความมั่งคั่งสุทธิ (Net Worth)</span>
         <span className="hidden sm:block" />
-        <span className={`text-right tabular-nums ${total - liabTotal < 0 ? "text-red-700" : ""}`}>{money(total - liabTotal, undefined, 0)}</span>
+        <span className={`text-right tabular-nums ${total - liabTotal < 0 ? "text-red-700" : ""}`}>{baht(total - liabTotal)}</span>
         <span className="hidden sm:block" />
       </div>
     </div>
@@ -331,7 +337,7 @@ function AllocRow({ dot, label, pct, value, count, bar }: { dot: string; label: 
       </div>
       <span className="hidden text-right tabular-nums font-medium text-slate-700 sm:block">{pct != null ? `${pct.toFixed(1)}%` : ""}</span>
       <span className={`text-right tabular-nums ${value < 0 ? "text-red-700" : "text-slate-700"}`}>
-        <span className="mr-2 font-medium sm:hidden">{pct != null ? `${pct.toFixed(1)}%` : ""}</span>{money(value, undefined, 0)}
+        <span className="mr-2 font-medium sm:hidden">{pct != null ? `${pct.toFixed(1)}%` : ""}</span>{baht(value)}
       </span>
       <span className="hidden text-slate-400 transition-transform group-open:rotate-90 sm:block">{count ? "▸" : ""}</span>
     </div>
@@ -347,7 +353,7 @@ function ItemList({ items, showShare, negative }: { items: Item[]; showShare: bo
             ? <span className="text-xs text-slate-400"> · {i.share_note}</span>
             : showShare && i.ownership_percent && Number(i.ownership_percent) < 100
               ? <span className="text-xs text-slate-400"> · ถือ {Number(Number(i.ownership_percent).toFixed(2))}%</span> : null}</span>
-          <span className={`shrink-0 tabular-nums ${negative ? "text-red-700" : ""}`}>{negative ? "−" : ""}{money(i.base_value, undefined, 0)}</span>
+          <span className={`shrink-0 tabular-nums ${negative ? "text-red-700" : ""}`}>{negative ? "−" : ""}{baht(i.base_value)}</span>
         </li>
       ))}
     </ul>
@@ -376,7 +382,7 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
             : <BRow label={personId ? "− ค่าใช้จ่ายสุทธิ (ที่ระบุชื่อ)" : "− ค่าใช้จ่ายสุทธิ"} v={-expense} />}
           <BRow label="= เงินคงเหลือสุทธิ" v={net} sub />
           <BRow label={personId ? "± กำไร / ขาดทุนเงินลงทุน (ตามสัดส่วนถือ)" : "± กำไร / ขาดทุนเงินลงทุน"} v={dm ? gain : 0}
-            note={dm && fx ? <>ในนั้นจาก FX {money(fx, undefined, 0)}</> : null} />
+            note={dm && fx ? <>ในนั้นจาก FX {baht(fx)}</> : null} />
           <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={dm ? other : 0} />
           <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
         </tbody>
@@ -393,53 +399,57 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
   const total = Number(dm?.net_worth ?? 0);                                // % ของ Net Worth ครอบครัว (รวมส่วนที่ไม่ระบุเจ้าของ)
   if (!rows.length) return <p className="text-sm text-slate-500">ยังไม่มีข้อมูล</p>;
   return (
-    <table className="w-full text-sm">
-      <thead className="text-left text-xs text-slate-500">
-        <tr><th className="py-1">สมาชิก</th><th className="hidden sm:table-cell"></th><th className="px-2 text-right">%</th><th className="text-right">Net Worth</th></tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
+    // แถวละคน: ชื่อ · % · Net Worth แล้วแท่งสัดส่วนเต็มความกว้างใต้แถว (เดิมเป็นคอลัมน์แท่งในตาราง → กล่องแคบแล้วตัวเลขล้นขอบขวา)
+    <div className="text-sm">
+      <div className={`${PROW} pb-1 text-xs font-semibold text-slate-600`}><span>สมาชิก</span><span className="text-right">%</span><span className="text-right">Net Worth</span></div>
+      <ul className="divide-y divide-slate-100">
         {rows.map((x, i) => {
           const v = Number(x.net_worth);
           const pct = total ? (v * 100) / total : 0;
           const color = x.person_id ? blueAt(i) : "#d97706";
+          const sel = !!x.person_id && x.person_id === personId;
           return (
-            <tr key={x.person_id ?? "none"} className={`${x.person_id ? "" : "text-amber-700"} ${x.person_id && x.person_id === personId ? "bg-blue-50/60" : ""}`}>
-              <td className="whitespace-nowrap py-2 pr-2">
-                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: color }} />
-                {x.person_id ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="hover:underline">{x.name}</Link> : x.name}
-              </td>
-              <td className="hidden w-full min-w-12 sm:table-cell">
-                <div className="h-2.5 overflow-hidden rounded-full bg-blue-50">
-                  {pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
-                </div>
-              </td>
-              <td className={`whitespace-nowrap px-2 text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</td>
-              <td className={`whitespace-nowrap text-right font-medium tabular-nums ${v < 0 ? "text-red-700" : ""}`}>{money(v, undefined, 0)}</td>
-            </tr>
+            <li key={x.person_id ?? "none"} className={`py-2 ${x.person_id ? "" : "text-amber-700"} ${sel ? "-mx-2 rounded-md bg-blue-50/60 px-2" : ""}`}>
+              <div className={PROW}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+                  {x.person_id
+                    ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="truncate hover:underline" aria-current={sel ? "true" : undefined}>{x.name}</Link>
+                    : <span className="truncate">{x.name}</span>}
+                </span>
+                <span className={`text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</span>
+                <span className={`text-right font-medium tabular-nums ${v < 0 ? "text-red-700" : ""}`}>{baht(v)}</span>
+              </div>
+              <div className="ml-[1.125rem] mt-1.5 h-1.5 overflow-hidden rounded-full bg-blue-50" aria-hidden="true">
+                {pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
+              </div>
+            </li>
           );
         })}
-      </tbody>
-      <tfoot className="border-t-2 border-slate-200 font-medium">
-        <tr><td className="py-2">รวมครอบครัว</td><td className="hidden sm:table-cell"></td><td className="px-2 text-right tabular-nums">100.0%</td>
-          <td className="text-right tabular-nums">{money(total, undefined, 0)}</td></tr>
-      </tfoot>
-    </table>
+      </ul>
+      <div className={`${PROW} border-t-2 border-slate-200 pt-2 font-medium`}>
+        <span>รวมครอบครัว</span><span className="text-right tabular-nums">100.0%</span><span className="text-right tabular-nums">{baht(total)}</span>
+      </div>
+    </div>
   );
 }
 
-function Big({ label, who, value, base, baseLabel, inverse }: { label: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean }) {
+/** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · % · Net Worth */
+const PROW = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3";
+
+function Big({ label, who, value, base, baseLabel, inverse, wide }: { label: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean; wide?: boolean }) {
   // ปัดเป็นบาท (เหมือนตัวเลขที่แสดง) แล้วต่างกัน 0 = "ไม่เปลี่ยนแปลง"
   const diff = base == null ? null : Math.round(Number(value) - base);
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
+    <div className={`min-w-0 rounded-xl border border-slate-200 bg-white p-5 num-box ${wide ? WIDE : ""}`}>
       {/* ชื่อคนบรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง */}
       <div className="truncate text-xs text-slate-500" title={`${label} · ${who}`}>{label} · {who}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{money(value, "THB", 0)}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums">{baht(value, "THB")}</div>
       {diff != null && (diff === 0
         ? <div className="mt-1 text-xs text-slate-500">ไม่เปลี่ยนแปลงจาก{baseLabel}</div>
         : <div className={`mt-1 text-xs ${good ? "text-emerald-700" : "text-red-700"}`}>
-            {diff > 0 ? "▲ +" : "▼ "}{money(diff, undefined, 0)}
+            {diff > 0 ? "▲ +" : "▼ "}{baht(diff)}
             {base ? ` (${((diff / Math.abs(base)) * 100).toFixed(2)}%)` : ""} จาก{baseLabel}
           </div>
       )}
@@ -453,7 +463,7 @@ function BRow({ label, v, bold, sub, note }: { label: string; v: number; bold?: 
     <tr className={bold ? "font-medium" : sub ? "bg-slate-50 italic" : ""}>
       <td className={`py-1.5 pr-2 ${sub ? "pl-2 font-medium text-slate-700" : ""}`}>{label}
         {note && <div className="pl-3 text-xs text-slate-500">{note}</div>}</td>
-      <td className={`text-right tabular-nums ${sub ? "pr-2 font-medium " : ""}${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{money(v, undefined, 0)}</td>
+      <td className={`text-right tabular-nums ${sub ? "pr-2 font-medium " : ""}${!bold && v < 0 ? "text-red-700" : !bold && v > 0 ? "text-emerald-700" : ""}`}>{baht(v)}</td>
     </tr>
   );
 }
@@ -474,55 +484,4 @@ function clipRange<T extends { date: string }>(points: T[], from: string | null)
   const i = points.findIndex((pt) => pt.date >= from);
   if (i < 0) return points.slice(-1);
   return points.slice(points[i].date === from ? i : Math.max(0, i - 1));
-}
-
-/** กราฟเส้นเดียว (SVG) — จุดทึบ = ยอดยืนยันแล้ว, จุดกลวง = ประมาณการ · hover แสดงค่า */
-function TrendChart({ points, selected }: { points: { label: string; date: string; v: number; solid: boolean }[]; selected: number }) {
-  if (points.length < 2) return <p className="text-sm text-slate-500">ข้อมูลยังไม่พอแสดงกราฟ</p>;
-  // แกนตัวเลขทั้งซ้ายและขวา (ชุดเดียวกัน) → อ่านค่าจุดล่าสุดด้านขวาได้ง่าย
-  const W = 640, H = 220, L = 70, R = 70, T = 12, B = 28;
-  const vs = points.map((x) => x.v);
-  let lo = Math.min(...vs), hi = Math.max(...vs);
-  const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
-  lo -= pad; hi += pad;
-  const x = (i: number) => L + (i * (W - L - R)) / (points.length - 1);
-  const y = (v: number) => T + ((hi - v) * (H - T - B)) / (hi - lo);
-  const ticks = [0, 0.5, 1].map((f) => lo + (hi - lo) * f);
-  // ทศนิยมแกนปรับตามช่วงยอด: ยอดขยับน้อย → แสดงละเอียดขึ้น (กันป้ายซ้ำกัน เช่น 209.4M สามบรรทัด)
-  const step = (hi - lo) / 2;
-  const fmt = (v: number) => {
-    const [div, unit] = Math.abs(v) >= 1e6 ? [1e6, "M"] : Math.abs(v) >= 1e3 ? [1e3, "K"] : [1, ""];
-    const d = Math.min(4, Math.max(unit === "M" ? 1 : 0, Math.ceil(-Math.log10(step / div))));
-    return `${(v / div).toFixed(d)}${unit}`;
-  };
-  const path = points.map((pt, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(pt.v).toFixed(1)}`).join(" ");
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="กราฟ Net Worth">
-      <defs>
-        <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1f5eff" stopOpacity={0.22} />
-          <stop offset="100%" stopColor="#1f5eff" stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      {ticks.map((t, i) => (
-        <g key={i}>
-          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e6ecf7" strokeWidth={1} strokeDasharray="3 4" />
-          <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#64748b">{fmt(t)}</text>
-          <text x={W - R + 8} y={y(t) + 4} textAnchor="start" fontSize={11} fill="#64748b">{fmt(t)}</text>
-        </g>
-      ))}
-      <path d={`${path} L${x(points.length - 1).toFixed(1)},${H - B} L${x(0).toFixed(1)},${H - B} Z`} fill="url(#nwFill)" stroke="none" />
-      <path d={path} fill="none" stroke="#1f5eff" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((pt, i) => (
-        <g key={i}>
-          <circle cx={x(i)} cy={y(pt.v)} r={14} fill="transparent"><title>{`${pt.label} (${pt.date}): ${pt.v.toLocaleString("th-TH", { maximumFractionDigits: 0 })} บาท`}</title></circle>
-          {i === selected && <circle cx={x(i)} cy={y(pt.v)} r={10} fill="none" stroke="#86afff" strokeWidth={2.5} pointerEvents="none" />}
-          <circle cx={x(i)} cy={y(pt.v)} r={5} fill={pt.solid ? "#1f5eff" : "#ffffff"} stroke="#1f5eff" strokeWidth={2} pointerEvents="none" />
-          {(i === 0 || i === points.length - 1 || points.length <= 8) && (
-            <text x={x(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"} fontSize={11} fill="#64748b">{pt.label}</text>
-          )}
-        </g>
-      ))}
-    </svg>
-  );
 }
