@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
-import { money } from "@/lib/format";
+import { baht } from "@/lib/format";
 import { loadGroupChanges, loadInvestmentGain, loadMonthFlows, type GroupChange, type InvestmentGain, type MonthFlows, type Row } from "./dashboard-detail";
 
 /** กล่องบน Dashboard ที่กดได้ → pop up รายละเอียด (โหลดตอนกด) */
@@ -68,12 +68,12 @@ function RowsTable({ title, rows, total, totalLabel = "รวม", empty, negati
               <tr key={r.key}>
                 <td className="py-1.5 pr-3">{r.label}{r.count ? <span className="text-xs text-slate-400"> ({r.count})</span> : null}</td>
                 <td className="w-24 py-1.5 pr-3 text-right text-xs tabular-nums text-slate-500">{total ? `${((r.value * 100) / total).toFixed(1)}%` : ""}</td>
-                <td className={`py-1.5 text-right tabular-nums ${negative ? "text-red-700" : ""}`}>{money(r.value, undefined, 0)}</td>
+                <td className={`py-1.5 text-right tabular-nums ${negative ? "text-red-700" : ""}`}>{baht(r.value)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot className="border-t-2 border-slate-200 font-medium">
-            <tr><td className="py-1.5">{totalLabel}</td><td></td><td className={`py-1.5 text-right tabular-nums ${negative ? "text-red-700" : ""}`}>{money(total, undefined, 0)}</td></tr>
+            <tr><td className="py-1.5">{totalLabel}</td><td></td><td className={`py-1.5 text-right tabular-nums ${negative ? "text-red-700" : ""}`}>{baht(total)}</td></tr>
           </tfoot>
         </table>
       )}
@@ -106,17 +106,17 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
                   return (
                     <tr key={r.key}>
                       <td className="py-1.5">{r.label}</td>
-                      <td className={`text-right tabular-nums ${r.key === "LIABILITY" ? "text-red-700" : ""}`}>{money(r.start, undefined, 0)}</td>
-                      <td className={`text-right tabular-nums ${r.key === "LIABILITY" ? "text-red-700" : ""}`}>{money(r.end, undefined, 0)}</td>
-                      <td className={`text-right tabular-nums ${sign(d)}`}>{d > 0 ? "+" : ""}{money(d, undefined, 0)}</td>
+                      <td className={`text-right tabular-nums ${r.key === "LIABILITY" ? "text-red-700" : ""}`}>{baht(r.start)}</td>
+                      <td className={`text-right tabular-nums ${r.key === "LIABILITY" ? "text-red-700" : ""}`}>{baht(r.end)}</td>
+                      <td className={`text-right tabular-nums ${sign(d)}`}>{d > 0 ? "+" : ""}{baht(d)}</td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot className="border-t-2 border-slate-200 font-medium">
-                <tr><td className="py-1.5">Net Worth</td><td className="text-right tabular-nums">{money(nw("start"), undefined, 0)}</td>
-                  <td className="text-right tabular-nums">{money(nw("end"), undefined, 0)}</td>
-                  <td className={`text-right tabular-nums ${sign(nw("end") - nw("start"))}`}>{nw("end") - nw("start") > 0 ? "+" : ""}{money(nw("end") - nw("start"), undefined, 0)}</td></tr>
+                <tr><td className="py-1.5">Net Worth</td><td className="text-right tabular-nums">{baht(nw("start"))}</td>
+                  <td className="text-right tabular-nums">{baht(nw("end"))}</td>
+                  <td className={`text-right tabular-nums ${sign(nw("end") - nw("start"))}`}>{nw("end") - nw("start") > 0 ? "+" : ""}{baht(nw("end") - nw("start"))}</td></tr>
               </tfoot>
             </table>
             <p className="mt-1 text-xs text-slate-500">
@@ -131,7 +131,7 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
               {f.investment.length > 0 && <RowsTable title="+ รายได้ลงทุน ตามพอร์ต" rows={f.investment} total={f.investmentTotal} empty="-" />}
             </div>
             <RowsTable title="− ค่าใช้จ่ายตามหมวด" rows={f.expense} total={f.expenseTotal} empty="ไม่มีค่าใช้จ่าย" negative
-              totalLabel={f.reimbursements ? `รวม (ก่อนหักเงินคืน ${money(f.reimbursements, undefined, 0)})` : "รวม"} />
+              totalLabel={f.reimbursements ? `รวม (ก่อนหักเงินคืน ${baht(f.reimbursements)})` : "รวม"} />
           </div>
           {f.topExpenses.length > 0 && (
             <section>
@@ -142,7 +142,7 @@ function ChangeDetail({ start, personId, ym, bridge }: { start: string; personId
                     <tr key={i}>
                       <td className="w-24 py-1.5 pr-3 text-xs text-slate-500">{e.date.slice(8, 10)}/{e.date.slice(5, 7)}</td>
                       <td className="py-1.5 pr-3">{e.label}{e.category && <span className="text-xs text-slate-400"> · {e.category}</span>}</td>
-                      <td className="py-1.5 text-right tabular-nums text-red-700">{money(e.value, undefined, 0)}</td>
+                      <td className="py-1.5 text-right tabular-nums text-red-700">{baht(e.value)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -179,12 +179,12 @@ function GainTable({ ig }: { ig: InvestmentGain }) {
             {rows.map((r) => (
               <tr key={r.asset_id} className="align-top">
                 <td className="py-1.5 pr-2"><Link href={`/investments/${r.asset_id}`} className="hover:underline">{r.name}</Link></td>
-                <td className="text-right tabular-nums">{money(r.start, undefined, 0)}</td>
-                <td className="text-right tabular-nums text-slate-500">{r.flows ? `${r.flows > 0 ? "+" : ""}${money(r.flows, undefined, 0)}` : "-"}</td>
-                <td className="text-right tabular-nums">{money(r.end, undefined, 0)}</td>
+                <td className="text-right tabular-nums">{baht(r.start)}</td>
+                <td className="text-right tabular-nums text-slate-500">{r.flows ? `${r.flows > 0 ? "+" : ""}${baht(r.flows)}` : "-"}</td>
+                <td className="text-right tabular-nums">{baht(r.end)}</td>
                 <td className={`text-right tabular-nums ${sign(r.gain)}`}>
-                  {r.gain > 0 ? "+" : ""}{money(r.gain, undefined, 0)}
-                  {r.fx !== 0 && <div className="text-xs text-slate-500">จาก FX {r.fx > 0 ? "+" : ""}{money(r.fx, undefined, 0)}</div>}
+                  {r.gain > 0 ? "+" : ""}{baht(r.gain)}
+                  {r.fx !== 0 && <div className="text-xs text-slate-500">จาก FX {r.fx > 0 ? "+" : ""}{baht(r.fx)}</div>}
                 </td>
               </tr>
             ))}
@@ -192,7 +192,7 @@ function GainTable({ ig }: { ig: InvestmentGain }) {
           {rows.length > 1 && (
             <tfoot className="border-t-2 border-slate-200 font-medium">
               <tr><td className="py-1.5" colSpan={4}>รวม</td>
-                <td className={`text-right tabular-nums ${sign(ig.gain)}`}>{ig.gain > 0 ? "+" : ""}{money(ig.gain, undefined, 0)}</td></tr>
+                <td className={`text-right tabular-nums ${sign(ig.gain)}`}>{ig.gain > 0 ? "+" : ""}{baht(ig.gain)}</td></tr>
             </tfoot>
           )}
         </table>
