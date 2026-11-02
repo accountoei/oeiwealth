@@ -22,7 +22,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: l }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banksRaw }, { data: pays }, { data: ints }] = await Promise.all([
+  const [{ data: l }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banksRaw }, { data: pays }, { data: ints }, { data: biz }] = await Promise.all([
     supabase.from("liabilities").select("*, linked:assets!liabilities_linked_asset_id_fkey(name)")
       .eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("liability_ownerships").select("id,person_id,responsibility_percent,persons(name)")
@@ -36,6 +36,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes,pending_split,currency")
       .eq("liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
+    supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
   ]);
   // ยอดหนี้ลดเกินที่คำนวณ → รายได้ก้อนรอแยก / รายการที่แยกแล้ว (แก้ / แยกที่ Income & Expenses)
   const [{ data: drops }, { data: cats }] = await Promise.all([
@@ -124,7 +125,8 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
             view={
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <Item label="ประเภท">{LIABILITY_TYPE_LABEL[l.liability_type] ?? l.liability_type}</Item>
-                <Item label="ผู้ให้กู้">{l.lender || "-"}</Item>
+                <Item label="ผู้ให้กู้">{l.lender || "-"}
+                  {l.lender_business_id && <span className="block text-xs text-slate-500">กิจการของครอบครัว · <Link href={`/financial/business/${l.lender_business_id}`} className="text-blue-700 hover:underline">ดูกิจการ</Link> · ฝั่งกิจการไม่ตั้งลูกหนี้แยก (อยู่ในมูลค่ากิจการแล้ว)</span>}</Item>
                 <Item label="สถานะ">{STATUS_LABEL[l.status] ?? l.status}</Item>
                 <Item label="อัตราดอกเบี้ย">{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : "-"}</Item>
                 <Item label="ค่างวด" num>{l.monthly_payment ? `${money(l.monthly_payment)}/เดือน` : "-"}{l.payment_due_day ? <span className="block text-xs text-slate-500">ทุกวันที่ {l.payment_due_day}</span> : null}</Item>
@@ -141,7 +143,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
             edit={
               <div className="space-y-5">
                 <p className="text-xs text-slate-500">แก้เฉพาะข้อมูลสัญญา ไม่กระทบยอดคงค้าง (อัปเดตยอดที่กล่อง &ldquo;ยอดคงค้าง&rdquo; ด้านล่าง)</p>
-                <EditLiabilityForm l={l} remove={canDelete ? { kind: "liability", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบหนี้รายการนี้",
+                <EditLiabilityForm l={l} businesses={(biz ?? []).map((b) => ({ id: b.asset_id, name: b.company_name }))} remove={canDelete ? { kind: "liability", id, redirectTo: "/liabilities", paths: ["/liabilities"], label: "ลบหนี้รายการนี้",
                   hint: "ปิดหนี้จริงให้เปลี่ยนสถานะเป็น \"ปิดหนี้แล้ว\"" } : undefined} />
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผิดชอบหนี้</h3>
