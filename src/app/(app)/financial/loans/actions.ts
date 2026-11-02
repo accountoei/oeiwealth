@@ -32,6 +32,16 @@ export async function createLoan(_: ActionState, form: FormData): Promise<Action
   } });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/financial/loans");
+  // ตั้งตารางผ่อนพร้อมกัน (ไม่บังคับ · ตกลง 2 พ.ย. 2026): สัญญาบันทึกแล้ว ถ้าตารางไม่ผ่าน → ไปหน้าสัญญาพร้อมแจ้งให้ตั้งตารางใหม่
+  const raw = str(form.get("schedule_lines"));
+  if (raw) {
+    let lines: unknown = null;
+    try { lines = JSON.parse(raw); } catch { /* ด้านล่าง */ }
+    const { error: sErr } = Array.isArray(lines) && lines.length
+      ? await supabase.rpc("set_loan_schedule", { p_loan_asset_id: data, p_lines: lines })
+      : { error: { message: "อ่านตารางผ่อนไม่ได้" } };
+    if (sErr) redirect(`/financial/loans/${data}?sched=${encodeURIComponent(friendlyError(sErr.message))}`);
+  }
   redirect(`/financial/loans/${data}`);
 }
 

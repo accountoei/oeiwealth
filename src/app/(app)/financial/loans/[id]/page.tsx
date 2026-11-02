@@ -21,10 +21,10 @@ type Sched = { id: string; installment_no: number; due_date: string; principal_d
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
 
 export default async function LoanDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string; sched?: string }>;
 }) {
   const { id } = await params;
-  const rs = (await searchParams).restructure;
+  const { restructure: rs, sched: schedErr } = await searchParams;
   const preset = rs === "end" || rs === "payment" || rs === "disburse" || rs === "rate" ? rs : undefined;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -259,6 +259,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 {open.length === 0 && <span className="text-emerald-700"> · รับครบทุกงวดแล้ว</span>}
               </div>
             ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
+            {schedErr && sched.length === 0 && <p className="mt-1 text-sm text-red-600">บันทึกสัญญาแล้ว แต่ตั้งตารางผ่อนไม่สำเร็จ: {schedErr} · กด &ldquo;+ ตั้งตารางผ่อน&rdquo; เพื่อตั้งใหม่</p>}
             {sched.length > 0 && Math.abs(schedP - principalAll) > 0.01 && (
               <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา{extraLent > 0 ? " รวมที่ให้กู้เพิ่ม" : ""} ({money(principalAll)})
                 {extraLent > 0 ? " — กด “คำนวณงวดที่เหลือใหม่” เพื่อใส่ยอดที่ให้กู้เพิ่มในตาราง" : " — สถานะ “รับแล้ว” อาจคลาดเคลื่อน"}</p>
