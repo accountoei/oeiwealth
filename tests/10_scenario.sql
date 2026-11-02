@@ -3317,6 +3317,28 @@ SELECT t.fails($$UPDATE public.cash_movements SET deleted_at = now() WHERE id = 
   WHERE from_asset_id = t.a('เงินกู้ญาติ') AND movement_type = 'LOAN_PRINCIPAL_RECEIPT' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1)$$,
   'สัญญานี้ปิดแล้ว', 'สัญญาปิดแล้ว: ลบรายการรับเงินต้นจนกลับมาค้าง → ไม่ได้');
 SELECT t.ok(NOT has_function_privilege('anon', 'public.batch_receive_loan_payments(jsonb)', 'EXECUTE'), 'รับชำระทั้งชุด: anon เรียกไม่ได้');
+-- คู่สัญญา (2 พ.ย. 2026): เลขบัตรเข้ารหัส · 4 ตัวท้ายระบบตั้งเอง · สถานที่ / บัญชีรับชำระต้องถูกประเภท
+SELECT t.ok(public.set_loan_party_id(t.a('เงินกู้ญาติ'), 'BORROWER', '1-2345-67890-12-3') = '0123', 'คู่สัญญา: ตั้งเลขบัตรผู้กู้ → คืน 4 ตัวท้าย');
+SELECT t.ok((SELECT borrower_id_last4 FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = '0123', 'คู่สัญญา: เก็บ 4 ตัวท้ายในสัญญา');
+SELECT t.ok(public.set_loan_party_id(t.a('เงินกู้ญาติ'), 'GUARANTOR', 'aa1234567') = '4567', 'คู่สัญญา: ผู้ค้ำใช้เลขหนังสือเดินทางได้');
+SELECT t.ok(public.reveal_loan_party_ids(t.a('เงินกู้ญาติ')) = '{"borrower":"1234567890123","guarantor":"AA1234567"}'::jsonb, 'คู่สัญญา: EDITOR อ่านเลขเต็มได้');
+SELECT t.fails($$SELECT public.set_loan_party_id(t.a('เงินกู้ญาติ'), 'BORROWER', '12345')$$, '13 หลัก', 'คู่สัญญา: เลขบัตรตัวเลขไม่ครบ 13 หลัก → ไม่ได้');
+SELECT t.fails($$UPDATE public.loan_details SET borrower_id_last4 = '9999' WHERE asset_id = t.a('เงินกู้ญาติ')$$, 'CACHE_FIELD', 'คู่สัญญา: แก้ 4 ตัวท้ายตรงไม่ได้');
+SELECT t.fails($$SELECT * FROM public.loan_party_secrets$$, 'permission denied', 'คู่สัญญา: Client อ่านตารางเลขบัตรไม่ได้');
+SELECT t.fails($$UPDATE public.loan_details SET repay_bank_asset_id = t.a('เงินกู้ญาติ') WHERE asset_id = t.a('เงินกู้ญาติ')$$, 'บัญชีธนาคาร', 'คู่สัญญา: บัญชีรับชำระต้องเป็นบัญชีธนาคาร');
+SELECT t.fails($$UPDATE public.loan_details SET contract_place_type = 'BUSINESS', contract_place_business_id = t.a('KBank ออมทรัพย์') WHERE asset_id = t.a('เงินกู้ญาติ')$$, 'Private Business', 'คู่สัญญา: สถานที่ต้องเป็นกิจการ');
+UPDATE public.loan_details SET repay_bank_asset_id = t.a('KBank ออมทรัพย์'), borrower_address = 'ที่อยู่ทดสอบ', guarantor_name = 'ผู้ค้ำทดสอบ',
+       witness1_name = 'พยาน ก', contract_place_type = 'TEXT', contract_place_text = 'บ้านทดสอบ' WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok((SELECT repay_bank_asset_id FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) = t.a('KBank ออมทรัพย์'), 'คู่สัญญา: บันทึกบัญชีรับชำระ / ที่อยู่ / พยาน ได้');
+SELECT t.ok(public.set_loan_party_id(t.a('เงินกู้ญาติ'), 'GUARANTOR', '') IS NULL, 'คู่สัญญา: ล้างเลขผู้ค้ำได้');
+SELECT t.ok((SELECT guarantor_id_last4 FROM public.loan_details WHERE asset_id = t.a('เงินกู้ญาติ')) IS NULL, 'คู่สัญญา: ล้างแล้ว 4 ตัวท้ายว่าง');
+SELECT t.ok(public.reveal_loan_party_ids(t.a('เงินกู้ญาติ')) = '{"borrower":"1234567890123"}'::jsonb, 'คู่สัญญา: ล้างแล้วไม่คืนเลขผู้ค้ำ');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.reveal_loan_party_ids(t.a('เงินกู้ญาติ'))$$, 'PERMISSION_DENIED', 'คู่สัญญา: CONTRIBUTOR อ่านเลขเต็มไม่ได้');
+SELECT t.fails($$SELECT public.set_loan_party_id(t.a('เงินกู้ญาติ'), 'BORROWER', '1234567890123')$$, 'PERMISSION_DENIED', 'คู่สัญญา: CONTRIBUTOR ตั้งเลขบัตรไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.reveal_loan_party_ids(uuid)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'public.set_loan_party_id(uuid,text,text)', 'EXECUTE'), 'คู่สัญญา: anon เรียกไม่ได้');
 RESET ROLE;
 ROLLBACK;
 

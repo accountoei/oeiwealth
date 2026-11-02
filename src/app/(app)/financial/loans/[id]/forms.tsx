@@ -8,6 +8,7 @@ import { ROW_BTN, numOrZero as num, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
+import ContractParties, { type PartyOptions, type PartyValues } from "../ContractParties";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -201,7 +202,9 @@ export function DisburseForm({ assetId, currency, banks, today, minDate, hasOpen
 }
 
 /** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
-export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false }: {
+export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false, party }: {
+  /** รายละเอียดสำหรับพิมพ์สัญญา (ที่อยู่ เลขบัตร ผู้ค้ำ พยาน สถานที่ บัญชีรับชำระ) */
+  party?: { v: Partial<PartyValues>; opt: PartyOptions; canSensitive: boolean };
   /** งวดสุดท้ายในตารางผ่อน → วันครบกำหนดสัญญาต้องไม่ก่อนวันนี้ */
   minDue?: string | null;
   /** สถานะ "มีความเสี่ยง": ช่องมูลค่าคาดว่าจะได้รับคืน (เก็บเป็นส่วนที่มีความเสี่ยง · แสดงอย่างเดียว ไม่กระทบ Net Worth) */
@@ -223,6 +226,12 @@ export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false
       <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} min={minDue ?? undefined} required={!!minDue} className={input} />
         {minDue && <span className="mt-1 block text-xs text-slate-500">ต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน ({thDate(minDue)})</span>}</label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
+      {party && (
+        <fieldset className="rounded-lg border border-slate-200 p-3 md:col-span-2">
+          <legend className="px-1 text-sm font-medium text-slate-700">รายละเอียดสำหรับพิมพ์สัญญา</legend>
+          <ContractParties v={party.v} opt={party.opt} canSensitive={party.canSensitive} />
+        </fieldset>
+      )}
       {risk && (
         <fieldset className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 md:col-span-2 md:grid-cols-2">
           <legend className="px-1 text-sm font-medium text-amber-800">มีความเสี่ยงไม่ได้คืน</legend>
