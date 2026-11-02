@@ -368,6 +368,10 @@ export async function saveFcn(_: ActionState, form: FormData): Promise<ActionSta
   const id = String(form.get("asset_id"));
   const holdingId = String(form.get("holding_id"));
   const principal = num(form.get("principal"));
+  // ฟอร์ม "แก้ไขข้อมูล": ยังไม่เคยบันทึกและไม่ได้กรอกอะไรเลย (นอกจากเงินต้นที่เติมให้) → ข้าม
+  const fcnId = str(form.get("fcn_id"));
+  if (!fcnId && ["issuer", "trade_date", "issue_date", "coupon_rate", "strike_level", "barrier_level", "autocall_level", "observation_frequency"]
+    .every((k) => !str(form.get(k))) && form.get("knock_in_occurred") !== "on") return {};
   if (!str(form.get("issuer"))) return { error: "กรุณาใส่ผู้ออก (Issuer)" };
   if (principal === null || Number.isNaN(principal) || principal < 0) return { error: "กรุณาใส่เงินต้น" };
   const knock = form.get("knock_in_occurred") === "on";
@@ -382,7 +386,6 @@ export async function saveFcn(_: ActionState, form: FormData): Promise<ActionSta
   for (const k of ["coupon_rate", "strike_level", "barrier_level", "autocall_level"] as const) {
     if (row[k] !== null && Number.isNaN(row[k])) return { error: "อัตรา / ระดับต้องเป็นตัวเลข (%)" };
   }
-  const fcnId = str(form.get("fcn_id"));
   const { error } = fcnId
     ? await supabase.from("fcn_details").update(row).eq("id", fcnId)
     : await supabase.from("fcn_details").insert(row);
