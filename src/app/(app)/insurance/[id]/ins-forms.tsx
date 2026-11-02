@@ -87,7 +87,7 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-medium text-slate-900">{hasLines ? `แก้${label}` : `ตั้ง${label}`}</h3>
-          <p className="text-xs text-slate-500">งวดที่มีการชำระ / รับแล้วเก็บไว้ · แทนเฉพาะงวดที่ยังไม่ชำระ · งวดใหม่ต้องอยู่หลังงวดที่ชำระแล้ว</p>
+          <p className="text-xs text-slate-500">งวดที่มีการชำระ / รับแล้วเก็บไว้ · แทนเฉพาะงวดที่ยังไม่ชำระ · งวดใหม่ต้องอยู่หลังงวดที่ชำระแล้ว · ตั้งย้อนหลังได้ตั้งแต่วันเริ่มสัญญา: งวดก่อน Go-live เป็นประวัติให้เอง (นับว่าจ่าย / รับแล้ว ไม่มีเงินเข้า–ออก) · งวดไหนไม่ได้จ่ายจริง แก้ที่งวดนั้นเป็น &ldquo;ไม่ได้จ่าย&rdquo;</p>
         </div>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
