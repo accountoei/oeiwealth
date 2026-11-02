@@ -1,4 +1,4 @@
-# มิเตอร์ตามห้อง + ซื้อ / ขายของในทรัพย์สิน
+# #289 · มิเตอร์ตามห้อง + ซื้อ / ขายของในทรัพย์สิน
 
 - วันที่: 2 พ.ย. 2026 · branch `feat/inventory-meters-buy-sell`
 - SQL: `supabase/migrations/20261102001000_inventory_meters_buy_sell.sql` (รันก่อน Merge · เพิ่มคอลัมน์ / ฟังก์ชัน ไม่แก้ข้อมูลเดิม)
