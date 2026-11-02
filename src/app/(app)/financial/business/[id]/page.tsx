@@ -25,7 +25,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }, { data: sales }] = await Promise.all([
+  const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }, { data: sales }, { data: inLoans }, { data: inDebts }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle(),
     supabase.from("private_business_details").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,cost_per_share,start_date,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
@@ -38,6 +38,9 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("business_share_sales").select("id,kind,sale_date,shares,price,fee,currency,bank_asset_id,value_before,value_after,book_value,gain,cost_basis,new_issue,notes,created_at,persons(name)")
       .eq("asset_id", id).is("deleted_at", null).order("sale_date", { ascending: false }).order("created_at", { ascending: false }),
+    // เงินกู้กับสมาชิก (อ้างอิง · ไม่นับเข้ามูลค่ากิจการ): กิจการกู้จากสมาชิก / สมาชิกกู้จากกิจการ
+    supabase.from("loan_details").select("asset_id,borrower_name,outstanding_principal,status").eq("borrower_business_id", id).is("deleted_at", null),
+    supabase.from("liabilities").select("id,name,currency,outstanding_amount,status").eq("lender_business_id", id).is("deleted_at", null),
   ]);
   if (!a || !d) notFound();
   const canWrite = me.role !== "VIEWER";
@@ -124,6 +127,26 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             <EntityDocuments category="BUSINESS" entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
           </div>
         </div>
+        {((inLoans ?? []).length > 0 || (inDebts ?? []).length > 0) && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+            <h2 className="font-medium text-slate-900">เงินกู้กับสมาชิก</h2>
+            <p className="mt-0.5 text-xs text-slate-500">แสดงไว้อ้างอิง · ไม่นับเข้ามูลค่ากิจการ (มูลค่าตามส่วนของผู้ถือหุ้นรวมหนี้ / ลูกหนี้นี้ไว้แล้ว) · ฝั่งสมาชิกนับใน Net Worth ตามปกติ</p>
+            <ul className="mt-3 divide-y divide-slate-100 text-sm">
+              {(inLoans ?? []).map((x) => (
+                <li key={x.asset_id} className="flex flex-wrap justify-between gap-2 py-2">
+                  <Link href={`/financial/loans/${x.asset_id}`} className="text-blue-700 hover:underline">กิจการกู้จากสมาชิก · {x.borrower_name}</Link>
+                  <span className="tabular-nums">คงเหลือ {money(x.outstanding_principal, a.currency)}{x.status === "CLOSED" && <span className="text-slate-500"> · ปิดแล้ว</span>}</span>
+                </li>
+              ))}
+              {(inDebts ?? []).map((x) => (
+                <li key={x.id} className="flex flex-wrap justify-between gap-2 py-2">
+                  <Link href={`/liabilities/${x.id}`} className="text-blue-700 hover:underline">สมาชิกกู้จากกิจการ · {x.name}</Link>
+                  <span className="tabular-nums">คงเหลือ {money(x.outstanding_amount, x.currency)}{x.status !== "ACTIVE" && <span className="text-slate-500"> · ปิดแล้ว</span>}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={
