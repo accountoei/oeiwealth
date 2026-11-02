@@ -224,3 +224,61 @@ export function parseScheduleText(text: string): ParseResult {
   const rows = text.split(/\r?\n/).map((raw) => (raw.includes("\t") ? raw.split("\t") : raw.trim().split(/\s{2,}|\s*;\s*/)));
   return parseScheduleRows(rows);
 }
+
+// ---------------------------------------------------------------- ตารางที่แก้ได้ทีละช่อง (ScheduleGrid)
+
+/** จำนวนเดือนตามปฏิทินระหว่าง 2 วัน (ไม่ดูวันที่) */
+export const monthsBetween = (a: string, b: string) =>
+  (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
+
+/** จำนวนงวด ↔ งวดสุดท้ายครบกำหนด (งวดแรก + (n − 1) × ทุกกี่เดือน) */
+export const lastDueOf = (firstDue: string, periods: number, everyMonths: number) =>
+  firstDue && periods >= 1 ? addMonthsKeepDay(firstDue, (Math.floor(periods) - 1) * everyMonths) : "";
+export const periodsUntil = (firstDue: string, lastDue: string, everyMonths: number) =>
+  firstDue && lastDue && lastDue >= firstDue ? Math.min(Math.floor(monthsBetween(firstDue, lastDue) / everyMonths) + 1, MAX_PERIODS) : 0;
+
+/**
+ * ดอกเบี้ยของ 1 งวด = ยอดคงเหลือ × อัตรา × ระยะเวลา
+ * - MONTHLY: จำนวนเดือนระหว่างงวด ÷ 12 (ห่างกันไม่ถึงเดือน → ใช้จำนวนวัน ÷ 365)
+ * - ACTUAL_365: จำนวนวันจริง ÷ 365
+ */
+export function periodInterest(balance: number, ratePct: number, prev: string, cur: string, dayCount: DayCount): number {
+  if (!(balance > 0) || !(ratePct > 0) || !prev || !cur) return 0;
+  const days = daysBetween(prev, cur);
+  if (!(days > 0)) return 0;
+  const months = monthsBetween(prev, cur);
+  const frac = dayCount === "ACTUAL_365" || months < 1 ? days / 365 : months / 12;
+  return r2(balance * (ratePct / 100) * frac);
+}
+
+/** งวดในตารางที่แก้ได้ · manual = ดอกเบี้ยพิมพ์เอง (คำนวณใหม่ไม่เขียนทับ) */
+export type GridLine = SchedLine & { manual?: boolean };
+export type RecalcOpts = { amount: number; ratePct: number; dayCount: DayCount; interestFrom?: string; flat?: boolean };
+
+/**
+ * คำนวณดอกเบี้ยใหม่ตั้งแต่งวดที่ from (ลำดับในตาราง เริ่ม 0) ถึงงวดสุดท้าย · งวดก่อนหน้า from และงวด manual คงเดิม
+ * ยอดคงเหลือ = เงินต้นตามสัญญา − เงินต้นของงวดก่อนหน้า · งวดแรกนับจาก interestFrom (ไม่มี = ก่อนงวดแรก 1 เดือน)
+ * flat = ดอกเบี้ยคงที่ คิดจากเงินต้นตามสัญญาทุกงวด
+ */
+export function recalcInterest<T extends GridLine>(lines: T[], from: number, p: RecalcOpts): T[] {
+  let bal = p.amount;
+  let prevDate = "";   // วันครบกำหนดของงวดก่อนหน้า (ข้ามแถวที่ยังไม่ใส่วันที่)
+  return lines.map((l, i) => {
+    const before = bal;
+    bal = r2(bal - (Number.isFinite(l.principal) ? l.principal : 0));
+    const prev = prevDate || (p.interestFrom && p.interestFrom < l.due_date ? p.interestFrom : l.due_date ? addMonthsKeepDay(l.due_date, -1) : "");
+    if (l.due_date) prevDate = l.due_date;
+    if (i < from || l.manual || !l.due_date) return l;
+    return { ...l, interest: periodInterest(p.flat ? p.amount : Math.max(before, 0), p.ratePct, prev, l.due_date, p.dayCount) };
+  });
+}
+
+/**
+ * ยอดตั้งต้นจากตาราง (สัญญาที่ให้กู้ก่อน Go-live):
+ * เงินต้นคงเหลือ ณ วันตั้งต้น = เงินต้นตามสัญญา − เงินต้นของงวดที่ครบกำหนดถึงวันตั้งต้น (งวดเหล่านี้ถือว่ารับแล้ว)
+ */
+export function openingFromSchedule(principal: number, lines: { due_date: string; principal: number }[], openingDate: string) {
+  const pre = lines.filter((l) => l.due_date && l.due_date <= openingDate);
+  const paid = r2(pre.reduce((s, l) => s + l.principal, 0));
+  return { count: pre.length, paid, outstanding: r2(principal - paid) };
+}

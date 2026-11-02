@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useActionSlot } from "@/components/ActionBar";
 import { useActionState, useState } from "react";
-import { closeLoan, disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
-import { ROW_BTN, numOrZero as num, thDate } from "@/lib/format";
+import { applyScheduleOpening, closeLoan, disburseMore, receivePayment, updateLoanInfo, type ActionState } from "../actions";
+import { ROW_BTN, money, numOrZero as num, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
@@ -202,8 +202,60 @@ export function DisburseForm({ assetId, currency, banks, today, minDate, hasOpen
   ));
 }
 
-/** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
-export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false, party }: {
+/**
+ * วันที่ทำสัญญา + เงินต้นตามสัญญา + ยอดตั้งต้น (ตกลง 2 พ.ย. 2026)
+ * สัญญาก่อน Go-live แก้ได้ทั้ง 3 ช่อง · วันตั้งต้น (วันก่อน Go-live) แสดงอย่างเดียว · ยอดตั้งต้นเติมจากตารางผ่อนได้
+ * สัญญาที่ให้กู้ในระบบ: เงินต้นมาจากรายการจ่ายเงินกู้ แก้วันที่ทำสัญญาได้อย่างเดียว
+ */
+export type LoanAmounts = { isOpening: boolean; loanDate: string | null; principal: number; openingDate: string; opening: number;
+  /** ยอดตั้งต้นตามตารางผ่อน (ไม่มีตาราง = null) */ fromSchedule: number | null; live: boolean; currency: string };
+function AmountFields({ a }: { a: LoanAmounts }) {
+  const [p, setP] = useState(a.principal.toFixed(2));
+  const [o, setO] = useState(a.opening.toFixed(2));
+  return (
+    <fieldset className="grid gap-3 rounded-lg border border-slate-200 p-3 md:col-span-2 md:grid-cols-2">
+      <legend className="px-1 text-sm font-medium text-slate-700">วันที่และยอดเงิน</legend>
+      <label className="text-sm">วันที่ทำสัญญา (วันที่ให้กู้)<input name="loan_date" type="date" defaultValue={a.loanDate ?? ""} className={input} /></label>
+      {a.isOpening ? <>
+        <label className="text-sm">เงินต้นตามสัญญา ({a.currency})<input name="principal" required inputMode="decimal" value={p} onChange={(e) => setP(e.target.value)} className={input} /></label>
+        <label className="text-sm">เงินต้นคงเหลือ ณ วันตั้งต้น<input name="opening_outstanding" required inputMode="decimal" value={o} onChange={(e) => setO(e.target.value)} className={input} />
+          {a.fromSchedule != null && Math.abs(a.fromSchedule - num(o)) > 0.005 && (
+            <span className="mt-1 block text-xs text-amber-700">ตามตารางผ่อน = {money(a.fromSchedule)} ·{" "}
+              <button type="button" onClick={() => setO(a.fromSchedule!.toFixed(2))} className="text-blue-700 underline">ใช้ยอดจากตาราง</button>
+              <span className="block text-slate-500">(คิดจากเงินต้นตามสัญญาที่บันทึกไว้ − เงินต้นงวดที่ครบกำหนดถึงวันตั้งต้น)</span></span>
+          )}
+        </label>
+        <div className="text-sm">วันตั้งต้น
+          <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">{thDate(a.openingDate)}</div>
+          <span className="mt-1 block text-xs text-slate-500">วันก่อน Go-live 1 วัน · ยอดยกมาทุกรายการใช้วันเดียวกัน (เปลี่ยนได้ด้วยการเลื่อนวัน Go-live)</span>
+        </div>
+        {a.live && <p className="text-xs text-amber-700 md:col-span-2">ระบบ LIVE แล้ว: แก้เงินต้นคงเหลือ ณ วันตั้งต้นได้เฉพาะ ADMIN และต้องใส่เหตุผลในหมายเหตุ</p>}
+      </> : (
+        <div className="text-sm">เงินต้นตามสัญญา
+          <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 tabular-nums">{money(a.principal, a.currency)}</div>
+          <span className="mt-1 block text-xs text-slate-500">ให้กู้หลัง Go-live: ยอดมาจากรายการจ่ายเงินกู้ แก้ที่ประวัติด้านล่าง</span>
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
+/** ปุ่ม "ใช้ยอดจากตาราง" (หัวตารางผ่อน): ยอดตั้งต้นที่บันทึกไว้ไม่ตรงกับตารางผ่อน */
+export function ApplyScheduleOpening({ assetId, value }: { assetId: string; value: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(applyScheduleOpening, {});
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <button disabled={pending} className="ml-1 text-blue-700 underline disabled:opacity-50">{pending ? "กำลังปรับ…" : `ใช้ยอดจากตาราง (${value})`}</button>
+      {state.error && <span className="ml-2 text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ · วันที่และยอดเงิน) */
+export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false, party, amounts }: {
+  /** วันที่ทำสัญญา / เงินต้นตามสัญญา / ยอดตั้งต้น */
+  amounts?: LoanAmounts;
   /** รายละเอียดสำหรับพิมพ์สัญญา (ที่อยู่ เลขบัตร ผู้ค้ำ พยาน สถานที่ บัญชีรับชำระ) */
   party?: { v: Partial<PartyValues> & { borrower_person_id?: string | null; borrower_business_id?: string | null; borrower_bank_asset_id?: string | null };
     opt: PartyOptions; canSensitive: boolean; persons: { id: string; name: string }[]; borrowerBanks: BorrowerBank[] };
@@ -233,6 +285,7 @@ export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false
       <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} min={minDue ?? undefined} required={!!minDue} className={input} />
         {minDue && <span className="mt-1 block text-xs text-slate-500">ต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน ({thDate(minDue)})</span>}</label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
+      {amounts && <AmountFields a={amounts} />}
       {party && (
         <fieldset className="rounded-lg border border-slate-200 p-3 md:col-span-2">
           <legend className="px-1 text-sm font-medium text-slate-700">รายละเอียดสำหรับพิมพ์สัญญา</legend>

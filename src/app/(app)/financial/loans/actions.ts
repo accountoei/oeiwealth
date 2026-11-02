@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, thDate, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, amountOrNull, isValidTax, notSaved, readRows, TAX_ERROR } from "@/lib/batch-entry";
+import { openingFromSchedule } from "@/lib/loan-schedule";
 
 /** rateChanged = แก้อัตราดอกเบี้ย → ถามต่อว่าจะคำนวณงวดที่เหลือใหม่ไหม */
 export type ActionState = FormState & { rateChanged?: boolean };
@@ -50,6 +51,36 @@ async function saveIds(supabase: Awaited<ReturnType<typeof createClient>>, id: s
     if (error) return friendlyError(error.message);
   }
   return null;
+}
+
+type Supa = Awaited<ReturnType<typeof createClient>>;
+
+/** สัญญาที่ให้กู้ก่อน Go-live (มียอดตั้งต้น) — สัญญาที่ให้กู้ในระบบ เงินต้นมาจากรายการจ่ายเงินกู้ ยอดตั้งต้น = 0 */
+async function isOpeningLoan(supabase: Supa, id: string, openingOutstanding: number): Promise<boolean> {
+  if (openingOutstanding > 0) return true;
+  const { count } = await supabase.from("cash_movements").select("id", { count: "exact", head: true })
+    .eq("to_asset_id", id).eq("movement_type", "LOAN_DISBURSEMENT").is("deleted_at", null);
+  return (count ?? 0) === 0;
+}
+
+/**
+ * ปรับยอดตั้งต้น (เงินต้นคงเหลือ ณ วันตั้งต้น) ตามตารางผ่อนที่บันทึกไว้:
+ * เงินต้นตามสัญญา − เงินต้นของงวดที่ครบกำหนดถึงวันตั้งต้น · เฉพาะสัญญาที่ให้กู้ก่อน Go-live
+ * ระบบ LIVE แล้ว ฐานข้อมูลบังคับ: เฉพาะ ADMIN + มีหมายเหตุ และเดือนที่ปิดแล้วต้อง Reopen ก่อน
+ */
+async function syncOpeningFromSchedule(supabase: Supa, id: string): Promise<string | null> {
+  const [{ data: ld }, { data: ls }] = await Promise.all([
+    supabase.from("loan_details").select("principal,opening_date,opening_outstanding_principal").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
+    supabase.from("loan_schedule_lines").select("due_date,principal_due").eq("loan_asset_id", id).is("deleted_at", null),
+  ]);
+  if (!ld) return "ไม่พบสัญญาเงินให้กู้";
+  if (!(await isOpeningLoan(supabase, id, Number(ld.opening_outstanding_principal)))) return "สัญญานี้ให้กู้หลัง Go-live — ไม่มียอดตั้งต้น";
+  const o = openingFromSchedule(Number(ld.principal), (ls ?? []).map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due) })), ld.opening_date);
+  if (o.outstanding < 0) return "เงินต้นของงวดก่อน Go-live รวมกันเกินเงินต้นตามสัญญา — แก้ตารางหรือเงินต้นตามสัญญาก่อน";
+  if (Math.abs(o.outstanding - Number(ld.opening_outstanding_principal)) < 0.005) return null;
+  const { data, error } = await supabase.from("loan_details").update({ opening_outstanding_principal: o.outstanding }).eq("asset_id", id).select("id");
+  if (error) return friendlyError(error.message);
+  return data?.length ? null : "คุณไม่มีสิทธิ์แก้ยอดตั้งต้น";
 }
 
 export async function createLoan(_: ActionState, form: FormData): Promise<ActionState> {
@@ -145,7 +176,22 @@ export async function saveSchedule(_: ActionState, form: FormData): Promise<Acti
   if (!Array.isArray(lines) || lines.length === 0) return { error: "ตารางผ่อนต้องมีอย่างน้อย 1 งวด" };
   const { data, error } = await supabase.rpc("set_loan_schedule", { p_loan_asset_id: id, p_lines: lines });
   if (error) return { error: friendlyError(error.message) };
+  // ติ๊ก "ปรับยอดตั้งต้นตามตาราง" (สัญญาก่อน Go-live) · ตารางบันทึกแล้ว ถ้าส่วนนี้ไม่ผ่านแจ้งให้ทราบ
+  if (form.get("sync_opening") === "on") {
+    const oErr = await syncOpeningFromSchedule(supabase, id);
+    if (oErr) return { ...done(id, `บันทึกตารางผ่อน ${data} งวดแล้ว`), ok: undefined, error: `บันทึกตารางผ่อน ${data} งวดแล้ว แต่ปรับยอดตั้งต้นไม่สำเร็จ: ${oErr}` };
+    return done(id, `บันทึกตารางผ่อน ${data} งวด และปรับยอดตั้งต้นตามตารางแล้ว`);
+  }
   return done(id, `บันทึกตารางผ่อน ${data} งวดแล้ว`);
+}
+
+/** ปุ่ม "ใช้ยอดจากตาราง" ในหน้าสัญญา: ยอดตั้งต้น = เงินต้นตามสัญญา − เงินต้นของงวดที่ครบกำหนดถึงวันตั้งต้น */
+export async function applyScheduleOpening(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const err = await syncOpeningFromSchedule(supabase, id);
+  if (err) return { error: err };
+  return done(id, "ปรับยอดตั้งต้นตามตารางผ่อนแล้ว");
 }
 
 /** คำนวณงวดที่เหลือใหม่: เก็บงวดที่รับแล้ว · ตัดงวดรับบางส่วน · แทนงวดที่ยังไม่ได้รับด้วยตารางใหม่ (ADMIN / EDITOR) */
@@ -176,8 +222,21 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
   if (last && (!due || due < last.due_date)) {
     return { error: `วันครบกำหนดสัญญาต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน (${thDate(last.due_date)})` };
   }
-  const { data: cur } = await supabase.from("loan_details").select("interest_rate,outstanding_principal").eq("asset_id", assetId).is("deleted_at", null).maybeSingle();
+  const { data: cur } = await supabase.from("loan_details").select("interest_rate,outstanding_principal,opening_outstanding_principal").eq("asset_id", assetId).is("deleted_at", null).maybeSingle();
   const rate = num(form.get("interest_rate"));
+  // วันที่ทำสัญญา (ทุกสัญญา) · เงินต้นตามสัญญา + ยอดตั้งต้น (เฉพาะสัญญาที่ให้กู้ก่อน Go-live · ฐานข้อมูลคุมสิทธิ์และ Period Lock)
+  const amounts: Record<string, unknown> = {};
+  if (form.has("loan_date")) amounts.loan_date = str(form.get("loan_date"));
+  if (form.has("principal") || form.has("opening_outstanding")) {
+    const p = num(form.get("principal")), o = num(form.get("opening_outstanding"));
+    if (p == null || Number.isNaN(p) || p <= 0) return { error: "เงินต้นตามสัญญาต้องเป็นตัวเลขมากกว่า 0" };
+    if (o == null || Number.isNaN(o) || o < 0) return { error: "เงินต้นคงเหลือ ณ วันตั้งต้นต้องเป็นตัวเลข (ไม่ติดลบ · ค้างเต็มจำนวน = ใส่เท่าเงินต้น)" };
+    if (!(await isOpeningLoan(supabase, assetId, Number(cur?.opening_outstanding_principal ?? 0)))) {
+      return { error: "สัญญานี้ให้กู้หลัง Go-live — เงินต้นมาจากรายการจ่ายเงินกู้ แก้ที่ประวัติด้านล่าง" };
+    }
+    amounts.principal = p;
+    amounts.opening_outstanding_principal = o;
+  }
   // มีความเสี่ยง: กรอก "มูลค่าคาดว่าจะได้รับคืน" → เก็บเป็นส่วนที่มีความเสี่ยง = เงินต้นคงเหลือ − มูลค่าคาดว่าได้คืน (แสดงอย่างเดียว)
   let risk: { at_risk_amount: number | null; risk_assessed_date: string | null; risk_note: string | null } | null = null;
   if (form.has("expected_recoverable")) {
@@ -193,6 +252,7 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
   if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   const { error: e2 } = await supabase.from("loan_details").update({
     ...(risk ?? {}),
+    ...amounts,
     borrower_name: str(form.get("borrower_name")),
     interest_rate: rate,
     due_date: due,
