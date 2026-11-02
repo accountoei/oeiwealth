@@ -7,10 +7,10 @@ import { monthToClose } from "@/lib/closing";
 
 export type AttentionItem = { text: string; href: string; tone: "red" | "amber" | "slate" };
 
-/** งานที่ต้องทำ ณ วันนี้ (หน้า "สิ่งที่ต้องทำ" + ตัวเลขที่เมนูซ้าย) — ปิดเดือนอยู่บนสุด · cache() → ใน 1 คำขอคำนวณครั้งเดียว */
+/** งานที่ต้องทำ ณ วันนี้ (หน้า "สิ่งที่ต้องทำ" + ตัวเลขที่ปุ่มกระดิ่งแถบบน) — ปิดเดือนอยู่บนสุด · cache() → ใน 1 คำขอคำนวณครั้งเดียว */
 export const getAttention = cache(async (): Promise<AttentionItem[]> => buildAttention(await createClient(), await monthToClose()));
 
-/** ตัวเลขที่เมนูซ้าย: จำไว้จนมีการบันทึก / งานเบื้องหลังเสร็จ (เพดาน 1 ชั่วโมง · ทุกหน้าไม่ต้องยิง ~13 คำสั่งทุกคลิก) · หน้า To-Do List ยังใช้ getAttention() สด */
+/** ตัวเลขที่ปุ่มกระดิ่ง (แถบบน): จำไว้จนมีการบันทึก / งานเบื้องหลังเสร็จ (เพดาน 1 ชั่วโมง · ทุกหน้าไม่ต้องยิง ~13 คำสั่งทุกคลิก) · หน้า To-Do List ยังใช้ getAttention() สด */
 export const getTodoCount = cache(async (): Promise<{ total: number; red: number }> => {
   const toClose = await monthToClose();
   return cachedData(["todo-count", toClose], async (supabase) => {

@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { NAV, NAV_HREFS } from "./nav";
 
 /**
- * แถบบน (ตกลง 28 ต.ค. 2026): ชื่อเมนู (ซ้าย) · ช่องค้นหา (กลาง) · เลือกคน / เดือน ของหน้านั้น (ขวา)
+ * แถบบน (ตกลง 28 ต.ค. 2026 · ปรับ 2 พ.ย. 2026 ดู AppHeader): ชื่อเมนู (ซ้าย) · ช่องค้นหา (ชิดซ้าย ที่เดิมทุกหน้า) · เลือกคน / เดือน ของหน้านั้น · กระดิ่ง / ผู้ใช้ (ขวา)
  *   ตัวเลือกคน / เดือนยังเป็นของแต่ละหน้า (ไม่จำข้ามหน้า) — หน้าส่งเข้ามาที่แถบบนด้วย <HeaderFilters>
  *   เปลี่ยนคน / เดือน = คงหน้าเดิมไว้แต่จางลงจนข้อมูลใหม่มาครบ (ไม่ล้างเป็นโครงเทา → กล่องไม่กระโดด)
  */
@@ -22,7 +22,7 @@ export function HeaderTitle() {
   const best = NAV_HREFS.filter(match).sort((a, b) => b.length - a.length)[0];
   const group = NAV.find((g) => (g.match ?? g.href) === best);
   const label = group?.label ?? (pathname === "/search" ? "ผลการค้นหา" : "");
-  return <div className="truncate text-lg font-semibold text-slate-900">{label}</div>;
+  return <div className="truncate text-base font-semibold text-slate-900 @min-[40rem]:text-lg">{label}</div>;
 }
 
 const noSubscribe = () => () => {};
@@ -31,7 +31,8 @@ const noSubscribe = () => () => {};
 export function HeaderFilters({ children }: { children: ReactNode }) {
   // ฝั่งเซิร์ฟเวอร์ / ตอน hydrate = ยังไม่มีที่วาง → วาดหลังโหลดหน้า (ไม่ใช้ setState ใน effect)
   const target = useSyncExternalStore(noSubscribe, () => document.getElementById(HEADER_SLOT_ID), () => null);
-  return target ? createPortal(<div className="flex flex-wrap items-center justify-end gap-2">{children}</div>, target) : null;
+  // มือถือ: ช่องเลือกแคบลงเล็กน้อย → คน + เดือนอยู่บรรทัดเดียวกันบนจอ ~390px
+  return target ? createPortal(<div className="flex flex-wrap items-center justify-end gap-2 max-md:[&_select]:px-2">{children}</div>, target) : null;
 }
 
 /** คำอธิบายหน้า → ไอคอน ⓘ ข้างชื่อเมนูที่แถบบน (ตกลง 28 ต.ค. 2026 · แทนบรรทัดคำอธิบายใต้หัวหน้า) · ชี้ / แตะ = แสดง */

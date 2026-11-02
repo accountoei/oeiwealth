@@ -1,10 +1,10 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, Suspense, use, useContext, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createContext, useContext, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, Briefcase, Building2, ChevronsLeft, ChevronsRight, CreditCard, Gem, HandCoins,
-  Landmark, LayoutDashboard, ListChecks, LogOut, Settings, ShieldCheck, TrendingUp, Users, type LucideIcon,
+  Landmark, LayoutDashboard, Settings, ShieldCheck, TrendingUp, Users, type LucideIcon,
 } from "lucide-react";
 import { clampNavWidth, NAV_COLLAPSED_COOKIE, NAV_HREFS, NAV_ORDER_COOKIE, NAV_WIDTH_COOKIE, NAV_PINNED_FIRST, NAV_PINNED_LAST, orderNav, type NavGroup } from "./nav";
 import IntentLink from "./IntentLink";
@@ -12,12 +12,9 @@ import { NAV_RESET_EVENT } from "./NavReset";
 import { familyInitials } from "@/lib/format";
 
 const ICONS: Record<string, LucideIcon> = {
-  dashboard: LayoutDashboard, todo: ListChecks, income: ArrowLeftRight, cash: Landmark, loans: HandCoins, investments: TrendingUp,
+  dashboard: LayoutDashboard, income: ArrowLeftRight, cash: Landmark, loans: HandCoins, investments: TrendingUp,
   business: Briefcase, property: Building2, alternative: Gem, insurance: ShieldCheck, liabilities: CreditCard, family: Users, settings: Settings,
 };
-
-/** งานค้างที่เมนู "สิ่งที่ต้องทำ" (โหลดตามหลัง ไม่ทำให้หน้าช้า) */
-export type TodoCount = { total: number; red: number };
 
 // เมนูที่เพิ่งกด → ไฮไลต์ทันทีไม่ต้องรอหน้าใหม่ (ใช้จนกว่า URL จะเปลี่ยน)
 const PendingCtx = createContext<{ path: string; setPending: (href: string) => void }>({ path: "", setPending: () => {} });
@@ -32,16 +29,7 @@ function setCookie(name: string, value: string | null) {
  *  ไม่สลับแถว ↔ ซ้อนชั้น / ไม่เปลี่ยนระยะขอบ → ไม่มีอะไรกระโดด */
 const fade = (collapsed: boolean) => `transition-opacity duration-200 ${collapsed ? "pointer-events-none opacity-0" : "opacity-100"}`;
 
-function TodoBadge({ todo, collapsed }: { todo: Promise<TodoCount | null>; collapsed: boolean }) {
-  const t = use(todo);
-  if (!t?.total) return null;
-  const cls = t.red ? "bg-red-500 text-white" : "bg-amber-100 text-amber-800";
-  return collapsed
-    ? <span className={`absolute right-1 top-1 h-2 w-2 rounded-full ${t.red ? "bg-red-500" : "bg-amber-400"}`} aria-label={`งานค้าง ${t.total} รายการ`} />
-    : <span className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 ${cls}`} aria-label={`งานค้าง ${t.total} รายการ`}>{t.total}</span>;
-}
-
-function NavLink({ g, dot, collapsed, todo }: { g: NavGroup; dot?: boolean; collapsed: boolean; todo?: Promise<TodoCount | null> }) {
+function NavLink({ g, dot, collapsed }: { g: NavGroup; dot?: boolean; collapsed: boolean }) {
   const { path: pathname, setPending } = useContext(PendingCtx);
   const href = g.href!;
   const base = g.match ?? href.split("#")[0];
@@ -66,7 +54,6 @@ function NavLink({ g, dot, collapsed, todo }: { g: NavGroup; dot?: boolean; coll
       <span className={`flex min-w-0 flex-1 items-center gap-1.5 truncate whitespace-nowrap ${fade(collapsed)}`} aria-hidden={collapsed || undefined}>
         {g.label}{dot && !collapsed && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" aria-label="มีงานค้าง" />}</span>
       {collapsed && dot && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}
-      {todo && <Suspense fallback={null}><TodoBadge todo={todo} collapsed={collapsed} /></Suspense>}
       {!g.ready && !collapsed && <span className="text-[11px] text-slate-400">เร็ว ๆ นี้</span>}
     </IntentLink>
   );
@@ -90,11 +77,11 @@ function SortRow({ g, onUp, onDown }: { g: NavGroup; onUp?: () => void; onDown?:
 
 /**
  * dots = href ของเมนูที่ต้องแสดงจุดแดง (เช่น Settings เมื่อมีเดือนที่ถึงเวลาปิดแล้วยังไม่ปิด)
- * initialOrder / initialCollapsed = ค่าจาก cookie ของเครื่องนี้ · todo = จำนวนงานค้าง (Promise → แสดงเมื่อพร้อม)
+ * initialOrder / initialCollapsed = ค่าจาก cookie ของเครื่องนี้
+ * To-Do List + ผู้ใช้ / ออกจากระบบ ย้ายไปเป็นปุ่มที่แถบบน (HeaderActions · ตกลง 2 พ.ย. 2026)
  */
-export default function Sidebar({ dots = [], user, familyName = "", familyPhoto = null, initialOrder = [], initialCollapsed = false, initialWidth, todo }: {
-  dots?: string[]; user: { name: string; email: string; role: string }; familyName?: string; familyPhoto?: string | null; initialOrder?: string[]; initialCollapsed?: boolean;
-  initialWidth?: number; todo?: Promise<TodoCount | null>;
+export default function Sidebar({ dots = [], familyName = "", familyPhoto = null, initialOrder = [], initialCollapsed = false, initialWidth }: {
+  dots?: string[]; familyName?: string; familyPhoto?: string | null; initialOrder?: string[]; initialCollapsed?: boolean; initialWidth?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [collapsedPref, setCollapsed] = useState(initialCollapsed);
@@ -118,7 +105,6 @@ export default function Sidebar({ dots = [], user, familyName = "", familyPhoto 
     setCookie(NAV_ORDER_COOKIE, next.join("|"));
   };
   const resetOrder = () => { setOrder([]); setCookie(NAV_ORDER_COOKIE, null); };
-  const initial = (user.name || user.email).trim().charAt(0).toUpperCase();
   const title = familyName.trim() || "Family Wealth Vault";
 
   // ลากเส้นขอบขวาเพื่อยืด / หดแถบเมนู (จอใหญ่) · ปล่อยแล้วจำไว้ที่เครื่องนี้ · ดับเบิลคลิก = กลับขนาดเดิม
@@ -186,27 +172,11 @@ export default function Sidebar({ dots = [], user, familyName = "", familyPhoto 
         ) : (
           <nav className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-3 pb-1 pt-1.5" onClick={() => setOpen(false)}>
             {nav.map((g) => (
-              <NavLink key={g.href} g={g} collapsed={collapsed} dot={dots.includes(g.href!)} todo={g.href === "/todo" ? todo : undefined} />
+              <NavLink key={g.href} g={g} collapsed={collapsed} dot={dots.includes(g.href!)} />
             ))}
           </nav>
         )}
 
-        {/* ผู้ใช้ + ออกจากระบบ (ย้ายจากแถบบน 27 ต.ค. 2026) */}
-        <div className="overflow-hidden border-t border-slate-200 px-3 py-2.5">
-          <div className="flex min-h-9 items-center gap-2.5 px-1">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700" title={collapsed ? `${user.name || user.email} · ${user.role}` : undefined}>{initial}</span>
-            <span className={`min-w-0 flex-1 whitespace-nowrap leading-tight ${fade(collapsed)}`} aria-hidden={collapsed || undefined}>
-              <span className="block truncate text-sm text-slate-800" title={user.email}>{user.name || user.email}</span>
-              <span className="block truncate text-xs text-slate-500">{user.role}{user.name ? ` · ${user.email}` : ""}</span>
-            </span>
-          </div>
-          <form action="/auth/signout" method="post" className="mt-1.5">
-            <button aria-label="ออกจากระบบ" title={collapsed ? "ออกจากระบบ" : undefined}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-red-50 hover:text-red-700">
-              <LogOut className="h-4 w-4 shrink-0" aria-hidden /><span className={`whitespace-nowrap ${fade(collapsed)}`} aria-hidden={collapsed || undefined}>ออกจากระบบ</span>
-            </button>
-          </form>
-        </div>
         {!collapsed && (
           <div onPointerDown={startDrag} onDoubleClick={resetWidth} role="separator" aria-orientation="vertical" aria-label="ลากเพื่อยืด / หดเมนู"
             title="ลากเพื่อยืด / หดเมนู · ดับเบิลคลิก = ขนาดเดิม"

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { Search } from "lucide-react";
 import { searchAll, type SearchHit } from "@/lib/search";
 import { NAV } from "./nav";
@@ -30,7 +31,8 @@ const PAGES: { label: string; href: string; words?: string }[] = [
 ];
 
 /** ช่องค้นหาด้านบน (แบบ Google · ตกลง 28 ต.ค. 2026): พิมพ์ในช่องได้ทันที (หรือ Ctrl/⌘ + K) → ผลแยกกลุ่มเลื่อนลงใต้ช่อง ไม่มีหน้าต่างกลางจอ
- *   ↑↓ Enter เลือก · Esc / คลิกที่อื่น = ปิดรายการ */
+ *   ↑↓ Enter เลือก · Esc / คลิกที่อื่น = ปิดรายการ
+ *   มือถือ (2 พ.ย. 2026): เป็นปุ่มแว่นขยายข้างกระดิ่ง · แตะแล้วช่องค้นหาเต็มแถวบน (แถบบนไม่สูงขึ้น) · ยกเลิก / Esc = ปิด */
 export default function SearchBox() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -40,6 +42,8 @@ export default function SearchBox() {
   // เลือกบรรทัดเองแล้ว (ลูกศร / เมาส์) → Enter เปิดบรรทัดนั้น · ยังไม่ได้เลือก → Enter เปิดหน้า "ผลการค้นหา"
   const [picked, setPicked] = useState(false);
   const [loading, startTransition] = useTransition();
+  // มือถือ: ช่องค้นหาเปิดเต็มแถบบนอยู่
+  const [mobile, setMobile] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
@@ -49,7 +53,7 @@ export default function SearchBox() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); input.current?.focus(); setOpen(true); }
     };
     // คลิกนอกช่อง / รายการ → ปิดรายการ (คำที่พิมพ์ยังอยู่ · กลับมาคลิกช่องแล้วรายการขึ้นอีก)
-    const onDown = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const onDown = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setMobile(false); } };
     window.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
     return () => { window.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
@@ -73,10 +77,13 @@ export default function SearchBox() {
   const all = [...pages, ...(t.length >= 2 ? hits : [])];
 
   const clear = () => { setQ(""); setHits([]); setSel(0); setPicked(false); };
-  const goAll = () => { const v = q.trim(); if (v.length < 2) return; setOpen(false); clear(); input.current?.blur(); router.push(`/search?q=${encodeURIComponent(v)}`); };
-  const go = (h: SearchHit | undefined) => { if (!h) return; setOpen(false); clear(); input.current?.blur(); router.push(h.href); };
+  const goAll = () => { const v = q.trim(); if (v.length < 2) return; setOpen(false); setMobile(false); clear(); input.current?.blur(); router.push(`/search?q=${encodeURIComponent(v)}`); };
+  const go = (h: SearchHit | undefined) => { if (!h) return; setOpen(false); setMobile(false); clear(); input.current?.blur(); router.push(h.href); };
+  const closeMobile = () => { setOpen(false); setMobile(false); clear(); };
+  // แสดงช่องก่อน (flushSync) แล้วโฟกัสทันทีในการแตะเดียวกัน → แป้นพิมพ์มือถือขึ้นเลย (iPhone ต้องโฟกัสระหว่างแตะ)
+  const openMobile = () => { flushSync(() => { setMobile(true); setOpen(true); }); input.current?.focus(); };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { if (open && t) setOpen(false); else { clear(); input.current?.blur(); } }
+    if (e.key === "Escape") { if (open && t) setOpen(false); else { clear(); setMobile(false); input.current?.blur(); } }
     else if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setPicked(true); setSel((s) => (picked ? Math.min(s + 1, all.length - 1) : 0)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setPicked(true); setSel((s) => Math.max(s - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); if (picked && all[sel]) go(all[sel]); else if (t.length >= 2) goAll(); else go(all[0]); }
@@ -84,7 +91,15 @@ export default function SearchBox() {
   const show = open && t !== "";
 
   return (
-    <div ref={box} className="relative w-full max-w-md">
+    <>
+    <button type="button" onClick={openMobile} aria-label="ค้นหาข้อมูลในระบบ"
+      className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 md:hidden">
+      <Search className="h-5 w-5" aria-hidden strokeWidth={1.9} />
+    </button>
+    {/* มือถือ: ช่องค้นหาทับแถวบนของแถบบน (ปุ่ม ☰ ยังเห็นทางซ้าย) */}
+    <div ref={box} className={`${mobile ? "absolute left-[6.5rem] right-0 top-0 z-20 flex h-[3.75rem] items-center gap-1 bg-white pr-3" : "hidden"
+      } md:static md:flex md:h-auto md:w-full md:bg-transparent md:p-0`}>
+      <div className="relative min-w-0 flex-1">
       <div className={`flex items-center gap-2 border bg-slate-50 px-3 py-1.5 text-sm focus-within:border-blue-400 focus-within:bg-white ${show
         ? "rounded-t-lg border-slate-300 bg-white" : "rounded-lg border-slate-200 hover:border-slate-300 hover:bg-white"}`}>
         <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
@@ -118,6 +133,9 @@ export default function SearchBox() {
           )}
         </div>
       )}
+      </div>
+      {mobile && <button type="button" onClick={closeMobile} className="shrink-0 rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 md:hidden">ยกเลิก</button>}
     </div>
+    </>
   );
 }
