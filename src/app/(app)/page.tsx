@@ -6,7 +6,7 @@ import { requireAppUser } from "@/lib/auth";
 import { baht, millions, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
-import { DetailBox, PopupBox } from "./DashDetail";
+import { ChangeDetail, PopupBox, type Bridge } from "./DashDetail";
 import TrendChart from "./TrendChart";
 
 type Preview = {
@@ -162,17 +162,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
         <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
           {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
-          <DetailBox start={start} personId={personId} ym={ym}
+          <PopupBox
             title={<>Net Worth เปลี่ยนเพราะอะไร<span className="block text-xs font-normal text-slate-500">{thMonth(start)} · {personName || "ทั้งครอบครัว"}</span></>}
             info={<>&ldquo;เงินคงเหลือสุทธิ&rdquo; = รายได้สุทธิ + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ (เป็นยอดย่อย ไม่บวกซ้ำ) ·
               &ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ประเมินใหม่ (อสังหาฯ / ธุรกิจ / ทอง) · อัตราแลกเปลี่ยนนอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก
               {personId ? " · ค่าใช้จ่ายส่วนกลาง (ไม่ได้จ่ายจากบัญชี / บัตรของใคร และไม่ได้ระบุคน) รวมอยู่ใน “อื่น ๆ”" : ""}</>}
             popupTitle={`Net Worth เปลี่ยนเพราะอะไร ${thMonth(start)} · ${personName || "ทั้งครอบครัว"}`}
-            bridge={<Suspense fallback={<Lines n={6} />}><ChangeBody start={start} isCurrent={isCurrent} personId={personId} /></Suspense>}>
+            popup={<Suspense fallback={<Lines n={6} />}><ChangePopup start={start} isCurrent={isCurrent} personId={personId} /></Suspense>}>
             <Suspense fallback={<Lines n={6} />}>
               <ChangeBody start={start} isCurrent={isCurrent} personId={personId} />
             </Suspense>
-          </DetailBox>
+          </PopupBox>
 
         </div>
       </section>
@@ -476,39 +476,55 @@ function ItemTable({ color, label, pct, items, sum, showShare, negative }: {
   );
 }
 
-async function ChangeBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
+/** ตัวเลขของกล่อง "Net Worth เปลี่ยนเพราะอะไร" · ใช้ทั้งในกล่องและใน pop up (กดบรรทัดเพื่อกางรายละเอียด) */
+async function changeBridge(start: string, isCurrent: boolean, personId: string): Promise<Bridge | null> {
   // รวมกล่อง "รายได้ & ค่าใช้จ่าย": เงินคงเหลือสุทธิ (ยอดย่อย) = รายได้สุทธิหลังภาษี + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ — ยอดเดียวกับหน้ารายได้ / ค่าใช้จ่าย
   const [dm, p, track, ig] = await Promise.all([getMonth(start), personId ? getPersonDash(start, personId) : getPreview(start), getTrack(start),
     getInvGain(start, personId)]);
-  if (p?.prev_net_worth == null) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
+  if (p?.prev_net_worth == null) return null;
   const cur = personId ? Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0) : Number(dm?.net_worth ?? 0);
   const expense = Number(p.expenses) - Number(p.reimbursements);
   const net = Number(p.income) + Number(p.investment_income) - expense;
   const gain = Number(ig?.gain ?? 0), fx = Number(ig?.fx ?? 0);
   const other = cur - Number(p.prev_net_worth) - net - gain;
+  return {
+    prevLabel: p.prev_label ?? "ยอดงวดก่อน", prev: Number(p.prev_net_worth), income: Number(p.income), investment: Number(p.investment_income),
+    expense, expenseUntracked: track === "NOT_TRACKED" && !expense, net,
+    gain: dm ? gain : 0, fx: dm ? fx : 0, other: dm ? other : 0, cur, endLabel: isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน", person: !!personId,
+  };
+}
+
+async function ChangeBody({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
+  const b = await changeBridge(start, isCurrent, personId);
+  if (!b) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
   return (
-    <>
-      <table className="w-full text-sm">
-        <tbody className="divide-y divide-slate-100">
-          <BRow label={p.prev_label ?? "ยอดงวดก่อน"} v={p.prev_net_worth} bold />
-          <BRow label="+ รายได้สุทธิ (หลังภาษี)" v={p.income} />
-          <BRow label={personId ? "+ รายได้ลงทุน (ตามสัดส่วนถือ)" : "+ รายได้ลงทุน"} v={p.investment_income} />
-          {/* ค่าใช้จ่าย: ชื่อบรรทัดมี "−" แล้ว ตัวเลขจึงไม่ติดลบซ้ำ · ยอดย่อย "เงินคงเหลือสุทธิ" เป็นบรรทัดเล็กสีเทา (ไม่ใช่บรรทัดที่บวกเพิ่ม) */}
-          {track === "NOT_TRACKED" && !expense
-            ? <tr><td className="py-1 pr-2">− ค่าใช้จ่ายสุทธิ</td><td className="text-right text-xs text-slate-500">ยังไม่ได้บันทึก</td></tr>
-            : <BRow label={personId ? "− ค่าใช้จ่ายสุทธิ (ที่ระบุชื่อ)" : "− ค่าใช้จ่ายสุทธิ"} v={expense} />}
-          <tr className="text-xs text-slate-500">
-            <td className="py-0.5 pl-3 pr-2">ยอดย่อย: เงินคงเหลือสุทธิ</td>
-            <td className={`text-right tabular-nums ${net < 0 ? "text-red-700" : ""}`}>{baht(net)}</td>
-          </tr>
-          <BRow label={personId ? "± กำไร / ขาดทุนเงินลงทุน (ตามสัดส่วนถือ)" : "± กำไร / ขาดทุนเงินลงทุน"} v={dm ? gain : 0} signed
-            note={dm && fx ? <>ในนั้นจาก FX {fx > 0 ? "+" : ""}{baht(fx)}</> : null} />
-          <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={dm ? other : 0} signed />
-          <BRow label={isCurrent ? "= ณ วันนี้" : "= ณ สิ้นเดือน"} v={cur} bold />
-        </tbody>
-      </table>
-    </>
+    <table className="w-full text-sm">
+      <tbody className="divide-y divide-slate-100">
+        <BRow label={b.prevLabel} v={b.prev} bold />
+        <BRow label="+ รายได้สุทธิ (หลังภาษี)" v={b.income} />
+        <BRow label={b.person ? "+ รายได้ลงทุน (ตามสัดส่วนถือ)" : "+ รายได้ลงทุน"} v={b.investment} />
+        {/* ค่าใช้จ่าย: ชื่อบรรทัดมี "−" แล้ว ตัวเลขจึงไม่ติดลบซ้ำ · ยอดย่อย "เงินคงเหลือสุทธิ" เป็นบรรทัดเล็กสีเทา (ไม่ใช่บรรทัดที่บวกเพิ่ม) */}
+        {b.expenseUntracked
+          ? <tr><td className="py-1 pr-2">− ค่าใช้จ่ายสุทธิ</td><td className="text-right text-xs text-slate-500">ยังไม่ได้บันทึก</td></tr>
+          : <BRow label={b.person ? "− ค่าใช้จ่ายสุทธิ (ที่ระบุชื่อ)" : "− ค่าใช้จ่ายสุทธิ"} v={b.expense} />}
+        <tr className="text-xs text-slate-500">
+          <td className="py-0.5 pl-3 pr-2">ยอดย่อย: เงินคงเหลือสุทธิ</td>
+          <td className={`text-right tabular-nums ${b.net < 0 ? "text-red-700" : ""}`}>{baht(b.net)}</td>
+        </tr>
+        <BRow label={b.person ? "± กำไร / ขาดทุนเงินลงทุน (ตามสัดส่วนถือ)" : "± กำไร / ขาดทุนเงินลงทุน"} v={b.gain} signed
+          note={b.fx ? <>ในนั้นจาก FX {b.fx > 0 ? "+" : ""}{baht(b.fx)}</> : null} />
+        <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={b.other} signed />
+        <BRow label={b.endLabel} v={b.cur} bold />
+      </tbody>
+    </table>
   );
+}
+
+/** pop up: บรรทัดเดียวกับในกล่อง แต่กดบรรทัดเพื่อกางรายละเอียด (ตกลง 2 พ.ย. 2026 · แบบ ก.) */
+async function ChangePopup({ start, isCurrent, personId }: { start: string; isCurrent: boolean; personId: string }) {
+  const b = await changeBridge(start, isCurrent, personId);
+  if (!b) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
+  return <ChangeDetail start={start} personId={personId} b={b} />;
 }
 
 async function PersonsBody({ start, ym, personId }: { start: string; ym: string; personId: string }) {
