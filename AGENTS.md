@@ -12,7 +12,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 ## 0. Before you start
 
 1. `git pull` — another AI or person may have pushed since you last looked. Never work on a stale copy.
-   Then read **`docs/PRE_LAUNCH_CHECKLIST.md`** — current status, agreed decisions and what is still open.
+   Then read **`docs/PRE_LAUNCH_CHECKLIST.md`** — current status, agreed decisions and what is still open — and the newest files in **`docs/pr-log/`** (`ls docs/pr-log | tail`), which hold PR history and decisions after #282.
 2. Only one agent should change code at a time. If you are not the primary agent, work on a **branch and open a Pull Request**; do not push to `main`.
    **The owner merges PRs.** Exception: a PR that changes **only documentation** (`docs/`, `*.md`; no code, migrations, Edge Functions or workflows) may be merged by the AI itself — tell the owner afterwards.
 3. Read the relevant migration(s) and page(s) before changing them. The database is the source of truth for business rules.
@@ -52,7 +52,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 
 ```bash
 service postgresql start
-DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (994 checks)
+DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (N checks) — N ≥ the count in the newest docs/pr-log/ file
 node scripts/fx-fetch.test.mjs && node scripts/price-fetch.test.mjs && node scripts/money-endpoint.test.mjs && node scripts/batch-entry.test.mjs && node scripts/form-input.test.mjs && node scripts/tax-calc.test.mjs
 ```
 
@@ -92,7 +92,9 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 
 ## 5. Handing work back to the owner
 
-**Every Pull Request must also update `docs/PRE_LAUNCH_CHECKLIST.md`** (tick what is done, add new open items / decisions, add a row to the PR history). This repo is **public**: never put real family data (names, addresses, deed or account numbers, amounts) in the repo, including that file and test files.
+**Every Pull Request must add its own log file `docs/pr-log/YYYY-MM-DD-<branch-name-without-prefix>.md`** (what changed, SQL file, test check count, decisions agreed, open items — template in `docs/pr-log/README.md`; add the PR number to the file's heading once the PR exists).
+- **Do not** add rows to the "ประวัติการปรับปรุง (Pull Requests)" or "การตัดสินใจที่ตกลงแล้ว" tables in `docs/PRE_LAUNCH_CHECKLIST.md` (frozen since 2 Nov 2026), do not edit its header date line, and do not change the check count in this file — shared append-only spots made every parallel PR conflict.
+- Edit `docs/PRE_LAUNCH_CHECKLIST.md` only when a to-do item or the system status actually changes (tick an item, add a new open item). This repo is **public**: never put real family data (names, addresses, deed or account numbers, amounts) in the repo, including that file and test files.
 
 Always finish with, in Thai:
 1. What changed (short, non-technical).
