@@ -77,7 +77,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
-    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }] = await Promise.all([
+    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }, { data: cpiLast }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("property_details").select(`*, property_utilities(id,utility_type,unit_label,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
@@ -106,6 +106,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // ขายบางแถว / รื้อถอน (ยกเลิกได้เฉพาะครั้งล่าสุด)
     supabase.from("property_component_events").select("id,event_type,event_date,price,fee,book_value,gain,whole,valuation_id,created_at")
       .eq("asset_id", id).is("deleted_at", null).order("event_date", { ascending: false }).order("created_at", { ascending: false }),
+    // เงินเฟ้อปีล่าสุดที่มีข้อมูลทั้งปี (ข้อความเทียบในกล่องราคาขายขั้นต่ำ)
+    supabase.from("cpi_annual").select("year,inflation_pct").is("deleted_at", null).order("year", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!a || !pd) notFound();
 
@@ -552,6 +554,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 acqTotal={acqAll} currentValue={a.current_value != null ? Number(a.current_value) : null} /> : undefined} />
             {/* ราคาขายขั้นต่ำที่คุ้ม (เทียบมูลค่าล่าสุด) ก่อนราคาตลาด (เทียบราคาขายขั้นต่ำ) · ตกลง 29 ต.ค. 2026 */}
             <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null} nwValue={Number(a.current_value ?? 0)}
+              lastCpi={cpiLast ? { year: Number(cpiLast.year), pct: cpiLast.inflation_pct != null ? Number(cpiLast.inflation_pct) : null } : null}
               unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)}
               lots={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />} />
             <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
