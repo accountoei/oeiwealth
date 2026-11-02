@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, BENEFIT_TYPE_LABEL, COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -17,6 +17,7 @@ import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
 import UndoButton from "@/components/UndoButton";
+import RowActions from "@/components/RowActions";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -42,7 +43,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
     { data: banks }, { data: cards }, { data: family }] = await Promise.all([
     loadPersonView(sp.p),
-    supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status")
+    supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date")
       .order("status").order("insurer"),
     supabase.from("persons").select("id,name").order("sort_order"),
     supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
@@ -113,7 +114,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const yNow = Number(year);
   const yr = /^\d{4}$/.test(sp.y ?? "") ? Number(sp.y) : isCur ? yNow : Number(ym.slice(0, 4));
   const yearLines = lineList.filter((l) => shown.has(l.policy_id) && l.due_date.startsWith(`${yr}-`));
-  const yHref = (y: number) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (tFilter) q.set("t", tFilter); if (y !== yNow) q.set("y", String(y)); const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`; };
+  const yHref = (y: number, t: string) => { const q = new URLSearchParams({ tab: t }); if (sp.p) q.set("p", sp.p); if (tFilter) q.set("t", tFilter); if (sp.m) q.set("m", sp.m);
+    if (y !== yNow) q.set("y", String(y)); return `/insurance?${q.toString()}`; };
   const groupsOf = (kind: string) => rows.map((r) => ({ r, lines: yearLines.filter((l) => l.policy_id === r.id && l.kind === kind) })).filter((g) => g.lines.length > 0);
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
@@ -122,11 +124,16 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   // งวดที่จ่าย / รับไปแล้ว (บางส่วน หรือครบภายใน 60 วัน) → ยอดที่บันทึกแล้วกดเพื่อแก้ / ลบ ในตาราง (ตกลง 28 ต.ค. 2026)
   //   เบี้ย = ฟอร์มเดียวกับหน้ากรมธรรม์ · ผลประโยชน์ = ยกเลิกทั้งก้อนแล้วบันทึกใหม่ · งวดที่ครบแล้วยังอยู่ในตาราง ("ครบแล้ว" · ไม่มีช่องกรอก)
   const since = isCur ? addDays(today, -60) : mStart, until = isCur ? today : mEnd;
+  // ดึงช่วงเดียวครอบทั้ง "ภายใน 60 วัน" และทั้งเดือนที่เลือก → ใช้ทั้งตารางบันทึกทั้งชุดและกล่อง "ที่บันทึกแล้ว · เดือน" (ไม่เพิ่มรอบ)
+  const qUntil = until > mEnd ? until : mEnd;
   const [{ data: recentPays }, { data: recentBens }] = await Promise.all([
-    supabase.from("expense_items").select("insurance_schedule_line_id").not("insurance_schedule_line_id", "is", null).gte("date", since).lte("date", until).is("deleted_at", null),
-    supabase.from("insurance_benefit_receipts").select("line_id").not("line_id", "is", null).gte("receipt_date", since).lte("receipt_date", until).is("undone_at", null).is("deleted_at", null),
+    supabase.from("expense_items").select("id,insurance_schedule_line_id,date,amount,currency,notes,paid_from_asset_id,paid_from_credit_card_id,person_id")
+      .not("insurance_schedule_line_id", "is", null).gte("date", since).lte("date", qUntil).is("deleted_at", null).order("date").order("created_at"),
+    supabase.from("insurance_benefit_receipts").select("id,policy_id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes")
+      .gte("receipt_date", since).lte("receipt_date", qUntil).is("undone_at", null).is("deleted_at", null).order("receipt_date").order("created_at"),
   ]);
-  const recentLines = new Set([...(recentPays ?? []).map((e) => e.insurance_schedule_line_id as string), ...(recentBens ?? []).map((b) => b.line_id as string)]);
+  const recentLines = new Set([...(recentPays ?? []).filter((e) => e.date <= until).map((e) => e.insurance_schedule_line_id as string),
+    ...(recentBens ?? []).filter((b) => b.line_id && b.receipt_date <= until).map((b) => b.line_id as string)]);
   const inBatch = (l: YLine) => activeIds.has(l.policy_id)
     && ((OPEN.includes(l.status) && (isCur || l.due_date <= mEnd)) || (l.status === "PAID" && recentLines.has(l.id)));
   const soon = isCur ? addDays(today, 60) : mEnd;
@@ -164,6 +171,23 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency }));
   const canWrite = me.role !== "VIEWER";
   const goLive = family?.go_live_date ?? "";
+  // กล่อง "ที่บันทึกแล้ว · เดือน" ใต้ตารางบันทึกทั้งชุด (เหมือนหน้า Property · ตกลง 2 พ.ย. 2026) · ตามตัวกรองคน
+  const lineById = new Map(lineList.map((l) => [l.id, l]));
+  const mine = new Set(mineRows.map((r) => r.id));
+  const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
+  const cardName = new Map((cards ?? []).map((c) => [c.id as string, [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")]));
+  const monthPays = (recentPays ?? []).filter((e) => e.date >= mStart && e.date <= mEnd)
+    .map((e) => ({ ...e, line: lineById.get(e.insurance_schedule_line_id as string) })).filter((e) => e.line && mine.has(e.line.policy_id));
+  const monthBens = (recentBens ?? []).filter((b) => b.receipt_date >= mStart && b.receipt_date <= mEnd && mine.has(b.policy_id));
+  const sumThbOf = (xs: { amount: number; currency: string }[]) => xs.filter((x) => x.currency === "THB").reduce((t, x) => t + Number(x.amount), 0);
+  const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
+  const paidWith = (e: { paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; person_id: string | null }) =>
+    e.paid_from_asset_id ? `บัญชี ${bankName.get(e.paid_from_asset_id) ?? ""}` : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}`
+      : e.person_id ? `เงินสด / ${pname.get(e.person_id) ?? ""}` : "-";
+  const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
+  const actRows = rows.filter((r) => r.status === "ACTIVE");
+  const nextBenefit = (pid: string) => lineList.find((l) => l.policy_id === pid && l.kind === "BENEFIT" && OPEN.includes(l.status));
+  const monthLabel = thMonth(mStart);
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -173,11 +197,136 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
-      <TabPanel id="benefit">
+      <TabPanel id="benefit" className="space-y-4">
         <InsuranceBatch key={`b${ym}${lineList.length}`} kind="BENEFIT" rows={batchLines("BENEFIT")} pays={bankPays} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">ผลประโยชน์ที่รับแล้ว · {monthLabel}</h2>
+          <table className="mt-2 w-full min-w-[48rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-3 py-2">วันที่</th><th className="px-3">กรมธรรม์</th><th className="px-3">รายการ</th><th className="px-3">เข้าบัญชี</th>
+                <th className="px-3 text-right">จากมูลค่าเวนคืน</th><th className="px-3 text-right">รายได้</th><th className="px-3 text-right">ยอดรับ</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {monthBens.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ยังไม่มีการรับผลประโยชน์ในเดือนนี้</td></tr>}
+              {monthBens.map((b) => {
+                const l = b.line_id ? lineById.get(b.line_id) : undefined;
+                return (
+                  <tr key={b.id} className="align-top">
+                    <td className="whitespace-nowrap px-3 py-2">{thDate(b.receipt_date)}</td>
+                    <td className="px-3"><Link href={`/insurance/${b.policy_id}`} className="hover:underline">{policyName.get(b.policy_id) ?? "-"}</Link></td>
+                    <td className="px-3">{l ? `งวดที่ ${l.installment_no} · ${BENEFIT_TYPE_LABEL[l.benefit_type ?? "OTHER"]}` : "รับเงินก้อน"}{b.outcome && ` · ${OUTCOME[b.outcome] ?? b.outcome}`}
+                      {b.notes && <div className="text-xs text-slate-500">{b.notes}</div>}</td>
+                    <td className="px-3 text-xs text-slate-600">{b.bank_asset_id ? bankName.get(b.bank_asset_id) ?? "บัญชี" : "-"}</td>
+                    <td className="px-3 text-right tabular-nums">{Number(b.cash_value_part) > 0 ? money(b.cash_value_part) : "-"}</td>
+                    <td className="px-3 text-right tabular-nums">{Number(b.income_part) > 0 ? money(b.income_part) : "-"}</td>
+                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-emerald-700">{money(b.amount, b.currency !== "THB" ? b.currency : undefined)}</td>
+                    <td className="px-3 text-right">
+                      {canOrder && !b.outcome ? <UndoButton kind="BENEFIT" id={b.id} paths={["/insurance", `/insurance/${b.policy_id}`, "/income-expenses"]} label="ยกเลิก"
+                        confirmText={`ยกเลิกการรับ ${money(Number(b.amount), b.currency)} วันที่ ${thDate(b.receipt_date)} ทั้งก้อน?\nเงินที่ถอนจากมูลค่าเวนคืน / รายได้ของครั้งนี้ถูกย้อนทั้งหมด`} />
+                        : b.outcome && canOrder ? <Link href={`/insurance/${b.policy_id}`} className="text-xs text-slate-500 hover:underline" title="ยกเลิกที่หน้ากรมธรรม์">หน้ากรมธรรม์ →</Link> : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {monthBens.length > 0 && <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium"><tr><td colSpan={4} className="px-3 py-2">รวม (THB)</td>
+              <td className="px-3 text-right tabular-nums">{money(monthBens.filter((b) => b.currency === "THB").reduce((t, b) => t + Number(b.cash_value_part), 0))}</td>
+              <td className="px-3 text-right tabular-nums">{money(monthBens.filter((b) => b.currency === "THB").reduce((t, b) => t + Number(b.income_part), 0))}</td>
+              <td className="px-3 text-right tabular-nums text-emerald-700">{money(sumThbOf(monthBens))}</td><td></td></tr></tfoot>}
+          </table>
+          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้ · ยกเลิก = ย้อนทั้งก้อนแล้วบันทึกใหม่ในตารางด้านบน · รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม) ยกเลิกที่หน้ากรมธรรม์</p>
+        </div>
+        <YearTable kind="BENEFIT" year={yr} groups={groupsOf("BENEFIT")} pname={pname} prevHref={yHref(yr - 1, "benefit")} nextHref={yHref(yr + 1, "benefit")} thisHref={yr !== yNow ? yHref(yNow, "benefit") : undefined} />
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">กรมธรรม์ที่มีผล</h2>
+          <table className="mt-2 w-full min-w-[44rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-3 py-2">กรมธรรม์</th><th className="px-3">ผู้เอาประกัน</th><th className="px-3">ระยะสัญญา</th><th className="px-3">ผลประโยชน์งวดถัดไป</th><th className="px-3 text-right">มูลค่าเวนคืน</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {actRows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ไม่มีกรมธรรม์ที่มีผล</td></tr>}
+              {actRows.map((r) => {
+                const nb = nextBenefit(r.id);
+                const lb = lastOf(r.id, "BENEFIT");
+                return (
+                  <tr key={r.id}>
+                    <td className="px-3 py-2"><Link href={`/insurance/${r.id}`} className="hover:underline">{policyName.get(r.id)}</Link>
+                      <div className="text-xs text-slate-500">{TYPE[r.insurance_type] ?? r.insurance_type}</div></td>
+                    <td className="px-3">{r.person_id ? pname.get(r.person_id) : "-"}</td>
+                    <td className="whitespace-nowrap px-3 text-xs text-slate-500">{thDate(r.start_date)} – {thDate(r.end_date)}</td>
+                    <td className="px-3 text-xs">{nb ? <>{thDate(nb.due_date)} · <span className="tabular-nums">{money(nb.remaining, nb.currency)}</span></> : <span className="text-slate-400">-</span>}
+                      {lb && <div className="text-slate-500">รับถึงปี {lb.year} · เหลือ {lb.left} งวด</div>}</td>
+                    <td className="px-3 text-right tabular-nums">{r.has_cash_value ? money(cvOf(r), undefined, 0) : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </TabPanel>
-      <TabPanel id="premium">
+      <TabPanel id="premium" className="space-y-4">
         <InsuranceBatch key={`p${ym}${lineList.length}`} kind="PREMIUM" rows={batchLines("PREMIUM")} pays={[...bankPays, ...cardPays]} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">เบี้ยที่จ่ายแล้ว · {monthLabel}</h2>
+          <table className="mt-2 w-full min-w-[40rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-3 py-2">วันที่</th><th className="px-3">กรมธรรม์</th><th className="px-3">งวด</th><th className="px-3">จ่ายด้วย</th><th className="px-3 text-right">จำนวน</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {monthPays.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีการจ่ายเบี้ยในเดือนนี้</td></tr>}
+              {monthPays.map((e) => {
+                const l = e.line as YLine;
+                const text = money(e.amount, e.currency !== "THB" ? e.currency : undefined);
+                return (
+                  <tr key={e.id} className="align-top">
+                    <td className="whitespace-nowrap px-3 py-2">{thDate(e.date)}</td>
+                    <td className="px-3"><Link href={`/insurance/${l.policy_id}`} className="hover:underline">{policyName.get(l.policy_id) ?? "-"}</Link></td>
+                    <td className="px-3">งวดที่ {l.installment_no} <span className="text-xs text-slate-500">· ครบ {thDate(l.due_date)}</span>{e.notes && <div className="text-xs text-slate-500">{e.notes}</div>}</td>
+                    <td className="px-3 text-xs text-slate-600">{paidWith(e)}</td>
+                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-red-700">
+                      {canWrite ? <RowActions table="expense_items" id={e.id} paths={["/insurance", `/insurance/${l.policy_id}`, "/income-expenses"]} canDelete={canOrder}
+                        fields={premiumPaymentFields(e as { date: string; amount: number })} button={`${text} ✎`} buttonClass={AMT} /> : text}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {monthPays.length > 0 && <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium"><tr><td colSpan={4} className="px-3 py-2">รวม (THB)</td>
+              <td className="px-3 text-right tabular-nums text-red-700">{money(sumThbOf(monthPays))}</td></tr></tfoot>}
+          </table>
+          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">กดยอดเพื่อแก้ / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน</p>
+        </div>
+        <YearTable kind="PREMIUM" year={yr} groups={groupsOf("PREMIUM")} pname={pname} prevHref={yHref(yr - 1, "premium")} nextHref={yHref(yr + 1, "premium")} thisHref={yr !== yNow ? yHref(yNow, "premium") : undefined} />
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">กรมธรรม์ที่มีผล</h2>
+          <table className="mt-2 w-full min-w-[44rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-3 py-2">กรมธรรม์</th><th className="px-3">ผู้จ่าย</th><th className="px-3">ระยะสัญญา</th><th className="px-3">เบี้ยงวดถัดไป</th><th className="px-3 text-right">เบี้ยต่อปี</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {actRows.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ไม่มีกรมธรรม์ที่มีผล</td></tr>}
+              {actRows.map((r) => {
+                const np = nextPremium.get(r.id);
+                const lp = lastOf(r.id, "PREMIUM");
+                const payer = r.payer_person_id ?? r.person_id;
+                return (
+                  <tr key={r.id}>
+                    <td className="px-3 py-2"><Link href={`/insurance/${r.id}`} className="hover:underline">{policyName.get(r.id)}</Link>
+                      <div className="text-xs text-slate-500">{TYPE[r.insurance_type] ?? r.insurance_type}</div></td>
+                    <td className="px-3">{payer ? pname.get(payer) : "-"}</td>
+                    <td className="whitespace-nowrap px-3 text-xs text-slate-500">{thDate(r.start_date)} – {thDate(r.end_date)}</td>
+                    <td className="px-3 text-xs">{np ? <>{thDate(np.due_date)} · <span className="tabular-nums">{money(np.remaining)}</span></> : <span className="text-slate-400">-</span>}
+                      {overduePremium.get(r.id) && <div className="text-red-600">เลยกำหนด {overduePremium.get(r.id)} งวด</div>}
+                      {lp && <div className="text-slate-500">จ่ายถึงปี {lp.year} · เหลือ {lp.left} งวด</div>}</td>
+                    <td className="px-3 text-right tabular-nums">{r.premium != null ? money(r.premium, r.premium_currency ?? undefined, 0) : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {actRows.length > 0 && <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium"><tr><td colSpan={4} className="px-3 py-2">รวม {actRows.length} ฉบับ (THB)</td>
+              <td className="px-3 text-right tabular-nums">{money(actRows.filter((r) => (r.premium_currency ?? "THB") === "THB").reduce((t, r) => t + Number(r.premium ?? 0), 0), undefined, 0)}</td></tr></tfoot>}
+          </table>
+        </div>
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">
@@ -296,8 +445,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           )}
         </table>
       </div>
-      <YearTable kind="PREMIUM" year={yr} groups={groupsOf("PREMIUM")} pname={pname} prevHref={yHref(yr - 1)} nextHref={yHref(yr + 1)} thisHref={yr !== yNow ? yHref(yNow) : undefined} />
-      <YearTable kind="BENEFIT" year={yr} groups={groupsOf("BENEFIT")} pname={pname} prevHref={yHref(yr - 1)} nextHref={yHref(yr + 1)} thisHref={yr !== yNow ? yHref(yNow) : undefined} />
       </TabPanel>
     </div>
     </TabsProvider>

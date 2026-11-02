@@ -15,6 +15,7 @@ import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect, { WithStatus } from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
+import ModalButton from "@/components/ModalButton";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { premiumPaymentFields } from "@/lib/source-edit";
@@ -100,6 +101,10 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
   const cvCtx = cvAsset ? { assetId: cvAsset.id, currency: cvAsset.currency, current: cvAsset.current_value == null ? null : Number(cvAsset.current_value),
     minDate: family?.go_live_date ?? "", paths, suggest: cvDue ? { value: cvDue.value, year: cvDue.policy_year, date: cvDue.value_date } : null } : null;
   const startIso: string | null = p.start_date ?? null;
+  // ปุ่มในกล่องมูลค่าเวนคืนด้านบน (แทนกล่องด้านล่าง · ตกลง 2 พ.ย. 2026 · คล้ายหน้า Property)
+  const showCv = !!cvAsset || cvRows.length > 0 || !!p.has_cash_value || p.insurance_type === "LIFE";
+  const cvTableCurrent = cvRows.map((r) => ({ ...r, value_date: startIso && addMonthsKeepDay(startIso, r.policy_year * 12) === r.value_date ? null : r.value_date }));
+  const CV_SOURCE: Record<string, string> = { STATEMENT: "ตามหนังสือแจ้ง", USER: "บันทึกเอง", ACCOUNT_SETUP: "ยอดตั้งต้น" };
   const policyLabel = `เบี้ยประกัน ${p.insurer}${p.policy_no ? ` ${p.policy_no}` : ""}`;
   const activeOwners = (owners ?? []).filter((o: { end_date: string | null }) => !o.end_date) as { person_id: string; person_name: string; ownership_percent: number }[];
   const benName = (b: { person_id: string | null; beneficiary_name: string | null; persons: unknown }) =>
@@ -147,6 +152,77 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                 <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>
                 {canDelete && <div className="mt-2"><AddCashValueForm policyId={id} currency={ccy} today={today} goLive={family?.go_live_date ?? ""} /></div>}
               </>
+            )}
+            {cvRows.length > 0 && (
+              <div className="mt-1 text-xs text-slate-600">ตามสัญญา{cvDue ? ` ปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy, 0)}` : ` ${cvRows.length} ปี · ยังไม่ถึงปีแรก`}
+                {cvPending && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">ยังไม่ได้ลง</span>}</div>
+            )}
+            {cvAsset && premPaid > 0 && cvAsset.current_value != null && cvAsset.currency === ccy && (
+              <div className="mt-1 text-xs text-slate-600">เบี้ยที่จ่ายแล้ว {money(premPaid, ccy, 0)} · มูลค่าเวนคืน = {Math.round((Number(cvAsset.current_value) / premPaid) * 100)}% ของเบี้ย</div>
+            )}
+            {showCv && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {cvAsset && (
+                  <ModalButton label="ปรับมูลค่า / ประวัติ" title="มูลค่าเวนคืน · ปรับมูลค่า / ประวัติ" size="lg" primary>
+                    <div className="space-y-5">
+                      {canWrite && (
+                        <div>
+                          <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับใน Net Worth)</h3>
+                          <p className="mb-2 text-xs text-slate-500">ตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง) · ถ้าใส่ตารางตามสัญญาไว้ ระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
+                          <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
+                            methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />
+                        </div>
+                      )}
+                      <div className="border-t border-slate-100 pt-3">
+                        <h3 className="mb-1 text-sm font-medium text-slate-800">ประวัติมูลค่า</h3>
+                        <table className="w-full text-sm">
+                          <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ที่มา</th><th className="text-right">มูลค่า</th><th></th></tr></thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(cvVals ?? []).length === 0 && <tr><td colSpan={4} className="py-3 text-center text-slate-500">ยังไม่มีประวัติ</td></tr>}
+                            {(cvVals ?? []).map((v) => (
+                              <tr key={v.id}>
+                                <td className="py-1.5">{thDate(v.valuation_date)}</td>
+                                <td className="text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes ?? (CV_SOURCE[v.source] ?? v.source)}</td>
+                                <td className="text-right tabular-nums">{money(v.value, cvAsset.currency, 0)}</td>
+                                <td className="pl-2 text-right">
+                                  {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
+                                    fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
+                                      { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </ModalButton>
+                )}
+                {cvRows.length > 0 ? (
+                  <ModalButton label={<>ตารางตามสัญญา ({cvRows.length} ปี){cvPending && <span className="ml-1 text-amber-700">●</span>}</>} title="ตารางมูลค่าเวนคืนตามสัญญา" size="lg">
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500">มูลค่า ณ สิ้นปีกรมธรรม์ (จากเล่มกรมธรรม์) · ระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยก่อนหน้านั้นครบ (ไม่ทับยอดที่ลงไว้ใหม่กว่า)</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {cvPending && canWrite && <SyncCashValueButton policyId={id} />}
+                        {canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={cvTableCurrent} />}
+                      </div>
+                      {cvPending && <p className="text-xs text-amber-700">ปีที่ {cvDue?.policy_year} ถึงวันแล้วแต่ยังไม่ได้ลงมูลค่า</p>}
+                      <div className="max-h-[26rem] overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-white text-left text-xs text-slate-500"><tr><th className="py-1">ปีที่</th><th>สิ้นปีกรมธรรม์</th><th className="text-right">มูลค่าเวนคืน</th></tr></thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {cvRows.map((r) => (
+                              <tr key={r.policy_year} className={r.value_date <= today ? "" : "text-slate-400"}>
+                                <td className="py-1">{r.policy_year}{cvDue?.policy_year === r.policy_year && <span className="ml-1 text-xs text-blue-700">ล่าสุด</span>}</td>
+                                <td>{thDate(r.value_date)}</td><td className="text-right tabular-nums">{money(r.value, ccy)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </ModalButton>
+                ) : canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={[]} />}
+              </div>
             )}
             <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">
               เบี้ย {money(p.premium, p.premium_currency ?? undefined, 0)} / ปี{premNext && <> · งวดถัดไป {thDate(premNext.due_date)}</>}
@@ -376,55 +452,6 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
         <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
       </section>
 
-      {(cvAsset || cvRows.length > 0 || p.has_cash_value || p.insurance_type === "LIFE") && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <ActionBar right={canDelete ? <CashValueTableEditor policyId={id} startDate={startIso}
-              current={cvRows.map((r) => ({ ...r, value_date: startIso && addMonthsKeepDay(startIso, r.policy_year * 12) === r.value_date ? null : r.value_date }))} /> : undefined}>
-            <div>
-              <h2 className="font-medium text-slate-900">มูลค่าเวนคืน</h2>
-              <p className="text-xs text-slate-500">อัปเดตตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง) · หรือใส่ตารางมูลค่าเวนคืนตามสัญญา แล้วระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
-            </div>
-          </ActionBar>
-          {cvRows.length > 0 && (
-            <details className="rounded-lg border border-slate-200 p-3 text-sm" open={cvPending}>
-              <summary className="cursor-pointer text-slate-700">ตารางมูลค่าเวนคืนตามสัญญา {cvRows.length} ปี
-                {cvDue && <> · ล่าสุดที่ถึงวัน: ปีที่ {cvDue.policy_year} = {money(cvDue.value, ccy)}</>}
-                {cvPending && <span className="text-amber-700"> · ยังไม่ได้ลง</span>}</summary>
-              {cvPending && canWrite && <div className="mt-2"><SyncCashValueButton policyId={id} /></div>}
-              <div className="mt-2 max-h-64 overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white text-left text-xs text-slate-500"><tr><th className="py-1">ปีที่</th><th>สิ้นปีกรมธรรม์</th><th className="text-right">มูลค่าเวนคืน</th></tr></thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {cvRows.map((r) => (
-                      <tr key={r.policy_year} className={r.value_date <= today ? "" : "text-slate-400"}>
-                        <td className="py-1">{r.policy_year}</td><td>{thDate(r.value_date)}</td><td className="text-right tabular-nums">{money(r.value, ccy)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          )}
-          {!cvAsset && <p className="text-sm text-slate-500">ยังไม่มีมูลค่าเวนคืน — ระบบสร้างให้เองเมื่อมีปีในตารางที่ถึงวันแล้ว หรือกด &ldquo;+ เพิ่มมูลค่าเวนคืน&rdquo; ด้านบน</p>}
-          {cvAsset && canWrite && <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
-            methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />}
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              {(cvVals ?? []).map((v) => (
-                <tr key={v.id}>
-                  <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                  <td className="text-right tabular-nums">{money(v.value, undefined, 0)}</td>
-                  <td className="pl-4 text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes}</td>
-                  <td className="pl-2 text-right">
-                    {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
-                      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value }]} />}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
     </div>
   );
 }
