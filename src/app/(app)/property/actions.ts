@@ -696,3 +696,95 @@ export async function copyTaxYearAll(_: ActionState, form: FormData): Promise<Ac
     + (skipHas ? ` · ข้าม ${skipHas} (มีข้อมูลปี ${to + 543} แล้ว)` : "") + (skipNone ? ` · ข้าม ${skipNone} (ปี ${from + 543} ไม่มีข้อมูล)` : "");
   return failed.length ? { error: `${msg} · ไม่สำเร็จ ${failed.length}: ${failed[0]}` } : { ok: msg };
 }
+
+// ---------------- ของในทรัพย์สิน + รายการส่งมอบ (ไม่นับใน Net Worth · ตกลง 2 พ.ย. 2026) ----------------
+type InvRow = { unit_label?: string; item_type?: string; name?: string; qty?: string; brand?: string; serial_no?: string; value?: string; notes?: string };
+const t = (v: string | undefined | null) => { const x = String(v ?? "").trim(); return x === "" ? null : x; };
+const n = (v: string | undefined | null) => { const x = String(v ?? "").replace(/,/g, "").trim(); return x === "" ? null : Number(x); };
+
+async function propertyIdOf(supabase: Awaited<ReturnType<typeof createClient>>, assetId: string) {
+  const { data } = await supabase.from("property_details").select("id").eq("asset_id", assetId).is("deleted_at", null).maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}
+
+/** เพิ่มของในทรัพย์สินหลายแถวพร้อมกัน (แถวไม่มีชื่อ = ข้าม) */
+export async function addInventoryItems(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const rows = (readRows<InvRow>(form) ?? []).filter((r) => t(r.name));
+  if (!rows.length) return { error: "ยังไม่ได้กรอกชื่อรายการ" };
+  if (rows.some((r) => { const q = n(r.qty); const v = n(r.value); return (q != null && !(q > 0)) || (v != null && !(v >= 0)) || Number.isNaN(q) || Number.isNaN(v); }))
+    return { error: "จำนวนต้องมากกว่า 0 และมูลค่าต้องไม่ติดลบ" };
+  const propertyId = await propertyIdOf(supabase, assetId);
+  if (!propertyId) return { error: "ไม่พบทรัพย์สิน" };
+  const { data: last } = await supabase.from("property_inventory_items").select("sort_order").eq("property_id", propertyId)
+    .is("deleted_at", null).order("sort_order", { ascending: false }).limit(1).maybeSingle();
+  const base = Number(last?.sort_order ?? 0);
+  const { error } = await supabase.from("property_inventory_items").insert(rows.map((r, i) => ({
+    property_id: propertyId, unit_label: t(r.unit_label), item_type: r.item_type || "OTHER", name: t(r.name),
+    qty: n(r.qty) ?? 1, brand: t(r.brand), serial_no: t(r.serial_no), value: n(r.value), notes: t(r.notes), sort_order: base + i + 1,
+  })));
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(assetId);
+  return { ok: `เพิ่ม ${rows.length} รายการแล้ว` };
+}
+
+/** คัดลอกของทั้งห้อง → อีกห้อง (ห้องตกแต่งเหมือนกัน · แก้เฉพาะที่ต่างทีหลัง) */
+export async function copyInventoryRoom(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const from = t(String(form.get("from") ?? "")), to = t(String(form.get("to") ?? ""));
+  if ((from ?? "") === (to ?? "")) return { error: "เลือกห้องปลายทางที่ต่างจากห้องต้นทาง" };
+  const propertyId = await propertyIdOf(supabase, assetId);
+  if (!propertyId) return { error: "ไม่พบทรัพย์สิน" };
+  let q = supabase.from("property_inventory_items").select("item_type,name,qty,brand,value,notes,sort_order")
+    .eq("property_id", propertyId).is("deleted_at", null).order("sort_order");
+  q = from == null ? q.is("unit_label", null) : q.eq("unit_label", from);
+  const { data: src, error: e0 } = await q;
+  if (e0) return { error: friendlyError(e0.message) };
+  if (!src?.length) return { error: "ห้องต้นทางยังไม่มีรายการ" };
+  // เลขมิเตอร์ / Serial เป็นของแต่ละชิ้น → ไม่คัดลอก (กรอกเองทีหลัง)
+  const { error } = await supabase.from("property_inventory_items").insert(src.map((r) => ({ ...r, property_id: propertyId, unit_label: to })));
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(assetId);
+  return { ok: `คัดลอก ${src.length} รายการไป${to ?? "ส่วนกลาง"}แล้ว · เลขมิเตอร์ / Serial กรอกเพิ่มที่แต่ละแถว` };
+}
+
+/** ดึงของในทรัพย์สิน (ห้องของสัญญา + ส่วนกลาง) เข้ารายการส่งมอบ · กดซ้ำได้ เพิ่มเฉพาะของใหม่ */
+export async function copyInventoryToLease(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("copy_inventory_to_lease", { p_lease_id: String(form.get("lease_id")) });
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(String(form.get("asset_id")));
+  return { ok: Number(data) > 0 ? `ดึงมา ${data} รายการ` : "ไม่มีรายการใหม่ให้ดึง" };
+}
+
+type HandoverRow = InvRow & { id?: string; inventory_item_id?: string; in_condition?: string; in_reading?: string; out_status?: string;
+  out_condition?: string; out_reading?: string; deduction?: string };
+
+/** บันทึกรายการส่งมอบทั้งตาราง: แก้แถวเดิม · เพิ่มแถวใหม่ · ลบแถวที่เอาออก (Soft Delete) */
+export async function saveHandover(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const leaseId = String(form.get("lease_id"));
+  const rows = (readRows<HandoverRow>(form) ?? []).filter((r) => t(r.name));
+  let removed: string[] = [];
+  try { removed = JSON.parse(String(form.get("removed") ?? "[]")); } catch { return { error: BAD_ROWS_ERROR }; }
+  const nums = rows.flatMap((r) => [n(r.qty), n(r.value), n(r.in_reading), n(r.out_reading), n(r.deduction)]);
+  if (nums.some((x) => x != null && (Number.isNaN(x) || x < 0)) || rows.some((r) => n(r.qty) === 0)) return { error: "ตัวเลขต้องไม่ติดลบ และจำนวนต้องมากกว่า 0" };
+  const body = (r: HandoverRow, i: number) => ({
+    item_type: r.item_type || "OTHER", name: t(r.name), qty: n(r.qty) ?? 1, brand: t(r.brand), serial_no: t(r.serial_no), value: n(r.value),
+    in_condition: t(r.in_condition), in_reading: n(r.in_reading), out_status: t(r.out_status), out_condition: t(r.out_condition),
+    out_reading: n(r.out_reading), deduction: n(r.deduction), notes: t(r.notes), sort_order: i + 1,
+  });
+  const results = await Promise.all([
+    ...rows.map((r, i) => r.id
+      ? supabase.from("lease_handover_items").update(body(r, i)).eq("id", r.id).eq("lease_id", leaseId).select("id")
+      : supabase.from("lease_handover_items").insert({ ...body(r, i), lease_id: leaseId }).select("id")),
+    ...removed.map((id) => supabase.from("lease_handover_items").update({ deleted_at: new Date().toISOString() }).eq("id", id).eq("lease_id", leaseId).select("id")),
+  ]);
+  const bad = results.find((x) => x.error || !x.data?.length);
+  revalidateProperty(assetId);
+  if (bad) return { error: bad.error ? friendlyError(bad.error.message) : "บางรายการบันทึกไม่ได้ (ไม่มีสิทธิ์แก้รายการนี้)" };
+  return { ok: "บันทึกรายการส่งมอบแล้ว" };
+}

@@ -26,7 +26,7 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
   const { data: pd } = await supabase.from("property_details").select("id,asset_id,property_type,address,land_area_sq_wa,house_no,unit_no,floor_no,building_name,assets!inner(name)")
     .eq("id", l.property_id).maybeSingle();
   if (!pd) notFound();
-  const [{ data: deeds }, { data: owners }, { data: people }, { data: banks }, { data: biz }, { data: tenantId }] = await Promise.all([
+  const [{ data: deeds }, { data: owners }, { data: people }, { data: banks }, { data: biz }, { data: tenantId }, { data: hand }] = await Promise.all([
     supabase.from("property_deeds").select("component_type,title_type,title_deed_no,land_no,deed_book,deed_page,land_area_sq_wa,building_area_sqm,sort_order")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order"),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,end_date").eq("asset_id", pd.asset_id),
@@ -36,6 +36,8 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
       ? supabase.from("private_business_details").select("company_name,address").eq("asset_id", l.contract_place_business_id).maybeSingle()
       : Promise.resolve({ data: null }),
     canReveal && l.tenant_id_last4 ? supabase.rpc("reveal_lease_tenant_id", { p_lease_id: l.id }) : Promise.resolve({ data: null }),
+    supabase.from("lease_handover_items").select("item_type,name,qty,brand,serial_no,in_condition,in_reading")
+      .eq("lease_id", l.id).is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   const bank = (banks ?? []).find((b) => b.asset_id === l.rent_to_asset_id);
   const accountNo = bank && canReveal
@@ -67,6 +69,8 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
     tenantAddress: l.tenant_address, tenantPhone: l.tenant_phone, signatory: l.tenant_signatory,
     noticeDays: l.notice_days, lateFee: l.late_return_fee_per_day == null ? null : Number(l.late_return_fee_per_day),
     witnesses: [l.witness1_name, l.witness2_name],
+    handover: (hand ?? []).map((h) => ({ type: h.item_type, name: h.name, qty: Number(h.qty), brand: h.brand, serial: h.serial_no,
+      condition: h.in_condition, reading: h.in_reading == null ? null : Number(h.in_reading) })),
     deeds: lands.map((x) => ({ titleType: x.title_type, deedNo: x.title_deed_no, landNo: x.land_no, book: x.deed_book, page: x.deed_page,
       areaSqWa: x.land_area_sq_wa == null ? null : Number(x.land_area_sq_wa) })),
     buildingSqm: sqm > 0 ? sqm : null, landSqWa: pd.land_area_sq_wa == null ? null : Number(pd.land_area_sq_wa),

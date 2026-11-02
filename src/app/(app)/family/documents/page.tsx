@@ -26,7 +26,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   if (sp.m && DOC_MODULE_LABEL[sp.m]) q = q.eq("module", sp.m);
   if (!sp.all) q = q.eq("version_status", "CURRENT");
   if (sp.q?.trim()) q = q.or(`title.ilike.%${sp.q.trim().replace(/[%,()]/g, " ")}%,document_type.ilike.%${sp.q.trim().replace(/[%,()]/g, " ")}%`);
-  const [{ data: rows }, { data: status }, { data: assets }, { data: liabs }, { data: pols }, { data: persons }, { data: cards }, { data: expiring }] = await Promise.all([
+  const [{ data: rows }, { data: status }, { data: assets }, { data: liabs }, { data: pols }, { data: persons }, { data: cards }, { data: expiring }, { data: leases }] = await Promise.all([
     q,
     supabase.rpc("drive_status"),
     supabase.from("assets").select("id,name,asset_group,asset_type,status").is("deleted_at", null).order("name"),
@@ -36,6 +36,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("v_documents_status").select("id,title,document_type,expiry_date,derived_status,mime_type")
       .eq("version_status", "CURRENT").not("derived_status", "is", null).order("expiry_date"),
+    // รูป / เอกสารการส่งมอบของสัญญาเช่า (ผูกกับสัญญา)
+    supabase.from("v_lease_status").select("id,tenant_name,unit_label,property_asset_id"),
   ]);
   const allDocs = (rows as Doc[] | null) ?? [];
   const ids = allDocs.map((d) => d.id);
@@ -57,6 +59,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
     [p.insurer, p.policy_no, one(p.persons as { name: string } | null)?.name].filter(Boolean).join(" · ");
   (pols ?? []).forEach((p) => label.set(`INSURANCE_POLICY:${p.id}`, { name: polName(p), href: `/insurance/${p.id}` }));
   (persons ?? []).forEach((p) => label.set(`PERSON:${p.id}`, { name: p.name, href: "/family/members" }));
+  (leases ?? []).forEach((l) => label.set(`PROPERTY_LEASE:${l.id}`, {
+    name: `สัญญาเช่า · ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}`, href: `/property/${l.property_asset_id}` }));
   const cardName = (c: { issuer: string; card_name: string | null; card_last4: string | null }) =>
     [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ");
   (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: `/liabilities/cards/${c.id}` }));
