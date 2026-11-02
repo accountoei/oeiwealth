@@ -28,7 +28,7 @@ import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
-import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
+import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
 import { buildHints } from "@/lib/category-hints";
 import { stripPending } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
@@ -65,7 +65,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
       { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
       { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: loanRows }, { data: insRows }],
-    [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc }, { data: rexpRows }, { data: rexpTplRaw }, { data: leaseRaw }],
+    [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc }, { data: rexpRows }, { data: rexpTplRaw }, { data: leaseRaw }, { data: covRaw }],
     [pfCash, { data: pfCardPays }], { data: hintRows }, { data: propRows }, { data: openRaw }, { data: stmtRaw }] = await Promise.all([
     pvQ,
     // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (กติกาเดียวกับ Dashboard)
@@ -133,6 +133,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       supabase.from("v_lease_status")
         .select("id,property_asset_id,unit_label,tenant_name,rent_amount,rent_currency,payment_frequency,payment_due_day,start_date,end_date,lease_status")
         .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]).order("end_date"),
+      // ความคุ้มครองของกรมธรรม์ที่มีผล → "เคลมใหม่" ในฟอร์มบันทึกเงินคืน (สร้างเคลมให้เอง · ตกลง 2 พ.ย. 2026)
+      supabase.from("insurance_coverages").select("id,coverage_type,currency,insurance_policies!inner(insurer,policy_no,status,deleted_at,persons!insurance_policies_person_id_fkey(name))")
+        .is("deleted_at", null).eq("insurance_policies.status", "ACTIVE").is("insurance_policies.deleted_at", null),
     ]),
     // บัญชีเงินฝากในพอร์ต (ค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ต) + จ่ายบัตรจากพอร์ตเดือนนี้
     Promise.all([
@@ -190,6 +193,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
     return { id: c.id, currency: c.currency, label: [pol?.insurer, pol?.policy_no, pname(pol?.persons),
       c.claim_date && `เคลม ${thDate(c.claim_date)}`, c.claimed_amount != null && money(c.claimed_amount, c.currency)].filter(Boolean).join(" · ") };
+  });
+  const newClaims: Claim[] = (covRaw ?? []).map((c) => {
+    const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
+    return { id: `new:${c.id}`, currency: c.currency, label: [pname(pol?.persons), pol?.insurer, pol?.policy_no,
+      COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type].filter(Boolean).join(" · ") };
   });
 
   type Cost = { utility_id: string; property_asset_id: string; property_name: string; utility_type: string; provider: string | null;
@@ -570,7 +578,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         action: i.pending_split ? expSplit(i) ?? <MoveBadge label="รอแยกรายละเอียด" tone="amber" />
           : acts(expEdit(i, "แก้ไข") ?? DONE_EXP,
             canWrite && i.is_reimbursable && remaining > 0 && (
-              <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims}
+              <ReimbursementForm itemId={i.id} remaining={remaining} currency={i.currency} banks={banks} cards={cards} claims={claims} newClaims={newClaims}
                 today={today} minDate={goLive} />
             )),
       };

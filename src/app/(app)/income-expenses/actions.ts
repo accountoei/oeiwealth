@@ -175,6 +175,18 @@ export async function addReimbursement(_: ActionState, form: FormData): Promise<
   const amount = num(form.get("amount"));
   if (bad(amount)) return { error: "กรุณาใส่ยอดเงินคืน" };
   const to = endpointFromForm(form, "to_via");
+  // "เคลมใหม่ · ความคุ้มครอง …" → สร้างเคลมแล้วผูกเงินคืนในคำสั่งเดียว (ตกลง 2 พ.ย. 2026)
+  const claimSel = str(form.get("insurance_claim_id"));
+  if (claimSel?.startsWith("new:")) {
+    const { error } = await supabase.rpc("record_reimbursement_new_claim", {
+      p_coverage_id: claimSel.slice(4), p_expense_item_id: String(form.get("expense_item_id")), p_received_date: str(form.get("received_date")),
+      p_amount: amount, p_received_to_asset_id: bankId(to), p_received_to_credit_card_id: cardId(to), p_notes: str(form.get("notes")),
+    });
+    if (error) return { error: friendlyError(error.message) };
+    revalidatePath("/insurance", "layout");
+    revalidatePath("/family/health");
+    return done("บันทึกเงินคืนแล้ว · สร้างเคลมให้แล้ว");
+  }
   const { error } = await supabase.rpc("record_reimbursement", {
     p_expense_item_id: String(form.get("expense_item_id")), p_received_date: str(form.get("received_date")),
     p_amount: amount, p_received_to_asset_id: bankId(to),

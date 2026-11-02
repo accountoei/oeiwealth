@@ -2813,6 +2813,21 @@ SELECT t.fails(format($q$UPDATE public.insurance_schedule_lines SET skipped = tr
 SELECT public.set_insurance_cash_value_table(:'hpol', jsonb_build_array(jsonb_build_object('policy_year', 2, 'value', 20000, 'value_date', current_date - 1))) IS NOT NULL AS hcv;
 SELECT t.ok((SELECT a.current_value = 20000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = :'hpol'),
             'งวดประวัติ / ไม่ได้จ่าย ไม่นับเป็นค้างเบี้ย → ลงมูลค่าเวนคืนตามตารางได้');
+-- บันทึกเงินคืนแล้วสร้างเคลมให้เอง (2 พ.ย. 2026)
+INSERT INTO public.insurance_coverages(policy_id, coverage_type, limit_amount) VALUES (:'hpol', 'OPD_ANNUAL', 30000);
+SELECT id AS hcov FROM public.insurance_coverages WHERE policy_id = :'hpol' AND coverage_type = 'OPD_ANNUAL' \gset
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ค่ารักษา OPD ทดสอบ', 'amount', 2500,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'is_reimbursable', true)) AS hexp \gset
+SELECT public.record_reimbursement_new_claim(:'hcov', :'hexp', current_date, 2000, t.a('KBank ออมทรัพย์'), NULL, NULL) AS hclaim \gset
+SELECT t.ok((SELECT policy_id = :'hpol' AND coverage_id = :'hcov' AND claimed_amount = 2000 AND received_amount = 2000 AND status = 'PAID'
+               FROM public.insurance_claims WHERE id = :'hclaim'),
+            'เงินคืนจากเคลมใหม่: สร้างเคลมผูกความคุ้มครอง · ได้รับ 2,000 · สถานะจ่ายครบ');
+SELECT t.ok((SELECT insurance_claim_id = :'hclaim' FROM public.expense_reimbursements WHERE expense_item_id = :'hexp' AND deleted_at IS NULL),
+            'เงินคืนจากเคลมใหม่: เงินคืนผูกกับเคลมที่สร้าง');
+SELECT t.fails(format($q$SELECT public.record_reimbursement_new_claim(%L, %L, current_date, 1000)$q$, :'hcov', :'hexp'),
+  'เงินคืนเกินยอดค้างรับ', 'เงินคืนจากเคลมใหม่: เกินยอดค้างรับ → ไม่สร้างเคลมค้างไว้');
+SELECT t.ok((SELECT count(*) = 1 FROM public.insurance_claims WHERE policy_id = :'hpol' AND deleted_at IS NULL),
+            'เงินคืนจากเคลมใหม่: บันทึกไม่ผ่าน = ไม่มีเคลมค้าง');
 \echo '== 13zz7. Private Business: ปันผลแยกตามผู้ถือหุ้น + มูลค่าหลายกิจการ (ROLLBACK ท้ายหัวข้อ)'
 BEGIN;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');

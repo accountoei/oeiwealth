@@ -19,6 +19,7 @@ import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
 import UndoButton from "@/components/UndoButton";
 import RowActions from "@/components/RowActions";
+import ModalButton from "@/components/ModalButton";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -85,16 +86,21 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const usedByCov = new Map<string, number>();
   (claims ?? []).filter((c) => !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
     usedByCov.set(c.coverage_id as string, (usedByCov.get(c.coverage_id as string) ?? 0) + Number(c.received_amount ?? c.claimed_amount ?? 0)));
-  type Sum = { limit: number; used: number; currency: string; policies: number };
+  // ตารางสิทธิ์: แถว = ความคุ้มครอง · คอลัมน์ = คน · กดตัวเลขดูว่ามาจากกรมธรรม์ไหน (ตกลง 2 พ.ย. 2026)
+  type Sum = { limit: number; used: number; currency: string; policies: number; items: { policyId: string; limit: number; used: number; currency: string }[] };
   const byPerson = new Map<string, Map<string, Sum>>();
   (covs ?? []).forEach((c) => {
     const pid = activePolicy.get(c.policy_id);
     if (!pid || !pv.isPerson(pid)) return;
     const m = byPerson.get(pid) ?? new Map<string, Sum>();
-    const cur = m.get(c.coverage_type) ?? { limit: 0, used: 0, currency: c.currency, policies: 0 };
-    m.set(c.coverage_type, { ...cur, limit: cur.limit + Number(c.limit_amount), used: cur.used + (usedByCov.get(c.id) ?? 0), policies: cur.policies + 1 });
+    const cur = m.get(c.coverage_type) ?? { limit: 0, used: 0, currency: c.currency, policies: 0, items: [] };
+    const used = usedByCov.get(c.id) ?? 0;
+    m.set(c.coverage_type, { ...cur, limit: cur.limit + Number(c.limit_amount), used: cur.used + used, policies: cur.policies + 1,
+      items: [...cur.items, { policyId: c.policy_id, limit: Number(c.limit_amount), used, currency: c.currency }] });
     byPerson.set(pid, m);
   });
+  const covPersons = (persons ?? []).map((x) => x.id).filter((id) => byPerson.has(id));
+  const covTypes = Object.keys(COVERAGE_LABEL).filter((k) => covPersons.some((id) => byPerson.get(id)?.has(k)));
   const policyName = new Map((data ?? []).map((r) => [r.id, `${r.insurer}${r.policy_no ? ` · ${r.policy_no}` : ""}`]));
   const fupRows = (fups ?? []).filter((f) => pv.isPerson(f.person_id) || rows.some((r) => r.id === f.policy_id));
   const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id))
@@ -374,29 +380,47 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           </ul>
         </section>
       )}
-      {byPerson.size > 0 && (
-        <section className="grid gap-4 md:grid-cols-2">
-          {[...byPerson.entries()].map(([pid, m]) => (
-            <div key={pid} className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-2 font-medium text-slate-900">สิทธิ์คุ้มครอง · {pname.get(pid)}</div>
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-slate-100">
-                  {Object.keys(COVERAGE_LABEL).filter((k) => m.has(k)).map((k) => {
-                    const x = m.get(k) as Sum;
+      {covPersons.length > 0 && (
+        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">สิทธิ์คุ้มครองรายคน</h2>
+          <p className="px-4 text-xs text-slate-500">รวมวงเงินจากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กดตัวเลขเพื่อดูว่ามาจากกรมธรรม์ไหน</p>
+          <table className="mt-2 w-full min-w-[36rem] text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr><th className="px-4 py-2">ความคุ้มครอง</th>{covPersons.map((id) => <th key={id} className="px-4 text-right">{pname.get(id)}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {covTypes.map((k) => (
+                <tr key={k} className="align-top">
+                  <td className="px-4 py-2">{COVERAGE_LABEL[k][0]}{COVERAGE_LABEL[k][1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[k][1]}</span>}</td>
+                  {covPersons.map((id) => {
+                    const x = byPerson.get(id)?.get(k);
+                    if (!x) return <td key={id} className="px-4 text-right text-slate-300">-</td>;
                     const annual = COVERAGE_ANNUAL.includes(k);
                     return (
-                      <tr key={k}>
-                        <td className="py-1.5">{COVERAGE_LABEL[k][0]}{COVERAGE_LABEL[k][1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[k][1]}</span>}
-                          {x.policies > 1 && <span className="text-xs text-slate-400"> · {x.policies} กรมธรรม์</span>}</td>
-                        <td className="text-right tabular-nums">{money(x.limit, x.currency)}
-                          {annual && x.used > 0 && <div className="text-xs text-slate-500">ใช้ปีนี้ {money(x.used)} · เหลือ {money(Math.max(x.limit - x.used, 0))}</div>}</td>
-                      </tr>
+                      <td key={id} className="px-4 py-2 text-right">
+                        <ModalButton label={money(x.limit, x.currency, 0)} title={`${COVERAGE_LABEL[k][0]} · ${pname.get(id)}`}
+                          className="tabular-nums text-slate-900 underline decoration-dotted underline-offset-4 hover:text-blue-700">
+                          <table className="w-full text-sm">
+                            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">กรมธรรม์</th><th className="text-right">วงเงิน</th>{annual && <th className="text-right">ใช้ปีนี้</th>}</tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {x.items.map((it, n) => (
+                                <tr key={n}><td className="py-1.5"><Link href={`/insurance/${it.policyId}`} className="hover:underline">{policyName.get(it.policyId)}</Link></td>
+                                  <td className="text-right tabular-nums">{money(it.limit, it.currency, 0)}</td>
+                                  {annual && <td className="text-right tabular-nums">{it.used > 0 ? money(it.used, undefined, 0) : "-"}</td>}</tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </ModalButton>
+                        {x.policies > 1 && <div className="text-xs text-slate-400">{x.policies} กรมธรรม์</div>}
+                        {annual && x.used > 0 && <div className="text-xs text-slate-500">เหลือ {money(Math.max(x.limit - x.used, 0), undefined, 0)}</div>}
+                      </td>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">เคลม: บันทึกเงินคืนที่ Income &amp; Expenses แล้วเลือก &ldquo;เคลมใหม่&rdquo; ตามความคุ้มครอง ระบบสร้างเคลมและหักวงเงินให้เอง · ดูสิทธิ์สุขภาพรายคนได้ที่ Family → Health</p>
         </section>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
