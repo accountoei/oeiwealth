@@ -222,7 +222,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                       risk={l.status === "AT_RISK" ? { outstanding: leftP, currency: l.currency, today, date: extra?.risk_assessed_date ?? null, note: extra?.risk_note ?? null,
                         expected: extra?.at_risk_amount == null ? null : Math.max(leftP - Number(extra.at_risk_amount), 0) } : undefined} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
                       borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }}
-                      party={{ v: extra ?? {}, canSensitive: canDelete,
+                      party={{ v: extra ?? {}, canSensitive: canDelete, persons: persons ?? [],
                         opt: { banks: (banks ?? []).map((b) => ({ asset_id: b.asset_id, name: b.name, account_no_masked: b.account_no_masked })), businesses: businesses ?? [] } }} />
                   </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
@@ -244,7 +244,12 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">แบบการชำระ</dt><dd>{payType}</dd>
             <dt className="text-slate-500">วันครบกำหนด</dt><dd>{l.due_date ? thDate(l.due_date) : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">สถานะ</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[l.status] ?? "bg-slate-100 text-slate-700"}`}>● {LOAN_STATUS_LABEL[l.status] ?? l.status}</span></dd>
-            <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}{extra?.borrower_phone && <div className="text-xs text-slate-500">โทร {extra.borrower_phone}</div>}
+            <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}
+              {extra?.borrower_person_id && <div className="text-xs text-slate-500">สมาชิกในครอบครัว · <Link href={`/family/members/${extra.borrower_person_id}`} className="text-blue-700 hover:underline">
+                {(persons ?? []).find((p) => p.id === extra.borrower_person_id)?.name ?? "ดูข้อมูล"}</Link> · นับเป็นหนี้สินของผู้กู้ใน Net Worth</div>}
+              {extra?.borrower_business_id && <div className="text-xs text-slate-500">กิจการของครอบครัว · <Link href={`/financial/business/${extra.borrower_business_id}`} className="text-blue-700 hover:underline">
+                {(businesses ?? []).find((b) => b.asset_id === extra.borrower_business_id)?.company_name ?? "ดูกิจการ"}</Link> · ฝั่งกิจการไม่ตั้งหนี้แยก (อยู่ในมูลค่ากิจการแล้ว)</div>}
+              {extra?.borrower_phone && <div className="text-xs text-slate-500">โทร {extra.borrower_phone}</div>}
               {extra?.borrower_id_last4 && <div className="text-xs text-slate-500">เลขบัตร ••••{extra.borrower_id_last4}</div>}
               {extra?.borrower_address && <div className="whitespace-pre-line text-xs text-slate-500">{extra.borrower_address}</div>}</dd>
             {extra?.guarantor_name && <><dt className="text-slate-500">ผู้ค้ำประกัน</dt><dd>{extra.guarantor_name}
