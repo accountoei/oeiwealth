@@ -304,6 +304,121 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     </div>
   );
 
+  // กล่องค่าเช่า: รายการรับต่องวด แสดงใต้แถวงวด · ที่ไม่ตรงงวดในตาราง → "รายการรับอื่น" (รวม 2 กล่อง · ตกลง 2 พ.ย. 2026)
+  type RentPaidRow = NonNullable<typeof rentPaid>[number];
+  const rentKey = (lease: string, period: string) => `${lease}|${period}`;
+  const rentRowKeys = new Set(rents.map((r) => rentKey(r.lease_id, r.income_period)));
+  const paidByPeriod = new Map<string, RentPaidRow[]>();
+  const otherPaid: RentPaidRow[] = [];
+  for (const x of [...(rentPaid ?? [])].reverse()) {
+    const k = rentKey(x.lease_id as string, x.income_period as string);
+    if (x.income_type === "RENT" && rentRowKeys.has(k)) paidByPeriod.set(k, [...(paidByPeriod.get(k) ?? []), x]);
+  }
+  for (const x of rentPaid ?? []) if (!(x.income_type === "RENT" && rentRowKeys.has(rentKey(x.lease_id as string, x.income_period as string)))) otherPaid.push(x);
+  const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
+
+  const leaseActions = (l: Lease) => {
+    const dep = Number(l.security_deposit ?? 0);
+    const leaseEnded = l.deposit_due_date <= today;
+    return (
+      <>
+        <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
+        {canWrite && l.status === "ACTIVE" && l.end_date > today && (
+          <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
+        )}
+        {canWrite && (
+          <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false}
+            deleteControl={canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
+              hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
+              buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />} fields={[
+            { name: "tenant_name", label: "ผู้เช่า", value: l.tenant_name },
+            { name: "unit_label", label: "ห้อง", value: l.unit_label, width: "w-24" },
+            { name: "contract_no", label: "เลขสัญญา", value: l.contract_no, width: "w-24" },
+            { name: "end_date", label: "สิ้นสุด", type: "date", value: l.end_date },
+            { name: "rent_amount", label: "ค่าเช่า", type: "number", value: l.rent_amount },
+            { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
+            { name: "rent_to_asset_id", label: "บัญชีรับค่าเช่า", type: "select", value: rentTo.get(l.id) ?? "",
+              options: [["", "— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —"], ...bankList.filter((b) => b.currency === l.rent_currency).map((b) => [b.asset_id, b.name] as [string, string])] },
+            { name: "utilities_billing", label: "ค่าน้ำ / ค่าไฟ", type: "select", value: leaseExtra.get(l.id)?.utilities_billing ?? "",
+              options: [["", "— ไม่ระบุ —"], ...Object.entries(UTILITIES_BILLING_LABEL) as [string, string][]] },
+            { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
+        )}
+        {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
+          <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
+            banks={bankList} minDate={l.deposit_due_date} today={today} />
+        )}
+        {canSettle && l.deposit_settlement_type === "REFUNDED" && (
+          <UndoButton kind="DEPOSIT" id={l.id} paths={paths} label="ยกเลิกการคืนเงินประกัน"
+            confirmText={`ยกเลิกการคืนเงินประกันของ ${l.tenant_name}?\nเงินคืนผู้เช่า และรายได้ส่วนที่หักไว้ จะถูกลบ · สัญญากลับมาถือเงินประกัน (หนี้สิน) เหมือนเดิม`} />
+        )}
+      </>
+    );
+  };
+  const leaseCard = (l: Lease) => {
+    const st = LEASE_STATUS[l.lease_status];
+    const dep = Number(l.security_deposit ?? 0);
+    const ds = DEPOSIT_LABEL[l.deposit_status];
+    const leaseEnded = l.deposit_due_date <= today;
+    return (
+      <div key={l.id} className="rounded-lg border border-slate-200 p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? l.lease_status}</span>
+          <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
+          {l.contract_no && <span className="text-xs text-slate-500">สัญญาเลขที่ {l.contract_no}</span>}
+        </div>
+        <div className="mt-1 text-slate-600">
+          {thDate(l.start_date)} – {thDate(l.end_date)}
+          {l.terminated_date && <span className="text-red-600"> · เลิก {thDate(l.terminated_date)}</span>}
+          {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
+          {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
+          {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}
+          {leaseExtra.get(l.id)?.utilities_billing && <span className="text-xs text-slate-500"> · ค่าน้ำไฟ: {UTILITIES_BILLING_LABEL[leaseExtra.get(l.id)!.utilities_billing!]}</span>}
+        </div>
+        {dep > 0 && (
+          <div className="mt-1">
+            เงินประกัน {money(dep, l.deposit_currency ?? undefined)}
+            {l.deposit_carried_amount && <span className="text-slate-500"> (ยกมา {money(l.deposit_carried_amount)})</span>}
+            {" · "}<span className={ds?.cls}>{ds?.text ?? l.deposit_status}</span>
+            {l.deposit_received_date && l.deposit_received_date < goLive && l.deposit_status !== "SETTLED" &&
+              <span className="text-xs text-slate-500"> · รับก่อน Go-live = อยู่ในยอดตั้งต้น</span>}
+            {l.deposit_settlement_type === "REFUNDED" &&
+              <span className="text-xs text-slate-500"> · คืน {money(l.deposit_refunded_amount)} เมื่อ {thDate(l.deposit_settled_date)}</span>}
+            {l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" &&
+              <span className="text-xs text-slate-500"> · ยกไปสัญญาใหม่ {thDate(l.deposit_settled_date)}</span>}
+          </div>
+        )}
+        {l.notes && <div className="mt-1 whitespace-pre-line text-xs text-slate-500">{l.notes}</div>}
+        <div className="mt-2 flex flex-wrap gap-4">{leaseActions(l)}</div>
+        {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
+          <p className="mt-1 text-xs text-slate-400">คืนเงินประกันได้ตั้งแต่ {thDate(l.deposit_due_date)}</p>
+        )}
+      </div>
+    );
+  };
+  // สัญญาที่จบครบแล้ว (ไม่มีผล · เงินประกันเคลียร์แล้ว · ไม่มีค่าเช่า / ค่าน้ำไฟค้าง) → พับเป็นบรรทัดสั้นใน "สัญญาเดิม" (ตกลง 2 พ.ย. 2026)
+  const leaseOpenItems = new Set([...rents.filter((x) => x.status === "OVERDUE" || x.status === "PENDING").map((x) => x.lease_id),
+    ...charges.map((c) => c.lease_id)]);
+  const leaseDone = (l: Lease) => !liveLeases.includes(l) && (Number(l.security_deposit ?? 0) <= 0 || !!l.deposit_settled_date) && !leaseOpenItems.has(l.id);
+  const openLeases = leases.filter((l) => !leaseDone(l));
+  const doneLeases = leases.filter(leaseDone);
+  const leaseLine = (l: Lease) => {
+    const st = LEASE_STATUS[l.lease_status];
+    const dep = Number(l.security_deposit ?? 0);
+    return (
+      <div key={l.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5">
+        <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? l.lease_status}</span>
+        <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
+        {l.contract_no && <span className="text-xs text-slate-500">เลขที่ {l.contract_no}</span>}
+        <span className="text-slate-600">{thDate(l.start_date)} – {l.terminated_date ? <span className="text-red-600">เลิก {thDate(l.terminated_date)}</span> : thDate(l.end_date)}
+          {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)}
+          {dep > 0 && <span className="text-xs text-slate-500"> · เงินประกัน {money(dep)}
+            {l.deposit_settlement_type === "REFUNDED" ? ` คืน ${money(l.deposit_refunded_amount)} เมื่อ ${thDate(l.deposit_settled_date)}`
+              : l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" ? ` ยกไปสัญญาใหม่ ${thDate(l.deposit_settled_date)}` : ""}</span>}</span>
+        <span className="ml-auto flex flex-wrap gap-4">{leaseActions(l)}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -453,96 +568,46 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </div>
         {canWrite && pd.usage_type === "RENTAL" && liveLeases.length === 0 && <SuggestVacant assetId={id} />}
 
-        {leases.map((l) => {
-          const st = LEASE_STATUS[l.lease_status];
-          const dep = Number(l.security_deposit ?? 0);
-          const ds = DEPOSIT_LABEL[l.deposit_status];
-          const leaseEnded = l.deposit_due_date <= today;
-          return (
-            <div key={l.id} className="rounded-lg border border-slate-200 p-4 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? l.lease_status}</span>
-                <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
-                {l.contract_no && <span className="text-xs text-slate-500">สัญญาเลขที่ {l.contract_no}</span>}
-              </div>
-              <div className="mt-1 text-slate-600">
-                {thDate(l.start_date)} – {thDate(l.end_date)}
-                {l.terminated_date && <span className="text-red-600"> · เลิก {thDate(l.terminated_date)}</span>}
-                {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
-                {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
-                {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}
-                {leaseExtra.get(l.id)?.utilities_billing && <span className="text-xs text-slate-500"> · ค่าน้ำไฟ: {UTILITIES_BILLING_LABEL[leaseExtra.get(l.id)!.utilities_billing!]}</span>}
-              </div>
-              {dep > 0 && (
-                <div className="mt-1">
-                  เงินประกัน {money(dep, l.deposit_currency ?? undefined)}
-                  {l.deposit_carried_amount && <span className="text-slate-500"> (ยกมา {money(l.deposit_carried_amount)})</span>}
-                  {" · "}<span className={ds?.cls}>{ds?.text ?? l.deposit_status}</span>
-                  {l.deposit_received_date && l.deposit_received_date < goLive && l.deposit_status !== "SETTLED" &&
-                    <span className="text-xs text-slate-500"> · รับก่อน Go-live = อยู่ในยอดตั้งต้น</span>}
-                  {l.deposit_settlement_type === "REFUNDED" &&
-                    <span className="text-xs text-slate-500"> · คืน {money(l.deposit_refunded_amount)} เมื่อ {thDate(l.deposit_settled_date)}</span>}
-                  {l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" &&
-                    <span className="text-xs text-slate-500"> · ยกไปสัญญาใหม่ {thDate(l.deposit_settled_date)}</span>}
-                </div>
-              )}
-              {l.notes && <div className="mt-1 whitespace-pre-line text-xs text-slate-500">{l.notes}</div>}
-              <div className="mt-2 flex flex-wrap gap-4">
-                <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
-                {canWrite && l.status === "ACTIVE" && l.end_date > today && (
-                  <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
-                )}
-                {canWrite && (
-                  <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false}
-                    deleteControl={canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
-                      hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
-                      buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />} fields={[
-                    { name: "tenant_name", label: "ผู้เช่า", value: l.tenant_name },
-                    { name: "unit_label", label: "ห้อง", value: l.unit_label, width: "w-24" },
-                    { name: "contract_no", label: "เลขสัญญา", value: l.contract_no, width: "w-24" },
-                    { name: "end_date", label: "สิ้นสุด", type: "date", value: l.end_date },
-                    { name: "rent_amount", label: "ค่าเช่า", type: "number", value: l.rent_amount },
-                    { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
-                    { name: "rent_to_asset_id", label: "บัญชีรับค่าเช่า", type: "select", value: rentTo.get(l.id) ?? "",
-                      options: [["", "— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —"], ...bankList.filter((b) => b.currency === l.rent_currency).map((b) => [b.asset_id, b.name] as [string, string])] },
-                    { name: "utilities_billing", label: "ค่าน้ำ / ค่าไฟ", type: "select", value: leaseExtra.get(l.id)?.utilities_billing ?? "",
-                      options: [["", "— ไม่ระบุ —"], ...Object.entries(UTILITIES_BILLING_LABEL) as [string, string][]] },
-                    { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
-                )}
-                {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
-                  <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
-                    banks={bankList} minDate={l.deposit_due_date} today={today} />
-                )}
-                {canSettle && l.deposit_settlement_type === "REFUNDED" && (
-                  <UndoButton kind="DEPOSIT" id={l.id} paths={paths} label="ยกเลิกการคืนเงินประกัน"
-                    confirmText={`ยกเลิกการคืนเงินประกันของ ${l.tenant_name}?\nเงินคืนผู้เช่า และรายได้ส่วนที่หักไว้ จะถูกลบ · สัญญากลับมาถือเงินประกัน (หนี้สิน) เหมือนเดิม`} />
-                )}
-              </div>
-              {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
-                <p className="mt-1 text-xs text-slate-400">คืนเงินประกันได้ตั้งแต่ {thDate(l.deposit_due_date)}</p>
-              )}
-            </div>
-          );
-        })}
+        {openLeases.map(leaseCard)}
+        {doneLeases.length > 0 && (isRental ? (
+          <details className="rounded-lg border border-slate-200 text-sm">
+            <summary className="cursor-pointer px-4 py-3 text-slate-700">สัญญาเดิม ({doneLeases.length})
+              <span className="ml-2 text-xs text-slate-500">จบแล้ว ไม่มีรายการค้าง · กดเพื่อดู</span></summary>
+            <div className="divide-y divide-slate-100 border-t border-slate-200">{doneLeases.map(leaseLine)}</div>
+          </details>
+        ) : <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">{doneLeases.map(leaseLine)}</div>)}
 
       </section>
 
-      {rents.length > 0 && (
+      {(rents.length > 0 || otherPaid.length > 0) && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-1 font-medium text-slate-900">ค่าเช่าที่ควรได้ vs ได้รับจริง</h2>
-          <p className="mb-3 text-xs text-slate-500">นับตั้งแต่เดือน Go-live · การบันทึกรับจะสร้างรายได้ค่าเช่าและเงินเข้าบัญชีให้</p>
+          <h2 className="mb-1 font-medium text-slate-900">ค่าเช่า</h2>
+          <p className="mb-3 text-xs text-slate-500">ควรได้ vs ได้รับจริง นับตั้งแต่เดือน Go-live · การบันทึกรับจะสร้างรายได้ค่าเช่าและเงินเข้าบัญชีให้ · กดยอดที่รับแล้วเพื่อแก้ไข / ลบ (ลบแล้วงวดนั้นกลับเป็น &ldquo;รอรับ&rdquo; · ผิดบัญชีให้ลบแล้วบันทึกรับใหม่ · งวดที่ปิดแล้วต้อง Reopen ก่อน)</p>
+          {rents.length > 0 && (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr><th className="py-1">งวด</th><th>สัญญา</th><th className="text-right">ควรได้</th><th className="text-right">ได้รับ</th>
                 <th className="pl-4">สถานะ</th><th></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rents.map((r) => (
+              {rents.map((r) => {
+                const got = paidByPeriod.get(rentKey(r.lease_id, r.income_period)) ?? [];
+                return (
                 <tr key={`${r.lease_id}-${r.income_period}`} className="align-top">
                   <td className="py-1.5">{thMonth(r.income_period)}</td>
                   <td className="text-xs text-slate-600">{r.name.split(" · ").slice(1).join(" · ")}<div className="text-slate-400">ครบ {thDate(r.due_date)}</div></td>
                   <td className="text-right tabular-nums">{money(r.expected_amount)}</td>
-                  <td className="text-right tabular-nums">{Number(r.received_amount) > 0 ? money(r.received_amount) : "-"}</td>
+                  <td className="text-right tabular-nums">
+                    {got.length === 0 ? (Number(r.received_amount) > 0 ? money(r.received_amount) : "-") : got.map((x) => (
+                      <div key={x.id} className="mb-1 last:mb-0">
+                        {canWrite ? <RowActions table="income_transactions" id={x.id} paths={paths} canDelete={canDelete}
+                          fields={rentIncomeFields(x)} button={`${money(x.amount)} ✎`} buttonClass={AMT} /> : money(x.amount)}
+                        <div className="text-xs text-slate-500">รับ {thDate(x.date)}{Number(x.tax ?? 0) > 0 && ` · ภาษี ${money(x.tax)}`}</div>
+                        <div className="text-xs text-slate-400">{x.received_to_asset_id ? bankName.get(x.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</div>
+                        {x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}
+                      </div>
+                    ))}
+                  </td>
                   <td className={`pl-4 ${RENT_STATUS[r.status]?.cls ?? ""}`}>{RENT_STATUS[r.status]?.text ?? r.status}</td>
                   <td className="text-right">
                     {canWrite && (r.status === "OVERDUE" || r.status === "PENDING") && (
@@ -552,9 +617,40 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     )}
                   </td>
                 </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          )}
+          {otherPaid.length > 0 && (
+          <div className={rents.length > 0 ? "mt-5" : ""}>
+          <h3 className="mb-1 text-sm font-medium text-slate-700">รายการรับอื่น</h3>
+          <p className="mb-2 text-xs text-slate-500">ค่าน้ำไฟเรียกเก็บ · หักจากเงินประกัน · ค่าเช่างวดเก่ากว่าตารางด้านบน · กดที่แถวเพื่อแก้ไข / ลบ</p>
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr><th className="py-1">วันที่รับ</th><th>งวด</th><th>สัญญา</th><th className="text-right">ยอด</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {otherPaid.map((r) => (
+                <tr key={r.id} className="align-top">
+                  <td className="py-1.5">{thDate(r.date)}</td>
+                  <td>{r.income_type === "RENT" ? thMonth(r.income_period) : r.income_subtype === REBILL_SUBTYPE
+                    ? <>{thMonth(r.income_period)}<div className="text-xs text-slate-500">ค่าน้ำไฟเรียกเก็บ</div></>
+                    : <span className="text-xs text-slate-500">หักจากเงินประกัน</span>}</td>
+                  <td className="text-xs text-slate-600">{leaseName.get(r.lease_id as string) ?? "-"}{r.notes && <div className="text-slate-400">{r.notes}</div>}</td>
+                  <td className="text-right tabular-nums">{money(r.amount, r.currency)}{Number(r.tax ?? 0) > 0 && <div className="text-xs text-slate-500">ภาษี {money(r.tax)}</div>}</td>
+                  <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
+                  <td className="pl-2 text-right">
+                    {r.income_type !== "RENT" && r.income_subtype !== REBILL_SUBTYPE && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
+                    {canWrite && (r.income_type === "RENT" || r.income_subtype === REBILL_SUBTYPE) && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
+                      fields={rentIncomeFields(r)} />}
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
+          </div>
+          )}
         </section>
       )}
 
@@ -590,95 +686,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         </section>
       )}
 
-      {(rentPaid ?? []).length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-1 font-medium text-slate-900">ประวัติรับค่าเช่า</h2>
-          <p className="mb-3 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอรับ&rdquo; · บันทึกผิดบัญชี ให้ลบแล้วบันทึกรับใหม่ · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500">
-              <tr><th className="py-1">วันที่รับ</th><th>งวด</th><th>สัญญา</th><th className="text-right">ยอด</th><th className="pl-4">เข้าบัญชี</th><th></th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(rentPaid ?? []).map((r) => (
-                <tr key={r.id} className="align-top">
-                  <td className="py-1.5">{thDate(r.date)}</td>
-                  <td>{r.income_type === "RENT" ? thMonth(r.income_period) : r.income_subtype === REBILL_SUBTYPE
-                    ? <>{thMonth(r.income_period)}<div className="text-xs text-slate-500">ค่าน้ำไฟเรียกเก็บ</div></>
-                    : <span className="text-xs text-slate-500">หักจากเงินประกัน</span>}</td>
-                  <td className="text-xs text-slate-600">{leaseName.get(r.lease_id as string) ?? "-"}{r.notes && <div className="text-slate-400">{r.notes}</div>}</td>
-                  <td className="text-right tabular-nums">{money(r.amount, r.currency)}{Number(r.tax ?? 0) > 0 && <div className="text-xs text-slate-500">ภาษี {money(r.tax)}</div>}</td>
-                  <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
-                  <td className="pl-2 text-right">
-                    {r.income_type !== "RENT" && r.income_subtype !== REBILL_SUBTYPE && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
-                    {canWrite && (r.income_type === "RENT" || r.income_subtype === REBILL_SUBTYPE) && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
-                      fields={rentIncomeFields(r)} />}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
       </LeaseWrap>}
-
-      {/* ---------------- ภาษีที่ดินและสิ่งปลูกสร้าง ---------------- */}
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง</h2>
-            <p className="text-xs text-slate-500">ที่ดิน + สิ่งปลูกสร้าง (หักค่าเสื่อม) − ยกเว้น = ฐานภาษี × อัตรา − ส่วนลด · ปีปัจจุบันตั้งเป็นยอดประมาณ &ldquo;ภาษีที่ดิน&rdquo; ในค่าใช้จ่ายประจำให้</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TaxYearSelect years={taxYears} value={ty} withData={taxDataYears} hrefOf={`/property/${id}?ty=__Y__`} />
-            {canWrite && taxLines.length === 0 && prevTaxYear != null && <CopyTaxYear assetId={id} from={prevTaxYear} to={ty} />}
-            {canWrite && <TaxLineForm assetId={id} year={ty} label="+ เพิ่มรายการ" primary
-              defaults={{ rate_pct: Number(suggestRate), land_sq_wa: taxLines.some((t) => t.land_sq_wa != null) ? null : pd.land_area_sq_wa,
-                sort_order: taxLines.length + 1 }} />}
-          </div>
-        </div>
-        {taxLines.length === 0 ? (
-          <p className="text-sm text-slate-500">ยังไม่มีข้อมูลภาษีปี {ty + 543}{prevTaxYear != null ? ` · กด "คัดลอกจากปี ${prevTaxYear + 543}" เพื่อใช้ข้อมูลและอัตราเดิม แล้วแก้เฉพาะที่เปลี่ยน` : ` · อัตราที่ระบบเสนอตามการใช้งาน "${USAGE_LABEL[pd.usage_type] ?? pd.usage_type}" = ${LAND_TAX_RATE_BY_USAGE[pd.usage_type] ?? 0.3}%`}</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[60rem] text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr><th className="px-2 py-2">รายการ</th><th className="px-2 text-right">ที่ดิน</th><th className="px-2 text-right">สิ่งปลูกสร้าง (หลังหักค่าเสื่อม)</th>
-                  <th className="px-2 text-right">รวมราคาประเมิน</th><th className="px-2 text-right">ยกเว้น</th><th className="px-2 text-right">ฐานภาษี</th>
-                  <th className="px-2 text-right">อัตรา</th><th className="px-2 text-right">ภาษี</th><th className="px-2"></th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {taxLines.map((t) => (
-                  <tr key={t.id} className="align-top">
-                    <td className="px-2 py-2">{t.description || "-"}{t.building_type && <div className="text-xs text-slate-500">{t.building_type}</div>}
-                      {t.notes && <div className="text-xs text-slate-400">{t.notes}</div>}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.land_value) > 0 ? money(t.land_value) : "-"}
-                      {t.land_sq_wa != null && <div className="text-xs text-slate-500">{landText(t.land_sq_wa)} × {money(t.land_price_per_sq_wa)}</div>}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.building_value) > 0 ? money(t.building_value) : "-"}
-                      {t.building_sqm != null && <div className="text-xs text-slate-500">{Number(t.building_sqm).toLocaleString("th-TH")} ตร.ม. × {money(t.building_price_per_sqm)}
-                        {Number(t.depreciation_pct) > 0 && ` − ${Number(t.depreciation_pct)}%`}{t.building_age != null && ` · อายุ ${t.building_age} ปี`}</div>}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{money(t.total_value)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.exemption) !== 0 ? money(-Number(t.exemption)) : "-"}
-                      {t.exemption_reason && <div className="text-xs text-slate-500">{t.exemption_reason}</div>}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{money(t.taxable_value)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{Number(t.rate_pct)}%
-                      {Number(t.discount_pct) > 0 && <div className="text-xs text-slate-500">ลด {Number(t.discount_pct)}%</div>}</td>
-                    <td className="px-2 py-2 text-right font-medium tabular-nums">{money(t.tax_amount)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 text-right">
-                      {canWrite && <TaxLineForm assetId={id} year={ty} line={t} label="แก้ไข" canDelete={canDelete} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
-                <tr><td className="px-2 py-2">รวมปี {ty + 543}</td><td className="px-2 text-right tabular-nums">{money(taxSum("land_value"))}</td>
-                  <td className="px-2 text-right tabular-nums">{money(taxSum("building_value"))}</td><td className="px-2 text-right tabular-nums">{money(taxSum("total_value"))}</td>
-                  <td className="px-2 text-right tabular-nums">{money(-taxSum("exemption"))}</td><td className="px-2 text-right tabular-nums">{money(taxSum("taxable_value"))}</td>
-                  <td></td><td className="px-2 text-right tabular-nums">{money(taxSum("tax_amount"))}</td><td></td></tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </section>
 
       {/* ---------------- ค่าใช้จ่ายของทรัพย์สินนี้: ครั้งเดียว (ซ่อม / ปรับปรุง) + ประจำ / สาธารณูปโภค ---------------- */}
       <section id="expenses" className="scroll-mt-20 space-y-4 rounded-xl border border-slate-200 bg-white p-5">
@@ -828,6 +836,65 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   );
                 })}
               </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* ---------------- ภาษีที่ดินและสิ่งปลูกสร้าง ---------------- */}
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง</h2>
+            <p className="text-xs text-slate-500">ที่ดิน + สิ่งปลูกสร้าง (หักค่าเสื่อม) − ยกเว้น = ฐานภาษี × อัตรา − ส่วนลด · ปีปัจจุบันตั้งเป็นยอดประมาณ &ldquo;ภาษีที่ดิน&rdquo; ในค่าใช้จ่ายประจำให้</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TaxYearSelect years={taxYears} value={ty} withData={taxDataYears} hrefOf={`/property/${id}?ty=__Y__`} />
+            {canWrite && taxLines.length === 0 && prevTaxYear != null && <CopyTaxYear assetId={id} from={prevTaxYear} to={ty} />}
+            {canWrite && <TaxLineForm assetId={id} year={ty} label="+ เพิ่มรายการ" primary
+              defaults={{ rate_pct: Number(suggestRate), land_sq_wa: taxLines.some((t) => t.land_sq_wa != null) ? null : pd.land_area_sq_wa,
+                sort_order: taxLines.length + 1 }} />}
+          </div>
+        </div>
+        {taxLines.length === 0 ? (
+          <p className="text-sm text-slate-500">ยังไม่มีข้อมูลภาษีปี {ty + 543}{prevTaxYear != null ? ` · กด "คัดลอกจากปี ${prevTaxYear + 543}" เพื่อใช้ข้อมูลและอัตราเดิม แล้วแก้เฉพาะที่เปลี่ยน` : ` · อัตราที่ระบบเสนอตามการใช้งาน "${USAGE_LABEL[pd.usage_type] ?? pd.usage_type}" = ${LAND_TAX_RATE_BY_USAGE[pd.usage_type] ?? 0.3}%`}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[60rem] text-sm">
+              <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <tr><th className="px-2 py-2">รายการ</th><th className="px-2 text-right">ที่ดิน</th><th className="px-2 text-right">สิ่งปลูกสร้าง (หลังหักค่าเสื่อม)</th>
+                  <th className="px-2 text-right">รวมราคาประเมิน</th><th className="px-2 text-right">ยกเว้น</th><th className="px-2 text-right">ฐานภาษี</th>
+                  <th className="px-2 text-right">อัตรา</th><th className="px-2 text-right">ภาษี</th><th className="px-2"></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {taxLines.map((t) => (
+                  <tr key={t.id} className="align-top">
+                    <td className="px-2 py-2">{t.description || "-"}{t.building_type && <div className="text-xs text-slate-500">{t.building_type}</div>}
+                      {t.notes && <div className="text-xs text-slate-400">{t.notes}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.land_value) > 0 ? money(t.land_value) : "-"}
+                      {t.land_sq_wa != null && <div className="text-xs text-slate-500">{landText(t.land_sq_wa)} × {money(t.land_price_per_sq_wa)}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.building_value) > 0 ? money(t.building_value) : "-"}
+                      {t.building_sqm != null && <div className="text-xs text-slate-500">{Number(t.building_sqm).toLocaleString("th-TH")} ตร.ม. × {money(t.building_price_per_sqm)}
+                        {Number(t.depreciation_pct) > 0 && ` − ${Number(t.depreciation_pct)}%`}{t.building_age != null && ` · อายุ ${t.building_age} ปี`}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(t.total_value)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{Number(t.exemption) !== 0 ? money(-Number(t.exemption)) : "-"}
+                      {t.exemption_reason && <div className="text-xs text-slate-500">{t.exemption_reason}</div>}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(t.taxable_value)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{Number(t.rate_pct)}%
+                      {Number(t.discount_pct) > 0 && <div className="text-xs text-slate-500">ลด {Number(t.discount_pct)}%</div>}</td>
+                    <td className="px-2 py-2 text-right font-medium tabular-nums">{money(t.tax_amount)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      {canWrite && <TaxLineForm assetId={id} year={ty} line={t} label="แก้ไข" canDelete={canDelete} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+                <tr><td className="px-2 py-2">รวมปี {ty + 543}</td><td className="px-2 text-right tabular-nums">{money(taxSum("land_value"))}</td>
+                  <td className="px-2 text-right tabular-nums">{money(taxSum("building_value"))}</td><td className="px-2 text-right tabular-nums">{money(taxSum("total_value"))}</td>
+                  <td className="px-2 text-right tabular-nums">{money(-taxSum("exemption"))}</td><td className="px-2 text-right tabular-nums">{money(taxSum("taxable_value"))}</td>
+                  <td></td><td className="px-2 text-right tabular-nums">{money(taxSum("tax_amount"))}</td><td></td></tr>
+              </tfoot>
             </table>
           </div>
         )}
