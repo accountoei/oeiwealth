@@ -3518,6 +3518,49 @@ SELECT t.ok((SELECT coalesce(sum(CASE WHEN item_type = 'ASSET' THEN base_value E
             'กู้ภายใน: Net Worth ครอบครัว = เดิม − ลูกหนี้ (ลูกหนี้กับหนี้สินหักกัน)');
 SELECT t.fails($$UPDATE public.asset_ownerships SET person_id = t.p('คุณพ่อ') WHERE asset_id = t.a('เงินกู้ญาติ') AND deleted_at IS NULL$$,
   'ผู้กู้เป็นผู้ให้กู้', 'กู้ภายใน: เพิ่มผู้กู้เป็นเจ้าของสัญญาไม่ได้');
+-- ฝั่งผู้กู้อัตโนมัติ (2 พ.ย. 2026): เลือกบัญชีของผู้กู้ → จ่ายกู้ = เงินเข้า · รับชำระ = เงินต้นออก + ดอกเบี้ยจ่าย
+SELECT t.fails($$UPDATE public.loan_details SET borrower_bank_asset_id = t.a('บัญชีชุด B') WHERE asset_id = t.a('เงินกู้ญาติ')$$,
+  'ผู้กู้เป็นเจ้าของ', 'กู้ภายใน: บัญชีของผู้กู้ต้องเป็นบัญชีที่ผู้กู้เป็นเจ้าของ');
+SELECT t.fails($$UPDATE public.loan_details SET borrower_bank_asset_id = t.a('BBL USD') WHERE asset_id = t.a('เงินกู้ญาติ')$$,
+  'สกุลเดียวกับเงินกู้', 'กู้ภายใน: บัญชีของผู้กู้ต่างสกุลเงิน → ไม่ได้');
+SELECT t.fails($$UPDATE public.loan_details SET borrower_bank_asset_id = t.a('บ้าน A') WHERE asset_id = t.a('เงินกู้ญาติ')$$,
+  'บัญชีธนาคาร', 'กู้ภายใน: บัญชีของผู้กู้ต้องเป็นบัญชีธนาคาร');
+UPDATE public.loan_details SET borrower_bank_asset_id = t.a('บัญชีชุด A') WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok((SELECT count(*) FROM public.cash_movements x JOIN public.cash_movements m ON m.id = x.source_entity_id
+              WHERE x.is_derived AND x.source_entity_type = 'CASH_MOVEMENT' AND x.deleted_at IS NULL AND x.movement_type = 'OTHER_IN'
+                AND x.to_asset_id = t.a('บัญชีชุด A') AND x.amount = 50000 AND m.description = 'ให้กู้เพิ่ม (กู้ภายใน)') = 1,
+            'กู้ภายใน: ตั้งบัญชีผู้กู้ → เงินกู้ที่จ่ายไปแล้วเข้าบัญชีผู้กู้ให้');
+SELECT coalesce(sum(CASE WHEN item_type = 'ASSET' THEN base_value ELSE -base_value END), 0) AS nw1 FROM public.v_net_worth_items_current \gset
+SELECT public.receive_loan_payment(t.a('เงินกู้ญาติ'), t.a('KBank ออมทรัพย์'), current_date, 1000, 200, 0, NULL) AS rg \gset
+SELECT (SELECT source_entity_id FROM public.cash_movements WHERE movement_group_id = :'rg' AND source_entity_type = 'INCOME') AS rinc,
+       (SELECT id FROM public.cash_movements WHERE movement_group_id = :'rg' AND movement_type = 'LOAN_PRINCIPAL_RECEIPT') AS rmov \gset
+SELECT t.ok((SELECT count(*) FROM public.cash_movements x WHERE x.is_derived AND x.source_entity_type = 'CASH_MOVEMENT' AND x.source_entity_id = :'rmov'
+              AND x.deleted_at IS NULL AND x.movement_type = 'OTHER_OUT' AND x.from_asset_id = t.a('บัญชีชุด A') AND x.amount = 1000) = 1,
+            'กู้ภายใน: รับชำระเงินต้น → เงินออกจากบัญชีผู้กู้เท่ากัน');
+SELECT t.ok((SELECT count(*) FROM public.expense_items e
+              JOIN public.cash_movements em ON em.is_derived AND em.source_entity_type = 'EXPENSE' AND em.source_entity_id = e.id AND em.deleted_at IS NULL
+              WHERE e.internal_loan_income_id = :'rinc' AND e.deleted_at IS NULL AND e.amount = 200 AND e.expense_category = 'ดอกเบี้ยจ่าย'
+                AND e.person_id = t.p('คุณพ่อ') AND e.paid_from_asset_id = t.a('บัญชีชุด A') AND em.from_asset_id = t.a('บัญชีชุด A')) = 1,
+            'กู้ภายใน: รับดอกเบี้ย → ค่าใช้จ่ายดอกเบี้ยจ่ายของผู้กู้ จ่ายจากบัญชีผู้กู้');
+SELECT t.ok((SELECT coalesce(sum(CASE WHEN item_type = 'ASSET' THEN base_value ELSE -base_value END), 0) FROM public.v_net_worth_items_current) = :nw1,
+            'กู้ภายใน: รับชำระแล้ว Net Worth ครอบครัวเท่าเดิม (เงินย้ายคน · ดอกเบี้ยรับหักดอกเบี้ยจ่าย)');
+SELECT t.fails($$UPDATE public.cash_movements SET amount = 1 WHERE is_derived AND source_entity_type = 'CASH_MOVEMENT'$$,
+  'DERIVED_RECORD', 'กู้ภายใน: แก้เงินเข้า–ออกฝั่งผู้กู้ตรง ๆ ไม่ได้');
+SELECT t.fails($$UPDATE public.expense_items SET amount = 1 WHERE internal_loan_income_id IS NOT NULL$$,
+  'DERIVED_RECORD', 'กู้ภายใน: แก้ค่าใช้จ่ายดอกเบี้ยฝั่งผู้กู้ตรง ๆ ไม่ได้');
+SELECT t.fails($$INSERT INTO public.expense_items(monthly_expense_id, date, description, amount, internal_loan_income_id)
+  SELECT monthly_expense_id, date, 'x', 1, internal_loan_income_id FROM public.expense_items WHERE internal_loan_income_id IS NOT NULL LIMIT 1$$,
+  'DERIVED_RECORD', 'กู้ภายใน: สร้างค่าใช้จ่ายผูกดอกเบี้ยเองไม่ได้');
+UPDATE public.income_transactions SET amount = 300 WHERE id = :'rinc';
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE internal_loan_income_id = :'rinc' AND deleted_at IS NULL) = 300,
+            'กู้ภายใน: แก้ดอกเบี้ยที่รับ → ค่าใช้จ่ายฝั่งผู้กู้แก้ตาม');
+SELECT public.undo_payment_group(:'rg');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE is_derived AND source_entity_type = 'CASH_MOVEMENT' AND source_entity_id = :'rmov' AND deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM public.expense_items WHERE internal_loan_income_id = :'rinc' AND deleted_at IS NULL),
+            'กู้ภายใน: ยกเลิกรับชำระ → รายการฝั่งผู้กู้ถูกลบตาม');
+UPDATE public.loan_details SET borrower_bank_asset_id = NULL WHERE asset_id = t.a('เงินกู้ญาติ');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE is_derived AND source_entity_type = 'CASH_MOVEMENT' AND deleted_at IS NULL),
+            'กู้ภายใน: ล้างบัญชีของผู้กู้ → เงินเข้าบัญชีผู้กู้ถูกลบตาม');
 SELECT t.fails($$UPDATE public.loan_details SET borrower_business_id = t.a('KBank ออมทรัพย์'), borrower_person_id = NULL WHERE asset_id = t.a('เงินกู้ญาติ')$$,
   'Private Business', 'กู้ภายใน: ผู้กู้แบบกิจการต้องเป็น Private Business');
 SELECT t.fails($$UPDATE public.loan_details SET borrower_business_id = (SELECT asset_id FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด')

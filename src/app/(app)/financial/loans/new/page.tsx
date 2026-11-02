@@ -1,16 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, todayBangkok } from "@/lib/format";
+import { addDays, todayBangkok, withBankOwners } from "@/lib/format";
 import NewLoanForm from "./NewLoanForm";
 
 export default async function NewLoanPage() {
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: family }, { data: persons }, { data: banks }, { data: businesses }] = await Promise.all([
+  const [{ data: family }, { data: persons }, { data: banks }, { data: businesses }, { data: owns }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
+    supabase.from("asset_ownerships").select("asset_id,person_id").is("deleted_at", null).is("end_date", null),
   ]);
   if (me.role === "VIEWER") return <p className="text-sm text-slate-600">สิทธิ์ผู้ดูเพิ่มรายการไม่ได้</p>;
   if (!family) return <p className="text-sm text-red-600">ไม่พบข้อมูลครอบครัว</p>;
@@ -23,7 +24,8 @@ export default async function NewLoanPage() {
       <NewLoanForm persons={persons ?? []} banks={banks ?? []} goLive={family.go_live_date}
         openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}
         isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"}
-        canSchedule={me.role === "ADMIN" || me.role === "EDITOR"} partyOpt={{ banks: banks ?? [], businesses: businesses ?? [] }} />
+        canSchedule={me.role === "ADMIN" || me.role === "EDITOR"} partyOpt={{ banks: banks ?? [], businesses: businesses ?? [] }}
+        borrowerBanks={withBankOwners(banks ?? [], owns ?? [])} />
     </div>
   );
 }

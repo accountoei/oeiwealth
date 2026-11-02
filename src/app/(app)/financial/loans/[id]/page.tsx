@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { LOAN_PARTY_COLS as PARTY_COLS, MOVE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
+import { LOAN_PARTY_COLS as PARTY_COLS, MOVE_LABEL, money, thDate, todayBangkok, withBankOwners } from "@/lib/format";
 import { DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
 import EditButton from "@/components/EditButton";
 import ScheduleTable, { type SchedRow } from "./ScheduleTable";
@@ -28,7 +28,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const preset = rs === "end" || rs === "payment" || rs === "disburse" || rs === "rate" ? rs : undefined;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }, { data: businesses }] = await Promise.all([
+  const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }, { data: businesses }, { data: owns }] = await Promise.all([
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,at_risk_amount,risk_assessed_date,risk_note,${PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
@@ -42,6 +42,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
     supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status")
       .eq("loan_asset_id", id).order("due_date").order("installment_no"),
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
+    supabase.from("asset_ownerships").select("asset_id,person_id").is("deleted_at", null).is("end_date", null),
   ]);
   if (!l) notFound();
   const canWrite = me.role !== "VIEWER";
@@ -222,7 +223,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                       risk={l.status === "AT_RISK" ? { outstanding: leftP, currency: l.currency, today, date: extra?.risk_assessed_date ?? null, note: extra?.risk_note ?? null,
                         expected: extra?.at_risk_amount == null ? null : Math.max(leftP - Number(extra.at_risk_amount), 0) } : undefined} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
                       borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }}
-                      party={{ v: extra ?? {}, canSensitive: canDelete, persons: persons ?? [],
+                      party={{ v: extra ?? {}, canSensitive: canDelete, persons: persons ?? [], borrowerBanks: withBankOwners(banks ?? [], owns ?? []),
                         opt: { banks: (banks ?? []).map((b) => ({ asset_id: b.asset_id, name: b.name, account_no_masked: b.account_no_masked })), businesses: businesses ?? [] } }} />
                   </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
@@ -247,6 +248,10 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}
               {extra?.borrower_person_id && <div className="text-xs text-slate-500">สมาชิกในครอบครัว · <Link href={`/family/members/${extra.borrower_person_id}`} className="text-blue-700 hover:underline">
                 {(persons ?? []).find((p) => p.id === extra.borrower_person_id)?.name ?? "ดูข้อมูล"}</Link> · นับเป็นหนี้สินของผู้กู้ใน Net Worth</div>}
+              {extra?.borrower_person_id && (extra.borrower_bank_asset_id
+                ? <div className="text-xs text-slate-500">บัญชีของผู้กู้ <Link href={`/financial/cash/${extra.borrower_bank_asset_id}`} className="text-blue-700 hover:underline">
+                    {bankName.get(extra.borrower_bank_asset_id) ?? "ดูบัญชี"}</Link> · จ่ายเงินกู้ / รับชำระ บันทึกเงินเข้า–ออกและดอกเบี้ยจ่ายฝั่งผู้กู้ให้อัตโนมัติ</div>
+                : <div className="text-xs text-amber-700">ยังไม่ได้เลือกบัญชีของผู้กู้ · เงินเข้า–ออกฝั่งผู้กู้ต้องบันทึกเอง (แก้รายละเอียด → บัญชีของผู้กู้)</div>)}
               {extra?.borrower_business_id && <div className="text-xs text-slate-500">กิจการของครอบครัว · <Link href={`/financial/business/${extra.borrower_business_id}`} className="text-blue-700 hover:underline">
                 {(businesses ?? []).find((b) => b.asset_id === extra.borrower_business_id)?.company_name ?? "ดูกิจการ"}</Link> · ฝั่งกิจการไม่ตั้งหนี้แยก (อยู่ในมูลค่ากิจการแล้ว)</div>}
               {extra?.borrower_phone && <div className="text-xs text-slate-500">โทร {extra.borrower_phone}</div>}

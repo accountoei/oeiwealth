@@ -345,7 +345,12 @@ export function monthOptions(goLiveDate: string | null | undefined, today: strin
 
 /** ปุ่มคำสั่งในแถวตาราง (บันทึกรับ / บันทึกจ่าย) · สีเดียวกันทุกหน้า */
 /** คอลัมน์รายละเอียดคู่สัญญาของเงินให้กู้ (loan_details · ใช้ทั้งหน้าสัญญาและหน้าพิมพ์) */
-export const LOAN_PARTY_COLS = "borrower_address,borrower_id_last4,guarantor_name,guarantor_phone,guarantor_address,guarantor_id_last4,witness1_name,witness2_name,contract_place_type,contract_place_business_id,contract_place_text,repay_bank_asset_id,borrower_person_id,borrower_business_id";
+export const LOAN_PARTY_COLS = "borrower_address,borrower_id_last4,guarantor_name,guarantor_phone,guarantor_address,guarantor_id_last4,witness1_name,witness2_name,contract_place_type,contract_place_business_id,contract_place_text,repay_bank_asset_id,borrower_person_id,borrower_business_id,borrower_bank_asset_id";
+
+/** บัญชีธนาคาร + สมาชิกที่เป็นเจ้าของ (ช่อง "บัญชีของผู้กู้" ในฟอร์มเงินให้กู้) */
+export function withBankOwners<T extends { asset_id: string }>(banks: T[], own: { asset_id: string; person_id: string }[]): (T & { owners: string[] })[] {
+  return banks.map((b) => ({ ...b, owners: own.filter((o) => o.asset_id === b.asset_id).map((o) => o.person_id) }));
+}
 
 export const ROW_BTN = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50";
 
