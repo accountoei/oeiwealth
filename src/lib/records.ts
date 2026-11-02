@@ -50,11 +50,39 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   points_accounts: { program_name: "str", balance: "num", balance_date: "date", expiry_date: "date" },
   documents: { title: "str", document_type: "str", issue_date: "date", expiry_date: "date", notes: "str" },
 };
-const DELETABLE = new Set(["income_transactions", "expense_items", "cash_movements", "investment_transactions", "asset_valuations",
-  "liability_valuations", "investment_valuations", "expense_reimbursements", "recurring_income_templates", "recurring_expense_templates", "property_utilities",
-  "insurance_claims", "expected_income_dismissals", "health_checkups", "health_results", "memberships", "points_accounts", "fcn_underlyings", "documents", "document_links",
-  "loan_schedule_lines", "insurance_schedule_lines", "insurance_coverages", "lease_utility_charges", "property_inventory_items", "property_deeds", "property_market_valuations", "property_cost_items", "donation_records",
-  "portfolio_capital_transfers"]);
+// หนึ่งตารางต่อบรรทัด เรียงตามตัวอักษร — เพิ่มตารางใหม่ตรงตำแหน่งตัวอักษร ไม่ต่อท้าย (กัน PR ที่เปิดพร้อมกันชนกัน)
+const DELETABLE = new Set([
+  "asset_valuations",
+  "cash_movements",
+  "document_links",
+  "documents",
+  "donation_records",
+  "expected_income_dismissals",
+  "expense_items",
+  "expense_reimbursements",
+  "fcn_underlyings",
+  "health_checkups",
+  "health_results",
+  "income_transactions",
+  "insurance_claims",
+  "insurance_coverages",
+  "insurance_schedule_lines",
+  "investment_transactions",
+  "investment_valuations",
+  "lease_utility_charges",
+  "liability_valuations",
+  "loan_schedule_lines",
+  "memberships",
+  "points_accounts",
+  "portfolio_capital_transfers",
+  "property_cost_items",
+  "property_deeds",
+  "property_inventory_items",
+  "property_market_valuations",
+  "property_utilities",
+  "recurring_expense_templates",
+  "recurring_income_templates",
+]);
 
 function refresh(form: FormData) {
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));
