@@ -418,6 +418,8 @@ export async function recordRent(_: ActionState, form: FormData): Promise<Action
   const id = String(form.get("asset_id"));
   const amount = num(form.get("amount"));
   if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
+  const tax = num(form.get("tax"));
+  if (tax !== null && (Number.isNaN(tax) || tax < 0 || tax >= amount)) return { error: "ภาษีหัก ณ ที่จ่ายต้องน้อยกว่ายอดก่อนภาษี" };
   const toAsset = str(form.get("received_to_asset_id"));
   let currency = str(form.get("currency")) ?? "THB";
   if (toAsset) {
@@ -426,7 +428,7 @@ export async function recordRent(_: ActionState, form: FormData): Promise<Action
   }
   const { error } = await supabase.from("income_transactions").insert({
     lease_id: String(form.get("lease_id")), income_type: "RENT", date: str(form.get("date")),
-    income_period: str(form.get("income_period")), amount, currency,
+    income_period: str(form.get("income_period")), amount, tax: tax || null, currency,
     received_to_asset_id: toAsset, notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
@@ -517,11 +519,13 @@ export async function receiveUtilityCharge(_: ActionState, form: FormData): Prom
 /** รับค่าเช่าหลายสัญญาพร้อมกัน (แท็บ บันทึกรับค่าเช่า/สัญญาเช่า) · ผิดแถวเดียว = ไม่บันทึกเลย */
 export async function batchRent(_: BatchState, form: FormData): Promise<BatchState> {
   const supabase = await createClient();
-  const rows = readRows<{ lease_id: string; amount: string; date: string; received_to_asset_id: string; income_period: string }>(form);
+  const rows = readRows<{ lease_id: string; amount: string; tax?: string; date: string; received_to_asset_id: string; income_period: string }>(form);
   if (!rows) return { error: BAD_ROWS_ERROR };
-  const clean = rows.map((r) => ({ ...r, amount: num(r.amount), received_to_asset_id: r.received_to_asset_id || null }));
+  const clean = rows.map((r) => ({ ...r, amount: num(r.amount), tax: num(r.tax ?? ""), received_to_asset_id: r.received_to_asset_id || null }));
   if (!clean.length) return { error: "กรุณากรอกยอดที่ได้รับอย่างน้อย 1 รายการ" };
   if (!clean.every((r) => isPositive(r.amount))) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
+  if (clean.some((r) => r.tax !== null && (Number.isNaN(r.tax) || r.tax < 0 || r.tax >= Number(r.amount))))
+    return { error: "ภาษีหัก ณ ที่จ่ายต้องเป็นตัวเลข 0 ขึ้นไป และน้อยกว่ายอดก่อนภาษี" };
   const { data, error } = await supabase.rpc("batch_record_rent", { p_rows: clean });
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   revalidateProperty();
