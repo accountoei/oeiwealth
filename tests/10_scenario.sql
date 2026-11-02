@@ -2063,6 +2063,16 @@ SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(
   jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
                      'date', current_date + 1, 'amount', 500, 'notes', 'batch-rent-bad')))$$, 'อนาคต', 'รับค่าเช่า: วันที่อนาคตไม่ได้');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE notes = 'batch-rent-bad'), 'รับค่าเช่า: แถวไหนผิด = ไม่บันทึกเลยทั้งชุด');
+-- ภาษีหัก ณ ที่จ่ายของค่าเช่า (2 พ.ย. 2026): เก็บใน tax · เงินเข้าบัญชี = ยอด − ภาษี · ภาษี ≥ ยอด ไม่ได้
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date, 'amount', 2000, 'tax', 100, 'received_to_asset_id', t.a('KBank ออมทรัพย์'), 'notes', 'batch-rent-wht')));
+SELECT t.ok((SELECT i.tax = 100 AND i.amount = 2000 AND m.amount = 1900 FROM public.income_transactions i
+              JOIN public.cash_movements m ON m.source_entity_type = 'INCOME' AND m.source_entity_id = i.id AND m.deleted_at IS NULL WHERE i.notes = 'batch-rent-wht'),
+            'รับค่าเช่า: ภาษีหัก ณ ที่จ่าย 100 เก็บไว้ · เงินเข้าบัญชี 1,900');
+SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date, 'amount', 500, 'tax', 500, 'notes', 'batch-rent-bad')))$$, 'ภาษีหัก', 'รับค่าเช่า: ภาษีเท่ากับยอดไม่ได้');
 SELECT public.batch_add_property_expenses(jsonb_build_array(
   jsonb_build_object('date', current_date, 'description', 'batch-exp-test', 'amount', 800, 'related_asset_id', t.a('บ้าน A'),
                      'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'expense_category', 'บ้าน / สาธารณูปโภค')));
@@ -2760,6 +2770,20 @@ SELECT t.ok((SELECT (r->>'added')::int = 0 FROM public.sync_insurance_cash_value
             'CONTRIBUTOR เรียกอัปเดตตามตารางได้ (หลังบันทึกจ่ายเบี้ย)');
 SELECT t.fails($$SELECT public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'), '[]')$$,
   'PERMISSION_DENIED', 'CONTRIBUTOR ตั้งตารางมูลค่าเวนคืนไม่ได้');
+-- งานประจำวัน (2 พ.ย. 2026): ปีที่ถึงวันแล้วแต่ไม่มีการจ่ายเบี้ยใหม่ → ลงให้เอง
+SELECT t.fails($$SELECT public.server_sync_insurance_cash_values()$$, 'permission denied', 'มูลค่าเวนคืนรายวัน: ผู้ใช้เรียกงานประจำวันไม่ได้ (service_role เท่านั้น)');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.insurance_cash_value_table(policy_id, policy_year, value_date, value, currency)
+SELECT id, 3, current_date - 1, 41000, 'THB' FROM tcv WHERE k = 'pol';
+SELECT id AS cvpol FROM tcv WHERE k = 'pol' \gset
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok(public.server_sync_insurance_cash_values() = 1, 'มูลค่าเวนคืนรายวัน: ปีที่ 3 ถึงวันแล้ว → ลง 1 รายการ');
+SELECT t.ok((SELECT a.current_value = 41000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+              WHERE i.id = :'cvpol'), 'มูลค่าเวนคืนรายวัน: มูลค่าปัจจุบัน = 41,000');
+SELECT t.ok((SELECT result = 'SUCCESS' AND (details->>'added')::int = 1 FROM public.system_job_runs WHERE job_type = 'INSURANCE_CV' ORDER BY id DESC LIMIT 1),
+            'มูลค่าเวนคืนรายวัน: บันทึกผลงาน INSURANCE_CV');
+SELECT t.ok(public.server_sync_insurance_cash_values() = 0, 'มูลค่าเวนคืนรายวัน: รันซ้ำไม่ลงซ้ำ');
+SET ROLE authenticated;
 \echo '== 13zz7. Private Business: ปันผลแยกตามผู้ถือหุ้น + มูลค่าหลายกิจการ (ROLLBACK ท้ายหัวข้อ)'
 BEGIN;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
