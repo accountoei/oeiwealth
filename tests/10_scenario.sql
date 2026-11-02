@@ -3454,6 +3454,55 @@ SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT t.ok(NOT has_table_privilege('anon', 'public.property_inventory_items', 'SELECT')
             AND NOT has_table_privilege('anon', 'public.lease_handover_items', 'SELECT')
             AND NOT has_function_privilege('anon', 'public.copy_inventory_to_lease(uuid)', 'EXECUTE'), 'ของในทรัพย์สิน / ส่งมอบ: anon เข้าไม่ได้');
+-- มิเตอร์ตามห้อง + ซื้อ / ขายของในทรัพย์สิน (2 พ.ย. 2026)
+INSERT INTO public.property_utilities(property_id, utility_type, provider, meter_no, unit_label) VALUES
+  (:'lease_b_prop', 'ELECTRICITY', 'กฟน.', 'M-ROOM', :'lease_b_unit'),
+  (:'lease_b_prop', 'WATER', 'กปน.', 'W-ALL', NULL),
+  (:'lease_b_prop', 'ELECTRICITY', 'กฟน.', 'M-OTHER', 'ห้องอื่น');
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 2, 'ส่งมอบ: ดึงมิเตอร์ 2 ตัว');
+SELECT t.ok((SELECT count(*) FROM public.lease_handover_items WHERE lease_id = :'lease_b' AND utility_id IS NOT NULL AND deleted_at IS NULL) = 2
+            AND NOT EXISTS (SELECT 1 FROM public.lease_handover_items WHERE lease_id = :'lease_b' AND serial_no = 'M-OTHER'),
+            'ส่งมอบ: ดึงมิเตอร์ห้องนี้ + ส่วนกลางจากสาธารณูปโภค (ไม่เอาห้องอื่น)');
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 0, 'ส่งมอบ: ดึงมิเตอร์ซ้ำไม่เพิ่มซ้ำ');
+SELECT asset_id AS lease_b_asset FROM public.property_details WHERE id = :'lease_b_prop' \gset
+SELECT t.ok(public.add_inventory_items(:'lease_b_asset',
+  '[{"unit_label":"ห้องอื่น","item_type":"APPLIANCE","name":"ตู้เย็นใหม่","qty":"1","value":"12,000"},{"name":""}]'::jsonb,
+  jsonb_build_object('date', current_date, 'description', 'ซื้อตู้เย็น', 'amount', 12000, 'currency', 'THB',
+                     'expense_category', 'บ้าน / สาธารณูปโภค', 'property_cost_type', 'OTHER', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'))) = 1,
+            'ของในทรัพย์สิน: เพิ่มของ (ข้ามแถวไม่มีชื่อ)');
+SELECT t.ok((SELECT e.amount = 12000 AND e.related_asset_id = :'lease_b_asset' FROM public.property_inventory_items i
+                   JOIN public.expense_items e ON e.id = i.expense_item_id WHERE i.name = 'ตู้เย็นใหม่'),
+            'ของในทรัพย์สิน: เพิ่มของ + บันทึกค่าใช้จ่ายผูกทรัพย์สินในครั้งเดียว');
+SELECT t.fails($$SELECT public.add_inventory_items((SELECT asset_id FROM public.property_details pd JOIN public.property_leases l ON l.property_id = pd.id WHERE l.tenant_name = 'ผู้เช่า ข' LIMIT 1),
+  '[{"name":"โต๊ะ"}]'::jsonb, jsonb_build_object('date', current_date, 'description', '', 'amount', 100))$$, 'กรุณาใส่รายละเอียด',
+  'ของในทรัพย์สิน: ค่าใช้จ่ายผิด → ไม่เพิ่มของ (ทั้งรายการยกเลิก)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.property_inventory_items WHERE name = 'โต๊ะ'), 'ของในทรัพย์สิน: ค่าใช้จ่ายไม่ผ่าน ของไม่ถูกเพิ่ม');
+SELECT id AS fridge_id FROM public.property_inventory_items WHERE name = 'ตู้เย็นใหม่' \gset
+SELECT t.fails($$SELECT public.dispose_inventory_item((SELECT id FROM public.property_inventory_items WHERE name = 'ตู้เย็นใหม่'), 'DISCARDED', current_date, 500)$$,
+  'ทิ้งไม่มีเงินรับ', 'ของในทรัพย์สิน: ทิ้งแต่ใส่เงินรับไม่ได้');
+SELECT t.ok(public.dispose_inventory_item(:'fridge_id', 'SOLD', current_date, 3000, t.a('KBank ออมทรัพย์'), 'ขายมือสอง') IS NOT NULL, 'ของในทรัพย์สิน: ขายได้');
+SELECT t.ok((SELECT x.amount = 3000 AND x.income_type = 'OTHER' AND x.asset_id = :'lease_b_asset' FROM public.property_inventory_items i
+                   JOIN public.income_transactions x ON x.id = i.income_transaction_id WHERE i.id = :'fridge_id'),
+            'ของในทรัพย์สิน: ขาย → รายได้อื่นของทรัพย์สิน');
+SELECT t.fails($$SELECT public.dispose_inventory_item((SELECT id FROM public.property_inventory_items WHERE name = 'ตู้เย็นใหม่'), 'SOLD', current_date, 1, NULL)$$,
+  'ขาย / ทิ้งไปแล้ว', 'ของในทรัพย์สิน: ขายซ้ำไม่ได้');
+SELECT income_transaction_id AS fridge_inc FROM public.property_inventory_items WHERE id = :'fridge_id' \gset
+SELECT public.undo_inventory_disposal(:'fridge_id');
+SELECT t.ok((SELECT disposal_type IS NULL FROM public.property_inventory_items WHERE id = :'fridge_id')
+            AND (SELECT deleted_at IS NOT NULL FROM public.income_transactions WHERE id = :'fridge_inc'),
+            'ของในทรัพย์สิน: ยกเลิกขาย → ลบรายได้ + คืนของเข้ารายการ');
+SELECT t.ok(public.dispose_inventory_item((SELECT id FROM public.property_inventory_items WHERE name = 'แอร์ห้องนอน'), 'DISCARDED', current_date) IS NULL, 'ของในทรัพย์สิน: ทิ้ง ไม่สร้างรายได้');
+SELECT t.ok((SELECT disposal_type = 'DISCARDED' FROM public.property_inventory_items WHERE name = 'แอร์ห้องนอน'),
+            'ของในทรัพย์สิน: ทิ้งได้ (ไม่มีรายได้)');
+UPDATE public.lease_handover_items SET deleted_at = now() WHERE lease_id = :'lease_b' AND name = 'แอร์ห้องนอน';
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 0, 'ส่งมอบ: ไม่ดึงของที่ทิ้งแล้ว');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.dispose_inventory_item((SELECT id FROM public.property_inventory_items WHERE name = 'คีย์การ์ดลิฟต์'), 'DISCARDED', current_date)$$,
+  'ไม่มีสิทธิ์', 'ของในทรัพย์สิน: VIEWER ขาย / ทิ้งไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.add_inventory_items(uuid,jsonb,jsonb)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'public.dispose_inventory_item(uuid,text,date,numeric,uuid,text)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'public.undo_inventory_disposal(uuid)', 'EXECUTE'), 'ของในทรัพย์สิน: anon เรียกฟังก์ชันซื้อ / ขายไม่ได้');
 -- เงินกู้ภายในครอบครัว (2 พ.ย. 2026): ผู้กู้เป็นสมาชิก → หนี้สินของผู้กู้ · ยอดรวมครอบครัวหักกันเป็น 0
 UPDATE public.loan_details SET status = 'ACTIVE' WHERE asset_id = t.a('เงินกู้ญาติ');
 INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)

@@ -25,7 +25,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
     rent_to_asset_id: "str", utilities_billing: "str" },
   lease_utility_charges: { amount: "num", notes: "str" },
   property_inventory_items: { unit_label: "str", item_type: "str", name: "str", qty: "num", brand: "str", serial_no: "str", value: "num", notes: "str" },
-  property_utilities: { provider: "str", account_no: "str", meter_no: "str", notes: "str",
+  property_utilities: { provider: "str", account_no: "str", meter_no: "str", notes: "str", unit_label: "str",
     expected_amount: "num", frequency: "str", due_day: "num", due_month: "num", paid_from_asset_id: "str", paid_from_credit_card_id: "str" },
   insurance_claims: { incident_date: "date", claim_date: "date", claimed_amount: "num", received_amount: "num", status: "str", notes: "str", coverage_id: "str" },
   credit_cards: { issuer: "str", card_name: "str", credit_limit: "num", statement_day: "num", due_day: "num", annual_fee: "num", expiry_date: "date", notes: "str" },

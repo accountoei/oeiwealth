@@ -106,8 +106,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของเดือนที่ผูกกับรายการเหล่านั้น
     (async () => {
       const { data: utils } = allProps.length
-        ? await supabase.from("property_utilities").select("id,property_id,paid_from_asset_id,paid_from_credit_card_id").in("property_id", allProps.map((p) => p.id))
-        : { data: [] as { id: string; property_id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[] };
+        ? await supabase.from("property_utilities").select("id,property_id,unit_label,paid_from_asset_id,paid_from_credit_card_id").in("property_id", allProps.map((p) => p.id))
+        : { data: [] as { id: string; property_id: string; unit_label: string | null; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[] };
       const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
         .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
       const { data: expU } = utilProp.size
@@ -285,7 +285,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       ?? banks.find((b) => b.currency === c.currency)?.id ?? "",
   })));
   // สัญญาที่ตั้ง "เรียกเก็บผู้เช่า" ของแต่ละทรัพย์สิน → ติ๊กเรียกเก็บในแท็บค่าใช้จ่าย (ไฟ / น้ำ)
-  const rebillOf = (assetId: string) => (byProp.get(assetId) ?? []).find((l) => l.lease_status !== "UPCOMING" && rebillLeases.has(l.id));
+  //   มิเตอร์ผูกห้อง → สัญญาของห้องนั้นก่อน
+  const utilRoom = new Map(((utils ?? []) as { id: string; unit_label: string | null }[]).map((u) => [u.id, u.unit_label?.trim().toLowerCase() ?? ""]));
+  const rebillOf = (assetId: string, utilityId: string) => {
+    const ls = (byProp.get(assetId) ?? []).filter((l) => l.lease_status !== "UPCOMING" && rebillLeases.has(l.id));
+    const room = utilRoom.get(utilityId);
+    return (room && ls.find((l) => l.unit_label?.trim().toLowerCase() === room)) || ls[0];
+  };
   type CT = { utility_id: string; property_asset_id: string; utility_type: string; provider: string | null; cost_period: string; due_date: string | null; expected_amount: number | null; paid_amount: number | null; currency: string; status: string };
   const costRows: CostRow[] = ((costTrack ?? []) as CT[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
     key: `${c.utility_id}:${c.cost_period}`, utilityId: c.utility_id, assetId: c.property_asset_id, property: propName.get(c.property_asset_id) ?? "",
@@ -294,7 +300,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     expected: Number(c.expected_amount ?? 0), paid: Number(c.paid_amount ?? 0), currency: c.currency, status: c.status,
     category: UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค", pay: utilPay.get(c.utility_id) || undefined,
     ...(() => {
-      const l = ["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillOf(c.property_asset_id) : undefined;
+      const l = ["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillOf(c.property_asset_id, c.utility_id) : undefined;
       return l ? { rebillLease: l.id, rebillLabel: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") } : {};
     })(),
     edits: ((costPaid ?? []) as PaidRow[]).filter((e) => e.property_utility_id === c.utility_id).map((e) => ({ id: e.id, node: recEdit({

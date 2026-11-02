@@ -11,7 +11,7 @@ import {
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
 import ModalButton from "@/components/ModalButton";
-import { ENCUMBRANCE_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
+import { COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -355,8 +355,10 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
 export type PropertyPick = { id: string; assetId: string; name: string; currency: string };
 
 /** เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค · หน้ารายละเอียดทรัพย์สินส่ง propertyId มา · หน้า Income & Expenses ส่งรายการทรัพย์สินให้เลือก */
-export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false, pays, asButton = false }: {
+export function UtilityForm({ assetId, propertyId, currency, properties, label = "+ เพิ่มค่าใช้จ่ายประจำ / สาธารณูปโภค", tracked = false, pays, asButton = false, rooms = [], usedRooms = [] }: {
   assetId?: string; propertyId?: string; currency?: string; properties?: PropertyPick[]; label?: string; tracked?: boolean;
+  /** หลายห้อง → ช่องห้อง (ว่าง = ส่วนกลาง / ทั้งหลัง) */ rooms?: string[];
+  /** [ประเภท, ห้อง] ที่มีอยู่แล้ว → ค่าเริ่มต้น = ห้องแรกที่ยังไม่มีประเภทนั้น (ไฟ / น้ำ) */ usedRooms?: [string, string][];
   /** แสดงเป็นปุ่ม (กล่องค่าใช้จ่ายของทรัพย์สิน) แทนลิงก์ */ asButton?: boolean;
   /** ตัวเลือก "จ่ายจาก" ค่าตั้งต้น [ค่า (a:/c:), ชื่อ] */ pays?: [string, string][];
 }) {
@@ -368,6 +370,7 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(asButton ? BOX_BTN : link)}>{label}</button>;
   if (!open) return trigger;
   const meter = type === "ELECTRICITY" || type === "WATER";
+  const roomDefault = meter ? (rooms.find((r) => !usedRooms.some(([t, u]) => t === type && u === r)) ?? "") : "";
   const chosen = properties?.find((x) => x.id === pick);
   const ccy = chosen?.currency ?? currency ?? "THB";
   return present(trigger, (
@@ -391,6 +394,14 @@ export function UtilityForm({ assetId, propertyId, currency, properties, label =
         <label className="text-xs">{type === "LAND_TAX" ? "หน่วยงาน" : type === "COMMON_FEE" ? "นิติบุคคล / ผู้เก็บ" : "ผู้ให้บริการ"}
           <input name="provider" placeholder={type === "LAND_TAX" ? "เช่น อบต. / เขต" : type === "COMMON_FEE" ? "" : "เช่น กฟน."} className={`mt-1 block w-36 ${small}`} />
         </label>
+        {rooms.length > 1 && (
+          <label className="text-xs">ห้อง
+            <select key={type} name="unit_label" defaultValue={roomDefault} className={`mt-1 block ${small}`}>
+              <option value="">{COMMON_ROOM_LABEL}</option>
+              {rooms.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+        )}
         {meter && <>
           <label className="text-xs">เลขที่ผู้ใช้<input name="account_no" className={`mt-1 block w-32 ${small}`} /></label>
           <label className="text-xs">เลขมิเตอร์<input name="meter_no" className={`mt-1 block w-32 ${small}`} /></label>

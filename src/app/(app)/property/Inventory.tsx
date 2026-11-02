@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState, type ReactNode } from "react";
-import { addInventoryItems, copyInventoryRoom, copyInventoryToLease, saveHandover, type ActionState } from "./actions";
-import { COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_METER_TYPES, INVENTORY_TYPE_LABEL, money } from "@/lib/format";
+import { addInventoryItems, copyInventoryRoom, copyInventoryToLease, disposeInventoryItem, saveHandover, undoInventoryDisposal, type ActionState } from "./actions";
+import { COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, money } from "@/lib/format";
 import ModalButton from "@/components/ModalButton";
 import Flash from "@/components/Flash";
 
@@ -15,11 +15,14 @@ function Msg({ s }: { s: ActionState }) {
   if (s.ok) return <Flash on={s} as="p" className="text-sm text-emerald-700" />;
   return null;
 }
-const TypeSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-  <select value={value} onChange={(e) => onChange(e.target.value)} className={cell}>
-    {Object.entries(INVENTORY_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-  </select>
-);
+/** ประเภท: เลือกได้เฉพาะของ (มิเตอร์มาจากสาธารณูปโภค) · แถวมิเตอร์ในรายการส่งมอบแสดงชื่อมิเตอร์ (เปลี่ยนไม่ได้) */
+const TypeSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => INVENTORY_METER_TYPES.includes(value)
+  ? <div className="px-1 py-1.5 text-sm text-slate-600">{INVENTORY_TYPE_LABEL[value]}</div>
+  : (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={cell}>
+      {INVENTORY_PICK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
 /** ห้อง: เลือกจากรายการ หรือพิมพ์ชื่อใหม่ (ว่าง = ส่วนกลาง / ทั้งหลัง) */
 const RoomInput = ({ value, onChange, listId }: { value: string; onChange: (v: string) => void; listId: string }) => (
   <input list={listId} value={value} onChange={(e) => onChange(e.target.value)} placeholder={COMMON_ROOM_LABEL} className={cell} />
@@ -31,32 +34,41 @@ type AddRow = { unit_label: string; item_type: string; name: string; qty: string
  * เพิ่มของในทรัพย์สินหลายแถว (pop up) · หลายห้อง (rooms) → มีช่องห้อง
  *   แถวแรก = ห้องถัดไปที่ยังไม่มีของ · แถวต่อไป = ห้องเดียวกับแถวก่อนหน้า (เลือกซ้ำ / เปลี่ยนได้)
  */
-export function InventoryAddButton({ assetId, rooms, roomsWithItems }: { assetId: string; rooms: string[]; roomsWithItems: string[] }) {
+type BuyProps = { pays: [string, string][]; today: string; minDate?: string; currency: string };
+
+export function InventoryAddButton({ assetId, rooms, roomsWithItems, ...buy }: { assetId: string; rooms: string[]; roomsWithItems: string[] } & BuyProps) {
   return (
     <ModalButton label="+ เพิ่มรายการ" title="เพิ่มของในทรัพย์สิน" size="lg" primary>
-      <InventoryAddBody assetId={assetId} rooms={rooms} roomsWithItems={roomsWithItems} />
+      <InventoryAddBody assetId={assetId} rooms={rooms} roomsWithItems={roomsWithItems} {...buy} />
     </ModalButton>
   );
 }
 
-function InventoryAddBody({ assetId, rooms, roomsWithItems }: { assetId: string; rooms: string[]; roomsWithItems: string[] }) {
+const amt = (v: string) => Number(v.replace(/,/g, "")) || 0;
+
+function InventoryAddBody({ assetId, rooms, roomsWithItems, pays, today, minDate, currency }: { assetId: string; rooms: string[]; roomsWithItems: string[] } & BuyProps) {
   const multi = rooms.length > 1;
   const firstRoom = multi ? (rooms.find((r) => !roomsWithItems.includes(r)) ?? rooms[0]) : "";
-  const blank = (room: string): AddRow => ({ unit_label: room, item_type: "FURNITURE", name: "", qty: "1", brand: "", serial_no: "", value: "" });
+  // แถวแรก = เฟอร์นิเจอร์ · แถวต่อไป = ห้อง / ประเภทเดียวกับแถวบน (ตกลง 2 พ.ย. 2026)
+  const blank = (room: string, type = "FURNITURE"): AddRow => ({ unit_label: room, item_type: type, name: "", qty: "1", brand: "", serial_no: "", value: "" });
   const [rows, setRows] = useState<AddRow[]>([blank(firstRoom)]);
+  const [buy, setBuy] = useState(false);
+  const [buyAmount, setBuyAmount] = useState<string | null>(null);   // null = ตามมูลค่า × จำนวน
   const [state, action, pending] = useActionState<ActionState, FormData>(addInventoryItems, {});
   const set = (i: number, k: keyof AddRow, v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  const meter = (r: AddRow) => INVENTORY_METER_TYPES.includes(r.item_type);
+  const sum = rows.reduce((s, r) => s + (r.name.trim() ? amt(r.value) * (amt(r.qty) || 1) : 0), 0);
+  const last = rows[rows.length - 1];
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="rows" value={JSON.stringify(rows)} />
       <datalist id="inv-rooms">{rooms.map((r) => <option key={r} value={r} />)}</datalist>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[52rem] text-sm">
           <thead className="text-left text-xs text-slate-500">
             <tr>{multi && <th className="w-36 pb-1">ห้อง</th>}<th className="w-36">ประเภท</th><th>รายการ *</th><th className="w-20">จำนวน</th>
-              <th className="w-36">ยี่ห้อ / รุ่น</th><th className="w-32">เลขมิเตอร์ / Serial</th><th className="w-28">มูลค่าทดแทน</th><th className="w-8" /></tr>
+              <th className="w-36">ยี่ห้อ / รุ่น</th><th className="w-32">Serial</th><th className="w-28">{buy ? "ราคา / มูลค่าทดแทน" : "มูลค่าทดแทน"}</th><th className="w-8" /></tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
@@ -64,7 +76,7 @@ function InventoryAddBody({ assetId, rooms, roomsWithItems }: { assetId: string;
                 {multi && <td className="py-1 pr-1"><RoomInput value={r.unit_label} onChange={(v) => set(i, "unit_label", v)} listId="inv-rooms" /></td>}
                 <td className="py-1 pr-1"><TypeSelect value={r.item_type} onChange={(v) => set(i, "item_type", v)} /></td>
                 <td className="py-1 pr-1"><input value={r.name} onChange={(e) => set(i, "name", e.target.value)}
-                  placeholder={meter(r) ? "เช่น มิเตอร์ไฟห้อง 1203" : "เช่น ตู้เย็น · เตียง 5 ฟุต"} className={cell} /></td>
+                  placeholder="เช่น ตู้เย็น · เตียง 5 ฟุต" className={cell} /></td>
                 <td className="py-1 pr-1"><input value={r.qty} onChange={(e) => set(i, "qty", e.target.value)} inputMode="decimal" data-money="off" className={`${cell} text-right`} /></td>
                 <td className="py-1 pr-1"><input value={r.brand} onChange={(e) => set(i, "brand", e.target.value)} className={cell} /></td>
                 <td className="py-1 pr-1"><input value={r.serial_no} onChange={(e) => set(i, "serial_no", e.target.value)} data-plain className={cell} /></td>
@@ -77,11 +89,32 @@ function InventoryAddBody({ assetId, rooms, roomsWithItems }: { assetId: string;
         </table>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => setRows([...rows, blank(rows[rows.length - 1]?.unit_label ?? firstRoom)])} className={ghost}>+ เพิ่มแถว</button>
+        <button type="button" onClick={() => setRows([...rows, blank(last?.unit_label ?? firstRoom, last?.item_type)])} className={ghost}>+ เพิ่มแถว</button>
+      </div>
+      {/* ซื้อมาใหม่ → บันทึกค่าใช้จ่าย 1 รายการ (หมวดบ้าน · ผูกทรัพย์สินนี้) พร้อมกัน */}
+      <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="buy" checked={buy} onChange={(e) => setBuy(e.target.checked)} />
+          ซื้อมาใหม่ — บันทึกเป็นค่าใช้จ่ายด้วย</label>
+        {buy && (
+          <div className="grid gap-2 sm:grid-cols-[9rem_1fr_14rem_9rem]">
+            <label className="text-xs">วันที่จ่าย<input name="buy_date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 ${cell}`} /></label>
+            <label className="text-xs">รายการ<input name="buy_description" placeholder={`ซื้อ${rows.filter((r) => r.name.trim()).map((r) => r.name.trim()).join(", ")}`} className={`mt-1 ${cell}`} /></label>
+            <label className="text-xs">จ่ายจาก
+              <select name="buy_pay" required defaultValue="" className={`mt-1 ${cell}`}>
+                <option value="" disabled>— เลือก —</option>
+                {pays.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select></label>
+            <label className="text-xs">ยอดที่จ่าย<input name="buy_amount" inputMode="decimal" required value={buyAmount ?? (sum > 0 ? money(sum) : "")}
+              onChange={(e) => setBuyAmount(e.target.value)} className={`mt-1 ${cell} text-right`} /></label>
+          </div>
+        )}
+        <p className="text-xs text-slate-500">{buy ? "ลงหน้า Income & Expenses หมวดบ้าน / สาธารณูปโภค (ประเภท อื่น ๆ) ผูกทรัพย์สินนี้ · ยอดตั้งต้น = ราคา × จำนวน (แก้ได้)" : "ของที่มีอยู่แล้วไม่ต้องติ๊ก"}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <Msg s={state} />
       </div>
-      <p className="text-xs text-slate-500">ไม่นับใน Net Worth · มูลค่าทดแทนใช้เสนอค่าเสียหายตอนหักเงินประกัน{multi ? ` · ห้องว่าง = ${COMMON_ROOM_LABEL} (ส่งมอบให้ทุกสัญญา)` : ""}</p>
+      <p className="text-xs text-slate-500">ไม่นับใน Net Worth · มิเตอร์ไฟ / น้ำ เพิ่มที่ &ldquo;ค่าใช้จ่ายประจำ / สาธารณูปโภค&rdquo; (ดึงเข้ารายการส่งมอบให้เอง) · มูลค่าทดแทนใช้เสนอค่าเสียหายตอนหักเงินประกัน{multi ? ` · ห้องว่าง = ${COMMON_ROOM_LABEL} (ส่งมอบให้ทุกสัญญา)` : ""}</p>
     </form>
   );
 }
@@ -110,7 +143,7 @@ function CopyRoomBody({ assetId, rooms, roomsWithItems }: { assetId: string; roo
         <label className="text-sm">ไปห้อง
           <input name="to" list="inv-rooms-copy" defaultValue={to0} placeholder="ชื่อห้อง" className={`mt-1 ${cell}`} /></label>
       </div>
-      <p className="text-xs text-slate-500">คัดลอกประเภท ชื่อ จำนวน ยี่ห้อ มูลค่า · เลขมิเตอร์ / Serial ไม่คัดลอก (กรอกเองที่แต่ละแถว)</p>
+      <p className="text-xs text-slate-500">คัดลอกประเภท ชื่อ จำนวน ยี่ห้อ มูลค่า · Serial ไม่คัดลอก (กรอกเองที่แต่ละแถว) · ไม่คัดลอกของที่ขาย / ทิ้งแล้ว</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังคัดลอก…" : "คัดลอก"}</button>
         <Msg s={state} />
@@ -164,7 +197,7 @@ function HandoverBody({ assetId, leaseId, items, canWrite, currency }: {
         <form action={copyAction} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="asset_id" value={assetId} />
           <input type="hidden" name="lease_id" value={leaseId} />
-          <button disabled={copying} className={ghost}>{copying ? "กำลังดึง…" : "ดึงของจากทรัพย์สิน (ห้องนี้ + ส่วนกลาง)"}</button>
+          <button disabled={copying} className={ghost}>{copying ? "กำลังดึง…" : "ดึงของ + มิเตอร์ (ห้องนี้ + ส่วนกลาง)"}</button>
           <span className="text-xs text-slate-500">กดซ้ำได้ เพิ่มเฉพาะของที่ยังไม่มี</span>
           <Msg s={cs} />
         </form>
@@ -229,5 +262,61 @@ function HandoverBody({ assetId, leaseId, items, canWrite, currency }: {
         <p className="text-xs text-slate-500">เลขมิเตอร์วันส่งคืน − วันรับมอบ = หน่วยที่ใช้ (ใช้คิดค่าน้ำไฟงวดสุดท้าย) · ค่าเสียหายรวมจะเติมให้ตอนกด &ldquo;คืน / หักเงินประกัน&rdquo;</p>
       </form>
     </div>
+  );
+}
+
+/** ขาย / ทิ้ง ของในทรัพย์สิน (pop up) · ขายได้เงิน → รายได้อื่นของทรัพย์สิน */
+export function DisposeButton({ assetId, itemId, name, banks, today, minDate }: {
+  assetId: string; itemId: string; name: string; banks: [string, string][]; today: string; minDate?: string;
+}) {
+  return (
+    <ModalButton label="ขาย / ทิ้ง" title={`ขาย / ทิ้ง: ${name}`} className="text-xs text-slate-500 underline hover:text-slate-800">
+      <DisposeBody assetId={assetId} itemId={itemId} banks={banks} today={today} minDate={minDate} />
+    </ModalButton>
+  );
+}
+
+function DisposeBody({ assetId, itemId, banks, today, minDate }: { assetId: string; itemId: string; banks: [string, string][]; today: string; minDate?: string }) {
+  const [type, setType] = useState("SOLD");
+  const [state, action, pending] = useActionState<ActionState, FormData>(disposeInventoryItem, {});
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="item_id" value={itemId} />
+      <div className="flex gap-4 text-sm">
+        {Object.entries(INVENTORY_DISPOSAL_LABEL).map(([v, l]) => (
+          <label key={v} className="flex items-center gap-1.5"><input type="radio" name="disposal_type" value={v} checked={type === v} onChange={() => setType(v)} />{l}</label>
+        ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm">วันที่<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 ${cell}`} /></label>
+        {type === "SOLD" && <>
+          <label className="text-sm">ขายได้ (เว้นว่าง = ไม่ได้เงิน)<input name="amount" inputMode="decimal" className={`mt-1 ${cell} text-right`} /></label>
+          <label className="text-sm sm:col-span-2">รับเข้าบัญชี
+            <select name="to_asset_id" defaultValue={banks[0]?.[0] ?? ""} className={`mt-1 ${cell}`}>
+              {banks.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select></label>
+        </>}
+        <label className="text-sm sm:col-span-2">หมายเหตุ<input name="notes" className={`mt-1 ${cell}`} /></label>
+      </div>
+      <p className="text-xs text-slate-500">{type === "SOLD" ? "ได้เงิน → ลงเป็นรายได้อื่นของทรัพย์สินนี้ (หน้า Income & Expenses) · " : ""}ของจะย้ายไป &ldquo;ขาย / ทิ้งแล้ว&rdquo; และไม่ถูกดึงเข้ารายการส่งมอบอีก · ยกเลิกได้</p>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  );
+}
+
+/** ยกเลิกการขาย / ทิ้ง (ลบรายได้ที่สร้าง · คืนของเข้ารายการ) */
+export function UndoDisposalButton({ assetId, itemId }: { assetId: string; itemId: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(undoInventoryDisposal, {});
+  return (
+    <form action={action} className="inline-flex items-center gap-2">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="item_id" value={itemId} />
+      <button disabled={pending} className="text-xs text-slate-500 underline hover:text-slate-800">{pending ? "…" : "ยกเลิก"}</button>
+      {state.error && <span className="text-xs text-red-600">{state.error}</span>}
+    </form>
   );
 }
