@@ -108,8 +108,11 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
       <input type="hidden" name="lease_id" value={leaseId} />
       <input type="hidden" name="income_period" value={period} />
       <input type="hidden" name="currency" value={currency} />
-      <label className="text-xs">ยอดที่ได้รับ
+      <label className="text-xs">ยอดก่อนภาษี
         <input name="amount" required inputMode="decimal" defaultValue={String(expected)} className={`mt-1 block w-28 ${small}`} />
+      </label>
+      <label className="text-xs">ภาษีหัก ณ ที่จ่าย
+        <input name="tax" inputMode="decimal" placeholder="ถ้ามี" className={`mt-1 block w-24 ${small}`} />
       </label>
       <label className="text-xs">วันที่รับ
         <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
