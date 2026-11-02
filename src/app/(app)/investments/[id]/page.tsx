@@ -12,6 +12,8 @@ import {
 } from "./forms";
 import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
+import NetInvestedBox from "./NetInvestedBox";
+import { netInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
 import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { CurrencyScope } from "@/components/CurrencyContext";
@@ -55,7 +57,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const pfQ = supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle().then((r) => r);
   const [[{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
     { data: unsettled }, { data: persons }], [{ data: lastTx }, { data: txs }, { data: autoRows }],
-    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
+    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: capPre }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
     Promise.all([
       supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
       pfQ,
@@ -83,10 +85,13 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       cachedRpc<RetLocal[]>("investment_returns_local", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // คู่กับบรรทัดบน (ตารางเดียวกัน → ตัวเลขชุดเดียวกัน)
       // รายการโอน ธนาคาร ↔ พอร์ต (แก้ไข / ใส่ยอดที่เข้าทีหลัง)
       supabase.from("cash_movements")
-        .select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,fee,counter_amount,counter_currency,counter_fee,cash_holding_id,description")
+        .select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,fee,counter_amount,counter_currency,counter_fee,cash_holding_id,description,base_amount")
         .eq("is_derived", false).is("deleted_at", null)
         .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
         .order("movement_date", { ascending: false }).limit(2000),
+      // เงินโอนเข้าพอร์ตก่อน Go-live (กล่องเงินลงทุนสุทธิ)
+      supabase.from("portfolio_capital_transfers").select("id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes")
+        .eq("portfolio_asset_id", id).is("deleted_at", null).order("transfer_date"),
     ]),
     // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
     canWrite ? Promise.all([
@@ -136,6 +141,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txList = (txs as Tx[] | null) ?? [];
   const transfers = (mvs as PfTransfer[] | null) ?? [];
   const transferById = new Map(transfers.map((m) => [m.id, m]));
+  const invested = netInvested(id, a.currency, (capPre as CapitalPre[] | null) ?? [], transfers as unknown as CapitalMove[]);
   // เงินโอนที่ยังไม่ทราบยอด (รอยอด) รายบัญชี — ที่ทราบยอดแล้วนับในยอดบัญชีเงินฝากทันที
   const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
@@ -218,6 +224,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             </dl>
             <p className="mt-2 text-xs text-slate-400">เงินฝากคำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น · รายได้ก่อนหักภาษี</p>
           </div>
+          <NetInvestedBox assetId={id} currency={a.currency} investedThb={invested.thb} investedCcy={invested.ccy}
+            valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
+            valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
+            closed={a.status === "CLOSED"} lines={invested.lines} goLive={family?.go_live_date ?? ""} canWrite={canWrite} canDelete={canDelete} paths={paths} />
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
           </div>

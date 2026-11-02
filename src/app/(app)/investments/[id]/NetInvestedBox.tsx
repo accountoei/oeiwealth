@@ -1,0 +1,122 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import Modal from "@/components/Modal";
+import Flash from "@/components/Flash";
+import RowActions from "@/components/RowActions";
+import { addCapitalTransfer, type ActionState } from "../actions";
+import { money, thDate } from "@/lib/format";
+import { vsInvested, type CapitalLine } from "@/lib/net-invested";
+
+const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
+const sign = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500");
+const signed = (v: number, ccy?: string) => `${v > 0 ? "+" : ""}${money(v, ccy, 0)}`;
+const pctTxt = (p: number | null) => (p == null ? "" : ` (${p > 0 ? "+" : ""}${p.toFixed(2)}%)`);
+
+/**
+ * กล่อง "เงินลงทุนสุทธิ" ของพอร์ต (ตกลง 2 พ.ย. 2026)
+ * เงินโอนเข้าก่อน Go-live (กรอกที่นี่) + โอนไป − โอนกลับ หลัง Go-live (ปุ่มโอนเงิน) เทียบมูลค่าล่าสุด
+ * พอร์ตต่างประเทศ: บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน · พอร์ตปิดแล้ว = กำไร / ขาดทุนที่รับรู้แล้ว
+ */
+export default function NetInvestedBox({ assetId, currency, investedThb, investedCcy, valueThb, valueCcy, closed, lines, goLive, canWrite, canDelete, paths }: {
+  assetId: string; currency: string; investedThb: number; investedCcy: number | null; valueThb: number | null; valueCcy: number | null;
+  closed: boolean; lines: CapitalLine[]; goLive: string; canWrite: boolean; canDelete: boolean; paths: string[];
+}) {
+  const [list, setList] = useState(false);
+  const [add, setAdd] = useState(false);
+  const fx = currency !== "THB";
+  const thb = vsInvested(valueThb, investedThb);
+  const ccy = fx ? vsInvested(valueCcy, investedCcy) : null;
+  const plLabel = closed ? "กำไร / ขาดทุน (รับรู้แล้ว)" : "กำไร / ขาดทุนรวม";
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
+      <div className="text-xs text-slate-500">เงินลงทุนสุทธิ (เงินโอนเข้า − โอนกลับ)</div>
+      {lines.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">ยังไม่มีเงินโอน{canWrite ? " · ใส่เงินที่โอนไปก่อน Go-live เพื่อเทียบกับมูลค่าล่าสุด" : ""}</p>
+      ) : (
+        <dl className="mt-2 space-y-1.5 text-xs">
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินลงทุนสุทธิ</dt>
+            <dd className="text-right tabular-nums"><div className="text-sm font-medium">{money(investedThb, "THB", 0)}</div>
+              {fx && <div className="text-slate-500">{investedCcy == null ? `${currency} ยังไม่ครบ` : money(investedCcy, currency, 0)}</div>}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">มูลค่าล่าสุด</dt>
+            <dd className="text-right tabular-nums"><div>{money(valueThb ?? 0, "THB", 0)}</div>
+              {fx && <div className="text-slate-500">{money(valueCcy ?? 0, currency, 0)}</div>}</dd></div>
+          <div className="flex justify-between gap-3 border-t border-slate-100 pt-1.5"><dt className="text-slate-500">{plLabel}</dt>
+            <dd className="text-right tabular-nums">
+              {thb && <div className={`text-sm font-medium ${sign(thb.pl)}`}>{signed(thb.pl, "THB")}{pctTxt(thb.pct)}</div>}
+              {ccy && <div className={sign(ccy.pl)}>{signed(ccy.pl, currency)}{pctTxt(ccy.pct)}</div>}</dd></div>
+        </dl>
+      )}
+      {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน</p>}
+      <div className="mt-3 flex flex-wrap gap-3 text-sm">
+        {lines.length > 0 && <button type="button" onClick={() => setList(true)} className="text-slate-600 underline">ดูรายการเงินโอน ({lines.length})</button>}
+        {canWrite && goLive && <button type="button" onClick={() => setAdd(true)} className="text-slate-600 underline">+ เงินโอนก่อน Go-live</button>}
+      </div>
+
+      {list && (
+        <Modal title="รายการเงินโอนเข้า-ออกพอร์ต" size="lg" onClose={() => setList(false)}>
+          <div data-keep-open className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th>
+                <th className="text-right">บาท</th>{fx && <th className="text-right">{currency}</th>}<th></th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {lines.map((l) => (
+                  <tr key={l.key} className="align-top">
+                    <td className="py-1.5">{thDate(l.date)}</td>
+                    <td>{l.kind === "PRE" ? "โอนเข้า (ก่อน Go-live)" : l.kind === "OUT" ? "โอนเข้าพอร์ต" : "โอนกลับจากพอร์ต"}
+                      {l.pre?.notes && <div className="text-xs text-slate-500">{l.pre.notes}</div>}
+                      {l.kind !== "PRE" && <div className="text-xs text-slate-400">แก้ที่รายการโอนในหน้าพอร์ต</div>}</td>
+                    <td className={`text-right tabular-nums ${sign(l.thb)}`}>{signed(l.thb)}</td>
+                    {fx && <td className={`text-right tabular-nums ${l.ccy == null ? "text-slate-400" : sign(l.ccy)}`}>{l.ccy == null ? "—" : signed(l.ccy)}</td>}
+                    <td className="pl-2 text-right">{l.pre && canWrite && <RowActions table="portfolio_capital_transfers" id={l.pre.id} paths={paths} canDelete={canDelete}
+                      button="แก้ไข" deleteEffect="ลบเฉพาะข้อมูลอ้างอิง ไม่กระทบยอดบัญชี / มูลค่าพอร์ต"
+                      fields={[{ name: "transfer_date", label: "วันที่โอน", type: "date", value: l.pre.transfer_date },
+                        { name: "amount_thb", label: "เงินบาทที่โอน", type: "number", value: l.pre.amount_thb },
+                        ...(fx ? [{ name: "amount_ccy", label: `${currency} ที่พอร์ตได้รับ`, type: "number" as const, value: l.pre.amount_ccy }] : []),
+                        { name: "notes", label: "หมายเหตุ", value: l.pre.notes, wide: true }]} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-200 font-medium">
+                <tr><td className="py-1.5" colSpan={2}>เงินลงทุนสุทธิ</td>
+                  <td className="text-right tabular-nums">{money(investedThb, undefined, 0)}</td>
+                  {fx && <td className="text-right tabular-nums">{investedCcy == null ? "—" : money(investedCcy, undefined, 0)}</td>}<td></td></tr>
+              </tfoot>
+            </table>
+            <p className="mt-2 text-xs text-slate-500">หลัง Go-live นับจากปุ่ม &ldquo;โอนเงิน&rdquo; ของพอร์ตให้อัตโนมัติ · — = ยังไม่ทราบยอดฝั่งพอร์ต (ไม่นับในยอด {currency})</p>
+          </div>
+        </Modal>
+      )}
+      {add && (
+        <Modal title="เงินโอนเข้าพอร์ตก่อน Go-live" onClose={() => setAdd(false)}>
+          <AddForm assetId={assetId} currency={currency} goLive={goLive} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function AddForm({ assetId, currency, goLive }: { assetId: string; currency: string; goLive: string }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(addCapitalTransfer, {});
+  const fx = currency !== "THB";
+  // วันสุดท้ายก่อน Go-live (ฐานข้อมูลตรวจซ้ำ)
+  const max = new Date(Date.parse(goLive) - 86400000).toISOString().slice(0, 10);
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <div className={`grid gap-3 ${fx ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        <label className="block text-sm text-slate-700">วันที่โอน *<input type="date" name="transfer_date" required max={max} className={input} /></label>
+        <label className="block text-sm text-slate-700">เงินบาทที่โอน *<input name="amount_thb" inputMode="decimal" required className={input} /></label>
+        {fx && <label className="block text-sm text-slate-700">{currency} ที่พอร์ตได้รับ<input name="amount_ccy" inputMode="decimal" className={input} /></label>}
+        <label className="block text-sm text-slate-700 sm:col-span-full">หมายเหตุ<input name="notes" className={input} /></label>
+      </div>
+      <p className="text-xs text-slate-500">ใช้เทียบเงินลงทุนกับมูลค่าล่าสุดเท่านั้น ไม่กระทบยอดบัญชี มูลค่าพอร์ต หรือ Net Worth · ต้องเป็นวันที่ก่อน Go-live ({thDate(goLive)}) · โอนตั้งแต่วัน Go-live ใช้ปุ่ม &ldquo;โอนเงิน&rdquo;
+        {fx && ` · ไม่ทราบยอด ${currency} เว้นว่างได้ (ยอดเทียบเป็น ${currency} จะยังไม่แสดง)`}</p>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        {state.error && <span className="text-sm text-red-600">{state.error}</span>}
+        <Flash on={state} as="span" className="text-sm text-emerald-700" />
+      </div>
+    </form>
+  );
+}

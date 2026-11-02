@@ -2,7 +2,7 @@
 
 - วันที่: 2 พ.ย. 2026 · branch `feat/property-inventory`
 - SQL: `supabase/migrations/20261102000900_property_inventory.sql` (รันก่อน Merge)
-- ทดสอบ: ALL SCENARIO TESTS PASSED (1018 checks) · tsc / eslint (0 errors) / build ผ่าน
+- ทดสอบ: ALL SCENARIO TESTS PASSED (1018 checks; 1028 หลังรวม main ที่มี #286) · tsc / eslint (0 errors) / build ผ่าน
 - ต่อจาก: #285 (รายละเอียดสัญญาเช่า · Merge แล้ว)
 
 ## เปลี่ยนอะไร

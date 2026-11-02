@@ -9,6 +9,8 @@ export type PortfolioRow = {
   asset_id: string; name: string; sub: string; currency: string; value: number | null; valueThb: number; valueDate: string | null;
   sharePct: number | null; fullValue: number | null; inTransit: boolean; atCost: boolean; closed?: boolean;
   unreal: number; real: number; fx: number; income: number; total: number; cost: number;
+  /** เงินลงทุนสุทธิ (บาท · เงินโอนเข้า − โอนกลับ) · null = ยังไม่มีเงินโอน */
+  invested?: number | null;
 };
 
 const sign = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500");
@@ -22,6 +24,10 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
   const [open, setOpen] = useState<string | null>(null);
   const sum = (k: keyof PortfolioRow) => rows.reduce((t, r) => t + Number(r[k] ?? 0), 0);
   const tot = { valueThb: sum("valueThb"), total: sum("total"), cost: sum("cost") };
+  // เงินลงทุนสุทธิ: แสดงเมื่อมีพอร์ตที่มีเงินโอน · แถวรวม = เฉพาะพอร์ตที่ยังเปิด (พอร์ตที่ปิด = กำไรที่รับรู้แล้วของพอร์ตนั้น)
+  const hasInv = rows.some((r) => r.invested != null);
+  const invRows = rows.filter((r) => r.invested != null && !r.closed);
+  const invTot = { inv: invRows.reduce((t, r) => t + r.invested!, 0), value: invRows.reduce((t, r) => t + r.valueThb, 0) };
   return (
     <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
@@ -38,6 +44,8 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
             <th className="px-3 text-right">ต้นทุน (บาท)</th>
             <th className="px-3 text-right">มูลค่า (บาท)</th>
             <th className="px-3 text-right">ผลตอบแทนรวม (บาท)</th>
+            {hasInv && <th className="px-3 text-right">เงินลงทุนสุทธิ (บาท)</th>}
+            {hasInv && <th className="px-3 text-right">กำไรเทียบเงินลงทุน</th>}
             <th className="w-8"></th>
           </tr>
         </thead>
@@ -68,11 +76,18 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
                     <div className="font-medium">{amt(r.total)}</div>
                     {pct(r.total, r.cost) && <div className="text-xs">{pct(r.total, r.cost)}</div>}
                   </td>
+                  {hasInv && <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.invested == null ? "-" : money(r.invested, undefined, 2)}</td>}
+                  {hasInv && (r.invested == null ? <td className="px-3 py-2.5 text-right text-slate-400">-</td> : (
+                    <td className={`px-3 py-2.5 text-right tabular-nums ${sign(r.valueThb - r.invested)}`}>
+                      <div className="font-medium">{amt(r.valueThb - r.invested)}</div>
+                      {pct(r.valueThb - r.invested, r.invested) && <div className="text-xs">{pct(r.valueThb - r.invested, r.invested)}</div>}
+                      {r.closed && <div className="text-xs text-slate-500">รับรู้แล้ว</div>}
+                    </td>))}
                   <td className="pr-3 pt-2.5 text-right text-xs text-slate-400">{isOpen ? "▴" : "▾"}</td>
                 </tr>
                 {isOpen && (
                   <tr className="bg-slate-50">
-                    <td colSpan={5} className="px-4 py-3">
+                    <td colSpan={hasInv ? 7 : 5} className="px-4 py-3">
                       <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-5">
                         <Item label="ต้นทุน" value={money(r.cost, undefined, 0)} />
                         <Item label="ยังไม่รับรู้" value={amt(r.unreal)} cls={sign(r.unreal)} />
@@ -96,6 +111,10 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
               <td className={`px-3 text-right tabular-nums ${sign(tot.total)}`}>
                 {amt(tot.total)}{pct(tot.total, tot.cost) && <div className="text-xs font-normal">{pct(tot.total, tot.cost)}</div>}
               </td>
+              {hasInv && <td className="px-3 text-right tabular-nums">{money(invTot.inv, undefined, 2)}</td>}
+              {hasInv && <td className={`px-3 text-right tabular-nums ${sign(invTot.value - invTot.inv)}`}>
+                {amt(invTot.value - invTot.inv)}{pct(invTot.value - invTot.inv, invTot.inv) && <div className="text-xs font-normal">{pct(invTot.value - invTot.inv, invTot.inv)}</div>}
+              </td>}
               <td></td>
             </tr>
           </tfoot>
@@ -103,6 +122,7 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
       </table>
       <p className="px-4 py-3 text-xs text-slate-500">
         ต้นทุน = ต้นทุนเฉลี่ยของหลักทรัพย์ที่ถืออยู่ · ผลตอบแทนนับตั้งแต่ยอดตั้งต้น · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
+        {hasInv && " · เงินลงทุนสุทธิ = เงินที่โอนเข้าพอร์ต (ก่อน + หลัง Go-live) − โอนกลับ · กำไรเทียบเงินลงทุน = มูลค่า − เงินลงทุนสุทธิ (รวมผลค่าเงิน) · แถวรวมนับเฉพาะพอร์ตที่ยังเปิด"}
       </p>
     </section>
   );
