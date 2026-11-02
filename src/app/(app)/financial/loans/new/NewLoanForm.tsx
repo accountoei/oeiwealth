@@ -7,6 +7,8 @@ import OwnerShares from "@/components/OwnerShares";
 import { thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
+import { numOrZero } from "@/lib/format";
+import NewLoanSchedule from "./NewLoanSchedule";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -14,8 +16,15 @@ const label = "block text-sm text-slate-700";
 export default function NewLoanForm(props: {
   persons: { id: string; name: string }[]; banks: { asset_id: string; name: string; currency: string }[];
   goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean;
+  /** ADMIN / EDITOR ตั้งตารางผ่อนได้ (ฐานข้อมูลบังคับ) */
+  canSchedule: boolean;
 }) {
-  const { persons, banks, goLive, openingDate, today, isSetup, isAdmin } = props;
+  const { persons, banks, goLive, openingDate, today, isSetup, isAdmin, canSchedule } = props;
+  // ช่องที่ตารางผ่อนใช้ (ส่วน "ตั้งตารางผ่อนเลย" ด้านล่าง)
+  const [principal, setPrincipal] = useState("");
+  const [rate, setRate] = useState("");
+  const [loanDate, setLoanDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(createLoan, {});
   const [opening, setOpening] = useState(isSetup);
   return (
@@ -24,10 +33,10 @@ export default function NewLoanForm(props: {
         <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลเงินกู้</h2>
         <label className={label}>ชื่อรายการ *<input name="name" required placeholder="เช่น ให้น้องยืมซื้อรถ" className={input} /></label>
         <label className={label}>ผู้กู้ *<input name="borrower_name" required className={input} /></label>
-        <label className={label}>เงินต้นตามสัญญา *<input name="principal" required inputMode="decimal" className={input} /></label>
-        <label className={label}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" className={input} /></label>
-        <label className={label}>วันที่ให้กู้<input name="loan_date" type="date" max={today} className={input} /></label>
-        <label className={label}>ครบกำหนดคืน<input name="due_date" type="date" className={input} /></label>
+        <label className={label}>เงินต้นตามสัญญา *<input name="principal" required inputMode="decimal" value={principal} onChange={(e) => setPrincipal(e.target.value)} className={input} /></label>
+        <label className={label}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} className={input} /></label>
+        <label className={label}>วันที่ให้กู้<input name="loan_date" type="date" max={today} value={loanDate} onChange={(e) => setLoanDate(e.target.value)} className={input} /></label>
+        <label className={label}>ครบกำหนดคืน<input name="due_date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={input} /></label>
         <label className={`${label} md:col-span-2`}>หมายเหตุ {opening && !isSetup && "(เหตุผล · จำเป็น)"}
           <input name="notes" required={opening && !isSetup} className={input} />
         </label>
@@ -63,6 +72,8 @@ export default function NewLoanForm(props: {
           </div>
         )}
       </section>
+
+      {canSchedule && <NewLoanSchedule amount={numOrZero(principal)} ratePct={numOrZero(rate)} loanDate={loanDate} dueDate={dueDate} today={today} />}
 
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       <div className="flex gap-3">

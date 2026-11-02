@@ -21,7 +21,8 @@ export default async function NewLoanPage() {
       </div>
       <NewLoanForm persons={persons ?? []} banks={banks ?? []} goLive={family.go_live_date}
         openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}
-        isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"} />
+        isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"}
+        canSchedule={me.role === "ADMIN" || me.role === "EDITOR"} />
     </div>
   );
 }
