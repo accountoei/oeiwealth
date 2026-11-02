@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
+  PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -35,7 +35,7 @@ import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
-import { CopyRoomButton, HandoverButton, InventoryAddButton, type HandoverItem } from "../Inventory";
+import { CopyRoomButton, DisposeButton, HandoverButton, InventoryAddButton, UndoDisposalButton, type HandoverItem } from "../Inventory";
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 import type { LeasePrefill } from "../LeaseFields";
 
@@ -60,7 +60,7 @@ type Lease = { id: string; unit_label: string | null; tenant_name: string; contr
   deposit_received_date: string | null; deposit_settled_date: string | null; deposit_settlement_type: string | null;
   deposit_refunded_amount: number | null; deposit_carried_amount: number | null; status: string; notes: string | null;
   lease_status: string; deposit_status: string; deposit_due_date: string };
-type Util = { id: string; utility_type: string; provider: string | null; account_no: string | null; meter_no: string | null;
+type Util = { id: string; utility_type: string; unit_label: string | null; provider: string | null; account_no: string | null; meter_no: string | null;
   notes: string | null; deleted_at: string | null; expected_amount: number | null; currency: string; frequency: string | null;
   due_day: number | null; due_month: number | null; active: boolean; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null };
 type Cost = { utility_id: string; utility_type: string; provider: string | null; cost_period: string; due_date: string;
@@ -79,7 +79,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
     { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("property_details").select(`*, property_utilities(id,utility_type,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
+    supabase.from("property_details").select(`*, property_utilities(id,utility_type,unit_label,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes,source_movement_id")
@@ -196,7 +196,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
     supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
     // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
-    supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,notes,sort_order")
+    supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("lease_handover_items").select("id,lease_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
@@ -231,7 +231,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     notes: string | null; paid_date: string | null; paid_amount: number | null }[];
   // สัญญาที่ "เราจ่ายแล้วเรียกเก็บ" ค่าน้ำไฟ → ติ๊กเรียกเก็บผู้เช่าให้ตอนบันทึกจ่าย
   const rebillLeases = liveLeases.filter((l) => leaseExtra.get(l.id)?.utilities_billing === "REBILL")
-    .map((l) => ({ id: l.id, label: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") }));
+    .map((l) => ({ id: l.id, unit: l.unit_label?.trim().toLowerCase() ?? "", label: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") }));
+  // มิเตอร์ผูกห้อง → สัญญาของห้องนั้นขึ้นก่อน (ค่าเริ่มต้นของ "เรียกเก็บผู้เช่า")
+  const rebillFor = (utilityId: string) => {
+    const room = utilById.get(utilityId)?.unit_label?.trim().toLowerCase();
+    return room ? [...rebillLeases].sort((x, y) => Number(y.unit === room) - Number(x.unit === room)) : rebillLeases;
+  };
   // ไม่ได้ตั้งบัญชีรับค่าเช่า → ใช้บัญชีที่รับครั้งล่าสุดของสัญญานั้น
   const lastRentBank = new Map<string, string>();
   [...(rentPaid ?? [])].reverse().forEach((x) => { if (x.lease_id && x.received_to_asset_id) lastRentBank.set(x.lease_id as string, x.received_to_asset_id as string); });
@@ -350,9 +355,14 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
   // ของในทรัพย์สิน: หลายห้อง (ชื่อห้องจากสัญญา + ที่ตั้งไว้ในของ) → มีช่องห้อง · ห้องว่าง = ส่วนกลาง / ทั้งหลัง
   type Inv = { id: string; unit_label: string | null; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null;
-    value: number | null; notes: string | null };
-  const inv = (invRows ?? []) as Inv[];
-  const rooms = [...new Set([...leases.map((l) => l.unit_label?.trim()), ...inv.map((x) => x.unit_label?.trim())].filter((x): x is string => !!x))]
+    value: number | null; notes: string | null; expense_item_id: string | null; disposal_type: string | null; disposed_date: string | null;
+    disposal_amount: number | null; expense_items: { date: string } | { date: string }[] | null };
+  const invAll = (invRows ?? []) as Inv[];
+  const inv = invAll.filter((x) => !x.disposal_type);
+  const invGone = invAll.filter((x) => x.disposal_type);
+  const boughtOn = (x: Inv) => (Array.isArray(x.expense_items) ? x.expense_items[0]?.date : x.expense_items?.date) ?? null;
+  const rooms = [...new Set([...leases.map((l) => l.unit_label?.trim()), ...inv.map((x) => x.unit_label?.trim()), ...utilities.map((u) => u.unit_label?.trim())]
+    .filter((x): x is string => !!x))]
     .sort((x, y) => x.localeCompare(y, "th", { numeric: true }));
   const multiRoom = rooms.length > 1;
   const roomsWithItems = [...new Set(inv.map((x) => x.unit_label?.trim() ?? ""))];
@@ -632,40 +642,43 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-medium text-slate-900">ของในทรัพย์สิน</h2>
-              <p className="text-xs text-slate-500">มิเตอร์ กุญแจ บัตร รีโมท เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า · ไม่นับใน Net Worth · ใช้ทำรายการส่งมอบของแต่ละสัญญา{multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</p>
+              <p className="text-xs text-slate-500">เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า กุญแจ บัตร รีโมท · ไม่นับใน Net Worth (ซื้อ = ค่าใช้จ่าย · ขาย = รายได้) · ใช้ทำรายการส่งมอบของแต่ละสัญญา (มิเตอร์ดึงจากสาธารณูปโภค){multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</p>
             </div>
             {canWrite && (
               <div className="flex flex-wrap items-center gap-2">
                 {multiRoom && inv.length > 0 && <CopyRoomButton assetId={id} rooms={rooms} roomsWithItems={roomsWithItems} />}
-                <InventoryAddButton assetId={id} rooms={multiRoom ? rooms : []} roomsWithItems={roomsWithItems} />
+                <InventoryAddButton assetId={id} rooms={multiRoom ? rooms : []} roomsWithItems={roomsWithItems} pays={payOpts.slice(1)} today={today} minDate={goLive || undefined} currency={a.currency} />
               </div>
             )}
           </div>
-          {inv.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ · เพิ่มมิเตอร์ไฟ / น้ำ กุญแจ คีย์การ์ด เฟอร์นิเจอร์ ฯลฯ แล้วดึงเข้ารายการส่งมอบตอนทำสัญญา</p> : (
+          {inv.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ · เพิ่มเฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า กุญแจ คีย์การ์ด ฯลฯ แล้วดึงเข้ารายการส่งมอบตอนทำสัญญา</p> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[44rem] text-sm">
                 <thead className="text-left text-xs text-slate-500">
                   <tr>{multiRoom && <th className="py-1">ห้อง</th>}<th>ประเภท</th><th>รายการ</th><th className="text-right">จำนวน</th><th className="pl-4">ยี่ห้อ / รุ่น</th>
-                    <th>เลขมิเตอร์ / Serial</th><th className="text-right">มูลค่าทดแทน</th><th></th></tr>
+                    <th>Serial</th><th className="text-right">มูลค่าทดแทน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(multiRoom ? [...inv].sort((x, y) => (x.unit_label ?? "").localeCompare(y.unit_label ?? "", "th", { numeric: true })) : inv).map((x) => (
                     <tr key={x.id} className="align-top">
                       {multiRoom && <td className="py-1.5 text-slate-600">{x.unit_label || <span className="text-slate-400">{COMMON_ROOM_LABEL}</span>}</td>}
                       <td className="py-1.5 text-xs text-slate-600">{INVENTORY_TYPE_LABEL[x.item_type] ?? x.item_type}</td>
-                      <td>{x.name}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
+                      <td>{x.name}{(x.notes || boughtOn(x)) && <div className="text-xs text-slate-400">{[boughtOn(x) && `ซื้อ ${thDate(boughtOn(x))} (ลงค่าใช้จ่ายแล้ว)`, x.notes].filter(Boolean).join(" · ")}</div>}</td>
                       <td className="text-right tabular-nums">{Number(x.qty).toLocaleString("th-TH")}</td>
                       <td className="pl-4 text-slate-600">{x.brand ?? "-"}</td>
                       <td className="text-slate-600">{x.serial_no ?? "-"}</td>
                       <td className="text-right tabular-nums">{x.value != null ? money(x.value) : "-"}</td>
-                      <td className="pl-2 text-right">
+                      <td className="whitespace-nowrap pl-2 text-right">
+                        {canWrite && <DisposeButton assetId={id} itemId={x.id} name={x.name} today={today} minDate={goLive || undefined}
+                          banks={bankList.filter((b) => b.currency === a.currency).map((b) => [b.asset_id, b.name] as [string, string])} />}{" "}
                         {canWrite && <RowActions table="property_inventory_items" id={x.id} paths={paths} canDelete={canDelete} deleteEffect="" fields={[
                           ...(multiRoom ? [{ name: "unit_label", label: "ห้อง (ว่าง = ส่วนกลาง)", value: x.unit_label, width: "w-28" }] : []),
-                          { name: "item_type", label: "ประเภท", type: "select" as const, value: x.item_type, options: Object.entries(INVENTORY_TYPE_LABEL) as [string, string][] },
+                          { name: "item_type", label: "ประเภท", type: "select" as const, value: x.item_type,
+                            options: INVENTORY_METER_TYPES.includes(x.item_type) ? [...INVENTORY_PICK_TYPES, [x.item_type, INVENTORY_TYPE_LABEL[x.item_type]] as [string, string]] : INVENTORY_PICK_TYPES },
                           { name: "name", label: "รายการ", value: x.name },
                           { name: "qty", label: "จำนวน", type: "number" as const, value: x.qty, width: "w-20" },
                           { name: "brand", label: "ยี่ห้อ / รุ่น", value: x.brand },
-                          { name: "serial_no", label: "เลขมิเตอร์ / Serial", value: x.serial_no },
+                          { name: "serial_no", label: "Serial", value: x.serial_no },
                           { name: "value", label: "มูลค่าทดแทน", type: "number" as const, value: x.value },
                           { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }]} />}
                       </td>
@@ -674,6 +687,21 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 </tbody>
               </table>
             </div>
+          )}
+          {invGone.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs text-slate-500">ขาย / ทิ้งแล้ว ({invGone.length})</summary>
+              <ul className="mt-2 divide-y divide-slate-100">
+                {invGone.map((x) => (
+                  <li key={x.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-slate-600">
+                    <span>{multiRoom && x.unit_label && <span className="text-slate-400">{x.unit_label} · </span>}{x.name}
+                      <span className="text-xs text-slate-400"> · {INVENTORY_DISPOSAL_LABEL[x.disposal_type ?? ""]} {thDate(x.disposed_date)}
+                        {x.disposal_amount != null && ` · ได้ ${money(x.disposal_amount, a.currency)} (ลงรายได้แล้ว)`}</span></span>
+                    {canDelete && <UndoDisposalButton assetId={id} itemId={x.id} />}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </section>
       )}
@@ -824,7 +852,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {canWrite && <div className="flex flex-wrap items-start gap-2">
             {a.status === "ACTIVE" && <RecordCostForm assetId={id} label="" expected={0} currency={a.currency} category="บ้าน / สาธารณูปโภค"
               banks={bankList} cards={cards} persons={persons ?? []} today={today} minDate={goLive} />}
-            <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} label="+ ค่าใช้จ่ายประจำ" asButton />
+            <UtilityForm assetId={id} propertyId={pd.id} currency={a.currency} pays={payOpts.slice(1)} label="+ ค่าใช้จ่ายประจำ" asButton
+              rooms={multiRoom ? rooms : []} usedRooms={utilities.map((u) => [u.utility_type, u.unit_label?.trim() ?? ""] as [string, string])} />
           </div>}
         </div>
         {oneOff.length > 0 && (
@@ -860,12 +889,13 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         {utilities.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล · เพิ่มค่าส่วนกลาง ภาษีที่ดิน ไฟ น้ำ พร้อมยอดประมาณเพื่อติดตามการจ่าย</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
-              <tr><th className="py-1">รายการ</th><th className="text-right">ยอดประมาณ</th><th className="pl-4">กำหนดจ่าย</th><th className="pl-4">ข้อมูลอ้างอิง</th><th></th></tr>
+              <tr><th className="py-1">รายการ</th>{multiRoom && <th>ห้อง</th>}<th className="text-right">ยอดประมาณ</th><th className="pl-4">กำหนดจ่าย</th><th className="pl-4">ข้อมูลอ้างอิง</th><th></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {utilities.map((u) => (
                 <tr key={u.id} className="align-top">
                   <td className="py-1.5">{utilName(u.utility_type, u.provider)}</td>
+                  {multiRoom && <td className="text-slate-600">{u.unit_label || <span className="text-slate-400">{COMMON_ROOM_LABEL}</span>}</td>}
                   <td className="text-right tabular-nums">{u.expected_amount != null ? money(u.expected_amount, u.currency) : <span className="text-slate-400">ไม่ติดตาม</span>}</td>
                   <td className="pl-4 text-slate-600">{scheduleText(u.frequency, u.due_day, u.due_month) || "-"}</td>
                   <td className="pl-4 text-xs text-slate-500">
@@ -874,6 +904,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="pl-2 text-right">
                     {canWrite && <RowActions table="property_utilities" id={u.id} paths={paths} canDelete={canDelete} fields={[
                       { name: "provider", label: "ผู้ให้บริการ / ผู้เก็บ", value: u.provider },
+                      ...(multiRoom ? [{ name: "unit_label", label: "ห้อง (ว่าง = ส่วนกลาง)", value: u.unit_label, width: "w-28" }] : []),
                       { name: "expected_amount", label: "ยอดประมาณ", type: "number", value: u.expected_amount, width: "w-28" },
                       { name: "frequency", label: "จ่าย", type: "select", value: u.frequency ?? "", options: [["", "ไม่ติดตาม"],
                         ["MONTHLY", FREQ_LABEL.MONTHLY], ["QUARTERLY", FREQ_LABEL.QUARTERLY], ["YEARLY", FREQ_LABEL.YEARLY]] },
@@ -921,7 +952,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                           category={UTIL_EXPENSE_CATEGORY[c.utility_type] ?? "บ้าน / สาธารณูปโภค"} expected={Number(c.expected_amount)}
                           banks={bankList} cards={cards} persons={persons ?? []} today={today}
                           defaultBank={utilById.get(c.utility_id)?.paid_from_asset_id} defaultCard={utilById.get(c.utility_id)?.paid_from_credit_card_id}
-                          rebillLeases={["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillLeases : []} />
+                          rebillLeases={["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillFor(c.utility_id) : []} />
                       )}
                     </td>
                   </tr>

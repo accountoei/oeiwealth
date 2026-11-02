@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { friendlyError, HOME_CATEGORY, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { bankId, cardId, parseEndpoint, payLinesFromForm } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
@@ -506,7 +506,7 @@ export async function addUtility(_: ActionState, form: FormData): Promise<Action
   const { error } = await supabase.from("property_utilities").insert({
     property_id: String(form.get("property_id")), utility_type: str(form.get("utility_type")) ?? "ELECTRICITY",
     provider: str(form.get("provider")), account_no: str(form.get("account_no")), meter_no: str(form.get("meter_no")),
-    notes: str(form.get("notes")), expected_amount: amount, frequency, currency: str(form.get("currency")) ?? "THB",
+    unit_label: str(form.get("unit_label")), notes: str(form.get("notes")), expected_amount: amount, frequency, currency: str(form.get("currency")) ?? "THB",
     due_day: dueDay, due_month: dueMonth,
     ...(form.has("pay_default") ? (() => { const e = parseEndpoint(str(form.get("pay_default"))); return { paid_from_asset_id: bankId(e), paid_from_credit_card_id: cardId(e) }; })() : {}),
   });
@@ -707,7 +707,7 @@ async function propertyIdOf(supabase: Awaited<ReturnType<typeof createClient>>, 
   return (data?.id as string | undefined) ?? null;
 }
 
-/** เพิ่มของในทรัพย์สินหลายแถวพร้อมกัน (แถวไม่มีชื่อ = ข้าม) */
+/** เพิ่มของในทรัพย์สินหลายแถวพร้อมกัน (แถวไม่มีชื่อ = ข้าม) · ติ๊ก "ซื้อมาใหม่" → บันทึกค่าใช้จ่าย 1 รายการผูกกับของ (ทำในรายการเดียว) */
 export async function addInventoryItems(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const assetId = String(form.get("asset_id"));
@@ -715,18 +715,50 @@ export async function addInventoryItems(_: ActionState, form: FormData): Promise
   if (!rows.length) return { error: "ยังไม่ได้กรอกชื่อรายการ" };
   if (rows.some((r) => { const q = n(r.qty); const v = n(r.value); return (q != null && !(q > 0)) || (v != null && !(v >= 0)) || Number.isNaN(q) || Number.isNaN(v); }))
     return { error: "จำนวนต้องมากกว่า 0 และมูลค่าต้องไม่ติดลบ" };
-  const propertyId = await propertyIdOf(supabase, assetId);
-  if (!propertyId) return { error: "ไม่พบทรัพย์สิน" };
-  const { data: last } = await supabase.from("property_inventory_items").select("sort_order").eq("property_id", propertyId)
-    .is("deleted_at", null).order("sort_order", { ascending: false }).limit(1).maybeSingle();
-  const base = Number(last?.sort_order ?? 0);
-  const { error } = await supabase.from("property_inventory_items").insert(rows.map((r, i) => ({
-    property_id: propertyId, unit_label: t(r.unit_label), item_type: r.item_type || "OTHER", name: t(r.name),
-    qty: n(r.qty) ?? 1, brand: t(r.brand), serial_no: t(r.serial_no), value: n(r.value), notes: t(r.notes), sort_order: base + i + 1,
-  })));
+  let expense: Record<string, unknown> | null = null;
+  if (form.get("buy") === "on") {
+    const amount = num(form.get("buy_amount"));
+    if (!isPositive(amount)) return { error: "กรุณาใส่ยอดที่จ่าย (มากกว่า 0)" };
+    const e = parseEndpoint(str(form.get("buy_pay")));
+    if (!e) return { error: "กรุณาเลือกจ่ายจากบัญชี / บัตร" };
+    expense = {
+      date: str(form.get("buy_date")), description: str(form.get("buy_description")) ?? `ซื้อ${rows.map((r) => t(r.name)).join(", ")}`.slice(0, 200),
+      amount, currency: str(form.get("currency")) ?? "THB", expense_category: HOME_CATEGORY, property_cost_type: "OTHER",
+      paid_from_asset_id: bankId(e), paid_from_credit_card_id: cardId(e), notes: str(form.get("buy_notes")),
+    };
+  }
+  const { data, error } = await supabase.rpc("add_inventory_items", { p_asset_id: assetId, p_rows: rows, p_expense: expense });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty(assetId);
-  return { ok: `เพิ่ม ${rows.length} รายการแล้ว` };
+  if (expense) { revalidatePath("/income-expenses"); revalidatePath("/financial/cash", "layout"); }
+  return { ok: `เพิ่ม ${data} รายการแล้ว${expense ? " · บันทึกค่าใช้จ่ายแล้ว" : ""}` };
+}
+
+/** ขาย (ได้เงิน → รายได้อื่นของทรัพย์สิน) / ทิ้ง ของในทรัพย์สิน 1 รายการ */
+export async function disposeInventoryItem(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  const type = str(form.get("disposal_type")) ?? "SOLD";
+  const amount = type === "SOLD" ? num(form.get("amount")) : null;
+  if (amount != null && (Number.isNaN(amount) || amount < 0)) return { error: "จำนวนเงินไม่ถูกต้อง" };
+  const { data, error } = await supabase.rpc("dispose_inventory_item", {
+    p_item_id: String(form.get("item_id")), p_type: type, p_date: str(form.get("date")), p_amount: amount,
+    p_to_asset_id: type === "SOLD" && amount ? str(form.get("to_asset_id")) : null, p_notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(assetId);
+  if (data) { revalidatePath("/income-expenses"); revalidatePath("/financial/cash", "layout"); }
+  return { ok: data ? "บันทึกขายแล้ว · ลงรายได้ให้แล้ว" : type === "SOLD" ? "บันทึกขายแล้ว" : "บันทึกทิ้งแล้ว" };
+}
+
+/** ยกเลิกการขาย / ทิ้ง → ลบรายได้ที่สร้าง แล้วคืนของเข้ารายการ */
+export async function undoInventoryDisposal(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("undo_inventory_disposal", { p_item_id: String(form.get("item_id")) });
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(String(form.get("asset_id")));
+  revalidatePath("/income-expenses"); revalidatePath("/financial/cash", "layout");
+  return { ok: "ยกเลิกแล้ว" };
 }
 
 /** คัดลอกของทั้งห้อง → อีกห้อง (ห้องตกแต่งเหมือนกัน · แก้เฉพาะที่ต่างทีหลัง) */
@@ -738,7 +770,7 @@ export async function copyInventoryRoom(_: ActionState, form: FormData): Promise
   const propertyId = await propertyIdOf(supabase, assetId);
   if (!propertyId) return { error: "ไม่พบทรัพย์สิน" };
   let q = supabase.from("property_inventory_items").select("item_type,name,qty,brand,value,notes,sort_order")
-    .eq("property_id", propertyId).is("deleted_at", null).order("sort_order");
+    .eq("property_id", propertyId).is("deleted_at", null).is("disposal_type", null).order("sort_order");
   q = from == null ? q.is("unit_label", null) : q.eq("unit_label", from);
   const { data: src, error: e0 } = await q;
   if (e0) return { error: friendlyError(e0.message) };

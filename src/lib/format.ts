@@ -157,10 +157,14 @@ export const USAGE_LABEL: Record<string, string> = {
 /** ค่าน้ำไฟของสัญญาเช่า */
 /** ของในทรัพย์สิน / รายการส่งมอบสัญญาเช่า (ไม่นับใน Net Worth · ตกลง 2 พ.ย. 2026) */
 export const INVENTORY_TYPE_LABEL: Record<string, string> = {
-  ELECTRIC_METER: "มิเตอร์ไฟฟ้า", WATER_METER: "มิเตอร์น้ำ", KEY: "กุญแจ", KEYCARD: "คีย์การ์ด", PARKING_CARD: "บัตรจอดรถ",
-  REMOTE: "รีโมท", FURNITURE: "เฟอร์นิเจอร์", APPLIANCE: "เครื่องใช้ไฟฟ้า", OTHER: "อื่น ๆ",
+  FURNITURE: "เฟอร์นิเจอร์", APPLIANCE: "เครื่องใช้ไฟฟ้า", KEY: "กุญแจ", KEYCARD: "คีย์การ์ด", REMOTE: "รีโมท", PARKING_CARD: "บัตรจอดรถ",
+  OTHER: "อื่น ๆ", ELECTRIC_METER: "มิเตอร์ไฟฟ้า", WATER_METER: "มิเตอร์น้ำ",
 };
+/** มิเตอร์มาจาก "สาธารณูปโภค" (ไม่กรอกเป็นของในทรัพย์สิน · ตกลง 2 พ.ย. 2026) — รายการส่งมอบยังใช้ประเภทนี้ */
 export const INVENTORY_METER_TYPES = ["ELECTRIC_METER", "WATER_METER"];
+/** ประเภทที่เลือกได้ตอนเพิ่ม / แก้ของในทรัพย์สิน (ไม่มีมิเตอร์) */
+export const INVENTORY_PICK_TYPES = Object.entries(INVENTORY_TYPE_LABEL).filter(([k]) => !INVENTORY_METER_TYPES.includes(k)) as [string, string][];
+export const INVENTORY_DISPOSAL_LABEL: Record<string, string> = { SOLD: "ขาย", DISCARDED: "ทิ้ง / ชำรุดใช้ไม่ได้" };
 export const HANDOVER_OUT_LABEL: Record<string, string> = { OK: "ครบ / ปกติ", DAMAGED: "ชำรุด", MISSING: "สูญหาย" };
 /** ห้องว่าง (unit_label = NULL) ของของในทรัพย์สิน */
 export const COMMON_ROOM_LABEL = "ส่วนกลาง / ทั้งหลัง";
