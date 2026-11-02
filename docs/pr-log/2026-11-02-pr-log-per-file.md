@@ -1,4 +1,4 @@
-# #PR · บันทึก PR แยกไฟล์ละ PR (กัน merge conflict)
+# #283 · บันทึก PR แยกไฟล์ละ PR (กัน merge conflict)
 
 - วันที่: 2 พ.ย. 2026 · branch `docs/pr-log-per-file`
 - SQL: ไม่มี · เอกสารอย่างเดียว
