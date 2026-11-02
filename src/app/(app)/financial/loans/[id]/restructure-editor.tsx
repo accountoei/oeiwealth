@@ -4,11 +4,12 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { usePathname, useRouter } from "next/navigation";
 import { restructureSchedule, type ActionState } from "../actions";
-import { generateSchedule, PAYMENT_LABEL, SCHED_METHOD_LABEL, type SchedBasis, type SchedLine, type SchedMethod } from "@/lib/loan-schedule";
+import { generateSchedule, lastDueOf, PAYMENT_LABEL, periodsUntil, SCHED_METHOD_LABEL, type SchedBasis, type SchedMethod } from "@/lib/loan-schedule";
 import { money, thDate, numOrZero as num } from "@/lib/format";
 import { DayCountFields } from "./day-count";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
+import ScheduleGrid, { rowsToLines, toRows, type GridRow } from "../ScheduleGrid";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -28,14 +29,17 @@ export type OldSummary = { count: number; firstTotal: number; interest: number; 
  * คำนวณงวดที่เหลือใหม่ — ชำระเกิน / ผู้กู้ขอเปลี่ยนจำนวนงวด ค่างวด ดอกเบี้ย / พักชำระ
  * งวดที่รับแล้วเก็บไว้ · งวดที่ยังไม่ครบถูกแทนด้วยตารางใหม่ (ฐานข้อมูลทำให้ในครั้งเดียว: restructure_loan_schedule)
  * ดอกเบี้ยค้าง (งวดที่ถึงกำหนดแล้วแต่ยังไม่ได้รับดอก) เลือกรวมเข้างวดแรกของตารางใหม่ได้ ไม่ให้หายไป
+ * ผลคำนวณลงตารางที่แก้ได้ทีละช่อง (ScheduleGrid · ตกลง 2 พ.ย. 2026) · เปรียบเทียบเดิม / ใหม่ เปลี่ยนตามทันที
+ * paidThrough = งวดสุดท้ายที่รับครบแล้ว → งวดใหม่ต้องลงวันที่หลังวันนี้ (ฐานข้อมูลบังคับ)
  */
 export function RestructureEditor({ assetId, currency, outstanding, ratePct, startDefault, overdueInterest, old, methodGuess = "EQUAL_PAYMENT",
-  interestFrom, preset, periodsDefault }: {
+  interestFrom, preset, periodsDefault, paidThrough }: {
   assetId: string; currency: string; outstanding: number; ratePct: number; startDefault: string;
   overdueInterest: number; old: OldSummary; methodGuess?: SchedMethod; interestFrom?: string;
   /** เปิดมาจากคำถามหลังรับเงินต้นเกินงวด: end = ลดค่างวด (จบวันเดิม) · payment = จบเร็วขึ้น (ค่างวดเดิม)
    *  disburse = หลังให้กู้เพิ่ม · rate = หลังเปลี่ยนอัตราดอกเบี้ย (ยอด / อัตราใหม่ใส่ไว้ให้ จำนวนงวดเท่าเดิม) */
   preset?: "end" | "payment" | "disburse" | "rate"; periodsDefault?: number;
+  paidThrough?: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,13 +57,15 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
   const [first, setFirst] = useState(startDefault);
   const [carry, setCarry] = useState(overdueInterest > 0);
   const [note, setNote] = useState("");
-  const [lines, setLines] = useState<SchedLine[] | null>(null);
+  const [rows, setRows] = useState<GridRow[] | null>(null);
+  const [flat, setFlat] = useState(false);
   const [err, setErr] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(restructureSchedule, {});
   const cf = useConfirmSubmit();
   useEffect(() => { if (preset) box.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [preset]);
   // บันทึกแล้ว: เอา ?restructure= ออกจากลิงก์ (กด Refresh จะได้ไม่เปิดซ้ำ)
   useEffect(() => { if (state.ok && preset) router.replace(pathname, { scroll: false }); }, [state.ok, preset, pathname, router]);
+  const { lines, errors } = useMemo(() => (rows ? rowsToLines(rows) : { lines: null, errors: [] as string[] }), [rows]);
   const neu = useMemo(() => (lines ? {
     count: lines.length, firstTotal: lines[0] ? lines[0].principal + lines[0].interest : 0,
     interest: lines.reduce((s, l) => s + l.interest, 0), lastDue: lines.at(-1)?.due_date ?? null,
@@ -74,15 +80,19 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
     const r = generateSchedule({ method, basis, amount: num(amount), ratePct: num(rate), periods: num(periods), payment: num(payment),
       firstDue: first, everyMonths: Number(every), dayCount: actual ? "ACTUAL_365" : "MONTHLY", interestFrom: from || undefined });
     setErr(r.error ?? "");
-    if (r.error) { setLines(null); return; }
+    if (r.error) return;
     const out = r.lines.map((l) => ({ ...l }));
-    if (carry && overdueInterest > 0 && out[0]) {
-      out[0].interest = Math.round((out[0].interest + overdueInterest) * 100) / 100;
-      out[0].notes = `รวมดอกเบี้ยค้าง ${fmt2(overdueInterest)}`;
+    const next = toRows(out);
+    // ดอกเบี้ยค้างรวมในงวดแรก = ดอกเบี้ยที่ใส่เอง (จุดส้ม) → แก้แถวอื่นแล้วไม่ถูกคิดทับ
+    if (carry && overdueInterest > 0 && next[0]) {
+      next[0] = { ...next[0], interest: fmt2(Math.round((out[0].interest + overdueInterest) * 100) / 100), notes: `รวมดอกเบี้ยค้าง ${fmt2(overdueInterest)}`, manual: true };
     }
-    setLines(out);
+    setRows(next);
+    setFlat(method === "FLAT");
   };
-  const reset = () => setLines(null);
+  // เปลี่ยนค่าในสูตร: ตารางด้านล่างคงเดิมจนกด "คำนวณ" ใหม่ (ไม่ทิ้งที่แก้ในตาราง)
+  const early = !!(paidThrough && lines?.some((l) => l.due_date <= paidThrough));
+  const last = lastDueOf(first, num(periods), Number(every));
 
   return present(trigger, (
     <div ref={box} className="w-full scroll-mt-4 space-y-4 rounded-xl border border-amber-200 bg-amber-50/40 p-5">
@@ -106,41 +116,47 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
       <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
         <div className="grid gap-3 md:grid-cols-3">
           <label className="text-sm md:col-span-3">วิธีคิด
-            <select value={method} onChange={(e) => { setMethod(e.target.value as SchedMethod); reset(); }} className={input}>
+            <select value={method} onChange={(e) => setMethod(e.target.value as SchedMethod)} className={input}>
               {(Object.keys(SCHED_METHOD_LABEL) as SchedMethod[]).map((k) => <option key={k} value={k}>{SCHED_METHOD_LABEL[k]}</option>)}
             </select>
           </label>
           <label className="text-sm">เงินต้นที่เหลือ ({currency})
-            <input value={amount} onChange={(e) => { setAmount(e.target.value); reset(); }} inputMode="decimal" className={input} />
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className={input} />
             <span className="mt-0.5 block text-xs text-slate-500">ตั้งต้น = เงินต้นคงเหลือจริง {fmt2(outstanding)}</span>
           </label>
           <label className="text-sm">ดอกเบี้ย % ต่อปี
-            <input value={rate} onChange={(e) => { setRate(e.target.value); reset(); }} name="rate" inputMode="decimal" className={input} />
+            <input value={rate} onChange={(e) => setRate(e.target.value)} name="rate" inputMode="decimal" className={input} />
           </label>
           <label className="text-sm">ทุก
-            <select value={every} onChange={(e) => { setEvery(e.target.value); reset(); }} className={input}>
+            <select value={every} onChange={(e) => setEvery(e.target.value)} className={input}>
               <option value="1">ทุกเดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุกปี</option>
             </select>
           </label>
           {method !== "INTEREST_ONLY" && (
             <label className="text-sm">กำหนดจาก
-              <select value={basis} onChange={(e) => { setBasis(e.target.value as SchedBasis); reset(); }} className={input}>
+              <select value={basis} onChange={(e) => setBasis(e.target.value as SchedBasis)} className={input}>
                 <option value="PERIODS">ใส่จำนวนงวดที่เหลือ</option>
                 <option value="PAYMENT">ใส่จำนวนเงินที่ผ่อนต่องวด</option>
               </select>
             </label>
           )}
           {byPayment
-            ? <label className="text-sm">{PAYMENT_LABEL[method]}<input value={payment} onChange={(e) => { setPayment(e.target.value); reset(); }} inputMode="decimal" className={input} /></label>
-            : <label className="text-sm">จำนวนงวดที่เหลือ<input value={periods} onChange={(e) => { setPeriods(e.target.value); reset(); }} name="quantity" inputMode="decimal" className={input} /></label>}
+            ? <label className="text-sm">{PAYMENT_LABEL[method]}<input value={payment} onChange={(e) => setPayment(e.target.value)} inputMode="decimal" className={input} /></label>
+            : <>
+              <label className="text-sm">จำนวนงวดที่เหลือ<input value={periods} onChange={(e) => setPeriods(e.target.value)} name="quantity" inputMode="decimal" className={input} /></label>
+              <label className="text-sm">งวดสุดท้ายครบกำหนด
+                <input type="date" value={last} min={first} onChange={(e) => { const n = periodsUntil(first, e.target.value, Number(every)); if (n) setPeriods(String(n)); }} className={input} />
+                <span className="mt-0.5 block text-xs text-slate-500">ใส่ช่องไหนก็ได้ อีกช่องเปลี่ยนตาม</span>
+              </label>
+            </>}
           <label className="text-sm">ครบกำหนดงวดแรกของตารางใหม่
-            <input type="date" value={first} onChange={(e) => { setFirst(e.target.value); reset(); }} className={input} />
+            <input type="date" value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
           </label>
-          <DayCountFields actual={actual} setActual={(v) => { setActual(v); reset(); }} from={from}
-            setFrom={(v) => { setFrom(v); reset(); }} hint="ตั้งต้น = วันครบกำหนดงวดล่าสุดที่รับแล้ว" />
+          <DayCountFields actual={actual} setActual={setActual} from={from}
+            setFrom={setFrom} hint="ตั้งต้น = วันครบกำหนดงวดล่าสุดที่รับแล้ว" />
           {overdueInterest > 0 && (
             <label className="flex items-start gap-2 text-sm md:col-span-3">
-              <input type="checkbox" checked={carry} onChange={(e) => { setCarry(e.target.checked); reset(); }} className="mt-1" />
+              <input type="checkbox" checked={carry} onChange={(e) => setCarry(e.target.checked)} className="mt-1" />
               <span>รวมดอกเบี้ยค้าง {fmt2(overdueInterest)} เข้างวดแรกของตารางใหม่
                 <span className="block text-xs text-slate-500">ดอกเบี้ยของงวดที่ถึงกำหนดแล้วแต่ยังไม่ได้รับ — ไม่ติ๊ก = ยกให้ / ไม่เก็บ</span></span>
             </label>
@@ -150,12 +166,13 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={calc} className={obtn}>คำนวณ</button>
+          <button type="button" onClick={calc} className={obtn}>{rows ? "คำนวณใหม่ (แทนที่ตารางด้านล่าง)" : "คำนวณ"}</button>
           {err && <span className="text-sm text-red-600">{err}</span>}
+          {paidThrough && <span className="text-xs text-slate-500">งวดใหม่ต้องลงวันที่หลัง {thDate(paidThrough)} (งวดสุดท้ายที่รับครบแล้ว)</span>}
         </div>
       </section>
 
-      {lines && neu && (
+      {rows && lines && neu && (
         <>
           <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-4">
             <div className="mb-2 text-sm font-medium text-slate-800">เปรียบเทียบงวดที่เหลือ</div>
@@ -173,28 +190,18 @@ export function RestructureEditor({ assetId, currency, outstanding, ratePct, sta
             )}
           </section>
           <section className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="mb-2 text-sm font-medium text-slate-800">ตารางใหม่ {lines.length} งวด</div>
-            <div className="max-h-72 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white text-left text-xs text-slate-500">
-                  <tr><th className="py-1">#</th><th>ครบกำหนด</th><th className="text-right">เงินต้น</th><th className="text-right">ดอกเบี้ย</th><th className="text-right">รวม</th><th className="pl-3">หมายเหตุ</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {lines.map((l, i) => (
-                    <tr key={i}><td className="py-1">{i + 1}</td><td>{thDate(l.due_date)}</td>
-                      <td className="text-right tabular-nums">{money(l.principal)}</td><td className="text-right tabular-nums">{money(l.interest)}</td>
-                      <td className="text-right tabular-nums">{money(l.principal + l.interest)}</td><td className="pl-3 text-xs text-slate-500">{l.notes}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <div className="mb-2 text-sm font-medium text-slate-800">ตารางใหม่ {rows.length} งวด <span className="font-normal text-slate-500">· แก้ทีละช่องได้</span></div>
+            <ScheduleGrid rows={rows} setRows={setRows} currency={currency} amountLabel="เงินต้นที่เหลือ"
+              opts={{ amount: num(amount), ratePct: num(rate), dayCount: actual ? "ACTUAL_365" : "MONTHLY", interestFrom: from || interestFrom, flat }}
+              after={paidThrough ? { date: paidThrough, label: "งวดสุดท้ายที่รับครบแล้ว" } : undefined} />
           </section>
           <form action={action} className="flex flex-wrap items-center gap-3"
             onSubmit={cf.guard("ยืนยันปรับตาราง? งวดที่ยังไม่ได้รับจะถูกแทนด้วยตารางใหม่", {})}>{cf.dialog}
             <input type="hidden" name="asset_id" value={assetId} />
             <input type="hidden" name="lines" value={JSON.stringify(lines)} />
             <input type="hidden" name="note" value={note} />
-            <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : `ยืนยันปรับตาราง (${lines.length} งวด)`}</button>
+            <button disabled={pending || lines.length === 0 || errors.length > 0 || early} className={btn}>{pending ? "กำลังบันทึก…" : `ยืนยันปรับตาราง (${lines.length} งวด)`}</button>
+            {errors.length > 0 && <span className="text-sm text-red-600">{errors[0]}{errors.length > 1 ? ` (และอีก ${errors.length - 1} จุด)` : ""}</span>}
             {state.error && <span className="text-sm text-red-600">{state.error}</span>}
             <Flash on={state} as="span" className="text-sm text-emerald-700" />
           </form>

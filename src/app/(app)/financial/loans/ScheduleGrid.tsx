@@ -49,8 +49,10 @@ function recalc(rows: GridRow[], from: number, opts: RecalcOpts): GridRow[] {
 }
 
 const cell = "w-full rounded border border-slate-300 px-2 py-1 text-sm";
+// ช่องที่ผิด: ใช้ style (globals.css กำหนดสีขอบ / พื้นของ input ไว้ ทับ class ของ Tailwind)
+const bad = (on: boolean) => (on ? { borderColor: "#ef4444", backgroundColor: "#fef2f2", color: "#b91c1c" } : undefined);
 
-export default function ScheduleGrid({ rows, setRows, opts, currency, opening, controls }: {
+export default function ScheduleGrid({ rows, setRows, opts, currency, opening, controls, amountLabel = "เงินต้นตามสัญญา", after }: {
   rows: GridRow[]; setRows: (rows: GridRow[]) => void;
   /** ใช้คำนวณดอกเบี้ยใหม่ · amount = เงินต้นตามสัญญา (ยอดคงเหลือ = amount − เงินต้นงวดก่อนหน้า) */
   opts: RecalcOpts;
@@ -59,6 +61,10 @@ export default function ScheduleGrid({ rows, setRows, opts, currency, opening, c
   opening?: { date: string; principal: number; recorded?: number | null };
   /** ช่องอัตราดอกเบี้ย / วิธีนับดอก (แสดงบนหัวตาราง) */
   controls?: ReactNode;
+  /** ชื่อยอดที่เงินต้นรวมต้องเท่ากัน (คำนวณงวดที่เหลือใหม่ = เงินต้นที่เหลือ) */
+  amountLabel?: string;
+  /** ทุกงวดต้องลงวันที่หลังวันนี้ (คำนวณงวดที่เหลือใหม่: งวดสุดท้ายที่รับครบแล้ว) */
+  after?: { date: string; label: string };
 }) {
   const [auto, setAuto] = useState(true);
   const set = (next: GridRow[], from: number | null) => setRows(auto && from != null ? recalc(next, from, opts) : next);
@@ -98,6 +104,8 @@ export default function ScheduleGrid({ rows, setRows, opts, currency, opening, c
   const lines = rows.filter((r) => r.due_date).map((r) => ({ due_date: r.due_date, principal: parse(r.principal) || 0 }));
   const o = opening ? openingFromSchedule(opening.principal, lines, opening.date) : null;
   const unordered = rows.some((r, i) => i > 0 && r.due_date && rows[i - 1].due_date && r.due_date < rows[i - 1].due_date);
+  const tooEarly = (d: string) => !!(after && d && d <= after.date);
+  const early = rows.filter((r) => tooEarly(r.due_date)).length;
 
   return (
     <div className="space-y-2">
@@ -122,9 +130,9 @@ export default function ScheduleGrid({ rows, setRows, opts, currency, opening, c
                 <tr key={r.key} className={pre ? "bg-slate-50" : undefined}>
                   <td className="px-2 py-1 text-xs text-slate-500">{i + 1}{pre && <span className="block whitespace-nowrap text-[10px] text-slate-400">ก่อน Go-live</span>}</td>
                   <td className="px-1 py-1"><input type="date" value={r.due_date} onChange={(e) => onDate(i, e.target.value)} onBlur={sortDates} aria-label={`วันครบกำหนดงวดที่ ${i + 1}`}
-                    className={`${cell} min-w-[9rem] ${r.due_date ? "" : "border-red-300"}`} /></td>
+                    style={bad(!r.due_date || tooEarly(r.due_date))} className={`${cell} min-w-[9rem]`} /></td>
                   <td className="px-1 py-1"><input value={r.principal} onChange={(e) => onPrincipal(i, e.target.value)} inputMode="decimal" aria-label={`เงินต้นงวดที่ ${i + 1}`}
-                    className={`${cell} min-w-[7rem] text-right ${Number.isNaN(p) ? "border-red-300" : ""}`} /></td>
+                    style={bad(Number.isNaN(p))} className={`${cell} min-w-[7rem] text-right`} /></td>
                   <td className="px-1 py-1">
                     <div className="flex items-center gap-1">
                       {r.manual
@@ -132,7 +140,7 @@ export default function ScheduleGrid({ rows, setRows, opts, currency, opening, c
                             className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500" aria-label="ยกเลิกดอกเบี้ยที่พิมพ์เอง" />
                         : <span className="h-2.5 w-2.5 shrink-0" />}
                       <input value={r.interest} onChange={(e) => onInterest(i, e.target.value)} inputMode="decimal" aria-label={`ดอกเบี้ยงวดที่ ${i + 1}`}
-                        className={`${cell} min-w-[6.5rem] text-right ${Number.isNaN(it) ? "border-red-300" : ""}`} />
+                        style={bad(Number.isNaN(it))} className={`${cell} min-w-[6.5rem] text-right`} />
                     </div>
                   </td>
                   <td className="px-1 py-1 text-right">{money((p || 0) + (it || 0))}</td>
@@ -163,8 +171,9 @@ export default function ScheduleGrid({ rows, setRows, opts, currency, opening, c
         <li className="text-slate-500">ดอกเบี้ยคิดใหม่ = เงินต้นคงเหลือ × {opts.ratePct || 0}% ต่อปี × {opts.dayCount === "ACTUAL_365" ? "จำนวนวัน ÷ 365" : "จำนวนเดือน ÷ 12"}
           {opts.flat ? " (ดอกเบี้ยคงที่: คิดจากเงินต้นตามสัญญา)" : ""} · <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> = ดอกเบี้ยที่พิมพ์เอง ระบบไม่เขียนทับ</li>
         {rows.length > 0 && (Math.abs(diffP) > 0.005
-          ? <li className="text-red-600">เงินต้นรวม {money(totP)} ไม่เท่ากับเงินต้นตามสัญญา {money(opts.amount, currency)} (ต่าง {money(Math.abs(diffP))}{diffP > 0 ? " เกิน" : " ขาด"}) — สถานะ &ldquo;รับแล้ว&rdquo; อาจคลาดเคลื่อน</li>
-          : <li className="text-emerald-700">เงินต้นรวมเท่ากับเงินต้นตามสัญญา {money(opts.amount, currency)}</li>)}
+          ? <li className="text-red-600">เงินต้นรวม {money(totP)} ไม่เท่ากับ{amountLabel} {money(opts.amount, currency)} (ต่าง {money(Math.abs(diffP))}{diffP > 0 ? " เกิน" : " ขาด"}) — สถานะ &ldquo;รับแล้ว&rdquo; อาจคลาดเคลื่อน</li>
+          : <li className="text-emerald-700">เงินต้นรวมเท่ากับ{amountLabel} {money(opts.amount, currency)}</li>)}
+        {early > 0 && <li className="text-red-600">{early} งวดลงวันที่ไม่หลัง {thDate(after!.date)} ({after!.label}) — แก้วันที่ก่อนบันทึก</li>}
         {o && rows.length > 0 && (
           <li className={o.outstanding < -0.005 || (opening?.recorded != null && Math.abs(opening.recorded - o.outstanding) > 0.005) ? "text-red-600" : "text-slate-600"}>
             ยอดคงเหลือ ณ วันตั้งต้น ({thDate(opening!.date)}) ตามตาราง: {money(opening!.principal)} − เงินต้น {o.count} งวดที่ครบกำหนดถึงวันนั้น {money(o.paid)} = <b>{money(o.outstanding, currency)}</b>

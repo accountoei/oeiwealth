@@ -310,6 +310,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <RestructureEditor assetId={id} currency={l.currency} outstanding={Number(l.outstanding_principal ?? 0)}
               ratePct={Number(l.interest_rate ?? 0)}
               startDefault={restartAt} methodGuess={methodGuess} interestFrom={prevDue} preset={preset} periodsDefault={periodsLeft}
+              paidThrough={sched.filter((x) => Number(x.total_remaining) <= 0.005).at(-1)?.due_date ?? null}
               overdueInterest={Math.round(open.filter((x) => x.due_date <= today).reduce((s, x) => s + Number(x.interest_remaining), 0) * 100) / 100}
               old={{ count: open.length, firstTotal: Number(nextDue?.total_due ?? open[0]?.total_due ?? 0),
                 interest: open.reduce((s, x) => s + Number(x.interest_remaining), 0), lastDue: open.at(-1)?.due_date ?? null }} />
