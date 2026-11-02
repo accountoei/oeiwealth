@@ -2,7 +2,7 @@
 
 - วันที่: 2 พ.ย. 2026 · branch `feat/internal-loan-borrower-side`
 - SQL: `supabase/migrations/20261102003000_internal_loan_borrower_side.sql` · ไม่มี Edge Function
-- ทดสอบ: ALL SCENARIO TESTS PASSED (1039 checks) · tsc / eslint / build ผ่าน
+- ทดสอบ: ALL SCENARIO TESTS PASSED (1056 checks) · tsc / eslint / build ผ่าน
 - ต่อจาก: #279 (เงินกู้ภายในครอบครัว)
 
 ## เปลี่ยนอะไร
