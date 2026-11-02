@@ -1,7 +1,7 @@
 # #285 · สัญญาเช่า: รายละเอียดสำหรับพิมพ์สัญญา · อายุสัญญา · เงินประกันตามเดือน · ต่อสัญญา
 
 - วันที่: 2 พ.ย. 2026 · branch `feat/lease-contract-details`
-- SQL: `supabase/migrations/20261102001100_lease_contract_details.sql` (รันก่อน Merge)
+- SQL: `supabase/migrations/20261102000800_lease_contract_details.sql` (รันก่อน Merge)
 - ทดสอบ: ALL SCENARIO TESTS PASSED (1010 checks) · tsc / eslint (0 errors) / build ผ่าน
 
 ## เปลี่ยนอะไร
