@@ -408,18 +408,33 @@ function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
   );
 }
 
-/** pop up ของกล่องสัดส่วน: หมวดละตาราง (ชื่อรายการ · % ในหมวด · มูลค่า) + แถวรวมหมวด · หมวดที่ไม่มีรายการไม่แสดง · ต่อด้วยหนี้สิน */
+/** pop up ของกล่องสัดส่วน (ตกลง 2 พ.ย. 2026 · แบบ ก.): หมวดละบรรทัดเหมือนในกล่อง กดหมวดเพื่อกางรายการใต้บรรทัด
+ *  (ชื่อรายการ · % ในหมวด · มูลค่า) · หมวดที่ไม่มีรายการไม่แสดง · ต่อด้วยหนี้สิน · ใช้ <details> → กางได้โดยไม่ต้องมี JavaScript */
 function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: { g: Grouped; showShare: boolean }) {
   const groups = GROUP.filter(([k]) => byKey[k]?.length);
   if (!groups.length && !liabs.length) return <p className="text-sm text-slate-500">ยังไม่มีรายการ</p>;
+  const row = (key: string, color: string, label: string, items: Item[], sum: number, pct?: number, negative?: boolean) => (
+    <details key={key} className="group border-b border-slate-100">
+      <summary className="-mx-2 flex cursor-pointer list-none items-start gap-1.5 rounded-md px-2 py-2 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+        <span className="mt-0.5 text-xs text-slate-400 transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
+        <div className="min-w-0 flex-1"><AllocRow color={color} label={label} pct={pct} value={negative ? -sum : sum} count={items.length} /></div>
+      </summary>
+      <div className="mb-3 ml-[1.125rem] rounded-lg bg-slate-50 px-3 py-2">
+        <ItemTable items={items} sum={sum} showShare={showShare} negative={negative} />
+      </div>
+    </details>
+  );
   return (
-    <div className="space-y-5">
-      {groups.map(([k, label]) => {
-        const list = byKey[k];
-        const v = sumItems(list);
-        return <ItemTable key={k} color={GROUP_COLOR[k]} label={label} pct={total ? (v / total) * 100 : 0} items={list} sum={v} showShare={showShare} />;
-      })}
-      {liabs.length > 0 && <ItemTable color={LIAB_COLOR} label="หนี้สิน" items={liabs} sum={liabTotal} showShare={showShare} negative />}
+    <div className="space-y-2">
+      <div className="text-sm">
+        {groups.map(([k, label]) => {
+          const list = byKey[k];
+          const v = sumItems(list);
+          return row(k, GROUP_COLOR[k], label, list, v, total ? (v / total) * 100 : 0);
+        })}
+        {liabs.length > 0 && row("liab", LIAB_COLOR, "หนี้สิน", liabs, liabTotal, undefined, true)}
+      </div>
+      <p className="text-xs text-slate-500">กดหมวดที่มี ▸ เพื่อดูรายการ · % ในบรรทัดหมวด = ของสินทรัพย์รวม · % ในรายการ = ของหมวดนั้น</p>
     </div>
   );
 }
@@ -443,36 +458,26 @@ function AllocRow({ color, label, pct, value, count }: { color: string; label: s
   );
 }
 
-function ItemTable({ color, label, pct, items, sum, showShare, negative }: {
-  color: string; label: string; pct?: number; items: Item[]; sum: number; showShare: boolean; negative?: boolean;
-}) {
+/** รายการในหมวดที่กาง: ชื่อ · % ในหมวด · มูลค่า (ยอดรวมอยู่ที่บรรทัดหมวดแล้ว) */
+function ItemTable({ items, sum, showShare, negative }: { items: Item[]; sum: number; showShare: boolean; negative?: boolean }) {
   const money = (v: number) => <span className={negative ? "text-red-700" : ""}>{negative ? "\u2212" : ""}{baht(v)}</span>;
   return (
-    <section>
-      <h3 className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-800">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />{label}
-        <span className="text-xs font-normal text-slate-400">({items.length}){pct != null ? ` · ${pct.toFixed(1)}% ของสินทรัพย์รวม` : ""}</span>
-      </h3>
-      {/* table-fixed + กว้างคอลัมน์คงที่ → คอลัมน์ % และมูลค่าตรงกันทุกหมวด */}
-      <table className="w-full table-fixed text-sm">
-        <colgroup><col /><col className="w-14 sm:w-24" /><col className="w-[6.5rem] sm:w-36" /></colgroup>
-        <tbody className="divide-y divide-slate-100">
-          {items.map((i, k) => (
-            <tr key={k}>
-              <td className="py-1.5 pr-3 [overflow-wrap:anywhere]">{i.item_name}{showShare && i.share_note
-                ? <span className="text-xs text-slate-400"> · {i.share_note}</span>
-                : showShare && i.ownership_percent && Number(i.ownership_percent) < 100
-                  ? <span className="text-xs text-slate-400"> · ถือ {Number(Number(i.ownership_percent).toFixed(2))}%</span> : null}</td>
-              <td className="py-1.5 pr-3 text-right text-xs tabular-nums text-slate-500">{sum ? `${((Number(i.base_value) * 100) / sum).toFixed(1)}%` : ""}</td>
-              <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(Number(i.base_value))}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot className="border-t border-slate-200 font-medium">
-          <tr><td className="py-1.5">รวม{label}</td><td></td><td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(sum)}</td></tr>
-        </tfoot>
-      </table>
-    </section>
+    // table-fixed + กว้างคอลัมน์คงที่ → คอลัมน์ % และมูลค่าตรงกันทุกหมวด
+    <table className="w-full table-fixed text-sm">
+      <colgroup><col /><col className="w-14 sm:w-24" /><col className="w-[6.5rem] sm:w-36" /></colgroup>
+      <tbody className="divide-y divide-slate-100">
+        {items.map((i, k) => (
+          <tr key={k}>
+            <td className="py-1 pr-3 [overflow-wrap:anywhere]">{i.item_name}{showShare && i.share_note
+              ? <span className="text-xs text-slate-400"> · {i.share_note}</span>
+              : showShare && i.ownership_percent && Number(i.ownership_percent) < 100
+                ? <span className="text-xs text-slate-400"> · ถือ {Number(Number(i.ownership_percent).toFixed(2))}%</span> : null}</td>
+            <td className="py-1 pr-3 text-right text-xs tabular-nums text-slate-500">{sum ? `${((Number(i.base_value) * 100) / sum).toFixed(1)}%` : ""}</td>
+            <td className="py-1 text-right tabular-nums whitespace-nowrap">{money(Number(i.base_value))}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
