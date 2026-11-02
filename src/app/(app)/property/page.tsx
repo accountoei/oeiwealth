@@ -326,6 +326,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   });
   const valueRows: ValueRow[] = active.map((p) => ({
     id: p.asset_id, name: p.assets.name, typeLabel: PROPERTY_TYPE_LABEL[p.property_type] ?? p.property_type, currency: p.assets.currency,
+    type: p.property_type, usage: p.usage_type,
     value: p.assets.current_value == null ? null : Number(p.assets.current_value), date: p.assets.current_value_date,
     defaultUnit: marketDefaultUnit(p.property_type), areaSqWa: p.land_area_sq_wa != null ? Number(p.land_area_sq_wa) : null,
     market: marketOf.get(p.asset_id) ?? null, factor: thb(1, p.assets.currency) * share(p.asset_id), minPrice: minOf.get(p.asset_id) ?? null,
@@ -391,7 +392,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
 
       <TabPanel id="income">
         <div className="space-y-4">
-          <RentBatch key={`r${ym}`} rows={rentRows} banks={banks} defaultDate={defaultDate} today={today} ym={ym} canWrite={canWrite} />
+          <RentBatch key={`r${ym}`} rows={rentRows} banks={banks} defaultDate={defaultDate} today={today} minDate={family?.go_live_date ?? ""} canWrite={canWrite} />
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
             <h2 className="px-4 pt-4 font-medium text-slate-900">รายได้จากทรัพย์สินที่บันทึกแล้ว · {thMonth(start)}</h2>
             <table className="mt-2 w-full min-w-[40rem] text-sm">

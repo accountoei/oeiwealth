@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
-import { addDays, diffText, marketStale, money, thDate } from "@/lib/format";
+import { addDays, diffText, marketStale, money, PROPERTY_TYPE_LABEL, thDate, USAGE_LABEL } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import ModalButton from "@/components/ModalButton";
 import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm";
@@ -12,7 +12,7 @@ import { splitByArea } from "./valueParts";
 import Flash from "@/components/Flash";
 
 export type ValueRow = {
-  id: string; name: string; typeLabel: string; currency: string; value: number | null; date: string | null;
+  id: string; name: string; typeLabel: string; /** ตัวกรองด้านบน */ type: string; usage: string; currency: string; value: number | null; date: string | null;
   defaultUnit: string; areaSqWa: number | null; market: MarketValuation | null;
   /** อัตราเป็นบาท × สัดส่วนของสมาชิกที่เลือก → ยอดรวมท้ายตาราง */ factor: number;
   /** ราคาขายขั้นต่ำที่คุ้ม (ต้นทุน + ดอกเบี้ย − ค่าเสื่อม + ค่าใช้จ่ายขาย) · null = ยังไม่มีต้นทุน */ minPrice: number | null;
@@ -26,7 +26,8 @@ const filled = (s: string | undefined) => (s ?? "").trim() !== "";
 
 /**
  * แท็บ อัปเดตมูลค่า (ตกลง 28 ต.ค. 2026) — มูลค่าใน Net Worth ของทุกทรัพย์สินในตารางเดียว + ราคาตลาด (อ้างอิง · ไม่นับใน Net Worth)
- *   กรอกมูลค่าใหม่เฉพาะแถวที่เปลี่ยน (ช่องว่าง = ไม่บันทึก) · วันที่ / วิธีเดียวทั้งชุด · ปุ่ม "ราคาตลาด" ของแต่ละแถวบันทึกแยก
+ *   กรอกมูลค่าใหม่เฉพาะแถวที่เปลี่ยน (ช่องว่าง = ไม่บันทึก) · วันที่เดียวทั้งชุด · ราคาตลาดของแต่ละแถวบันทึกแยก
+ *   ด้านบน (2 พ.ย. 2026): ตัวกรองประเภท / การใช้งาน แทนช่องวิธี / หมายเหตุ → บันทึกเป็น "ประมาณเอง" (ราคาประเมิน / หมายเหตุ บันทึกที่หน้าทรัพย์สิน)
  *   ทรัพย์สินที่มีส่วนประกอบ (29 ต.ค. 2026): กด "รายแถว" กางที่ดิน / อาคารในตาราง · กรอกเฉพาะแถวที่เปลี่ยน (ว่าง = เท่าเดิม)
  *   กรอกยอดรวม (30 ต.ค. 2026 · กติกาเดียวกับหน้าทรัพย์สิน) → สิ่งปลูกสร้างเท่าเดิม / ตามที่พิมพ์ · ที่ดินได้ส่วนที่เหลือ แบ่งตามเนื้อที่ · เห็นรายแถวทันที
  */
@@ -38,14 +39,14 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
   const router = useRouter();
   const cf = useConfirmSubmit();
   const [date, setDate] = useState(today);
-  const [method, setMethod] = useState("USER_ESTIMATE");
-  const [notes, setNotes] = useState("");
+  const [ty, setTy] = useState("");
+  const [us, setUs] = useState("");
   const [nv, setNv] = useState<Record<string, string>>({});
   const [pv, setPv] = useState<Record<string, Record<string, string>>>({});   // asset → ส่วนประกอบ → มูลค่าใหม่
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, form) => {
     const r = await batchPropertyValues(prev, form);
-    if (r.ok) { setNv({}); setPv({}); setNotes(""); router.refresh(); }
+    if (r.ok) { setNv({}); setPv({}); router.refresh(); }
     return r;
   }, {});
 
@@ -94,8 +95,13 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
   const setSub = (r: ValueRow, pid: string, v: string) => setPv({ ...pv, [r.id]: { ...(pv[r.id] ?? {}), [pid]: v } });
   const onSubmit = cf.guard(`บันทึกมูลค่าใหม่ ${chosen.length} รายการ ณ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   // ยอดรวม (บาท · ตามสัดส่วนของสมาชิกที่เลือก) · ราคาตลาดรวมเฉพาะรายการที่ประเมินแล้ว
-  const nwTotal = rows.reduce((t, r) => t + Number(r.value ?? 0) * r.factor, 0);
-  const valued = rows.filter((r) => r.market);
+  //   ตามตัวกรองด้านบน · ตัวเลขที่กรอกไว้ในแถวที่ถูกกรองออกยังอยู่และบันทึกด้วย (หน้าต่างยืนยันแสดงชื่อทุกรายการ)
+  const shown = rows.filter((r) => (!ty || r.type === ty) && (!us || r.usage === us));
+  const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
+  const typeOpts = [...new Set(rows.map((r) => r.type))];
+  const usageOpts = [...new Set(rows.map((r) => r.usage))];
+  const nwTotal = shown.reduce((t, r) => t + Number(r.value ?? 0) * r.factor, 0);
+  const valued = shown.filter((r) => r.market);
   const mkTotal = valued.reduce((t, r) => t + Number(r.market!.market_value) * r.factor, 0);
   const nwOfValued = valued.reduce((t, r) => t + Number(r.value ?? 0) * r.factor, 0);
 
@@ -106,13 +112,16 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
     <div className="space-y-3">
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2">วิธี
-            <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
-              <option value="USER_ESTIMATE">ประมาณเอง</option>
-              <option value="APPRAISAL">ราคาประเมิน (ราชการ / ธนาคาร)</option>
+          <label className="flex items-center gap-2">ประเภท
+            <select value={ty} onChange={(e) => setTy(e.target.value)} className={small}>
+              <option value="">ทั้งหมด</option>
+              {typeOpts.map((k) => <option key={k} value={k}>{PROPERTY_TYPE_LABEL[k] ?? k}</option>)}
             </select></label>
-          <label className="flex min-w-[12rem] flex-1 items-center gap-2">หมายเหตุ
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="เช่น ราคาประเมินราชการรอบใหม่" className={`w-full ${small}`} /></label>
+          <label className="flex items-center gap-2">การใช้งาน
+            <select value={us} onChange={(e) => setUs(e.target.value)} className={small}>
+              <option value="">ทั้งหมด</option>
+              {usageOpts.map((k) => <option key={k} value={k}>{USAGE_LABEL[k] ?? k}</option>)}
+            </select></label>
           <label className="ml-auto flex items-center gap-2">มูลค่า ณ วันที่
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
           </label>
@@ -136,8 +145,8 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีทรัพย์สินที่ถืออยู่</td></tr>}
-            {rows.map((r) => {
+            {shown.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">{rows.length ? "ไม่มีทรัพย์สินตามตัวกรอง" : "ไม่มีทรัพย์สินที่ถืออยู่"}</td></tr>}
+            {shown.map((r) => {
               const m = r.market;
               const v = Number(r.value ?? 0);
               const nwStale = !r.date || r.date < addDays(today, -365);
@@ -217,7 +226,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
               );
             })}
           </tbody>
-          {rows.length > 0 && (
+          {shown.length > 0 && (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
               <tr className="align-top">
                 <td className="px-3 py-2">รวม (THB)</td>
@@ -225,10 +234,10 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
                 <td></td>
                 <td></td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{valued.length ? money(mkTotal, "THB", 0) : "-"}
-                  {valued.length < rows.length && <div className="text-xs font-normal text-amber-700">ยังไม่ประเมิน {rows.length - valued.length} รายการ</div>}</td>
+                  {valued.length < shown.length && <div className="text-xs font-normal text-amber-700">ยังไม่ประเมิน {shown.length - valued.length} รายการ</div>}</td>
                 <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${mkTotal >= nwOfValued ? "text-emerald-700" : "text-red-700"}`}>
                   {valued.length ? diffText(mkTotal - nwOfValued, nwOfValued) : "-"}
-                  {valued.length > 0 && valued.length < rows.length && <div className="text-xs font-normal text-slate-400">เทียบเฉพาะ {valued.length} รายการที่ประเมินแล้ว</div>}</td>
+                  {valued.length > 0 && valued.length < shown.length && <div className="text-xs font-normal text-slate-400">เทียบเฉพาะ {valued.length} รายการที่ประเมินแล้ว</div>}</td>
               </tr>
             </tfoot>
           )}
@@ -238,12 +247,12 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
       {canWrite && (
         <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="valuation_method" value={method} />
-          <input type="hidden" name="notes" value={notes} />
+          <input type="hidden" name="valuation_method" value="USER_ESTIMATE" />
           <input type="hidden" name="rows" value={JSON.stringify(payload)} />
           <button disabled={pending || chosen.length === 0 || incomplete.length > 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
             {pending ? "กำลังบันทึก…" : `บันทึกมูลค่า ${chosen.length} รายการ ณ ${thDate(date)}`}
           </button>
+          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้แต่ถูกตัวกรองซ่อน</span>}
           {chosen.length > 0 && !pending && (
             <button type="button" onClick={() => { setNv({}); setPv({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
           )}
