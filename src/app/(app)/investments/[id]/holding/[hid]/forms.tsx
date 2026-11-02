@@ -32,43 +32,37 @@ export type Fcn = {
 };
 
 
-export function FcnForm({ assetId, holdingId, fcn, defaultPrincipal }: { assetId: string; holdingId: string; fcn: Fcn | null; defaultPrincipal?: number | null }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(!fcn);
-  const [state, action, pending] = useActionState<ActionState, FormData>(saveFcn, {});
+/** ช่องรายละเอียด FCN / Structured Product — อยู่ในฟอร์ม "แก้ไขข้อมูล" (HoldingInfoForm) บันทึกพร้อมกันด้วยปุ่มเดียว */
+function FcnFields({ assetId, holdingId, fcn, defaultPrincipal, label }: { assetId: string; holdingId: string; fcn: Fcn | null; defaultPrincipal?: number | null; label: string }) {
   const [knock, setKnock] = useState(!!fcn?.knock_in_occurred);
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-sm text-slate-600 underline")}>แก้รายละเอียด</button>;
-  if (!open) return trigger;
   const v = (x: number | null | undefined) => (x == null ? "" : String(Number(x)));
-  return present(trigger, (
-    <form action={action} className="space-y-3">
+  return (
+    <div className="space-y-2 rounded-lg bg-slate-50 p-3">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="holding_id" value={holdingId} />
       {fcn && <input type="hidden" name="fcn_id" value={fcn.id} />}
+      <div className="text-sm font-medium text-slate-800">รายละเอียด {label}</div>
       <div className="grid gap-3 md:grid-cols-4">
-        <label className="text-sm">ผู้ออก (Issuer) *<input name="issuer" required defaultValue={fcn?.issuer ?? ""} className={input} /></label>
-        <label className="text-sm">เงินต้น *<input name="principal" required inputMode="decimal" defaultValue={v(fcn?.principal ?? defaultPrincipal)} className={input} /></label>
-        <label className="text-sm">วันที่ซื้อ (Trade)<input name="trade_date" type="date" defaultValue={fcn?.trade_date ?? ""} className={input} /></label>
-        <label className="text-sm">วันออก (Issue)<input name="issue_date" type="date" defaultValue={fcn?.issue_date ?? ""} className={input} /></label>
-        <label className="text-sm">Coupon (% ต่อปี)<input name="coupon_rate" inputMode="decimal" defaultValue={v(fcn?.coupon_rate)} className={input} /></label>
-        <label className="text-sm">จ่าย Coupon
+        <label className="block text-sm text-slate-700">ผู้ออก (Issuer) *<input name="issuer" defaultValue={fcn?.issuer ?? ""} className={input} /></label>
+        <label className="block text-sm text-slate-700">เงินต้น *<input name="principal" inputMode="decimal" defaultValue={v(fcn?.principal ?? defaultPrincipal)} className={input} /></label>
+        <label className="block text-sm text-slate-700">วันที่ซื้อ (Trade)<input name="trade_date" type="date" defaultValue={fcn?.trade_date ?? ""} className={input} /></label>
+        <label className="block text-sm text-slate-700">วันออก (Issue)<input name="issue_date" type="date" defaultValue={fcn?.issue_date ?? ""} className={input} /></label>
+        <label className="block text-sm text-slate-700">Coupon (% ต่อปี)<input name="coupon_rate" inputMode="decimal" data-money="off" defaultValue={v(fcn?.coupon_rate)} className={input} /></label>
+        <label className="block text-sm text-slate-700">จ่าย Coupon
           <select name="coupon_frequency" defaultValue={fcn?.coupon_frequency ?? "MONTHLY"} className={input}>
             <option value="">—</option>{Object.entries(COUPON_FREQ_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </label>
-        <label className="text-sm">Strike (% ของราคาเริ่มต้น)<input name="strike_level" inputMode="decimal" defaultValue={v(fcn?.strike_level)} className={input} /></label>
-        <label className="text-sm">Knock-in / Barrier (%)<input name="barrier_level" inputMode="decimal" defaultValue={v(fcn?.barrier_level)} className={input} /></label>
-        <label className="text-sm">Autocall (%)<input name="autocall_level" inputMode="decimal" defaultValue={v(fcn?.autocall_level)} className={input} /></label>
-        <label className="text-sm">รอบสังเกตราคา<input name="observation_frequency" placeholder="เช่น ทุกเดือน / ทุกวัน" defaultValue={fcn?.observation_frequency ?? ""} className={input} /></label>
+        <label className="block text-sm text-slate-700">Strike (% ของราคาเริ่มต้น)<input name="strike_level" inputMode="decimal" data-money="off" defaultValue={v(fcn?.strike_level)} className={input} /></label>
+        <label className="block text-sm text-slate-700">Knock-in / Barrier (%)<input name="barrier_level" inputMode="decimal" data-money="off" defaultValue={v(fcn?.barrier_level)} className={input} /></label>
+        <label className="block text-sm text-slate-700">Autocall (%)<input name="autocall_level" inputMode="decimal" data-money="off" defaultValue={v(fcn?.autocall_level)} className={input} /></label>
+        <label className="block text-sm text-slate-700">รอบสังเกตราคา<input name="observation_frequency" placeholder="เช่น ทุกเดือน / ทุกวัน" defaultValue={fcn?.observation_frequency ?? ""} className={input} /></label>
         <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" name="knock_in_occurred" checked={knock} onChange={(e) => setKnock(e.target.checked)} /> เกิด Knock-in แล้ว</label>
-        {knock && <label className="text-sm">วันที่ Knock-in<input name="knock_in_date" type="date" defaultValue={fcn?.knock_in_date ?? ""} className={input} /></label>}
+        {knock && <label className="block text-sm text-slate-700">วันที่ Knock-in<input name="knock_in_date" type="date" defaultValue={fcn?.knock_in_date ?? ""} className={input} /></label>}
       </div>
-      <div className="flex items-center gap-3">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกรายละเอียด"}</button>
-        {fcn && <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>}
-        <Msg s={state} />
-      </div>
-    </form>
-  ));
+      <p className="text-xs text-slate-500">ใส่ผู้ออก + เงินต้น + Coupon (และวันครบกำหนดด้านบน) → งวด Coupon ขึ้นในแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; หน้า Investments · วันรับนับย้อนจากวันครบกำหนด · ยังไม่รู้รายละเอียด เว้นว่างไว้ได้</p>
+    </div>
+  );
 }
 
 export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: string }) {
@@ -161,7 +155,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
 }
 
 /** แก้ไขข้อมูลหลักทรัพย์ (ใช้ใน pop up "แก้ไขข้อมูล") */
-export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, income }: {
+export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, income, structured }: {
   id: string; paths: string[]; v: { name: string; symbol: string | null; maturity_date: string | null; notes: string | null; auto_price?: boolean; price_ref?: string | null };
   /** หุ้นกู้ / อื่น ๆ: ข้อมูลตารางรับดอกเบี้ย (เงินต้น · อัตรา · ความถี่) — FCN / Structured ใช้ "แก้รายละเอียด" ของ FCN */
   coupon?: { face_value: number | null; interest_rate: number | null; coupon_frequency: string | null; currency: string } | null;
@@ -171,8 +165,16 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
   autoBlocked?: string | null;
   /** บัญชีรับดอกเบี้ย / ปันผล / เงินคืน (ค่าตั้งต้นของฟอร์มรับเงิน · แท็บบันทึกรับผลตอบแทน) */
   income?: { currency: string; cashAccounts: CashAcct[]; banks: Bank[]; cashId: string | null; bankId: string | null };
+  /** FCN / Structured Product: รายละเอียด (fcn_details) แก้ในฟอร์มนี้ บันทึกก่อนข้อมูลหลัก */
+  structured?: { assetId: string; label: string; fcn: Fcn | null; defaultPrincipal: number | null } | null;
 }) {
-  const [state, action, pending] = useActionState<RecState, FormData>(updateRecord, {});
+  const [state, action, pending] = useActionState<RecState, FormData>(async (prev, f) => {
+    if (structured) {
+      const r = await saveFcn({}, f);
+      if (r.error) return { error: r.error };
+    }
+    return updateRecord(prev, f);
+  }, {});
   const [auto, setAuto] = useState(!!v.auto_price);
   const incomeOpts = income ? incomeAccountOptions(income.cashAccounts, income.banks, income.currency) : [];
   const [inc, setInc] = useState(income ? defaultIncomeAccount(incomeOpts, income.cashId, income.bankId) : "");
@@ -213,6 +215,7 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
           <p className="text-xs text-slate-500">ใส่ครบ (และมีวันครบกำหนด) → ขึ้นในแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; หน้า Investments · วันรับนับย้อนจากวันครบกำหนด · ยอดต่องวด = เงินต้น × อัตรา × เดือน ÷ 12</p>
         </div>
       )}
+      {structured && <FcnFields assetId={structured.assetId} holdingId={id} fcn={structured.fcn} defaultPrincipal={structured.defaultPrincipal} label={structured.label} />}
       {autoKind && (
         <div className="space-y-2 rounded-lg bg-slate-50 p-3">
           <input type="hidden" name="f_auto_price" value={auto ? "on" : "off"} />

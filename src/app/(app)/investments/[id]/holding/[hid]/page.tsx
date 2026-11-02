@@ -11,7 +11,7 @@ import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account
 import { scheduleOf } from "@/lib/coupon-schedule";
 import { ScheduleBox } from "../../../due";
 import ReturnsTable, { type Ret, type RetLocal } from "../../ReturnsTable";
-import { ConvertUnitsForm, FcnForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
+import { ConvertUnitsForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
@@ -173,6 +173,17 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                 <Item label="สถานะ">{STATUS_LABEL[h.status] ?? h.status}</Item>
                 <Item label="วิธีนับมูลค่า">{lump ? "มูลค่าก้อนเดียว" : "นับเป็นหน่วย"}</Item>
                 {(h.holding_type === "EQUITY" || h.holding_type === "FUND") && <Item label="ราคาอัตโนมัติ">{h.auto_price ? `เปิด · ${h.holding_type === "FUND" ? "NAV จาก ก.ล.ต." : "Yahoo Finance"}${h.price_ref ? ` (${h.price_ref})` : ""}` : "ปิด"}</Item>}
+                {isStructured && fcn && <>
+                  <Item label="ผู้ออก">{fcn.issuer}</Item>
+                  <Item label="เงินต้น">{money(fcn.principal, h.currency)}</Item>
+                  <Item label="วันที่ซื้อ / ออก">{`${fcn.trade_date ? thDate(fcn.trade_date) : "-"} / ${fcn.issue_date ? thDate(fcn.issue_date) : "-"}`}</Item>
+                  <Item label="Coupon">{`${pct(fcn.coupon_rate)} ต่อปี${fcn.coupon_frequency ? ` · ${COUPON_FREQ_LABEL[fcn.coupon_frequency] ?? fcn.coupon_frequency}` : ""}`}</Item>
+                  {fcn.coupon_rate != null && <Item label="Coupon ต่องวด (ประมาณ)">{money(Number(fcn.principal) * Number(fcn.coupon_rate) / 100 /
+                    ({ MONTHLY: 12, QUARTERLY: 4, SEMI_ANNUAL: 2, ANNUAL: 1 }[fcn.coupon_frequency ?? ""] ?? 1), h.currency)}</Item>}
+                  <Item label="Strike">{pct(fcn.strike_level)}</Item>
+                  <Item label="Knock-in / Barrier">{pct(fcn.barrier_level)}{fcn.knock_in_occurred && <span className="ml-2 rounded bg-red-50 px-2 py-0.5 text-xs text-red-700">Knock-in แล้ว{fcn.knock_in_date && ` ${thDate(fcn.knock_in_date)}`}</span>}</Item>
+                  <Item label="Autocall">{`${pct(fcn.autocall_level)}${fcn.observation_frequency ? ` · สังเกต ${fcn.observation_frequency}` : ""}`}</Item>
+                </>}
                 {h.notes && <Item label="หมายเหตุ" wide>{h.notes}</Item>}
               </dl>
             }
@@ -182,7 +193,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                   coupon_frequency: autoRow?.coupon_frequency ?? null, currency: h.currency } : null} autoKind={h.holding_type === "EQUITY" || h.holding_type === "FUND" ? h.holding_type : null}
                   autoBlocked={lump ? "มูลค่าก้อนเดียวดึงราคาอัตโนมัติไม่ได้ — แปลงเป็นจำนวนหน่วยก่อน" : h.holding_type === "FUND" && Number(h.quantity) === 1 && !h.auto_price ? "กองทุนนี้มีจำนวน 1 หน่วย (มักเป็นมูลค่ารวมที่ใส่แทนจำนวน) — แปลงเป็นจำนวนหน่วยก่อน" : null}
                   v={{ name: h.name, symbol: h.symbol, maturity_date: h.maturity_date, notes: h.notes, auto_price: h.auto_price, price_ref: h.price_ref }}
-                  income={{ currency: h.currency, cashAccounts, banks: banks ?? [], cashId: autoRow?.income_cash_holding_id ?? null, bankId: autoRow?.income_bank_asset_id ?? null }} />
+                  income={{ currency: h.currency, cashAccounts, banks: banks ?? [], cashId: autoRow?.income_cash_holding_id ?? null, bankId: autoRow?.income_bank_asset_id ?? null }}
+                  structured={isStructured ? { assetId: id, label: HOLDING_TYPE_LABEL[h.holding_type] ?? h.holding_type, fcn, defaultPrincipal: cost } : null} />
                 {isStructured && ["MATURED", "AUTOCALLED"].includes(h.status) && (
                   <div className="border-t border-slate-100 pt-4"><StatusSelect table="investment_holdings" id={hid} value={h.status} paths={paths} label="ปิดแบบ"
                     options={[["MATURED", "ครบกำหนดตามปกติ"], ["AUTOCALLED", "Autocall (ถูกเรียกคืนก่อนกำหนด)"]]} /></div>
@@ -203,28 +215,9 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       {ret.length > 0 && <ReturnsTable rows={ret} local={retLocal} portfolioCurrency={a.currency} rates={fxRates} title="ผลตอบแทนของหลักทรัพย์นี้" />}
 
       {isStructured && (
-        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-baseline justify-between">
-            <h2 className="font-medium text-slate-900">รายละเอียด {HOLDING_TYPE_LABEL[h.holding_type]}</h2>
-            {fcn?.knock_in_occurred && <span className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-700">Knock-in แล้ว {fcn.knock_in_date && thDate(fcn.knock_in_date)}</span>}
-          </div>
-          {fcn && (
-            <dl className="grid gap-x-6 gap-y-2 text-sm md:grid-cols-4">
-              <Item label="ผู้ออก">{fcn.issuer}</Item><Item num label="เงินต้น">{money(fcn.principal, h.currency)}</Item>
-              <Item label="วันที่ซื้อ / ออก">{`${thDate(fcn.trade_date)} / ${thDate(fcn.issue_date)}`}</Item>
-              <Item label="ครบกำหนด">{thDate(h.maturity_date)}</Item>
-              <Item label="Coupon">{`${pct(fcn.coupon_rate)} ต่อปี${fcn.coupon_frequency ? ` · ${COUPON_FREQ_LABEL[fcn.coupon_frequency] ?? fcn.coupon_frequency}` : ""}`}</Item>
-              <Item label="Strike">{pct(fcn.strike_level)}</Item><Item label="Knock-in / Barrier">{pct(fcn.barrier_level)}</Item>
-              <Item label="Autocall">{`${pct(fcn.autocall_level)}${fcn.observation_frequency ? ` · สังเกต ${fcn.observation_frequency}` : ""}`}</Item>
-              {fcn.coupon_rate != null && <Item num label="Coupon ต่องวด (ประมาณ)">{money(Number(fcn.principal) * Number(fcn.coupon_rate) / 100 /
-                ({ MONTHLY: 12, QUARTERLY: 4, SEMI_ANNUAL: 2, ANNUAL: 1 }[fcn.coupon_frequency ?? ""] ?? 1), h.currency)}</Item>}
-            </dl>
-          )}
-          {canWrite && <FcnForm assetId={id} holdingId={hid} fcn={fcn} defaultPrincipal={cost} />}
-
-          {fcn && (
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-slate-900">หุ้นอ้างอิง (Underlying)</h3>
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <div>
+              <h2 className="mb-2 font-medium text-slate-900">หุ้นอ้างอิง (Underlying)</h2>
               {unders.length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ใส่</p> : (
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">หุ้น</th><th className="text-right">ราคาเริ่มต้น</th>
@@ -232,8 +225,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                   <tbody className="divide-y divide-slate-100">
                     {unders.map((u) => {
                       const auto = (lv: number | null) => (u.initial_price != null && lv != null ? Number(u.initial_price) * Number(lv) / 100 : null);
-                      const strike = u.strike_price ?? auto(fcn.strike_level);
-                      const barrier = u.barrier_price ?? auto(fcn.barrier_level);
+                      const strike = u.strike_price ?? auto(fcn?.strike_level ?? null);
+                      const barrier = u.barrier_price ?? auto(fcn?.barrier_level ?? null);
                       return (
                         <tr key={u.id}>
                           <td className="py-1.5 font-medium">{u.symbol}{u.name && <span className="ml-1 text-xs font-normal text-slate-500">{u.name}</span>}</td>
@@ -249,10 +242,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                   </tbody>
                 </table>
               )}
-              {canWrite && <div className="mt-2"><UnderlyingForm assetId={id} fcnId={fcn.id} /></div>}
-              <p className="mt-2 text-xs text-slate-500">ราคา Strike / Barrier ที่ไม่ได้ใส่ คำนวณจากราคาเริ่มต้น × ระดับ % · Knock-in ให้ติ๊กเองเมื่อธนาคารแจ้ง</p>
-            </div>
-          )}
+              {canWrite && (fcn ? <div className="mt-2"><UnderlyingForm assetId={id} fcnId={fcn.id} /></div>
+                : <p className="mt-2 text-xs text-slate-500">เพิ่มหุ้นอ้างอิงได้หลังใส่ผู้ออก + เงินต้น ใน &ldquo;แก้ไขข้อมูล&rdquo; ของกล่องรายละเอียด</p>)}
+              <p className="mt-2 text-xs text-slate-500">ราคา Strike / Barrier ที่ไม่ได้ใส่ คำนวณจากราคาเริ่มต้น × ระดับ % · Knock-in ให้ติ๊กในแก้ไขข้อมูลเมื่อธนาคารแจ้ง</p>
+          </div>
         </section>
       )}
 
