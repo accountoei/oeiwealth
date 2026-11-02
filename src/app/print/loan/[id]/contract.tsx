@@ -4,10 +4,19 @@ import { bahtText, money, thDateLong } from "@/lib/format";
 export type ContractData = {
   contractNo: string | null; loanDate: string | null; dueDate: string | null; currency: string;
   borrower: string; borrowerPhone: string | null; lenders: string[]; purpose: string | null;
+  /** รายละเอียดคู่สัญญา (ไม่มี = เว้นเส้นให้เขียนเอง) · เลขบัตรเต็มเฉพาะ ADMIN / EDITOR */
+  borrowerAddress?: string | null; borrowerId?: string | null;
+  lenderAddresses?: (string | null)[];
+  place?: string | null;
+  bank?: { name: string; accountNo: string | null; accountName: string | null } | null;
+  guarantor?: { name: string; phone: string | null; address: string | null; id: string | null } | null;
+  witnesses?: (string | null)[];
   principal: number; ratePct: number | null;
   lines: { no: number; due: string; principal: number; interest: number }[];
 };
 
+/** เลขบัตรประชาชน 13 หลัก → 1-2345-67890-12-3 */
+const fmtId = (v: string) => (/^\d{13}$/.test(v) ? `${v[0]}-${v.slice(1, 5)}-${v.slice(5, 10)}-${v.slice(10, 12)}-${v[12]}` : v);
 const blank = (w = "10rem") => <span className="inline-block border-b border-dotted border-slate-500 align-bottom" style={{ width: w }} />;
 const monthGap = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 const amountOf = (v: number, ccy: string) => (ccy === "THB" ? `${money(v)} บาท (${bahtText(v)})` : `${money(v)} ${ccy}`);
@@ -54,19 +63,26 @@ function Sign({ role, name }: { role: string; name?: string }) {
  */
 export function LoanContract({ d }: { d: ContractData }) {
   const rate = d.ratePct ?? 0;
-  const lenders = d.lenders.length ? d.lenders.join(" และ ") : null;
+  const g = d.guarantor;
+  const addr = (v: string | null | undefined, w = "16rem") => (v ? v.replace(/\s*\n\s*/g, " ") : blank(w));
+  // ผู้ให้กู้หลายคน: ที่อยู่เดียวกัน → แสดงครั้งเดียว · ต่างกัน → แสดงต่อท้ายแต่ละคน
+  const la = d.lenderAddresses ?? [];
+  const sameAddr = la.length > 0 && la.every((x) => x && x === la[0]);
   return (
     <article className="contract text-[13px] leading-[1.75]">
       <h1 className="text-center text-lg font-semibold">สัญญากู้ยืมเงิน</h1>
       <div className="mt-2 flex flex-wrap justify-end gap-x-6">
         <span>เลขที่สัญญา {d.contractNo || blank("7rem")}</span>
-        <span>ทำที่ {blank("12rem")}</span>
+        <span>ทำที่ {d.place ? d.place.replace(/\s*\n\s*/g, " ") : blank("12rem")}</span>
       </div>
       <div className="text-right">วันที่ {d.loanDate ? thDateLong(d.loanDate) : blank("10rem")}</div>
       <p className="mt-2 indent-10">
-        สัญญานี้ทำขึ้นระหว่าง <b>{d.borrower}</b> เลขประจำตัวประชาชน {blank("9rem")} ที่อยู่ {blank("16rem")}
+        สัญญานี้ทำขึ้นระหว่าง <b>{d.borrower}</b> เลขประจำตัวประชาชน {d.borrowerId ? fmtId(d.borrowerId) : blank("9rem")} ที่อยู่ {addr(d.borrowerAddress)}
         {d.borrowerPhone ? ` โทร ${d.borrowerPhone}` : ""} ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้กู้&rdquo;</b> ฝ่ายหนึ่ง
-        กับ {lenders ? <b>{lenders}</b> : blank("12rem")} ที่อยู่ {blank("16rem")} ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้ให้กู้&rdquo;</b> อีกฝ่ายหนึ่ง
+        กับ {d.lenders.length === 0 ? <>{blank("12rem")} ที่อยู่ {blank("16rem")}</>
+          : sameAddr || d.lenders.length === 1 ? <><b>{d.lenders.join(" และ ")}</b> ที่อยู่ {addr(la[0])}</>
+          : d.lenders.map((n, i) => <span key={i}>{i > 0 && " และ "}<b>{n}</b> ที่อยู่ {addr(la[i], "12rem")}</span>)}
+        {" "}ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้ให้กู้&rdquo;</b> อีกฝ่ายหนึ่ง
         ทั้งสองฝ่ายตกลงกันดังต่อไปนี้
       </p>
       <p className="indent-10"><b>ข้อ 1 จำนวนเงินกู้</b> ผู้กู้ได้กู้ยืมเงินจากผู้ให้กู้เป็นจำนวน {amountOf(d.principal, d.currency)}
@@ -75,17 +91,23 @@ export function LoanContract({ d }: { d: ContractData }) {
         ? `ผู้กู้ตกลงชำระดอกเบี้ยให้แก่ผู้ให้กู้ในอัตราร้อยละ ${rate} ต่อปี ของเงินต้นที่ค้างชำระ นับแต่วันที่ได้รับเงินกู้เป็นต้นไป`
         : "ผู้ให้กู้ไม่คิดดอกเบี้ยจากเงินกู้ตามสัญญานี้"}</p>
       <p className="indent-10"><b>ข้อ 3 การชำระคืน</b> {repaymentText(d)}</p>
-      <p className="indent-10"><b>ข้อ 4 วิธีชำระ</b> ผู้กู้จะชำระเงินโดยโอนเข้าบัญชีธนาคาร {blank("8rem")} เลขที่บัญชี {blank("8rem")} หรือตามที่ผู้ให้กู้แจ้งเป็นหนังสือ
+      <p className="indent-10"><b>ข้อ 4 วิธีชำระ</b> ผู้กู้จะชำระเงินโดยโอนเข้าบัญชีธนาคาร {d.bank?.name || blank("8rem")}{d.bank?.accountName ? ` ชื่อบัญชี ${d.bank.accountName}` : ""} เลขที่บัญชี {d.bank?.accountNo || blank("8rem")} หรือตามที่ผู้ให้กู้แจ้งเป็นหนังสือ
         เงินที่ได้รับให้นำไปชำระดอกเบี้ยที่ค้างก่อน ส่วนที่เหลือนำไปชำระเงินต้น ผู้กู้มีสิทธิชำระคืนก่อนกำหนดได้ โดยคิดดอกเบี้ยถึงวันที่ชำระจริง</p>
       <p className="indent-10"><b>ข้อ 5 การผิดนัด</b> หากผู้กู้ผิดนัดชำระงวดใดงวดหนึ่ง และไม่ชำระภายใน 30 วันนับแต่วันที่ได้รับหนังสือบอกกล่าวจากผู้ให้กู้
         ให้ถือว่าผู้กู้ผิดนัดชำระหนี้ทั้งหมด ผู้ให้กู้มีสิทธิเรียกให้ผู้กู้ชำระหนี้ที่ค้างทั้งหมดได้ทันที พร้อมดอกเบี้ยผิดนัดตามที่กฎหมายกำหนด</p>
-      <p className="indent-10"><b>ข้อ 6</b> สัญญานี้ทำขึ้นสองฉบับมีข้อความถูกต้องตรงกัน คู่สัญญาได้อ่านและเข้าใจข้อความโดยตลอดแล้ว
+      {g && (
+        <p className="indent-10"><b>ข้อ 6 การค้ำประกัน</b> {g.name} เลขประจำตัวประชาชน {g.id ? fmtId(g.id) : blank("9rem")} ที่อยู่ {addr(g.address)}
+          {g.phone ? ` โทร ${g.phone}` : ""} ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้ค้ำประกัน&rdquo;</b> ตกลงค้ำประกันการชำระหนี้ของผู้กู้ตามสัญญานี้
+          หากผู้กู้ผิดนัดชำระหนี้ ผู้ค้ำประกันยินยอมรับผิดชำระหนี้แทนผู้กู้ ทั้งนี้ภายในขอบเขตที่กฎหมายกำหนด</p>
+      )}
+      <p className="indent-10"><b>ข้อ {g ? 7 : 6}</b> สัญญานี้ทำขึ้นสองฉบับมีข้อความถูกต้องตรงกัน คู่สัญญาได้อ่านและเข้าใจข้อความโดยตลอดแล้ว
         จึงลงลายมือชื่อไว้เป็นสำคัญต่อหน้าพยาน และต่างยึดถือไว้ฝ่ายละหนึ่งฉบับ</p>
       <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5">
         <Sign role="ผู้กู้" name={d.borrower} />
         {(d.lenders.length ? d.lenders : [undefined]).map((n, i) => <Sign key={i} role="ผู้ให้กู้" name={n} />)}
-        <Sign role="พยาน" />
-        <Sign role="พยาน" />
+        {g && <Sign role="ผู้ค้ำประกัน" name={g.name} />}
+        <Sign role="พยาน" name={d.witnesses?.[0] ?? undefined} />
+        <Sign role="พยาน" name={d.witnesses?.[1] ?? undefined} />
       </div>
       {d.currency === "THB" && (
         <p className="mt-5 text-[11px] text-slate-500">ติดอากรแสตมป์ {money(stampDuty(d.principal), undefined, 0)} บาท (1 บาท ต่อทุก 2,000 บาท หรือเศษ · สูงสุด 10,000 บาท)</p>
