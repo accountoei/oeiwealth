@@ -101,7 +101,7 @@ function sources(q: string, full: boolean): Source[] {
         return pd ? { group: "ผู้เช่า", label: l.tenant_name || l.unit_label || "สัญญาเช่า",
           sub: [assetOf(pd.assets)?.name, l.unit_label].filter(Boolean).join(" · ") || undefined, href: `/property/${pd.asset_id}` } : null;
       } },
-    { q: (sb, like, n) => sb.from("loan_details").select("id,asset_id,borrower_name,contract_no,purpose,notes,assets(name)").is("deleted_at", null)
+    { q: (sb, like, n) => sb.from("loan_details").select("id,asset_id,borrower_name,contract_no,purpose,notes,assets!loan_details_asset_id_fkey(name)").is("deleted_at", null)
         .or(ors(like, full ? ["borrower_name", "contract_no", "purpose", "notes"] : ["borrower_name"])).limit(n),
       hit: (l) => ({ group: "ผู้กู้", label: l.borrower_name || assetOf(l.assets)?.name || "เงินให้กู้", sub: assetOf(l.assets)?.name, href: `/financial/loans/${l.asset_id}` }) },
     { q: (sb, like, n) => sb.from("memberships").select("id,program_name,tier,benefits,notes").is("deleted_at", null)
