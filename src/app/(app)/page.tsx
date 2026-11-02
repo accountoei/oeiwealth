@@ -30,8 +30,9 @@ type Hist = {
 type Item = { item_type: string; item_name: string; item_group: string; base_value: number | null; ownership_percent: number | null;
   /** ธุรกิจ: "4,000 หุ้น · 40% ของบริษัท" */ share_note?: string | null };
 type PersonDash = {
-  opening: { date: string; net_worth: number };
-  snapshots: { month: string; date: string; status: string; net_worth: number }[];
+  /** total_assets / total_liabilities: SQL 20261102000100 (ก่อนรัน SQL ไม่มี → เส้นเล็กของการ์ดรายคนไม่แสดง) */
+  opening: { date: string; net_worth: number; total_assets?: number | null; total_liabilities?: number | null };
+  snapshots: { month: string; date: string; status: string; net_worth: number; total_assets?: number | null; total_liabilities?: number | null }[];
   prev_net_worth: number | null; prev_label: string | null; prev_date: string | null;
   income: number; investment_income: number; expenses: number; reimbursements: number;
 };
@@ -130,7 +131,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → Net Worth (ขวาสุด · เด่นด้วยพื้นสีอ่อน) */}
       <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} hero={i === 2} />)}</section>}>
-        <TopCards start={start} personId={personId} personName={personName} />
+        <TopCards start={start} personId={personId} personName={personName} isCurrent={isCurrent} />
       </Suspense>
 
       <section className="grid gap-4 lg:grid-cols-3">
@@ -215,10 +216,11 @@ const RANGE_BTN = "inline-flex min-h-9 items-center rounded-md px-2.5 text-xs sm
 
 function CardSkeleton({ hero }: { hero?: boolean }) {
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white p-4 sm:p-5 animate-pulse ${hero ? HERO : ""}`}>
-      <div className="h-3 w-28 rounded bg-slate-100" />
-      <div className="mt-2 h-7 w-40 rounded bg-slate-200" />
-      <div className="mt-2 h-3 w-24 rounded bg-slate-100" />
+    <div className={`rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 animate-pulse ${hero ? HERO : ""}`}>
+      <div className="flex justify-between"><div className="h-3 w-28 rounded bg-slate-100" /><div className="h-5 w-24 rounded-full bg-slate-100" /></div>
+      <div className="mt-3 flex items-center gap-3"><div className="hidden h-9 w-9 rounded-lg bg-slate-100 sm:block" />
+        <div><div className="h-7 w-36 rounded bg-slate-200" /><div className="mt-1.5 h-3 w-24 rounded bg-slate-100" /></div></div>
+      <div className="mt-3 h-3 w-32 rounded bg-slate-100" />
     </div>
   );
 }
@@ -246,7 +248,7 @@ async function AsOf({ start, isCurrent, today }: { start: string; isCurrent: boo
   );
 }
 
-async function TopCards({ start, personId, personName }: { start: string; personId: string; personName: string }) {
+async function TopCards({ start, personId, personName, isCurrent }: { start: string; personId: string; personName: string; isCurrent: boolean }) {
   const [dm, pBase] = await Promise.all([getMonth(start), personId ? getPersonBase(start, personId) : null]);
   // ฐานเทียบ: ครอบครัว = dashboard_month.base · รายคน = dashboard_person_base (ลำดับเลือกฐานเดียวกัน)
   const base = personId ? pBase : dm?.base ?? null;
@@ -256,17 +258,84 @@ async function TopCards({ start, personId, personName }: { start: string; person
   const nw = person ? person.net_worth : dm?.net_worth ?? 0;
   const assets = person ? person.assets : dm?.total_assets ?? 0;
   const liab = person ? person.liabilities : dm?.total_liabilities ?? 0;
+  const who = person ? person.name : "ทั้งครอบครัว";
+  const asOf = dm?.as_of ?? "";
+  // บรรทัดอธิบายใต้ตัวเลข (เดิมอยู่ใน ⓘ ของหัวหน้า มองไม่เห็น) · ดูเดือนที่ผ่านมา = ณ สิ้นเดือนนั้น
+  const asOfText = isCurrent ? "ณ วันนี้" : `ณ ${thDate(asOf)}`;
+  const ratio = Number(assets) > 0 ? (Number(liab) / Number(assets)) * 100 : null;
+  const spark = (kind: SparkKind, color: string, hero?: boolean) => (
+    <Suspense fallback={<SparkSlot hero={hero} />}>
+      <CardSpark start={start} personId={personId} kind={kind} current={kind === "total_assets" ? assets : kind === "total_liabilities" ? liab : nw}
+        asOf={asOf} color={color} hero={hero} />
+    </Suspense>
+  );
   return (
-    <>
-      <section className={TOP_GRID}>
-        <Big label="สินทรัพย์รวม" who={person ? person.name : "ทั้งครอบครัว"} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label} />
-        <Big label="หนี้สินรวม" who={person ? person.name : "ทั้งครอบครัว"} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse />
-        <Big label="Net Worth" who={person ? person.name : "ทั้งครอบครัว"} value={nw}
-          base={base ? Number(base.net_worth) : null} baseLabel={base?.label} hero />
-      </section>
-    </>
+    <section className={TOP_GRID}>
+      <Big label="สินทรัพย์รวม" shortLabel="สินทรัพย์" who={who} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label}
+        icon={<IconAssets />} spark={spark("total_assets", "#1f5eff")} note={asOfText} />
+      <Big label="หนี้สินรวม" shortLabel="หนี้สิน" who={who} value={liab} base={base ? Number(base.total_liabilities) : null} baseLabel={base?.label} inverse
+        icon={<IconDebt />} spark={spark("total_liabilities", LIAB_COLOR)}
+        note={ratio == null ? asOfText : `${ratio.toFixed(ratio < 10 ? 2 : 1)}% ของสินทรัพย์`} />
+      <Big label="Net Worth" who={who} value={nw} base={base ? Number(base.net_worth) : null} baseLabel={base?.label} hero
+        icon={<IconNetWorth />} spark={spark("net_worth", "#1f5eff", true)} note={`${asOfText} · หลังหักหนี้สินแล้ว`} />
+    </section>
   );
 }
+
+// ---------------------------------------------------------------------------- เส้นเล็กในการ์ด (2 พ.ย. 2026)
+type SparkKind = "total_assets" | "total_liabilities" | "net_worth";
+const SPARK_W = 128, SPARK_H = 40;
+/** ที่ของเส้นเล็ก: การ์ดเล็ก (สินทรัพย์ / หนี้สิน) แสดงตั้งแต่ lg · การ์ด Net Worth แสดงทุกจอ (เต็มแถวบนมือถือ)
+ *  กว้างสุด 128px · การ์ดแคบ (เช่น จอ 1280) เส้นหดลงเหลือ 64px แทนการเบียดตัวเลข */
+const sparkClass = (hero?: boolean) => `${hero ? "block" : "hidden lg:block"} h-10 w-full min-w-16 max-w-32`;
+function SparkSlot({ hero }: { hero?: boolean }) {
+  return <div className={sparkClass(hero)} aria-hidden />;
+}
+
+/** จุดรายเดือนเดียวกับกราฟใหญ่ (ยอดตั้งต้น + สิ้นเดือน ปิดแล้ว / อัตโนมัติ) ถึงก่อนวันของการ์ด + ยอดในการ์ด · 12 จุดล่าสุด
+ *  ใช้ข้อมูลชุดเดียวกับกราฟใหญ่ (cachedRpc + cache) → ไม่ถามฐานข้อมูลเพิ่ม · แยก Suspense → ตัวเลขขึ้นก่อน เส้นตามมา */
+async function CardSpark({ start, personId, kind, current, asOf, color, hero }: {
+  start: string; personId: string; kind: SparkKind; current: number; asOf: string; color: string; hero?: boolean;
+}) {
+  const h: { opening: Partial<Record<SparkKind, number | null>>; snapshots: ({ date: string } & Partial<Record<SparkKind, number | null>>)[] } | null =
+    personId ? await getPersonDash(start, personId) : await getHistory();
+  const raw = [h?.opening?.[kind], ...(h?.snapshots ?? []).filter((x) => !asOf || x.date < asOf).map((x) => x[kind]), current];
+  const vs = raw.filter((v): v is number => v != null && Number.isFinite(Number(v))).map(Number).slice(-12);
+  if (vs.length < 2) return <SparkSlot hero={hero} />;
+  return <Sparkline values={vs} color={color} className={sparkClass(hero)} />;
+}
+
+/** เส้นอย่างเดียว ไม่ระบายพื้น (แกนไม่เริ่มที่ 0 → พื้นทำให้ดูเปลี่ยนมากเกินจริง · เหมือนกราฟใหญ่) · จุดท้าย = ยอดในการ์ด
+ *  ตัวเลขอยู่ในการ์ดแล้ว → เส้นเป็นภาพประกอบ (aria-hidden)
+ *  ยืด / หดตามที่ว่าง (preserveAspectRatio none) · เส้นหนา 2px และจุดกลมเสมอ (non-scaling-stroke · จุด = เส้นยาว 0 ปลายมน) */
+function Sparkline({ values, color, className }: { values: number[]; color: string; className: string }) {
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const pad = 4, span = hi - lo || 1;
+  const x = (i: number) => pad + (i * (SPARK_W - pad * 2)) / (values.length - 1);
+  const y = (v: number) => (hi === lo ? SPARK_H / 2 : pad + ((hi - v) * (SPARK_H - pad * 2)) / span);
+  const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const last = values.length - 1;
+  return (
+    <svg viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} preserveAspectRatio="none" className={className} aria-hidden>
+      <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" opacity={0.85} vectorEffect="non-scaling-stroke" />
+      <path d={`M${x(last).toFixed(1)},${y(values[last]).toFixed(1)}h0`} stroke={color} strokeWidth={6} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------- ไอคอนการ์ด (SVG ในหน้า ไม่โหลดไฟล์ · เส้น 1.75)
+const ICON = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75,
+  strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+/** สินทรัพย์: อาคาร (ธนาคาร / ทรัพย์สิน) */
+const IconAssets = () => <svg {...ICON}><path d="M3 21h18M4 10h16M12 3 4 7v3h16V7l-8-4ZM6 10v8M10 10v8M14 10v8M18 10v8" /></svg>;
+/** หนี้สิน: บัตร / สัญญากู้ */
+const IconDebt = () => <svg {...ICON}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h4" /></svg>;
+/** Net Worth: กราฟแท่ง */
+const IconNetWorth = () => <svg {...ICON}><path d="M4 20h16M7 16v-4M12 16V8M17 16v-7" /></svg>;
+/** ลูกศรขึ้น / ลง ในป้ายเปลี่ยนแปลง (ทิศ = ยอดขึ้น / ลง · สี = ดี / ไม่ดี) */
+const Arrow = ({ up }: { up: boolean }) => (
+  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden className="shrink-0"><path d={up ? "M5 1.5 9 8H1z" : "M5 8.5 1 2h8z"} fill="currentColor" /></svg>
+);
 
 async function ChartBody({ start, isCurrent, personId, from }: { start: string; isCurrent: boolean; personId: string; from: string | null }) {
   let points: { label: string; date: string; v: number; solid: boolean }[];
@@ -480,42 +549,63 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
 /** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · % · Net Worth */
 const PROW = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3";
 
-/** การ์ดตัวเลขบน: ตัวใหญ่เป็น "ล้านบาท" (อ่านเร็ว) + เลขเต็มตัวเล็กใต้ (ตรวจทานได้) · ทุกการ์ดทุกยอด (รอบ 4)
- *  บรรทัดเปลี่ยนแปลงเป็นป้าย "เพิ่มขึ้น / ลดลง" (เขียว = ดีขึ้น · แดง = แย่ลง · หนี้ลด = ดีขึ้น) แล้วตามด้วย "จาก…" สีเทา */
-function Big({ label, who, value, base, baseLabel, inverse, hero }: { label: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean; hero?: boolean }) {
+/** การ์ดตัวเลขบน (2 พ.ย. 2026 ตามภาพที่เจ้าของส่งมา):
+ *  แถวบน   ชื่อการ์ด · คน ................ ป้าย ▲/▼ ยอดเปลี่ยน (%)   (เขียว = ดีขึ้น · แดง = แย่ลง · หนี้ลด = ดีขึ้น · ลูกศร = ทิศของยอด)
+ *  แถวกลาง [ไอคอน] ตัวใหญ่ "ล้านบาท" + เลขเต็มใต้ ...... เส้นเล็กย้อนหลัง
+ *  แถวล่าง บรรทัดอธิบาย (ณ วันนี้ / % ของสินทรัพย์ / หลังหักหนี้สิน) ........ เทียบกับ…
+ *  ไม่ใช้ปุ่มมน (ดูเหมือนกดได้แต่กดไม่ได้) · ไม่ใช้พื้นไล่สี · ไอคอนซ่อนบนมือถือ */
+function Big({ label, shortLabel, who, value, base, baseLabel, inverse, hero, icon, spark, note }: {
+  label: string; shortLabel?: string; who: string; value: number; base: number | null; baseLabel?: string; inverse?: boolean; hero?: boolean;
+  icon: ReactNode; spark: ReactNode; note: string;
+}) {
   // ปัดเป็นบาท (เหมือนตัวเลขที่แสดง) แล้วต่างกัน 0 = "ไม่เปลี่ยนแปลง"
   const diff = base == null ? null : Math.round(Number(value) - base);
   const good = diff == null ? null : inverse ? diff <= 0 : diff >= 0;
-  // รอบ 4: ทุกการ์ดเป็น "ล้านบาท" แม้ต่ำกว่า 1 ล้าน (เช่น หนี้สิน 0.80 ล้านบาท) → 3 การ์ดมีบรรทัดเหมือนกัน
+  // ทุกการ์ดเป็น "ล้านบาท" แม้ต่ำกว่า 1 ล้าน (เช่น หนี้สิน 0.80 ล้านบาท) → 3 การ์ดมีบรรทัดเหมือนกัน
   const m = millions(value, true);
   const pct = diff && base ? Math.abs((diff / Math.abs(base)) * 100).toFixed(2) : null;
-  // "สิ้นเดือน ต.ค. 2569 (อัตโนมัติ)" → "สิ้นเดือน ต.ค. 2569" (ชื่อเต็มอยู่ใน title เมื่อชี้) → การ์ดไม่ขึ้นบรรทัดใหม่
+  // "สิ้นเดือน ต.ค. 2569 (อัตโนมัติ)" → "สิ้นเดือน ต.ค. 2569" (ชื่อเต็มอยู่ใน title เมื่อชี้)
   const shortBase = (baseLabel ?? "").replace(/\s*\([^)]*\)\s*$/, "");
   return (
-    <div className={`num-box min-w-0 rounded-xl border p-4 sm:p-5 xl:p-4 ${hero ? `${HERO} border-blue-200 bg-blue-50/70` : "border-slate-200 bg-white"}`}
+    <div className={`min-w-0 rounded-xl border p-4 sm:p-5 xl:p-4 ${hero ? `${HERO} border-blue-200 bg-blue-50/70` : "border-slate-200 bg-white"}`}
       style={hero ? { boxShadow: "var(--card-shadow)" } : undefined}>
-      {/* ชื่อคนบรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง */}
-      <div className={`truncate text-xs ${hero ? "font-semibold text-ink" : "text-slate-500"}`} title={`${label} · ${who}`}>{label} · {who}</div>
-      {/* ขนาดตัวเลขเป็น text-[…] ไม่ใช่ text-xl / text-2xl: globals.css มีกฎ .text-2xl.tabular-nums บังคับสีเกือบดำ (#0b1220)
-          → เดิมการ์ดสินทรัพย์ / หนี้สินเป็นสีดำ ไม่ใช่กรมท่า (เจ้าของเห็นเป็นดำ · รอบ 4) */}
-      <div className={`mt-1 whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums text-ink ${hero ? "text-[1.75rem] sm:text-3xl" : "text-[1.25rem] sm:text-[1.5rem]"}`}>
-        {m ?? baht(value)}<span className="ml-1.5 text-sm font-normal tracking-normal text-slate-500">{m ? "ล้านบาท" : "บาท"}</span>
-      </div>
-      {m && <div className="text-xs tabular-nums text-slate-500">{baht(value)} บาท</div>}
-      {diff != null && (
-        <div className="mt-2 text-xs leading-relaxed">
-          {diff === 0
-            ? <span className="text-slate-500" title={`จาก${baseLabel}`}>ไม่เปลี่ยนแปลงจาก{shortBase}</span>
-            : <>
-                <span className={`inline-block rounded-full sm:whitespace-nowrap px-2 py-0.5 font-medium tabular-nums ${good ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
-                  {/* มือถือ การ์ดเล็ก (สินทรัพย์ / หนี้สิน): แสดงแค่ % ให้ป้ายอยู่บรรทัดเดียว · เลขเต็มอยู่ในการ์ดจอใหญ่ */}
-                  {!hero && pct && <span className="sm:hidden">{diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} {pct}%</span>}
-                  <span className={!hero && pct ? "hidden sm:inline" : ""}>{diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} {baht(Math.abs(diff))}{pct ? ` (${pct}%)` : ""}</span>
-                </span>
-                <span className="text-slate-500" title={`จาก${baseLabel}`}> จาก{shortBase}</span>
-              </>}
+      <div className="flex items-start justify-between gap-2">
+        {/* บรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง · ต่อท้ายชื่อคน / "ทั้งครอบครัว" (ตกลง PR #204)
+            การ์ดเล็กบนจอแคบ (< lg: มือถือ / แท็บเล็ต) ใช้ชื่อสั้น (สินทรัพย์ / หนี้สิน) ไม่มีที่ต่อชื่อคน → ชื่อคนอยู่ที่การ์ด Net Worth (เต็มแถว) */}
+        <div className={`min-w-0 truncate pt-0.5 text-xs ${hero ? "font-semibold text-ink" : "text-slate-500"}`} title={`${label} · ${who}`}>
+          {shortLabel ? <><span className="lg:hidden">{shortLabel}</span><span className="hidden lg:inline">{label}</span></> : label}
+          <span className={hero ? "" : "hidden lg:inline"}> · {who}</span>
         </div>
-      )}
+        {diff != null && (diff === 0
+          ? <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">ไม่เปลี่ยนแปลง</span>
+          : <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${good ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}
+              title={`${diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} ${baht(Math.abs(diff))} บาท จาก${baseLabel}`}>
+              <Arrow up={diff > 0} />
+              <span className="sr-only">{diff > 0 ? "เพิ่มขึ้น" : "ลดลง"}</span>
+              {/* การ์ดแคบ: แสดงแค่ % ให้ป้ายพอดี (ยอดเต็มอยู่ใน title เมื่อชี้)
+                  การ์ดเล็ก: แคบจนถึงจอ 2xl (≥ 1536px) · การ์ด Net Worth: แคบเฉพาะช่วง xl (3 การ์ดเรียงกันบนจอ 1280–1535) */}
+              {pct && <span className={hero ? "hidden xl:inline 2xl:hidden" : "2xl:hidden"}>{pct}%</span>}
+              <span className={!pct ? "" : hero ? "xl:hidden 2xl:inline" : "hidden 2xl:inline"}>{diff > 0 ? "+" : "\u2212"}{baht(Math.abs(diff))}{pct ? ` (${diff > 0 ? "+" : "\u2212"}${pct}%)` : ""}</span>
+            </span>)}
+      </div>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <div className="flex shrink-0 items-center gap-3">
+          <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:flex ${hero ? "bg-white text-blue-700 ring-1 ring-blue-100" : inverse ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{icon}</span>
+          <div className="min-w-0">
+            {/* ขนาดตัวเลขเป็น text-[…] ไม่ใช่ text-xl / text-2xl: globals.css มีกฎ .text-2xl.tabular-nums บังคับสีเกือบดำ (#0b1220) */}
+            <div className={`whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums text-ink ${hero ? "text-[1.75rem] sm:text-3xl" : "text-[1.25rem] sm:text-[1.5rem]"}`}>
+              {m ?? baht(value)}<span className="ml-1.5 text-sm font-normal tracking-normal text-slate-500">{m ? "ล้านบาท" : "บาท"}</span>
+            </div>
+            {m && <div className="text-xs tabular-nums text-slate-500">{baht(value)} บาท</div>}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-1 justify-end">{spark}</div>
+      </div>
+      <div className="mt-2 flex items-baseline justify-between gap-2 text-xs text-slate-500">
+        <span className="min-w-0 truncate" title={note}>{note}</span>
+        {/* การ์ดเล็กบนจอแคบ (< lg) ไม่มีที่ → ซ่อน "จาก…" (ป้ายด้านบนมี title บอกฐานเทียบ) */}
+        {diff != null && shortBase && <span className={`shrink-0 ${hero ? "" : "hidden lg:inline"}`} title={`จาก${baseLabel}`}>จาก{shortBase}</span>}
+      </div>
     </div>
   );
 }
