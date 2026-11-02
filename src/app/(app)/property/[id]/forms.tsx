@@ -6,9 +6,11 @@ import type { Component } from "../components";
 import { useActionSlot } from "@/components/ActionBar";
 import {
   addUtility, addValuation, createLease, receiveUtilityCharge, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
-  updatePropertyInfo, type ActionState,
+  updateLeaseDetails, updatePropertyInfo, type ActionState,
 } from "../actions";
-import LeaseFields, { type Bank, type CarryOption } from "../LeaseFields";
+import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
+import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
+import ModalButton from "@/components/ModalButton";
 import { ENCUMBRANCE_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -70,8 +72,9 @@ export function SuggestVacant({ assetId }: { assetId: string }) {
   );
 }
 
-export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, label }: {
+export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, label, renewals, detail }: {
   assetId: string; banks: Bank[]; goLive: string; currency: string; carryOptions: CarryOption[]; label: string;
+  renewals: LeasePrefill[]; detail: { opt: LeaseDetailOptions; canSensitive: boolean };
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(createLease, {});
@@ -82,7 +85,7 @@ export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, l
       <input type="hidden" name="asset_id" value={assetId} />
       <h3 className="font-medium text-slate-900">สัญญาเช่าใหม่</h3>
       <p className="text-xs text-slate-500">ต่อสัญญา = สร้างสัญญาใหม่ (สัญญาเดิมไม่ถูกแก้ ประวัติค่าเช่าแต่ละช่วงยังอยู่) · การใช้งานจะเปลี่ยนเป็น &ldquo;ปล่อยเช่า&rdquo;</p>
-      <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} />
+      <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} renewals={renewals} detail={detail} />
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกสัญญา"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
@@ -128,6 +131,50 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
       <div className="w-full"><Msg s={state} /></div>
     </form>
   ));
+}
+
+/** ปุ่ม "รายละเอียดสัญญา" (pop up): บัญชีรับค่าเช่า · จำนวนเดือนเงินประกัน · ผู้เช่า · สถานที่ · แจ้งล่วงหน้า · ค่าเสียหาย · พยาน */
+export function LeaseDetailsForm({ assetId, leaseId, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths }: {
+  assetId: string; leaseId: string; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
+  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null;
+}) {
+  return (
+    <ModalButton label="รายละเอียดสัญญา" title="รายละเอียดสัญญา (สำหรับพิมพ์)" size="lg" className="text-sm text-slate-700 underline">
+      <LeaseDetailsBody assetId={assetId} leaseId={leaseId} v={v} opt={opt} canSensitive={canSensitive} banks={banks}
+        rentCurrency={rentCurrency} rentTo={rentTo} depositMonths={depositMonths} />
+    </ModalButton>
+  );
+}
+
+function LeaseDetailsBody({ assetId, leaseId, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths }: {
+  assetId: string; leaseId: string; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
+  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(updateLeaseDetails, {});
+  const f = "mt-1 block w-full " + input;
+  return (
+    <form action={action} className="space-y-4">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="lease_id" value={leaseId} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm">บัญชีรับค่าเช่า (ใช้ในสัญญาที่พิมพ์)
+          <select name="lease_rent_to_asset_id" defaultValue={rentTo ?? ""} className={f}>
+            <option value="">— ไม่ระบุ (เว้นให้เขียนเอง) —</option>
+            {banks.filter((b) => b.currency === rentCurrency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">จำนวนเดือนที่วางประกัน
+          <input name="lease_deposit_months" inputMode="decimal" data-money="off" defaultValue={depositMonths ?? DEPOSIT_MONTHS_DEFAULT} className={f} />
+          <span className="text-xs text-slate-500">ใช้อ้างอิงในสัญญา · ไม่เปลี่ยนยอดเงินประกันที่บันทึกไว้</span>
+        </label>
+      </div>
+      <LeaseContractFields v={v} opt={opt} canSensitive={canSensitive} />
+      <div className="flex flex-wrap items-center gap-3">
+        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <Msg s={state} />
+      </div>
+    </form>
+  );
 }
 
 export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
@@ -215,7 +262,8 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   map_url?: string | null; latitude?: number | null; longitude?: number | null;
   vacant_since?: string | null; vacant_plan?: string | null; vacant_plan_date?: string | null;
   encumbrance_type?: string | null; encumbrance_details?: string | null; opportunity_rate_pct?: number | null;
-  acq_building_cost?: number | null; acq_building_years?: number | null };
+  acq_building_cost?: number | null; acq_building_years?: number | null;
+  house_no?: string | null; unit_no?: string | null; floor_no?: string | null; building_name?: string | null };
 
 /** แก้ข้อมูลทรัพย์สิน + ตารางส่วนประกอบ (ข้อมูล · ต้นทุน · มูลค่ารายแถว) ในฟอร์มเดียว ปุ่มบันทึกปุ่มเดียว (ตกลง 29 ต.ค. 2026) */
 export function EditPropertyForm({ p, components, latest, currency, currentValue, today, minDate, locked }: {
@@ -224,6 +272,7 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
   const [usage, setUsage] = useState(p.usage_type);
+  const [ptype, setPtype] = useState(p.property_type);
   const [enc, setEnc] = useState(p.encumbrance_type ?? "");
   const f = "mt-1 block w-full " + input;
   return (
@@ -231,7 +280,7 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
       <input type="hidden" name="asset_id" value={p.asset_id} />
       <label className="text-sm">ชื่อที่ใช้เรียก<input name="name" required defaultValue={p.name} className={f} /></label>
       <label className="text-sm">ประเภท
-        <select name="property_type" defaultValue={p.property_type} className={f}>
+        <select name="property_type" value={ptype} onChange={(e) => setPtype(e.target.value)} className={f}>
           {Object.entries(PROPERTY_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
@@ -253,6 +302,16 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
         </div>
       )}
       <label className="text-sm">กลุ่มทำเล<input name="location_group" defaultValue={p.location_group ?? ""} className={f} /></label>
+      {/* บ้านเลขที่ / ห้องชุด: ใช้ในข้อทรัพย์สินที่เช่าของสัญญาที่พิมพ์ (ที่ดินเปล่าใช้เลขโฉนดจากส่วนประกอบ) */}
+      {ptype === "CONDO" ? (
+        <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+          <label className="text-sm">ห้องชุดเลขที่<input name="unit_no" maxLength={50} defaultValue={p.unit_no ?? ""} className={f} /></label>
+          <label className="text-sm">ชั้น<input name="floor_no" maxLength={20} defaultValue={p.floor_no ?? ""} className={f} /></label>
+          <label className="text-sm">อาคาร / ชื่ออาคารชุด<input name="building_name" maxLength={200} defaultValue={p.building_name ?? ""} placeholder="ว่าง = ใช้ชื่อที่ใช้เรียก" className={f} /></label>
+        </div>
+      ) : ptype !== "LAND" && (
+        <label className="text-sm">บ้านเลขที่<input name="house_no" maxLength={50} defaultValue={p.house_no ?? ""} placeholder="เช่น 99/1" className={f} /></label>
+      )}
       <label className="text-sm md:col-span-2">ที่อยู่<input name="address" defaultValue={p.address ?? ""} className={f} /></label>
       <label className="text-sm">ลิงก์ Google Maps
         <input name="map_url" type="url" defaultValue={p.map_url ?? ""} placeholder="https://maps.app.goo.gl/…" className={f} />

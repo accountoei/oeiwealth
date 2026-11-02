@@ -1,4 +1,7 @@
 import { bahtText, landText, money, thDateLong, UTILITIES_BILLING_LABEL } from "@/lib/format";
+import { termMonths, termText } from "@/lib/lease";
+
+export { termMonths };
 
 /**
  * สัญญาเช่า (ร่างจากแบบมาตรฐานทั่วไป · ตกลง 2 พ.ย. 2026) — แยกแบบตามประเภททรัพย์สิน
@@ -9,9 +12,14 @@ import { bahtText, landText, money, thDateLong, UTILITIES_BILLING_LABEL } from "
 export type LeaseDeed = { titleType: string | null; deedNo: string | null; landNo: string | null; book: string | null; page: string | null; areaSqWa: number | null };
 export type LeaseData = {
   propertyType: "HOUSE" | "CONDO" | "LAND" | "OTHER"; propertyName: string; address: string | null; unit: string | null;
+  /** จากข้อมูลทรัพย์สิน: บ้านเลขที่ · ห้องชุดเลขที่ / ชั้น / ชื่ออาคาร */
+  houseNo: string | null; unitNo: string | null; floorNo: string | null; buildingName: string | null;
   deeds: LeaseDeed[]; buildingSqm: number | null; landSqWa: number | null;
   contractNo: string | null; startDate: string; endDate: string; currency: string;
   tenant: string; lessors: { name: string; address: string | null }[];
+  /** ผู้เช่า: บุคคล / นิติบุคคล · เลขบัตร / ทะเบียน (เลขเต็มเฉพาะ ADMIN / EDITOR) · ที่อยู่ · โทร · ผู้มีอำนาจลงนาม */
+  tenantJuristic: boolean; tenantId: string | null; tenantAddress: string | null; tenantPhone: string | null; signatory: string | null;
+  noticeDays: number | null; lateFee: number | null; witnesses: [string | null, string | null];
   rent: number; frequency: string; dueDay: number | null;
   deposit: number | null; utilities: string | null;
   bank: { name: string; accountName: string | null; accountNo: string | null } | null;
@@ -26,17 +34,6 @@ const blank = (w = "10rem") => <span className="inline-block border-b border-dot
 const amountOf = (v: number, ccy: string) => (ccy === "THB" ? `${money(v)} บาท (${bahtText(v)})` : `${money(v)} ${ccy}`);
 const plain = (v: number, ccy: string) => (ccy === "THB" ? `${money(v)} บาท` : `${money(v)} ${ccy}`);
 const oneLine = (v: string) => v.replace(/\s*\n\s*/g, " ");
-
-/** จำนวนเดือนเต็มของสัญญา (นับถึงวันถัดจากวันสิ้นสุด: 1 ม.ค. – 31 ธ.ค. = 12 เดือน) */
-export function termMonths(start: string, end: string) {
-  const e = new Date(`${end}T00:00:00Z`); e.setUTCDate(e.getUTCDate() + 1);
-  const m = (e.getUTCFullYear() - Number(start.slice(0, 4))) * 12 + e.getUTCMonth() + 1 - Number(start.slice(5, 7));
-  return Math.max(e.getUTCDate() < Number(start.slice(8, 10)) ? m - 1 : m, 0);
-}
-const termText = (months: number) => {
-  const y = Math.floor(months / 12), m = months % 12;
-  return [y ? `${y} ปี` : "", m ? `${m} เดือน` : ""].filter(Boolean).join(" ") || "น้อยกว่า 1 เดือน";
-};
 
 /** อากรแสตมป์สัญญาเช่าอสังหาริมทรัพย์: 1 บาท ต่อค่าเช่าทุก 1,000 บาท หรือเศษ ตลอดอายุสัญญา */
 export const leaseStampDuty = (totalRent: number) => Math.ceil(totalRent / 1000);
@@ -58,6 +55,9 @@ export function rentLines(start: string, end: string, frequency: string, dueDay:
   return out;
 }
 
+/** ชื่อใต้ลายเซ็นผู้เช่า: นิติบุคคล = ชื่อบริษัท โดย ผู้มีอำนาจลงนาม */
+const tenantSign = (d: LeaseData) => (d.tenantJuristic && d.signatory ? `${d.tenant} โดย ${d.signatory}` : d.tenant);
+
 function Sign({ role, name }: { role: string; name?: string }) {
   return (
     <div className="text-center">
@@ -77,17 +77,17 @@ function premisesText(d: LeaseData) {
     : null;
   switch (d.propertyType) {
     case "CONDO":
-      return <>ห้องชุดเลขที่ {d.unit ? d.unit.replace(/^ห้อง(ชุด)?\s*(เลขที่)?\s*/, "") : blank("5rem")} ในอาคารชุด {d.propertyName} ตั้งอยู่ที่ {addr ?? blank("16rem")}
+      return <>ห้องชุดเลขที่ {d.unitNo ?? (d.unit ? d.unit.replace(/^ห้อง(ชุด)?\s*(เลขที่)?\s*/, "") : blank("5rem"))}{d.floorNo ? ` ชั้น ${d.floorNo}` : ""} ในอาคารชุด {d.buildingName ?? d.propertyName} ตั้งอยู่ที่ {addr ?? blank("16rem")}
         {d.deeds[0]?.deedNo ? ` หนังสือกรรมสิทธิ์ห้องชุดเลขที่ ${d.deeds[0].deedNo}` : ""} เนื้อที่ห้องชุด {d.buildingSqm != null ? `${d.buildingSqm.toLocaleString("th-TH")} ตารางเมตร` : <>{blank("4rem")} ตารางเมตร</>}
         {" "}พร้อมเฟอร์นิเจอร์และอุปกรณ์ตามบัญชีแนบท้ายสัญญา</>;
     case "LAND":
       return <>ที่ดิน {deedTxt ?? <>โฉนดที่ดินเลขที่ {blank("6rem")}</>} ตั้งอยู่ที่ {addr ?? blank("16rem")}
         {d.landSqWa != null && d.deeds.length !== 1 ? ` รวมเนื้อที่ ${landText(d.landSqWa)}` : ""}{d.unit ? ` (ส่วนที่เช่า: ${d.unit})` : ""}</>;
     case "HOUSE":
-      return <>บ้าน {d.propertyName}{d.unit ? ` (${d.unit})` : ""} ตั้งอยู่ที่ {addr ?? blank("16rem")}{deedTxt ? ` ปลูกสร้างบนที่ดิน ${deedTxt}` : ""}
+      return <>บ้านเลขที่ {d.houseNo ?? blank("5rem")} ({d.propertyName}){d.unit ? ` ส่วนที่เช่า: ${d.unit}` : ""} ตั้งอยู่ที่ {addr ?? blank("16rem")}{deedTxt ? ` ปลูกสร้างบนที่ดิน ${deedTxt}` : ""}
         {" "}พร้อมอุปกรณ์ตามบัญชีแนบท้ายสัญญา</>;
     default:
-      return <>อาคาร / สถานที่ {d.propertyName}{d.unit ? ` (${d.unit})` : ""} ตั้งอยู่ที่ {addr ?? blank("16rem")}{deedTxt ? ` บนที่ดิน ${deedTxt}` : ""}
+      return <>อาคาร / สถานที่ {d.propertyName}{d.houseNo ? ` เลขที่ ${d.houseNo}` : ""}{d.unit ? ` (${d.unit})` : ""} ตั้งอยู่ที่ {addr ?? blank("16rem")}{deedTxt ? ` บนที่ดิน ${deedTxt}` : ""}
         {d.buildingSqm != null ? ` พื้นที่ประมาณ ${d.buildingSqm.toLocaleString("th-TH")} ตารางเมตร` : ""}</>;
   }
 }
@@ -154,10 +154,10 @@ export function LeaseContract({ d, place, signDate }: { d: LeaseData; place: str
     <><b>การตรวจทรัพย์สิน</b> ผู้ให้เช่าหรือตัวแทนมีสิทธิเข้าตรวจดูทรัพย์สินที่เช่าในเวลาอันสมควร โดยแจ้งให้ผู้เช่าทราบล่วงหน้า</>,
     <><b>การผิดสัญญา</b> หากผู้เช่าค้างชำระค่าเช่างวดใดเกิน 15 วัน หรือผิดสัญญาข้อใดข้อหนึ่ง และไม่แก้ไขภายใน 15 วันนับแต่ได้รับหนังสือแจ้งจากผู้ให้เช่า
       {" "}ผู้ให้เช่ามีสิทธิบอกเลิกสัญญาได้ทันที และมีสิทธิหักเงินประกันชดใช้ค่าเช่าและค่าเสียหาย โดยไม่ตัดสิทธิเรียกค่าเสียหายส่วนที่เกิน</>,
-    <><b>การเลิกสัญญาก่อนกำหนด</b> หากผู้เช่าประสงค์จะเลิกสัญญาก่อนครบกำหนด ต้องแจ้งเป็นหนังสือล่วงหน้าไม่น้อยกว่า {blank("3rem")} วัน
+    <><b>การเลิกสัญญาก่อนกำหนด</b> หากผู้เช่าประสงค์จะเลิกสัญญาก่อนครบกำหนด ต้องแจ้งเป็นหนังสือล่วงหน้าไม่น้อยกว่า {d.noticeDays ?? blank("3rem")} วัน
       {d.deposit ? " และยินยอมให้ผู้ให้เช่าริบเงินประกันทั้งหมด เว้นแต่ผู้ให้เช่าตกลงเป็นอย่างอื่น" : ""}</>,
     <><b>การส่งมอบคืน</b> เมื่อสัญญาสิ้นสุดลง ผู้เช่าจะส่งมอบทรัพย์สินที่เช่าคืนในสภาพเรียบร้อยเช่นเดียวกับวันที่รับมอบ ยกเว้นความเสื่อมสภาพจากการใช้งานตามปกติ
-      {" "}หากส่งมอบล่าช้า ผู้เช่ายินยอมชดใช้ค่าเสียหายในอัตราวันละ {blank("5rem")} บาท จนกว่าจะส่งมอบเสร็จ</>,
+      {" "}หากส่งมอบล่าช้า ผู้เช่ายินยอมชดใช้ค่าเสียหายในอัตราวันละ {d.lateFee != null ? plain(d.lateFee, d.currency) : <>{blank("5rem")} บาท</>} จนกว่าจะส่งมอบเสร็จ</>,
     months > 36 ? <><b>การจดทะเบียน</b> เนื่องจากการเช่านี้มีกำหนดเกินกว่า 3 ปี คู่สัญญาตกลงไปจดทะเบียนการเช่าต่อพนักงานเจ้าหน้าที่
       {" "}(ประมวลกฎหมายแพ่งและพาณิชย์ มาตรา 538) ภายใน {blank("3rem")} วัน โดยค่าธรรมเนียมการจดทะเบียน {blank("8rem")} เป็นผู้ชำระ</> : null,
     <>สัญญานี้ทำขึ้นสองฉบับมีข้อความถูกต้องตรงกัน คู่สัญญาได้อ่านและเข้าใจข้อความโดยตลอดแล้ว จึงลงลายมือชื่อไว้เป็นสำคัญต่อหน้าพยาน และต่างยึดถือไว้ฝ่ายละหนึ่งฉบับ</>,
@@ -175,15 +175,18 @@ export function LeaseContract({ d, place, signDate }: { d: LeaseData; place: str
         สัญญานี้ทำขึ้นระหว่าง {lessors.length === 0 ? <>{blank("12rem")} ที่อยู่ {blank("16rem")}</>
           : sameAddr || lessors.length === 1 ? <><b>{lessors.map((x) => x.name).join(" และ ")}</b> ที่อยู่ {addr(la[0])}</>
           : lessors.map((x, i) => <span key={i}>{i > 0 && " และ "}<b>{x.name}</b> ที่อยู่ {addr(x.address, "12rem")}</span>)}
-        {" "}ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้ให้เช่า&rdquo;</b> ฝ่ายหนึ่ง กับ <b>{d.tenant}</b> เลขประจำตัวประชาชน / เลขทะเบียนนิติบุคคล {blank("9rem")}
-        {" "}ที่อยู่ {blank("16rem")} โทร {blank("6rem")} ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้เช่า&rdquo;</b> อีกฝ่ายหนึ่ง ทั้งสองฝ่ายตกลงกันดังต่อไปนี้
+        {" "}ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้ให้เช่า&rdquo;</b> ฝ่ายหนึ่ง กับ <b>{d.tenant}</b>
+        {d.tenantJuristic
+          ? <> เลขทะเบียนนิติบุคคล {d.tenantId ?? blank("9rem")} สำนักงานตั้งอยู่ที่ {addr(d.tenantAddress)} โดย {d.signatory ?? blank("10rem")} กรรมการผู้มีอำนาจลงนาม</>
+          : <> เลขประจำตัวประชาชน {d.tenantId ?? blank("9rem")} ที่อยู่ {addr(d.tenantAddress)}</>}
+        {" "}โทร {d.tenantPhone ?? blank("6rem")} ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้เช่า&rdquo;</b> อีกฝ่ายหนึ่ง ทั้งสองฝ่ายตกลงกันดังต่อไปนี้
       </p>
       {clauses.map((c, i) => <p key={i} className="indent-10"><b>ข้อ {i + 1}</b> {c}</p>)}
       <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 break-inside-avoid">
         {(lessors.length ? lessors.map((x) => x.name) : [undefined]).map((n, i) => <Sign key={i} role="ผู้ให้เช่า" name={n} />)}
-        <Sign role="ผู้เช่า" name={d.tenant} />
-        <Sign role="พยาน" />
-        <Sign role="พยาน" />
+        <Sign role="ผู้เช่า" name={tenantSign(d)} />
+        <Sign role="พยาน" name={d.witnesses[0] ?? undefined} />
+        <Sign role="พยาน" name={d.witnesses[1] ?? undefined} />
       </div>
       {d.currency === "THB" && total > 0 && (
         <p className="mt-5 text-[11px] text-slate-500">ติดอากรแสตมป์ {leaseStampDuty(total).toLocaleString("en-US")} บาท
@@ -214,7 +217,7 @@ export function RentAnnex({ d }: { d: LeaseData }) {
       </table>
       <div className="mt-8 grid grid-cols-2 gap-6 break-inside-avoid">
         <Sign role="ผู้ให้เช่า" name={d.lessors.map((x) => x.name).join(" และ ") || undefined} />
-        <Sign role="ผู้เช่า" name={d.tenant} />
+        <Sign role="ผู้เช่า" name={tenantSign(d)} />
       </div>
     </article>
   );
@@ -245,7 +248,7 @@ export function HandoverAnnex({ d }: { d: LeaseData }) {
       <p className="mt-3">คู่สัญญาได้ตรวจทรัพย์สินตามรายการข้างต้นร่วมกันแล้ว ถูกต้องตรงตามสภาพจริง</p>
       <div className="mt-8 grid grid-cols-2 gap-6 break-inside-avoid">
         <Sign role="ผู้ส่งมอบ (ผู้ให้เช่า)" name={d.lessors.map((x) => x.name).join(" และ ") || undefined} />
-        <Sign role="ผู้รับมอบ (ผู้เช่า)" name={d.tenant} />
+        <Sign role="ผู้รับมอบ (ผู้เช่า)" name={tenantSign(d)} />
       </div>
     </article>
   );
