@@ -2063,6 +2063,16 @@ SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(
   jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
                      'date', current_date + 1, 'amount', 500, 'notes', 'batch-rent-bad')))$$, 'อนาคต', 'รับค่าเช่า: วันที่อนาคตไม่ได้');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE notes = 'batch-rent-bad'), 'รับค่าเช่า: แถวไหนผิด = ไม่บันทึกเลยทั้งชุด');
+-- ภาษีหัก ณ ที่จ่ายของค่าเช่า (2 พ.ย. 2026): เก็บใน tax · เงินเข้าบัญชี = ยอด − ภาษี · ภาษี ≥ ยอด ไม่ได้
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date, 'amount', 2000, 'tax', 100, 'received_to_asset_id', t.a('KBank ออมทรัพย์'), 'notes', 'batch-rent-wht')));
+SELECT t.ok((SELECT i.tax = 100 AND i.amount = 2000 AND m.amount = 1900 FROM public.income_transactions i
+              JOIN public.cash_movements m ON m.source_entity_type = 'INCOME' AND m.source_entity_id = i.id AND m.deleted_at IS NULL WHERE i.notes = 'batch-rent-wht'),
+            'รับค่าเช่า: ภาษีหัก ณ ที่จ่าย 100 เก็บไว้ · เงินเข้าบัญชี 1,900');
+SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', (SELECT id FROM public.property_leases WHERE deleted_at IS NULL AND status = 'ACTIVE' AND end_date >= current_date ORDER BY created_at LIMIT 1),
+                     'date', current_date, 'amount', 500, 'tax', 500, 'notes', 'batch-rent-bad')))$$, 'ภาษีหัก', 'รับค่าเช่า: ภาษีเท่ากับยอดไม่ได้');
 SELECT public.batch_add_property_expenses(jsonb_build_array(
   jsonb_build_object('date', current_date, 'description', 'batch-exp-test', 'amount', 800, 'related_asset_id', t.a('บ้าน A'),
                      'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'expense_category', 'บ้าน / สาธารณูปโภค')));
