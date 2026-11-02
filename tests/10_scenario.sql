@@ -2940,6 +2940,28 @@ SELECT t.ok((SELECT (j->>'prev_net_worth')::numeric = (SELECT (by_person->>t.p('
                     AND EXISTS (SELECT 1 FROM jsonb_array_elements(j->'snapshots') e WHERE e->>'month' = '2026-09-01' AND e->>'status' = 'AUTO')
                FROM (SELECT public.person_dashboard('2026-10-01', t.p('คุณพ่อ')) AS j) x),
             'Dashboard รายคน: ยอดงวดก่อน + กราฟ ใช้ยอดอัตโนมัติของคนนั้น');
+-- การ์ดรายคนมีเส้นเล็ก (2 พ.ย. 2026): ทุกจุดมีสินทรัพย์ / หนี้สินของคนนั้น · สินทรัพย์ − หนี้สิน = Net Worth (ตัวเลขเดิม)
+SELECT t.ok((SELECT bool_and((e->>'total_assets')::numeric - (e->>'total_liabilities')::numeric = (e->>'net_worth')::numeric
+                             AND (x.j->'opening'->>'total_assets')::numeric - (x.j->'opening'->>'total_liabilities')::numeric
+                                 = (x.j->'opening'->>'net_worth')::numeric)
+                    AND count(*) > 0
+               FROM (SELECT public.person_dashboard('2026-10-01', p.id) AS j FROM public.persons p WHERE p.deleted_at IS NULL) x,
+                    jsonb_array_elements(x.j->'snapshots') e),
+            'Dashboard รายคน (เส้นเล็ก): ทุกคน ทุกจุด สินทรัพย์ − หนี้สิน = Net Worth (ตั้งต้น · ปิดแล้ว · อัตโนมัติ)');
+SELECT t.ok((SELECT (e->>'total_assets')::numeric > 0 AND (e->>'total_assets')::numeric
+                    = (SELECT (by_person_al -> t.p('คุณพ่อ')::text ->> 'a')::numeric FROM public.net_worth_month_auto WHERE snapshot_month = '2026-09-01')
+               FROM (SELECT public.person_dashboard('2026-10-01', t.p('คุณพ่อ')) AS j) x, jsonb_array_elements(x.j->'snapshots') e
+              WHERE e->>'month' = '2026-09-01' AND e->>'status' = 'AUTO'),
+            'Dashboard รายคน (เส้นเล็ก): สินทรัพย์ ก.ย. (อัตโนมัติ) ของคุณพ่อ มาจากยอดอัตโนมัติ');
+SELECT t.ok((SELECT (e->>'total_assets')::numeric > 0 AND (e->>'total_assets')::numeric
+                    = (SELECT coalesce(sum(i.base_value), 0) FROM public.net_worth_snapshot_items i
+                         JOIN public.net_worth_snapshots s ON s.id = i.snapshot_id AND s.status = 'FINAL' AND s.deleted_at IS NULL
+                        WHERE s.snapshot_month = '2026-07-01' AND i.person_id = t.p('คุณแม่') AND i.item_type = 'ASSET')
+               FROM (SELECT public.person_dashboard('2026-10-01', t.p('คุณแม่')) AS j) x, jsonb_array_elements(x.j->'snapshots') e
+              WHERE e->>'month' = '2026-07-01' AND e->>'status' = 'FINAL'),
+            'Dashboard รายคน (เส้นเล็ก): สินทรัพย์ ก.ค. (ปิดแล้ว) ของคุณแม่ = รายการใน Snapshot');
+SELECT t.ok(NOT has_function_privilege('authenticated', 'private.month_points_person(uuid, uuid)', 'EXECUTE'),
+            'Dashboard รายคน (เส้นเล็ก): ผู้ใช้เรียกฟังก์ชันภายในโดยตรงไม่ได้');
 SELECT t.ok((SELECT j->>'label' = 'สิ้นเดือนก่อน' AND (j->>'net_worth')::numeric = (SELECT (by_person->>t.p('คุณพ่อ')::text)::numeric FROM _auto9)
                     AND (j->>'net_worth')::numeric = (j->>'total_assets')::numeric - (j->>'total_liabilities')::numeric
                FROM (SELECT public.dashboard_person_base('2026-10-01', t.p('คุณพ่อ')) AS j) x),
