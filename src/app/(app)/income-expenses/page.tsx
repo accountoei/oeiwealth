@@ -114,7 +114,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       supabase.from("v_insurance_schedule_status")
         .select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,remaining,status,insurer,policy_no,person_id,payer_person_id,cash_value_asset_id")
         .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
-        .neq("status", "CLOSED").order("due_date"),
+        .not("status", "in", "(CLOSED,HISTORY,SKIPPED)").order("due_date"),
     ]),
     // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
     Promise.all([

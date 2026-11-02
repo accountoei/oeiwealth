@@ -456,7 +456,13 @@ export const INS_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
   PAID: { text: "จ่ายแล้ว", cls: "bg-emerald-50 text-emerald-700" }, PARTIAL: { text: "บางส่วน", cls: "bg-amber-50 text-amber-700" },
   PENDING: { text: "รอ", cls: "bg-slate-100 text-slate-700" }, OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" },
   CLOSED: { text: "ไม่ต้องชำระ (ปิดกรมธรรม์)", cls: "bg-slate-100 text-slate-500" },
+  // ครบกำหนดก่อน Go-live = ประวัติ นับเป็นจ่าย / รับแล้ว (ไม่มีเงินเข้า–ออกในระบบ) · ติ๊ก "ไม่ได้จ่าย" = ไม่นับ (ตกลง 2 พ.ย. 2026)
+  HISTORY: { text: "ก่อน Go-live", cls: "bg-slate-100 text-slate-500" },
+  SKIPPED: { text: "ไม่ได้จ่าย", cls: "bg-slate-100 text-slate-500 line-through" },
 };
+/** ยอดที่นับเป็นจ่าย / รับแล้วของงวด: เงินจริง + งวดประวัติก่อน Go-live (เต็มงวด) */
+export const insCountedPaid = (l: { status: string; amount: number; paid_amount: number }) =>
+  l.status === "HISTORY" ? Number(l.amount) : Number(l.paid_amount);
 export const FOLLOWUP_ROLE: Record<string, string> = { INSURED: "ผู้เอาประกัน", PAYER: "ผู้จ่ายเบี้ย", BENEFICIARY: "ผู้รับผลประโยชน์" };
 export const FOLLOWUP_STATUS: [string, string][] = [["OPEN", "ยังไม่เริ่ม"], ["IN_PROGRESS", "กำลังดำเนินการ"], ["DONE", "เสร็จแล้ว"], ["NOT_APPLICABLE", "ไม่ต้องทำ"]];
 
