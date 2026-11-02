@@ -1,12 +1,13 @@
 // โครงเมนูตาม Core Schema V1.1 Section 1 (Navigation)
-/** icon = ชื่อไอคอนใน Sidebar (ICONS) */
+/** icon = ชื่อไอคอนใน Sidebar (ICONS) · sidebar: false = ไม่แสดงในแถบซ้าย (มีปุ่มที่แถบบนแทน) แต่ยังใช้เป็นชื่อหน้า */
 export type NavItem = { label: string; href: string; match?: string; ready?: boolean; icon?: string };
-export type NavGroup = { label: string; href?: string; match?: string; ready?: boolean; icon?: string; items?: NavItem[] };
+export type NavGroup = { label: string; href?: string; match?: string; ready?: boolean; icon?: string; sidebar?: false; items?: NavItem[] };
 
 export const NAV: NavGroup[] = [
   { label: "Dashboard", href: "/", ready: true, icon: "dashboard" },
   // ย้ายจากท้ายหน้า Dashboard (ตกลง 27 ต.ค. 2026): สิ่งที่ต้องทำ + ความครบถ้วนของข้อมูล
-  { label: "To-Do List", href: "/todo", ready: true, icon: "todo" },
+  // ย้ายจากแถบซ้ายไปเป็นปุ่มกระดิ่งที่แถบบน (ตกลง 2 พ.ย. 2026)
+  { label: "To-Do List", href: "/todo", ready: true, icon: "todo", sidebar: false },
   { label: "Income & Expenses", href: "/income-expenses", ready: true, icon: "income" },
   { label: "Cash & Bank Accounts", href: "/financial/cash", ready: true, icon: "cash" },
   { label: "Loans Receivable", href: "/financial/loans", ready: true, icon: "loans" },
@@ -37,11 +38,12 @@ export const clampNavWidth = (w: number) => (Number.isFinite(w) ? Math.min(NAV_W
 export const NAV_HREFS: string[] = NAV.flatMap((g) => (g.items ? g.items.map((i) => i.match ?? i.href) : g.href ? [g.match ?? g.href] : []))
   .map((h) => h.split("#")[0]);
 
-/** เรียงเมนูตามลำดับที่บันทึกไว้ (href) · เมนูใหม่ที่ไม่อยู่ในลำดับเดิมต่อท้าย (ก่อน Settings) */
+/** เมนูในแถบซ้าย เรียงตามลำดับที่บันทึกไว้ (href) · เมนูใหม่ที่ไม่อยู่ในลำดับเดิมต่อท้าย (ก่อน Settings) */
 export function orderNav(order: string[]): NavGroup[] {
-  const first = NAV.filter((g) => g.href === NAV_PINNED_FIRST);
-  const last = NAV.filter((g) => g.href === NAV_PINNED_LAST);
-  const mid = NAV.filter((g) => g.href !== NAV_PINNED_FIRST && g.href !== NAV_PINNED_LAST);
+  const side = NAV.filter((g) => g.sidebar !== false);
+  const first = side.filter((g) => g.href === NAV_PINNED_FIRST);
+  const last = side.filter((g) => g.href === NAV_PINNED_LAST);
+  const mid = side.filter((g) => g.href !== NAV_PINNED_FIRST && g.href !== NAV_PINNED_LAST);
   const pos = (g: NavGroup) => { const i = order.indexOf(g.href ?? ""); return i < 0 ? order.length + mid.indexOf(g) : i; };
   return [...first, ...[...mid].sort((a, b) => pos(a) - pos(b)), ...last];
 }
