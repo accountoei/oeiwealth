@@ -131,6 +131,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                 <Item label="ชื่อบริษัท">{d.company_name}</Item>
                 <Item label="เลขทะเบียน">{d.registration_no || "-"}</Item>
                 <Item label="ประเภทกิจการ">{d.business_type || "-"}</Item>
+                <Item label="เบอร์โทร">{d.phone ? <a href={`tel:${d.phone}`} className="hover:underline">{d.phone}</a> : "-"}</Item>
+                <Item label="ที่อยู่" wide>{d.address ? <span className="whitespace-pre-line">{d.address}</span> : "-"}</Item>
                 <Item label="การถือหุ้น">ถือ {fmtPct(companyPct)} ของบริษัท</Item>
                 <Item label="หุ้นที่ถือ / หุ้นทั้งหมด">{qty(d.shares_owned)} / {qty(d.total_shares)}</Item>
                 <Item label="ทุนจดทะเบียน" num>{d.par_value != null && d.total_shares != null ? money(Number(d.par_value) * Number(d.total_shares), a.currency) : "-"}
@@ -157,7 +159,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                   remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/business", paths: ["/financial/business"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีปันผล / เงินลงทุนที่บันทึกแล้ว" } : undefined }}
                   status2={{ table: "assets", id, value: a.status, paths, label: "นับเป็นทรัพย์สิน", options: ASSET_STATUS }}>
                   <BusinessInfoForm assetId={id} byShares={byShares} v={{ name: a.name, logo_data: d.logo_data ?? null, company_name: d.company_name, registration_no: d.registration_no,
-                    business_type: d.business_type, total_shares: d.total_shares, par_value: d.par_value, shares_owned: d.shares_owned,
+                    business_type: d.business_type, address: d.address ?? null, phone: d.phone ?? null, total_shares: d.total_shares, par_value: d.par_value, shares_owned: d.shares_owned,
                     company_ownership_percent: d.company_ownership_percent, investment_cost: d.investment_cost, notes: d.notes }} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">

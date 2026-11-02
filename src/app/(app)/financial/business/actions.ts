@@ -28,7 +28,10 @@ export async function createBusiness(_: ActionState, form: FormData): Promise<Ac
   } });
   if (error) return { error: friendlyError(error.message) };
   const par = num(form.get("par_value"));
-  if (par != null && par > 0) await supabase.from("private_business_details").update({ par_value: par }).eq("asset_id", String(data));
+  const contact = { address: str(form.get("address")), phone: str(form.get("phone")) };
+  if ((par != null && par > 0) || contact.address || contact.phone) {
+    await supabase.from("private_business_details").update({ ...(par != null && par > 0 ? { par_value: par } : {}), ...contact }).eq("asset_id", String(data));
+  }
   revalidatePath("/financial/business");
   redirect(`/financial/business/${data}`);
 }
@@ -62,6 +65,8 @@ export async function updateBusinessInfo(_: ActionState, form: FormData): Promis
     company_name: str(form.get("company_name")),
     registration_no: str(form.get("registration_no")),
     business_type: str(form.get("business_type")),
+    address: str(form.get("address")),
+    phone: str(form.get("phone")),
     total_shares: num(form.get("total_shares")),
     par_value: num(form.get("par_value")),
     investment_cost: num(form.get("investment_cost")),
