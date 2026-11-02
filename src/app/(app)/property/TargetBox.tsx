@@ -2,12 +2,14 @@ import type { ReactNode } from "react";
 import RowActions from "@/components/RowActions";
 import ModalButton from "@/components/ModalButton";
 import CostItemForm, { type CostLot } from "./CostItemForm";
-import { diffText, money, thDate } from "@/lib/format";
+import { diffText, money, opportunityText, thDate } from "@/lib/format";
 
 export type TargetPrice = {
   asset_id: string; currency: string; rate_pct: number | null; rate_source: string | null; lot_count: number; building_count: number;
   cost_total: number | null; interest_total: number | null; depreciation_total: number | null; carrying_value: number | null;
   market_value: number | null; market_date: string | null; min_price: number | null; net_income_thb: number;
+  /** วิธีคิด FIXED / CPI_PLUS · เงินเฟ้อเฉลี่ยต่อปีตั้งแต่ปีที่จ่ายก้อนแรกถึงปีล่าสุดที่มีดัชนี (ค.ศ.) */
+  method?: string | null; cpi_from_year?: number | null; cpi_to_year?: number | null; cpi_avg_pct?: number | null;
 };
 
 const SOURCE_LABEL: Record<string, string> = { ACQUISITION: "ราคาที่ได้มา", PAYMENT: "จ่ายเพิ่ม (ในระบบ)", MANUAL: "ต้นทุนเพิ่ม" };
@@ -36,10 +38,20 @@ export default function TargetBox({ currency, target, unit, nwValue, lots }: {
       ) : (<>
         <div className="mt-1 text-xl font-semibold tabular-nums">{money(min, currency, 0)}</div>
         {unit && unit.area > 0 && <div className="text-xs text-slate-500">≈ {money(min / unit.area, undefined, 0)} / {unit.label}</div>}
-        {t?.rate_pct == null && <p className="mt-1 text-xs text-amber-700">ยังไม่ได้ตั้งอัตราดอกเบี้ยเทียบ (Settings › FX &amp; Prices) · ตอนนี้คิดดอกเบี้ย 0%</p>}
+        {t?.rate_pct == null ? <p className="mt-1 text-xs text-amber-700">ยังไม่ได้ตั้งอัตราดอกเบี้ยเทียบ (Settings › FX &amp; Prices) · ตอนนี้คิดดอกเบี้ย 0%</p> : (
+          <div className="mt-1 text-xs text-slate-600">
+            {t.rate_source === "ASSET" ? "แปลงนี้" : "ของครอบครัว"}: {opportunityText(t.method, Number(t.rate_pct))}
+            {/* อัตราคงที่ → แสดงเงินเฟ้อจริงช่วงที่ถือไว้เทียบ (ตกลง 2 พ.ย. 2026) */}
+            {t.method !== "CPI_PLUS" && t.cpi_avg_pct != null && t.cpi_from_year != null && t.cpi_to_year != null && (
+              <div className="text-slate-400">เงินเฟ้อช่วงที่ถือ ({t.cpi_from_year + 543}–{t.cpi_to_year + 543}) เฉลี่ย {Number(t.cpi_avg_pct).toFixed(2)}% ต่อปี</div>)}
+            {t.method === "CPI_PLUS" && t.cpi_to_year != null && (
+              <div className="text-slate-400">เงินเฟ้อจริงถึงปี {t.cpi_to_year + 543} (ปีล่าสุดที่มีข้อมูลทั้งปี){t.cpi_avg_pct != null && t.cpi_from_year != null
+                ? ` · ช่วงที่ถือ (${t.cpi_from_year + 543}–${t.cpi_to_year + 543}) เฉลี่ย ${Number(t.cpi_avg_pct).toFixed(2)}% ต่อปี` : ""}</div>)}
+          </div>
+        )}
         <dl className="mt-2 space-y-0.5 text-xs">
           {line(`ต้นทุน ${t!.lot_count} ก้อน`, money(t!.cost_total))}
-          {line(`ดอกเบี้ย ${Number(t!.rate_pct ?? 0)}% ต่อปี${t!.rate_source === "ASSET" ? " (แปลงนี้)" : t!.rate_source === "FAMILY" ? " (ครอบครัว)" : ""}`, `+${money(t!.interest_total)}`)}
+          {line(t!.method === "CPI_PLUS" ? `ดอกเบี้ย (เงินเฟ้อ + ${Number(t!.rate_pct ?? 0)}% ต่อปี)` : `ดอกเบี้ย ${Number(t!.rate_pct ?? 0)}% ต่อปี`, `+${money(t!.interest_total)}`)}
           {Number(t!.depreciation_total) > 0 && line("หักค่าเสื่อมสิ่งปลูกสร้าง", `−${money(t!.depreciation_total)}`)}
           {carrying != null && min - carrying > 0.005 && line("ค่าใช้จ่ายขาย (จากราคาตลาดครั้งล่าสุด)", `+${money(min - carrying)}`)}
           {/* เทียบกับมูลค่าล่าสุด: ราคาขายขั้นต่ำสูง / ต่ำกว่ามูลค่าล่าสุดกี่ % (ตกลง 29 ต.ค. 2026) */}
@@ -72,7 +84,8 @@ export function CostLotsSection({ assetId, currency, today, lots, canWrite, canD
               <tr key={`${l.source}-${l.item_id ?? l.movement_id ?? i}`} className="align-top">
                 <td className="whitespace-nowrap py-1.5">{thDate(l.lot_date)}</td>
                 <td>{l.description || SOURCE_LABEL[l.source]}
-                  <div className="text-xs text-slate-400">{SOURCE_LABEL[l.source]}{l.is_building && ` · สิ่งปลูกสร้าง ${l.depreciation_years} ปี`}{l.notes && ` · ${l.notes}`}</div></td>
+                  <div className="text-xs text-slate-400">{SOURCE_LABEL[l.source]}{l.is_building && ` · สิ่งปลูกสร้าง ${l.depreciation_years} ปี`}{l.notes && ` · ${l.notes}`}
+                    {l.cpi_factor != null && ` · เงินเฟ้อ ×${Number(l.cpi_factor).toFixed(3)}`}</div></td>
                 <td className="text-right tabular-nums">{money(l.amount)}</td>
                 <td className="text-right tabular-nums">{Number(l.years_held).toFixed(1)}</td>
                 <td className="text-right tabular-nums">{money(l.interest)}</td>
@@ -88,7 +101,9 @@ export function CostLotsSection({ assetId, currency, today, lots, canWrite, canD
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">ดอกเบี้ย = ยอด × ((1 + อัตรา)^(ปีที่ถือ) − 1) · สิ่งปลูกสร้างหักค่าเสื่อมเท่ากันทุกปีจนครบอายุ ·
+      <p className="text-xs text-slate-500">{lots[0]?.method === "CPI_PLUS"
+          ? <>ดอกเบี้ย = ยอด × (ดัชนีเงินเฟ้อปี {lots[0].cpi_to_year != null ? lots[0].cpi_to_year + 543 : "ล่าสุด"} ÷ ดัชนีปีที่จ่าย × (1 + ส่วนเพิ่ม)^(ปีที่ถือ) − 1) · จ่ายหลังปีล่าสุดที่มีดัชนี = ไม่คิดเงินเฟ้อ</>
+          : <>ดอกเบี้ย = ยอด × ((1 + อัตรา)^(ปีที่ถือ) − 1)</>} · สิ่งปลูกสร้างหักค่าเสื่อมเท่ากันทุกปีจนครบอายุ ·
         ต้นทุนที่ได้มา แก้ที่ตารางส่วนประกอบ (ปุ่ม &ldquo;แก้ไข&rdquo;) · จ่ายเพิ่มในระบบนับให้อัตโนมัติ</p>
     </div>
   );

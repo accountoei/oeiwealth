@@ -261,8 +261,12 @@ function parseCoords(raw: string | null, url: string | null): { lat: number | nu
 export async function updatePropertyInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
-  const rate = num(form.get("opportunity_rate_pct"));
+  // อัตราดอกเบี้ยเทียบรายแปลง: วิธี "" = ใช้ของครอบครัว (ล้างทั้งคู่) · FIXED / CPI_PLUS ต้องมีตัวเลข
+  const oppMethod = form.has("opportunity_method") ? (str(form.get("opportunity_method")) ?? "") : null;
+  const rate = oppMethod === "" ? null : num(form.get("opportunity_rate_pct"));
   if (rate !== null && (Number.isNaN(rate) || rate < 0 || rate > 100)) return { error: "อัตราดอกเบี้ยเทียบต้องอยู่ระหว่าง 0–100%" };
+  if (oppMethod && !["FIXED", "CPI_PLUS"].includes(oppMethod)) return { error: "วิธีคิดอัตราดอกเบี้ยเทียบไม่ถูกต้อง" };
+  if (oppMethod && rate === null) return { error: oppMethod === "CPI_PLUS" ? "กรอกส่วนเพิ่มเหนือเงินเฟ้อ (แนะนำ 2%)" : "กรอกอัตราดอกเบี้ยเทียบ" };
   const mapUrl = str(form.get("map_url"));
   if (mapUrl && !/^https:\/\//i.test(mapUrl)) return { error: "ลิงก์ Google Maps ต้องขึ้นต้นด้วย https://" };
   const xy = parseCoords(str(form.get("coords")), mapUrl);
@@ -297,7 +301,8 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
     ...(form.has("land_rai") ? { land_area_sq_wa: sqwaFromForm(form) } : {}),
     subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
     province: str(form.get("province")),
-    ...(form.has("opportunity_rate_pct") ? { opportunity_rate_pct: rate } : {}),
+    ...(oppMethod !== null ? { opportunity_rate_pct: rate, opportunity_method: oppMethod || null }
+      : form.has("opportunity_rate_pct") ? { opportunity_rate_pct: rate } : {}),
     encumbrance_type: str(form.get("encumbrance_type")),
     encumbrance_details: ["", "NONE"].includes(str(form.get("encumbrance_type")) ?? "") ? null : str(form.get("encumbrance_details")),
     // ที่ว่าง: ส่งเฉพาะตอนเป็น "ว่าง" (ระบบเติมวันเริ่มว่าง / เก็บประวัติให้เมื่อเปลี่ยนการใช้งาน)

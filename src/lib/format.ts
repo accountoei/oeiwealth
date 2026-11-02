@@ -181,6 +181,16 @@ export const MARKET_METHOD_LABEL: Record<string, string> = {
 export const MARKET_PRICE_TYPE_LABEL: Record<string, string> = { LISTING: "ราคาประกาศขาย", TRANSACTION: "ราคาซื้อขายจริง", APPRAISAL: "ราคาจากผู้ประเมิน" };
 export const MARKET_CONFIDENCE_LABEL: Record<string, string> = { HIGH: "มั่นใจสูง", MEDIUM: "มั่นใจปานกลาง", LOW: "มั่นใจต่ำ" };
 export const MARKET_UNIT_LABEL: Record<string, string> = { SQ_WA: "ตร.ว.", SQ_M: "ตร.ม.", TOTAL: "ยอดรวม" };
+/** วิธีคิดอัตราดอกเบี้ยเทียบ (ต้นทุนเสียโอกาส) ของราคาขายขั้นต่ำที่คุ้ม */
+export const OPPORTUNITY_METHOD_LABEL: Record<string, string> = {
+  CPI_PLUS: "เงินเฟ้อ + ส่วนเพิ่ม",
+  FIXED: "อัตราคงที่",
+};
+/** ข้อความสั้นของวิธีคิด เช่น "เงินเฟ้อ + 2%" / "คงที่ 4%" */
+export function opportunityText(method: string | null | undefined, rate: number | null | undefined): string {
+  if (rate == null) return "ยังไม่ได้ตั้ง";
+  return method === "CPI_PLUS" ? `เงินเฟ้อ + ${Number(rate)}%` : `คงที่ ${Number(rate)}%`;
+}
 /** หน่วยตั้งต้นตามประเภททรัพย์สิน: ที่ดิน → ต่อ ตร.ว. · คอนโด → ต่อ ตร.ม. · อื่น ๆ → ยอดรวม */
 export function marketDefaultUnit(propertyType: string): string {
   return propertyType === "LAND" ? "SQ_WA" : propertyType === "CONDO" ? "SQ_M" : "TOTAL";

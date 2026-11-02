@@ -10,6 +10,7 @@ import { TabActions } from "@/components/TabActions";
 import OverrideForm from "./OverrideForm";
 import FxRefreshButton from "./FxRefreshButton";
 import OpportunityRateForm from "./OpportunityRateForm";
+import CpiTable, { type CpiRow } from "./CpiTable";
 import { redirect } from "next/navigation";
 
 const JOB_RESULT: Record<string, string> = { SUCCESS: "สำเร็จ", PARTIAL: "บางส่วน", FAILED: "ล้มเหลว", RUNNING: "กำลังทำงาน" };
@@ -24,8 +25,8 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
-  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { data: autoHolds }, { data: autoGolds }, { data: lastPrice }, { data: lastRefresh }] = await Promise.all([
-    supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since,opportunity_rate_pct").maybeSingle(),
+  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { data: autoHolds }, { data: autoGolds }, { data: lastPrice }, { data: lastRefresh }, { data: cpiRows }] = await Promise.all([
+    supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since,opportunity_rate_pct,opportunity_method").maybeSingle(),
     supabase.from("v_fx_status").select("currency,latest_rate_date,rate_to_thb,source,is_override,age_days,is_stale").order("currency"),
     isAdmin
       ? supabase.from("system_job_runs").select("id,job_type,started_at,result,details").order("started_at", { ascending: false }).limit(10)
@@ -43,6 +44,8 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
       ? supabase.from("audit_logs").select("event_at,metadata").eq("entity_type", "fx_rates").eq("field_name", "fx_refresh_request")
           .order("event_at", { ascending: false }).limit(1)
       : Promise.resolve({ data: [] as { event_at: string; metadata: unknown }[] }),
+    // ดัชนีเงินเฟ้อรายปี (อัตราดอกเบี้ยเทียบแบบ เงินเฟ้อ + ส่วนเพิ่ม)
+    supabase.from("cpi_annual").select("year,cpi_index,inflation_pct,source,notes").is("deleted_at", null).order("year", { ascending: false }),
   ]);
   const tokenExp = ((lastRefresh?.[0]?.metadata as { token_expires?: string | null } | null)?.token_expires ?? "").slice(0, 10);
   const tokenDays = tokenExp ? Math.round((Date.parse(tokenExp) - Date.parse(todayBangkok())) / 86400000) : null;
@@ -212,14 +215,21 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
           </section>
       )}
 
-      {/* อัตราดอกเบี้ยเทียบ (ตกลง 28 ต.ค. 2026) · กล่องล่างสุดของแท็บ FX & Prices */}
+      {/* อัตราดอกเบี้ยเทียบ (ตกลง 28 ต.ค. 2026 · วิธีเงินเฟ้อ + ส่วนเพิ่ม 2 พ.ย. 2026) · กล่องล่างสุดของแท็บ FX & Prices */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">อัตราดอกเบี้ยเทียบ (ต้นทุนเสียโอกาส)</h2>
         <p className="mb-3 mt-1 text-xs text-slate-500">
           ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับใน Net Worth ·
           แก้เป็นรายแปลงได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; ของทรัพย์สิน{isAdmin ? "" : " · แก้ได้เฉพาะ ADMIN"}
         </p>
-        <OpportunityRateForm rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null} canEdit={isAdmin} />
+        <OpportunityRateForm rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null}
+          method={family?.opportunity_method ?? "FIXED"} canEdit={isAdmin} />
+        <h3 className="mb-2 mt-5 text-sm font-medium text-slate-800">อัตราเงินเฟ้อรายปี (ดัชนีราคาผู้บริโภคทั่วไปของไทย · ค่าเฉลี่ยทั้งปี)</h3>
+        <p className="mb-2 text-xs text-slate-500">
+          ใช้กับวิธี &ldquo;เงินเฟ้อ + ส่วนเพิ่ม&rdquo; และข้อความเทียบในกล่องราคาขายขั้นต่ำ · คิดถึงปีล่าสุดที่มีข้อมูลทั้งปี (ไม่ใช้ข้อมูลบางเดือน) ·
+          ข้อมูลย้อนหลังจาก World Bank ซึ่งมาจากตัวเลขของ สนค. กระทรวงพาณิชย์
+        </p>
+        <CpiTable rows={((cpiRows ?? []) as CpiRow[])} canEdit={isAdmin} thisYear={Number(todayBangkok().slice(0, 4))} />
       </section>
     </div>
   );

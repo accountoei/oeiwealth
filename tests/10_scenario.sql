@@ -3802,6 +3802,74 @@ SELECT t.ok(NOT has_table_privilege('anon', 'public.property_cost_items', 'SELEC
             AND NOT has_table_privilege('anon', 'public.v_property_cost_lots', 'SELECT'), 'ราคาขั้นต่ำ: anon อ่านไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz20b. Property: ต้นทุนเสียโอกาสแบบ เงินเฟ้อ + ส่วนเพิ่ม · ตารางดัชนีเงินเฟ้อ (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.ok((SELECT count(*) = 66 AND min(year) = 1960 AND max(year) = 2025 FROM public.cpi_annual WHERE deleted_at IS NULL),
+            'เงินเฟ้อ: มีดัชนีย้อนหลัง พ.ศ. 2503–2568');
+SELECT t.ok((SELECT opportunity_method FROM public.families) = 'FIXED', 'เงินเฟ้อ: ครอบครัวเริ่มต้นเป็นอัตราคงที่ (เหมือนเดิม)');
+SELECT cpi_index AS c20 FROM public.cpi_annual WHERE year = 2020 AND deleted_at IS NULL \gset
+SELECT cpi_index AS c24 FROM public.cpi_annual WHERE year = 2024 AND deleted_at IS NULL \gset
+SELECT cpi_index AS c25 FROM public.cpi_annual WHERE year = 2025 AND deleted_at IS NULL \gset
+UPDATE public.families SET opportunity_rate_pct = 3;
+UPDATE public.assets SET acquisition_cost = 1000000, acquisition_date = DATE '2020-06-01' WHERE id = t.a('บ้าน A');
+SELECT t.ok((SELECT method = 'FIXED' AND cpi_factor IS NULL
+                    AND interest = round(1000000 * (power(1.03, ((now() AT TIME ZONE 'Asia/Bangkok')::date - DATE '2020-06-01') / 365.0) - 1), 2)
+               FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A') AND source = 'ACQUISITION'),
+            'เงินเฟ้อ: แบบคงที่คิดเหมือนเดิม');
+SELECT t.ok((SELECT method = 'FIXED' AND cpi_from_year = 2020 AND cpi_to_year = 2025
+                    AND cpi_avg_pct = round((power(:c25 / :c20, 1.0 / 5) - 1) * 100, 2)
+               FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'เงินเฟ้อ: แบบคงที่ยังแสดงเงินเฟ้อเฉลี่ยช่วงที่ถือไว้เทียบ');
+UPDATE public.families SET opportunity_method = 'CPI_PLUS', opportunity_rate_pct = 2;
+SELECT t.ok((SELECT method = 'CPI_PLUS' AND rate_pct = 2 AND cpi_to_year = 2025 AND cpi_factor = round(:c25 / :c20, 6)
+                    AND interest = round(1000000 * (:c25 / :c20 * power(1.02, ((now() AT TIME ZONE 'Asia/Bangkok')::date - DATE '2020-06-01') / 365.0) - 1), 2)
+               FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A') AND source = 'ACQUISITION'),
+            'เงินเฟ้อ: ดอกเบี้ย = ยอด × (CPI 2568 ÷ CPI 2563 × 1.02^ปี − 1)');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.property_cost_items(asset_id, cost_date, amount, description)
+  VALUES (t.a('บ้าน A'), (now() AT TIME ZONE 'Asia/Bangkok')::date, 10000, 'ทดสอบปีนี้') RETURNING id AS ci1 \gset
+SELECT t.ok((SELECT cpi_factor = 1 AND interest = 0 FROM public.v_property_cost_lots WHERE item_id = :'ci1'),
+            'เงินเฟ้อ: จ่ายหลังปีล่าสุดที่มีดัชนี → ไม่คิดเงินเฟ้อ (ตัวคูณ 1)');
+SELECT t.ok((SELECT method = 'CPI_PLUS' AND rate_source = 'FAMILY' AND lot_count = 2
+                    AND min_price = cost_total + interest_total - depreciation_total
+               FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'เงินเฟ้อ: ราคาขั้นต่ำยังเป็นตัวเลขเดียว');
+UPDATE public.property_details SET opportunity_rate_pct = 5 WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT method = 'FIXED' AND rate_source = 'ASSET' FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'เงินเฟ้อ: แปลงที่ตั้งอัตราเองไว้ก่อน (ไม่ระบุวิธี) = คงที่ ไม่ตามวิธีครอบครัว');
+UPDATE public.families SET opportunity_method = 'FIXED', opportunity_rate_pct = 3;
+SELECT t.ok((SELECT opportunity_method FROM public.families) = 'CPI_PLUS', 'เงินเฟ้อ: EDITOR เปลี่ยนวิธีของครอบครัวไม่ได้');
+UPDATE public.property_details SET opportunity_method = 'CPI_PLUS', opportunity_rate_pct = 1.5 WHERE asset_id = t.a('บ้าน A');
+SELECT t.ok((SELECT method = 'CPI_PLUS' AND rate_pct = 1.5 AND rate_source = 'ASSET' FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'เงินเฟ้อ: ตั้งวิธีรายแปลงได้');
+SELECT t.fails($$UPDATE public.property_details SET opportunity_method = 'CPI_PLUS', opportunity_rate_pct = NULL WHERE asset_id = t.a('บ้าน A')$$,
+  'pd_opportunity_method_ck', 'เงินเฟ้อ: ตั้งวิธีรายแปลงต้องใส่ตัวเลขด้วย');
+SELECT t.fails($$SELECT public.set_cpi_year(2025, 1, 'สนค.')$$, 'เฉพาะ ADMIN', 'เงินเฟ้อ: EDITOR เพิ่มดัชนีไม่ได้');
+SELECT t.fails($$INSERT INTO public.cpi_annual(year, cpi_index, source) VALUES (2030, 130, 'x')$$, 'row-level security', 'เงินเฟ้อ: EDITOR เขียนตารางตรงไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT t.fails($$UPDATE public.families SET opportunity_method = 'X'$$, 'families_opportunity_method_ck', 'เงินเฟ้อ: วิธีคิดต้องเป็น FIXED / CPI_PLUS');
+SELECT public.set_cpi_year(2025, -0.1, 'สนค. (ทดสอบ)');
+SELECT t.ok((SELECT cpi_index = round(:c24 * 0.999, 6) AND inflation_pct = -0.1 AND source = 'สนค. (ทดสอบ)'
+               FROM public.cpi_annual WHERE year = 2025 AND deleted_at IS NULL),
+            'เงินเฟ้อ: ADMIN แก้ปีล่าสุดจาก % → ดัชนี = ปีก่อน × (1 + %)');
+SELECT t.fails($$SELECT public.set_cpi_year(2023, 1, 'สนค.')$$, 'เพิ่มได้เฉพาะปีถัดไป', 'เงินเฟ้อ: แก้ปีกลางไม่ได้ (ดัชนีต่อกันเป็นสาย)');
+SELECT t.fails(format($$SELECT public.set_cpi_year(%s, 1, 'สนค.')$$, extract(year FROM now())::int),
+  'ใส่ได้เฉพาะปีที่จบแล้ว', 'เงินเฟ้อ: ปีที่ยังไม่จบใส่ไม่ได้');
+SELECT t.fails($$SELECT public.delete_cpi_year(2020)$$, 'ลบได้เฉพาะปีล่าสุด', 'เงินเฟ้อ: ลบปีกลางไม่ได้');
+SELECT public.delete_cpi_year(2025);
+SELECT t.ok((SELECT max(year) FROM public.cpi_annual WHERE deleted_at IS NULL) = 2024, 'เงินเฟ้อ: ลบปีล่าสุดได้');
+SELECT public.set_cpi_year(2025, 0.5, 'สนค.');
+SELECT t.ok((SELECT cpi_index = round(:c24 * 1.005, 6) FROM public.cpi_annual WHERE year = 2025 AND deleted_at IS NULL),
+            'เงินเฟ้อ: เพิ่มปีถัดไปต่อจากปีก่อน');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) = 66 FROM public.cpi_annual WHERE deleted_at IS NULL), 'เงินเฟ้อ: VIEWER อ่านตารางได้');
+RESET ROLE;
+SELECT t.ok(NOT has_table_privilege('anon', 'public.cpi_annual', 'SELECT')
+            AND NOT has_function_privilege('anon', 'public.set_cpi_year(integer, numeric, text, text)', 'EXECUTE')
+            AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.cpi_annual'::regclass), 'เงินเฟ้อ: anon ใช้ไม่ได้ · RLS เปิด');
+ROLLBACK;
+
 \echo '== 13zz21. Property: จ่ายเพิ่ม → เพิ่มมูลค่าอัตโนมัติ · ค่าอาคารในราคาที่ได้มา (ROLLBACK ท้ายหัวข้อ)'
 BEGIN;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
