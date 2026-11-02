@@ -1,4 +1,4 @@
-# #PR · ของในทรัพย์สิน + รายการส่งมอบต่อสัญญาเช่า
+# #287 · ของในทรัพย์สิน + รายการส่งมอบต่อสัญญาเช่า
 
 - วันที่: 2 พ.ย. 2026 · branch `feat/property-inventory`
 - SQL: `supabase/migrations/20261102000900_property_inventory.sql` (รันก่อน Merge)
