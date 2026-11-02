@@ -1,4 +1,4 @@
-import { bahtText, landText, money, thDateLong, UTILITIES_BILLING_LABEL } from "@/lib/format";
+import { bahtText, INVENTORY_METER_TYPES, INVENTORY_TYPE_LABEL, landText, money, thDateLong, UTILITIES_BILLING_LABEL } from "@/lib/format";
 import { termMonths, termText } from "@/lib/lease";
 
 export { termMonths };
@@ -20,6 +20,8 @@ export type LeaseData = {
   /** ผู้เช่า: บุคคล / นิติบุคคล · เลขบัตร / ทะเบียน (เลขเต็มเฉพาะ ADMIN / EDITOR) · ที่อยู่ · โทร · ผู้มีอำนาจลงนาม */
   tenantJuristic: boolean; tenantId: string | null; tenantAddress: string | null; tenantPhone: string | null; signatory: string | null;
   noticeDays: number | null; lateFee: number | null; witnesses: [string | null, string | null];
+  /** รายการส่งมอบของสัญญา (ว่าง = ตารางเปล่าให้เขียนเอง) */
+  handover: { type: string; name: string; qty: number; brand: string | null; serial: string | null; condition: string | null; reading: number | null }[];
   rent: number; frequency: string; dueDay: number | null;
   deposit: number | null; utilities: string | null;
   bank: { name: string; accountName: string | null; accountNo: string | null } | null;
@@ -226,22 +228,39 @@ export function RentAnnex({ d }: { d: LeaseData }) {
 /** เอกสารแนบท้าย 2: บัญชีทรัพย์สินและสภาพ ณ วันส่งมอบ (ช่องว่างให้กรอกตอนส่งมอบ) */
 export function HandoverAnnex({ d }: { d: LeaseData }) {
   const land = d.propertyType === "LAND";
-  const rows = land ? 8 : 14;
+  const meters = d.handover.filter((x) => INVENTORY_METER_TYPES.includes(x.type));
+  const items = d.handover.filter((x) => !INVENTORY_METER_TYPES.includes(x.type));
+  const rows = Math.max((land ? 8 : 14) - items.length, 4);
+  const reading = (v: number | null) => (v != null ? Number(v).toLocaleString("th-TH") : blank("6rem"));
   return (
     <article className="text-[12px]">
       <h2 className="text-center text-base font-semibold">{land ? "บันทึกสภาพที่ดิน ณ วันส่งมอบ" : "บัญชีทรัพย์สินและสภาพ ณ วันส่งมอบ"}</h2>
       <p className="text-center">แนบท้าย{TITLE[d.propertyType]}{d.contractNo ? ` เลขที่ ${d.contractNo}` : ""} · {d.propertyName}{d.unit ? ` (${d.unit})` : ""} · วันที่ส่งมอบ {blank("8rem")}</p>
-      {!land && (
+      {!land && (meters.length ? (
+        <div className="mt-3 space-y-0.5">
+          {meters.map((m, i) => <p key={i}>{m.name}{m.serial ? ` (เลขที่ ${m.serial})` : ""} · เลขมิเตอร์วันส่งมอบ {reading(m.reading)} หน่วย</p>)}
+          {UTILITIES_BILLING_LABEL[d.utilities ?? ""] && <p>ค่าน้ำไฟ: {UTILITIES_BILLING_LABEL[d.utilities!]}</p>}
+        </div>
+      ) : (
         <p className="mt-3">เลขมิเตอร์ไฟฟ้า {blank("7rem")} หน่วย · เลขมิเตอร์น้ำประปา {blank("7rem")} หน่วย · กุญแจ / บัตรผ่าน {blank("4rem")} ชุด
           {UTILITIES_BILLING_LABEL[d.utilities ?? ""] ? ` · ค่าน้ำไฟ: ${UTILITIES_BILLING_LABEL[d.utilities!]}` : ""}</p>
-      )}
+      ))}
       {land && <p className="mt-3">หลักหมุด / แนวเขต {blank("16rem")} · สิ่งปลูกสร้างเดิมบนที่ดิน {blank("14rem")}</p>}
       <table className="mt-3 w-full border-collapse">
         <thead><tr className="border-y border-slate-400 text-left"><th className="w-10 py-1">ลำดับ</th><th>{land ? "รายการ / จุดที่ตรวจ" : "รายการ (เฟอร์นิเจอร์ / เครื่องใช้ / อุปกรณ์)"}</th>
           {!land && <th className="w-16 text-right">จำนวน</th>}<th className="w-48 pl-4">สภาพ</th><th className="w-40">หมายเหตุ</th></tr></thead>
         <tbody>
+          {items.map((x, i) => (
+            <tr key={`i${i}`} className="h-7 border-b border-slate-200 align-top">
+              <td className="py-1">{i + 1}</td>
+              <td className="py-1">{x.name}{x.brand || x.serial ? <span className="text-slate-500"> ({[x.brand, x.serial].filter(Boolean).join(" · ")})</span> : ""}
+                <span className="text-slate-400"> · {INVENTORY_TYPE_LABEL[x.type] ?? ""}</span></td>
+              {!land && <td className="py-1 text-right tabular-nums">{Number(x.qty).toLocaleString("th-TH")}</td>}
+              <td className="py-1 pl-4">{x.condition ?? ""}</td><td />
+            </tr>
+          ))}
           {Array.from({ length: rows }, (_, i) => (
-            <tr key={i} className="h-7 border-b border-slate-200"><td>{i + 1}</td><td />{!land && <td />}<td /><td /></tr>
+            <tr key={i} className="h-7 border-b border-slate-200"><td>{items.length + i + 1}</td><td />{!land && <td />}<td /><td /></tr>
           ))}
         </tbody>
       </table>

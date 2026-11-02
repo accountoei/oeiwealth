@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
+  PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -35,6 +35,7 @@ import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
+import { CopyRoomButton, HandoverButton, InventoryAddButton, type HandoverItem } from "../Inventory";
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 import type { LeasePrefill } from "../LeaseFields";
 
@@ -171,7 +172,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
   const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
-    { data: bizRows }, { data: ownerPeople }] = await Promise.all([
+    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -194,6 +195,11 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // รายละเอียดพิมพ์สัญญาเช่า: กิจการ (สถานที่ทำสัญญา) · เจ้าของ (ชื่อเต็ม + ที่อยู่)
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
     supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
+    // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
+    supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,notes,sort_order")
+      .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
+    supabase.from("lease_handover_items").select("id,lease_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
+      .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
   ]);
   type PayRow = { amount: number; currency: string; movement_date: string; metadata: { component_id?: string; add_value?: boolean | string } | null };
   // จ่ายเพิ่มเป็นต้นทุนเสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · รายการเก่าที่ไม่ได้ติ๊ก = ไม่นับเป็นต้นทุน
@@ -342,12 +348,44 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       rent_to_asset_id: x?.rent_to_asset_id ?? null, utilities_billing: x?.utilities_billing ?? null, deposit_months: x?.deposit_months ?? null };
   });
 
-  const leaseActions = (l: Lease) => {
+  // ของในทรัพย์สิน: หลายห้อง (ชื่อห้องจากสัญญา + ที่ตั้งไว้ในของ) → มีช่องห้อง · ห้องว่าง = ส่วนกลาง / ทั้งหลัง
+  type Inv = { id: string; unit_label: string | null; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null;
+    value: number | null; notes: string | null };
+  const inv = (invRows ?? []) as Inv[];
+  const rooms = [...new Set([...leases.map((l) => l.unit_label?.trim()), ...inv.map((x) => x.unit_label?.trim())].filter((x): x is string => !!x))]
+    .sort((x, y) => x.localeCompare(y, "th", { numeric: true }));
+  const multiRoom = rooms.length > 1;
+  const roomsWithItems = [...new Set(inv.map((x) => x.unit_label?.trim() ?? ""))];
+  type Hand = { id: string; lease_id: string; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null; value: number | null;
+    in_condition: string | null; in_reading: number | null; out_status: string | null; out_condition: string | null; out_reading: number | null;
+    deduction: number | null; notes: string | null };
+  const s2 = (v: unknown) => (v == null ? "" : String(v));
+  const handByLease = ((handRows ?? []) as unknown as Hand[]).reduce((m, h) => m.set(h.lease_id, [...(m.get(h.lease_id) ?? []), h]), new Map<string, Hand[]>());
+  const handItems = (leaseId: string): HandoverItem[] => (handByLease.get(leaseId) ?? []).map((h) => ({
+    id: h.id, item_type: h.item_type, name: h.name, qty: s2(Number(h.qty)), brand: s2(h.brand), serial_no: s2(h.serial_no),
+    value: h.value == null ? "" : money(h.value), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
+    out_status: s2(h.out_status), out_condition: s2(h.out_condition), out_reading: h.out_reading == null ? "" : s2(Number(h.out_reading)),
+    deduction: h.deduction == null ? "" : money(h.deduction), notes: s2(h.notes) }));
+  // ค่าเสียหายจากรายการส่งมอบ → เติมให้ตอน "คืน / หักเงินประกัน"
+  const handDeduct = (leaseId: string) => {
+    const rows = (handByLease.get(leaseId) ?? []).filter((h) => Number(h.deduction ?? 0) > 0);
+    return { amount: rows.reduce((t, h) => t + Number(h.deduction), 0),
+      reason: rows.map((h) => `${h.name}${h.out_status ? ` (${HANDOVER_OUT_LABEL[h.out_status]})` : ""} ${money(h.deduction)}`).join(" · ") };
+  };
+
+  const leaseActions = (l: Lease, full = false) => {
     const dep = Number(l.security_deposit ?? 0);
     const leaseEnded = l.deposit_due_date <= today;
+    const hand = handItems(l.id);
+    const hd = handDeduct(l.id);
     return (
       <>
         <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
+        {(canWrite || hand.length > 0) && (
+          <HandoverButton assetId={id} leaseId={l.id} label={`รายการส่งมอบ${hand.length ? ` (${hand.length})` : ""}`} items={hand} canWrite={canWrite}
+            currency={l.rent_currency} docs={full ? <EntityDocuments category="PROPERTY" entityType="PROPERTY_LEASE" entityId={l.id} module="PROPERTY"
+              role={me.role} paths={paths} title="รูปถ่าย / เอกสารการส่งมอบ" bare /> : undefined} />
+        )}
         {canWrite && l.status === "ACTIVE" && l.end_date > today && (
           <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
         )}
@@ -374,6 +412,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         )}
         {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
           <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
+            deduction={Math.min(hd.amount, dep)} reason={hd.reason}
             banks={bankList} minDate={l.deposit_due_date} today={today} />
         )}
         {canSettle && l.deposit_settlement_type === "REFUNDED" && (
@@ -417,7 +456,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </div>
         )}
         {l.notes && <div className="mt-1 whitespace-pre-line text-xs text-slate-500">{l.notes}</div>}
-        <div className="mt-2 flex flex-wrap gap-4">{leaseActions(l)}</div>
+        <div className="mt-2 flex flex-wrap gap-4">{leaseActions(l, true)}</div>
         {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
           <p className="mt-1 text-xs text-slate-400">คืนเงินประกันได้ตั้งแต่ {thDate(l.deposit_due_date)}</p>
         )}
@@ -586,6 +625,58 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             } />
         </div>
       </section>
+
+      {/* ---------------- ของในทรัพย์สิน (มิเตอร์ กุญแจ บัตร เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า · ไม่นับใน Net Worth · ตกลง 2 พ.ย. 2026) ---------------- */}
+      {(isRental || inv.length > 0) && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-medium text-slate-900">ของในทรัพย์สิน</h2>
+              <p className="text-xs text-slate-500">มิเตอร์ กุญแจ บัตร รีโมท เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า · ไม่นับใน Net Worth · ใช้ทำรายการส่งมอบของแต่ละสัญญา{multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</p>
+            </div>
+            {canWrite && (
+              <div className="flex flex-wrap items-center gap-2">
+                {multiRoom && inv.length > 0 && <CopyRoomButton assetId={id} rooms={rooms} roomsWithItems={roomsWithItems} />}
+                <InventoryAddButton assetId={id} rooms={multiRoom ? rooms : []} roomsWithItems={roomsWithItems} />
+              </div>
+            )}
+          </div>
+          {inv.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ · เพิ่มมิเตอร์ไฟ / น้ำ กุญแจ คีย์การ์ด เฟอร์นิเจอร์ ฯลฯ แล้วดึงเข้ารายการส่งมอบตอนทำสัญญา</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[44rem] text-sm">
+                <thead className="text-left text-xs text-slate-500">
+                  <tr>{multiRoom && <th className="py-1">ห้อง</th>}<th>ประเภท</th><th>รายการ</th><th className="text-right">จำนวน</th><th className="pl-4">ยี่ห้อ / รุ่น</th>
+                    <th>เลขมิเตอร์ / Serial</th><th className="text-right">มูลค่าทดแทน</th><th></th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(multiRoom ? [...inv].sort((x, y) => (x.unit_label ?? "").localeCompare(y.unit_label ?? "", "th", { numeric: true })) : inv).map((x) => (
+                    <tr key={x.id} className="align-top">
+                      {multiRoom && <td className="py-1.5 text-slate-600">{x.unit_label || <span className="text-slate-400">{COMMON_ROOM_LABEL}</span>}</td>}
+                      <td className="py-1.5 text-xs text-slate-600">{INVENTORY_TYPE_LABEL[x.item_type] ?? x.item_type}</td>
+                      <td>{x.name}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
+                      <td className="text-right tabular-nums">{Number(x.qty).toLocaleString("th-TH")}</td>
+                      <td className="pl-4 text-slate-600">{x.brand ?? "-"}</td>
+                      <td className="text-slate-600">{x.serial_no ?? "-"}</td>
+                      <td className="text-right tabular-nums">{x.value != null ? money(x.value) : "-"}</td>
+                      <td className="pl-2 text-right">
+                        {canWrite && <RowActions table="property_inventory_items" id={x.id} paths={paths} canDelete={canDelete} deleteEffect="" fields={[
+                          ...(multiRoom ? [{ name: "unit_label", label: "ห้อง (ว่าง = ส่วนกลาง)", value: x.unit_label, width: "w-28" }] : []),
+                          { name: "item_type", label: "ประเภท", type: "select" as const, value: x.item_type, options: Object.entries(INVENTORY_TYPE_LABEL) as [string, string][] },
+                          { name: "name", label: "รายการ", value: x.name },
+                          { name: "qty", label: "จำนวน", type: "number" as const, value: x.qty, width: "w-20" },
+                          { name: "brand", label: "ยี่ห้อ / รุ่น", value: x.brand },
+                          { name: "serial_no", label: "เลขมิเตอร์ / Serial", value: x.serial_no },
+                          { name: "value", label: "มูลค่าทดแทน", type: "number" as const, value: x.value },
+                          { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }]} />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ---------------- สัญญาเช่า (แสดงเฉพาะที่ให้เช่า · ไม่ได้ให้เช่าแล้วแต่เคยมีสัญญา → พับเป็นประวัติ · ตกลง 27 ต.ค. 2026) ---------------- */}
       {(isRental || leases.length > 0) && <LeaseWrap open={isRental} count={leases.length}>

@@ -198,11 +198,12 @@ export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
   ));
 }
 
-export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, minDate, today }: {
+export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, minDate, today, deduction = 0, reason = "" }: {
   assetId: string; leaseId: string; deposit: number; currency: string; banks: Bank[]; minDate: string; today: string;
+  /** ค่าเสียหายจากรายการส่งมอบ (เติมเป็นยอดหัก + เหตุผลให้ · แก้ได้) */ deduction?: number; reason?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [refund, setRefund] = useState(String(deposit));
+  const [refund, setRefund] = useState(String(deposit - deduction));
   const [asIncome, setAsIncome] = useState(true);
   const [state, action, pending] = useActionState<ActionState, FormData>(settleDeposit, {});
   const deduct = deposit - (Number(refund.replace(/,/g, "")) || 0);
@@ -232,7 +233,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
       {deduct > 0 && (
         <div className="space-y-2">
           <label className="block text-xs">เหตุผลที่หัก {money(deduct, currency)} (จำเป็น)
-            <input name="deduction_reason" required placeholder="เช่น ค่าซ่อมผนัง" className={`mt-1 block w-full ${small}`} />
+            <input name="deduction_reason" required defaultValue={reason} placeholder="เช่น ค่าซ่อมผนัง" className={`mt-1 block w-full ${small}`} />
           </label>
           <label className="flex items-start gap-2 text-xs">
             <input type="checkbox" name="record_as_income" checked={asIncome} onChange={(e) => setAsIncome(e.target.checked)} className="mt-0.5" />

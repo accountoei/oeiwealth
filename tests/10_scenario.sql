@@ -3433,6 +3433,27 @@ SELECT t.fails($$SELECT public.set_lease_tenant_id((SELECT id FROM public.proper
 SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT t.ok(NOT has_function_privilege('anon', 'public.reveal_lease_tenant_id(uuid)', 'EXECUTE')
             AND NOT has_function_privilege('anon', 'public.set_lease_tenant_id(uuid,text)', 'EXECUTE'), 'สัญญาเช่า: anon เรียกไม่ได้');
+-- ของในทรัพย์สิน + รายการส่งมอบ (2 พ.ย. 2026): คัดลอกเข้าสัญญาเฉพาะห้องเดียวกัน + ส่วนกลาง · กดซ้ำไม่ซ้ำ
+SELECT property_id AS lease_b_prop, unit_label AS lease_b_unit FROM public.property_leases WHERE id = :'lease_b' \gset
+INSERT INTO public.property_inventory_items(property_id, unit_label, item_type, name, qty, value) VALUES
+  (:'lease_b_prop', NULL, 'KEYCARD', 'คีย์การ์ดลิฟต์', 2, 300),
+  (:'lease_b_prop', :'lease_b_unit', 'APPLIANCE', 'แอร์ห้องนอน', 1, 15000),
+  (:'lease_b_prop', 'ห้องอื่น', 'FURNITURE', 'เตียงห้องอื่น', 1, 5000);
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 2, 'ส่งมอบ: คัดลอกของห้องนี้ + ส่วนกลาง (ไม่เอาห้องอื่น)');
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 0, 'ส่งมอบ: กดคัดลอกซ้ำไม่เพิ่มรายการซ้ำ');
+SELECT t.fails($$INSERT INTO public.property_inventory_items(property_id, item_type, name, qty)
+  SELECT property_id, 'KEY', 'กุญแจ', 0 FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข' LIMIT 1$$, 'pinv_qty_ck', 'ของในทรัพย์สิน: จำนวนต้องมากกว่า 0');
+UPDATE public.lease_handover_items SET out_status = 'MISSING', deduction = 300 WHERE lease_id = :'lease_b' AND item_type = 'KEYCARD';
+SELECT t.ok((SELECT sum(deduction) FROM public.lease_handover_items WHERE lease_id = :'lease_b' AND deleted_at IS NULL) = 300, 'ส่งมอบ: บันทึกของหาย + ค่าเสียหายได้');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_status = 'LOST' WHERE item_type = 'KEYCARD'$$, 'lho_out_ck', 'ส่งมอบ: สถานะวันส่งคืนต้องเป็น ครบ / ชำรุด / สูญหาย');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$INSERT INTO public.property_inventory_items(property_id, item_type, name)
+  SELECT property_id, 'KEY', 'กุญแจ' FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข' LIMIT 1$$, 'row-level security', 'ของในทรัพย์สิน: VIEWER เพิ่มไม่ได้');
+SELECT t.ok((SELECT count(*) FROM public.lease_handover_items WHERE lease_id = :'lease_b') = 2, 'ส่งมอบ: VIEWER อ่านได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(NOT has_table_privilege('anon', 'public.property_inventory_items', 'SELECT')
+            AND NOT has_table_privilege('anon', 'public.lease_handover_items', 'SELECT')
+            AND NOT has_function_privilege('anon', 'public.copy_inventory_to_lease(uuid)', 'EXECUTE'), 'ของในทรัพย์สิน / ส่งมอบ: anon เข้าไม่ได้');
 -- เงินกู้ภายในครอบครัว (2 พ.ย. 2026): ผู้กู้เป็นสมาชิก → หนี้สินของผู้กู้ · ยอดรวมครอบครัวหักกันเป็น 0
 UPDATE public.loan_details SET status = 'ACTIVE' WHERE asset_id = t.a('เงินกู้ญาติ');
 INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)

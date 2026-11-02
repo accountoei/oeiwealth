@@ -155,6 +155,16 @@ export const USAGE_LABEL: Record<string, string> = {
   BUSINESS_USE: "ใช้ในกิจการ", OTHER: "อื่น ๆ",
 };
 /** ค่าน้ำไฟของสัญญาเช่า */
+/** ของในทรัพย์สิน / รายการส่งมอบสัญญาเช่า (ไม่นับใน Net Worth · ตกลง 2 พ.ย. 2026) */
+export const INVENTORY_TYPE_LABEL: Record<string, string> = {
+  ELECTRIC_METER: "มิเตอร์ไฟฟ้า", WATER_METER: "มิเตอร์น้ำ", KEY: "กุญแจ", KEYCARD: "คีย์การ์ด", PARKING_CARD: "บัตรจอดรถ",
+  REMOTE: "รีโมท", FURNITURE: "เฟอร์นิเจอร์", APPLIANCE: "เครื่องใช้ไฟฟ้า", OTHER: "อื่น ๆ",
+};
+export const INVENTORY_METER_TYPES = ["ELECTRIC_METER", "WATER_METER"];
+export const HANDOVER_OUT_LABEL: Record<string, string> = { OK: "ครบ / ปกติ", DAMAGED: "ชำรุด", MISSING: "สูญหาย" };
+/** ห้องว่าง (unit_label = NULL) ของของในทรัพย์สิน */
+export const COMMON_ROOM_LABEL = "ส่วนกลาง / ทั้งหลัง";
+
 export const UTILITIES_BILLING_LABEL: Record<string, string> = {
   TENANT_PAYS: "ผู้เช่าจ่ายเอง", INCLUDED: "รวมในค่าเช่า", REBILL: "เราจ่ายแล้วเรียกเก็บ",
 };
@@ -387,6 +397,7 @@ export function docCategory(entityType: string | null | undefined, assetType?: s
   if (entityType === "PERSON") return "PERSON";
   if (entityType === "DONATION") return "DONATION";
   if (entityType === "TAX_RETURN") return "TAX";
+  if (entityType === "PROPERTY_LEASE") return "PROPERTY";
   if (entityType === "ASSET") {
     if (assetType === "BANK_ACCOUNT") return "BANK";
     if (assetType === "LOAN_RECEIVABLE") return "LOAN";
@@ -401,7 +412,7 @@ export function docCategory(entityType: string | null | undefined, assetType?: s
 }
 export const ENTITY_MODULE: Record<string, string> = {
   FINANCIAL: "FINANCIAL", INVESTMENT: "INVESTMENT", PROPERTY: "PROPERTY", ALTERNATIVE: "ALTERNATIVE",
-  LIABILITY: "FINANCIAL", INSURANCE_POLICY: "INSURANCE", PERSON: "FAMILY", CREDIT_CARD: "CARD_MEMBERSHIP", DONATION: "FAMILY", TAX_RETURN: "FAMILY",
+  LIABILITY: "FINANCIAL", PROPERTY_LEASE: "PROPERTY", INSURANCE_POLICY: "INSURANCE", PERSON: "FAMILY", CREDIT_CARD: "CARD_MEMBERSHIP", DONATION: "FAMILY", TAX_RETURN: "FAMILY",
 };
 
 // ---------- การบริจาค (Family → Donations) ----------
