@@ -8,7 +8,7 @@ import {
   PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
-  EditPropertyForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
+  EditPropertyForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
   UtilityForm,
 } from "./forms";
 import RowActions from "@/components/RowActions";
@@ -34,6 +34,9 @@ import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
 import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
+import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
+import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
+import type { LeasePrefill } from "../LeaseFields";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -167,7 +170,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const vacancyHistory = ((pd.vacancy_history ?? []) as { from: string; to: string; plan: string | null }[]).slice().reverse();
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows }] = await Promise.all([
+  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
+    { data: bizRows }, { data: ownerPeople }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -176,7 +180,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
     supabase.rpc("asset_has_history", { p_asset_id: id }),
     // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
-    supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").eq("property_id", pd.id).is("deleted_at", null),
+    supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
     // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
     supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
       .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
@@ -187,6 +191,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes,property_cost_type")
       .eq("related_asset_id", id).is("property_utility_id", null).is("source_fee_side", null).is("insurance_schedule_line_id", null)
       .is("liability_id", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
+    // รายละเอียดพิมพ์สัญญาเช่า: กิจการ (สถานที่ทำสัญญา) · เจ้าของ (ชื่อเต็ม + ที่อยู่)
+    supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
+    supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
   ]);
   type PayRow = { amount: number; currency: string; movement_date: string; metadata: { component_id?: string; add_value?: boolean | string } | null };
   // จ่ายเพิ่มเป็นต้นทุนเสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · รายการเก่าที่ไม่ได้ติ๊ก = ไม่นับเป็นต้นทุน
@@ -211,7 +218,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const eventVals = new Set(((eventRows ?? []) as { valuation_id: string | null }[]).map((e) => e.valuation_id).filter(Boolean));
   const v0 = vals?.[0];
   const deletableVal = v0 && (vals?.length ?? 0) > 1 && !v0.source_movement_id && v0.notes !== "ราคาขาย" && !eventVals.has(v0.id) ? v0.id as string : null;
-  type LeaseExtra = { id: string; rent_to_asset_id: string | null; utilities_billing: string | null };
+  type LeaseExtra = LeaseDetail & { id: string; rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null };
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
   const charges = (chargeRows ?? []) as { id: string; lease_id: string; cost_period: string; description: string; amount: number; currency: string;
@@ -317,6 +324,24 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   for (const x of rentPaid ?? []) if (!(x.income_type === "RENT" && rentRowKeys.has(rentKey(x.lease_id as string, x.income_period as string)))) otherPaid.push(x);
   const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
 
+  // รายละเอียดพิมพ์สัญญา: เจ้าของเรียงตามสัดส่วน (คนแรก = ค่าเริ่มต้น "ทำที่") · ต่อสัญญาดึงข้อมูลสัญญาเดิม
+  const detailOpt: LeaseDetailOptions = {
+    owners: [...activeOwners].sort((x, y) => Number(y.ownership_percent) - Number(x.ownership_percent)).map((o) => {
+      const pp = (ownerPeople ?? []).find((x) => x.id === o.person_id);
+      return { id: o.person_id as string, name: pp?.full_name_th ? `${pp.title_prefix ?? ""}${pp.full_name_th}` : (o.person_name as string),
+        address: (pp?.address as string | null) ?? null };
+    }),
+    businesses: bizRows ?? [],
+  };
+  const canSensitive = me.role === "ADMIN" || me.role === "EDITOR";
+  const renewals: LeasePrefill[] = leases.map((l) => {
+    const x = leaseExtra.get(l.id);
+    return { ...(x ?? {}), id: l.id, label: `${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} · ${thDate(l.start_date)} – ${thDate(l.terminated_date ?? l.end_date)}`,
+      unit_label: l.unit_label, tenant_name: l.tenant_name, start_date: l.start_date, end_date: l.end_date, terminated_date: l.terminated_date,
+      rent_amount: Number(l.rent_amount), rent_currency: l.rent_currency, payment_frequency: l.payment_frequency, payment_due_day: l.payment_due_day,
+      rent_to_asset_id: x?.rent_to_asset_id ?? null, utilities_billing: x?.utilities_billing ?? null, deposit_months: x?.deposit_months ?? null };
+  });
+
   const leaseActions = (l: Lease) => {
     const dep = Number(l.security_deposit ?? 0);
     const leaseEnded = l.deposit_due_date <= today;
@@ -325,6 +350,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
         {canWrite && l.status === "ACTIVE" && l.end_date > today && (
           <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
+        )}
+        {canWrite && (
+          <LeaseDetailsForm assetId={id} leaseId={l.id} v={leaseExtra.get(l.id) ?? {}} opt={detailOpt} canSensitive={canSensitive}
+            banks={bankList} rentCurrency={l.rent_currency} rentTo={rentTo.get(l.id) ?? null} depositMonths={leaseExtra.get(l.id)?.deposit_months ?? null} />
         )}
         {canWrite && (
           <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false}
@@ -515,6 +544,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   {activeOwners.length === 0 ? "-" : activeOwners.map((o) => <div key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</div>)}
                   {ownerTotal < 99.99999 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {Math.round((100 - ownerTotal) * 10000) / 10000}%</div>}
                 </Item>
+                {pd.house_no && <Item label="บ้านเลขที่">{pd.house_no}</Item>}
+                {pd.unit_no && <Item label="ห้องชุด">{[`เลขที่ ${pd.unit_no}`, pd.floor_no && `ชั้น ${pd.floor_no}`, pd.building_name].filter(Boolean).join(" · ")}</Item>}
                 {pd.address && <Item label="ที่อยู่" wide>{pd.address}</Item>}
                 {(pd.map_url || pd.latitude != null) && (
                   <Item label="ตำแหน่ง" wide>
@@ -563,7 +594,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <h2 className="font-medium text-slate-900">สัญญาเช่า</h2>
           {canWrite && (
             <NewLeaseForm assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions}
-              label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา"} />
+              label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา"}
+              renewals={renewals} detail={{ opt: detailOpt, canSensitive }} />
           )}
         </div>
         {canWrite && pd.usage_type === "RENTAL" && liveLeases.length === 0 && <SuggestVacant assetId={id} />}

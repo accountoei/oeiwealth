@@ -3407,6 +3407,32 @@ SELECT t.fails($$SELECT public.set_loan_party_id(t.a('เงินกู้ญ�
 SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT t.ok(NOT has_function_privilege('anon', 'public.reveal_loan_party_ids(uuid)', 'EXECUTE')
             AND NOT has_function_privilege('anon', 'public.set_loan_party_id(uuid,text,text)', 'EXECUTE'), 'คู่สัญญา: anon เรียกไม่ได้');
+-- สัญญาเช่า: รายละเอียดพิมพ์สัญญา (2 พ.ย. 2026): เลขผู้เช่าเข้ารหัส · 4 ตัวท้ายระบบตั้งเอง · สถานที่ต้องถูกประเภท
+SELECT id AS lease_b FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข' AND deleted_at IS NULL LIMIT 1 \gset
+SELECT t.ok(public.set_lease_tenant_id(:'lease_b', '0-1055-12345-67-8') = '5678', 'สัญญาเช่า: ตั้งเลขทะเบียนนิติบุคคลผู้เช่า → คืน 4 ตัวท้าย');
+SELECT t.ok((SELECT tenant_id_last4 FROM public.property_leases WHERE id = :'lease_b') = '5678', 'สัญญาเช่า: เก็บ 4 ตัวท้ายในสัญญา');
+SELECT t.ok(public.reveal_lease_tenant_id(:'lease_b') = '0105512345678', 'สัญญาเช่า: EDITOR อ่านเลขเต็มได้');
+SELECT t.fails($$SELECT public.set_lease_tenant_id((SELECT id FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข' LIMIT 1), '12345')$$, '13 หลัก', 'สัญญาเช่า: เลขตัวเลขไม่ครบ 13 หลัก → ไม่ได้');
+SELECT t.fails($$UPDATE public.property_leases SET tenant_id_last4 = '9999' WHERE tenant_name = 'ผู้เช่า ข'$$, 'CACHE_FIELD', 'สัญญาเช่า: แก้ 4 ตัวท้ายตรงไม่ได้');
+SELECT t.fails($$SELECT * FROM public.lease_tenant_secrets$$, 'permission denied', 'สัญญาเช่า: Client อ่านตารางเลขผู้เช่าไม่ได้');
+SELECT t.fails($$UPDATE public.property_leases SET contract_place_type = 'BUSINESS', contract_place_business_id = t.a('KBank ออมทรัพย์') WHERE tenant_name = 'ผู้เช่า ข'$$, 'Private Business', 'สัญญาเช่า: สถานที่ต้องเป็นกิจการ');
+SELECT t.fails($$UPDATE public.property_leases SET tenant_type = 'COMPANY' WHERE tenant_name = 'ผู้เช่า ข'$$, 'pl_tenant_type_ck', 'สัญญาเช่า: ประเภทผู้เช่าต้องเป็นบุคคล / นิติบุคคล');
+UPDATE public.property_leases SET tenant_type = 'JURISTIC', tenant_address = 'ที่อยู่ทดสอบ', tenant_signatory = 'กรรมการทดสอบ', deposit_months = 2,
+       contract_place_type = 'LESSOR', contract_place_person_id = (SELECT id FROM public.persons WHERE deleted_at IS NULL ORDER BY created_at LIMIT 1),
+       notice_days = 30, late_return_fee_per_day = 500, witness1_name = 'พยาน ก' WHERE id = :'lease_b';
+SELECT t.ok((SELECT notice_days = 30 AND late_return_fee_per_day = 500 AND contract_place_person_id IS NOT NULL FROM public.property_leases WHERE id = :'lease_b'),
+            'สัญญาเช่า: บันทึกผู้เช่า / สถานที่ / แจ้งล่วงหน้า / ค่าเสียหายต่อวัน / พยาน ได้');
+UPDATE public.property_details SET house_no = '99/1', unit_no = '1203', floor_no = '12', building_name = 'อาคาร A'
+ WHERE id = (SELECT property_id FROM public.property_leases WHERE id = :'lease_b');
+SELECT t.ok((SELECT house_no = '99/1' AND unit_no = '1203' FROM public.property_details WHERE id = (SELECT property_id FROM public.property_leases WHERE id = :'lease_b')),
+            'ทรัพย์สิน: บันทึกบ้านเลขที่ / ห้องชุดเลขที่ ได้');
+SELECT t.ok(public.set_lease_tenant_id(:'lease_b', '') IS NULL AND public.reveal_lease_tenant_id(:'lease_b') IS NULL, 'สัญญาเช่า: ล้างเลขผู้เช่าได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.reveal_lease_tenant_id((SELECT id FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข' LIMIT 1))$$, 'PERMISSION_DENIED', 'สัญญาเช่า: CONTRIBUTOR อ่านเลขเต็มไม่ได้');
+SELECT t.fails($$SELECT public.set_lease_tenant_id((SELECT id FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ข' LIMIT 1), '1234567890123')$$, 'PERMISSION_DENIED', 'สัญญาเช่า: CONTRIBUTOR ตั้งเลขไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.reveal_lease_tenant_id(uuid)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'public.set_lease_tenant_id(uuid,text)', 'EXECUTE'), 'สัญญาเช่า: anon เรียกไม่ได้');
 -- เงินกู้ภายในครอบครัว (2 พ.ย. 2026): ผู้กู้เป็นสมาชิก → หนี้สินของผู้กู้ · ยอดรวมครอบครัวหักกันเป็น 0
 UPDATE public.loan_details SET status = 'ACTIVE' WHERE asset_id = t.a('เงินกู้ญาติ');
 INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)

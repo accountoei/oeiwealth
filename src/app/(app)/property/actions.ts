@@ -28,14 +28,51 @@ function leaseFromForm(form: FormData) {
   };
 }
 
-/** บัญชีรับค่าเช่า (ค่าตั้งต้น) + วิธีคิดค่าน้ำไฟ — create_lease ไม่รับ 2 ช่องนี้ จึงตั้งหลังสร้างสัญญา */
-async function setRentAccount(supabase: Awaited<ReturnType<typeof createClient>>, leaseIds: string[], form: FormData) {
+/** รายละเอียดสำหรับพิมพ์สัญญา (ช่อง lease_* จาก LeaseContractFields · มี lease_detail = ฟอร์มมีส่วนนี้) */
+function leaseDetailFromForm(form: FormData) {
+  if (!form.has("lease_detail")) return null;
+  const g = (k: string) => str(form.get(`lease_${k}`));
+  const place = g("contract_place_type");
+  return {
+    tenant_type: g("tenant_type"), tenant_address: g("tenant_address"), tenant_phone: g("tenant_phone"),
+    tenant_signatory: g("tenant_type") === "JURISTIC" ? g("tenant_signatory") : null,
+    contract_place_type: place,
+    contract_place_person_id: place === "LESSOR" ? g("contract_place_person_id") : null,
+    contract_place_business_id: place === "BUSINESS" ? g("contract_place_business_id") : null,
+    contract_place_text: place === "TEXT" ? g("contract_place_text") : null,
+    notice_days: num(form.get("lease_notice_days")), late_return_fee_per_day: num(form.get("lease_late_return_fee_per_day")),
+    witness1_name: g("witness1_name"), witness2_name: g("witness2_name"),
+  };
+}
+
+/**
+ * ช่องที่ create_lease ไม่รับ — ตั้งหลังสร้างสัญญา: บัญชีรับค่าเช่า · วิธีคิดค่าน้ำไฟ · จำนวนเดือนเงินประกัน · รายละเอียดพิมพ์สัญญา
+ *   เลขผู้เช่า (เข้ารหัส · ADMIN / EDITOR): พิมพ์ใหม่ = ตั้ง · ติ๊กล้าง = ล้าง · ต่อสัญญาแล้วเว้นว่าง = ใช้เลขของสัญญาเดิม
+ */
+async function saveLeaseExtras(supabase: Awaited<ReturnType<typeof createClient>>, leaseIds: string[], form: FormData) {
+  if (!leaseIds.length) return null;
   const to = str(form.get("lease_rent_to_asset_id"));
   const billing = str(form.get("lease_utilities_billing"));
-  if ((!to && !billing) || !leaseIds.length) return null;
-  const { error } = await supabase.from("property_leases")
-    .update({ ...(to ? { rent_to_asset_id: to } : {}), ...(billing ? { utilities_billing: billing } : {}) }).in("id", leaseIds);
-  return error ? `ตั้งบัญชีรับค่าเช่า / ค่าน้ำไฟไม่ได้ (${friendlyError(error.message)}) — ตั้งใหม่ที่ปุ่มแก้ไขของสัญญา` : null;
+  const months = form.has("lease_deposit_months") ? num(form.get("lease_deposit_months")) : undefined;
+  const detail = leaseDetailFromForm(form);
+  const patch = { ...(to ? { rent_to_asset_id: to } : {}), ...(billing ? { utilities_billing: billing } : {}),
+    ...(months !== undefined ? { deposit_months: months } : {}), ...(detail ?? {}) };
+  if (Object.keys(patch).length) {
+    const { error } = await supabase.from("property_leases").update(patch).in("id", leaseIds);
+    if (error) return `บันทึกบัญชีรับค่าเช่า / รายละเอียดสัญญาไม่ได้ (${friendlyError(error.message)}) — แก้ที่ปุ่ม "รายละเอียดสัญญา"`;
+  }
+  return setTenantId(supabase, leaseIds[0], form);
+}
+
+/** เลขผู้เช่า: พิมพ์ใหม่ / ล้าง / ต่อสัญญา (เว้นว่าง = ใช้เลขสัญญาเดิม) · ไม่มีช่องนี้ (ไม่ใช่ ADMIN / EDITOR) = ไม่แตะ */
+async function setTenantId(supabase: Awaited<ReturnType<typeof createClient>>, leaseId: string, form: FormData) {
+  if (!form.has("lease_tenant_id") && form.get("lease_tenant_id_clear") !== "on") return null;
+  let idNo: string | null = form.get("lease_tenant_id_clear") === "on" ? "" : str(form.get("lease_tenant_id"));
+  const from = str(form.get("lease_renew_from"));
+  if (idNo == null && from) idNo = ((await supabase.rpc("reveal_lease_tenant_id", { p_lease_id: from })).data as string | null) ?? null;
+  if (idNo == null) return null;
+  const { error } = await supabase.rpc("set_lease_tenant_id", { p_lease_id: leaseId, p_id_no: idNo });
+  return error ? `บันทึกเลขผู้เช่าไม่ได้ (${friendlyError(error.message)})` : null;
 }
 
 /** ตารางส่วนประกอบจากฟอร์ม (ComponentTable · JSON) → แถวสำหรับ save_property_components + id ที่ลบ */
@@ -125,7 +162,7 @@ export async function createProperty(_: ActionState, form: FormData): Promise<Ac
   if (lease?.tenant_name) {
     const { data: ls } = await supabase.from("property_leases").select("id,property_details!inner(asset_id)")
       .eq("property_details.asset_id", String(data)).is("deleted_at", null);
-    const e1 = await setRentAccount(supabase, (ls ?? []).map((l) => l.id), form);
+    const e1 = await saveLeaseExtras(supabase, (ls ?? []).map((l) => l.id), form);
     if (e1) return { error: `บันทึกทรัพย์สินแล้ว แต่${e1}`, created: `/property/${data}` };
   }
   if (pay) {
@@ -253,6 +290,9 @@ export async function updatePropertyInfo(_: ActionState, form: FormData): Promis
   const { error: e2 } = await supabase.from("property_details").update({
     property_type: str(form.get("property_type")), usage_type: str(form.get("usage_type")),
     location_group: str(form.get("location_group")), address: str(form.get("address")),
+    // บ้านเลขที่ / ห้องชุด (ส่งเฉพาะช่องที่ฟอร์มแสดงตามประเภท)
+    ...(form.has("house_no") ? { house_no: str(form.get("house_no")) } : {}),
+    ...(form.has("unit_no") ? { unit_no: str(form.get("unit_no")), floor_no: str(form.get("floor_no")), building_name: str(form.get("building_name")) } : {}),
     // เนื้อที่: แก้ที่ทรัพย์สินได้เฉพาะตอนยังไม่มีโฉนด (มีโฉนดแล้ว = ผลรวมจากโฉนด · ข้อมูลโฉนดแก้ที่ส่วน "โฉนด / เอกสารสิทธิ์")
     ...(form.has("land_rai") ? { land_area_sq_wa: sqwaFromForm(form) } : {}),
     subdistrict: str(form.get("subdistrict")), district: str(form.get("district")),
@@ -376,9 +416,26 @@ export async function createLease(_: ActionState, form: FormData): Promise<Actio
   const id = String(form.get("asset_id"));
   const { data: leaseId, error } = await supabase.rpc("create_lease", { p_property_asset_id: id, p_lease: leaseFromForm(form) });
   if (error) return { error: friendlyError(error.message) };
-  const warn = await setRentAccount(supabase, leaseId ? [String(leaseId)] : [], form);
+  const warn = await saveLeaseExtras(supabase, leaseId ? [String(leaseId)] : [], form);
   revalidateProperty(id);
   return warn ? { error: `สร้างสัญญาแล้ว แต่${warn}` } : { ok: "สร้างสัญญาเช่าแล้ว" };
+}
+
+/** ปุ่ม "รายละเอียดสัญญา" บนการ์ดสัญญา: บัญชีรับค่าเช่า · จำนวนเดือนเงินประกัน · ผู้เช่า · สถานที่ · แจ้งล่วงหน้า · ค่าเสียหาย · พยาน */
+export async function updateLeaseDetails(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const leaseId = String(form.get("lease_id"));
+  const detail = leaseDetailFromForm(form) ?? {};
+  const { data, error } = await supabase.from("property_leases").update({
+    ...detail, deposit_months: num(form.get("lease_deposit_months")),
+    rent_to_asset_id: str(form.get("lease_rent_to_asset_id")),
+  }).eq("id", leaseId).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขสัญญานี้" };
+  const warn = await setTenantId(supabase, leaseId, form);
+  revalidateProperty(id);
+  return warn ? { error: `บันทึกรายละเอียดแล้ว แต่${warn}` } : { ok: "บันทึกรายละเอียดสัญญาแล้ว" };
 }
 
 export async function terminateLease(_: ActionState, form: FormData): Promise<ActionState> {
