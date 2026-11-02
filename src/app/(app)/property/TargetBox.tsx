@@ -19,9 +19,10 @@ const SOURCE_LABEL: Record<string, string> = { ACQUISITION: "ราคาที�
  *   ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาถือ − ค่าเสื่อมสิ่งปลูกสร้าง + ค่าใช้จ่ายขาย (จากราคาตลาดครั้งล่าสุด) · เทียบมูลค่าล่าสุด
  *   รายได้ − ค่าใช้จ่ายที่บันทึกแล้ว แสดงประกอบ (ไม่หัก) · ตารางต้นทุนรายก้อน อยู่ในปุ่ม "ดูวิธีคิด" (CostLotsSection)
  */
-export default function TargetBox({ currency, target, unit, nwValue, lots }: {
+export default function TargetBox({ currency, target, unit, nwValue, lots, lastCpi }: {
   currency: string; target: TargetPrice | null; /** มูลค่าล่าสุด (Net Worth) */ nwValue: number;
   /** ตารางต้นทุนรายก้อน + ดอกเบี้ย + ค่าเสื่อม (เปิดดูในหน้าต่าง) */ lots?: ReactNode;
+  /** เงินเฟ้อปีล่าสุดที่มีข้อมูลทั้งปี (ใช้เมื่อยังไม่มีช่วงที่ถือให้เฉลี่ย) */ lastCpi?: { year: number; pct: number | null } | null;
   /** เนื้อที่สำหรับราคาต่อหน่วย (ตามราคาตลาดครั้งล่าสุด หรือเนื้อที่โฉนด) */ unit: { area: number; label: string } | null;
 }) {
   const t = target;
@@ -41,12 +42,12 @@ export default function TargetBox({ currency, target, unit, nwValue, lots }: {
         {t?.rate_pct == null ? <p className="mt-1 text-xs text-amber-700">ยังไม่ได้ตั้งอัตราดอกเบี้ยเทียบ (Settings › FX &amp; Prices) · ตอนนี้คิดดอกเบี้ย 0%</p> : (
           <div className="mt-1 text-xs text-slate-600">
             {t.rate_source === "ASSET" ? "แปลงนี้" : "ของครอบครัว"}: {opportunityText(t.method, Number(t.rate_pct))}
-            {/* อัตราคงที่ → แสดงเงินเฟ้อจริงช่วงที่ถือไว้เทียบ (ตกลง 2 พ.ย. 2026) */}
-            {t.method !== "CPI_PLUS" && t.cpi_avg_pct != null && t.cpi_from_year != null && t.cpi_to_year != null && (
-              <div className="text-slate-400">เงินเฟ้อช่วงที่ถือ ({t.cpi_from_year + 543}–{t.cpi_to_year + 543}) เฉลี่ย {Number(t.cpi_avg_pct).toFixed(2)}% ต่อปี</div>)}
-            {t.method === "CPI_PLUS" && t.cpi_to_year != null && (
-              <div className="text-slate-400">เงินเฟ้อจริงถึงปี {t.cpi_to_year + 543} (ปีล่าสุดที่มีข้อมูลทั้งปี){t.cpi_avg_pct != null && t.cpi_from_year != null
-                ? ` · ช่วงที่ถือ (${t.cpi_from_year + 543}–${t.cpi_to_year + 543}) เฉลี่ย ${Number(t.cpi_avg_pct).toFixed(2)}% ต่อปี` : ""}</div>)}
+            {/* เงินเฟ้อไว้เทียบ (ตกลง 2 พ.ย. 2026): เฉลี่ยช่วงที่ถือ · ซื้อหลังปีล่าสุดที่มีข้อมูลทั้งปี → ใช้เงินเฟ้อปีล่าสุดแทน */}
+            {t.cpi_avg_pct != null && t.cpi_from_year != null && t.cpi_to_year != null ? (
+              <div className="text-slate-400">เงินเฟ้อเฉลี่ย {Number(t.cpi_avg_pct).toFixed(2)}% ต่อปี ({t.cpi_from_year + 543}–{t.cpi_to_year + 543})</div>
+            ) : lastCpi?.pct != null && (
+              <div className="text-slate-400">เงินเฟ้อเฉลี่ย {Number(lastCpi.pct).toFixed(2)}% ต่อปี ({lastCpi.year + 543})</div>
+            )}
           </div>
         )}
         <dl className="mt-2 space-y-0.5 text-xs">
