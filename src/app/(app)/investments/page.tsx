@@ -9,6 +9,7 @@ import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
+import { CAPITAL_MOVE_COLS, netInvested, vsInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -47,7 +48,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }], { data: income }, rets,
+  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }, { data: capPre }, { data: capMoves }], { data: income }, rets,
     [openPfs, updateData], dueData] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
@@ -59,6 +60,10 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       pvQ.then(async (v) => await supabase.from("investment_transactions")
         .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
         .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(v.personId ? 60 : 10)),
+      // เงินลงทุนสุทธิรายพอร์ต: เงินโอนก่อน Go-live + โอนไป / โอนกลับหลัง Go-live
+      supabase.from("portfolio_capital_transfers").select("id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes").is("deleted_at", null),
+      supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).in("movement_type", ["INVESTMENT_OUT", "INVESTMENT_IN"])
+        .eq("is_derived", false).is("deleted_at", null).limit(5000),
     ]),
     // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
     Promise.all([pvQ, familyQ]).then(async ([v, { data: f }]) => {
@@ -129,6 +134,11 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const types = [...new Set(list.map((p) => pfType.get(p.asset_id) ?? "OTHER"))];
   const tFilter = types.includes(sp.t ?? "") ? sp.t : undefined;
   const tHref = (t?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); const s = q.toString(); return `/investments${s ? `?${s}` : ""}`; };
+  // เงินลงทุนสุทธิ (บาท × สัดส่วนของสมาชิกที่เลือก) · null = ยังไม่มีเงินโอน
+  const investedOf = (assetId: string, ccy: string) => {
+    const n = netInvested(assetId, ccy, (capPre as CapitalPre[] | null) ?? [], (capMoves as CapitalMove[] | null) ?? []);
+    return n.lines.length ? n.thb * sh(assetId) : null;
+  };
   // ตารางพอร์ต · เรียงตามลำดับที่ตั้งไว้
   const ret = new Map(retRows.map((r) => [r.asset_id, r]));
   const rows: PortfolioRow[] = bySort(list.filter((p) => !tFilter || (pfType.get(p.asset_id) ?? "OTHER") === tFilter), (p) => p.asset_id, sortMap).map((p) => {
@@ -143,8 +153,17 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       atCost: holdings.some((h) => h.portfolio_asset_id === p.asset_id && h.valued_at_cost),
       unreal: r?.unreal ?? 0, real: r?.real ?? 0, fx: (r?.unrealFx ?? 0) + (r?.realFx ?? 0), income: r?.income ?? 0,
       total: r?.total ?? 0, cost: r?.cost ?? 0,
+      invested: investedOf(p.asset_id, p.portfolio_currency),
     };
   });
+  // กล่องสรุป: พอร์ตที่ยังเปิด (เทียบมูลค่าล่าสุด) แยกจากพอร์ตที่ปิดแล้ว (กำไรที่รับรู้แล้ว) · ทุกพอร์ต ไม่ขึ้นกับตัวกรองประเภท
+  const allInv = list.map((p) => ({ closed: pfStatus.get(p.asset_id) === "CLOSED", inv: investedOf(p.asset_id, p.portfolio_currency),
+    value: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0) })).filter((x) => x.inv != null);
+  const openInv = allInv.filter((x) => !x.closed);
+  const invOpen = openInv.reduce((t, x) => t + x.inv!, 0);
+  const invOpenPl = vsInvested(openInv.reduce((t, x) => t + x.value, 0), invOpen);
+  const closedPl = allInv.filter((x) => x.closed).reduce((t, x) => t + (x.value - x.inv!), 0);
+  const hasClosedInv = allInv.some((x) => x.closed);
   const share = (m: Map<string, number>, label: (k: string) => string, offset = 0) =>
     [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, name: label(k), value: v, color: SHARE_COLORS[(i + offset) % SHARE_COLORS.length] }));
 
@@ -159,12 +178,20 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
 
       <TabPanel id="overview" className="space-y-6">
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className={`grid gap-4 sm:grid-cols-2 ${allInv.length ? "lg:grid-cols-3 xl:grid-cols-5" : "xl:grid-cols-4"}`}>
         {/* เรียงตามที่ตกลง 27 ต.ค. 2026: เงินฝากในพอร์ต · จำนวนพอร์ต · รายได้ · มูลค่าลงทุนรวม (ท้ายสุด) */}
         <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)} />
         <StatBox label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
           sub={list.some((p) => pfStatus.get(p.asset_id) === "CLOSED") ? `ปิดแล้ว ${list.filter((p) => pfStatus.get(p.asset_id) === "CLOSED").length} พอร์ต` : undefined} />
         <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
+        {allInv.length > 0 && (
+          <StatBox label="เงินลงทุนสุทธิ (พอร์ตที่เปิด)" value={money(invOpen, "THB", 0)}
+            sub={<>
+              {invOpenPl && <div className={invOpenPl.pl >= 0 ? "text-emerald-700" : "text-red-700"}>
+                กำไร / ขาดทุน {invOpenPl.pl > 0 ? "+" : ""}{money(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && ` (${invOpenPl.pct > 0 ? "+" : ""}${invOpenPl.pct.toFixed(2)}%)`}</div>}
+              {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว {closedPl > 0 ? "+" : ""}{money(closedPl, "THB", 0)}</div>}
+            </>} />
+        )}
         <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />
       </section>
 
