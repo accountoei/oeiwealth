@@ -4156,6 +4156,44 @@ SELECT t.ok((SELECT title_type = 'น.ส.3' AND deed_book = 'B-2' AND deed_page
             'ซื้อที่ดินเพิ่ม: เก็บประเภทเอกสาร · เล่ม · หน้า · ระวาง · หน้าสำรวจ');
 RESET ROLE;
 ROLLBACK;
+\echo '== 13zz31. เงินโอนเข้าพอร์ตก่อน Go-live (portfolio_capital_transfers · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT go_live_date AS cap_gl FROM public.families \gset
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตเงินโอนบาท', 'THB' FROM public.families;
+SELECT count(*) AS cap_cm0 FROM public.cash_movements \gset
+INSERT INTO public.portfolio_capital_transfers(portfolio_asset_id, transfer_date, amount_thb, amount_ccy)
+  VALUES (t.a('Brokerage USD'), :'cap_gl'::date - 400, 350000, 10000) RETURNING id AS cap1 \gset
+INSERT INTO public.portfolio_capital_transfers(portfolio_asset_id, transfer_date, amount_thb, amount_ccy)
+  VALUES (t.a('พอร์ตเงินโอนบาท'), :'cap_gl'::date - 30, 50000, 999) RETURNING id AS cap2 \gset
+SELECT t.ok((SELECT count(*) FROM public.cash_movements) = :cap_cm0
+            AND (SELECT amount_ccy IS NULL FROM public.portfolio_capital_transfers WHERE id = :'cap2')
+            AND (SELECT created_by IS NOT NULL FROM public.portfolio_capital_transfers WHERE id = :'cap1'),
+            'เงินโอนก่อน Go-live: บันทึกได้ · ไม่สร้างเงินเข้า-ออก · พอร์ตบาทไม่มียอดสกุลอื่น');
+SELECT t.fails(format($$INSERT INTO public.portfolio_capital_transfers(portfolio_asset_id, transfer_date, amount_thb) VALUES ('%s', '%s', 1)$$,
+               t.a('Brokerage USD'), :'cap_gl'), 'Go-live', 'เงินโอนก่อน Go-live: วัน Go-live ขึ้นไปบันทึกไม่ได้ (ใช้ปุ่มโอนเงิน)');
+SELECT t.fails(format($$UPDATE public.portfolio_capital_transfers SET transfer_date = '%s' WHERE id = '%s'$$, :'cap_gl', :'cap1'),
+               'Go-live', 'เงินโอนก่อน Go-live: แก้วันที่เป็นหลัง Go-live ไม่ได้');
+SELECT t.fails(format($$INSERT INTO public.portfolio_capital_transfers(portfolio_asset_id, transfer_date, amount_thb) VALUES ('%s', '2000-01-01', 1)$$,
+               t.a('KBank ออมทรัพย์')), 'ไม่พบพอร์ตลงทุน', 'เงินโอนก่อน Go-live: ต้องเป็นพอร์ตลงทุน');
+SELECT t.fails(format($$INSERT INTO public.portfolio_capital_transfers(portfolio_asset_id, transfer_date, amount_thb) VALUES ('%s', '2000-01-01', 0)$$,
+               t.a('Brokerage USD')), 'amount_thb', 'เงินโอนก่อน Go-live: ยอดบาทต้องมากกว่า 0');
+UPDATE public.portfolio_capital_transfers SET notes = 'แก้หมายเหตุ', amount_thb = 351000 WHERE id = :'cap1';
+UPDATE public.portfolio_capital_transfers SET deleted_at = now() WHERE id = :'cap2';
+SELECT t.ok((SELECT amount_thb = 351000 FROM public.portfolio_capital_transfers WHERE id = :'cap1')
+            AND (SELECT deleted_by IS NOT NULL FROM public.portfolio_capital_transfers WHERE id = :'cap2'),
+            'เงินโอนก่อน Go-live: แก้ยอด / ลบแบบ Soft Delete ได้');
+SELECT t.fails(format($$DELETE FROM public.portfolio_capital_transfers WHERE id = '%s'$$, :'cap1'), '', 'เงินโอนก่อน Go-live: ลบจริงไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) FROM public.portfolio_capital_transfers) = 2, 'เงินโอนก่อน Go-live: VIEWER อ่านได้');
+SELECT t.fails(format($$INSERT INTO public.portfolio_capital_transfers(portfolio_asset_id, transfer_date, amount_thb) VALUES ('%s', '2000-01-01', 1)$$,
+               t.a('Brokerage USD')), 'row-level security', 'เงินโอนก่อน Go-live: VIEWER เพิ่มไม่ได้');
+RESET ROLE;
+SELECT t.ok(NOT has_table_privilege('anon', 'public.portfolio_capital_transfers', 'SELECT')
+            AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.portfolio_capital_transfers'::regclass),
+            'เงินโอนก่อน Go-live: RLS เปิด · anon อ่านไม่ได้');
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth
