@@ -222,13 +222,9 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
           ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับใน Net Worth ·
           แก้เป็นรายแปลงได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; ของทรัพย์สิน{isAdmin ? "" : " · แก้ได้เฉพาะ ADMIN"}
         </p>
-        <OpportunityRateForm rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null}
+        <OpportunityRateForm key={`${family?.opportunity_method}-${family?.opportunity_rate_pct}`} rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null}
           method={family?.opportunity_method ?? "FIXED"} canEdit={isAdmin} />
-        <h3 className="mb-2 mt-5 text-sm font-medium text-slate-800">อัตราเงินเฟ้อรายปี (ดัชนีราคาผู้บริโภคทั่วไปของไทย · ค่าเฉลี่ยทั้งปี)</h3>
-        <p className="mb-2 text-xs text-slate-500">
-          ใช้กับวิธี &ldquo;เงินเฟ้อ + ส่วนเพิ่ม&rdquo; และข้อความเทียบในกล่องราคาขายขั้นต่ำ · คิดถึงปีล่าสุดที่มีข้อมูลทั้งปี (ไม่ใช้ข้อมูลบางเดือน) ·
-          ข้อมูลย้อนหลังจาก World Bank ซึ่งมาจากตัวเลขของ สนค. กระทรวงพาณิชย์
-        </p>
+        <div className="mt-5" />
         <CpiTable rows={((cpiRows ?? []) as CpiRow[])} canEdit={isAdmin} thisYear={Number(todayBangkok().slice(0, 4))} />
       </section>
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
+import { useResetSync } from "@/lib/useResetSync";
 import { setOpportunityRate, type FxState } from "./actions";
 import Flash from "@/components/Flash";
 import { OPPORTUNITY_METHOD_LABEL } from "@/lib/format";
@@ -10,13 +11,15 @@ import { OPPORTUNITY_METHOD_LABEL } from "@/lib/format";
 export default function OpportunityRateForm({ rate, method, canEdit }: { rate: number | null; method: string; canEdit: boolean }) {
   const [state, action, pending] = useActionState<FxState, FormData>(setOpportunityRate, {});
   const [m, setM] = useState(method === "CPI_PLUS" ? "CPI_PLUS" : "FIXED");
+  const ref = useRef<HTMLSelectElement>(null);
+  useResetSync(ref, setM);
   const same = m === method;
   const cpi = m === "CPI_PLUS";
   return (
     <form action={action} className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2">วิธีคิด
-          <select name="method" value={m} onChange={(e) => setM(e.target.value)} disabled={!canEdit}
+          <select ref={ref} name="method" defaultValue={m} onChange={(e) => setM(e.target.value)} disabled={!canEdit}
             className="rounded-md border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50">
             {Object.entries(OPPORTUNITY_METHOD_LABEL).reverse().map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select></label>

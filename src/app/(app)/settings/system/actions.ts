@@ -100,7 +100,7 @@ export async function saveCpiYear(_: FxState, form: FormData): Promise<FxState> 
 
 /** ADMIN ลบปีล่าสุดของดัชนีเงินเฟ้อ (ลบได้เฉพาะปีล่าสุด ไม่ให้ดัชนีขาดช่วง) */
 export async function deleteCpiYear(_: FxState, form: FormData): Promise<FxState> {
-  const year = Number(String(form.get("year") ?? ""));
+  const year = Number(String(form.get("year") ?? "")) - 543;   // ฟอร์มเป็น พ.ศ.
   const supabase = await createClient();
   const { error } = await supabase.rpc("delete_cpi_year", { p_year: year });
   if (error) return { error: friendlyError(error.message) };
