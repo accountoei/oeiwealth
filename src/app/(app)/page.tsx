@@ -131,7 +131,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → Net Worth (ขวาสุด · เด่นด้วยพื้นสีอ่อน) */}
       <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} hero={i === 2} />)}</section>}>
-        <TopCards start={start} personId={personId} personName={personName} isCurrent={isCurrent} />
+        <TopCards start={start} personId={personId} personName={personName} isCurrent={isCurrent} range={range} />
       </Suspense>
 
       <section className="grid gap-4 lg:grid-cols-3">
@@ -154,8 +154,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Suspense>
           {/* คำอธิบายจุดบนกราฟ (legend) ไว้ใต้กราฟ · ตัวเล็ก */}
           <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />ยอดตั้งต้น / สิ้นเดือน</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-blue-600 bg-white" />ยังไม่ปิด (ประมาณการ)</span>
+            {/* จุดทึบ = ยอดที่ล็อกแล้ว (ยอดตั้งต้น / เดือนที่ปิดแล้ว) · จุดกลวง = ยอดสิ้นเดือนอัตโนมัติ (คำนวณใหม่ทุกคืนจนกว่าจะปิดเดือน) และวันนี้ (ตกลง 2 พ.ย. 2026) */}
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />ยอดตั้งต้น / ปิดเดือนแล้ว</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-blue-600 bg-white" />ยังไม่ปิด (อาจเปลี่ยน)</span>
           </p>
         </div>
 
@@ -248,7 +249,7 @@ async function AsOf({ start, isCurrent, today }: { start: string; isCurrent: boo
   );
 }
 
-async function TopCards({ start, personId, personName, isCurrent }: { start: string; personId: string; personName: string; isCurrent: boolean }) {
+async function TopCards({ start, personId, personName, isCurrent, range }: { start: string; personId: string; personName: string; isCurrent: boolean; range: string }) {
   const [dm, pBase] = await Promise.all([getMonth(start), personId ? getPersonBase(start, personId) : null]);
   // ฐานเทียบ: ครอบครัว = dashboard_month.base · รายคน = dashboard_person_base (ลำดับเลือกฐานเดียวกัน)
   const base = personId ? pBase : dm?.base ?? null;
@@ -266,7 +267,7 @@ async function TopCards({ start, personId, personName, isCurrent }: { start: str
   const spark = (kind: SparkKind, color: string, hero?: boolean) => (
     <Suspense fallback={<SparkSlot hero={hero} />}>
       <CardSpark start={start} personId={personId} kind={kind} current={kind === "total_assets" ? assets : kind === "total_liabilities" ? liab : nw}
-        asOf={asOf} color={color} hero={hero} />
+        asOf={asOf} range={range} color={color} hero={hero} />
     </Suspense>
   );
   return (
@@ -292,15 +293,18 @@ function SparkSlot({ hero }: { hero?: boolean }) {
   return <div className={sparkClass(hero)} aria-hidden />;
 }
 
-/** จุดรายเดือนเดียวกับกราฟใหญ่ (ยอดตั้งต้น + สิ้นเดือน ปิดแล้ว / อัตโนมัติ) ถึงก่อนวันของการ์ด + ยอดในการ์ด · 12 จุดล่าสุด
+/** จุดเดียวกับกราฟใหญ่ (ยอดตั้งต้น + สิ้นเดือน + ยอดในการ์ด) ตามปุ่มช่วงเวลาของกราฟ (1M / 3M / … / ตั้งแต่ Go-live · ตกลง 2 พ.ย. 2026)
+ *  ดูเดือนที่ผ่านมา: เส้นจบที่เดือนนั้น (นับช่วงย้อนจากวันของการ์ด) · ไม่จำกัดจำนวนจุด
  *  ใช้ข้อมูลชุดเดียวกับกราฟใหญ่ (cachedRpc + cache) → ไม่ถามฐานข้อมูลเพิ่ม · แยก Suspense → ตัวเลขขึ้นก่อน เส้นตามมา */
-async function CardSpark({ start, personId, kind, current, asOf, color, hero }: {
-  start: string; personId: string; kind: SparkKind; current: number; asOf: string; color: string; hero?: boolean;
+async function CardSpark({ start, personId, kind, current, asOf, range, color, hero }: {
+  start: string; personId: string; kind: SparkKind; current: number; asOf: string; range: string; color: string; hero?: boolean;
 }) {
-  const h: { opening: Partial<Record<SparkKind, number | null>>; snapshots: ({ date: string } & Partial<Record<SparkKind, number | null>>)[] } | null =
-    personId ? await getPersonDash(start, personId) : await getHistory();
-  const raw = [h?.opening?.[kind], ...(h?.snapshots ?? []).filter((x) => !asOf || x.date < asOf).map((x) => x[kind]), current];
-  const vs = raw.filter((v): v is number => v != null && Number.isFinite(Number(v))).map(Number).slice(-12);
+  type Pt = { date: string } & Partial<Record<SparkKind, number | null>>;
+  const h: { opening: Pt; snapshots: Pt[] } | null = personId ? await getPersonDash(start, personId) : await getHistory();
+  const pts: Pt[] = [...(h ? [h.opening] : []), ...(h?.snapshots ?? []).filter((x) => !asOf || x.date < asOf),
+    { date: asOf, [kind]: current }];
+  const vs = clipRange(pts, asOf ? rangeStart(range, asOf) : null)
+    .map((x) => x[kind]).filter((v): v is number => v != null && Number.isFinite(Number(v))).map(Number);
   if (vs.length < 2) return <SparkSlot hero={hero} />;
   return <Sparkline values={vs} color={color} className={sparkClass(hero)} />;
 }
@@ -345,7 +349,7 @@ async function ChartBody({ start, isCurrent, personId, from }: { start: string; 
     const cur = Number(dm?.by_person.find((x) => x.person_id === personId)?.net_worth ?? 0);
     points = [
       ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
-      ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" || s.status === "AUTO" })),
+      ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
       ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: cur, solid: false }] : []),
     ];
     asOf = dm?.as_of;
@@ -354,7 +358,7 @@ async function ChartBody({ start, isCurrent, personId, from }: { start: string; 
     // จุดบนกราฟ: ยอดตั้งต้น + ยอดสิ้นเดือน (ปิดแล้ว / อัตโนมัติ · ทึบ) + ยอดวันนี้ (กลวง)
     points = [
       ...(h ? [{ label: "ตั้งต้น", date: h.opening.date, v: Number(h.opening.net_worth), solid: true }] : []),
-      ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" || s.status === "AUTO" })),
+      ...(h?.snapshots ?? []).map((s) => ({ label: thMonth(s.month), date: s.date, v: Number(s.net_worth), solid: s.status === "FINAL" })),
       ...(isCurrent && dm ? [{ label: "วันนี้", date: dm.as_of, v: Number(dm.net_worth), solid: false }] : []),
     ];
     asOf = dm?.as_of;

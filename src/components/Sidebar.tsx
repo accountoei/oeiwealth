@@ -28,6 +28,10 @@ function setCookie(name: string, value: string | null) {
     : `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
 }
 
+/** ยุบ / ขยายแถบ (2 พ.ย. 2026): ไอคอนอยู่ที่เดิมทั้ง 2 แบบ (กลางแถบยุบ 64px) · ตัวหนังสือจางลงและถูกตัดตามความกว้างที่หด
+ *  ไม่สลับแถว ↔ ซ้อนชั้น / ไม่เปลี่ยนระยะขอบ → ไม่มีอะไรกระโดด */
+const fade = (collapsed: boolean) => `transition-opacity duration-200 ${collapsed ? "pointer-events-none opacity-0" : "opacity-100"}`;
+
 function TodoBadge({ todo, collapsed }: { todo: Promise<TodoCount | null>; collapsed: boolean }) {
   const t = use(todo);
   if (!t?.total) return null;
@@ -56,10 +60,11 @@ function NavLink({ g, dot, collapsed, todo }: { g: NavGroup; dot?: boolean; coll
   return (
     // ไม่หน่วง: ชี้เมาส์ค้าง (หรือแตะ) → โหลดข้อมูลหน้านั้นล่วงหน้าทั้งหน้า (IntentLink · ทุกเมนูรวม Dashboard) · กดแล้วไฮไลต์ทันที + โครงหน้า (loading.tsx) ระหว่างรอ
     <IntentLink href={href} onClick={onClick} title={collapsed ? g.label : undefined} aria-label={collapsed ? g.label : undefined}
-      className={`relative flex items-center gap-2.5 rounded-lg py-[7px] text-sm ${collapsed ? "justify-center px-2" : "px-3"} ${
+      className={`relative flex items-center gap-2.5 rounded-lg px-[11px] py-[7px] text-sm ${
         active ? "bg-blue-50 font-semibold text-blue-700 ring-1 ring-blue-100" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}>
       <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-blue-600" : "text-slate-500"}`} aria-hidden strokeWidth={1.9} />
-      {!collapsed && <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">{g.label}{dot && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" aria-label="มีงานค้าง" />}</span>}
+      <span className={`flex min-w-0 flex-1 items-center gap-1.5 truncate whitespace-nowrap ${fade(collapsed)}`} aria-hidden={collapsed || undefined}>
+        {g.label}{dot && !collapsed && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" aria-label="มีงานค้าง" />}</span>
       {collapsed && dot && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}
       {todo && <Suspense fallback={null}><TodoBadge todo={todo} collapsed={collapsed} /></Suspense>}
       {!g.ready && !collapsed && <span className="text-[11px] text-slate-400">เร็ว ๆ นี้</span>}
@@ -140,31 +145,31 @@ export default function Sidebar({ dots = [], user, familyName = "", familyPhoto 
         className="md:hidden fixed top-2.5 left-3 z-30 rounded-md bg-blue-600 text-white px-3 py-1.5 text-sm shadow">☰ เมนู</button>
       <aside style={collapsed ? undefined : { width }}
         className={`${open ? "flex" : "hidden"} md:flex fixed md:sticky top-0 z-20 h-screen shrink-0 flex-col pt-10 md:pt-0 border-r border-slate-200 bg-white ${
-        dragging ? "select-none" : "transition-[width] duration-150"} ${collapsed ? "w-16" : ""}`}>
+        dragging ? "select-none" : "transition-[width] duration-200 ease-out"} ${collapsed ? "w-16" : ""}`}>
         {/* มุมซ้ายบน: ชื่อครอบครัว + "Wealth Vault" · รูปครอบครัว (ใส่ที่ Members → แก้ไข) · ไม่มีรูป → ชื่อย่อ (ตกลง 28 ต.ค. 2026) */}
-        <div className={`flex items-center gap-2 pb-3 pt-5 ${collapsed ? "flex-col px-2" : "pl-5 pr-3"}`}>
+        <div className="flex min-h-[4.5rem] items-center gap-2 overflow-hidden pb-3 pl-[14px] pr-4 pt-5">
           {familyPhoto
             // eslint-disable-next-line @next/next/no-img-element
             ? <img src={familyPhoto} alt="" title={collapsed ? title : undefined} className="h-9 w-9 shrink-0 rounded-xl object-cover" />
             : <span title={collapsed ? title : undefined}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{familyInitials(familyName)}</span>}
-          {!collapsed && (
-            <span className="min-w-0 flex-1 leading-tight" title={title}>
-              <span className="block truncate text-[15px] font-bold text-slate-900">{title}</span>
-              <span className="block text-xs text-slate-500">Wealth Vault</span>
-            </span>
-          )}
-          {!collapsed && !sorting && (
+          <span className={`min-w-0 flex-1 whitespace-nowrap leading-tight ${fade(collapsed)}`} title={title} aria-hidden={collapsed || undefined}>
+            <span className="block truncate text-[15px] font-bold text-slate-900">{title}</span>
+            <span className="block text-xs text-slate-500">Wealth Vault</span>
+          </span>
+          {!sorting && (
             <button type="button" onClick={() => setSorting(true)} aria-label="จัดเรียงเมนู" title="จัดเรียงเมนู (จำไว้ที่เครื่องนี้)"
-              className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+              tabIndex={collapsed ? -1 : undefined} aria-hidden={collapsed || undefined}
+              className={`shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 ${fade(collapsed)}`}>
               <ArrowUpDown className="h-4 w-4" />
             </button>
           )}
-          <button type="button" onClick={toggle} aria-label={collapsed ? "ขยายเมนู" : "ยุบเมนู"} title={collapsed ? "ขยายเมนู" : "ยุบเมนู (แสดงแต่ไอคอน)"}
-            className="hidden rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block">
-            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-          </button>
         </div>
+        {/* ปุ่มยุบ / ขยาย: วงกลมเล็กบนเส้นขอบขวา ระดับเดียวกับรูปครอบครัว · ตำแหน่งเดียวกันทั้ง 2 แบบ (เลื่อนตามขอบ) */}
+        <button type="button" onClick={toggle} aria-label={collapsed ? "ขยายเมนู" : "ยุบเมนู"} title={collapsed ? "ขยายเมนู" : "ยุบเมนู (แสดงแต่ไอคอน)"}
+          className="absolute right-0 top-7 z-10 hidden h-6 w-6 translate-x-1/2 place-items-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-slate-300 hover:text-slate-900 md:grid">
+          {collapsed ? <ChevronsRight className="h-3.5 w-3.5" /> : <ChevronsLeft className="h-3.5 w-3.5" />}
+        </button>
 
         {sorting ? (
           <div className="flex-1 space-y-1 overflow-y-auto px-3">
@@ -179,7 +184,7 @@ export default function Sidebar({ dots = [], user, familyName = "", familyPhoto 
             </div>
           </div>
         ) : (
-          <nav className={`flex-1 space-y-0.5 overflow-y-auto pb-1 pt-1.5 ${collapsed ? "px-2" : "px-3"}`} onClick={() => setOpen(false)}>
+          <nav className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-3 pb-1 pt-1.5" onClick={() => setOpen(false)}>
             {nav.map((g) => (
               <NavLink key={g.href} g={g} collapsed={collapsed} dot={dots.includes(g.href!)} todo={g.href === "/todo" ? todo : undefined} />
             ))}
@@ -187,20 +192,18 @@ export default function Sidebar({ dots = [], user, familyName = "", familyPhoto 
         )}
 
         {/* ผู้ใช้ + ออกจากระบบ (ย้ายจากแถบบน 27 ต.ค. 2026) */}
-        <div className={`border-t border-slate-200 py-2.5 ${collapsed ? "px-2" : "px-3"}`}>
-          <div className={`flex items-center gap-2.5 ${collapsed ? "flex-col" : "px-1"}`}>
+        <div className="overflow-hidden border-t border-slate-200 px-3 py-2.5">
+          <div className="flex min-h-9 items-center gap-2.5 px-1">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700" title={collapsed ? `${user.name || user.email} · ${user.role}` : undefined}>{initial}</span>
-            {!collapsed && (
-              <span className="min-w-0 flex-1 leading-tight">
-                <span className="block truncate text-sm text-slate-800" title={user.email}>{user.name || user.email}</span>
-                <span className="block truncate text-xs text-slate-500">{user.role}{user.name ? ` · ${user.email}` : ""}</span>
-              </span>
-            )}
+            <span className={`min-w-0 flex-1 whitespace-nowrap leading-tight ${fade(collapsed)}`} aria-hidden={collapsed || undefined}>
+              <span className="block truncate text-sm text-slate-800" title={user.email}>{user.name || user.email}</span>
+              <span className="block truncate text-xs text-slate-500">{user.role}{user.name ? ` · ${user.email}` : ""}</span>
+            </span>
           </div>
           <form action="/auth/signout" method="post" className="mt-1.5">
             <button aria-label="ออกจากระบบ" title={collapsed ? "ออกจากระบบ" : undefined}
-              className={`flex w-full items-center gap-2.5 rounded-lg py-1.5 text-sm text-slate-600 hover:bg-red-50 hover:text-red-700 ${collapsed ? "justify-center px-2" : "px-3"}`}>
-              <LogOut className="h-4 w-4 shrink-0" aria-hidden />{!collapsed && "ออกจากระบบ"}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-red-50 hover:text-red-700">
+              <LogOut className="h-4 w-4 shrink-0" aria-hidden /><span className={`whitespace-nowrap ${fade(collapsed)}`} aria-hidden={collapsed || undefined}>ออกจากระบบ</span>
             </button>
           </form>
         </div>
