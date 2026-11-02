@@ -88,7 +88,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_lease_rent_tracking").select("*").eq("property_asset_id", id)
       .order("income_period", { ascending: false }).limit(36),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
-    supabase.from("families").select("go_live_date").maybeSingle(),
+    supabase.from("families").select("go_live_date,opportunity_method,opportunity_rate_pct").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_property_cost_tracking").select("utility_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,gap,currency,status,last_paid_date,dismissal_id,dismissal_reason")
       .eq("property_asset_id", id).order("cost_period", { ascending: false }).order("utility_type").limit(48),
@@ -623,7 +623,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <EditPropertyForm p={{ ...pd, name: a.name, notes: a.notes, acquisition_date: a.acquisition_date,
                     acquisition_cost: a.acquisition_cost, asset_id: id }} components={comps} latest={latestByComp} currency={a.currency}
                     currentValue={a.current_value != null ? Number(a.current_value) : null} today={today} minDate={goLive}
-                    locked={comps.filter((c) => c.source_movement_id || paidComp.has(c.id)).map((c) => c.id)} />
+                    locked={comps.filter((c) => c.source_movement_id || paidComp.has(c.id)).map((c) => c.id)}
+                    family={{ method: family?.opportunity_method ?? "FIXED", rate: family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null }} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>

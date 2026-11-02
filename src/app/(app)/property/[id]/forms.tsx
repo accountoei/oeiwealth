@@ -11,7 +11,7 @@ import {
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
 import ModalButton from "@/components/ModalButton";
-import { COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money } from "@/lib/format";
+import { COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -262,13 +262,14 @@ type Info = { asset_id: string; name: string; notes: string | null; acquisition_
   subdistrict: string | null; district: string | null; province: string | null;
   map_url?: string | null; latitude?: number | null; longitude?: number | null;
   vacant_since?: string | null; vacant_plan?: string | null; vacant_plan_date?: string | null;
-  encumbrance_type?: string | null; encumbrance_details?: string | null; opportunity_rate_pct?: number | null;
+  encumbrance_type?: string | null; encumbrance_details?: string | null; opportunity_rate_pct?: number | null; opportunity_method?: string | null;
   acq_building_cost?: number | null; acq_building_years?: number | null;
   house_no?: string | null; unit_no?: string | null; floor_no?: string | null; building_name?: string | null };
 
 /** แก้ข้อมูลทรัพย์สิน + ตารางส่วนประกอบ (ข้อมูล · ต้นทุน · มูลค่ารายแถว) ในฟอร์มเดียว ปุ่มบันทึกปุ่มเดียว (ตกลง 29 ต.ค. 2026) */
-export function EditPropertyForm({ p, components, latest, currency, currentValue, today, minDate, locked }: {
+export function EditPropertyForm({ p, components, latest, currency, currentValue, today, minDate, locked, family }: {
   p: Info; components: Component[]; latest: Record<string, number>; currency: string; currentValue: number | null; today: string; minDate: string;
+  /** อัตราดอกเบี้ยเทียบของครอบครัว (แสดงตอนเลือก "ใช้ของครอบครัว") */ family: { method: string; rate: number | null };
   /** แถวที่ผูกกับรายการเงิน (ลบ / แก้ต้นทุนไม่ได้) */ locked: string[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePropertyInfo, {});
@@ -339,9 +340,7 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
         <ComponentTable mode="edit" currency={currency} initial={components} latest={latest} acquisitionCost={p.acquisition_cost}
           currentValue={currentValue} today={today} minDate={minDate} defaultDate={p.acquisition_date ?? ""} locked={locked} />
       </div>
-      <label className="text-sm">อัตราดอกเบี้ยเทียบของแปลงนี้ (% ต่อปี)
-        <input name="opportunity_rate_pct" inputMode="decimal" data-money="off" defaultValue={p.opportunity_rate_pct ?? ""} placeholder="ว่าง = ใช้อัตราครอบครัว" className={f} />
-        <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับใน Net Worth) · อัตราครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>
+      <OpportunityFields p={p} family={family} f={f} />
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={p.notes ?? ""} className={f} /></label>
       <div className="md:col-span-2 flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
@@ -350,6 +349,27 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
       </div>
     </form>
   );
+}
+
+/** อัตราดอกเบี้ยเทียบรายแปลง: ใช้ของครอบครัว / อัตราคงที่ / เงินเฟ้อ + ส่วนเพิ่ม (ตกลง 2 พ.ย. 2026)
+ *  แปลงเก่าที่ตั้งอัตราไว้แต่ไม่ได้เลือกวิธี = อัตราคงที่ · เปลี่ยนวิธี = ช่องตัวเลขว่าง ให้กรอกใหม่ */
+function OpportunityFields({ p, family, f }: { p: Info; family: { method: string; rate: number | null }; f: string }) {
+  const init = p.opportunity_rate_pct == null ? "" : p.opportunity_method === "CPI_PLUS" ? "CPI_PLUS" : "FIXED";
+  const [m, setM] = useState(init);
+  const cpi = m === "CPI_PLUS";
+  return (<>
+    <label className="text-sm">อัตราดอกเบี้ยเทียบของแปลงนี้
+      <select name="opportunity_method" value={m} onChange={(e) => setM(e.target.value)} className={f}>
+        <option value="">ใช้ของครอบครัว ({opportunityText(family.method, family.rate)})</option>
+        {Object.entries(OPPORTUNITY_METHOD_LABEL).reverse().map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับใน Net Worth) · ของครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>
+    <label className="text-sm">{cpi ? "ส่วนเพิ่มเหนือเงินเฟ้อ (% ต่อปี)" : "อัตรา (% ต่อปี)"}
+      <input key={m} name="opportunity_rate_pct" inputMode="decimal" data-money="off" disabled={m === ""} required={m !== ""}
+        defaultValue={m !== "" && m === init ? (p.opportunity_rate_pct ?? "") : ""}
+        placeholder={m === "" ? "ใช้ของครอบครัว" : cpi ? "แนะนำ 2" : "เช่น 4"} className={`${f} disabled:bg-slate-50`} />
+      {m !== "" && m !== init && <span className="text-xs text-amber-700">เปลี่ยนวิธีคิดแล้ว กรอกตัวเลขใหม่</span>}</label>
+  </>);
 }
 
 export type PropertyPick = { id: string; assetId: string; name: string; currency: string };

@@ -9,6 +9,7 @@ export type CostLot = {
   asset_id: string; source: string; item_id: string | null; movement_id: string | null; lot_date: string; amount: number;
   description: string | null; is_building: boolean; depreciation_years: number | null; notes: string | null;
   rate_pct: number; years_held: number; interest: number; depreciation: number;
+  /** วิธีคิด FIXED / CPI_PLUS · ตัวคูณเงินเฟ้อ (CPI_PLUS) · ปีล่าสุดที่มีดัชนี */ method?: string; cpi_factor?: number | null; cpi_to_year?: number | null;
 };
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
