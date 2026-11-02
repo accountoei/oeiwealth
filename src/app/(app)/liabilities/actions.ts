@@ -33,6 +33,12 @@ export async function createLiability(_: ActionState, form: FormData): Promise<A
     p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
+  // กู้จากกิจการของครอบครัว (ไม่บังคับ · ตกลง 2 พ.ย. 2026): ระบุกิจการที่ให้กู้ (ฝั่งกิจการไม่ตั้งรายการแยก)
+  const biz = str(form.get("lender_business_id"));
+  if (biz) {
+    const { error: e2 } = await supabase.from("liabilities").update({ lender_business_id: biz }).eq("id", String(data));
+    if (e2) return { error: friendlyError(e2.message) };
+  }
   revalidatePath("/liabilities");
   redirect(`/liabilities/${data}`);
 }
@@ -59,6 +65,7 @@ export async function updateLiabilityInfo(_: ActionState, form: FormData): Promi
   const id = String(form.get("liability_id"));
   const { data, error } = await supabase.from("liabilities").update({
     name: str(form.get("name")), lender: str(form.get("lender")),
+    ...(form.has("lender_business_id") ? { lender_business_id: str(form.get("lender_business_id")) } : {}),
     interest_rate: num(form.get("interest_rate")), monthly_payment: num(form.get("monthly_payment")),
     payment_due_day: num(form.get("payment_due_day")), due_date: str(form.get("due_date")),
     status: str(form.get("status")) ?? "ACTIVE", notes: str(form.get("notes")),

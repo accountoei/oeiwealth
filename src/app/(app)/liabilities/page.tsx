@@ -41,7 +41,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder ? sp.order ?? "" : "";        // "1" = เงินกู้ · "cards" = บัตร
   const paths = ["/liabilities"];
-  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }] = await Promise.all([
+  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }, { data: inRaw }] = await Promise.all([
     loadPersonView(sp.p, { liabilities: true }),
     supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
     loadSortMap("liabilities"),
@@ -52,6 +52,9 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,status"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,status,overdraft_limit,overdraft_rate").not("overdraft_limit", "is", null).order("name"),
     supabase.rpc("bank_balances_at", { p_date: todayBangkok() }),
+    // เงินกู้ภายในครอบครัว: สมาชิกเป็นผู้กู้ของ Loans Receivable → หนี้สินของผู้กู้ (Net Worth นับให้ · ตกลง 2 พ.ย. 2026)
+    supabase.from("loan_details").select("asset_id,borrower_person_id,outstanding_principal,status,assets!loan_details_asset_id_fkey(name,currency),persons(name)")
+      .not("borrower_person_id", "is", null).is("deleted_at", null),
   ]);
   // มุมมองรายบุคคล: เฉพาะหนี้ที่คนนั้นมีส่วน · ยอด × สัดส่วน (เงินกู้ตามผู้รับผิดชอบ · บัตรตามเจ้าของบัตร · เงินประกันตามเจ้าของทรัพย์)
   const all = ((data as Row[] | null) ?? []).filter((r) => pv.showLiability(r.source_id))
@@ -59,6 +62,13 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       amount: r.amount == null ? null : Number(r.amount) * pv.liabilityShare(r.source_id) }));
   const totals = new Map<string, number>();
   all.forEach((r) => totals.set(r.currency, (totals.get(r.currency) ?? 0) + Number(r.amount ?? 0)));
+  type In = { asset_id: string; borrower_person_id: string; outstanding_principal: number | null; status: string;
+    assets: { name: string; currency: string } | { name: string; currency: string }[] | null; persons: { name: string } | { name: string }[] | null };
+  const one = <T,>(x: T | T[] | null) => (Array.isArray(x) ? x[0] : x) ?? null;
+  const internal = ((inRaw as In[] | null) ?? []).filter((x) => pv.isPerson(x.borrower_person_id) && Number(x.outstanding_principal ?? 0) > 0
+    && x.status !== "CLOSED" && x.status !== "WRITTEN_OFF")
+    .map((x) => ({ id: x.asset_id, name: one(x.assets)?.name ?? "", currency: one(x.assets)?.currency ?? "THB", person: one(x.persons)?.name ?? "", amount: Number(x.outstanding_principal) }));
+  internal.forEach((r) => totals.set(r.currency, (totals.get(r.currency) ?? 0) + r.amount));
   // เงินเบิกเกินบัญชี (O/D): บัญชีกระแสรายวันที่มีวงเงิน · ใช้ไป = ยอดติดลบ (ส่วนของสมาชิกที่เลือก = ตามเจ้าของบัญชี)
   const calc = new Map(((balRaw as { asset_id: string; calculated: number | null }[] | null) ?? []).map((r) => [r.asset_id, r.calculated == null ? null : Number(r.calculated)]));
   const ods = ((odRaw as { asset_id: string; name: string; currency: string; bank_name: string; status: string; overdraft_limit: number; overdraft_rate: number | null }[] | null) ?? [])
@@ -276,6 +286,24 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
             </tbody>
           </table>
           <p className="px-4 pb-3 pt-2 text-xs text-slate-500">ยอดติดลบของบัญชีนับเป็นหนี้สินใน Net Worth อัตโนมัติ · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; จากบัญชีนั้น · ตั้งวงเงินที่หน้าบัญชี → แก้ไขข้อมูล</p>
+        </div>
+      )}
+
+      {internal.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <h2 className="px-4 pt-4 font-medium text-slate-900">เงินกู้ภายในครอบครัว</h2>
+          <p className="px-4 text-xs text-slate-500">สมาชิกกู้จากสมาชิกคนอื่น · ยอดตามเงินต้นคงเหลือของสัญญา (บันทึกรับชำระที่หน้า Loans Receivable) · ยอดรวมครอบครัวหักกับลูกหนี้เป็น 0</p>
+          <table className="mt-2 w-full text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {internal.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3"><Link href={`/financial/loans/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
+                    <div className="text-xs text-slate-500">ผู้กู้ {r.person}</div></td>
+                  <td className="px-4 text-right tabular-nums">{money(r.amount, r.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

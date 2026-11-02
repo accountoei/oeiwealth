@@ -33,6 +33,12 @@ function partyPatch(form: FormData): Record<string, unknown> {
   };
 }
 
+/** ผู้กู้เป็นสมาชิก / กิจการ (PartyPicker · ว่าง = บุคคลภายนอก) · ส่งมาเฉพาะเมื่อฟอร์มมีช่องเลือก */
+function borrowerPatch(form: FormData): Record<string, unknown> {
+  if (!form.has("borrower_business_id")) return {};
+  return { borrower_person_id: str(form.get("borrower_person_id")), borrower_business_id: str(form.get("borrower_business_id")) };
+}
+
 /** เลขบัตรผู้กู้ / ผู้ค้ำ: กรอกใหม่ = ตั้ง · ติ๊กล้าง = ลบ · ว่าง = ไม่เปลี่ยน (เข้ารหัสในฐานข้อมูล) */
 async function saveIds(supabase: Awaited<ReturnType<typeof createClient>>, id: string, form: FormData): Promise<string | null> {
   for (const [field, party] of [["borrower_id", "BORROWER"], ["guarantor_id", "GUARANTOR"]] as const) {
@@ -48,6 +54,9 @@ async function saveIds(supabase: Awaited<ReturnType<typeof createClient>>, id: s
 export async function createLoan(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const opening = form.get("is_opening") === "on";
+  // ผู้กู้เป็นสมาชิก → ต้องไม่ใช่ผู้ให้กู้ (เจ้าของ) ของสัญญาเดียวกัน (ฐานข้อมูลตรวจซ้ำ)
+  const bp = str(form.get("borrower_person_id"));
+  if (bp && ownersFromForm(form).some((o) => o.person_id === bp)) return { error: "ผู้กู้เป็นผู้ให้กู้ของสัญญาเดียวกันไม่ได้ — เลือกผู้ให้กู้คนอื่น" };
   const { data, error } = await supabase.rpc("create_loan", { p: {
     name: str(form.get("name")), borrower_name: str(form.get("borrower_name")), principal: num(form.get("principal")),
     currency: str(form.get("currency")), interest_rate: num(form.get("interest_rate")),
@@ -60,7 +69,7 @@ export async function createLoan(_: ActionState, form: FormData): Promise<Action
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/financial/loans");
   // รายละเอียดสำหรับพิมพ์สัญญา (ไม่บังคับ): สัญญาบันทึกแล้ว ถ้าส่วนนี้ไม่ผ่าน → ไปหน้าสัญญาพร้อมแจ้งให้แก้ที่ "แก้ไขรายละเอียด"
-  const patch = { ...partyPatch(form), borrower_phone: str(form.get("borrower_phone")) };
+  const patch = { ...partyPatch(form), ...borrowerPatch(form), borrower_phone: str(form.get("borrower_phone")) };
   const { error: pErr } = await supabase.from("loan_details").update(patch).eq("asset_id", data);
   const partyErr = pErr ? friendlyError(pErr.message) : await saveIds(supabase, data, form);
   if (partyErr) redirect(`/financial/loans/${data}?party=${encodeURIComponent(partyErr)}`);
@@ -191,6 +200,7 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
     contract_no: str(form.get("contract_no")),
     purpose: str(form.get("purpose")),
     ...partyPatch(form),
+    ...borrowerPatch(form),
   }).eq("asset_id", assetId);
   if (e2) return { error: friendlyError(e2.message) };
   const idErr = await saveIds(supabase, assetId, form);

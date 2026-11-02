@@ -8,6 +8,7 @@ import DropPrompt from "../DropPrompt";
 import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
+import PartyPicker from "@/components/PartyPicker";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -50,10 +51,10 @@ export function AddBalanceForm({ liabilityId, currency, today, minDate, banks = 
   </div>);
 }
 
-type Info = { id: string; name: string; lender: string | null; interest_rate: number | null; monthly_payment: number | null;
+type Info = { id: string; name: string; lender: string | null; lender_business_id?: string | null; interest_rate: number | null; monthly_payment: number | null;
   payment_due_day: number | null; due_date: string | null; status: string; notes: string | null };
 
-export function EditLiabilityForm({ l, remove }: { l: Info; remove?: RemoveOpt }) {
+export function EditLiabilityForm({ l, remove, businesses = [] }: { l: Info; remove?: RemoveOpt; businesses?: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateLiabilityInfo, {});
   const del = useStatusDelete(remove, l.status);
   const f = "mt-1 block w-full " + input;
@@ -62,7 +63,8 @@ export function EditLiabilityForm({ l, remove }: { l: Info; remove?: RemoveOpt }
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="liability_id" value={l.id} />
       <label className="text-sm">ชื่อที่ใช้เรียก<input name="name" required defaultValue={l.name} className={f} /></label>
-      <label className="text-sm">ผู้ให้กู้<input name="lender" defaultValue={l.lender ?? ""} className={f} /></label>
+      <PartyPicker kindLabel="ผู้ให้กู้เป็น" label="ชื่อผู้ให้กู้" nameField="lender" businessField="lender_business_id" businesses={businesses}
+        v={{ name: l.lender, businessId: l.lender_business_id }} />
       <label className="text-sm">อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={l.interest_rate ?? ""} className={f} /></label>
       <label className="text-sm">ค่างวดต่อเดือน<input name="monthly_payment" inputMode="decimal" defaultValue={l.monthly_payment ?? ""} className={f} /></label>
       <label className="text-sm">ครบกำหนดจ่ายทุกวันที่<input name="payment_due_day" type="number" min={1} max={31} defaultValue={l.payment_due_day ?? ""} className={f} /></label>

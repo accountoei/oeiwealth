@@ -7,6 +7,7 @@ import OwnerShares from "@/components/OwnerShares";
 import { LIABILITY_TYPE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { NewCardInline } from "../cards/forms";
+import PartyPicker from "@/components/PartyPicker";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -14,8 +15,9 @@ const label = "block text-sm text-slate-700";
 export default function NewLiabilityForm(props: {
   persons: { id: string; name: string }[]; assets: { id: string; name: string; asset_group: string }[];
   goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean; cardDate: string;
+  businesses: { id: string; name: string }[];
 }) {
-  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, cardDate } = props;
+  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, cardDate, businesses } = props;
   // ประเภท "บัตรเครดิต" = ฟอร์มบัตร (ตาราง credit_cards) แทนฟอร์มเงินกู้ (ตกลง 28 ต.ค. 2026 · ปุ่มเดียวที่หน้า Liabilities)
   const [type, setType] = useState("MORTGAGE");
   const typeField = (
@@ -38,7 +40,7 @@ export default function NewLiabilityForm(props: {
         <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลหนี้สิน</h2>
         {typeField}
         <label className={label}>ชื่อที่ใช้เรียก *<input name="name" required placeholder="เช่น สินเชื่อบ้าน A" className={input} /></label>
-        <label className={label}>ผู้ให้กู้<input name="lender" placeholder="เช่น SCB" className={input} /></label>
+        <PartyPicker kindLabel="ผู้ให้กู้เป็น" label="ชื่อผู้ให้กู้" nameField="lender" businessField="lender_business_id" businesses={businesses} placeholder="เช่น SCB" />
         <label className={label}>สกุลเงิน
           <CurrencySelect name="currency" defaultValue="THB" className={input} />
         </label>
