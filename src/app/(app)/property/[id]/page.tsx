@@ -488,6 +488,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               )}
               {l.notes && <div className="mt-1 whitespace-pre-line text-xs text-slate-500">{l.notes}</div>}
               <div className="mt-2 flex flex-wrap gap-4">
+                <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
                 {canWrite && l.status === "ACTIVE" && l.end_date > today && (
                   <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
                 )}

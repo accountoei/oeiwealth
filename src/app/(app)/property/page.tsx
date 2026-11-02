@@ -425,7 +425,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                 {props.flatMap((p) => (byProp.get(p.asset_id) ?? []).map((l) => (
                   <tr key={l.id}>
                     <td className="px-3 py-2"><Link href={`/property/${p.asset_id}`} className="hover:underline">{p.assets.name}</Link></td>
-                    <td className="px-3">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</td>
+                    <td className="px-3">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
+                      <Link href={`/print/lease/${l.id}`} target="_blank" className="ml-2 text-xs text-blue-700 hover:underline">พิมพ์สัญญา</Link></td>
                     <td className="px-3"><span className={`rounded px-1.5 py-0.5 text-xs ${LEASE_STATUS[l.lease_status]?.cls ?? ""}`}>{LEASE_STATUS[l.lease_status]?.text ?? l.lease_status}</span></td>
                     <td className="whitespace-nowrap px-3 text-xs text-slate-500">{thDate(l.start_date)} – {thDate(l.end_date)}</td>
                     <td className="px-3 text-right tabular-nums">{money(l.rent_amount, l.rent_currency)}<span className="text-xs text-slate-400">{FREQ_TEXT[l.payment_frequency] ?? ""}</span></td>
