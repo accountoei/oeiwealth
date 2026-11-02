@@ -12,6 +12,7 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
 import YearTable, { OPEN, type YLine } from "./YearTable";
 import InsuranceBatch, { type InsLine, type PayOpt } from "./InsuranceBatch";
+import CashValueBatch, { type CvRow } from "./CashValueBatch";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
@@ -21,7 +22,7 @@ import RowActions from "@/components/RowActions";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
-const TABS = [["overview", "ภาพรวม"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
+const TABS = [["overview", "ภาพรวม"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"], ["update", "อัปเดตมูลค่าเวนคืน"]] as const;
 
 export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
@@ -41,7 +42,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const year = today.slice(0, 4);
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }] = await Promise.all([
+    { data: banks }, { data: cards }, { data: family }, { data: cvTable }] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date")
       .order("status").order("insurer"),
@@ -59,6 +60,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("families").select("go_live_date").maybeSingle(),
+    supabase.from("insurance_cash_value_table").select("policy_id,policy_year,value_date,value").is("deleted_at", null).lte("value_date", today)
+      .order("value_date"),
   ]);
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
@@ -188,6 +191,18 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const actRows = rows.filter((r) => r.status === "ACTIVE");
   const nextBenefit = (pid: string) => lineList.find((l) => l.policy_id === pid && l.kind === "BENEFIT" && OPEN.includes(l.status));
   const monthLabel = thMonth(mStart);
+  // แท็บอัปเดตมูลค่าเวนคืน: กรมธรรม์ที่มีผลและมีมูลค่าเวนคืน / ตารางตามสัญญา · ปีล่าสุดที่ถึงวันแล้ว · ยังไม่ได้ลง (เงื่อนไขเดียวกับ sync_insurance_cash_value)
+  const dueOf = new Map<string, { year: number; value: number; date: string }>();
+  (cvTable ?? []).forEach((c) => dueOf.set(c.policy_id, { year: Number(c.policy_year), value: Number(c.value), date: c.value_date as string }));
+  const cvRows: CvRow[] = actRows.filter((r) => r.has_cash_value || r.cash_value_asset_id || dueOf.has(r.id)).map((r) => {
+    const a = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : undefined;
+    const due = dueOf.get(r.id) ?? null;
+    const pending = !!due && (!a ? true : due.date >= goLive && (!a.current_value_date || due.date > a.current_value_date));
+    const premiumDue = !!due && lineList.some((l) => l.policy_id === r.id && l.kind === "PREMIUM" && l.due_date < due.date && l.status !== "PAID");
+    return { policyId: r.id, assetId: a?.id ?? null, name: policyName.get(r.id) ?? "-", person: r.person_id ? pname.get(r.person_id) ?? null : null,
+      currency: a?.currency ?? r.insured_amount_currency ?? "THB", value: a?.current_value == null ? null : Number(a.current_value), date: a?.current_value_date ?? null,
+      due, pending, premiumDue, factor: a && a.currency === "THB" ? pv.assetShare(a.id) : 0 };
+  });
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -327,6 +342,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
               <td className="px-3 text-right tabular-nums">{money(actRows.filter((r) => (r.premium_currency ?? "THB") === "THB").reduce((t, r) => t + Number(r.premium ?? 0), 0), undefined, 0)}</td></tr></tfoot>}
           </table>
         </div>
+      </TabPanel>
+
+      <TabPanel id="update">
+        <CashValueBatch key={`u${cvRows.map((r) => `${r.policyId}${r.date}`).join("")}`} rows={cvRows} today={today} minDate={goLive} canWrite={canWrite} canCreate={canOrder}
+          shareNote={pv.personId ? `ยอดรวมท้ายตาราง = ส่วนของ ${pv.personName} ตามสัดส่วนเจ้าของ (มูลค่าในแถว = ทั้งกรมธรรม์)` : null} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">

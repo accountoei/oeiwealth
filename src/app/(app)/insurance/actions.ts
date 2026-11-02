@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
-import { BAD_ROWS_ERROR, amountOrNull, isPositive, notSaved, readRows } from "@/lib/batch-entry";
+import { BAD_ROWS_ERROR, amountOrNull, isPositive, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
 export type ActionState = FormState;
 /** ผลลงมูลค่าเวนคืนตามตารางในสัญญา (sync_insurance_cash_value) */
@@ -198,7 +198,7 @@ export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<
 // ---------------------------------------------------------------- แท็บบันทึกทั้งชุด (ตกลง 27 ต.ค. 2026) · ผิดแถวเดียว = ไม่บันทึกเลย
 type BatchLine = { policy_id: string; line_id: string; label: string; amount: string; pay: string; currency: string };
 
-function refreshBatch(rows: BatchLine[]) {
+function refreshBatch(rows: { policy_id: string }[]) {
   revalidatePath("/insurance");
   new Set(rows.map((r) => r.policy_id)).forEach((id) => revalidatePath(`/insurance/${id}`));
   revalidatePath("/income-expenses");
@@ -241,4 +241,44 @@ export async function batchBenefits(_: ActionState, form: FormData): Promise<Act
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   refreshBatch(rows);
   return { ok: `บันทึกรับผลประโยชน์แล้ว ${data} งวด` };
+}
+
+/** แท็บอัปเดตมูลค่าเวนคืน (ตกลง 2 พ.ย. 2026): หลายกรมธรรม์ในคำสั่งเดียว (insert ครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกทั้งชุด)
+ *  ค่าตามตารางในสัญญา → วิธี "ตามหนังสือแจ้ง" + หมายเหตุปีกรมธรรม์ · กรอกเอง → วิธีที่เลือกด้านบน */
+export async function batchCashValues(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const rows = readRows<{ asset_id: string; policy_id: string; label: string; value: string; date: string; method: string; notes?: string | null }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!rows.length) return { error: "กรุณากรอกมูลค่าอย่างน้อย 1 รายการ" };
+  const clean = rows.map((r) => ({ ...r, num: Number(plainNumber(r.value)) }));
+  const bad = clean.find((r) => !plainNumber(r.value) || Number.isNaN(r.num) || r.num < 0);
+  if (bad) return { error: `${bad.label} · มูลค่าต้องเป็นตัวเลข (ไม่ติดลบ)` };
+  const noDate = clean.find((r) => !/^\d{4}-\d{2}-\d{2}$/.test(r.date ?? ""));
+  if (noDate) return { error: `${noDate.label} · กรุณาใส่วันที่` };
+  if (clean.some((r) => !["STATEMENT", "USER_ESTIMATE"].includes(r.method))) return { error: BAD_ROWS_ERROR };
+  const { error } = await supabase.from("asset_valuations").insert(clean.map((r) => ({
+    asset_id: r.asset_id, valuation_date: r.date, value: r.num, valuation_method: r.method,
+    source: r.method === "STATEMENT" ? "STATEMENT" : "USER", notes: str(r.notes ?? null),
+  })));
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  refreshBatch(clean);
+  return { ok: `บันทึกมูลค่าเวนคืนแล้ว ${clean.length} รายการ` };
+}
+
+/** ลงมูลค่าตามตารางในสัญญาทุกกรมธรรม์ที่ถึงวันแล้ว (ยังไม่มีมูลค่าเวนคืน → สร้างให้ · ADMIN / EDITOR) */
+export async function syncAllCashValues(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  let ids: string[];
+  try { ids = JSON.parse(String(form.get("policy_ids") ?? "[]")); } catch { return { error: BAD_ROWS_ERROR }; }
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100) return { error: BAD_ROWS_ERROR };
+  let added = 0;
+  const errors: string[] = [];
+  for (const id of ids.map(String)) {
+    const { data, error } = await supabase.rpc("sync_insurance_cash_value", { p_policy_id: id });
+    if (error) errors.push(friendlyError(error.message));
+    else added += (data as CvSync | null)?.added ?? 0;
+  }
+  refreshBatch(ids.map((id) => ({ policy_id: id })));
+  if (errors.length) return { error: `ลงได้ ${added} ปี · ไม่สำเร็จ ${errors.length} กรมธรรม์: ${[...new Set(errors)].join(" · ")}` };
+  return added > 0 ? { ok: `ลงมูลค่าตามตารางแล้ว ${added} ปี` } : { ok: "ไม่มีปีที่ต้องลงเพิ่ม (เบี้ยก่อนหน้ายังค้าง · หรือมียอดที่ใหม่กว่าแล้ว)" };
 }
