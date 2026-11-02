@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createLoan, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { thDate } from "@/lib/format";
+import { money, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
 import { numOrZero } from "@/lib/format";
-import NewLoanSchedule from "./NewLoanSchedule";
+import NewLoanSchedule, { type NewSched } from "./NewLoanSchedule";
+import { openingFromSchedule } from "@/lib/loan-schedule";
 import ContractParties, { type PartyOptions } from "../ContractParties";
 import PartyPicker, { type BorrowerBank } from "@/components/PartyPicker";
 
@@ -31,6 +32,12 @@ export default function NewLoanForm(props: {
   const [dueDate, setDueDate] = useState("");
   const [state, action, pending] = useActionState<ActionState, FormData>(createLoan, {});
   const [opening, setOpening] = useState(isSetup);
+  const [currency, setCurrency] = useState("THB");
+  // ตารางผ่อน (ส่วน "ตั้งตารางผ่อนเลย") → ยอดตั้งต้นจากตาราง = เงินต้นตามสัญญา − เงินต้นงวดที่ครบกำหนดถึงวันตั้งต้น (ตกลง 2 พ.ย. 2026)
+  const [sched, setSched] = useState<NewSched>({ lines: [], errors: [] });
+  const [openOut, setOpenOut] = useState("");
+  const fromSched = opening && sched.lines.length && numOrZero(principal) > 0 ? openingFromSchedule(numOrZero(principal), sched.lines, openingDate) : null;
+  const openingValue = openOut.trim() ? openOut : fromSched ? fromSched.outstanding.toFixed(2) : "";
   return (
     <form action={action} className="space-y-6">
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
@@ -62,9 +69,22 @@ export default function NewLoanForm(props: {
         )}
         {opening ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <label className={label}>เงินต้นคงเหลือ ณ วันตั้งต้น<input name="opening_outstanding" inputMode="decimal" placeholder="ไม่ใส่ = เท่าเงินต้น" className={input} /></label>
+            <label className={label}>เงินต้นคงเหลือ ณ วันตั้งต้น
+              <input value={openOut} onChange={(e) => setOpenOut(e.target.value)} inputMode="decimal"
+                placeholder={fromSched ? `${money(fromSched.outstanding)} (จากตาราง)` : "ไม่ใส่ = เท่าเงินต้น"} className={input} />
+              <input type="hidden" name="opening_outstanding" value={openingValue} />
+              {fromSched ? (
+                <span className={`mt-1 block text-xs ${fromSched.outstanding < 0 ? "text-red-600" : "text-slate-500"}`}>
+                  {openOut.trim() ? "ตามตารางผ่อน" : "ว่าง = ใช้ยอดจากตารางผ่อน"}: {money(numOrZero(principal))} − เงินต้น {fromSched.count} งวดที่ครบกำหนดถึง {thDate(openingDate)} {money(fromSched.paid)} = <b>{money(fromSched.outstanding)}</b>
+                  {fromSched.outstanding < 0 && " — เงินต้นงวดก่อน Go-live เกินเงินต้นตามสัญญา"}
+                  {openOut.trim() && Math.abs(numOrZero(openOut) - fromSched.outstanding) > 0.005 &&
+                    <span className="block text-amber-700">ใส่ต่างจากตาราง: งวดก่อน Go-live ที่ยังไม่ได้รับจะขึ้น &ldquo;เลยกำหนด&rdquo; (ใช้เมื่อผู้กู้ค้างชำระจริง) ·{" "}
+                      <button type="button" onClick={() => setOpenOut("")} className="text-blue-700 underline">ใช้ยอดจากตาราง</button></span>}
+                </span>
+              ) : <span className="mt-1 block text-xs text-slate-500">ตั้งตารางผ่อนด้านล่างแล้ว ระบบเติมยอดนี้จากตารางให้</span>}
+            </label>
             <label className={label}>สกุลเงิน
-              <CurrencySelect name="currency" defaultValue="THB" className={input} />
+              <CurrencySelect name="currency" defaultValue="THB" onChange={setCurrency} className={input} />
             </label>
           </div>
         ) : (
@@ -85,11 +105,13 @@ export default function NewLoanForm(props: {
         <div className="mt-4"><ContractParties opt={partyOpt} canSensitive={canSchedule} /></div>
       </details>
 
-      {canSchedule && <NewLoanSchedule amount={numOrZero(principal)} ratePct={numOrZero(rate)} loanDate={loanDate} dueDate={dueDate} today={today} />}
+      {canSchedule && <NewLoanSchedule amount={numOrZero(principal)} ratePct={numOrZero(rate)} loanDate={loanDate} dueDate={dueDate} today={today}
+        currency={currency} openingDate={opening ? openingDate : undefined} onChange={setSched} />}
 
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+      {sched.errors.length > 0 && <p className="text-sm text-red-600">ตารางผ่อน: {sched.errors[0]}{sched.errors.length > 1 ? ` (และอีก ${sched.errors.length - 1} จุด)` : ""}</p>}
       <div className="flex gap-3">
-        <button disabled={pending} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending || sched.errors.length > 0} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <BalanceGuard bank="disburse_from_asset_id" amount="principal" date="disburse_date" />
         <Link href="/financial/loans" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
       </div>

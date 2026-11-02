@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { LOAN_PARTY_COLS as PARTY_COLS, MOVE_LABEL, money, thDate, todayBangkok, withBankOwners } from "@/lib/format";
-import { DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
+import { ApplyScheduleOpening, DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
 import EditButton from "@/components/EditButton";
 import ScheduleTable, { type SchedRow } from "./ScheduleTable";
 import RowActions from "@/components/RowActions";
@@ -13,7 +13,7 @@ import { WithStatus } from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ScheduleEditor } from "./schedule-editor";
 import { RestructureEditor } from "./restructure-editor";
-import { addMonthsKeepDay, LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
+import { addMonthsKeepDay, LOAN_SCHED_STATUS, openingFromSchedule } from "@/lib/loan-schedule";
 import { ActionBar } from "@/components/ActionBar";
 import { loanInterestFields } from "@/lib/source-edit";
 
@@ -37,7 +37,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,received_to_asset_id").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
       .is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
-    supabase.from("families").select("go_live_date").maybeSingle(),
+    supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status")
       .eq("loan_asset_id", id).order("due_date").order("installment_no"),
@@ -77,6 +77,11 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const prevDue = sched.filter((x) => x.due_date < restartAt).at(-1)?.due_date ?? l.loan_date ?? undefined;
   const methodGuess = open.length > 1 && open.slice(0, -1).every((x) => Number(x.principal_due) === 0) ? "INTEREST_ONLY" as const : "EQUAL_PAYMENT" as const;
   const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
+  // สัญญาที่ให้กู้ก่อน Go-live (มียอดตั้งต้น · ไม่มีรายการจ่ายเงินกู้ในระบบ) → แก้เงินต้น / ยอดตั้งต้นได้ · ยอดตั้งต้นเทียบกับตารางผ่อน
+  const isOpening = Number(l.opening_outstanding_principal ?? 0) > 0 || !(moves ?? []).some((m) => m.movement_type === "LOAN_DISBURSEMENT" && m.to_asset_id === id);
+  const openingSched = isOpening && sched.length
+    ? openingFromSchedule(Number(l.principal ?? 0), sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due) })), l.opening_date) : null;
+  const openingMismatch = !!openingSched && openingSched.outstanding >= 0 && Math.abs(openingSched.outstanding - Number(l.opening_outstanding_principal ?? 0)) > 0.005;
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
   // บันทึกรับชำระแล้ว → แก้ตารางทั้งชุดไม่ได้ · งวดที่รับแล้วแก้ / ลบไม่ได้ (ฐานข้อมูลบังคับ: 20261010000200_loan_schedule_locks)
   const hasPayments = (moves ?? []).some((m) => m.movement_type === "LOAN_PRINCIPAL_RECEIPT") || (incomes ?? []).length > 0;
@@ -215,11 +220,14 @@ export default async function LoanDetailPage({ params, searchParams }: {
             {canWrite && (
               <EditButton title="แก้ไขรายละเอียด" small>
                 <div className="space-y-5">
-                  <p className="text-xs text-slate-500">วันที่ให้กู้และยอดตั้งต้นแก้ไม่ได้ (ผูกกับรายการเงินที่บันทึกแล้ว)</p>
+                  <p className="text-xs text-slate-500">{isOpening ? "สัญญาที่ให้กู้ก่อน Go-live: แก้วันที่ทำสัญญา เงินต้นตามสัญญา และยอดตั้งต้นได้ที่ \"วันที่และยอดเงิน\" ด้านล่าง"
+                    : "ให้กู้หลัง Go-live: เงินต้นมาจากรายการจ่ายเงินกู้ (แก้ที่ประวัติด้านล่าง)"}</p>
                   <WithStatus status={{ table: "loan_details", id: l.id, value: l.status, paths, label: "สถานะ",
                     options: LOAN_STATUS_OPTIONS,
                     remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined }}>
                     <LoanInfoForm assetId={id} minDue={sched.at(-1)?.due_date ?? null} hasOpenSchedule={open.length > 0}
+                      amounts={{ isOpening, loanDate: l.loan_date, principal: Number(l.principal ?? 0), openingDate: l.opening_date, opening: Number(l.opening_outstanding_principal ?? 0),
+                        fromSchedule: openingSched && openingSched.outstanding >= 0 ? openingSched.outstanding : null, live: family?.system_status === "LIVE", currency: l.currency }}
                       risk={l.status === "AT_RISK" ? { outstanding: leftP, currency: l.currency, today, date: extra?.risk_assessed_date ?? null, note: extra?.risk_note ?? null,
                         expected: extra?.at_risk_amount == null ? null : Math.max(leftP - Number(extra.at_risk_amount), 0) } : undefined} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
                       borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }}
@@ -240,7 +248,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">เลขที่สัญญา</dt><dd>{extra?.contract_no || <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">วันที่ทำสัญญา</dt><dd>{l.loan_date ? thDate(l.loan_date) : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">วัตถุประสงค์</dt><dd>{extra?.purpose || <span className="text-slate-400">—</span>}</dd>
-            <dt className="text-slate-500">เงินต้นเริ่มต้น</dt><dd className="font-medium tabular-nums">{money(l.principal, l.currency)}</dd>
+            <dt className="text-slate-500">เงินต้นตามสัญญา</dt><dd className="font-medium tabular-nums">{money(l.principal, l.currency)}</dd>
             <dt className="text-slate-500">อัตราดอกเบี้ย</dt><dd>{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">แบบการชำระ</dt><dd>{payType}</dd>
             <dt className="text-slate-500">วันครบกำหนด</dt><dd>{l.due_date ? thDate(l.due_date) : <span className="text-slate-400">—</span>}</dd>
@@ -287,6 +295,11 @@ export default async function LoanDetailPage({ params, searchParams }: {
               </div>
             ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
             {schedErr && sched.length === 0 && <p className="mt-1 text-sm text-red-600">บันทึกสัญญาแล้ว แต่ตั้งตารางผ่อนไม่สำเร็จ: {schedErr} · กด &ldquo;+ ตั้งตารางผ่อน&rdquo; เพื่อตั้งใหม่</p>}
+            {openingMismatch && (
+              <div className="mt-0.5 text-xs text-red-600">ยอดตั้งต้นที่บันทึกไว้ ({money(l.opening_outstanding_principal)}) ไม่ตรงกับตารางผ่อน: เงินต้นตามสัญญา − เงินต้นงวดที่ครบกำหนดถึง {thDate(l.opening_date)} = {money(openingSched!.outstanding)}
+                {canDelete ? <ApplyScheduleOpening assetId={id} value={money(openingSched!.outstanding)} /> : " · แจ้ง ADMIN / EDITOR ให้ปรับ"}
+                <span className="block text-slate-500">ถ้าผู้กู้ค้างชำระจริงก่อน Go-live ให้คงยอดเดิมไว้ — งวดที่ยังไม่ได้รับจะขึ้น &ldquo;เลยกำหนด&rdquo;</span></div>
+            )}
             {sched.length > 0 && Math.abs(schedP - principalAll) > 0.01 && (
               <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา{extraLent > 0 ? " รวมที่ให้กู้เพิ่ม" : ""} ({money(principalAll)})
                 {extraLent > 0 ? " — กด “คำนวณงวดที่เหลือใหม่” เพื่อใส่ยอดที่ให้กู้เพิ่มในตาราง" : " — สถานะ “รับแล้ว” อาจคลาดเคลื่อน"}</p>
@@ -303,6 +316,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
           )}
           {canDelete && loanOpen && (!hasPayments || sched.length === 0) && (
             <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
+              opening={isOpening ? { date: l.opening_date, recorded: Number(l.opening_outstanding_principal ?? 0) } : undefined}
               current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
               defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0), interestFrom: l.loan_date ?? undefined,
                 firstDue: addMonthsKeepDay(l.loan_date ?? today, 1), lastDue: l.due_date ?? undefined }} />
