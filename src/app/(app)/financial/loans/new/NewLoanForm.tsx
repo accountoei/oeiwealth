@@ -10,7 +10,7 @@ import BalanceGuard from "@/components/BalanceGuard";
 import { numOrZero } from "@/lib/format";
 import NewLoanSchedule from "./NewLoanSchedule";
 import ContractParties, { type PartyOptions } from "../ContractParties";
-import PartyPicker from "@/components/PartyPicker";
+import PartyPicker, { type BorrowerBank } from "@/components/PartyPicker";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -21,8 +21,9 @@ export default function NewLoanForm(props: {
   /** ADMIN / EDITOR ตั้งตารางผ่อนได้ (ฐานข้อมูลบังคับ) */
   canSchedule: boolean;
   partyOpt: PartyOptions;
+  borrowerBanks: BorrowerBank[];
 }) {
-  const { persons, banks, goLive, openingDate, today, isSetup, isAdmin, canSchedule, partyOpt } = props;
+  const { persons, banks, goLive, openingDate, today, isSetup, isAdmin, canSchedule, partyOpt, borrowerBanks } = props;
   // ช่องที่ตารางผ่อนใช้ (ส่วน "ตั้งตารางผ่อนเลย" ด้านล่าง)
   const [principal, setPrincipal] = useState("");
   const [rate, setRate] = useState("");
@@ -36,7 +37,8 @@ export default function NewLoanForm(props: {
         <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลเงินกู้</h2>
         <label className={label}>ชื่อรายการ *<input name="name" required placeholder="เช่น ให้น้องยืมซื้อรถ" className={input} /></label>
         <PartyPicker kindLabel="ผู้กู้เป็น" label="ชื่อผู้กู้" nameField="borrower_name" personField="borrower_person_id" businessField="borrower_business_id" required
-          persons={persons} businesses={partyOpt.businesses.map((b) => ({ id: b.asset_id, name: b.company_name }))} placeholder="ชื่อ-นามสกุลเต็ม พร้อมคำนำหน้า" />
+          persons={persons} businesses={partyOpt.businesses.map((b) => ({ id: b.asset_id, name: b.company_name }))} placeholder="ชื่อ-นามสกุลเต็ม พร้อมคำนำหน้า"
+          bankField="borrower_bank_asset_id" banks={borrowerBanks} />
         <label className={label}>เบอร์ติดต่อผู้กู้<input name="borrower_phone" type="tel" maxLength={50} className={input} /></label>
         <label className={label}>เงินต้นตามสัญญา *<input name="principal" required inputMode="decimal" value={principal} onChange={(e) => setPrincipal(e.target.value)} className={input} /></label>
         <label className={label}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} className={input} /></label>

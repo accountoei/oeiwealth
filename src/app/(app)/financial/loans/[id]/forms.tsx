@@ -9,7 +9,7 @@ import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
 import ContractParties, { type PartyOptions, type PartyValues } from "../ContractParties";
-import PartyPicker from "@/components/PartyPicker";
+import PartyPicker, { type BorrowerBank } from "@/components/PartyPicker";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -205,8 +205,8 @@ export function DisburseForm({ assetId, currency, banks, today, minDate, hasOpen
 /** แก้รายละเอียดเงินให้กู้ (ชื่อรายการ · ผู้กู้ · ดอกเบี้ย · ครบกำหนด · หมายเหตุ) */
 export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false, party }: {
   /** รายละเอียดสำหรับพิมพ์สัญญา (ที่อยู่ เลขบัตร ผู้ค้ำ พยาน สถานที่ บัญชีรับชำระ) */
-  party?: { v: Partial<PartyValues> & { borrower_person_id?: string | null; borrower_business_id?: string | null }; opt: PartyOptions; canSensitive: boolean;
-    persons: { id: string; name: string }[] };
+  party?: { v: Partial<PartyValues> & { borrower_person_id?: string | null; borrower_business_id?: string | null; borrower_bank_asset_id?: string | null };
+    opt: PartyOptions; canSensitive: boolean; persons: { id: string; name: string }[]; borrowerBanks: BorrowerBank[] };
   /** งวดสุดท้ายในตารางผ่อน → วันครบกำหนดสัญญาต้องไม่ก่อนวันนี้ */
   minDue?: string | null;
   /** สถานะ "มีความเสี่ยง": ช่องมูลค่าคาดว่าจะได้รับคืน (เก็บเป็นส่วนที่มีความเสี่ยง · แสดงอย่างเดียว ไม่กระทบ Net Worth) */
@@ -223,7 +223,8 @@ export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false
       {party ? (
         <PartyPicker kindLabel="ผู้กู้เป็น" label="ชื่อผู้กู้" nameField="borrower_name" personField="borrower_person_id" businessField="borrower_business_id" required
           persons={party.persons} businesses={party.opt.businesses.map((b) => ({ id: b.asset_id, name: b.company_name }))}
-          v={{ name: v.borrower_name, personId: party.v.borrower_person_id, businessId: party.v.borrower_business_id }} />
+          v={{ name: v.borrower_name, personId: party.v.borrower_person_id, businessId: party.v.borrower_business_id, bankId: party.v.borrower_bank_asset_id }}
+          bankField="borrower_bank_asset_id" banks={party.borrowerBanks} />
       ) : <label className="text-sm">ผู้กู้ *<input name="borrower_name" required defaultValue={v.borrower_name} className={input} /></label>}
       <label className="text-sm">เบอร์ติดต่อผู้กู้<input name="borrower_phone" type="tel" maxLength={50} defaultValue={v.borrower_phone ?? ""} className={input} /></label>
       <label className="text-sm">เลขที่สัญญา<input name="contract_no" maxLength={100} defaultValue={v.contract_no ?? ""} className={input} /></label>

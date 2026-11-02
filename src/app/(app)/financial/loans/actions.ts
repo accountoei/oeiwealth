@@ -36,7 +36,8 @@ function partyPatch(form: FormData): Record<string, unknown> {
 /** ผู้กู้เป็นสมาชิก / กิจการ (PartyPicker · ว่าง = บุคคลภายนอก) · ส่งมาเฉพาะเมื่อฟอร์มมีช่องเลือก */
 function borrowerPatch(form: FormData): Record<string, unknown> {
   if (!form.has("borrower_business_id")) return {};
-  return { borrower_person_id: str(form.get("borrower_person_id")), borrower_business_id: str(form.get("borrower_business_id")) };
+  return { borrower_person_id: str(form.get("borrower_person_id")), borrower_business_id: str(form.get("borrower_business_id")),
+    ...(form.has("borrower_bank_asset_id") ? { borrower_bank_asset_id: str(form.get("borrower_bank_asset_id")) } : {}) };
 }
 
 /** เลขบัตรผู้กู้ / ผู้ค้ำ: กรอกใหม่ = ตั้ง · ติ๊กล้าง = ลบ · ว่าง = ไม่เปลี่ยน (เข้ารหัสในฐานข้อมูล) */
