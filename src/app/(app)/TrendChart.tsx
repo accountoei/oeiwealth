@@ -8,7 +8,7 @@ export type TrendPoint = { label: string; date: string; v: number; solid: boolea
 const fmtBaht = (v: number) => `${baht(v)} บาท`;
 
 /**
- * กราฟเส้น Net Worth (SVG) — จุดทึบ = ยอดยืนยันแล้ว, จุดกลวง = ประมาณการ
+ * กราฟเส้น Net Worth (SVG) — จุดทึบ = ยอดล็อกแล้ว (ยอดตั้งต้น / ปิดเดือนแล้ว), จุดกลวง = ยังไม่ปิด (อาจเปลี่ยน)
  * วาดตามความกว้างจริงของกล่อง (ไม่ย่อทั้งภาพ) → ตัวหนังสือแกนขนาดเท่าเดิมทุกจอ (เดิมบนมือถือเหลือ ~4–5px)
  * ชี้ (เมาส์) / แตะ (มือถือ) / ปุ่มลูกศร (คีย์บอร์ด) → กล่องค่าของจุดที่ใกล้ที่สุด
  * ตกลง 1 พ.ย. 2026: ไม่ระบายพื้นใต้เส้น (แกนไม่เริ่มที่ 0 → พื้นทำให้ดูเปลี่ยนมากเกินจริง) · บอกยอดเปลี่ยนทั้งช่วงเป็นตัวเลขแทน · แกนซ้ายฝั่งเดียว 5 ขีด
@@ -111,7 +111,7 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
         <div role="status" className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs text-white shadow-lg"
           style={{ left: x(active), top: Math.max(0, y(a.v) - 12),
             transform: `translate(${active === 0 ? "-12px" : active === points.length - 1 ? "calc(-100% + 12px)" : "-50%"}, -100%)` }}>
-          <div className="text-slate-300">{a.label} · {a.date.slice(8, 10)}/{a.date.slice(5, 7)}/{Number(a.date.slice(0, 4)) + 543}{a.solid ? "" : " · ประมาณการ"}</div>
+          <div className="text-slate-300">{a.label} · {a.date.slice(8, 10)}/{a.date.slice(5, 7)}/{Number(a.date.slice(0, 4)) + 543}{a.solid ? "" : " · ยังไม่ปิด"}</div>
           <div className="font-semibold tabular-nums">{fmtBaht(a.v)}</div>
         </div>
       )}
