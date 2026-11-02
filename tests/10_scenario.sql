@@ -2784,6 +2784,50 @@ SELECT t.ok((SELECT result = 'SUCCESS' AND (details->>'added')::int = 1 FROM pub
             'มูลค่าเวนคืนรายวัน: บันทึกผลงาน INSURANCE_CV');
 SELECT t.ok(public.server_sync_insurance_cash_values() = 0, 'มูลค่าเวนคืนรายวัน: รันซ้ำไม่ลงซ้ำ');
 SET ROLE authenticated;
+-- งวดก่อน Go-live = ประวัติ · ติ๊กไม่ได้จ่าย · ใส่งวดประวัติย้อนหลังได้แม้จ่ายงวดหลัง Go-live แล้ว (2 พ.ย. 2026)
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO tcv SELECT 'hist', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ประวัติก่อนโกไลฟ์', 'currency', 'THB', 'premium', 12000, 'start_date', '2024-01-15'));
+SELECT id AS hpol FROM tcv WHERE k = 'hist' \gset
+SELECT public.set_insurance_schedule(:'hpol', 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', '2025-01-15', 'amount', 12000), jsonb_build_object('due_date', current_date - 3, 'amount', 12000))) AS hset;
+SELECT t.ok((SELECT status = 'HISTORY' AND remaining = 0 FROM public.v_insurance_schedule_status WHERE policy_id = :'hpol' AND due_date = '2025-01-15'),
+            'งวดก่อน Go-live = ประวัติ (ไม่เลยกำหนด · คงเหลือ 0)');
+SELECT t.ok((SELECT status = 'OVERDUE' FROM public.v_insurance_schedule_status WHERE policy_id = :'hpol' AND due_date = current_date - 3),
+            'งวดหลัง Go-live ยังเลยกำหนดตามปกติ');
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'เบี้ยประวัติทดสอบ', 'amount', 12000,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurance_schedule_line_id', (SELECT id FROM public.insurance_schedule_lines WHERE policy_id = :'hpol' AND due_date = current_date - 3 AND deleted_at IS NULL))) IS NOT NULL AS hpaid;
+SELECT public.set_insurance_schedule(:'hpol', 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', '2024-01-15', 'amount', 12000), jsonb_build_object('due_date', '2025-01-15', 'amount', 12000))) AS hset2;
+SELECT t.ok((SELECT string_agg(installment_no || ':' || status, ',' ORDER BY due_date) = '1:HISTORY,2:HISTORY,3:PAID'
+               FROM public.v_insurance_schedule_status WHERE policy_id = :'hpol' AND kind = 'PREMIUM'),
+            'ใส่งวดประวัติย้อนหลังได้แม้จ่ายงวดหลัง Go-live แล้ว · เลขงวดเรียงใหม่ (งวดที่จ่ายแล้วเป็นงวดที่ 3)');
+SELECT t.fails(format($q$SELECT public.set_insurance_schedule(%L, 'PREMIUM', jsonb_build_array(jsonb_build_object('due_date', current_date - 10, 'amount', 12000)))$q$, :'hpol'),
+  'งวดแรกต้องอยู่หลังงวดที่มีการชำระแล้ว', 'งวดหลัง Go-live ยังต้องอยู่หลังงวดที่จ่ายแล้ว');
+UPDATE public.insurance_schedule_lines SET skipped = true WHERE policy_id = :'hpol' AND due_date = '2025-01-15' AND deleted_at IS NULL;
+SELECT t.ok((SELECT status = 'SKIPPED' AND remaining = 0 FROM public.v_insurance_schedule_status WHERE policy_id = :'hpol' AND due_date = '2025-01-15'),
+            'ติ๊ก "ไม่ได้จ่าย" → สถานะไม่ได้จ่าย');
+SELECT t.fails(format($q$UPDATE public.insurance_schedule_lines SET skipped = true WHERE policy_id = %L AND due_date = current_date - 3 AND deleted_at IS NULL$q$, :'hpol'),
+  'LOCKED|ไม่ได้จ่าย', 'งวดที่มีเงินแล้วติ๊ก "ไม่ได้จ่าย" ไม่ได้');
+SELECT public.set_insurance_cash_value_table(:'hpol', jsonb_build_array(jsonb_build_object('policy_year', 2, 'value', 20000, 'value_date', current_date - 1))) IS NOT NULL AS hcv;
+SELECT t.ok((SELECT a.current_value = 20000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = :'hpol'),
+            'งวดประวัติ / ไม่ได้จ่าย ไม่นับเป็นค้างเบี้ย → ลงมูลค่าเวนคืนตามตารางได้');
+-- บันทึกเงินคืนแล้วสร้างเคลมให้เอง (2 พ.ย. 2026)
+INSERT INTO public.insurance_coverages(policy_id, coverage_type, limit_amount) VALUES (:'hpol', 'OPD_ANNUAL', 30000);
+SELECT id AS hcov FROM public.insurance_coverages WHERE policy_id = :'hpol' AND coverage_type = 'OPD_ANNUAL' \gset
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'ค่ารักษา OPD ทดสอบ', 'amount', 2500,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'is_reimbursable', true)) AS hexp \gset
+SELECT public.record_reimbursement_new_claim(:'hcov', :'hexp', current_date, 2000, t.a('KBank ออมทรัพย์'), NULL, NULL) AS hclaim \gset
+SELECT t.ok((SELECT policy_id = :'hpol' AND coverage_id = :'hcov' AND claimed_amount = 2000 AND received_amount = 2000 AND status = 'PAID'
+               FROM public.insurance_claims WHERE id = :'hclaim'),
+            'เงินคืนจากเคลมใหม่: สร้างเคลมผูกความคุ้มครอง · ได้รับ 2,000 · สถานะจ่ายครบ');
+SELECT t.ok((SELECT insurance_claim_id = :'hclaim' FROM public.expense_reimbursements WHERE expense_item_id = :'hexp' AND deleted_at IS NULL),
+            'เงินคืนจากเคลมใหม่: เงินคืนผูกกับเคลมที่สร้าง');
+SELECT t.fails(format($q$SELECT public.record_reimbursement_new_claim(%L, %L, current_date, 1000)$q$, :'hcov', :'hexp'),
+  'เงินคืนเกินยอดค้างรับ', 'เงินคืนจากเคลมใหม่: เกินยอดค้างรับ → ไม่สร้างเคลมค้างไว้');
+SELECT t.ok((SELECT count(*) = 1 FROM public.insurance_claims WHERE policy_id = :'hpol' AND deleted_at IS NULL),
+            'เงินคืนจากเคลมใหม่: บันทึกไม่ผ่าน = ไม่มีเคลมค้าง');
 \echo '== 13zz7. Private Business: ปันผลแยกตามผู้ถือหุ้น + มูลค่าหลายกิจการ (ROLLBACK ท้ายหัวข้อ)'
 BEGIN;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');

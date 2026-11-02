@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, money, thDate, todayBangkok,
+  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, insCountedPaid, money, thDate, todayBangkok,
 } from "@/lib/format";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
 import { AddCashValueForm, BenefitForm, CashValueTableEditor, CoverageForm, InsScheduleEditor, PayPremiumForm, PolicyInfoForm, SyncCashValueButton } from "./ins-forms";
@@ -24,7 +24,7 @@ import { DetailItem as Item } from "@/components/Boxes";
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
 type Line = { id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string; benefit_type: string | null;
-  notes: string | null; paid_amount: number; remaining: number; status: string };
+  notes: string | null; paid_amount: number; remaining: number; status: string; skipped: boolean };
 
 export default async function PolicyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -44,7 +44,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     p.asset_id ? supabase.from("assets").select("name").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
-    supabase.from("v_insurance_schedule_status").select("id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status")
+    supabase.from("v_insurance_schedule_status").select("id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status,skipped")
       .eq("policy_id", id).order("due_date").order("installment_no"),
     supabase.from("insurance_coverages").select("id,coverage_type,limit_amount,currency,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
     supabase.from("insurance_followups").select("id,person_id,role,action,status,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
@@ -85,11 +85,15 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
   const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
   const cardName = new Map(cards.map((c) => [c.id as string, c.label]));
-  const premPaid = premiums.reduce((s2, x) => s2 + Number(x.paid_amount), 0);
+  // นับรวมงวดประวัติก่อน Go-live (เต็มงวด) · ไม่นับงวดที่ติ๊กไม่ได้จ่าย
+  const premPaid = premiums.reduce((s2, x) => s2 + insCountedPaid(x), 0);
+  const premHist = premiums.filter((x) => x.status === "HISTORY").reduce((s2, x) => s2 + Number(x.amount), 0);
   const premOpen = premiums.filter((x) => ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status));
   const premNext = premOpen.find((x) => x.status !== "OVERDUE");
   const premOverdue = premOpen.filter((x) => x.status === "OVERDUE");
-  const benReceived = benefits.reduce((s2, x) => s2 + Number(x.paid_amount), 0);
+  // ผลประโยชน์ที่รับรวม = งวด (รวมประวัติก่อน Go-live) + รับเงินก้อนที่ไม่ผูกงวด
+  const benReceived = benefits.reduce((s2, x) => s2 + insCountedPaid(x), 0)
+    + (receipts ?? []).filter((r) => !r.line_id && r.currency === ccy).reduce((s2, r) => s2 + Number(r.amount), 0);
   const lastDue = (xs: Line[]) => xs.at(-1)?.due_date;
   // งวดสุดท้าย: ปี (พ.ศ.) + จำนวนงวดที่ยังเหลือ
   const lastYear = (xs: Line[]) => { const d = lastDue(xs); return d ? Number(d.slice(0, 4)) + 543 : null; };
@@ -101,6 +105,9 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
   const cvCtx = cvAsset ? { assetId: cvAsset.id, currency: cvAsset.currency, current: cvAsset.current_value == null ? null : Number(cvAsset.current_value),
     minDate: family?.go_live_date ?? "", paths, suggest: cvDue ? { value: cvDue.value, year: cvDue.policy_year, date: cvDue.value_date } : null } : null;
   const startIso: string | null = p.start_date ?? null;
+  // สรุปกรมธรรม์: ได้คืน = (ผลประโยชน์ที่รับ + มูลค่าเวนคืนปัจจุบัน) ÷ เบี้ยที่จ่ายรวม
+  const cvNow = cvAsset && cvAsset.current_value != null && cvAsset.currency === ccy ? Number(cvAsset.current_value) : null;
+  const backPct = premPaid > 0 ? ((benReceived + (cvNow ?? 0)) / premPaid) * 100 : 0;
   // ปุ่มในกล่องมูลค่าเวนคืนด้านบน (แทนกล่องด้านล่าง · ตกลง 2 พ.ย. 2026 · คล้ายหน้า Property)
   const showCv = !!cvAsset || cvRows.length > 0 || !!p.has_cash_value || p.insurance_type === "LIFE";
   const cvTableCurrent = cvRows.map((r) => ({ ...r, value_date: startIso && addMonthsKeepDay(startIso, r.policy_year * 12) === r.value_date ? null : r.value_date }));
@@ -157,8 +164,15 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
               <div className="mt-1 text-xs text-slate-600">ตามสัญญา{cvDue ? ` ปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy, 0)}` : ` ${cvRows.length} ปี · ยังไม่ถึงปีแรก`}
                 {cvPending && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">ยังไม่ได้ลง</span>}</div>
             )}
-            {cvAsset && premPaid > 0 && cvAsset.current_value != null && cvAsset.currency === ccy && (
-              <div className="mt-1 text-xs text-slate-600">เบี้ยที่จ่ายแล้ว {money(premPaid, ccy, 0)} · มูลค่าเวนคืน = {Math.round((Number(cvAsset.current_value) / premPaid) * 100)}% ของเบี้ย</div>
+            {premPaid > 0 && (
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-slate-50 p-2.5 text-xs">
+                <dt className="text-slate-500">เบี้ยที่จ่ายรวม</dt>
+                <dd className="text-right tabular-nums">{money(premPaid, ccy, 0)}{premHist > 0 && <span className="block text-slate-400">ก่อน Go-live {money(premHist, undefined, 0)}</span>}</dd>
+                <dt className="text-slate-500">ผลประโยชน์ที่รับรวม</dt><dd className="text-right tabular-nums">{money(benReceived, ccy, 0)}</dd>
+                {cvNow != null && <><dt className="text-slate-500">มูลค่าเวนคืน</dt><dd className="text-right tabular-nums">{money(cvNow, ccy, 0)}</dd></>}
+                <dt className="font-medium text-slate-700">ได้คืนเทียบเบี้ย</dt>
+                <dd className={`text-right font-medium tabular-nums ${backPct >= 100 ? "text-emerald-700" : "text-slate-700"}`}>{backPct.toFixed(0)}%</dd>
+              </dl>
             )}
             {showCv && (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -475,13 +489,15 @@ function ScheduleTable({ lines, canWrite, canDelete, paths, action, benefit = fa
                 <td>{thDate(x.due_date)}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
                 {benefit && <td className="text-xs">{BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]}</td>}
                 <td className="text-right tabular-nums">{money(x.amount, x.currency)}</td>
-                <td className="text-right tabular-nums">{Number(x.paid_amount) > 0 ? money(x.paid_amount) : "-"}</td>
-                <td className="pl-4"><span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? x.status}</span></td>
+                <td className="text-right tabular-nums">{x.status === "HISTORY" ? <span className="text-slate-400">{money(x.amount)}</span> : Number(x.paid_amount) > 0 ? money(x.paid_amount) : "-"}</td>
+                <td className="pl-4"><span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{x.status === "SKIPPED" && benefit ? "ไม่ได้รับ" : st?.text ?? x.status}</span></td>
                 <td className="pl-2 text-right">
                   {action(x)}
                   {canWrite && x.status !== "PAID" && <div className="mt-1"><RowActions table="insurance_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
                     { name: "due_date", label: "ครบกำหนด", type: "date", value: x.due_date },
                     { name: "amount", label: "ยอด", type: "number", value: x.amount },
+                    ...(Number(x.paid_amount) === 0 ? [{ name: "skipped", label: benefit ? "ได้รับจริงไหม" : "จ่ายจริงไหม", type: "select" as const, value: x.skipped ? "true" : "false",
+                      options: [["false", benefit ? "ได้รับ / รอรับ" : "จ่าย / รอจ่าย"], ["true", benefit ? "ไม่ได้รับ" : "ไม่ได้จ่าย"]] as [string, string][] }] : []),
                     { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }]} /></div>}
                 </td>
               </tr>

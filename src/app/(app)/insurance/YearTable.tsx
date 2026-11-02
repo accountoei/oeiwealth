@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS, money, thDate } from "@/lib/format";
+import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS, insCountedPaid, money, thDate } from "@/lib/format";
 
 export type YLine = { id: string; policy_id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string;
   benefit_type: string | null; paid_amount: number; remaining: number; status: string };
@@ -55,7 +55,7 @@ export default function YearTable({ kind, year, groups, pname, prevHref, nextHre
                     {lines.length === 1 && <div className="text-slate-500">{thDate(lines[0].due_date)}</div>}
                     {overdue > 0 && <div className="text-red-600">เลยกำหนด {overdue} งวด</div>}</div>
                   <div className="text-right tabular-nums">{money(sum(lines, (l) => l.amount), ccy)}</div>
-                  <div className="text-right tabular-nums text-slate-600">{money(sum(lines, (l) => l.paid_amount), ccy)}</div>
+                  <div className="text-right tabular-nums text-slate-600">{money(sum(lines, insCountedPaid), ccy)}</div>
                   <div className="text-right tabular-nums">{money(sum(lines, (l) => (l.status === "CLOSED" ? 0 : l.remaining)), ccy)}</div>
                 </>
               );
@@ -72,7 +72,7 @@ export default function YearTable({ kind, year, groups, pname, prevHref, nextHre
                           <div className="text-slate-500">{thDate(l.due_date)}</div>
                           <div><span className={`rounded px-1.5 py-0.5 ${st?.cls ?? ""}`}>{st?.text ?? l.status}</span></div>
                           <div className="text-right tabular-nums">{money(l.amount, l.currency)}</div>
-                          <div className="text-right tabular-nums text-slate-600">{Number(l.paid_amount) > 0 ? money(l.paid_amount, l.currency) : "-"}</div>
+                          <div className="text-right tabular-nums text-slate-600">{insCountedPaid(l) > 0 ? money(insCountedPaid(l), l.currency) : "-"}</div>
                           <div className="text-right tabular-nums">{l.status === "CLOSED" ? "-" : money(l.remaining, l.currency)}</div>
                         </div>
                       );

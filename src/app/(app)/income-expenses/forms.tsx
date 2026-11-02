@@ -675,8 +675,9 @@ export function MonthStatusForm({ month, status }: { month: string; status: stri
   );
 }
 
-export function ReimbursementForm({ itemId, remaining, currency, banks, cards, claims = [], today, minDate }: {
-  itemId: string; remaining: number; currency: string; banks: Bank[]; cards: Card[]; claims?: Claim[]; today: string; minDate: string;
+export function ReimbursementForm({ itemId, remaining, currency, banks, cards, claims = [], newClaims = [], today, minDate }: {
+  itemId: string; remaining: number; currency: string; banks: Bank[]; cards: Card[]; claims?: Claim[];
+  /** ความคุ้มครองของกรมธรรม์ที่มีผล (id = "new:<coverage>") → สร้างเคลมให้เองตอนบันทึก */ newClaims?: Claim[]; today: string; minDate: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [via, setVia] = useState("bank");
@@ -706,11 +707,14 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, c
           {cards.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
       )}
-      {claims.some((c) => c.currency === currency) && (
+      {[...claims, ...newClaims].some((c) => c.currency === currency) && (
         <label className="text-xs">จากเคลมประกัน
           <select name="insurance_claim_id" defaultValue="" className={`mt-1 block max-w-64 ${small}`}>
             <option value="">— ไม่ผูก —</option>
-            {claims.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {claims.some((c) => c.currency === currency) && <optgroup label="เคลมที่ยื่นไว้">
+              {claims.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</optgroup>}
+            {newClaims.some((c) => c.currency === currency) && <optgroup label="เคลมใหม่ (สร้างให้เอง) · ความคุ้มครอง">
+              {newClaims.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</optgroup>}
           </select>
         </label>
       )}
