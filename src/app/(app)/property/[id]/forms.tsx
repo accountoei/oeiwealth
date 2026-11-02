@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { useResetSync } from "@/lib/useResetSync";
 import ComponentTable from "../ComponentTable";
 import type { Component } from "../components";
 import { useActionSlot } from "@/components/ActionBar";
@@ -340,7 +341,7 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
         <ComponentTable mode="edit" currency={currency} initial={components} latest={latest} acquisitionCost={p.acquisition_cost}
           currentValue={currentValue} today={today} minDate={minDate} defaultDate={p.acquisition_date ?? ""} locked={locked} />
       </div>
-      <OpportunityFields p={p} family={family} f={f} />
+      <OpportunityFields key={`${p.opportunity_method ?? ""}-${p.opportunity_rate_pct ?? ""}`} p={p} family={family} f={f} />
       <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={p.notes ?? ""} className={f} /></label>
       <div className="md:col-span-2 flex flex-wrap items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
@@ -356,10 +357,12 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
 function OpportunityFields({ p, family, f }: { p: Info; family: { method: string; rate: number | null }; f: string }) {
   const init = p.opportunity_rate_pct == null ? "" : p.opportunity_method === "CPI_PLUS" ? "CPI_PLUS" : "FIXED";
   const [m, setM] = useState(init);
+  const ref = useRef<HTMLSelectElement>(null);
+  useResetSync(ref, setM);
   const cpi = m === "CPI_PLUS";
   return (<>
     <label className="text-sm">อัตราดอกเบี้ยเทียบของแปลงนี้
-      <select name="opportunity_method" value={m} onChange={(e) => setM(e.target.value)} className={f}>
+      <select ref={ref} name="opportunity_method" defaultValue={m} onChange={(e) => setM(e.target.value)} className={f}>
         <option value="">ใช้ของครอบครัว ({opportunityText(family.method, family.rate)})</option>
         {Object.entries(OPPORTUNITY_METHOD_LABEL).reverse().map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
