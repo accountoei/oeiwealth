@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { MOVE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
+import { LOAN_PARTY_COLS as PARTY_COLS, MOVE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
 import { DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
 import EditButton from "@/components/EditButton";
 import ScheduleTable, { type SchedRow } from "./ScheduleTable";
@@ -21,31 +21,36 @@ type Sched = { id: string; installment_no: number; due_date: string; principal_d
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
 
 export default async function LoanDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string; sched?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string; sched?: string; party?: string }>;
 }) {
   const { id } = await params;
-  const { restructure: rs, sched: schedErr } = await searchParams;
+  const { restructure: rs, sched: schedErr, party: partyErr } = await searchParams;
   const preset = rs === "end" || rs === "payment" || rs === "disburse" || rs === "rate" ? rs : undefined;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }] = await Promise.all([
+  const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }, { data: businesses }] = await Promise.all([
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
-    supabase.from("loan_details").select("borrower_phone,contract_no,purpose,at_risk_amount,risk_assessed_date,risk_note").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
+    supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,at_risk_amount,risk_assessed_date,risk_note,${PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,received_to_asset_id").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
       .is("deleted_at", null).order("date", { ascending: false }),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status")
       .eq("loan_asset_id", id).order("due_date").order("installment_no"),
+    supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
   ]);
   if (!l) notFound();
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
+  const repayBank = extra?.repay_bank_asset_id ? (banks ?? []).find((b) => b.asset_id === extra.repay_bank_asset_id) : undefined;
+  const placeText = extra?.contract_place_type === "LENDER" ? "ที่อยู่ผู้ให้กู้"
+    : extra?.contract_place_type === "BUSINESS" ? (businesses ?? []).find((b) => b.asset_id === extra.contract_place_business_id)?.company_name ?? "กิจการ"
+    : extra?.contract_place_type === "TEXT" ? extra.contract_place_text : null;
   const goLive = family?.go_live_date ?? "";
   const paths = [`/financial/loans/${id}`, "/financial/loans", "/financial/cash", "/income-expenses"];
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
@@ -151,6 +156,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <h1 className="text-2xl font-semibold text-slate-900">{l.name}</h1>
             <p className="text-sm text-slate-500">ผู้กู้ {l.borrower_name}{extra?.borrower_phone && <> · โทร <a href={`tel:${extra.borrower_phone}`} className="hover:underline">{extra.borrower_phone}</a></>}
               {" · "}{l.currency}{l.derived_status === "OVERDUE" && <span className="text-red-600"> · เลยกำหนดคืน</span>}</p>
+            {partyErr && <p className="mt-1 text-sm text-red-600">บันทึกสัญญาแล้ว แต่บันทึกรายละเอียดสำหรับพิมพ์สัญญาไม่สำเร็จ: {partyErr} · กด &ldquo;แก้ไขรายละเอียด&rdquo; เพื่อกรอกใหม่</p>}
           </div>
           <div className="flex items-start gap-2">
             <Link href={`/print/loan/${id}`} target="_blank" className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">พิมพ์สัญญา / ตาราง</Link>
@@ -215,7 +221,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
                     <LoanInfoForm assetId={id} minDue={sched.at(-1)?.due_date ?? null} hasOpenSchedule={open.length > 0}
                       risk={l.status === "AT_RISK" ? { outstanding: leftP, currency: l.currency, today, date: extra?.risk_assessed_date ?? null, note: extra?.risk_note ?? null,
                         expected: extra?.at_risk_amount == null ? null : Math.max(leftP - Number(extra.at_risk_amount), 0) } : undefined} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
-                      borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }} />
+                      borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }}
+                      party={{ v: extra ?? {}, canSensitive: canDelete,
+                        opt: { banks: (banks ?? []).map((b) => ({ asset_id: b.asset_id, name: b.name, account_no_masked: b.account_no_masked })), businesses: businesses ?? [] } }} />
                   </WithStatus>
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้ให้กู้ (เจ้าของ)</h3>
@@ -236,7 +244,16 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">แบบการชำระ</dt><dd>{payType}</dd>
             <dt className="text-slate-500">วันครบกำหนด</dt><dd>{l.due_date ? thDate(l.due_date) : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">สถานะ</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[l.status] ?? "bg-slate-100 text-slate-700"}`}>● {LOAN_STATUS_LABEL[l.status] ?? l.status}</span></dd>
-            <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}{extra?.borrower_phone && <div className="text-xs text-slate-500">โทร {extra.borrower_phone}</div>}</dd>
+            <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}{extra?.borrower_phone && <div className="text-xs text-slate-500">โทร {extra.borrower_phone}</div>}
+              {extra?.borrower_id_last4 && <div className="text-xs text-slate-500">เลขบัตร ••••{extra.borrower_id_last4}</div>}
+              {extra?.borrower_address && <div className="whitespace-pre-line text-xs text-slate-500">{extra.borrower_address}</div>}</dd>
+            {extra?.guarantor_name && <><dt className="text-slate-500">ผู้ค้ำประกัน</dt><dd>{extra.guarantor_name}
+              {extra.guarantor_phone && <div className="text-xs text-slate-500">โทร {extra.guarantor_phone}</div>}
+              {extra.guarantor_id_last4 && <div className="text-xs text-slate-500">เลขบัตร ••••{extra.guarantor_id_last4}</div>}
+              {extra.guarantor_address && <div className="whitespace-pre-line text-xs text-slate-500">{extra.guarantor_address}</div>}</dd></>}
+            {(extra?.witness1_name || extra?.witness2_name) && <><dt className="text-slate-500">พยาน</dt><dd>{[extra.witness1_name, extra.witness2_name].filter(Boolean).join(", ")}</dd></>}
+            <dt className="text-slate-500">สถานที่ทำสัญญา</dt><dd>{placeText ?? <span className="text-slate-400">—</span>}</dd>
+            <dt className="text-slate-500">บัญชีรับชำระ</dt><dd>{repayBank ? `${repayBank.name}${repayBank.account_no_masked ? ` · ${repayBank.account_no_masked}` : ""}` : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">ผู้ให้กู้ (เจ้าของ)</dt><dd>
               {activeOwners.length === 0 ? "-" : activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ")}
               {ownerTotal < 100 && <div className="text-xs text-amber-700">ยังไม่ระบุเจ้าของ {100 - ownerTotal}%</div>}</dd>

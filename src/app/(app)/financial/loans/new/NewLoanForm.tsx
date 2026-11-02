@@ -9,6 +9,7 @@ import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
 import { numOrZero } from "@/lib/format";
 import NewLoanSchedule from "./NewLoanSchedule";
+import ContractParties, { type PartyOptions } from "../ContractParties";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -18,8 +19,9 @@ export default function NewLoanForm(props: {
   goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean;
   /** ADMIN / EDITOR ตั้งตารางผ่อนได้ (ฐานข้อมูลบังคับ) */
   canSchedule: boolean;
+  partyOpt: PartyOptions;
 }) {
-  const { persons, banks, goLive, openingDate, today, isSetup, isAdmin, canSchedule } = props;
+  const { persons, banks, goLive, openingDate, today, isSetup, isAdmin, canSchedule, partyOpt } = props;
   // ช่องที่ตารางผ่อนใช้ (ส่วน "ตั้งตารางผ่อนเลย" ด้านล่าง)
   const [principal, setPrincipal] = useState("");
   const [rate, setRate] = useState("");
@@ -32,7 +34,8 @@ export default function NewLoanForm(props: {
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
         <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลเงินกู้</h2>
         <label className={label}>ชื่อรายการ *<input name="name" required placeholder="เช่น ให้น้องยืมซื้อรถ" className={input} /></label>
-        <label className={label}>ผู้กู้ *<input name="borrower_name" required className={input} /></label>
+        <label className={label}>ผู้กู้ *<input name="borrower_name" required placeholder="ชื่อ-นามสกุลเต็ม พร้อมคำนำหน้า" className={input} /></label>
+        <label className={label}>เบอร์ติดต่อผู้กู้<input name="borrower_phone" type="tel" maxLength={50} className={input} /></label>
         <label className={label}>เงินต้นตามสัญญา *<input name="principal" required inputMode="decimal" value={principal} onChange={(e) => setPrincipal(e.target.value)} className={input} /></label>
         <label className={label}>อัตราดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} className={input} /></label>
         <label className={label}>วันที่ให้กู้<input name="loan_date" type="date" max={today} value={loanDate} onChange={(e) => setLoanDate(e.target.value)} className={input} /></label>
@@ -72,6 +75,11 @@ export default function NewLoanForm(props: {
           </div>
         )}
       </section>
+
+      <details className="group rounded-xl border border-slate-200 bg-white p-5">
+        <summary className="cursor-pointer font-medium text-slate-900">รายละเอียดสำหรับพิมพ์สัญญา <span className="text-sm font-normal text-slate-500">(ไม่บังคับ · ที่อยู่ เลขบัตร ผู้ค้ำ พยาน สถานที่ บัญชีรับชำระ)</span></summary>
+        <div className="mt-4"><ContractParties opt={partyOpt} canSensitive={canSchedule} /></div>
+      </details>
 
       {canSchedule && <NewLoanSchedule amount={numOrZero(principal)} ratePct={numOrZero(rate)} loanDate={loanDate} dueDate={dueDate} today={today} />}
 

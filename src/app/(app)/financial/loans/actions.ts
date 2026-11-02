@@ -18,6 +18,33 @@ function done(id: string, msg: string): ActionState {
   return { ok: msg };
 }
 
+/** รายละเอียดสำหรับพิมพ์สัญญา (ContractParties) → คอลัมน์ loan_details · ส่งมาเฉพาะเมื่อฟอร์มมีช่องเหล่านี้ */
+function partyPatch(form: FormData): Record<string, unknown> {
+  if (!form.has("contract_place_type")) return {};
+  const place = str(form.get("contract_place_type"));
+  return {
+    borrower_address: str(form.get("borrower_address")),
+    guarantor_name: str(form.get("guarantor_name")), guarantor_phone: str(form.get("guarantor_phone")), guarantor_address: str(form.get("guarantor_address")),
+    witness1_name: str(form.get("witness1_name")), witness2_name: str(form.get("witness2_name")),
+    contract_place_type: place,
+    contract_place_business_id: place === "BUSINESS" ? str(form.get("contract_place_business_id")) : null,
+    contract_place_text: place === "TEXT" ? str(form.get("contract_place_text")) : null,
+    repay_bank_asset_id: str(form.get("repay_bank_asset_id")),
+  };
+}
+
+/** เลขบัตรผู้กู้ / ผู้ค้ำ: กรอกใหม่ = ตั้ง · ติ๊กล้าง = ลบ · ว่าง = ไม่เปลี่ยน (เข้ารหัสในฐานข้อมูล) */
+async function saveIds(supabase: Awaited<ReturnType<typeof createClient>>, id: string, form: FormData): Promise<string | null> {
+  for (const [field, party] of [["borrower_id", "BORROWER"], ["guarantor_id", "GUARANTOR"]] as const) {
+    const clear = form.get(`${field}_clear`) === "on";
+    const val = str(form.get(field));
+    if (!clear && !val) continue;
+    const { error } = await supabase.rpc("set_loan_party_id", { p_loan_asset_id: id, p_party: party, p_id_no: clear ? "" : val });
+    if (error) return friendlyError(error.message);
+  }
+  return null;
+}
+
 export async function createLoan(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const opening = form.get("is_opening") === "on";
@@ -32,6 +59,11 @@ export async function createLoan(_: ActionState, form: FormData): Promise<Action
   } });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/financial/loans");
+  // รายละเอียดสำหรับพิมพ์สัญญา (ไม่บังคับ): สัญญาบันทึกแล้ว ถ้าส่วนนี้ไม่ผ่าน → ไปหน้าสัญญาพร้อมแจ้งให้แก้ที่ "แก้ไขรายละเอียด"
+  const patch = { ...partyPatch(form), borrower_phone: str(form.get("borrower_phone")) };
+  const { error: pErr } = await supabase.from("loan_details").update(patch).eq("asset_id", data);
+  const partyErr = pErr ? friendlyError(pErr.message) : await saveIds(supabase, data, form);
+  if (partyErr) redirect(`/financial/loans/${data}?party=${encodeURIComponent(partyErr)}`);
   // ตั้งตารางผ่อนพร้อมกัน (ไม่บังคับ · ตกลง 2 พ.ย. 2026): สัญญาบันทึกแล้ว ถ้าตารางไม่ผ่าน → ไปหน้าสัญญาพร้อมแจ้งให้ตั้งตารางใหม่
   const raw = str(form.get("schedule_lines"));
   if (raw) {
@@ -158,8 +190,11 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
     borrower_phone: str(form.get("borrower_phone")),
     contract_no: str(form.get("contract_no")),
     purpose: str(form.get("purpose")),
+    ...partyPatch(form),
   }).eq("asset_id", assetId);
   if (e2) return { error: friendlyError(e2.message) };
+  const idErr = await saveIds(supabase, assetId, form);
+  if (idErr) return { error: idErr };
   return { ...done(assetId, "บันทึกรายละเอียดแล้ว"), rateChanged: (cur?.interest_rate == null ? null : Number(cur.interest_rate)) !== rate };
 }
 

@@ -29,6 +29,9 @@ export default function NewBusinessForm(props: {
         <label className={label}>ชื่อที่ใช้เรียก<input name="name" placeholder="ไม่ใส่ = ชื่อบริษัท" className={input} /></label>
         <label className={label}>เลขทะเบียนนิติบุคคล<input name="registration_no" className={input} /></label>
         <label className={label}>ประเภทธุรกิจ<input name="business_type" className={input} /></label>
+        <label className={label}>เบอร์โทรกิจการ<input name="phone" type="tel" maxLength={50} className={input} /></label>
+        <label className={`${label} md:col-span-2`}>ที่อยู่กิจการ<textarea name="address" rows={2} maxLength={500} className={input} />
+          <span className="mt-1 block text-xs text-slate-500">ใช้เป็นสถานที่ทำสัญญาเงินให้กู้ได้</span></label>
         <label className={label}>เจ้าของระบุเป็น
           <select value={unit} onChange={(e) => setUnit(e.target.value as "shares" | "percent")} className={input}>
             <option value="shares">จำนวนหุ้น (ตาม บอจ.5)</option><option value="percent">% (ไม่มีหุ้น เช่น ห้างหุ้นส่วน)</option>
