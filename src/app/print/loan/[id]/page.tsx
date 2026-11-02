@@ -19,7 +19,8 @@ export default async function PrintLoanPage({ params }: { params: Promise<{ id: 
   const canReveal = me.role === "ADMIN" || me.role === "EDITOR";
   type Extra = { borrower_phone: string | null; contract_no: string | null; purpose: string | null; borrower_address: string | null;
     guarantor_name: string | null; guarantor_phone: string | null; guarantor_address: string | null; witness1_name: string | null; witness2_name: string | null;
-    contract_place_type: string | null; contract_place_business_id: string | null; contract_place_text: string | null; repay_bank_asset_id: string | null };
+    contract_place_type: string | null; contract_place_business_id: string | null; contract_place_text: string | null; repay_bank_asset_id: string | null;
+    borrower_person_id: string | null; borrower_business_id: string | null };
   const extraP = supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,${LOAN_PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null)
     .maybeSingle().then((r) => r.data as Extra | null);
   const banksP = supabase.from("v_bank_accounts_safe").select("id,asset_id,bank_name,account_name,account_no_masked").then((r) => r.data ?? []);
@@ -33,8 +34,8 @@ export default async function PrintLoanPage({ params }: { params: Promise<{ id: 
       .is("deleted_at", null),
     supabase.from("income_transactions").select("id,date,amount").eq("asset_id", id).eq("income_type", "LOAN_INTEREST").is("deleted_at", null),
     supabase.from("document_links").select("documents(id,title,document_type,version_status,deleted_at)").eq("entity_type", "ASSET").eq("entity_id", id).is("deleted_at", null),
-    supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
-    supabase.from("private_business_details").select("asset_id,company_name,address").is("deleted_at", null),
+    supabase.from("persons").select("id,name,title_prefix,full_name_th,address,phone,national_id").is("deleted_at", null),
+    supabase.from("private_business_details").select("asset_id,company_name,address,phone,registration_no").is("deleted_at", null),
     banksP,
     canReveal ? supabase.rpc("reveal_loan_party_ids", { p_loan_asset_id: id }).then((r) => (r.data ?? {}) as { borrower?: string; guarantor?: string }) : Promise.resolve({} as { borrower?: string; guarantor?: string }),
     canReveal ? Promise.all([extraP, banksP]).then(async ([e, bs]) => {
@@ -52,13 +53,20 @@ export default async function PrintLoanPage({ params }: { params: Promise<{ id: 
     const full = p?.full_name_th ? `${p.title_prefix ?? ""}${p.full_name_th}` : null;
     return { label: full ?? (o.person_name as string), address: (p?.address as string | null) ?? null };
   });
+  const bPerson = extra?.borrower_person_id ? (people ?? []).find((x) => x.id === extra.borrower_person_id) : undefined;
+  const bBiz = extra?.borrower_business_id ? (businesses ?? []).find((x) => x.asset_id === extra.borrower_business_id) : undefined;
   const repay = extra?.repay_bank_asset_id ? banks.find((b) => b.asset_id === extra.repay_bank_asset_id) : undefined;
   const d: ContractData = {
     contractNo: extra?.contract_no ?? null, loanDate: l.loan_date, dueDate: l.due_date, currency: l.currency,
     borrower: l.borrower_name, borrowerPhone: extra?.borrower_phone ?? null, purpose: extra?.purpose ?? null,
     lenders: lenderPeople.map((p) => p.label),
     lenderAddresses: lenderPeople.map((p) => p.address),
-    borrowerAddress: extra?.borrower_address ?? null, borrowerId: ids.borrower ?? null,
+    // ผู้กู้เป็นสมาชิก / กิจการ: ชื่อเต็ม ที่อยู่ เลขบัตร (หรือเลขทะเบียน) จากหน้า Family / หน้ากิจการ ถ้าในสัญญาไม่ได้กรอกเอง
+    ...(bPerson ? { borrower: bPerson.full_name_th ? `${bPerson.title_prefix ?? ""}${bPerson.full_name_th}` : l.borrower_name,
+      borrowerPhone: extra?.borrower_phone ?? bPerson.phone ?? null } : {}),
+    ...(bBiz ? { borrower: bBiz.company_name, borrowerPhone: extra?.borrower_phone ?? bBiz.phone ?? null, borrowerIdLabel: "เลขทะเบียนนิติบุคคล" } : {}),
+    borrowerAddress: extra?.borrower_address ?? bPerson?.address ?? bBiz?.address ?? null,
+    borrowerId: ids.borrower ?? bPerson?.national_id ?? bBiz?.registration_no ?? null,
     place: extra?.contract_place_type === "LENDER" ? lenderPeople.find((p) => p.address)?.address ?? null
       : extra?.contract_place_type === "BUSINESS" ? (() => { const b = (businesses ?? []).find((x) => x.asset_id === extra.contract_place_business_id);
           return b ? [b.company_name, b.address].filter(Boolean).join(" ") : null; })()

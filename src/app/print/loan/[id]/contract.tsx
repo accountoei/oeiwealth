@@ -6,6 +6,8 @@ export type ContractData = {
   borrower: string; borrowerPhone: string | null; lenders: string[]; purpose: string | null;
   /** รายละเอียดคู่สัญญา (ไม่มี = เว้นเส้นให้เขียนเอง) · เลขบัตรเต็มเฉพาะ ADMIN / EDITOR */
   borrowerAddress?: string | null; borrowerId?: string | null;
+  /** ผู้กู้เป็นกิจการ → "เลขทะเบียนนิติบุคคล" (ค่าเริ่มต้น "เลขประจำตัวประชาชน") */
+  borrowerIdLabel?: string;
   lenderAddresses?: (string | null)[];
   place?: string | null;
   bank?: { name: string; accountNo: string | null; accountName: string | null } | null;
@@ -77,7 +79,7 @@ export function LoanContract({ d }: { d: ContractData }) {
       </div>
       <div className="text-right">วันที่ {d.loanDate ? thDateLong(d.loanDate) : blank("10rem")}</div>
       <p className="mt-2 indent-10">
-        สัญญานี้ทำขึ้นระหว่าง <b>{d.borrower}</b> เลขประจำตัวประชาชน {d.borrowerId ? fmtId(d.borrowerId) : blank("9rem")} ที่อยู่ {addr(d.borrowerAddress)}
+        สัญญานี้ทำขึ้นระหว่าง <b>{d.borrower}</b> {d.borrowerIdLabel ?? "เลขประจำตัวประชาชน"} {d.borrowerId ? fmtId(d.borrowerId) : blank("9rem")} ที่อยู่ {addr(d.borrowerAddress)}
         {d.borrowerPhone ? ` โทร ${d.borrowerPhone}` : ""} ซึ่งต่อไปในสัญญานี้เรียกว่า <b>&ldquo;ผู้กู้&rdquo;</b> ฝ่ายหนึ่ง
         กับ {d.lenders.length === 0 ? <>{blank("12rem")} ที่อยู่ {blank("16rem")}</>
           : sameAddr || d.lenders.length === 1 ? <><b>{d.lenders.join(" และ ")}</b> ที่อยู่ {addr(la[0])}</>
