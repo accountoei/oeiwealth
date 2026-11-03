@@ -29,8 +29,9 @@ export function stampDuty(principal: number) {
   return Math.min(Math.ceil(principal / 2000), 10000);
 }
 
-/** ข้อ 3 การชำระคืน: ข้อความตามแบบตารางผ่อน (ไม่มีตาราง / ดอกรายงวดคืนต้นตอนจบ / ผ่อนต้น + ดอก) */
-export function repaymentText(d: ContractData): string {
+/** ข้อ 3 การชำระคืน: ข้อความตามแบบตารางผ่อน (ไม่มีตาราง / ดอกรายงวดคืนต้นตอนจบ / ผ่อนต้น + ดอก)
+ *  doc = "addendum" → ตารางแนบท้าย "บันทึกนี้" (บันทึกให้กู้เพิ่ม) แทน "สัญญานี้" */
+export function repaymentText(d: ContractData, doc: "contract" | "addendum" = "contract"): string {
   const L = d.lines, n = L.length;
   const due = d.dueDate ? `วันที่ ${thDateLong(d.dueDate)}` : null;
   if (n === 0) return `ผู้กู้ตกลงชำระคืนเงินต้นพร้อมดอกเบี้ยทั้งหมดให้แก่ผู้ให้กู้ภายใน${due ?? "วันที่ ____________________"}`;
@@ -38,7 +39,8 @@ export function repaymentText(d: ContractData): string {
   const monthly = n > 1 && L.slice(1).every((x, i) => monthGap(L[i].due, x.due) === 1);
   const freq = monthly ? `เป็นรายเดือน ทุกวันที่ ${Number(first.due.slice(8, 10))} ของเดือน` : "เป็นงวด";
   const span = `เริ่มงวดแรกวันที่ ${thDateLong(first.due)} งวดสุดท้ายวันที่ ${thDateLong(last.due)}`;
-  const annex = "ตามตารางผ่อนชำระแนบท้ายสัญญานี้ ซึ่งถือเป็นส่วนหนึ่งของสัญญา";
+  const tbl = doc === "addendum" ? "ตารางผ่อนชำระแนบท้ายบันทึกนี้ ซึ่งถือเป็นส่วนหนึ่งของบันทึกนี้" : "ตารางผ่อนชำระแนบท้ายสัญญานี้ ซึ่งถือเป็นส่วนหนึ่งของสัญญา";
+  const annex = `ตาม${tbl}`;
   if (n === 1) return `ผู้กู้ตกลงชำระคืนเงินต้น ${plain(last.principal, d.currency)} พร้อมดอกเบี้ย ${plain(last.interest, d.currency)} ภายในวันที่ ${thDateLong(last.due)}`;
   if (L.slice(0, -1).every((x) => x.principal === 0)) {
     return `ผู้กู้ตกลงชำระดอกเบี้ย${freq} รวม ${n} งวด ${span} และชำระคืนเงินต้นทั้งหมดพร้อมดอกเบี้ยงวดสุดท้าย ${annex}`;
@@ -47,7 +49,7 @@ export function repaymentText(d: ContractData): string {
   const same = L.slice(1, -1).every((x) => Math.abs(t(x) - t(first)) < 1);
   return same
     ? `ผู้กู้ตกลงผ่อนชำระเงินต้นพร้อมดอกเบี้ย${freq} รวม ${n} งวด งวดละ ${plain(t(first), d.currency)}${Math.abs(t(last) - t(first)) >= 1 ? ` (งวดสุดท้าย ${plain(t(last), d.currency)})` : ""} ${span} ${annex}`
-    : `ผู้กู้ตกลงผ่อนชำระเงินต้นพร้อมดอกเบี้ย${freq} รวม ${n} งวด ${span} ตามจำนวนเงินที่กำหนดในตารางผ่อนชำระแนบท้ายสัญญานี้ ซึ่งถือเป็นส่วนหนึ่งของสัญญา`;
+    : `ผู้กู้ตกลงผ่อนชำระเงินต้นพร้อมดอกเบี้ย${freq} รวม ${n} งวด ${span} ตามจำนวนเงินที่กำหนดใน${tbl}`;
 }
 
 function Sign({ role, name }: { role: string; name?: string }) {
@@ -118,16 +120,17 @@ export function LoanContract({ d }: { d: ContractData }) {
   );
 }
 
-/** เอกสารแนบท้าย: ตารางผ่อนชำระ (ทั้งแผน ไม่มีสถานะการรับ) */
-export function ScheduleAnnex({ d }: { d: ContractData }) {
+/** เอกสารแนบท้าย: ตารางผ่อนชำระ (ทั้งแผน ไม่มีสถานะการรับ)
+ *  left = เงินต้นคงเหลือหลังแต่ละงวด (ไม่ส่ง = เงินต้นรวมตามตาราง − เงินต้นสะสม) · caption / sub = บรรทัดใต้หัวเรื่อง (ใช้กับตารางแนบท้ายบันทึกให้กู้เพิ่ม) */
+export function ScheduleAnnex({ d, left: leftIn, caption, sub, note }: { d: ContractData; left?: number[]; caption?: string; sub?: string; note?: string }) {
   const sum = (k: "principal" | "interest") => d.lines.reduce((s, x) => s + x[k], 0);
   // เงินต้นคงเหลือหลังแต่ละงวด = เงินต้นรวมตามตาราง − เงินต้นสะสมถึงงวดนั้น
-  const left = d.lines.map((_, i) => Math.max(Math.round((sum("principal") - d.lines.slice(0, i + 1).reduce((s, x) => s + x.principal, 0)) * 100) / 100, 0));
+  const left = leftIn ?? d.lines.map((_, i) => Math.max(Math.round((sum("principal") - d.lines.slice(0, i + 1).reduce((s, x) => s + x.principal, 0)) * 100) / 100, 0));
   return (
     <article className="text-[12px]">
       <h2 className="text-center text-base font-semibold">ตารางผ่อนชำระ</h2>
-      <p className="text-center">แนบท้ายสัญญากู้ยืมเงิน{d.contractNo ? ` เลขที่ ${d.contractNo}` : ""}{d.loanDate ? ` ลงวันที่ ${thDateLong(d.loanDate)}` : ""}</p>
-      <p className="text-center">ผู้กู้ {d.borrower} · เงินต้น {plain(d.principal, d.currency)}{d.ratePct ? ` · ดอกเบี้ยร้อยละ ${d.ratePct} ต่อปี` : ""}</p>
+      <p className="text-center">{caption ?? `แนบท้ายสัญญากู้ยืมเงิน${d.contractNo ? ` เลขที่ ${d.contractNo}` : ""}${d.loanDate ? ` ลงวันที่ ${thDateLong(d.loanDate)}` : ""}`}</p>
+      <p className="text-center">{sub ?? `ผู้กู้ ${d.borrower} · เงินต้น ${plain(d.principal, d.currency)}${d.ratePct ? ` · ดอกเบี้ยร้อยละ ${d.ratePct} ต่อปี` : ""}`}</p>
       <table className="mt-3 w-full border-collapse">
         <thead><tr className="border-y border-slate-400 text-left">
           <th className="py-1">งวดที่</th><th>ครบกำหนด</th><th className="text-right">เงินต้น</th><th className="text-right">ดอกเบี้ย</th>
@@ -146,10 +149,82 @@ export function ScheduleAnnex({ d }: { d: ContractData }) {
           <td className="text-right tabular-nums">{money(sum("principal"))}</td><td className="text-right tabular-nums">{money(sum("interest"))}</td>
           <td className="text-right tabular-nums">{money(sum("principal") + sum("interest"))}</td><td /></tr></tfoot>
       </table>
+      {note && <p className="mt-2 text-[11px] text-slate-600">{note}</p>}
       <div className="mt-8 grid grid-cols-2 gap-6 break-inside-avoid">
         <Sign role="ผู้กู้" name={d.borrower} />
         <Sign role="ผู้ให้กู้" name={d.lenders.join(" และ ") || undefined} />
       </div>
+    </article>
+  );
+}
+
+/** ข้อมูลการให้กู้เพิ่ม 1 ครั้ง (จากรายการจ่ายเงินกู้หลังเริ่มสัญญา) */
+export type LendData = {
+  /** ครั้งที่ (นับจากการให้กู้เพิ่มครั้งแรก) */
+  no: number; date: string; amount: number;
+  /** เงินต้นค้างชำระทั้งหมด ณ วันทำบันทึก (หลังรวมยอดที่ให้กู้เพิ่มครั้งนี้) */
+  balance: number;
+  /** งวดผ่อนที่ครบกำหนดหลังวันให้กู้เพิ่ม (ตารางแนบท้ายบันทึก) */
+  lines: ContractData["lines"];
+};
+
+/**
+ * บันทึกข้อตกลงต่อท้ายสัญญากู้ยืมเงิน (ให้กู้เพิ่ม) — ร่างจากแบบมาตรฐาน · 1 หน้า A4 (ตกลง 3 พ.ย. 2026)
+ * อ้างสัญญาเดิม · จำนวนที่กู้เพิ่ม · เงินต้นค้างรวม · ผ่อนตามตารางใหม่ · ผู้ค้ำยินยอม · ข้ออื่นตามสัญญาเดิม · อากรคิดจากยอดที่กู้เพิ่ม
+ * ไม่ใช่คำปรึกษากฎหมาย: ให้ทนายตรวจข้อความก่อนใช้จริง
+ */
+export function LendAddendum({ d, a }: { d: ContractData; a: LendData }) {
+  const rate = d.ratePct ?? 0;
+  const g = d.guarantor;
+  const addr = (v: string | null | undefined, w = "16rem") => (v ? v.replace(/\s*\n\s*/g, " ") : blank(w));
+  const la = d.lenderAddresses ?? [];
+  const sameAddr = la.length > 0 && la.every((x) => x && x === la[0]);
+  const ref = <>สัญญากู้ยืมเงิน เลขที่ {d.contractNo || blank("7rem")} ลงวันที่ {d.loanDate ? thDateLong(d.loanDate) : blank("10rem")}</>;
+  // เลขข้อ: 1–4 คงที่ · มีผู้ค้ำ = ข้อ 5 · ถัดไปเลื่อนตาม
+  const k = g ? 6 : 5;
+  return (
+    <article className="contract text-[13px] leading-[1.75]">
+      <h1 className="text-center text-lg font-semibold">บันทึกข้อตกลงต่อท้ายสัญญากู้ยืมเงิน</h1>
+      <p className="text-center font-medium">(ให้กู้เพิ่ม ครั้งที่ {a.no})</p>
+      <div className="mt-2 flex flex-wrap justify-end gap-x-6">
+        <span>แนบท้ายสัญญาเลขที่ {d.contractNo || blank("7rem")}</span>
+        <span>ทำที่ {d.place ? d.place.replace(/\s*\n\s*/g, " ") : blank("12rem")}</span>
+      </div>
+      <div className="text-right">วันที่ {thDateLong(a.date)}</div>
+      <p className="mt-2 indent-10">
+        บันทึกนี้ทำขึ้นระหว่าง <b>{d.borrower}</b> {d.borrowerIdLabel ?? "เลขประจำตัวประชาชน"} {d.borrowerId ? fmtId(d.borrowerId) : blank("9rem")} ที่อยู่ {addr(d.borrowerAddress)}
+        {d.borrowerPhone ? ` โทร ${d.borrowerPhone}` : ""} ซึ่งต่อไปเรียกว่า <b>&ldquo;ผู้กู้&rdquo;</b> ฝ่ายหนึ่ง
+        กับ {d.lenders.length === 0 ? <>{blank("12rem")} ที่อยู่ {blank("16rem")}</>
+          : sameAddr || d.lenders.length === 1 ? <><b>{d.lenders.join(" และ ")}</b> ที่อยู่ {addr(la[0])}</>
+          : d.lenders.map((x, i) => <span key={i}>{i > 0 && " และ "}<b>{x}</b> ที่อยู่ {addr(la[i], "12rem")}</span>)}
+        {" "}ซึ่งต่อไปเรียกว่า <b>&ldquo;ผู้ให้กู้&rdquo;</b> อีกฝ่ายหนึ่ง
+        ซึ่งเป็นคู่สัญญาตาม{ref} (ต่อไปเรียกว่า <b>&ldquo;สัญญาเดิม&rdquo;</b>) ทั้งสองฝ่ายตกลงทำบันทึกต่อท้ายสัญญาเดิม ดังต่อไปนี้
+      </p>
+      <p className="indent-10"><b>ข้อ 1 จำนวนเงินกู้เพิ่ม</b> ผู้กู้ได้กู้ยืมเงินจากผู้ให้กู้เพิ่มเติมเป็นจำนวน {amountOf(a.amount, d.currency)}{" "}
+        และผู้กู้ได้รับเงินจำนวนดังกล่าวไปครบถ้วนแล้วในวันทำบันทึกนี้</p>
+      <p className="indent-10"><b>ข้อ 2 เงินต้นค้างชำระรวม</b> ผู้กู้ยอมรับว่า ณ วันทำบันทึกนี้ ผู้กู้มีเงินต้นค้างชำระตามสัญญาเดิมรวมกับเงินกู้เพิ่มตามข้อ 1
+        เป็นจำนวนทั้งสิ้น {amountOf(a.balance, d.currency)}</p>
+      <p className="indent-10"><b>ข้อ 3 ดอกเบี้ย</b> {rate > 0
+        ? `ผู้กู้ตกลงชำระดอกเบี้ยของเงินต้นค้างชำระตามข้อ 2 ในอัตราร้อยละ ${rate} ต่อปี นับแต่วันทำบันทึกนี้เป็นต้นไป`
+        : "ผู้ให้กู้ไม่คิดดอกเบี้ยจากเงินกู้ตามบันทึกนี้"}</p>
+      <p className="indent-10"><b>ข้อ 4 การชำระคืน</b> {repaymentText({ ...d, lines: a.lines }, "addendum")}</p>
+      {g && (
+        <p className="indent-10"><b>ข้อ 5 การค้ำประกัน</b> {g.name} ผู้ค้ำประกันตามสัญญาเดิม ได้ทราบข้อความในบันทึกนี้แล้ว
+          และยินยอมค้ำประกันการชำระหนี้ของผู้กู้ตามสัญญาเดิมรวมทั้งเงินกู้เพิ่มตามบันทึกนี้ ทั้งนี้ภายในขอบเขตที่กฎหมายกำหนด</p>
+      )}
+      <p className="indent-10"><b>ข้อ {k}</b> ข้อความอื่นในสัญญาเดิมที่ไม่ได้แก้ไขโดยบันทึกนี้ ให้คงมีผลใช้บังคับต่อไปทุกประการ และให้ถือว่าบันทึกนี้เป็นส่วนหนึ่งของสัญญาเดิม</p>
+      <p className="indent-10"><b>ข้อ {k + 1}</b> บันทึกนี้ทำขึ้นสองฉบับมีข้อความถูกต้องตรงกัน คู่สัญญาได้อ่านและเข้าใจข้อความโดยตลอดแล้ว
+        จึงลงลายมือชื่อไว้เป็นสำคัญต่อหน้าพยาน และต่างยึดถือไว้ฝ่ายละหนึ่งฉบับ</p>
+      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5">
+        <Sign role="ผู้กู้" name={d.borrower} />
+        {(d.lenders.length ? d.lenders : [undefined]).map((x, i) => <Sign key={i} role="ผู้ให้กู้" name={x} />)}
+        {g && <Sign role="ผู้ค้ำประกัน" name={g.name} />}
+        <Sign role="พยาน" name={d.witnesses?.[0] ?? undefined} />
+        <Sign role="พยาน" name={d.witnesses?.[1] ?? undefined} />
+      </div>
+      {d.currency === "THB" && (
+        <p className="mt-5 text-[11px] text-slate-500">ติดอากรแสตมป์ {money(stampDuty(a.amount), undefined, 0)} บาท (คิดจากยอดที่ให้กู้เพิ่ม · 1 บาท ต่อทุก 2,000 บาท หรือเศษ · สูงสุด 10,000 บาท)</p>
+      )}
     </article>
   );
 }

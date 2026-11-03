@@ -27,6 +27,8 @@ export type SchedEvent = {
   balance?: number | null;
   /** ปุ่มแก้ / ลบ (เฉพาะรายการล่าสุด) */
   actions?: ReactNode;
+  /** ลิงก์พิมพ์บันทึกต่อท้ายสัญญา (เฉพาะแถวให้กู้เพิ่ม) */
+  print?: string;
 };
 
 type Item = { t: "line"; d: string; r: SchedRow } | { t: "event"; d: string; e: SchedEvent };
@@ -98,7 +100,9 @@ export default function ScheduleTable({ rows, events = [], currency }: { rows: S
                   <td className={`py-1.5 text-right text-sm tabular-nums ${it.e.kind === "PAY" ? "text-emerald-700" : "text-blue-700"}`}>
                     {it.e.kind === "PAY" ? money(it.e.principal + it.e.interest - it.e.tax) : it.e.initial ? money(it.e.initial) : ""}</td>
                   <td className="py-1.5 text-right text-sm tabular-nums text-slate-600">{it.e.balance != null ? money(it.e.balance) : ""}</td>
-                  <td className="py-1.5 pl-4">{it.e.actions}</td>
+                  <td className="py-1.5 pl-4">
+                    {it.e.print && <a href={it.e.print} target="_blank" className="mb-1 inline-block text-xs text-blue-700 underline">พิมพ์บันทึกให้กู้เพิ่ม</a>}
+                    {it.e.actions}</td>
                 </tr>
               </Fragment>
             ))}

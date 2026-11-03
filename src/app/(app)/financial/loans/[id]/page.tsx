@@ -198,6 +198,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
       bank: e.bank ? bankName.get(e.bank) ?? "บัญชี" : "",
       principal: Number(e.principal?.amount ?? 0), interest: Number(e.interest?.amount ?? 0), tax: Number(e.interest?.tax ?? 0),
       lent, initial: m && !lent ? Number(m.amount) : undefined,
+      print: m && lent ? `/print/loan/${id}?lend=${m.id}` : undefined,
       actions: canWrite && e.key === history[0]?.key ? actionsFor(e) : undefined,
     };
   });
