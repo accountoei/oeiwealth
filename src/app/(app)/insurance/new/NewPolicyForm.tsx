@@ -12,11 +12,11 @@ const label = "block text-sm text-slate-700";
 
 export default function NewPolicyForm(props: {
   persons: { id: string; name: string }[]; assets: { id: string; name: string }[];
-  goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean;
+  goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean; initialType?: string; initialAsset?: string;
 }) {
-  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin } = props;
+  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, initialType = "LIFE", initialAsset = "" } = props;
   const [state, action, pending] = useActionState<ActionState, FormData>(createPolicy, {});
-  const [type, setType] = useState("LIFE");
+  const [type, setType] = useState(initialType);
   const [hasCv, setHasCv] = useState(false);
   const [opening, setOpening] = useState(isSetup);
   // หลัง Go-live: ซ่อนตัวเลือก "มีอยู่ก่อน Go-live" (ไม่ติ๊ก) · ADMIN กดลิงก์เล็กเพื่อเพิ่มรายการที่ตกหล่น
@@ -35,7 +35,7 @@ export default function NewPolicyForm(props: {
         <label className={label}>เลขกรมธรรม์<input name="policy_no" className={input} /></label>
         {type === "PROPERTY" ? (
           <label className={label}>ทรัพย์สินที่เอาประกัน
-            <select name="insured_asset_id" defaultValue="" className={input}>
+            <select name="insured_asset_id" defaultValue={initialAsset} className={input}>
               <option value="">— ไม่ระบุ —</option>{assets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </label>

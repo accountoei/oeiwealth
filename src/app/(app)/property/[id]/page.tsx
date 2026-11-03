@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
+  INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -39,6 +39,7 @@ import { CopyRoomButton, DisposeButton, HandoverButton, InventoryAddButton, Undo
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 import type { LeasePrefill } from "../LeaseFields";
 
+const INS_STATUS_LABEL = Object.fromEntries(INS_STATUS);
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
   USER_ESTIMATE: "ประมาณเอง", APPRAISAL: "ประเมิน", BOOK_VALUE: "ราคาทุน", LATEST_TRANSACTION: "ราคาซื้อขายล่าสุด", STATEMENT: "Statement",
@@ -77,7 +78,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
-    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }, { data: cpiLast }] = await Promise.all([
+    { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }, { data: cpiLast },
+    { data: insBox }, { data: insPayRows }] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("property_details").select(`*, property_utilities(id,utility_type,unit_label,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
       .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
@@ -108,6 +110,20 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       .eq("asset_id", id).is("deleted_at", null).order("event_date", { ascending: false }).order("created_at", { ascending: false }),
     // เงินเฟ้อปีล่าสุดที่มีข้อมูลทั้งปี (ข้อความเทียบในกล่องราคาขายขั้นต่ำ)
     supabase.from("cpi_annual").select("year,inflation_pct").is("deleted_at", null).order("year", { ascending: false }).limit(1).maybeSingle(),
+    // กล่อง "ประกันของทรัพย์สินนี้" (ตกลง 3 พ.ย. 2026): กรมธรรม์ที่เอาประกันทรัพย์สินนี้ + เบี้ยงวดที่ยังไม่จ่าย (ต่อจากคำสั่งแรกในรอบเดียวกัน)
+    supabase.from("v_insurance_status").select("id,insurer,policy_no,insured_amount,insured_amount_currency,premium,premium_currency,end_date,status,derived_status")
+      .eq("asset_id", id).order("status").order("end_date", { ascending: false })
+      .then(async ({ data: pols }) => {
+        const ids = (pols ?? []).map((x) => x.id as string);
+        const { data: due } = ids.length
+          ? await supabase.from("v_insurance_schedule_status").select("policy_id,due_date,remaining,currency,status").eq("kind", "PREMIUM")
+              .in("policy_id", ids).in("status", INS_OPEN).order("due_date")
+          : { data: [] };
+        return { data: { pols: pols ?? [], due: due ?? [] } };
+      }),
+    // เบี้ยประกันที่จ่ายแล้ว (ผูกทรัพย์สินนี้) → นับเป็นค่าใช้จ่ายของทรัพย์สิน · แก้ / ลบที่หน้ากรมธรรม์
+    supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes,insurance_schedule_lines(policy_id)")
+      .eq("related_asset_id", id).not("insurance_schedule_line_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
   ]);
   if (!a || !pd) notFound();
 
@@ -164,8 +180,14 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const demolishable = saleComps.filter((c) => c.type !== "LAND");
   const cards = (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string,
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
+  // ประกันของทรัพย์สินนี้ · เบี้ยต่อปีของกรมธรรม์ที่มีผลรวมในประมาณการต่อปี
+  const insPols = insBox?.pols ?? [];
+  const newInsHref = `/insurance/new?type=PROPERTY&asset=${id}`;
+  const insDue = insBox?.due ?? [];
   const yearly = utilities.filter((u) => u.frequency && u.active)
     .reduce((m, u) => m.set(u.currency, (m.get(u.currency) ?? 0) + Number(u.expected_amount ?? 0) * (PERIODS_PER_YEAR[u.frequency!] ?? 0)), new Map<string, number>());
+  insPols.filter((x) => x.status === "ACTIVE" && Number(x.premium ?? 0) > 0)
+    .forEach((x) => yearly.set(x.premium_currency ?? "THB", (yearly.get(x.premium_currency ?? "THB") ?? 0) + Number(x.premium)));
   const utilName = (t: string, provider: string | null) => [UTIL_LABEL[t] ?? t, provider].filter(Boolean).join(" · ");
   const isRental = pd.usage_type === "RENTAL" || liveLeases.length > 0;
   // ที่ว่าง: ระยะเวลาที่ว่าง + ประวัติช่วงที่เคยว่าง
@@ -219,7 +241,11 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const acqAll = a.acquisition_cost != null || addPays.length > 0 ? Number(a.acquisition_cost ?? 0) + addPays.reduce((t, p) => t + Number(p.amount), 0) : null;
   const oneOff = (oneOffRows ?? []) as { id: string; date: string; description: string | null; amount: number; currency: string;
     paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; notes: string | null; property_cost_type: string | null }[];
-  const spent = [...oneOff, ...((costPaid ?? []) as { date: string; amount: number; currency: string }[])].filter((e) => e.currency === a.currency);
+  // เบี้ยประกันทรัพย์สินนี้ที่จ่ายแล้ว (ตกลง 3 พ.ย. 2026) → รวมใน "ค่าใช้จ่าย … บาท" ของกล่องมูลค่า + ตารางค่าใช้จ่าย
+  const insPays = ((insPayRows ?? []) as { id: string; date: string; description: string | null; amount: number; currency: string; notes: string | null;
+    paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; insurance_schedule_lines: { policy_id: string } | { policy_id: string }[] | null }[])
+    .map((e) => ({ ...e, policyId: (Array.isArray(e.insurance_schedule_lines) ? e.insurance_schedule_lines[0] : e.insurance_schedule_lines)?.policy_id ?? null }));
+  const spent = [...oneOff, ...insPays, ...((costPaid ?? []) as { date: string; amount: number; currency: string }[])].filter((e) => e.currency === a.currency);
   const spentSum = spent.reduce((t, e) => t + Number(e.amount), 0);
   const spentLast = spent.reduce((d, e) => (e.date > d ? e.date : d), "");
   // ประวัติมูลค่า: แก้ไม่ได้ · ลบได้เฉพาะครั้งล่าสุดที่บันทึกเอง (ไม่ใช่จากจ่ายเพิ่ม / ขาย / รื้อถอน) และไม่ใช่มูลค่าเดียว
@@ -562,6 +588,47 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               minPrice={(targetRow as TargetPrice | null)?.min_price != null ? Number((targetRow as TargetPrice).min_price) : null}
               history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
           </div>
+          {/* ประกันของทรัพย์สินนี้ (ตกลง 3 พ.ย. 2026): กรมธรรม์ละบรรทัด กดไปหน้ากรมธรรม์ · ยังไม่มี = ปุ่มเพิ่ม (เลือกประเภท / ทรัพย์สินไว้ให้) */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-medium text-slate-900">ประกันของทรัพย์สินนี้</h2>
+              {canWrite && a.status === "ACTIVE" && insPols.length > 0 && <Link href={newInsHref} className="text-xs text-blue-700 hover:underline">+ เพิ่ม</Link>}
+            </div>
+            {insPols.length === 0 ? (
+              <>
+                <p className="mt-1 text-sm text-slate-500">ยังไม่มีประกัน</p>
+                {canWrite && a.status === "ACTIVE" && <Link href={newInsHref}
+                  className="mt-3 inline-block rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">+ เพิ่มประกันทรัพย์สินนี้</Link>}
+              </>
+            ) : (
+              <ul className="mt-1 divide-y divide-slate-100 text-sm">
+                {insPols.map((x) => {
+                  const mine = insDue.filter((d) => d.policy_id === x.id);
+                  const late = mine.filter((d) => d.status === "OVERDUE").length;
+                  const next = mine.find((d) => d.status !== "OVERDUE");
+                  return (
+                    <li key={x.id} className={`py-2 ${x.status !== "ACTIVE" ? "opacity-60" : ""}`}>
+                      <Link href={`/insurance/${x.id}`} className="font-medium text-slate-900 hover:underline">{x.insurer}{x.policy_no && ` · ${x.policy_no}`}</Link>
+                      <div className="text-xs text-slate-500">
+                        {[x.insured_amount != null ? `ทุน ${money(x.insured_amount, x.insured_amount_currency ?? undefined, 0)}` : null,
+                          x.premium != null ? `เบี้ย ${money(x.premium, x.premium_currency ?? undefined, 0)}/ปี` : null,
+                          x.end_date ? `ถึง ${thDate(x.end_date)}` : null].filter(Boolean).join(" · ")}
+                      </div>
+                      <div className="text-xs">
+                        {(x.status !== "ACTIVE" ? [<span key="s" className="text-slate-500">{INS_STATUS_LABEL[x.status] ?? x.status}</span>] : [
+                          x.derived_status === "EXPIRED" && <span key="e" className="text-red-600">เลยวันสิ้นสุด</span>,
+                          x.derived_status === "EXPIRING_SOON" && <span key="e" className="text-amber-700">ใกล้ครบ</span>,
+                          late > 0 && <span key="l" className="text-red-600">เบี้ยเลยกำหนด {late} งวด</span>,
+                          next ? <span key="n" className="text-slate-500">เบี้ยงวดถัดไป {thDate(next.due_date)} {money(next.remaining, next.currency !== "THB" ? next.currency : undefined)}</span>
+                            : late === 0 && <span key="n" className="text-slate-500">ไม่มีเบี้ยค้าง</span>,
+                        ]).filter(Boolean).map((n, i) => <span key={i}>{i > 0 && " · "}{n}</span>)}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
           </div>
@@ -848,7 +915,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-medium text-slate-900">ค่าใช้จ่ายของทรัพย์สินนี้</h2>
-            <p className="text-xs text-slate-500">ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า และค่าใช้จ่ายประจำ · เข้าหน้า Income &amp; Expenses ไม่เพิ่มราคาที่ได้มา</p>
+            <p className="text-xs text-slate-500">ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า ค่าใช้จ่ายประจำ และเบี้ยประกัน · เข้าหน้า Income &amp; Expenses ไม่เพิ่มราคาที่ได้มา</p>
             {[...yearly.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
               <p key={ccy} className="text-xs text-slate-500">ประมาณการต่อปี <span className="font-medium tabular-nums text-slate-700">{money(v, ccy, 0)}</span></p>
             ))}
@@ -882,6 +949,31 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                         fields={[{ name: "property_cost_type", label: "ประเภท", type: "select" as const, value: e.property_cost_type,
                           options: [["", "— ไม่ระบุ —"] as [string, string], ...Object.entries(PROPERTY_COST_TYPE_LABEL)] },
                           { name: "description", label: "รายการ", value: e.description, width: "w-48" }, ...propertyCostFields(e)]} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {insPays.length > 0 && (
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-slate-700">เบี้ยประกัน</h3>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1">วันที่จ่าย</th><th>รายการ</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {insPays.map((e) => (
+                  <tr key={e.id} className="align-top">
+                    <td className="py-1.5">{thDate(e.date)}</td>
+                    <td>{e.description || "เบี้ยประกัน"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
+                    <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
+                    <td className="pl-4 text-xs text-slate-600">
+                      {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
+                    </td>
+                    <td className="pl-2 text-right text-xs">
+                      {e.policyId && <Link href={`/insurance/${e.policyId}?tab=premium`} className="text-blue-700 hover:underline" title="แก้ / ลบที่หน้ากรมธรรม์">กรมธรรม์ →</Link>}
                     </td>
                   </tr>
                 ))}

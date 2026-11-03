@@ -60,6 +60,20 @@ export async function addClaim(_: ActionState, form: FormData): Promise<ActionSt
   return { ok: "บันทึกเคลมแล้ว" };
 }
 
+/** ประกันทรัพย์สิน: เบี้ยที่จ่ายผูกกับทรัพย์สินที่เอาประกัน (related_asset_id) → นับเป็นค่าใช้จ่ายของทรัพย์สินนั้น (ตกลง 3 พ.ย. 2026) */
+async function insuredAssets(supabase: Awaited<ReturnType<typeof createClient>>, policyIds: string[]) {
+  if (policyIds.length === 0) return new Map<string, string>();
+  const { data } = await supabase.from("insurance_policies").select("id,asset_id").in("id", policyIds)
+    .eq("insurance_type", "PROPERTY").not("asset_id", "is", null).is("deleted_at", null);
+  return new Map((data ?? []).map((r) => [r.id as string, r.asset_id as string]));
+}
+
+function refreshAssets(assetIds: Iterable<string>) {
+  const ids = [...new Set(assetIds)];
+  ids.forEach((a) => { revalidatePath(`/property/${a}`); revalidatePath(`/alternative/${a}`); });
+  if (ids.length) { revalidatePath("/property"); revalidatePath("/alternative"); }
+}
+
 function refresh(id: string) {
   revalidatePath(`/insurance/${id}`);
   revalidatePath("/insurance");
@@ -88,9 +102,10 @@ export async function payPremium(_: PayState, form: FormData): Promise<PayState>
   const amount = num(form.get("amount"));
   if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่จำนวนเงิน" };
   const pay = endpointFromForm(form);
+  const asset = (await insuredAssets(supabase, [id])).get(id) ?? null;
   const { error } = await supabase.rpc("add_expense", { p: {
     date: str(form.get("date")), description: str(form.get("description")), amount, currency: str(form.get("currency")),
-    expense_category: "ประกัน",
+    expense_category: "ประกัน", related_asset_id: asset,
     ...paidFromColumns(pay),
     person_id: pay.kind === "cash" ? str(form.get("person_id")) : null,
     insurance_schedule_line_id: str(form.get("line_id")), notes: str(form.get("notes")),
@@ -99,6 +114,7 @@ export async function payPremium(_: PayState, form: FormData): Promise<PayState>
   // ลงมูลค่าเวนคืนตามตารางในสัญญาต่อ (ถ้ามี) · ไม่สำเร็จก็ไม่กระทบการจ่ายเบี้ย
   const { data: cv } = await supabase.rpc("sync_insurance_cash_value", { p_policy_id: id });
   refresh(id);
+  if (asset) refreshAssets([asset]);
   return { ok: "บันทึกจ่ายเบี้ยแล้ว", cv: (cv as CvSync | null) ?? undefined };
 }
 
@@ -214,14 +230,17 @@ export async function batchPremiums(_: ActionState, form: FormData): Promise<Act
   if (!rows) return { error: BAD_ROWS_ERROR };
   if (!date) return { error: "กรุณาเลือกวันที่จ่าย" };
   if (!rows.length) return { error: "กรุณากรอกยอดอย่างน้อย 1 งวด" };
+  const assets = await insuredAssets(supabase, [...new Set(rows.map((r) => r.policy_id))]);
   const clean = rows.map((r) => ({
     policy_id: r.policy_id, label: r.label, date, description: r.label, amount: amountOrNull(r.amount), currency: r.currency,
     paid_from_asset_id: bankId(parseEndpoint(r.pay)), paid_from_credit_card_id: cardId(parseEndpoint(r.pay)), insurance_schedule_line_id: r.line_id,
+    related_asset_id: assets.get(r.policy_id) ?? null,
   }));
   if (!clean.every((r) => isPositive(r.amount))) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
   const { data, error } = await supabase.rpc("batch_pay_insurance_premiums", { p_rows: clean });
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
   refreshBatch(rows);
+  refreshAssets(assets.values());
   return { ok: `บันทึกจ่ายเบี้ยแล้ว ${data} งวด` };
 }
 
