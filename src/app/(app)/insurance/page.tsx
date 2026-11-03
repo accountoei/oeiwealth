@@ -206,7 +206,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       currency: r.insured_amount_currency ?? "THB", notes: null, fromPolicy: true });
   });
   const covPolicies: CovPolicy[] = activeAll.map((r) => ({ id: r.id, name: policyName.get(r.id) ?? "-", type: r.insurance_type, personId: r.person_id,
-    endDate: r.end_date, expiring: r.derived_status === "EXPIRING_SOON", expired: r.derived_status === "EXPIRED", overdue: overduePremium.get(r.id) ?? 0,
+    endDate: r.end_date, expiring: r.derived_status === "EXPIRING_SOON", expired: r.derived_status === "EXPIRED",
     premium: Number(r.premium ?? 0), premiumCcy: r.premium_currency ?? "THB", hasCov: covRows.some((c) => c.policy_id === r.id) }));
   const covByIdType = new Map((covs ?? []).map((c) => [c.id, c.coverage_type as string]));
   const policyPerson = new Map((data ?? []).map((r) => [r.id, r.person_id as string | null]));
