@@ -1,4 +1,4 @@
-# #PR · Insurance: แท็บ "ความคุ้มครอง" + พิมพ์สรุปสำหรับโรงพยาบาล
+# #309 · Insurance: แท็บ "ความคุ้มครอง" + พิมพ์สรุปสำหรับโรงพยาบาล
 
 - วันที่: 3 พ.ย. 2026 · branch `feat/insurance-coverage-tab`
 - SQL: ไม่มี SQL · ไม่มี Edge Function
