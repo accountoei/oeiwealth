@@ -5,7 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import { LOAN_PARTY_COLS as PARTY_COLS, MOVE_LABEL, money, thDate, todayBangkok, withBankOwners } from "@/lib/format";
 import { ApplyScheduleOpening, DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
 import EditButton from "@/components/EditButton";
-import ScheduleTable, { type SchedRow } from "./ScheduleTable";
+import ScheduleTable, { type SchedEvent, type SchedRow } from "./ScheduleTable";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -32,9 +32,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
     supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,grace_days,at_risk_amount,risk_assessed_date,risk_note,${PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
-    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id")
+    supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id,created_at")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null).order("movement_date", { ascending: false }),
-    supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,received_to_asset_id").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
+    supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,received_to_asset_id,created_at").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
       .is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
@@ -87,7 +87,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
   // บันทึกรับชำระแล้ว → แก้ตารางทั้งชุดไม่ได้ · งวดที่รับแล้วแก้ / ลบไม่ได้ (ฐานข้อมูลบังคับ: 20261010000200_loan_schedule_locks)
   const hasPayments = (moves ?? []).some((m) => m.movement_type === "LOAN_PRINCIPAL_RECEIPT") || (incomes ?? []).length > 0;
-  // ประวัติ: การรับชำระครั้งเดียว (เงินต้น + ดอกเบี้ย) แสดงเป็น 1 แถว ยอดรวมตรงกับ Statement ธนาคาร
+  // รายการเงินจริง: การรับชำระครั้งเดียว (เงินต้น + ดอกเบี้ย) แสดงเป็น 1 แถว ยอดรวมตรงกับ Statement ธนาคาร
   // จับคู่ด้วย movement_group_id ที่ receive_loan_payment ใส่ให้ทั้งรายการเงินต้นและรายการเงินเข้าของดอกเบี้ย
   const incomeIds = (incomes ?? []).map((i) => i.id);
   const { data: incMoves } = incomeIds.length
@@ -97,21 +97,24 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const incGroup = new Map((incMoves ?? []).map((m) => [m.source_entity_id as string, m.movement_group_id as string | null]));
   type Mv = NonNullable<typeof moves>[number];
   type Inc = NonNullable<typeof incomes>[number];
-  type Entry = { key: string; date: string; disburse?: Mv; principal?: Mv; interest?: Inc; bank: string | null };
+  type Entry = { key: string; date: string; at: string; disburse?: Mv; principal?: Mv; interest?: Inc; bank: string | null };
   const entries = new Map<string, Entry>();
+  const later = (a: string, b: string | null | undefined) => (b && b > a ? b : a);
   (moves ?? []).forEach((m) => {
     if (m.movement_type === "LOAN_PRINCIPAL_RECEIPT") {
       const k = m.movement_group_id ?? m.id;
-      entries.set(k, { ...(entries.get(k) ?? { key: k, date: m.movement_date, bank: m.to_asset_id }), principal: m });
-    } else entries.set(m.id, { key: m.id, date: m.movement_date, disburse: m, bank: m.from_asset_id === id ? m.to_asset_id : m.from_asset_id });
+      const e = entries.get(k) ?? { key: k, date: m.movement_date, at: "", bank: m.to_asset_id };
+      entries.set(k, { ...e, at: later(e.at, m.created_at), principal: m });
+    } else entries.set(m.id, { key: m.id, date: m.movement_date, at: m.created_at ?? "", disburse: m, bank: m.from_asset_id === id ? m.to_asset_id : m.from_asset_id });
   });
   (incomes ?? []).forEach((i) => {
     const g = incGroup.get(i.id);
     const k = g && entries.has(g) ? g : g ?? i.id;
     const e = entries.get(k);
-    entries.set(k, e ? { ...e, interest: i } : { key: k, date: i.date, bank: i.received_to_asset_id, interest: i });
+    entries.set(k, e ? { ...e, at: later(e.at, i.created_at), interest: i } : { key: k, date: i.date, at: i.created_at ?? "", bank: i.received_to_asset_id, interest: i });
   });
-  const history = [...entries.values()].sort((a, b) => b.date.localeCompare(a.date));
+  // ใหม่สุดก่อน (วันเดียวกัน: บันทึกทีหลังก่อน) · history[0] = รายการล่าสุด (แก้ / ลบได้เฉพาะรายการนี้)
+  const history = [...entries.values()].sort((a, b) => b.date.localeCompare(a.date) || b.at.localeCompare(a.at));
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id, b.name]));
 
   // ให้กู้เพิ่ม = เงินที่จ่ายให้ผู้กู้หลังวันยอดตั้งต้น (ไม่นับครั้งแรกของสัญญาที่ให้กู้ในระบบ)
@@ -142,6 +145,13 @@ export default async function LoanDetailPage({ params, searchParams }: {
   };
   let cumP = 0, cumI = 0;
   const pBase = Math.max(principalAll - Number(l.opening_outstanding_principal ?? principalAll), 0);
+  // ยอดคงเหลือตามแผน = ยอดก่อนหน้า + ให้กู้เพิ่ม − คืนเงินต้น (ตกลง 3 พ.ย. 2026)
+  //   ตารางที่คำนวณงวดที่เหลือใหม่หลังให้กู้เพิ่มแล้ว มียอดให้กู้เพิ่มรวมอยู่ในเงินต้นของตาราง → ยอดเริ่ม = เงินต้นตามตาราง − ส่วนที่ให้กู้เพิ่ม
+  const initialId = Number(l.opening_outstanding_principal ?? 0) > 0 ? null : disb[0]?.id ?? null;
+  const extraDisb = disb.filter((m) => m.id !== initialId);
+  const startP = schedP - Math.min(Math.max(schedP - Number(l.principal ?? 0), 0), extraLent);
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const lentBefore = (d: string) => extraDisb.filter((m) => m.movement_date < d).reduce((s, m) => s + Number(m.amount), 0);
   const schedRows: SchedRow[] = sched.map((x) => {
     cumP += Number(x.principal_due);
     const preOpening = x.due_date <= l.opening_date;
@@ -150,10 +160,51 @@ export default async function LoanDetailPage({ params, searchParams }: {
     const st = LOAN_SCHED_STATUS[x.status];
     return {
       id: x.id, no: x.installment_no, due: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), total: Number(x.total_due),
-      remaining: Number(x.total_remaining), balance: Math.max(Math.round((schedP - cumP) * 100) / 100, 0), status: x.status, statusText: x.status === "PAID" ? "ชำระแล้ว" : st?.text ?? x.status, statusCls: st?.cls ?? "",
+      remaining: Number(x.total_remaining), balance: Math.max(r2(startP + lentBefore(x.due_date) - cumP), 0), status: x.status, statusText: x.status === "PAID" ? "ชำระแล้ว" : st?.text ?? x.status, statusCls: st?.cls ?? "",
       notes: x.notes, paidOn: x.status === "PAID" ? [dp, di].filter(Boolean).sort().at(-1) ?? null : undefined,
     };
   });
+
+  // รายการเงินจริง แทรกในตารางผ่อนตามวันที่ (แทนกล่องประวัติเดิม · ตกลง 3 พ.ย. 2026) · แก้ / ลบได้เฉพาะรายการล่าสุด
+  const btn = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50";
+  const actionsFor = (e: Entry) => {
+    const both = !!(e.principal && e.interest);
+    const group = e.principal?.movement_group_id ?? (e.interest ? incGroup.get(e.interest.id) : null);
+    // รับชำระครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่มลบปุ่มเดียว ลบทั้งการรับชำระครั้งนั้น (ถ้าผิดแค่ยอด ให้แก้ยอดแทน)
+    const wholeDelete = canDelete && both && group ? <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้"
+      confirmText={`ลบการรับชำระวันที่ ${thDate(e.date)}?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined;
+    const items = [
+      e.principal && !e.principal.is_derived && <RowActions key="p" table="cash_movements" id={e.principal.id} paths={paths} button={both ? "แก้เงินต้น" : "แก้ไข / ลบ"} buttonClass={btn}
+        canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={[
+        { name: "movement_date", label: "วันที่", type: "date", value: e.principal.movement_date },
+        { name: "amount", label: "เงินต้น", type: "number", value: e.principal.amount }]} />,
+      e.interest && <RowActions key="i" table="income_transactions" id={e.interest.id} paths={paths} button={both ? "แก้ดอกเบี้ย" : "แก้ไข / ลบ"} buttonClass={btn}
+        canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={loanInterestFields(e.interest)} />,
+      e.disburse && !e.disburse.is_derived && <RowActions key="d" table="cash_movements" id={e.disburse.id} paths={paths} button="แก้ไข / ลบ" buttonClass={btn}
+        canDelete={canDelete} fields={[
+        { name: "movement_date", label: "วันที่", type: "date", value: e.disburse.movement_date },
+        { name: "amount", label: "จำนวน", type: "number", value: e.disburse.amount }]} />,
+    ].filter(Boolean);
+    return items.length ? <div className="flex flex-wrap gap-1">{items}</div> : undefined;
+  };
+  const asc: SchedEvent[] = [...history].reverse().map((e) => {
+    const m = e.disburse;
+    const isInitial = !!m && m.id === initialId;
+    const lent = m && !isInitial && extraDisb.some((x) => x.id === m.id) ? Number(m.amount) : 0;
+    return {
+      key: e.key, date: e.date, kind: m ? "LEND" : "PAY",
+      label: m ? (isInitial ? "จ่ายเงินกู้ (เริ่มสัญญา)" : lent ? "ให้กู้เพิ่ม" : MOVE_LABEL[m.movement_type] ?? m.movement_type)
+        : e.principal && e.interest ? "รับชำระ" : e.principal ? "รับคืนเงินต้น" : "ดอกเบี้ยรับ (รายได้)",
+      bank: e.bank ? bankName.get(e.bank) ?? "บัญชี" : "",
+      principal: Number(e.principal?.amount ?? 0), interest: Number(e.interest?.amount ?? 0), tax: Number(e.interest?.tax ?? 0),
+      lent, initial: m && !lent ? Number(m.amount) : undefined,
+      actions: canWrite && e.key === history[0]?.key ? actionsFor(e) : undefined,
+    };
+  });
+  // แถวให้กู้: ยอดคงเหลือหลังให้กู้ = ยอดเริ่ม + ให้กู้เพิ่มถึงรายการนี้ − เงินต้นงวดที่ครบถึงวันนั้น
+  const events: SchedEvent[] = asc.map((ev, i) => ev.kind !== "LEND" || !sched.length ? ev : {
+    ...ev, balance: Math.max(r2(startP + asc.slice(0, i + 1).reduce((s, x) => s + x.lent, 0)
+      - sched.filter((x) => x.due_date <= ev.date).reduce((s, x) => s + Number(x.principal_due), 0)), 0) });
 
   return (
     <div className="space-y-6">
@@ -223,7 +274,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
               <EditButton title="แก้ไขรายละเอียด" small>
                 <div className="space-y-5">
                   <p className="text-xs text-slate-500">{isOpening ? "สัญญาที่ให้กู้ก่อน Go-live: แก้วันที่ทำสัญญา เงินต้นตามสัญญา และยอดตั้งต้นได้ที่ \"วันที่และยอดเงิน\" ด้านล่าง"
-                    : "ให้กู้หลัง Go-live: เงินต้นมาจากรายการจ่ายเงินกู้ (แก้ที่ประวัติด้านล่าง)"}</p>
+                    : "ให้กู้หลัง Go-live: เงินต้นมาจากรายการจ่ายเงินกู้ (แก้ที่แถวสีฟ้าในตารางผ่อนชำระ แท็บ \"ทั้งหมด\")"}</p>
                   <WithStatus status={{ table: "loan_details", id: l.id, value: l.status, paths, label: "สถานะ",
                     options: LOAN_STATUS_OPTIONS,
                     remove: canDelete ? { kind: "asset", id, redirectTo: "/financial/loans", paths: ["/financial/loans"], label: "ลบรายการนี้", hint: "ลบได้เมื่อไม่มีรายการให้กู้ / รับชำระ" } : undefined }}>
@@ -339,68 +390,15 @@ export default async function LoanDetailPage({ params, searchParams }: {
           ))}
           </div>
         </div>
-        {sched.length > 0 && <ScheduleTable rows={schedRows} currency={l.currency} />}
+        {(sched.length > 0 || events.length > 0) && <ScheduleTable rows={schedRows} events={events} currency={l.currency} />}
         {sched.length > 0 && <p className="text-xs text-slate-500">
           ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดที่เลยกำหนด (ไม่มี = งวดถัดไป) ให้ · เปลี่ยนวันที่ได้รับ = ยอดเปลี่ยนตามงวดที่ครบถึงวันนั้น · แก้ยอดได้ตามที่รับจริง ·
-          ลบการรับชำระที่บันทึกผิดได้ที่ประวัติด้านล่าง (ตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "ตั้ง / แก้ตารางผ่อน"}&rdquo; ·
+          บันทึกผิด: แก้ / ลบที่แถวสีเขียวล่าสุด (แท็บ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo; · ลบแล้วตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "ตั้ง / แก้ตารางผ่อน"}&rdquo; ·
           สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
           ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
         </p>}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">ประวัติให้กู้ / รับชำระ</h2>
-        {history.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ (ยอดตั้งต้นอยู่ด้านบน)</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ประเภท</th><th>บัญชี</th><th className="text-right">จำนวน</th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {history.map((e) => {
-                const total = e.disburse ? Number(e.disburse.amount) : Number(e.principal?.amount ?? 0) + Number(e.interest?.amount ?? 0);
-                const both = !!(e.principal && e.interest);
-                const group = e.principal?.movement_group_id ?? (e.interest ? incGroup.get(e.interest.id) : null);
-                // รับชำระครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่มลบปุ่มเดียว ลบทั้งการรับชำระครั้งนั้น (ถ้าผิดแค่ยอด ให้แก้ยอดแทน)
-                const wholeDelete = canDelete && both && group ? <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้"
-                  confirmText={`ลบการรับชำระวันที่ ${thDate(e.date)}?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined;
-                return (
-                  <tr key={e.key} className="align-top">
-                    <td className="py-2">{thDate(e.date)}</td>
-                    <td className="py-2">
-                      {e.disburse ? (MOVE_LABEL[e.disburse.movement_type] ?? e.disburse.movement_type)
-                        : both ? "รับชำระ" : e.principal ? "รับคืนเงินต้น" : "ดอกเบี้ยรับ (รายได้)"}
-                      {/* แยกส่วน: เงินต้น (ลดยอดเงินให้กู้) · ดอกเบี้ย (รายได้) — แก้ / ลบ แยกกันได้ */}
-                      {e.principal && (
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span>เงินต้น <span className="tabular-nums">{money(e.principal.amount)}</span></span>
-                          {canWrite && !e.principal.is_derived && <RowActions table="cash_movements" id={e.principal.id} paths={paths}
-                            canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={[
-                            { name: "movement_date", label: "วันที่", type: "date", value: e.principal.movement_date },
-                            { name: "amount", label: "เงินต้น", type: "number", value: e.principal.amount }]} />}
-                        </div>
-                      )}
-                      {e.interest && (
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span>ดอกเบี้ย (รายได้) <span className="tabular-nums">{money(e.interest.amount)}</span>
-                            {Number(e.interest.tax ?? 0) ? ` · ภาษีหัก ณ ที่จ่าย ${money(e.interest.tax)}` : ""}</span>
-                          {canWrite && <RowActions table="income_transactions" id={e.interest.id} paths={paths}
-                            canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={loanInterestFields(e.interest)} />}
-                        </div>
-                      )}
-                      {e.disburse && canWrite && !e.disburse.is_derived && (
-                        <div className="mt-0.5 text-xs"><RowActions table="cash_movements" id={e.disburse.id} paths={paths} canDelete={canDelete} fields={[
-                          { name: "movement_date", label: "วันที่", type: "date", value: e.disburse.movement_date },
-                          { name: "amount", label: "จำนวน", type: "number", value: e.disburse.amount }]} /></div>
-                      )}
-                    </td>
-                    <td className="py-2 text-xs text-slate-500">{e.bank ? bankName.get(e.bank) ?? "บัญชี" : ""}</td>
-                    <td className={`py-2 text-right tabular-nums ${e.disburse ? "" : "text-emerald-700"}`}>{money(total)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-        <p className="mt-2 text-xs text-slate-500">การรับชำระแต่ละครั้งแสดงเป็นยอดรวม (ตรงกับ Statement) · ข้างในแยก เงินต้น = ลดยอดเงินให้กู้ · ดอกเบี้ย = รายได้</p>
-      </section>
 
     </div>
   );

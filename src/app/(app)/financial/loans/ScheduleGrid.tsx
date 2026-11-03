@@ -189,7 +189,7 @@ export default function ScheduleGrid({ rows, setRows, opts, currency, opening, c
       <div className="max-h-[28rem] overflow-auto rounded-lg border border-slate-200">
         <table className="w-full min-w-[46rem] text-sm tabular-nums">
           <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-2 py-1.5">งวด</th><th className="px-1">ครบกำหนด</th><th className="px-1 text-right">เงินต้น</th><th className="px-1 text-right">ดอกเบี้ย</th>
+            <tr><th className="px-2 py-1.5">งวด</th><th className="px-1">ครบกำหนด</th><th className="px-1 text-right">คืนเงินต้น</th><th className="px-1 text-right">ดอกเบี้ย</th>
               <th className="px-1 text-right">รวม</th><th className="px-1 text-right">เงินต้นคงเหลือ</th><th className="px-1">หมายเหตุ</th><th className="px-1" /></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
