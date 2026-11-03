@@ -4,8 +4,34 @@ export function money(value: number | string | null | undefined, currency?: stri
   const n = typeof value === "string" ? Number(String(value).replace(/,/g, "")) : value;
   if (Number.isNaN(n)) return "-";
   const d = Math.max(digits, 2);
-  const s = n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: d });
+  // ยอดที่ปัดแล้วเป็นศูนย์ (เช่น −0.001 หรือ −0) แสดง "0.00" ไม่ใช่ "-0.00"
+  const s = (isZero(n, d) ? 0 : n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: d });
   return currency ? `${s} ${currency}` : s;
+}
+
+/** ปัดตามทศนิยมที่แสดงแล้วเป็นศูนย์หรือไม่ */
+export function isZero(value: number | string | null | undefined, digits = 2): boolean {
+  const n = Number(value ?? 0);
+  return !Number.isFinite(n) || Math.round(Math.abs(n) * 10 ** digits) === 0;
+}
+/** ยอดมีเครื่องหมาย "+1,000.00" / "−1,000.00" · ปัดแล้วเป็นศูนย์ → "0.00" (ไม่มี + / −) */
+export function signedMoney(value: number | string | null | undefined, currency?: string, digits = 2): string {
+  const n = Number(value ?? 0);
+  if (isZero(n, Math.max(digits, 2))) return money(0, currency, digits);
+  return `${n > 0 ? "+" : "\u2212"}${money(Math.abs(n), currency, digits)}`;
+}
+/** ยอดที่ออก (แสดงติดลบ) "−1,000.00" · ศูนย์ → "0.00" */
+export function minusMoney(value: number | string | null | undefined, currency?: string, digits = 2): string {
+  return signedMoney(-Math.abs(Number(value ?? 0)), currency, digits);
+}
+/** ยอดที่เข้า (แสดงบวก) "+1,000.00" · ศูนย์ → "0.00" */
+export function plusMoney(value: number | string | null | undefined, currency?: string, digits = 2): string {
+  return signedMoney(Math.abs(Number(value ?? 0)), currency, digits);
+}
+/** เปอร์เซ็นต์มีเครื่องหมาย "+1.23%" / "−1.23%" · ปัดแล้วเป็นศูนย์ → "0.00%" */
+export function signedPct(value: number, digits = 2): string {
+  if (isZero(value, digits)) return `${(0).toFixed(digits)}%`;
+  return `${value > 0 ? "+" : "\u2212"}${Math.abs(value).toFixed(digits)}%`;
 }
 
 /** จำนวนเงินปัดเป็นบาท (ไม่มีสตางค์) สำหรับหน้าสรุป เช่น Dashboard · คอมมาคั่นหลักพัน · −0 แสดงเป็น 0 · ติดลบใช้เครื่องหมายลบ "−" (ตัวเดียวกันทั้งหน้า) */
@@ -201,7 +227,7 @@ export function marketStale(date: string | null | undefined, today: string): boo
 }
 /** ส่วนต่าง เช่น "+3,200,000.00 (+64.0%)" */
 export function diffText(diff: number, base: number): string {
-  const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
+  const sign = isZero(diff) ? "" : diff > 0 ? "+" : "−";
   const pct = base > 0 ? ` (${sign}${(Math.abs(diff) * 100 / base).toFixed(1)}%)` : "";
   return `${sign}${money(Math.abs(diff))}${pct}`;
 }

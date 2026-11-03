@@ -3,7 +3,7 @@ import { Suspense, cache, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { baht, millions, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { baht, millions, monthOptions, monthRange, thDate, thMonth, todayBangkok, signedPct } from "@/lib/format";
 import DashboardFilters from "@/components/DashboardFilters";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { ChangeDetail, PopupBox, type Bridge } from "./DashDetail";
@@ -394,7 +394,7 @@ async function NwPeriods({ start, personId, current, asOf, base, isCurrent }: {
             <div className={`inline-flex items-center gap-1 text-xs font-semibold tabular-nums ${diff === 0 ? "text-slate-600" : diff > 0 ? "text-emerald-700" : "text-red-700"}`}>
               {diff !== 0 && <Arrow up={diff > 0} />}
               <span className="sr-only">{diff > 0 ? "เพิ่มขึ้น" : diff < 0 ? "ลดลง" : ""}</span>
-              {pct == null ? `${diff > 0 ? "+" : diff < 0 ? "\u2212" : ""}${baht(Math.abs(diff))}` : `${pct > 0 ? "+" : pct < 0 ? "\u2212" : ""}${Math.abs(pct).toFixed(2)}%`}
+              {pct == null ? `${diff > 0 ? "+" : diff < 0 ? "\u2212" : ""}${baht(Math.abs(diff))}` : signedPct(pct)}
             </div>
           </div>
         );

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { addDays, money, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { addDays, money, monthRange, thDate, thMonth, todayBangkok, signedMoney, plusMoney, minusMoney } from "@/lib/format";
 import { TabActions } from "@/components/TabActions";
 import { FinalizeForm, ReopenForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
@@ -299,8 +299,8 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                   <tr key={c.id} className="align-top">
                     <td className="py-2 pr-2"><Link href={`/liabilities/cards/${c.id}`} className="hover:underline">{c.name}</Link></td>
                     <td className="px-2 py-2 text-right tabular-nums">{money(c.stBal, c.currency)}<div className="text-xs text-slate-500">{thDate(c.stDate)}</div></td>
-                    <td className="px-2 py-2 text-right tabular-nums text-red-700">{c.spend ? `+${money(c.spend, c.currency)}` : "–"}</td>
-                    <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{c.paid + c.back ? `−${money(c.paid + c.back, c.currency)}` : "–"}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-red-700">{c.spend ? plusMoney(c.spend, c.currency) : "–"}</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{c.paid + c.back ? minusMoney(c.paid + c.back, c.currency) : "–"}</td>
                     <td className="px-2 py-2 text-right font-medium tabular-nums">{money(c.total, c.currency)}</td>
                     <td className="py-2 pl-2 text-xs">{c.exact
                       ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">ตามยอดที่บันทึก</span>
@@ -416,7 +416,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                     <td className="px-3 text-right tabular-nums">{money(h.total_liabilities, undefined, 0)}</td>
                     <td className="px-3 text-right font-medium tabular-nums">{money(h.net_worth, undefined, 0)}</td>
                     <td className={`px-3 text-right tabular-nums ${d == null ? "text-slate-400" : d >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      {d == null ? "-" : `${d >= 0 ? "+" : ""}${money(d, undefined, 0)}`}</td>
+                      {d == null ? "-" : signedMoney(d, undefined, 0)}</td>
                     <td className="px-3 text-xs text-slate-500">v{h.version}</td>
                   </tr>
                 );

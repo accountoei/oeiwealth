@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ageFrom, EDUCATION_LEVEL_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, thDate, todayBangkok } from "@/lib/format";
+import { ageFrom, EDUCATION_LEVEL_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, thDate, todayBangkok, minusMoney } from "@/lib/format";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
 import { DetailItem as Item } from "@/components/Boxes";
@@ -207,7 +207,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
                       <td className="py-1.5 pr-3">{href ? <Link href={href} className="text-blue-700 hover:underline">{e.item_name}</Link> : e.item_name}</td>
                       <td className="pr-3 text-xs text-slate-500">{debt ? "หนี้สิน" : "สินทรัพย์"}{e.item_group ? ` · ${e.item_group}` : ""}</td>
                       <td className="pr-3 text-right tabular-nums">{Number(e.ownership_percent).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
-                      <td className={`text-right tabular-nums ${debt ? "text-red-700" : ""}`}>{debt ? "-" : ""}{money(e.base_value, "THB", 0)}</td>
+                      <td className={`text-right tabular-nums ${debt ? "text-red-700" : ""}`}>{debt ? minusMoney(e.base_value, "THB", 0) : money(e.base_value, "THB", 0)}</td>
                     </tr>
                   );
                 })}

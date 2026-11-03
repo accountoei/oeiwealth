@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, signedMoney } from "@/lib/format";
 import { moveMeta, type MoveMeta } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
 import DateSortHead from "@/components/DateSortHead";
@@ -226,7 +226,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                   <td colSpan={4} className="py-2 font-medium">
                     รวม{filtered ? "ตามตัวกรอง" : ""}{acct ? "" : " (ไม่นับโอนระหว่างบัญชีตัวเอง)"}{totals.size > 1 ? ` · ${ccy}` : ""}
                     <span className={`ml-3 font-semibold ${t.inn - t.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      สุทธิ {t.inn - t.out >= 0 ? "+" : "−"}{money(Math.abs(t.inn - t.out), ccy)}</span>
+                      สุทธิ {signedMoney(t.inn - t.out, ccy)}</span>
                   </td>
                   <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-emerald-700">{money(t.inn, ccy)}</td>
                   <td className="whitespace-nowrap pl-4 text-right font-medium tabular-nums text-red-700">{money(t.out, ccy)}</td>
@@ -237,7 +237,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                 <tr className="text-xs text-slate-500">
                   <td colSpan={4} className="pb-2">≈ รวมเป็นบาท (อัตรา ณ วันที่ของแต่ละรายการ)
                     <span className={`ml-3 font-medium ${thbTot.inn - thbTot.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      สุทธิ {thbTot.inn - thbTot.out >= 0 ? "+" : "−"}{money(Math.abs(thbTot.inn - thbTot.out), "THB")}</span></td>
+                      สุทธิ {signedMoney(thbTot.inn - thbTot.out, "THB")}</span></td>
                   <td className="whitespace-nowrap pb-2 pl-4 text-right tabular-nums">≈ {money(thbTot.inn, "THB")}</td>
                   <td className="whitespace-nowrap pb-2 pl-4 text-right tabular-nums">≈ {money(thbTot.out, "THB")}</td>
                   <td colSpan={cols - 6}></td>

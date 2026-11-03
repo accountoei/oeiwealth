@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useState, type ReactNode } from "react";
 import { MoveButtons, neighbors } from "@/components/SortControls";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, signedMoney, signedPct } from "@/lib/format";
 
 export type PortfolioRow = {
   asset_id: string; name: string; sub: string; currency: string; value: number | null; valueThb: number; valueDate: string | null;
@@ -14,8 +14,8 @@ export type PortfolioRow = {
 };
 
 const sign = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500");
-const amt = (v: number) => (v ? `${v > 0 ? "+" : ""}${money(v, undefined, 0)}` : "-");
-const pct = (total: number, cost: number) => (cost > 0 && total ? `${total > 0 ? "+" : ""}${((total / cost) * 100).toFixed(2)}%` : "");
+const amt = (v: number) => (v ? signedMoney(v, undefined, 0) : "-");
+const pct = (total: number, cost: number) => (cost > 0 && total ? signedPct((total / cost) * 100) : "");
 
 /** ตารางพอร์ต: มูลค่า (บาท) + ผลตอบแทนรวม (บาท / % เทียบต้นทุน) · กดแถวเพื่อดูผลตอบแทนแยกส่วน */
 export default function PortfolioTable({ rows, ordering = false, paths = [], toggle, filter, label = "รวมทุกพอร์ต" }: {

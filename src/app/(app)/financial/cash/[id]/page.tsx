@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type StmtRow } from "../../../income-expenses/MovesView";
 import { moveMeta, stripPending } from "@/lib/ledger";
@@ -301,8 +301,8 @@ export default async function AccountDetailPage({ params, searchParams }: {
           <MonthPicker months={months} value={ym} />
         </div>
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">+{money(sumIn)}</b></span>
-          <span className="text-red-700">เงินออก <b className="tabular-nums">−{money(sumOut)}</b></span>
+          <span className="text-emerald-700">เงินเข้า <b className="tabular-nums">{plusMoney(sumIn)}</b></span>
+          <span className="text-red-700">เงินออก <b className="tabular-nums">{minusMoney(sumOut)}</b></span>
           <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className={`tabular-nums ${Number(closing ?? 0) < -0.005 ? "text-red-700" : ""}`}>{closing == null ? "-" : money(closing, acc.currency)}</b></span>
         </div>
         {/* เตือนเฉพาะเมื่อมีเรื่องต้องทำ */}

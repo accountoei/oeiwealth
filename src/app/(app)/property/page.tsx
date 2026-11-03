@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, marketDefaultUnit, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning } from "@/lib/format";
+import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, marketDefaultUnit, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning, signedMoney, plusMoney, minusMoney } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
@@ -361,9 +361,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
 
       <TabPanel id="overview">
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={`+${money(incTotal, "THB")}`} valueClass="text-emerald-700" sub={`${incMonth.length} รายการ`} />
-          <StatBox label={`ค่าใช้จ่ายทรัพย์สิน${mLabel}`} value={`−${money(expTotal, "THB")}`} valueClass="text-red-700" sub={`${expRows.length} รายการ`} />
-          <StatBox label={`รายได้สุทธิ${mLabel}`} value={`${incTotal - expTotal >= 0 ? "+" : "−"}${money(Math.abs(incTotal - expTotal), "THB")}`}
+          <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700" sub={`${incMonth.length} รายการ`} />
+          <StatBox label={`ค่าใช้จ่ายทรัพย์สิน${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700" sub={`${expRows.length} รายการ`} />
+          <StatBox label={`รายได้สุทธิ${mLabel}`} value={signedMoney(incTotal - expTotal, "THB")}
             valueClass={incTotal - expTotal >= 0 ? "text-emerald-700" : "text-red-700"} sub="รายได้ − ค่าใช้จ่าย" />
           <StatBox label="ประมาณรายได้ค่าเช่าทั้งปี" value={money(annualRent, "THB")} valueClass="text-emerald-700"
             sub={leaseCount ? `จากสัญญาที่มีผล ${leaseCount} สัญญา (ต่อเดือน × 12)` : "ยังไม่มีสัญญาเช่าที่มีผล"} />

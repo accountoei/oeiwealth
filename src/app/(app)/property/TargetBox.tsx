@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import RowActions from "@/components/RowActions";
 import ModalButton from "@/components/ModalButton";
 import CostItemForm, { type CostLot } from "./CostItemForm";
-import { diffText, money, opportunityText, thDate } from "@/lib/format";
+import { diffText, money, opportunityText, thDate, minusMoney } from "@/lib/format";
 
 export type TargetPrice = {
   asset_id: string; currency: string; rate_pct: number | null; rate_source: string | null; lot_count: number; building_count: number;
@@ -53,7 +53,7 @@ export default function TargetBox({ currency, target, unit, nwValue, lots, lastC
         <dl className="mt-2 space-y-0.5 text-xs">
           {line(`ต้นทุน ${t!.lot_count} ก้อน`, money(t!.cost_total))}
           {line(t!.method === "CPI_PLUS" ? `ดอกเบี้ย (เงินเฟ้อ + ${Number(t!.rate_pct ?? 0)}% ต่อปี)` : `ดอกเบี้ย ${Number(t!.rate_pct ?? 0)}% ต่อปี`, `+${money(t!.interest_total)}`)}
-          {Number(t!.depreciation_total) > 0 && line("หักค่าเสื่อมสิ่งปลูกสร้าง", `−${money(t!.depreciation_total)}`)}
+          {Number(t!.depreciation_total) > 0 && line("หักค่าเสื่อมสิ่งปลูกสร้าง", minusMoney(t!.depreciation_total))}
           {carrying != null && min - carrying > 0.005 && line("ค่าใช้จ่ายขาย (จากราคาตลาดครั้งล่าสุด)", `+${money(min - carrying)}`)}
           {/* เทียบกับมูลค่าล่าสุด: ราคาขายขั้นต่ำสูง / ต่ำกว่ามูลค่าล่าสุดกี่ % (ตกลง 29 ต.ค. 2026) */}
           {nwValue > 0 && line(min > nwValue ? "ราคาขายขั้นต่ำสูงกว่ามูลค่าล่าสุด" : "ราคาขายขั้นต่ำต่ำกว่ามูลค่าล่าสุด", diffText(min - nwValue, nwValue),
@@ -90,7 +90,7 @@ export function CostLotsSection({ assetId, currency, today, lots, canWrite, canD
                 <td className="text-right tabular-nums">{money(l.amount)}</td>
                 <td className="text-right tabular-nums">{Number(l.years_held).toFixed(1)}</td>
                 <td className="text-right tabular-nums">{money(l.interest)}</td>
-                <td className="text-right tabular-nums">{Number(l.depreciation) > 0 ? `−${money(l.depreciation)}` : "-"}</td>
+                <td className="text-right tabular-nums">{Number(l.depreciation) > 0 ? minusMoney(l.depreciation) : "-"}</td>
                 <td className="pl-2 text-right">
                   {!canWrite ? null : l.source === "MANUAL" && l.item_id ? (
                     <RowActions table="property_cost_items" id={l.item_id} paths={paths} canDelete={canDelete} deleteEffect="ไม่นับต้นทุนก้อนนี้"

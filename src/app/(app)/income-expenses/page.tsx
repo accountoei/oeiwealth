@@ -5,8 +5,7 @@ import { requireAppUser } from "@/lib/auth";
 import RowActions from "@/components/RowActions";
 import {
   COST_STATUS, INCOME_TYPE_LABEL, HOME_CATEGORY, PERIODS_PER_YEAR, PROPERTY_COST_TYPE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, money, monthOptions, monthRange, scheduleText,
-  thDate, thMonth, todayBangkok,
-} from "@/lib/format";
+  thDate, thMonth, todayBangkok, signedMoney, plusMoney, minusMoney } from "@/lib/format";
 import { RecordCostForm } from "../property/[id]/forms";
 import {
   AutopayConfirmForm, ExpectedActions, ExpenseForm, ExpenseTemplateForm, ExpenseTemplateToggle, IncomeForm,
@@ -693,10 +692,10 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             </div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm tabular-nums">
               {moveSum.count === 0 ? <span className="text-slate-500">ยังไม่มีเงินเข้า–ออกในเดือนนี้</span> : <>
-                <span className="text-emerald-700">เข้า {moveSum.fx ? "≈ " : ""}+{money(moveSum.inn, "THB")}</span>
-                <span className="text-red-700">ออก {moveSum.fx ? "≈ " : ""}−{money(moveSum.out, "THB")}</span>
+                <span className="text-emerald-700">เข้า {moveSum.fx ? "≈ " : ""}{plusMoney(moveSum.inn, "THB")}</span>
+                <span className="text-red-700">ออก {moveSum.fx ? "≈ " : ""}{minusMoney(moveSum.out, "THB")}</span>
                 <span className={`font-semibold ${moveSum.inn - moveSum.out >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                  สุทธิ {moveSum.fx ? "≈ " : ""}{moveSum.inn - moveSum.out >= 0 ? "+" : "−"}{money(Math.abs(moveSum.inn - moveSum.out), "THB")}</span>
+                  สุทธิ {moveSum.fx ? "≈ " : ""}{signedMoney(moveSum.inn - moveSum.out, "THB")}</span>
                 {moveSum.fx && <span className="text-xs text-slate-500">รวมเป็นบาท (อัตรา ณ วันที่ของแต่ละรายการ) · แยกสกุลอยู่ท้ายตาราง</span>}
               </>}
             </div>

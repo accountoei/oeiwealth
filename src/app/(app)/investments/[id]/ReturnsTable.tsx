@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { HOLDING_TYPE_LABEL, money } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, money, signedMoney } from "@/lib/format";
 
 /** ผลตอบแทนเป็นบาท (investment_returns) */
 export type Ret = {
@@ -77,7 +77,7 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
   const showFx = !isPf && rows.some((r) => r.currency !== "THB" && !translatable(r));
   const otherCcy = isPf && data.some((r) => r.currency !== portfolioCurrency);
   const m = (v: number) => money(v, undefined, isPf ? 2 : 0);
-  const sign = (v: number) => `${v > 0 ? "+" : ""}${m(v)}`;
+  const sign = (v: number) => signedMoney(v, undefined, isPf ? 2 : 0);
 
   return (
     <section className={bare ? "" : "overflow-x-auto rounded-xl border border-slate-200 bg-white"}>

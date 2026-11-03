@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, addDays, money, monthOptions, monthRange, qty, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, addDays, money, monthOptions, monthRange, qty, thDate, thMonth, todayBangkok, signedPct } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -223,7 +223,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                   <td className={`${num} font-medium`}>{money(myValue(r))}
                     <div className={`text-xs font-normal ${stale ? "text-amber-700" : "text-slate-400"}`}>ณ {thDate(r.assets.current_value_date)}{stale && " · เกิน 1 ปี"}</div>
 </td>
-                  <td className={`${num} ${vc == null ? "text-slate-400" : vc >= 0 ? "text-emerald-700" : "text-red-700"}`}>{vc == null ? "-" : `${vc >= 0 ? "+" : ""}${vc.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`}</td>
+                  <td className={`${num} ${vc == null ? "text-slate-400" : vc >= 0 ? "text-emerald-700" : "text-red-700"}`}>{vc == null ? "-" : signedPct(vc, 1)}</td>
                   <td className={`${num} ${dv > 0 ? "text-emerald-700" : "text-slate-400"}`}>{money(dv)}</td>
                 </tr>
               );
@@ -236,7 +236,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                 <td className="px-3 text-right tabular-nums">{money(totals.reg)}</td><td className="px-3 text-right text-slate-400">-</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.cost)}</td>
                 <td className="px-3 text-right tabular-nums">{money(totals.val)}</td>
-                <td className={`px-3 text-right tabular-nums ${totals.cost <= 0 ? "text-slate-400" : totals.val >= totals.cost ? "text-emerald-700" : "text-red-700"}`}>{totals.cost > 0 ? `${totals.val >= totals.cost ? "+" : ""}${(((totals.val - totals.cost) * 100) / totals.cost).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%` : "-"}</td>
+                <td className={`px-3 text-right tabular-nums ${totals.cost <= 0 ? "text-slate-400" : totals.val >= totals.cost ? "text-emerald-700" : "text-red-700"}`}>{totals.cost > 0 ? signedPct(((totals.val - totals.cost) * 100) / totals.cost, 1) : "-"}</td>
                 <td className="px-3 text-right tabular-nums text-emerald-700">{money(totals.div)}</td>
               </tr>
             </tfoot>
