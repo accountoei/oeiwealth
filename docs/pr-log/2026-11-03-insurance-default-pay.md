@@ -1,4 +1,4 @@
-# Insurance: บัญชี / บัตรจ่ายเบี้ยตั้งต้นของกรมธรรม์
+# #313 · Insurance: บัญชี / บัตรจ่ายเบี้ยตั้งต้นของกรมธรรม์
 
 - วันที่: 3 พ.ย. 2026 · branch `feat/insurance-default-pay` (ต่อจาก `feat/insurance-tabs-property-box` #312)
 - SQL: `supabase/migrations/20261103124500_insurance_default_pay.sql` (รันก่อน Merge) · ไม่มี Edge Function
