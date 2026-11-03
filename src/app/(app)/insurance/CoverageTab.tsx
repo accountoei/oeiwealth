@@ -10,7 +10,7 @@ import ModalButton from "@/components/ModalButton";
  *   ทุนชีวิต / อุบัติเหตุ: กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองประเภทนั้น ใช้ทุนประกันของกรมธรรม์แทน
  */
 export type CovPolicy = { id: string; name: string; type: string; personId: string | null; endDate: string | null; expiring: boolean; expired: boolean;
-  overdue: number; premium: number; premiumCcy: string; hasCov: boolean };
+  premium: number; premiumCcy: string; hasCov: boolean };
 export type CovItem = { policyId: string; personId: string; type: string; limit: number; used: number; currency: string; notes: string | null; fromPolicy?: boolean };
 export type CovClaim = { id: string; policyId: string; personId: string | null; coverageType: string | null; date: string | null; claimed: number; received: number;
   currency: string; status: string; notes: string | null };
@@ -25,6 +25,8 @@ const HEALTH_TYPES = GROUPS[0][1];
 const CLAIM = Object.fromEntries(CLAIM_STATUS);
 const ccy = (c: string) => (c !== "THB" ? c : undefined);
 const LINK = "tabular-nums text-slate-900 underline decoration-dotted underline-offset-4 hover:text-blue-700";
+/** คอลัมน์แรกของตารางทั้งครอบครัว: ล็อกไว้ทางซ้าย เลื่อนดูสมาชิกที่เพิ่มขึ้นได้โดยยังเห็นชื่อความคุ้มครอง (ใส่สีพื้นที่ช่องเอง) */
+const STICKY = "sticky left-0 z-10 min-w-40 shadow-[inset_-1px_0_0_var(--color-slate-200)]";
 
 /** ยอดรวมแยกสกุลเงิน (THB ขึ้นก่อน) */
 function byCcy(xs: { amount: number; currency: string }[]) {
@@ -52,14 +54,12 @@ export default function CoverageTab({ persons, personId, personName, policies, i
   const healthPremium = active.filter((p) => p.type === "HEALTH" && p.premiumCcy === "THB").reduce((t, p) => t + p.premium, 0);
   const who = personId ? personName : "ทั้งครอบครัว";
 
-  // กล่องเตือน
+  // กล่องเตือน (เฉพาะเรื่องความคุ้มครอง · เบี้ยเลยกำหนด / ใกล้ครบ ดูที่แท็บภาพรวม · ไม่มีเรื่อง = ไม่แสดงกล่อง)
   const noHealth = persons.filter((p) => !active.some((x) => x.personId === p.id && x.type === "HEALTH") && !of(p.id).some((x) => HEALTH_TYPES.includes(x.type)));
   const noLife = persons.filter((p) => !of(p.id).some((x) => x.type === "LIFE"));
-  const renew = active.filter((p) => p.expiring || p.expired);
-  const overdue = active.filter((p) => p.overdue > 0);
   const highUse = mine.filter((x) => COVERAGE_ANNUAL.includes(x.type) && x.limit > 0 && x.used / x.limit >= 0.8);
   const noCov = active.filter((p) => p.type === "HEALTH" && !p.hasCov);
-  const alerts = noHealth.length + noLife.length + renew.length + overdue.length + highUse.length + noCov.length;
+  const alerts = noHealth.length + noLife.length + highUse.length + noCov.length;
   const pol = (id: string) => <Link href={`/insurance/${id}`} className="font-medium hover:underline">{policy.get(id)?.name ?? "กรมธรรม์"}</Link>;
 
   // ตาราง
@@ -92,27 +92,22 @@ export default function CoverageTab({ persons, personId, personName, policies, i
         <StatBox label="เบี้ยประกันสุขภาพ ต่อปี (THB)" value={money(healthPremium, undefined, 0)} sub={`${active.filter((p) => p.type === "HEALTH").length} กรมธรรม์`} />
       </section>
 
-      {alerts > 0 ? (
+      {alerts > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm">
           <h2 className="font-medium text-slate-900">เรื่องที่ควรดู</h2>
           <ul className="list-disc space-y-1 pl-5">
             {noCov.length > 0 && <li>กรมธรรม์สุขภาพที่ยังไม่ได้กรอกความคุ้มครอง ({noCov.length}): {noCov.map((p, i) => <span key={p.id}>{i > 0 && ", "}{pol(p.id)}</span>)}
               <span className="text-xs text-slate-500"> · กรอกที่หน้ากรมธรรม์ → ความคุ้มครอง</span></li>}
-            {renew.map((p) => <li key={p.id}>{pol(p.id)} {p.expired ? <span className="text-red-700">เลยวันสิ้นสุดแล้ว ({thDate(p.endDate)})</span>
-              : <>ครบ / ต่ออายุ {thDate(p.endDate)}</>}{p.personId && ` · ${pname.get(p.personId)}`}</li>)}
-            {overdue.map((p) => <li key={p.id}>{pol(p.id)} <span className="text-red-700">เบี้ยเลยกำหนด {p.overdue} งวด</span> · เสี่ยงกรมธรรม์ขาดอายุ
-              {canWrite && <> · <Link href="/insurance?tab=premium" className="text-blue-700 hover:underline">จ่ายเบี้ย</Link></>}</li>)}
             {highUse.map((x, i) => <li key={`u${i}`}>{label(x.type)} · {pname.get(x.personId)} ({pol(x.policyId)}) ใช้ไป {money(x.used, undefined, 0)} จาก {money(x.limit, undefined, 0)}
               {" "}<span className={x.used >= x.limit ? "text-red-700" : "text-amber-800"}>({Math.round((x.used / x.limit) * 100)}%)</span></li>)}
             {noHealth.length > 0 && <li>ยังไม่มีประกันสุขภาพ: {noHealth.map((p) => p.name).join(", ")}</li>}
             {noLife.length > 0 && <li>ยังไม่มีทุนประกันชีวิต: {noLife.map((p) => p.name).join(", ")}</li>}
           </ul>
         </section>
-      ) : (
-        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">ไม่มีเรื่องที่ต้องติดตาม</p>
       )}
 
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      {/* เลื่อนซ้าย-ขวาเฉพาะตาราง (หัวกล่อง / ปุ่มพิมพ์ / คำอธิบายอยู่กับที่) */}
+      <section className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <h2 className="font-medium text-slate-900">ความคุ้มครอง · {who}</h2>
           <Link href={printHref} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">พิมพ์สรุปสำหรับโรงพยาบาล</Link>
@@ -120,7 +115,7 @@ export default function CoverageTab({ persons, personId, personName, policies, i
         <p className="px-4 text-xs text-slate-500">จากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองใช้ทุนประกันของกรมธรรม์</p>
         {groups.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีข้อมูลความคุ้มครอง · กรอกได้ที่หน้ากรมธรรม์แต่ละฉบับ</p>
           : personId ? (
-          <table className="mt-2 w-full min-w-[44rem] text-sm">
+          <div className="overflow-x-auto"><table className="mt-2 w-full min-w-[44rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr><th className="px-4 py-2">ความคุ้มครอง / กรมธรรม์</th><th className="px-4 text-right">วงเงิน</th><th className="px-4 text-right">ใช้ปีนี้</th><th className="px-4 text-right">คงเหลือ</th><th className="px-4">สิ้นสุด</th></tr>
             </thead>
@@ -146,25 +141,26 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                         <td className="px-4 text-right tabular-nums">{annual ? (x.used > 0 ? money(x.used, undefined, 0) : "-") : ""}</td>
                         <td className={`px-4 text-right tabular-nums ${annual && x.limit > 0 && x.used / x.limit >= 0.8 ? "text-red-700" : ""}`}>{annual ? money(Math.max(x.limit - x.used, 0), undefined, 0) : ""}</td>
                         <td className="whitespace-nowrap px-4 text-xs">{thDate(policy.get(x.policyId)?.endDate)}
-                          {policy.get(x.policyId)?.expiring && <div className="text-amber-700">ใกล้ครบ</div>}</td>
+                          {policy.get(x.policyId)?.expiring && <div className="text-amber-700">ใกล้ครบ</div>}
+                          {policy.get(x.policyId)?.expired && <div className="text-red-600">เลยวันสิ้นสุด</div>}</td>
                       </tr>
                     )),
                   ];
                 })}
               </tbody>
             ))}
-          </table>
+          </table></div>
         ) : (
-          <table className="mt-2 w-full min-w-[36rem] text-sm">
+          <div className="overflow-x-auto"><table className="mt-2 w-full min-w-[36rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">ความคุ้มครอง</th>{covPersons.map((p) => <th key={p.id} className="px-4 text-right">{p.name}</th>)}</tr>
+              <tr><th className={`${STICKY} bg-slate-50 px-4 py-2`}>ความคุ้มครอง</th>{covPersons.map((p) => <th key={p.id} className="px-4 text-right">{p.name}</th>)}</tr>
             </thead>
             {groups.map(([g, ks]) => (
               <tbody key={g} className="divide-y divide-slate-100 border-t border-slate-200">
-                <tr className="bg-slate-50/60"><td colSpan={covPersons.length + 1} className="px-4 py-1.5 text-xs font-medium text-slate-600">{g}</td></tr>
+                <tr className="bg-slate-50/60"><td colSpan={covPersons.length + 1} className="px-4 py-1.5 text-xs font-medium text-slate-600"><span className="sticky left-4 inline-block">{g}</span></td></tr>
                 {ks.map((k) => (
                   <tr key={k} className="align-top">
-                    <td className="px-4 py-2">{label(k)}</td>
+                    <td className={`${STICKY} bg-white px-4 py-2`}>{label(k)}</td>
                     {covPersons.map((p) => {
                       const xs = of(p.id).filter((x) => x.type === k);
                       if (xs.length === 0) return <td key={p.id} className="px-4 text-right text-slate-300">-</td>;
@@ -185,7 +181,7 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                 ))}
               </tbody>
             ))}
-          </table>
+          </table></div>
         )}
         <p className="px-4 pb-3 pt-2 text-xs text-slate-500">กดตัวเลขเพื่อดูว่ามาจากกรมธรรม์ไหน · เลือกคนที่แถบบนเพื่อดูแยกตามกรมธรรม์</p>
       </section>
