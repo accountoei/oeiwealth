@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { resolvePendingPrice, type PendingState } from "@/lib/pending-price-actions";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, signedPct } from "@/lib/format";
 import Flash from "@/components/Flash";
 
 /** ราคาอัตโนมัติที่ระบบยังไม่บันทึก (เก็บใน price_pending โดย Job ราคา) */
@@ -34,7 +34,7 @@ export default function PendingPrice({ kind, id, pending, currency, canResolve, 
             {pending.world_per_baht_965 ? <span className="block text-xs text-slate-500">ราคาโลก × USD/THB ≈ {money(pending.world_per_baht_965)}</span> : null}</dd></div>)}
         <div><dt className="text-xs text-amber-800">ครั้งก่อน</dt>
           <dd className="tabular-nums">{pending.previous != null ? `${money(pending.previous, currency, kind === "holding" ? 4 : 2)} · ${thDate(pending.previous_date ?? "")}` : "ไม่มี"}
-            {chg != null && <span className={chg >= 0 ? " text-emerald-700" : " text-red-700"}> ({chg >= 0 ? "+" : ""}{chg.toFixed(2)}%)</span>}</dd></div>
+            {chg != null && <span className={chg >= 0 ? " text-emerald-700" : " text-red-700"}> ({signedPct(chg)})</span>}</dd></div>
         {pending.source_reference && <div><dt className="text-xs text-amber-800">ที่มา</dt><dd className="break-all text-xs">{pending.source_reference}</dd></div>}
       </dl>
       <p className="text-xs text-amber-800">{REASON[pending.reason] ?? pending.reason} · ระบบยังไม่ใช้ราคานี้คำนวณมูลค่า</p>

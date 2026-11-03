@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays } from "@/lib/format";
+import { ADD_BTN, HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays, signedMoney, signedPct } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -188,8 +188,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           <StatBox label="เงินลงทุนสุทธิ (พอร์ตที่เปิด)" value={money(invOpen, "THB", 0)}
             sub={<>
               {invOpenPl && <div className={invOpenPl.pl >= 0 ? "text-emerald-700" : "text-red-700"}>
-                กำไร / ขาดทุน {invOpenPl.pl > 0 ? "+" : ""}{money(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && ` (${invOpenPl.pct > 0 ? "+" : ""}${invOpenPl.pct.toFixed(2)}%)`}</div>}
-              {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว {closedPl > 0 ? "+" : ""}{money(closedPl, "THB", 0)}</div>}
+                กำไร / ขาดทุน {signedMoney(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && ` (${signedPct(invOpenPl.pct)})`}</div>}
+              {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว {signedMoney(closedPl, "THB", 0)}</div>}
             </>} />
         )}
         <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />

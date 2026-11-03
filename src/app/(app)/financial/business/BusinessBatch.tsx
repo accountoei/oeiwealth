@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { money, qty, thDate } from "@/lib/format";
+import { money, qty, thDate, signedMoney, signedPct } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
@@ -204,7 +204,7 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
                     <td className="px-3 text-right"><input inputMode="decimal" value={v} placeholder={r.currency} aria-label={`มูลค่าใหม่ ${r.name}`}
                       onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-40 text-right ${small}`} /></td>
                     <td className={`whitespace-nowrap px-3 text-right tabular-nums ${diff == null ? "text-slate-400" : diff >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      {diff == null ? "-" : `${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))}${r.value ? ` (${((diff * 100) / r.value).toFixed(1)}%)` : ""}`}</td>
+                      {diff == null ? "-" : `${signedMoney(diff)}${r.value ? ` (${signedPct((diff * 100) / r.value, 1)})` : ""}`}</td>
                   </>}
                 </tr>
               );

@@ -15,6 +15,8 @@ import AccountsTable, { type AccountRow } from "./AccountsTable";
 import BatchUpdate, { type BatchRow } from "./BatchUpdate";
 import InterestBatch, { type InterestRow } from "./InterestBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
+import { FLOW_LABEL, INCOME_KEYS, OTHER_KEYS, SPEND_KEYS, flowCount, flowSum, monthFlows, type Move } from "./flows";
+import FlowCard from "./FlowCard";
 import { assetIncomeFields } from "@/lib/source-edit";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
@@ -50,7 +52,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const paths = ["/financial/cash"];
 
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
-    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }] = await Promise.all([
+    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date,overdraft_limit").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
@@ -67,6 +69,9 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       .eq("status", "ACTIVE").not("autopay_asset_id", "is", null).not("due_day", "is", null).is("deleted_at", null),
     supabase.from("cash_movements").select("to_credit_card_id").eq("movement_type", "CARD_PAYMENT")
       .gte("movement_date", `${today.slice(0, 7)}-01`).lte("movement_date", today).is("deleted_at", null),
+    // เงินเข้า–ออกของเดือน แยกตามประเภท (การ์ดรายรับ / รายจ่าย / รายการอื่นๆ) · ช่วงวันเดียวกับ bank_month_summary
+    supabase.from("cash_movements").select("movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency")
+      .gte("movement_date", start).lte("movement_date", asOf).is("deleted_at", null).limit(10000),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
@@ -93,11 +98,8 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const pos = (v: number | string | null | undefined) => Math.max(Number(v ?? 0), 0);
   const totalNow = tot(sum, (s) => pos(s.balance));
   const totalPrev = tot(prevSum, (s) => pos(s.balance));
-  const inNow = tot(sum, (s) => Number(s.inflow) - Number(s.internal_in));
-  const outNow = tot(sum, (s) => Number(s.outflow) - Number(s.internal_out));
-  const inPrev = tot(prevSum, (s) => Number(s.inflow) - Number(s.internal_in));
-  const outPrev = tot(prevSum, (s) => Number(s.outflow) - Number(s.internal_out));
-  const cnt = (f: (s: Sum) => number) => active.reduce((t, a) => t + (sum.get(a.asset_id) ? f(sum.get(a.asset_id)!) : 0), 0);
+  const flow = monthFlows((monthMoves as Move[] | null) ?? [], new Set(((accounts as Acc[] | null) ?? []).map((a) => a.asset_id)),
+    new Map(active.map((a) => [a.asset_id, (v: number) => thb(v, a.currency) * share(a.asset_id)])));
   const pct = (a: number, b: number) => (Math.abs(b) < 0.005 ? null : ((a - b) / Math.abs(b)) * 100);
   const byCcy = [...active.reduce((m, a) => m.set(a.currency, (m.get(a.currency) ?? 0) + pos(sum.get(a.asset_id)?.balance) * share(a.asset_id)),
     new Map<string, number>())].filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => thb(b[1], b[0]) - thb(a[1], a[0]));
@@ -148,6 +150,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     <span className={(v >= 0) === (good === "up") ? "text-emerald-700" : "text-red-700"}>{v >= 0 ? "▲" : "▼"} {Math.abs(v).toFixed(1)}% จากเดือนก่อน</span>
   );
   const movesHref = `/income-expenses?tab=moves&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`;
+  const mName = ym === today.slice(0, 7) ? "เดือนนี้" : ` ${thMonth(start)}`;
 
   // ---------------------------------------------------------------- รับดอกเบี้ย (บัญชีที่ใช้งานอยู่ · รับแล้วในเดือนที่เลือก = สุทธิหลังภาษี)
   const interestIn = new Map<string, number>();
@@ -223,32 +226,15 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
               </ul>
             )}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">เงินเข้าบัญชีเดือนนี้</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">+{money(inNow, "THB")}</div>
-            <div className="mt-1 text-xs text-slate-500">{cnt((s) => Number(s.n_in))} รายการ</div>
-            <div className="mt-1 text-xs"><Delta v={pct(inNow, inPrev)} /></div>
-            <Link href={movesHref} className="mt-2 inline-block text-xs text-blue-700 hover:underline">ดูรายการเงินเข้า–ออก →</Link>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">เงินออกจากบัญชีเดือนนี้</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">−{money(outNow, "THB")}</div>
-            <div className="mt-1 text-xs text-slate-500">{cnt((s) => Number(s.n_out))} รายการ</div>
-            <div className="mt-1 text-xs"><Delta v={pct(outNow, outPrev)} good="down" /></div>
-            <Link href={movesHref} className="mt-2 inline-block text-xs text-blue-700 hover:underline">ดูรายการเงินเข้า–ออก →</Link>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">เงินเคลื่อนไหวสุทธิ</div>
-            <div className={`mt-1 text-xl font-semibold tabular-nums ${inNow - outNow >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-              {inNow - outNow >= 0 ? "+" : "−"}{money(Math.abs(inNow - outNow), "THB")}</div>
-            <div className="mt-1 text-xs text-slate-500">เงินเข้า − เงินออก</div>
-            <div className="mt-1 text-xs">
-              {(() => { const d = (inNow - outNow) - (inPrev - outPrev); return (
-                <span className={d >= 0 ? "text-emerald-700" : "text-red-700"}>{d >= 0 ? "▲ เพิ่มขึ้น" : "▼ ลดลง"}จากเดือนก่อน {money(Math.abs(d))}</span>); })()}
-            </div>
-          </div>
+          <FlowCard title={`รายรับเข้าบัญชี${mName}`} total={flowSum(flow, INCOME_KEYS)} count={flowCount(flow, INCOME_KEYS)} href={movesHref}
+            lines={flow.n.get("REIMB") ? INCOME_KEYS.map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0]) : []} />
+          <FlowCard title={`รายจ่ายจากบัญชี${mName}`} total={flowSum(flow, SPEND_KEYS)} count={flowCount(flow, SPEND_KEYS)} href={movesHref}
+            lines={SPEND_KEYS.filter((k) => k !== "FEE" || flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
+          <FlowCard title={`รายการอื่นๆ ${mName.trim()}`} total={flowSum(flow, OTHER_KEYS)} count={flowCount(flow, OTHER_KEYS)} href={movesHref}
+            empty="ไม่มีรายการลงทุน / เงินกู้ / ซื้อขายทรัพย์สิน"
+            lines={OTHER_KEYS.filter((k) => flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
         </section>
-        <p className="-mt-3 text-xs text-slate-500">เงินเข้า–ออกไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง · ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</p>
+        <p className="-mt-3 text-xs text-slate-500">ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง · ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · เงินออกแสดงเป็นยอดติดลบ</p>
         <div className="grid gap-4 lg:grid-cols-2">
           <ShareBars title="เงินฝากตามธนาคาร" rows={bankRows} />
           <div className="flex flex-col gap-4">

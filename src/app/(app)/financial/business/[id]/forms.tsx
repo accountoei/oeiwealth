@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { buyShares, recordDividend, sellShares, undoShareSale, updateBusinessInfo, type ActionState } from "../actions";
-import { money, qty } from "@/lib/format";
+import { money, qty, signedMoney } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
 import BusinessBadge from "../badge";
@@ -147,7 +147,7 @@ function LogoPicker({ name, current }: { name: string; current: string | null })
 type Holder = { person_id: string; name: string; shares: number; cost: number | null };
 const n = (v: string) => Number(String(v).replace(/,/g, "")) || 0;
 const fx = (v: number) => (Number.isFinite(v) ? String(Math.round(v * 10000) / 10000) : "");
-const signed = (v: number, ccy: string) => `${v >= 0 ? "+" : "−"}${money(Math.abs(v), ccy)}`;
+const signed = (v: number, ccy: string) => signedMoney(v, ccy);
 
 /**
  * ขายหุ้นรายคน: เลือกผู้ขายทีละคน · ใส่ราคาต่อหุ้นหรือราคารวม (อีกช่องคำนวณให้)

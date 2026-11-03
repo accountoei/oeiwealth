@@ -5,13 +5,13 @@ import Modal from "@/components/Modal";
 import Flash from "@/components/Flash";
 import RowActions from "@/components/RowActions";
 import { addCapitalTransfer, type ActionState } from "../actions";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, signedMoney, signedPct } from "@/lib/format";
 import { vsInvested, type CapitalLine } from "@/lib/net-invested";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const sign = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500");
-const signed = (v: number, ccy?: string) => `${v > 0 ? "+" : ""}${money(v, ccy, 0)}`;
-const pctTxt = (p: number | null) => (p == null ? "" : ` (${p > 0 ? "+" : ""}${p.toFixed(2)}%)`);
+const signed = (v: number, ccy?: string) => signedMoney(v, ccy, 0);
+const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
 
 /**
  * กล่อง "เงินลงทุนสุทธิ" ของพอร์ต (ตกลง 2 พ.ย. 2026)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { baht } from "@/lib/format";
+import { baht, signedPct } from "@/lib/format";
 
 export type TrendPoint = { label: string; date: string; v: number; solid: boolean };
 
@@ -81,7 +81,7 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
     <div className="flex flex-1 flex-col">
       <p className="mb-2 text-sm">
         <span className={`font-semibold tabular-nums ${Math.round(chg) < 0 ? "text-red-700" : Math.round(chg) > 0 ? "text-emerald-700" : "text-slate-700"}`}>
-          {Math.round(chg) > 0 ? "+" : ""}{baht(chg)}{chgPct != null ? ` (${chgPct > 0 ? "+" : ""}${chgPct.toFixed(2).replace("-", "\u2212")}%)` : ""}
+          {Math.round(chg) > 0 ? "+" : ""}{baht(chg)}{chgPct != null ? ` (${signedPct(chgPct)})` : ""}
         </span>
         <span className="text-slate-500"> ตั้งแต่{first.label === "ตั้งต้น" ? "ยอดตั้งต้น" : ` ${first.label}`}</span>
       </p>

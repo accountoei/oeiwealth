@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, signedMoney } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import HistoryRows, { type HistoryRow } from "@/components/HistoryRows";
@@ -76,13 +76,13 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           <div>
             <div className="text-xs text-slate-500">เทียบต้นทุน (ดูเป็นข้อมูล)</div>
             {basis != null ? (() => { const g = (price ?? 0) - fee - basis; return (
-              <div className={`font-semibold tabular-nums ${g >= 0 ? "text-emerald-700" : "text-red-600"}`}>{g >= 0 ? "+" : ""}{money(g, currency, 0)}</div>); })()
+              <div className={`font-semibold tabular-nums ${g >= 0 ? "text-emerald-700" : "text-red-600"}`}>{signedMoney(g, currency, 0)}</div>); })()
               : <div className="text-xs text-amber-700">ใส่ &ldquo;ราคาที่ได้มา&rdquo; เพื่อคำนวณ</div>}
           </div>
           {meta.gain != null ? (
             <div className="text-sm md:col-span-4">
               กำไร / ขาดทุนที่ลงบัญชี (เทียบมูลค่าล่าสุด {money(meta.book_value, currency, 0)}):{" "}
-              <b className={Number(meta.gain) >= 0 ? "text-emerald-700" : "text-red-600"}>{Number(meta.gain) >= 0 ? "+" : ""}{money(meta.gain, currency, 0)}</b>
+              <b className={Number(meta.gain) >= 0 ? "text-emerald-700" : "text-red-600"}>{signedMoney(meta.gain, currency, 0)}</b>
               <span className="text-xs text-slate-500"> · ลงเป็น{Number(meta.gain) >= 0 ? "รายได้" : "ค่าใช้จ่าย"}ของเจ้าของตามสัดส่วน</span>
             </div>
           ) : lastVal && <div className="text-xs text-slate-500 md:col-span-4">
@@ -104,7 +104,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
                     <span className="block text-xs text-slate-400">จาก {Number(x.quantity_before).toLocaleString("en-US", { maximumFractionDigits: 8 })}</span></td>
                   <td className="text-right tabular-nums">{money(x.price, currency, 0)}{Number(x.fee) > 0 && <span className="block text-xs text-slate-400">ค่าใช้จ่าย {money(x.fee, currency, 0)}</span>}</td>
                   <td className="text-right tabular-nums">{x.book_value != null ? money(x.book_value, currency, 0) : "-"}</td>
-                  <td className={`text-right tabular-nums ${Number(x.gain) >= 0 ? "text-emerald-700" : "text-red-600"}`}>{Number(x.gain) >= 0 ? "+" : ""}{money(x.gain, currency, 0)}</td>
+                  <td className={`text-right tabular-nums ${Number(x.gain) >= 0 ? "text-emerald-700" : "text-red-600"}`}>{signedMoney(x.gain, currency, 0)}</td>
                   <td className="pl-2 text-right">{canDelete && i === 0 && status === "ACTIVE" &&
                     <UndoButton kind="ALT_PART_SALE" id={x.id} paths={paths} label="ยกเลิก"
                       confirmText={`ยกเลิกการขายบางส่วนวันที่ ${thDate(x.sale_date)}?\nจำนวน / มูลค่า / ราคาทุนกลับเป็นก่อนขาย · เงินเข้าบัญชีและกำไร / ขาดทุนของครั้งนี้ถูกลบพร้อมกัน`} />}</td>
@@ -131,7 +131,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
         if (!v) return <td></td>;
         const d = delta.get(v.id);
         return <td className={`text-right tabular-nums ${d == null ? "text-slate-400" : d >= 0 ? "text-emerald-700" : "text-red-600"}`}>
-          {d == null ? "ตั้งต้น" : `${d >= 0 ? "+" : "−"}${money(Math.abs(d), undefined, 0)}`}</td>;
+          {d == null ? "ตั้งต้น" : signedMoney(d, undefined, 0)}</td>;
       };
       const out: Item[] = [
         ...(showMoves ? list : []).map((m): Item => {

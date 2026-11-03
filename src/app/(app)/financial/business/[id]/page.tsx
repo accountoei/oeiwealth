@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
+import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok, signedMoney } from "@/lib/format";
 import BusinessBadge from "../badge";
 import { BusinessInfoForm, BuySharesForm, DividendForm, ShareSaleForm, UndoShareSale } from "./forms";
 import EditToggle from "@/components/EditToggle";
@@ -216,8 +216,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                       {Number(x.shares) > 0 && <div className="text-xs text-slate-500">หุ้นละ {money(Number(x.price) / Number(x.shares), undefined, 4)}</div>}
                       {Number(x.fee) > 0 && <div className="text-xs text-slate-500">ค่าใช้จ่าย {money(x.fee)}</div>}</td>
                     <td className="whitespace-nowrap pl-4 text-right tabular-nums">{x.kind === "SELL" && x.gain != null ? (
-                      <><span className={Number(x.gain) >= 0 ? "text-emerald-700" : "text-red-700"}>{Number(x.gain) >= 0 ? "+" : "−"}{money(Math.abs(Number(x.gain)))}</span>
-                        {x.cost_basis != null && <div className="text-xs text-slate-500">เทียบทุน {(() => { const g = Number(x.price) - Number(x.fee) - Number(x.cost_basis); return `${g >= 0 ? "+" : "−"}${money(Math.abs(g))}`; })()}</div>}</>
+                      <><span className={Number(x.gain) >= 0 ? "text-emerald-700" : "text-red-700"}>{signedMoney(x.gain)}</span>
+                        {x.cost_basis != null && <div className="text-xs text-slate-500">เทียบทุน {(() => { const g = Number(x.price) - Number(x.fee) - Number(x.cost_basis); return signedMoney(g); })()}</div>}</>
                     ) : "-"}</td>
                     <td className="pl-4 text-xs text-slate-500">{x.bank_asset_id ? bankName.get(x.bank_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                     <td className="pl-2 text-right">{canDelete && i === 0 && (

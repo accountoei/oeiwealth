@@ -5,6 +5,7 @@ import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
 import {
   HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, qty, thDate, thMonth, todayBangkok,
+  signedPct,
 } from "@/lib/format";
 import {
   AddCashAccountForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
@@ -425,7 +426,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                       {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
                     </td>
                     <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? `${((gain / cost) * 100).toFixed(2)}%` : ""}</div></>}
+                      {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? signedPct((gain / cost) * 100) : ""}</div></>}
                     </td>
                     <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                     {orderMode === "sec" && (

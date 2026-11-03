@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { money, thDate, todayBangkok } from "@/lib/format";
+import { money, thDate, todayBangkok, signedMoney } from "@/lib/format";
 import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -184,7 +184,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                   <td className="py-1.5">{thDate(r.date)}</td>
                   <td>{r.kind}</td>
                   <td>{r.text}{r.pending && <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs text-amber-800">รอแยกรายละเอียด</span>}</td>
-                  <td className={`text-right tabular-nums ${r.amount < 0 ? "text-emerald-700" : ""}`}>{r.amount > 0 ? "+" : ""}{money(r.amount)}</td>
+                  <td className={`text-right tabular-nums ${r.amount < 0 ? "text-emerald-700" : ""}`}>{signedMoney(r.amount)}</td>
                   <td className="pl-2 text-right">
                     {/* ก้อนรอแยก: กดที่แถวเพื่อแยกรายการ / ลงเป็นการจ่ายบัตรจากบัญชี */}
                     {canDelete && r.pending && r.table && (
