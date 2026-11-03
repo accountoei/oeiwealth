@@ -21,6 +21,7 @@ export type BoxLine = {
   /** งวดนอกปีที่เลือก: "ค้างจากปี 2568" / "งวดปี 2570" */ tag?: string | null;
 };
 export type BoxPolicy = { id: string; name: string; person: string | null; active: boolean; lines: BoxLine[];
+  /** จ่ายเบี้ยจาก (ค่าตั้งต้นของกรมธรรม์ "a:" / "c:" · ว่าง = บัญชีแรกของสกุล) */ pay?: string;
   /** รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือก */ lumps: Recorded[] };
 export type PayOpt = { value: string; label: string; currency: string };
 
@@ -41,12 +42,14 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   const router = useRouter();
   const cf = useConfirmSubmit();
   const lines = policies.flatMap((p) => p.lines.map((l) => ({ ...l, policyId: p.id, policy: p.name, active: p.active })));
-  const firstPay = (ccy: string) => pays.find((p) => p.currency === ccy)?.value ?? "";
+  const payOf = new Map(policies.map((p) => [p.id, p.pay ?? ""]));
+  // ค่าตั้งต้นของกรมธรรม์ก่อน (ถ้ายังใช้ได้และสกุลตรง · ตกลง 3 พ.ย. 2026) ไม่งั้นบัญชีแรกของสกุล
+  const firstPay = (ccy: string, def = "") => (def && pays.some((p) => p.value === def && p.currency === ccy) ? def : pays.find((p) => p.currency === ccy)?.value ?? "");
   const [date, setDate] = useState(defaultDate);
   const [all, setAll] = useState(false);
   const [expand, setExpand] = useState<Record<string, boolean>>({});
   const [vals, setVals] = useState<Record<string, string>>({});
-  const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, firstPay(l.currency)])));
+  const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, firstPay(l.currency, payOf.get(l.policyId))])));
   const [state, action, pending] = useActionState<ActionState, FormData>(prem ? batchPremiums : batchBenefits, {});
   useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
 

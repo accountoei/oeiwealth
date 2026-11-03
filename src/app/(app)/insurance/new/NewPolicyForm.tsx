@@ -6,6 +6,7 @@ import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
 import { INS_TYPE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
+import PayDefaultSelect from "../PayDefaultSelect";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -13,8 +14,9 @@ const label = "block text-sm text-slate-700";
 export default function NewPolicyForm(props: {
   persons: { id: string; name: string }[]; assets: { id: string; name: string }[];
   goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean; initialType?: string; initialAsset?: string;
+  banks: { asset_id: string; name: string; currency: string; frequent?: boolean | null }[]; cards: { id: string; label: string; currency: string }[];
 }) {
-  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, initialType = "LIFE", initialAsset = "" } = props;
+  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, initialType = "LIFE", initialAsset = "", banks, cards } = props;
   const [state, action, pending] = useActionState<ActionState, FormData>(createPolicy, {});
   const [type, setType] = useState(initialType);
   const [hasCv, setHasCv] = useState(false);
@@ -59,6 +61,10 @@ export default function NewPolicyForm(props: {
         <label className={label}>เบี้ยประกัน (ต่อปี)<input name="premium" inputMode="decimal" className={input} /></label>
         <label className={label}>สกุลเงิน
           <CurrencySelect name="currency" defaultValue="THB" className={input} />
+        </label>
+        <label className={label}>จ่ายเบี้ยจาก (ค่าตั้งต้น)
+          <PayDefaultSelect banks={banks} cards={cards} className={input} />
+          <span className="mt-1 block text-xs text-slate-500">เลือกไว้ให้ตอนจ่ายเบี้ย · เปลี่ยนได้ทุกครั้ง</span>
         </label>
         <label className={label}>หมายเหตุ {hasCv && opening && !isSetup && "(เหตุผล · จำเป็น)"}<input name="notes" required={hasCv && opening && !isSetup} className={input} /></label>
       </section>

@@ -611,6 +611,18 @@ INSERT INTO tp SELECT 'pol', public.create_insurance_policy(jsonb_build_object(
 UPDATE public.insurance_policies SET payer_person_id = t.p('คุณพ่อ') WHERE id = (SELECT id FROM tp WHERE k = 'pol');
 SELECT t.ok((SELECT payer_person_id = t.p('คุณพ่อ') AND person_id = t.p('คุณแม่') FROM public.v_insurance_status WHERE id = (SELECT id FROM tp WHERE k = 'pol')),
             'ผู้จ่ายเบี้ยแยกจากผู้เอาประกันได้');
+-- บัญชี / บัตรจ่ายเบี้ยตั้งต้น (20261103124500 · แบบค่าใช้จ่ายประจำของทรัพย์สิน)
+UPDATE public.insurance_policies SET paid_from_asset_id = t.a('KBank ออมทรัพย์') WHERE id = (SELECT id FROM tp WHERE k = 'pol');
+SELECT t.ok((SELECT paid_from_asset_id = t.a('KBank ออมทรัพย์') AND paid_from_credit_card_id IS NULL FROM public.v_insurance_status WHERE id = (SELECT id FROM tp WHERE k = 'pol')),
+            'ตั้งบัญชีจ่ายเบี้ยตั้งต้น → เห็นใน v_insurance_status');
+UPDATE public.insurance_policies SET paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7788') WHERE id = (SELECT id FROM tp WHERE k = 'pol');
+SELECT t.ok((SELECT paid_from_asset_id IS NULL AND paid_from_credit_card_id IS NOT NULL FROM public.insurance_policies WHERE id = (SELECT id FROM tp WHERE k = 'pol')),
+            'เปลี่ยนเป็นบัตร → ล้างบัญชีให้ (เลือกได้ทางเดียว)');
+SELECT t.fails($$UPDATE public.insurance_policies SET paid_from_asset_id = t.a('BBL USD'), paid_from_credit_card_id = NULL WHERE id = (SELECT id FROM tp WHERE k = 'pol')$$,
+  'สกุลเงิน THB', 'บัญชีจ่ายเบี้ยต้องสกุลเดียวกับเบี้ย');
+SELECT t.fails($$UPDATE public.insurance_policies SET paid_from_asset_id = t.a('บ้าน A'), paid_from_credit_card_id = NULL WHERE id = (SELECT id FROM tp WHERE k = 'pol')$$,
+  'ต้องเป็นบัญชีธนาคาร', 'บัญชีจ่ายเบี้ยต้องเป็นบัญชีธนาคาร');
+UPDATE public.insurance_policies SET paid_from_credit_card_id = NULL WHERE id = (SELECT id FROM tp WHERE k = 'pol');
 SELECT t.ok(public.set_insurance_schedule((SELECT id FROM tp WHERE k = 'pol'), 'PREMIUM', jsonb_build_array(
   jsonb_build_object('due_date', current_date - 5, 'amount', 20000),
   jsonb_build_object('due_date', current_date + 300, 'amount', 20000))) = 2, 'ตั้งตารางเบี้ย 2 งวด');

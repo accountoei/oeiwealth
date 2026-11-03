@@ -21,6 +21,7 @@ import { ActionBar } from "@/components/ActionBar";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import { payDefaultValue } from "../PayDefaultSelect";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -175,6 +176,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     </>
   );
   const isProp = p.insurance_type === "PROPERTY";
+  // จ่ายเบี้ยจาก (ค่าตั้งต้นของกรมธรรม์ · ตกลง 3 พ.ย. 2026) · สกุลเดียวกับที่ฐานข้อมูลตรวจ (เบี้ย → ทุนประกัน → THB)
+  const payCcy: string = p.premium_currency ?? p.insured_amount_currency ?? "THB";
+  const payDefault = payDefaultValue(p);
+  const payDefaultText = p.paid_from_asset_id ? bankName.get(p.paid_from_asset_id) ?? "บัญชี (ปิดแล้ว)"
+    : p.paid_from_credit_card_id ? `บัตร ${cardName.get(p.paid_from_credit_card_id) ?? "(ปิดแล้ว)"}` : null;
   const insuredHref = `/${insured?.asset_group === "ALTERNATIVE" ? "alternative" : "property"}/${p.asset_id}`;
   // แก้ / ลบเบี้ยที่จ่ายแล้ว → หน้าทรัพย์สินที่เอาประกันอัปเดตด้วย (เบี้ยนับเป็นค่าใช้จ่ายของทรัพย์สิน)
   const payPaths = [...paths, "/income-expenses", ...(insured ? [insuredHref, "/property"] : [])];
@@ -280,6 +286,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                   {p.derived_status === "EXPIRED" && p.status === "ACTIVE" && <span className="block text-xs text-red-600">เลยวันสิ้นสุด</span>}</Item>
                 {p.insurance_type !== "PROPERTY" && <Item label="ผู้เอาประกัน">{p.person_id ? allName.get(p.person_id) ?? "-" : "-"}</Item>}
                 <Item label="ผู้จ่ายเบี้ย">{payerId ? allName.get(payerId) ?? "-" : "-"}</Item>
+                <Item label="จ่ายเบี้ยจาก">{payDefaultText ?? <span className="text-slate-400">เลือกตอนจ่าย</span>}</Item>
                 {insured && <Item label="ทรัพย์สินที่คุ้มครอง"><Link href={insuredHref} className="text-blue-700 hover:underline">{insured.name}</Link></Item>}
                 <Item label="ระยะเวลา">{thDate(p.start_date)} – {thDate(p.end_date)}</Item>
                 <Item label="ทุนประกัน" num>{money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</Item>
@@ -296,9 +303,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 <WithStatus status={{ table: "insurance_policies", id, value: p.status, paths, label: "สถานะกรมธรรม์",
                   options: INS_STATUS,
                   remove: canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้", hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined }}>
-                  <PolicyInfoForm policyId={id} persons={persons ?? []} showInsured={p.insurance_type !== "PROPERTY"} v={{
+                  <PolicyInfoForm policyId={id} persons={persons ?? []} showInsured={p.insurance_type !== "PROPERTY"} banks={banks ?? []} cards={cards} currency={payCcy} v={{
                     person_id: p.person_id, payer_person_id: p.payer_person_id, insurer: p.insurer, policy_no: p.policy_no, start_date: p.start_date,
-                    end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes }} />
+                    end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes, pay_default: payDefault }} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผลประโยชน์</h3>
@@ -494,7 +501,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               {premiums.length > 0 && <ScheduleTable lines={premiums} canWrite={canWrite} canDelete={canDelete} paths={paths} action={(x) =>
                 canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
                   label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
-                  defaultPerson={payerId} today={today} cashValue={cvCtx} /> : null} />}
+                  defaultPerson={payerId} defaultPay={payDefault} today={today} cashValue={cvCtx} /> : null} />}
               {(premPays ?? []).length > 0 && (
                 <div>
                   <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่ายเบี้ย</h3>

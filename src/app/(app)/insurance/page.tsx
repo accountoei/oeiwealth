@@ -11,6 +11,7 @@ import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortCon
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
 import UrlSelect from "@/components/UrlSelect";
+import { payDefaultValue } from "./PayDefaultSelect";
 import InsuranceBatch, { type BoxPolicy, type PayOpt, type YLine } from "./InsuranceBatch";
 import CashValueBatch, { type CvRow } from "./CashValueBatch";
 import CoverageTab, { type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
@@ -66,7 +67,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
     { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: monthPayRows }, { data: monthBenRows }, { data: yearLumps }, rec] = await Promise.all([
     loadPersonView(sp.p),
-    supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date")
+    supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id")
       .order("status").order("insurer"),
     supabase.from("persons").select("id,name").order("sort_order"),
     supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
@@ -173,6 +174,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     return mineRows.filter((r) => ids.has(r.id)).map((r) => {
       const who = prem ? (r.payer_person_id ?? r.person_id) : r.person_id;
       return { id: r.id, name: policyName.get(r.id) ?? "-", person: who ? pname.get(who) ?? null : null, active: r.status === "ACTIVE",
+        pay: prem ? payDefaultValue(r) : "",
         lines: ls.filter((l) => l.policy_id === r.id).map((l) => ({ id: l.id, no: l.installment_no, due: l.due_date, amount: Number(l.amount),
           paid: insCountedPaid(l), remaining: l.status === "CLOSED" ? 0 : Number(l.remaining), currency: l.currency, status: l.status,
           benefitType: l.benefit_type, edits: editsOf(l),
