@@ -12,6 +12,12 @@ export type ActionState = FormState;
 export type CvSync = { added: number; created: boolean; value?: number; date?: string; policy_year?: number };
 export type PayState = ActionState & { cv?: CvSync };
 
+/** "จ่ายเบี้ยจาก (ค่าตั้งต้น)" (pay_default = a:<บัญชี> / c:<บัตร> / ว่าง) → คอลัมน์ของกรมธรรม์ · ฐานข้อมูลตรวจสกุล / ประเภทบัญชี */
+function payDefault(form: FormData) {
+  const e = parseEndpoint(str(form.get("pay_default")));
+  return { paid_from_asset_id: bankId(e), paid_from_credit_card_id: cardId(e) };
+}
+
 function bens(form: FormData) {
   try { return JSON.parse(String(form.get("beneficiaries") ?? "[]")); } catch { return []; }
 }
@@ -28,11 +34,16 @@ export async function createPolicy(_: ActionState, form: FormData): Promise<Acti
     owners: ownersFromForm(form), beneficiaries: bens(form), notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
-  // ผู้จ่ายเบี้ย (ว่าง = ผู้เอาประกัน)
+  // ผู้จ่ายเบี้ย (ว่าง = ผู้เอาประกัน) · จ่ายเบี้ยจาก (ค่าตั้งต้น)
   const payer = str(form.get("payer_person_id"));
-  if (payer && payer !== str(form.get("person_id"))) {
-    const { error: e2 } = await supabase.from("insurance_policies").update({ payer_person_id: payer }).eq("id", data);
-    if (e2) return { error: friendlyError(e2.message) };
+  const pay = payDefault(form);
+  const extra: Record<string, unknown> = {
+    ...(payer && payer !== str(form.get("person_id")) ? { payer_person_id: payer } : {}),
+    ...(pay.paid_from_asset_id || pay.paid_from_credit_card_id ? pay : {}),
+  };
+  if (Object.keys(extra).length) {
+    const { error: e2 } = await supabase.from("insurance_policies").update(extra).eq("id", data);
+    if (e2) return { error: `บันทึกกรมธรรม์แล้ว แต่ตั้งค่าเพิ่มไม่สำเร็จ (แก้ได้ที่หน้ากรมธรรม์): ${friendlyError(e2.message)}` };
   }
   revalidatePath("/insurance");
   redirect(`/insurance/${data}`);
@@ -202,6 +213,7 @@ export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<
     payer_person_id: str(form.get("payer_person_id")), notes: str(form.get("notes")),
   };
   if (form.has("person_id")) patch.person_id = str(form.get("person_id"));
+  if (form.has("pay_default")) Object.assign(patch, payDefault(form));
   if (!patch.insurer) return { error: "กรุณาใส่บริษัทประกัน" };
   const { data, error } = await supabase.from("insurance_policies").update(patch).eq("id", id).select("id");
   if (error) return { error: friendlyError(error.message) };

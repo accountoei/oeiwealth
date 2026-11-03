@@ -12,6 +12,7 @@ import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
+import PayDefaultSelect from "../PayDefaultSelect";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -175,12 +176,16 @@ export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultA
 export type CashValueCtx = { assetId: string; currency: string; current: number | null; minDate: string; paths: string[];
   suggest: { value: number; year: number; date: string } | null };
 
-export function PayPremiumForm({ policyId, lineId, label, amount, currency, banks, cards, persons, defaultPerson, today, cashValue }: {
+export function PayPremiumForm({ policyId, lineId, label, amount, currency, banks, cards, persons, defaultPerson, defaultPay = "", today, cashValue }: {
   policyId: string; lineId: string; label: string; amount: number; currency: string;
-  banks: Bank[]; cards: Card[]; persons: Person[]; defaultPerson?: string | null; today: string; cashValue?: CashValueCtx | null;
+  banks: Bank[]; cards: Card[]; persons: Person[]; defaultPerson?: string | null;
+  /** จ่ายเบี้ยจาก (ค่าตั้งต้นของกรมธรรม์): "a:<บัญชี>" / "c:<บัตร>" · ไม่มี / ไม่ตรงสกุล = บัญชีแรกแบบเดิม */ defaultPay?: string;
+  today: string; cashValue?: CashValueCtx | null;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [via, setVia] = useState(banks.length ? "bank" : cards.length ? "card" : "cash");
+  const defBank = defaultPay.startsWith("a:") && banks.some((b) => b.asset_id === defaultPay.slice(2) && b.currency === currency) ? defaultPay.slice(2) : undefined;
+  const defCard = defaultPay.startsWith("c:") && cards.some((c) => c.id === defaultPay.slice(2) && c.currency === currency) ? defaultPay.slice(2) : undefined;
+  const [via, setVia] = useState(defCard ? "card" : defBank || banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<PayState, FormData>(payPremium, {});
   if (state.ok) {
     const done = <Flash on={state} className="text-xs text-emerald-700" />;
@@ -220,9 +225,9 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
           <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
         </select>
       </label>
-      {via === "bank" && <label className="text-xs">บัญชี<select name="bank_asset_id" required className={`mt-1 block ${small}`}>
+      {via === "bank" && <label className="text-xs">บัญชี<select name="bank_asset_id" required defaultValue={defBank} className={`mt-1 block ${small}`}>
         <BankOptions banks={sameBanks} /></select></label>}
-      {via === "card" && <label className="text-xs">บัตร<select name="card_id" required className={`mt-1 block ${small}`}>
+      {via === "card" && <label className="text-xs">บัตร<select name="card_id" required defaultValue={defCard} className={`mt-1 block ${small}`}>
         {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>}
       {via === "cash" && <label className="text-xs">ผู้จ่าย<select name="person_id" required defaultValue={defaultPerson ?? undefined} className={`mt-1 block ${small}`}>
         {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
@@ -353,10 +358,10 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
 }
 
 /** แก้ข้อมูลกรมธรรม์ (ในหน้าต่าง "แก้ไขข้อมูล") */
-export function PolicyInfoForm({ policyId, persons, showInsured, v }: {
-  policyId: string; persons: Person[]; showInsured: boolean;
+export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, currency, v }: {
+  policyId: string; persons: Person[]; showInsured: boolean; banks: Bank[]; cards: Card[]; currency: string;
   v: { person_id: string | null; payer_person_id: string | null; insurer: string; policy_no: string | null; start_date: string | null;
-    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null };
+    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null; pay_default: string };
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePolicyInfo, {});
   const d = (x: string | number | null) => (x == null ? "" : String(x));
@@ -377,6 +382,9 @@ export function PolicyInfoForm({ policyId, persons, showInsured, v }: {
           <option value="">คนเดียวกับผู้เอาประกัน</option>
           {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
+      </label>
+      <label className="text-sm">จ่ายเบี้ยจาก (ค่าตั้งต้น)
+        <PayDefaultSelect banks={banks} cards={cards} currency={currency} value={v.pay_default} className={input} />
       </label>
       <label className="text-sm">เริ่มคุ้มครอง<input name="start_date" type="date" defaultValue={d(v.start_date)} className={input} /></label>
       <label className="text-sm">สิ้นสุด<input name="end_date" type="date" defaultValue={d(v.end_date)} className={input} /></label>
