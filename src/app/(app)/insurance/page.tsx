@@ -10,6 +10,7 @@ import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
+import UrlSelect from "@/components/UrlSelect";
 import InsuranceBatch, { type BoxPolicy, type PayOpt, type YLine } from "./InsuranceBatch";
 import CashValueBatch, { type CvRow } from "./CashValueBatch";
 import CoverageTab, { type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
@@ -21,9 +22,10 @@ import UndoButton from "@/components/UndoButton";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
-const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"], ["coverage", "ความคุ้มครอง"]] as const;
+// ความคุ้มครองต่อจากภาพรวม (ตกลง 3 พ.ย. 2026 · เดิมอยู่ท้ายสุด)
+const TABS = [["overview", "ภาพรวม"], ["coverage", "ความคุ้มครอง"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
 
-export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string; m?: string }> }) {
+export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; s?: string; y?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
@@ -96,11 +98,18 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   // มุมมองรายบุคคล: กรมธรรม์ที่คนนั้นเป็นผู้เอาประกัน หรือเป็นเจ้าของมูลค่าเวนคืน · มูลค่าเวนคืน × สัดส่วนเจ้าของ
   const mineRows = bySort((data ?? []).filter((r) => pv.isPerson(r.person_id) || (pv.personId !== "" && r.payer_person_id === pv.personId)
     || (!!r.cash_value_asset_id && pv.personId !== "" && pv.showAsset(r.cash_value_asset_id))), (r) => r.id, sortMap);
-  // ตัวกรองประเภท (?t=)
-  const types = [...new Set(mineRows.map((r) => r.insurance_type as string))];
+  // ตัวกรองด้านบนตารางภาพรวม แบบหน้าทรัพย์สิน (ตกลง 3 พ.ย. 2026): ประเภท (?t=) · สถานะ (?s= · ตั้งต้น = มีผล · all = ทั้งหมด)
+  const types = INS_TYPE.map(([k]) => k).filter((k) => mineRows.some((r) => r.insurance_type === k));
   const tFilter = types.includes(sp.t ?? "") ? sp.t : undefined;
   const rows = tFilter ? mineRows.filter((r) => r.insurance_type === tFilter) : mineRows;
-  const tHref = (t?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`; };
+  const statuses = INS_STATUS.map(([k]) => k).filter((k) => k === "ACTIVE" || mineRows.some((r) => r.status === k));
+  const sFilter = sp.s === "all" ? "all" : statuses.includes(sp.s ?? "") ? (sp.s as string) : "ACTIVE";
+  const listRows = sFilter === "all" ? rows : rows.filter((r) => r.status === sFilter);
+  const sParam = sFilter === "ACTIVE" ? undefined : sFilter;
+  const fHref = (t: string | undefined, s: string | undefined) => {
+    const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); if (s && s !== "ACTIVE") q.set("s", s);
+    const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`;
+  };
   // เบี้ยงวดถัดไป / เลยกำหนด ต่อกรมธรรม์
   const nextPremium = new Map<string, { due_date: string; remaining: number }>();
   const overduePremium = new Map<string, number>();
@@ -299,21 +308,24 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
         </section>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-medium text-slate-900">กรมธรรม์ทั้งหมด</h2>
-            {types.length > 1 && (
-              <div className="flex flex-wrap gap-1 text-xs">
-                <Link href={tHref()} scroll={false} className={`rounded-full border px-2.5 py-0.5 ${!tFilter ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>ทั้งหมด</Link>
-                {types.map((t) => (
-                  <Link key={t} href={tHref(t)} scroll={false}
-                    className={`rounded-full border px-2.5 py-0.5 ${tFilter === t ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                    {TYPE[t] ?? t} ({mineRows.filter((r) => r.insurance_type === t).length})</Link>
-                ))}
-              </div>
-            )}
-          </div>
-          {canOrder && rows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, t: tFilter })} />}
+        {/* ตัวกรอง + ยอดรวมตามตัวกรองอยู่แถวบน แบบหน้าทรัพย์สิน (ตกลง 3 พ.ย. 2026 · เดิมยอดรวมอยู่ท้ายตาราง) */}
+        <div className="flex flex-wrap items-center gap-4 px-4 pt-4 text-xs text-slate-600">
+          <UrlSelect label="ประเภท" value={tFilter ?? ""} options={[{ value: "", label: "ทั้งหมด", href: fHref(undefined, sParam) },
+            ...types.map((t) => ({ value: t, label: TYPE[t] ?? t, href: fHref(t, sParam) }))]} />
+          <UrlSelect label="สถานะ" value={sFilter} options={[{ value: "all", label: "ทั้งหมด", href: fHref(tFilter, "all") },
+            ...statuses.map((k) => ({ value: k, label: STATUS[k] ?? k, href: fHref(tFilter, k) }))]} />
+          {listRows.length > 0 && (() => {
+            const prem = listRows.filter((r) => r.status === "ACTIVE" && (r.premium_currency ?? "THB") === "THB").reduce((t, r) => t + Number(r.premium ?? 0), 0);
+            const cvSum = listRows.reduce((t, r) => t + cvOf(r), 0);
+            return (
+              <span className="ml-auto text-right text-sm text-slate-700">
+                รวม{tFilter || sFilter !== "ACTIVE" ? "ตามตัวกรอง" : ""} {listRows.length} ฉบับ
+                {prem > 0 && <> · เบี้ย <b className="tabular-nums">{money(prem, undefined, 0)}</b>/ปี</>}
+                {cvSum > 0 && <> · มูลค่าเวนคืน <b className="tabular-nums">{money(cvSum, undefined, 0)}</b></>}
+              </span>
+            );
+          })()}
+          {canOrder && listRows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, t: tFilter, s: sParam })} />}
         </div>
         {/* รวมกล่อง "กรมธรรม์ที่มีผล" ของแท็บรับ / จ่ายไว้ที่นี่ (ตกลง 3 พ.ย. 2026): ระยะสัญญา · เบี้ยงวดถัดไป · ผลประโยชน์งวดถัดไป */}
         <table className="mt-2 w-full min-w-[60rem] text-sm">
@@ -322,14 +334,15 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
               <th className="px-4">เบี้ยงวดถัดไป</th><th className="px-4">ผลประโยชน์งวดถัดไป</th><th className="px-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">{pv.personId ? `ไม่มีกรมธรรม์ของ ${pv.personName}` : "ยังไม่มีกรมธรรม์"}</td></tr>}
-            {rows.map((r, i) => {
+            {listRows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+              {rows.length > 0 ? "ไม่มีกรมธรรม์ตามตัวกรอง" : pv.personId ? `ไม่มีกรมธรรม์ของ ${pv.personName}` : "ยังไม่มีกรมธรรม์"}</td></tr>}
+            {listRows.map((r, i) => {
               const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
               const nb = nextBenefit(r.id);
               return (
                 <tr key={r.id} className={r.status !== "ACTIVE" ? "opacity-50" : ""}>
                   <td className="px-4 py-3">
-                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="insurance_policies" id={r.id} paths={paths} {...neighbors(rows, i, (x) => x.id)} /></span>}
+                    {ordering && <span className="mr-2 align-middle"><MoveButtons table="insurance_policies" id={r.id} paths={paths} {...neighbors(listRows, i, (x) => x.id)} /></span>}
                     <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.insurer}{r.policy_no && ` · ${r.policy_no}`}</Link>
                     <div className="text-xs text-slate-500">{TYPE[r.insurance_type] ?? r.insurance_type}
                       {(r.start_date || r.end_date) && ` · ${r.start_date ? `${thDate(r.start_date)} – ` : "ถึง "}${thDate(r.end_date)}`}</div>
@@ -360,15 +373,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
               );
             })}
           </tbody>
-          {rows.length > 0 && (
-            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 text-xs font-medium">
-              <tr>
-                <td className="px-4 py-3 text-sm">รวม{tFilter ? "ตามประเภท" : ""} {rows.length} ฉบับ</td><td></td>
-                <td className="px-4 text-right tabular-nums">เบี้ย {money(rows.filter((r) => r.status === "ACTIVE" && (r.premium_currency ?? "THB") === "THB").reduce((t, r) => t + Number(r.premium ?? 0), 0), undefined, 0)}/ปี</td>
-                <td className="px-4 text-right tabular-nums text-sm">{money(rows.reduce((t, r) => t + cvOf(r), 0), undefined, 0)}</td><td></td><td></td><td></td>
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
       </TabPanel>

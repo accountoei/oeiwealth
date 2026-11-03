@@ -20,14 +20,18 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
+import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
 type Line = { id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string; benefit_type: string | null;
   notes: string | null; paid_amount: number; remaining: number; status: string; skipped: boolean };
 
-export default async function PolicyDetailPage({ params }: { params: Promise<{ id: string }> }) {
+const BOX = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
+
+export default async function PolicyDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
+  const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
   const { data: p } = await supabase.from("v_insurance_status").select("*").eq("id", id).maybeSingle();
@@ -41,7 +45,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     cvId ? supabase.from("assets").select("id,current_value,current_value_date,currency").eq("id", cvId).maybeSingle() : Promise.resolve({ data: null }),
     cvId ? supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", cvId).is("deleted_at", null).order("valuation_date", { ascending: false }) : Promise.resolve({ data: null }),
     cvId ? supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId) : Promise.resolve({ data: null }),
-    p.asset_id ? supabase.from("assets").select("name").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
+    p.asset_id ? supabase.from("assets").select("name,asset_group").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
     supabase.from("v_insurance_schedule_status").select("id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status,skipped")
@@ -118,6 +122,68 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
     b.person_id ? ((Array.isArray(b.persons) ? b.persons[0] : b.persons) as { name: string } | null)?.name ?? "-" : b.beneficiary_name;
   const benTotal = (bens ?? []).reduce((s, b) => s + Number(b.percentage), 0);
 
+  // มูลค่าเวนคืน: ใช้ทั้งปุ่มในกล่องด้านบน (pop up) และแท็บ "มูลค่าเวนคืน" (ตกลง 3 พ.ย. 2026)
+  const cvUpdate = cvAsset && canWrite ? (
+    <div>
+      <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับใน Net Worth)</h3>
+      <p className="mb-2 text-xs text-slate-500">ตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง) · ถ้าใส่ตารางตามสัญญาไว้ ระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
+      <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
+        methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />
+    </div>
+  ) : null;
+  const cvHistory = cvAsset ? (
+    <table className="w-full text-sm">
+      <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ที่มา</th><th className="text-right">มูลค่า</th><th></th></tr></thead>
+      <tbody className="divide-y divide-slate-100">
+        {(cvVals ?? []).length === 0 && <tr><td colSpan={4} className="py-3 text-center text-slate-500">ยังไม่มีประวัติ</td></tr>}
+        {(cvVals ?? []).map((v) => (
+          <tr key={v.id}>
+            <td className="py-1.5">{thDate(v.valuation_date)}</td>
+            <td className="text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes ?? (CV_SOURCE[v.source] ?? v.source)}</td>
+            <td className="text-right tabular-nums">{money(v.value, cvAsset.currency, 0)}</td>
+            <td className="pl-2 text-right">
+              {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
+                fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
+                  { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ) : null;
+  const cvContract = (
+    <>
+      <p className="text-xs text-slate-500">มูลค่า ณ สิ้นปีกรมธรรม์ (จากเล่มกรมธรรม์) · ระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยก่อนหน้านั้นครบ (ไม่ทับยอดที่ลงไว้ใหม่กว่า)</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {cvPending && canWrite && <SyncCashValueButton policyId={id} />}
+        {canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={cvTableCurrent} />}
+      </div>
+      {cvPending && <p className="text-xs text-amber-700">ปีที่ {cvDue?.policy_year} ถึงวันแล้วแต่ยังไม่ได้ลงมูลค่า</p>}
+      <div className="max-h-[26rem] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-white text-left text-xs text-slate-500"><tr><th className="py-1">ปีที่</th><th>สิ้นปีกรมธรรม์</th><th className="text-right">มูลค่าเวนคืน</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {cvRows.map((r) => (
+              <tr key={r.policy_year} className={r.value_date <= today ? "" : "text-slate-400"}>
+                <td className="py-1">{r.policy_year}{cvDue?.policy_year === r.policy_year && <span className="ml-1 text-xs text-blue-700">ล่าสุด</span>}</td>
+                <td>{thDate(r.value_date)}</td><td className="text-right tabular-nums">{money(r.value, ccy)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+  const isProp = p.insurance_type === "PROPERTY";
+  const insuredHref = `/${insured?.asset_group === "ALTERNATIVE" ? "alternative" : "property"}/${p.asset_id}`;
+  // แก้ / ลบเบี้ยที่จ่ายแล้ว → หน้าทรัพย์สินที่เอาประกันอัปเดตด้วย (เบี้ยนับเป็นค่าใช้จ่ายของทรัพย์สิน)
+  const payPaths = [...paths, "/income-expenses", ...(insured ? [insuredHref, "/property"] : [])];
+  // หน้ากรมธรรม์เป็นแท็บ (ตกลง 3 พ.ย. 2026): ความคุ้มครอง (+ เคลม) · มูลค่าเวนคืน · รับผลประโยชน์ · ชำระเบี้ย · เปิดที่ความคุ้มครองเสมอ
+  //   ประกันทรัพย์สิน: ไม่มีแท็บรับผลประโยชน์ · แท็บมูลค่าเวนคืนเฉพาะที่มีมูลค่าเวนคืน
+  const TABS: [string, string][] = [["coverage", "ความคุ้มครอง"], ...(!isProp || showCv ? [["cv", "มูลค่าเวนคืน"] as [string, string]] : []),
+    ...(!isProp ? [["benefit", "รับผลประโยชน์"] as [string, string]] : []), ["premium", "ชำระเบี้ย"]];
+  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "coverage";
+
   return (
     <div className="space-y-6">
       <div>
@@ -127,14 +193,12 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
             <h1 className="text-2xl font-semibold text-slate-900">{p.insurer}{p.policy_no && ` · ${p.policy_no}`}</h1>
             <p className="text-sm text-slate-500">{TYPE[p.insurance_type] ?? p.insurance_type}
               {p.person_id && ` · ผู้เอาประกัน ${allName.get(p.person_id) ?? ""}`}
-              {insured && ` · คุ้มครอง ${insured.name}`}</p>
+              {insured && <> · คุ้มครอง <Link href={insuredHref} className="hover:underline">{insured.name}</Link></>}</p>
           </div>
-          {canWrite && policyActive && (
+          {canWrite && policyActive && !isProp && (
             <ActionBar>
-              {p.insurance_type !== "PROPERTY" && <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
-                cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม)" canClose={canDelete} />}
-              <ClaimForm policyId={id} currency={ccy} today={today}
-                coverages={(covs ?? []).map((c) => ({ id: c.id, coverage_type: c.coverage_type, limit_amount: Number(c.limit_amount) }))} />
+              <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
+                cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม)" canClose={canDelete} />
             </ActionBar>
           )}
         </div>
@@ -179,34 +243,10 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                 {cvAsset && (
                   <ModalButton label="ปรับมูลค่า / ประวัติ" title="มูลค่าเวนคืน · ปรับมูลค่า / ประวัติ" size="lg" primary>
                     <div className="space-y-5">
-                      {canWrite && (
-                        <div>
-                          <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับใน Net Worth)</h3>
-                          <p className="mb-2 text-xs text-slate-500">ตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง) · ถ้าใส่ตารางตามสัญญาไว้ ระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
-                          <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
-                            methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />
-                        </div>
-                      )}
+                      {cvUpdate}
                       <div className="border-t border-slate-100 pt-3">
                         <h3 className="mb-1 text-sm font-medium text-slate-800">ประวัติมูลค่า</h3>
-                        <table className="w-full text-sm">
-                          <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ที่มา</th><th className="text-right">มูลค่า</th><th></th></tr></thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {(cvVals ?? []).length === 0 && <tr><td colSpan={4} className="py-3 text-center text-slate-500">ยังไม่มีประวัติ</td></tr>}
-                            {(cvVals ?? []).map((v) => (
-                              <tr key={v.id}>
-                                <td className="py-1.5">{thDate(v.valuation_date)}</td>
-                                <td className="text-slate-500">{v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes ?? (CV_SOURCE[v.source] ?? v.source)}</td>
-                                <td className="text-right tabular-nums">{money(v.value, cvAsset.currency, 0)}</td>
-                                <td className="pl-2 text-right">
-                                  {canWrite && <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
-                                    fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
-                                      { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        {cvHistory}
                       </div>
                     </div>
                   </ModalButton>
@@ -214,25 +254,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                 {cvRows.length > 0 ? (
                   <ModalButton label={<>ตารางตามสัญญา ({cvRows.length} ปี){cvPending && <span className="ml-1 text-amber-700">●</span>}</>} title="ตารางมูลค่าเวนคืนตามสัญญา" size="lg">
                     <div className="space-y-3">
-                      <p className="text-xs text-slate-500">มูลค่า ณ สิ้นปีกรมธรรม์ (จากเล่มกรมธรรม์) · ระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยก่อนหน้านั้นครบ (ไม่ทับยอดที่ลงไว้ใหม่กว่า)</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {cvPending && canWrite && <SyncCashValueButton policyId={id} />}
-                        {canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={cvTableCurrent} />}
-                      </div>
-                      {cvPending && <p className="text-xs text-amber-700">ปีที่ {cvDue?.policy_year} ถึงวันแล้วแต่ยังไม่ได้ลงมูลค่า</p>}
-                      <div className="max-h-[26rem] overflow-y-auto">
-                        <table className="w-full text-sm">
-                          <thead className="sticky top-0 bg-white text-left text-xs text-slate-500"><tr><th className="py-1">ปีที่</th><th>สิ้นปีกรมธรรม์</th><th className="text-right">มูลค่าเวนคืน</th></tr></thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {cvRows.map((r) => (
-                              <tr key={r.policy_year} className={r.value_date <= today ? "" : "text-slate-400"}>
-                                <td className="py-1">{r.policy_year}{cvDue?.policy_year === r.policy_year && <span className="ml-1 text-xs text-blue-700">ล่าสุด</span>}</td>
-                                <td>{thDate(r.value_date)}</td><td className="text-right tabular-nums">{money(r.value, ccy)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      {cvContract}
                     </div>
                   </ModalButton>
                 ) : canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={[]} />}
@@ -258,7 +280,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
                   {p.derived_status === "EXPIRED" && p.status === "ACTIVE" && <span className="block text-xs text-red-600">เลยวันสิ้นสุด</span>}</Item>
                 {p.insurance_type !== "PROPERTY" && <Item label="ผู้เอาประกัน">{p.person_id ? allName.get(p.person_id) ?? "-" : "-"}</Item>}
                 <Item label="ผู้จ่ายเบี้ย">{payerId ? allName.get(payerId) ?? "-" : "-"}</Item>
-                {insured && <Item label="ทรัพย์สินที่คุ้มครอง">{insured.name}</Item>}
+                {insured && <Item label="ทรัพย์สินที่คุ้มครอง"><Link href={insuredHref} className="text-blue-700 hover:underline">{insured.name}</Link></Item>}
                 <Item label="ระยะเวลา">{thDate(p.start_date)} – {thDate(p.end_date)}</Item>
                 <Item label="ทุนประกัน" num>{money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</Item>
                 <Item label="เบี้ยต่อปี" num>{money(p.premium, p.premium_currency ?? undefined, 0)}</Item>
@@ -314,158 +336,196 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
         </section>
       )}
 
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
-          {canWrite && <CoverageForm policyId={id} currency={ccy} />}
-        </div>
-        {(covs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p> : (
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              {(covs ?? []).map((c) => (
-                <tr key={c.id}>
-                  <td className="py-1.5">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}</td>
-                  <td className="text-right tabular-nums">{money(c.limit_amount, c.currency)}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}</td>
-                  <td className="pl-4 text-xs text-slate-500">{c.notes}</td>
-                  <td className="pl-2 text-right">{canWrite && <RowActions table="insurance_coverages" id={c.id} paths={paths} canDelete={canDelete} fields={[
-                    { name: "limit_amount", label: "วงเงิน", type: "number", value: c.limit_amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
-            defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} /> : undefined}>
-          <div>
-            <h2 className="font-medium text-slate-900">ตารางเบี้ย</h2>
-            {premiums.length > 0 ? (
-              <p className="text-sm text-slate-600">{premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด · จ่ายแล้ว {money(premPaid, ccy)}
-                {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
-                {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
-                {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
-            ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
-          </div>
-        </ActionBar>
-        {premiums.length > 0 && <ScheduleTable lines={premiums} canWrite={canWrite} canDelete={canDelete} paths={paths} action={(x) =>
-          canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
-            label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
-            defaultPerson={payerId} today={today} cashValue={cvCtx} /> : null} />}
-        {(premPays ?? []).length > 0 && (
-          <div>
-            <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่ายเบี้ย</h3>
-            <p className="mb-2 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-slate-500">
-                <tr><th className="py-1">วันที่จ่าย</th><th>งวด</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(premPays ?? []).map((e) => (
-                  <tr key={e.id} className="align-top">
-                    <td className="py-1.5">{thDate(e.date)}</td>
-                    <td>{lineNo.get(e.insurance_schedule_line_id as string) ?? "-"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
-                    <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
-                    <td className="pl-4 text-xs text-slate-600">
-                      {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
-                    </td>
-                    <td className="pl-2 text-right">
-                      {canWrite && <RowActions table="expense_items" id={e.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
-                        fields={premiumPaymentFields(e)} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {p.insurance_type !== "PROPERTY" && (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-          <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
-              defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} /> : undefined}>
-            <div>
-              <h2 className="font-medium text-slate-900">ผลประโยชน์ที่จะได้รับ</h2>
-              <p className="text-sm text-slate-600">
-                {benefits.length > 0 ? <>{benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด · รับแล้ว {money(benReceived, ccy)}</> : "รายงวด (เงินคืน / บำนาญ) ตั้งเป็นตาราง · ก้อนเดียว (ครบสัญญา / เวนคืน / สินไหม) กดปุ่มรับเงินก้อนได้เลย"}
-              </p>
-              {cvAsset && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
-            </div>
-          </ActionBar>
-          {benefits.length > 0 && <ScheduleTable lines={benefits} canWrite={canWrite} canDelete={canDelete} paths={paths} benefit action={(x) =>
-            canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
-              currency={x.currency} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value}
-              today={today} small canClose={canDelete} /> : null} />}
-          {(receipts ?? []).length > 0 && (
-            <div>
-              <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติรับผลประโยชน์</h3>
-              <p className="mb-2 text-xs text-slate-500">
-                &ldquo;ยกเลิกทั้งก้อน&rdquo; ย้อนทุกส่วนพร้อมกัน: เงินที่ถอนจากมูลค่าเวนคืน · รายได้ส่วนเกิน · สถานะกรมธรรม์ / มูลค่าเวนคืน · ยกเลิกได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน
-              </p>
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-slate-500">
-                  <tr><th className="py-1">วันที่รับ</th><th>รายการ</th><th className="text-right">ยอดรวม</th><th className="text-right">จากมูลค่าเวนคืน</th>
-                    <th className="text-right">รายได้</th><th></th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(receipts ?? []).map((r, i) => (
-                    <tr key={r.id} className="align-top">
-                      <td className="py-1.5">{thDate(r.receipt_date)}</td>
-                      <td className="text-xs text-slate-600">
-                        {r.line_id ? `งวดที่ ${benNo.get(r.line_id) ?? "-"}` : "รับเงินก้อน"}{r.outcome && ` · ${OUTCOME[r.outcome] ?? r.outcome}`}
-                        {r.notes && <div className="text-slate-400">{r.notes}</div>}
-                      </td>
-                      <td className="text-right tabular-nums">{money(r.amount, r.currency)}</td>
-                      <td className="text-right tabular-nums">{Number(r.cash_value_part) > 0 ? money(r.cash_value_part) : "-"}</td>
-                      <td className="text-right tabular-nums">{Number(r.income_part) > 0 ? money(r.income_part) : "-"}</td>
-                      <td className="pl-2 text-right">
-                        {canDelete && (i === 0 || !r.outcome) && <UndoButton kind="BENEFIT" id={r.id} paths={paths}
-                          confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} />}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <TabsProvider initial={tab} defaultKey="coverage">
+        <div className="space-y-4">
+          <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
+          <TabPanel id="coverage" className="space-y-4">
+            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
+                {canWrite && <CoverageForm policyId={id} currency={ccy} />}
+              </div>
+              {(covs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p> : (
+                <table className="w-full text-sm">
+                  <tbody className="divide-y divide-slate-100">
+                    {(covs ?? []).map((c) => (
+                      <tr key={c.id}>
+                        <td className="py-1.5">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}</td>
+                        <td className="text-right tabular-nums">{money(c.limit_amount, c.currency)}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}</td>
+                        <td className="pl-4 text-xs text-slate-500">{c.notes}</td>
+                        <td className="pl-2 text-right">{canWrite && <RowActions table="insurance_coverages" id={c.id} paths={paths} canDelete={canDelete} fields={[
+                          { name: "limit_amount", label: "วงเงิน", type: "number", value: c.limit_amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-medium text-slate-900">เคลม</h2>
+                {canWrite && policyActive && <ClaimForm policyId={id} currency={ccy} today={today}
+                  coverages={(covs ?? []).map((c) => ({ id: c.id, coverage_type: c.coverage_type, limit_amount: Number(c.limit_amount) }))} />}
+              </div>
+              {(claims ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีเคลม</p> : (
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">ยื่นเคลม</th><th>เกิดเหตุ</th><th className="text-right">ยอดเคลม</th><th className="text-right">ได้รับ</th><th className="pl-4">สถานะ</th><th></th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(claims ?? []).map((c) => (
+                      <tr key={c.id} className="align-top">
+                        <td className="py-1.5">{thDate(c.claim_date)}</td><td>{thDate(c.incident_date)}</td>
+                        <td className="text-right tabular-nums">{money(c.claimed_amount, c.currency)}</td>
+                        <td className="text-right tabular-nums">{c.received_amount != null ? money(c.received_amount) : "-"}</td>
+                        <td className="pl-4">{CSTATUS[c.status] ?? c.status}{c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}
+                          {(byClaim.get(c.id) ?? []).map((r) => {
+                            const e = (Array.isArray(r.expense_items) ? r.expense_items[0] : r.expense_items) as { description: string; date: string } | null;
+                            return <div key={r.id} className="text-xs text-emerald-700">รับคืน {thDate(r.received_date)} {money(r.amount, r.currency)}{e && ` · ${e.description} (${thDate(e.date)})`}</div>;
+                          })}
+                        </td>
+                        <td className="pl-2 text-right">
+                          {canWrite && <RowActions table="insurance_claims" id={c.id} paths={paths} canDelete={canDelete} fields={[
+                            { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claim_date },
+                            { name: "claimed_amount", label: "ยอดเคลม", type: "number", value: c.claimed_amount },
+                            { name: "received_amount", label: "ได้รับ", type: "number", value: c.received_amount },
+                            { name: "status", label: "สถานะ", type: "select", value: c.status, options: CLAIM_STATUS },
+                            { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
+            </section>
+          </TabPanel>
+          {TABS.some(([k]) => k === "cv") && (
+            <TabPanel id="cv">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section className={BOX}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="font-medium text-slate-900">ประวัติมูลค่าเวนคืน</h2>
+                    {cvUpdate && <ModalButton label="อัปเดตมูลค่า" title="มูลค่าเวนคืน · อัปเดตมูลค่า" size="lg" primary>{cvUpdate}</ModalButton>}
+                  </div>
+                  {cvAsset ? cvHistory : (
+                    <>
+                      <p className="text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "กรมธรรม์นี้ไม่มีมูลค่าเวนคืน (ไม่นับเป็นสินทรัพย์)"}</p>
+                      {canDelete && <AddCashValueForm policyId={id} currency={ccy} today={today} goLive={family?.go_live_date ?? ""} />}
+                    </>
+                  )}
+                </section>
+                <section className={BOX}>
+                  <h2 className="font-medium text-slate-900">ตารางมูลค่าเวนคืนตามสัญญา{cvRows.length > 0 && <span className="ml-1 text-sm font-normal text-slate-500">({cvRows.length} ปี)</span>}</h2>
+                  {cvRows.length > 0 ? cvContract : (
+                    <>
+                      <p className="text-sm text-slate-500">ยังไม่ได้ใส่ตาราง · ใส่มูลค่าสิ้นปีกรมธรรม์จากเล่มกรมธรรม์ แล้วระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปี</p>
+                      {canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={[]} />}
+                    </>
+                  )}
+                </section>
+              </div>
+            </TabPanel>
           )}
-        </section>
-      )}
-
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">เคลม</h2>
-        {(claims ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีเคลม</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">ยื่นเคลม</th><th>เกิดเหตุ</th><th className="text-right">ยอดเคลม</th><th className="text-right">ได้รับ</th><th className="pl-4">สถานะ</th><th></th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {(claims ?? []).map((c) => (
-                <tr key={c.id} className="align-top">
-                  <td className="py-1.5">{thDate(c.claim_date)}</td><td>{thDate(c.incident_date)}</td>
-                  <td className="text-right tabular-nums">{money(c.claimed_amount, c.currency)}</td>
-                  <td className="text-right tabular-nums">{c.received_amount != null ? money(c.received_amount) : "-"}</td>
-                  <td className="pl-4">{CSTATUS[c.status] ?? c.status}{c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}
-                    {(byClaim.get(c.id) ?? []).map((r) => {
-                      const e = (Array.isArray(r.expense_items) ? r.expense_items[0] : r.expense_items) as { description: string; date: string } | null;
-                      return <div key={r.id} className="text-xs text-emerald-700">รับคืน {thDate(r.received_date)} {money(r.amount, r.currency)}{e && ` · ${e.description} (${thDate(e.date)})`}</div>;
-                    })}
-                  </td>
-                  <td className="pl-2 text-right">
-                    {canWrite && <RowActions table="insurance_claims" id={c.id} paths={paths} canDelete={canDelete} fields={[
-                      { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claim_date },
-                      { name: "claimed_amount", label: "ยอดเคลม", type: "number", value: c.claimed_amount },
-                      { name: "received_amount", label: "ได้รับ", type: "number", value: c.received_amount },
-                      { name: "status", label: "สถานะ", type: "select", value: c.status, options: CLAIM_STATUS },
-                      { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
-      </section>
-
+          {!isProp && (
+            <TabPanel id="benefit">
+              <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+                <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
+                    defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} /> : undefined}>
+                  <div>
+                    <h2 className="font-medium text-slate-900">ผลประโยชน์ที่จะได้รับ</h2>
+                    <p className="text-sm text-slate-600">
+                      {benefits.length > 0 ? <>{benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด · รับแล้ว {money(benReceived, ccy)}</> : "รายงวด (เงินคืน / บำนาญ) ตั้งเป็นตาราง · ก้อนเดียว (ครบสัญญา / เวนคืน / สินไหม) กดปุ่มรับเงินก้อนได้เลย"}
+                    </p>
+                    {cvAsset && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
+                  </div>
+                </ActionBar>
+                {benefits.length > 0 && <ScheduleTable lines={benefits} canWrite={canWrite} canDelete={canDelete} paths={paths} benefit action={(x) =>
+                  canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
+                    currency={x.currency} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value}
+                    today={today} small canClose={canDelete} /> : null} />}
+                {(receipts ?? []).length > 0 && (
+                  <div>
+                    <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติรับผลประโยชน์</h3>
+                    <p className="mb-2 text-xs text-slate-500">
+                      &ldquo;ยกเลิกทั้งก้อน&rdquo; ย้อนทุกส่วนพร้อมกัน: เงินที่ถอนจากมูลค่าเวนคืน · รายได้ส่วนเกิน · สถานะกรมธรรม์ / มูลค่าเวนคืน · ยกเลิกได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน
+                    </p>
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-slate-500">
+                        <tr><th className="py-1">วันที่รับ</th><th>รายการ</th><th className="text-right">ยอดรวม</th><th className="text-right">จากมูลค่าเวนคืน</th>
+                          <th className="text-right">รายได้</th><th></th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(receipts ?? []).map((r, i) => (
+                          <tr key={r.id} className="align-top">
+                            <td className="py-1.5">{thDate(r.receipt_date)}</td>
+                            <td className="text-xs text-slate-600">
+                              {r.line_id ? `งวดที่ ${benNo.get(r.line_id) ?? "-"}` : "รับเงินก้อน"}{r.outcome && ` · ${OUTCOME[r.outcome] ?? r.outcome}`}
+                              {r.notes && <div className="text-slate-400">{r.notes}</div>}
+                            </td>
+                            <td className="text-right tabular-nums">{money(r.amount, r.currency)}</td>
+                            <td className="text-right tabular-nums">{Number(r.cash_value_part) > 0 ? money(r.cash_value_part) : "-"}</td>
+                            <td className="text-right tabular-nums">{Number(r.income_part) > 0 ? money(r.income_part) : "-"}</td>
+                            <td className="pl-2 text-right">
+                              {canDelete && (i === 0 || !r.outcome) && <UndoButton kind="BENEFIT" id={r.id} paths={paths}
+                                confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} />}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </TabPanel>
+          )}
+          <TabPanel id="premium">
+            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+              <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
+                  defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} /> : undefined}>
+                <div>
+                  <h2 className="font-medium text-slate-900">ตารางเบี้ย</h2>
+                  {premiums.length > 0 ? (
+                    <p className="text-sm text-slate-600">{premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด · จ่ายแล้ว {money(premPaid, ccy)}
+                      {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
+                      {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
+                      {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
+                  ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
+                </div>
+              </ActionBar>
+              {premiums.length > 0 && <ScheduleTable lines={premiums} canWrite={canWrite} canDelete={canDelete} paths={paths} action={(x) =>
+                canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
+                  label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
+                  defaultPerson={payerId} today={today} cashValue={cvCtx} /> : null} />}
+              {(premPays ?? []).length > 0 && (
+                <div>
+                  <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่ายเบี้ย</h3>
+                  <p className="mb-2 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs text-slate-500">
+                      <tr><th className="py-1">วันที่จ่าย</th><th>งวด</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(premPays ?? []).map((e) => (
+                        <tr key={e.id} className="align-top">
+                          <td className="py-1.5">{thDate(e.date)}</td>
+                          <td>{lineNo.get(e.insurance_schedule_line_id as string) ?? "-"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
+                          <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
+                          <td className="pl-4 text-xs text-slate-600">
+                            {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
+                          </td>
+                          <td className="pl-2 text-right">
+                            {canWrite && <RowActions table="expense_items" id={e.id} paths={payPaths} canDelete={canDelete}
+                              fields={premiumPaymentFields(e)} />}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </TabPanel>
+        </div>
+      </TabsProvider>
     </div>
   );
 }
