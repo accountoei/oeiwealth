@@ -24,7 +24,7 @@ import type { MarketValuation } from "./MarketValuationForm";
 import LandTaxTable, { type TaxLineRow, type TaxPropRow } from "./LandTaxTable";
 
 type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; vacant_since: string | null; location_group: string | null;
-  land_area_sq_wa: number | null;
+  land_area_sq_wa: number | null; latitude: number | null; longitude: number | null; address: string | null;
   assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null; status: string;
     acquisition_cost: number | null; acquisition_date: string | null } };
 type Lease = { id: string; property_asset_id: string; tenant_name: string; unit_label: string | null; rent_amount: number;
@@ -73,7 +73,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     loadPersonView(sp.p),
     Promise.all([
       supabase.from("property_details")
-        .select("id,asset_id,property_type,usage_type,vacant_since,location_group,land_area_sq_wa,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
+        .select("id,asset_id,property_type,usage_type,vacant_since,location_group,land_area_sq_wa,latitude,longitude,address,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
         .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
       supabase.from("v_lease_status").select("id,property_asset_id,tenant_name,unit_label,rent_amount,rent_currency,payment_frequency,start_date,end_date,lease_status")
         .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]),
@@ -242,6 +242,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       sub: [p.location_group, p.land_area_sq_wa != null ? landText(p.land_area_sq_wa) : null].filter(Boolean).join(" · "), loc: p.location_group,
       type: p.property_type, typeLabel: PROPERTY_TYPE_LABEL[p.property_type] ?? p.property_type,
       usage: p.usage_type, usageLabel: USAGE_LABEL[p.usage_type] ?? p.usage_type, status: p.assets.status,
+      // ส่งออกแผนที่ (KML)
+      geo: p.latitude != null && p.longitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : null,
+      area: p.land_area_sq_wa != null ? landText(p.land_area_sq_wa) : null, address: p.address,
       cost: p.assets.acquisition_cost == null ? null : thb(p.assets.acquisition_cost, p.assets.currency) * share(p.asset_id),
       costDate: p.assets.acquisition_date, value: valueOf(p), valueDate: p.assets.current_value_date,
       stale: !p.assets.current_value_date || p.assets.current_value_date < old,

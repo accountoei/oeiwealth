@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { useOnMainTab } from "../income-expenses/tabs";
-import { money, thDate } from "@/lib/format";
+import { money, thDate, todayBangkok } from "@/lib/format";
+import { buildKml } from "@/lib/kml";
 
 export type PropRow = {
   id: string; assetId: string; name: string; sub: string; loc: string | null; type: string; typeLabel: string; usage: string; usageLabel: string;
   status: string; cost: number | null; costDate: string | null; value: number | null; valueDate: string | null; stale: boolean;
   rent: number; ytd: number; leases: { id: string; badge: string; cls: string; text: string }[]; noLease: boolean; move?: ReactNode;
+  /** พิกัด / เนื้อที่ / ที่อยู่ (ส่งออกแผนที่ KML) */ geo?: { lat: number; lng: number } | null; area?: string | null; address?: string | null;
   /** ว่างมาแล้วกี่เดือน (เฉพาะที่ว่างและใส่วันเริ่มว่าง) · เตือนเรื่องภาษีที่ดิน */ vacant?: { text: string; warn: boolean } | null;
 };
 
@@ -63,6 +65,17 @@ export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]
         )}
         {toggle && <span className={shown.length > 0 ? "" : "ml-auto"}>{toggle}</span>}
       </div>
+      {shown.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-4 pt-2 text-xs text-slate-500">
+          <button type="button" onClick={() => downloadKml(shown, loc)} disabled={!shown.some((r) => r.geo)}
+            className="rounded-md border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50">ส่งออกแผนที่ (KML)</button>
+          <span>
+            {shown.filter((r) => r.geo).length} แปลงตามตัวกรองที่มีพิกัด
+            {shown.some((r) => !r.geo) && <> · ไม่มีพิกัด {shown.filter((r) => !r.geo).length} แปลง (ใส่ที่ &ldquo;แก้ไขข้อมูล&rdquo;)</>}
+            {" "}· นำเข้า Google My Maps: สร้างแผนที่ › นำเข้า › เลือกไฟล์ · พิมพ์ / PDF ที่เมนู ⋮ › พิมพ์แผนที่
+          </span>
+        </div>
+      )}
       <table className="mt-3 w-full min-w-[56rem] text-sm">
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
           <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3">ประเภท</th><th className="px-3">การใช้งาน</th>
@@ -103,4 +116,22 @@ export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]
       </table>
     </div>
   );
+}
+
+/** ไฟล์แผนที่ของแปลงตามตัวกรอง (เฉพาะที่มีพิกัด) — สร้างในเบราว์เซอร์แล้วดาวน์โหลด */
+function downloadKml(rows: PropRow[], loc: string) {
+  const places = rows.filter((r) => r.geo).map((r) => ({
+    name: r.name, lat: r.geo!.lat, lng: r.geo!.lng, group: r.loc, type: r.typeLabel, usage: r.usageLabel, usageCode: r.usage,
+    area: r.area ?? null, address: r.address ?? null,
+  }));
+  const label = loc && loc !== "__none" ? ` · ${loc}` : "";
+  const blob = new Blob([buildKml(`ทรัพย์สิน${label}`, places)], { type: "application/vnd.google-earth.kml+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `property-map${label ? "-" + loc.replace(/[\\/:*?"<>|\s]+/g, "_") : ""}-${todayBangkok()}.kml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
