@@ -76,11 +76,12 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
     <form action={action} onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
       {canWrite && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-          <label className="flex items-center gap-2">วันที่จ่าย
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+          {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
+          <span className="text-xs text-slate-500">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</span>
+          <label className="ml-auto flex shrink-0 items-center gap-2">วันที่จ่าย
             <input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} className={small} />
           </label>
-          <span className="text-xs text-slate-500">ใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</span>
         </div>
       )}
 

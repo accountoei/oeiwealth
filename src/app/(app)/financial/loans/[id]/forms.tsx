@@ -284,7 +284,7 @@ export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false
       <label className="text-sm">ดอกเบี้ย (% ต่อปี)<input name="interest_rate" inputMode="decimal" defaultValue={v.interest_rate ?? ""} className={input} /></label>
       <label className="text-sm">ครบกำหนดสัญญา<input name="due_date" type="date" defaultValue={v.due_date ?? ""} min={minDue ?? undefined} required={!!minDue} className={input} />
         {minDue && <span className="mt-1 block text-xs text-slate-500">ต้องไม่ก่อนงวดสุดท้ายในตารางผ่อน ({thDate(minDue)})</span>}</label>
-      <label className="text-sm">ผ่อนผันหลังครบกำหนดงวด (วัน)<input name="grace_days" inputMode="numeric" data-plain defaultValue={v.grace_days ?? 0} className={input} />
+      <label className="text-sm">ชำระล่าช้าไม่เกิน (วัน)<input name="grace_days" inputMode="numeric" data-plain defaultValue={v.grace_days ?? 0} className={input} />
         <span className="mt-1 block text-xs text-slate-500">เช่น ครบกำหนดวันที่ 28 แต่ผู้กู้จ่ายวันที่ 5–10 เดือนถัดไป ใส่ 15 · ระหว่างนี้ขึ้น &ldquo;ครบกำหนด&rdquo; ยังไม่ขึ้น &ldquo;เลยกำหนด&rdquo; · 0 = ไม่มี (สูงสุด 60)</span></label>
       <label className="text-sm md:col-span-2">หมายเหตุ<textarea name="notes" rows={2} defaultValue={v.notes ?? ""} className={input} /></label>
       {amounts && <AmountFields a={amounts} />}

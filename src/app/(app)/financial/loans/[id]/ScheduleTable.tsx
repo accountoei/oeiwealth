@@ -47,6 +47,7 @@ export default function ScheduleTable({ rows, events = [], currency }: { rows: S
   const chip = (on: boolean) => `rounded-full border px-3 py-1 text-xs ${on ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`;
   const sum = (k: "principal" | "interest" | "total" | "remaining") => lines.reduce((t, r) => t + r[k], 0);
   const pays = evs.filter((e) => e.kind === "PAY");
+  const lends = evs.filter((e) => e.lent > 0);
   const esum = (k: "principal" | "interest" | "tax" | "lent") => evs.reduce((t, e) => t + e[k], 0);
   const dash = <span className="text-slate-300">–</span>;
   return (
@@ -58,7 +59,9 @@ export default function ScheduleTable({ rows, events = [], currency }: { rows: S
         {events.length > 0 && f === "open" && <span className="text-xs text-slate-500">รายการรับชำระ / ให้กู้ที่บันทึกแล้ว ดูได้ที่ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo;</span>}
       </div>}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[46rem] text-sm">
+        {/* ความกว้างคอลัมน์กำหนดเอง (table-fixed): ช่องวันที่ / รายการกว้าง · ตัวเลขกว้างเท่ากันทุกช่อง · สถานะคงที่ (ตกลง 3 พ.ย. 2026) */}
+        <table className="w-full min-w-[66rem] table-fixed text-sm [&_.text-right]:whitespace-nowrap [&_.text-right]:pl-2">
+          <colgroup><col className="w-12" /><col className="w-[22%]" />{Array.from({ length: lendCol ? 5 : 4 }, (_, i) => <col key={i} />)}<col className="w-52" /></colgroup>
           <thead className="text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100"><th className="py-1.5">งวด</th><th>ครบกำหนด / วันที่</th><th className="text-right">คืนเงินต้น</th>
               {lendCol && <th className="text-right">ให้กู้เพิ่ม</th>}
@@ -114,7 +117,7 @@ export default function ScheduleTable({ rows, events = [], currency }: { rows: S
                 <td className="text-right tabular-nums">{money(sum("total"), currency)}</td><td></td>
                 <td className="pl-4 text-xs font-normal text-slate-500">{f !== "paid" && sum("remaining") > 0.005 ? `ค้าง ${money(sum("remaining"))}` : ""}</td></tr>}
               {(pays.length > 0 || esum("lent") > 0) && (
-                <tr className="text-xs font-normal text-slate-600"><td colSpan={2} className="py-2">รับจริง {pays.length} ครั้ง</td>
+                <tr className="text-xs font-normal text-slate-600"><td colSpan={2} className="py-2">{[pays.length ? `รับชำระ ${pays.length} ครั้ง` : "", lends.length ? `ให้กู้เพิ่ม ${lends.length} ครั้ง` : ""].filter(Boolean).join(" · ")}</td>
                   <td className="py-2 text-right tabular-nums text-emerald-700">{money(esum("principal"))}</td>
                   {lendCol && <td className="py-2 text-right tabular-nums text-blue-700">{money(esum("lent"))}</td>}
                   <td className="py-2 text-right tabular-nums text-emerald-700">{money(esum("interest"))}</td>
