@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, BENEFIT_TYPE_LABEL, COVERAGE_ANNUAL, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, BENEFIT_TYPE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_STATUS, INS_TYPE, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -13,17 +13,17 @@ import { StatBox } from "@/components/Boxes";
 import YearTable, { OPEN, type YLine } from "./YearTable";
 import InsuranceBatch, { type InsLine, type PayOpt } from "./InsuranceBatch";
 import CashValueBatch, { type CvRow } from "./CashValueBatch";
+import CoverageTab, { type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
 import UndoButton from "@/components/UndoButton";
 import RowActions from "@/components/RowActions";
-import ModalButton from "@/components/ModalButton";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
-const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
+const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"], ["coverage", "ความคุ้มครอง"]] as const;
 
 export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
@@ -49,9 +49,9 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       .order("status").order("insurer"),
     supabase.from("persons").select("id,name").order("sort_order"),
     supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
-    supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency").is("deleted_at", null),
-    supabase.from("insurance_claims").select("coverage_id,claimed_amount,received_amount,status,claim_date").is("deleted_at", null)
-      .not("coverage_id", "is", null).gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`),
+    supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes").is("deleted_at", null),
+    supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
+      .gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`).order("claim_date", { ascending: false }),
     supabase.from("v_insurance_schedule_status").select("policy_id,due_date,remaining,status").eq("kind", "PREMIUM")
       .in("status", ["PENDING", "OVERDUE", "PARTIAL"]).order("due_date"),
     supabase.from("insurance_followups").select("id,person_id,policy_id,role,action,status").is("deleted_at", null)
@@ -81,26 +81,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     if (d.status === "OVERDUE") overduePremium.set(d.policy_id, (overduePremium.get(d.policy_id) ?? 0) + 1);
     else if (!nextPremium.has(d.policy_id)) nextPremium.set(d.policy_id, { due_date: d.due_date, remaining: Number(d.remaining) });
   });
-  // สรุปสิทธิ์รายคน: กรมธรรม์ที่ยังมีผล · รวมวงเงินตามผู้เอาประกัน · วงเงินรายปีหักยอดเคลมปีนี้
-  const activePolicy = new Map((data ?? []).filter((r) => r.status === "ACTIVE" && r.person_id).map((r) => [r.id, r.person_id as string]));
-  const usedByCov = new Map<string, number>();
-  (claims ?? []).filter((c) => !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
-    usedByCov.set(c.coverage_id as string, (usedByCov.get(c.coverage_id as string) ?? 0) + Number(c.received_amount ?? c.claimed_amount ?? 0)));
-  // ตารางสิทธิ์: แถว = ความคุ้มครอง · คอลัมน์ = คน · กดตัวเลขดูว่ามาจากกรมธรรม์ไหน (ตกลง 2 พ.ย. 2026)
-  type Sum = { limit: number; used: number; currency: string; policies: number; items: { policyId: string; limit: number; used: number; currency: string }[] };
-  const byPerson = new Map<string, Map<string, Sum>>();
-  (covs ?? []).forEach((c) => {
-    const pid = activePolicy.get(c.policy_id);
-    if (!pid || !pv.isPerson(pid)) return;
-    const m = byPerson.get(pid) ?? new Map<string, Sum>();
-    const cur = m.get(c.coverage_type) ?? { limit: 0, used: 0, currency: c.currency, policies: 0, items: [] };
-    const used = usedByCov.get(c.id) ?? 0;
-    m.set(c.coverage_type, { ...cur, limit: cur.limit + Number(c.limit_amount), used: cur.used + used, policies: cur.policies + 1,
-      items: [...cur.items, { policyId: c.policy_id, limit: Number(c.limit_amount), used, currency: c.currency }] });
-    byPerson.set(pid, m);
-  });
-  const covPersons = (persons ?? []).map((x) => x.id).filter((id) => byPerson.has(id));
-  const covTypes = Object.keys(COVERAGE_LABEL).filter((k) => covPersons.some((id) => byPerson.get(id)?.has(k)));
   const policyName = new Map((data ?? []).map((r) => [r.id, `${r.insurer}${r.policy_no ? ` · ${r.policy_no}` : ""}`]));
   const fupRows = (fups ?? []).filter((f) => pv.isPerson(f.person_id) || rows.some((r) => r.id === f.policy_id));
   const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id))
@@ -209,6 +189,31 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       currency: a?.currency ?? r.insured_amount_currency ?? "THB", value: a?.current_value == null ? null : Number(a.current_value), date: a?.current_value_date ?? null,
       due, pending, premiumDue, factor: a && a.currency === "THB" ? pv.assetShare(a.id) : 0 };
   });
+  // แท็บความคุ้มครอง (ตกลง 3 พ.ย. 2026): กรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ (ไม่นับปฏิเสธ / ยกเลิก)
+  const usedByCov = new Map<string, number>();
+  (claims ?? []).filter((c) => c.coverage_id && !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
+    usedByCov.set(c.coverage_id as string, (usedByCov.get(c.coverage_id as string) ?? 0) + Number(c.received_amount ?? c.claimed_amount ?? 0)));
+  const activeAll = (data ?? []).filter((r) => r.status === "ACTIVE" && r.person_id);
+  const activePerson = new Map(activeAll.map((r) => [r.id, r.person_id as string]));
+  const covRows = (covs ?? []).filter((c) => activePerson.has(c.policy_id));
+  const covItems: CovItem[] = covRows.map((c) => ({ policyId: c.policy_id, personId: activePerson.get(c.policy_id) as string, type: c.coverage_type,
+    limit: Number(c.limit_amount), used: usedByCov.get(c.id) ?? 0, currency: c.currency, notes: c.notes }));
+  // กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองประเภทนั้น → ใช้ทุนประกันของกรมธรรม์
+  activeAll.forEach((r) => {
+    const k = r.insurance_type === "LIFE" ? "LIFE" : r.insurance_type === "ACCIDENT" ? "ACCIDENT_DEATH" : null;
+    if (!k || Number(r.insured_amount ?? 0) <= 0 || covRows.some((c) => c.policy_id === r.id && c.coverage_type === k)) return;
+    covItems.push({ policyId: r.id, personId: r.person_id as string, type: k, limit: Number(r.insured_amount), used: 0,
+      currency: r.insured_amount_currency ?? "THB", notes: null, fromPolicy: true });
+  });
+  const covPolicies: CovPolicy[] = activeAll.map((r) => ({ id: r.id, name: policyName.get(r.id) ?? "-", type: r.insurance_type, personId: r.person_id,
+    endDate: r.end_date, expiring: r.derived_status === "EXPIRING_SOON", expired: r.derived_status === "EXPIRED", overdue: overduePremium.get(r.id) ?? 0,
+    premium: Number(r.premium ?? 0), premiumCcy: r.premium_currency ?? "THB", hasCov: covRows.some((c) => c.policy_id === r.id) }));
+  const covByIdType = new Map((covs ?? []).map((c) => [c.id, c.coverage_type as string]));
+  const policyPerson = new Map((data ?? []).map((r) => [r.id, r.person_id as string | null]));
+  const covClaims: CovClaim[] = (claims ?? []).map((c) => ({ id: c.id, policyId: c.policy_id, personId: policyPerson.get(c.policy_id) ?? null,
+    coverageType: c.coverage_id ? covByIdType.get(c.coverage_id) ?? null : null, date: c.claim_date ?? c.incident_date, claimed: Number(c.claimed_amount ?? 0),
+    received: Number(c.received_amount ?? 0), currency: c.currency, status: c.status, notes: c.notes }));
+  const covPersonsInView = pv.persons.filter((x) => pv.isPerson(x.id));
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -355,6 +360,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           shareNote={pv.personId ? `ยอดรวมท้ายตาราง = ส่วนของ ${pv.personName} ตามสัดส่วนเจ้าของ (มูลค่าในแถว = ทั้งกรมธรรม์)` : null} />
       </TabPanel>
 
+      <TabPanel id="coverage">
+        <CoverageTab persons={covPersonsInView} personId={pv.personId} personName={pv.personName} policies={covPolicies} items={covItems} claims={covClaims}
+          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} />
+      </TabPanel>
+
       <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatBox label="กรมธรรม์ที่มีผล" value={act.length} unit="ฉบับ" sub={<>ทั้งหมด {mineRows.length} ฉบับ</>} />
@@ -378,49 +388,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
               </li>
             ))}
           </ul>
-        </section>
-      )}
-      {covPersons.length > 0 && (
-        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900">สิทธิ์คุ้มครองรายคน</h2>
-          <p className="px-4 text-xs text-slate-500">รวมวงเงินจากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กดตัวเลขเพื่อดูว่ามาจากกรมธรรม์ไหน</p>
-          <table className="mt-2 w-full min-w-[36rem] text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">ความคุ้มครอง</th>{covPersons.map((id) => <th key={id} className="px-4 text-right">{pname.get(id)}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {covTypes.map((k) => (
-                <tr key={k} className="align-top">
-                  <td className="px-4 py-2">{COVERAGE_LABEL[k][0]}{COVERAGE_LABEL[k][1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[k][1]}</span>}</td>
-                  {covPersons.map((id) => {
-                    const x = byPerson.get(id)?.get(k);
-                    if (!x) return <td key={id} className="px-4 text-right text-slate-300">-</td>;
-                    const annual = COVERAGE_ANNUAL.includes(k);
-                    return (
-                      <td key={id} className="px-4 py-2 text-right">
-                        <ModalButton label={money(x.limit, x.currency, 0)} title={`${COVERAGE_LABEL[k][0]} · ${pname.get(id)}`}
-                          className="tabular-nums text-slate-900 underline decoration-dotted underline-offset-4 hover:text-blue-700">
-                          <table className="w-full text-sm">
-                            <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">กรมธรรม์</th><th className="text-right">วงเงิน</th>{annual && <th className="text-right">ใช้ปีนี้</th>}</tr></thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {x.items.map((it, n) => (
-                                <tr key={n}><td className="py-1.5"><Link href={`/insurance/${it.policyId}`} className="hover:underline">{policyName.get(it.policyId)}</Link></td>
-                                  <td className="text-right tabular-nums">{money(it.limit, it.currency, 0)}</td>
-                                  {annual && <td className="text-right tabular-nums">{it.used > 0 ? money(it.used, undefined, 0) : "-"}</td>}</tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </ModalButton>
-                        {x.policies > 1 && <div className="text-xs text-slate-400">{x.policies} กรมธรรม์</div>}
-                        {annual && x.used > 0 && <div className="text-xs text-slate-500">เหลือ {money(Math.max(x.limit - x.used, 0), undefined, 0)}</div>}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">เคลม: บันทึกเงินคืนที่ Income &amp; Expenses แล้วเลือก &ldquo;เคลมใหม่&rdquo; ตามความคุ้มครอง ระบบสร้างเคลมและหักวงเงินให้เอง · ดูสิทธิ์สุขภาพรายคนได้ที่ Family → Health</p>
         </section>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
