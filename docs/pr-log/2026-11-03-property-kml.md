@@ -1,4 +1,4 @@
-# #PR · Property: ส่งออกแผนที่ (KML) ตามตัวกรอง สำหรับ Google My Maps
+# #308 · Property: ส่งออกแผนที่ (KML) ตามตัวกรอง สำหรับ Google My Maps
 
 - วันที่: 3 พ.ย. 2026 · branch `feat/property-kml`
 - SQL: ไม่มี (ใช้พิกัด / กลุ่มทำเลที่มีอยู่แล้ว)
