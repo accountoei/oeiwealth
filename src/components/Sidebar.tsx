@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, Briefcase, Building2, ChevronsLeft, ChevronsRight, CreditCard, Gem, HandCoins,
   Landmark, LayoutDashboard, Settings, ShieldCheck, TrendingUp, Users, type LucideIcon,
@@ -27,6 +27,16 @@ function setCookie(name: string, value: string | null) {
 
 /** ยุบ / ขยายแถบ (2 พ.ย. 2026): ไอคอนอยู่ที่เดิมทั้ง 2 แบบ (กลางแถบยุบ 64px) · ตัวหนังสือจางลงและถูกตัดตามความกว้างที่หด
  *  ไม่สลับแถว ↔ ซ้อนชั้น / ไม่เปลี่ยนระยะขอบ → ไม่มีอะไรกระโดด */
+/** iPad / แท็บเล็ต (จอสัมผัส ไม่มีเมาส์ · กว้างพอแสดงแถบเมนู) → ยุบแถบเมนูให้เองจนกว่าจะกดขยาย (ตกลง 3 พ.ย. 2026)
+ *  เนื้อหากว้างขึ้น 192px · มือถือ (< 768px) ใช้ปุ่ม ☰ อยู่แล้ว · คอมที่มีเมาส์ / iPad ที่ต่อแทร็กแพดไม่เข้าเงื่อนไข */
+const TABLET = "(min-width: 768px) and (hover: none) and (pointer: coarse)";
+const subscribeTablet = (cb: () => void) => {
+  const m = window.matchMedia(TABLET);
+  m.addEventListener("change", cb);
+  return () => m.removeEventListener("change", cb);
+};
+const isTablet = () => window.matchMedia(TABLET).matches;
+
 const fade = (collapsed: boolean) => `transition-opacity duration-200 ${collapsed ? "pointer-events-none opacity-0" : "opacity-100"}`;
 
 function NavLink({ g, dot, collapsed }: { g: NavGroup; dot?: boolean; collapsed: boolean }) {
@@ -77,14 +87,17 @@ function SortRow({ g, onUp, onDown }: { g: NavGroup; onUp?: () => void; onDown?:
 
 /**
  * dots = href ของเมนูที่ต้องแสดงจุดแดง (เช่น Settings เมื่อมีเดือนที่ถึงเวลาปิดแล้วยังไม่ปิด)
- * initialOrder / initialCollapsed = ค่าจาก cookie ของเครื่องนี้
+ * initialOrder / initialCollapsed = ค่าจาก cookie ของเครื่องนี้ (initialCollapsed ไม่มีค่า = ยังไม่เคยกดยุบ / ขยาย → แท็บเล็ตยุบเอง)
  * To-Do List + ผู้ใช้ / ออกจากระบบ ย้ายไปเป็นปุ่มที่แถบบน (HeaderActions · ตกลง 2 พ.ย. 2026)
  */
-export default function Sidebar({ dots = [], familyName = "", familyPhoto = null, initialOrder = [], initialCollapsed = false, initialWidth }: {
+export default function Sidebar({ dots = [], familyName = "", familyPhoto = null, initialOrder = [], initialCollapsed, initialWidth }: {
   dots?: string[]; familyName?: string; familyPhoto?: string | null; initialOrder?: string[]; initialCollapsed?: boolean; initialWidth?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [collapsedPref, setCollapsed] = useState(initialCollapsed);
+  // ที่เลือกเอง (กดยุบ / ขยาย) ชนะเสมอ · ยังไม่เคยเลือก → แท็บเล็ตยุบ จอคอมขยาย
+  const [choice, setChoice] = useState(initialCollapsed);
+  const tablet = useSyncExternalStore(subscribeTablet, isTablet, () => false);
+  const collapsedPref = choice ?? tablet;
   const [order, setOrder] = useState<string[]>(initialOrder);
   const [sorting, setSorting] = useState(false);
   const [width, setWidth] = useState(clampNavWidth(initialWidth ?? 0));
@@ -97,7 +110,10 @@ export default function Sidebar({ dots = [], familyName = "", familyPhoto = null
   const nav = orderNav(order);
   const mid = nav.filter((g) => g.href !== NAV_PINNED_FIRST && g.href !== NAV_PINNED_LAST).map((g) => g.href!);
 
-  const toggle = () => { setCollapsed(!collapsedPref); setCookie(NAV_COLLAPSED_COOKIE, collapsedPref ? null : "1"); };
+  // จำที่เลือกไว้ที่เครื่องนี้ ("0" = ขยาย · แท็บเล็ตจะไม่ยุบเองอีก)
+  const toggle = () => { setChoice(!collapsedPref); setCookie(NAV_COLLAPSED_COOKIE, collapsedPref ? "0" : "1"); };
+  // แท็บเล็ตที่ยุบเอง: จำไว้ใน cookie → เปิดครั้งต่อไป Server สร้างหน้าแบบยุบเลย (ไม่เห็นแถบหดตอนโหลด)
+  useEffect(() => { if (choice === undefined && tablet) setCookie(NAV_COLLAPSED_COOKIE, "1"); }, [choice, tablet]);
   const move = (i: number, d: -1 | 1) => {
     const next = [...mid];
     [next[i], next[i + d]] = [next[i + d], next[i]];

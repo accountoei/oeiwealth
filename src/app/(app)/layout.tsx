@@ -27,14 +27,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // จำนวนงานค้างที่ปุ่มกระดิ่ง (To-Do List): ไม่รอ (ส่งเป็น Promise → ตัวเลขขึ้นเมื่อคำนวณเสร็จ หน้าไม่ช้าลง) · จำไว้ 5 นาที / จนมีการบันทึก
   const todo: Promise<TodoCount | null> = getTodoCount().catch(() => null);
   const order = decodeURIComponent(jar.get(NAV_ORDER_COOKIE)?.value ?? "").split("|").filter(Boolean);
+  // แถบเมนูยุบ: "1" = ยุบ · "0" = ขยาย (กดเลือกเอง) · ไม่มี = ยังไม่เคยเลือก (iPad ยุบให้เอง)
+  const navCollapsed = jar.get(NAV_COLLAPSED_COOKIE)?.value;
   return (
     <div className="flex min-h-screen">
       <Sidebar dots={due ? ["/settings/month-closing"] : []} initialOrder={order}
-        initialCollapsed={jar.get(NAV_COLLAPSED_COOKIE)?.value === "1"} initialWidth={Number(jar.get(NAV_WIDTH_COOKIE)?.value)}
+        initialCollapsed={navCollapsed === "1" ? true : navCollapsed === "0" ? false : undefined} initialWidth={Number(jar.get(NAV_WIDTH_COOKIE)?.value)}
         familyName={(family as { name: string } | null)?.name ?? ""} familyPhoto={(family as { photo: string | null } | null)?.photo ?? null} />
       <NavPendingProvider><div className="flex-1 min-w-0">
         <AppHeader todo={todo} user={{ name: (person as { name: string } | null)?.name ?? "", email: user.email, role: ROLE_LABEL[user.role] }} />
-        <main className="mx-auto max-w-7xl p-4 md:p-8 2xl:max-w-[100rem]"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>
+        <main className="mx-auto max-w-[90rem] p-4 md:p-8"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>
           <Suspense><NavReset><PendingArea>{children}</PendingArea></NavReset><RowHighlight /></Suspense>
         </CurrencyProvider></KeepHeight></main>
         <Toaster />

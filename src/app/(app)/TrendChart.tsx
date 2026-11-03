@@ -11,17 +11,19 @@ const fmtBaht = (v: number) => `${baht(v)} บาท`;
  * กราฟเส้น Net Worth (SVG) — จุดทึบ = ยอดล็อกแล้ว (ยอดตั้งต้น / ปิดเดือนแล้ว), จุดกลวง = ยังไม่ปิด (อาจเปลี่ยน)
  * วาดตามความกว้างจริงของกล่อง (ไม่ย่อทั้งภาพ) → ตัวหนังสือแกนขนาดเท่าเดิมทุกจอ (เดิมบนมือถือเหลือ ~4–5px)
  * ชี้ (เมาส์) / แตะ (มือถือ) / ปุ่มลูกศร (คีย์บอร์ด) → กล่องค่าของจุดที่ใกล้ที่สุด
+ * ตกลง 3 พ.ย. 2026: กราฟสูงเต็มกล่อง (กล่องยืดเท่ากล่องข้าง ๆ ในแถวเดียวกัน) → ไม่มีที่ว่างใต้คำอธิบายสี · ต่ำสุดตามความสูงจอแบบเดิม
  * ตกลง 1 พ.ย. 2026: ไม่ระบายพื้นใต้เส้น (แกนไม่เริ่มที่ 0 → พื้นทำให้ดูเปลี่ยนมากเกินจริง) · บอกยอดเปลี่ยนทั้งช่วงเป็นตัวเลขแทน · แกนซ้ายฝั่งเดียว 5 ขีด
  */
 export default function TrendChart({ points, selected }: { points: TrendPoint[]; selected: number }) {
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
   const [vh, setVh] = useState(0);
+  const [boxH, setBoxH] = useState(0);
   const [active, setActive] = useState<number | null>(null);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => { setW(Math.round(e.contentRect.width)); setVh(window.innerHeight); });
+    const ro = new ResizeObserver(([e]) => { setW(Math.round(e.contentRect.width)); setBoxH(Math.round(e.contentRect.height)); setVh(window.innerHeight); });
     ro.observe(el);
     const onResize = () => setVh(window.innerHeight);
     window.addEventListener("resize", onResize);
@@ -33,9 +35,11 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
   // ก่อนรู้ความกว้าง (ตอนโหลดหน้า) ใช้ 640 แล้วย่อ / ขยายตามกล่องไปก่อน
   const W = w || 640;
   const narrow = W < 480;
-  // ความสูงกราฟตามความสูงจอ (จอเตี้ย → กราฟเตี้ย ให้การ์ด + กราฟ + กล่อง "เปลี่ยนเพราะอะไร" อยู่ในจอแรก)
+  // ความสูงต่ำสุดตามความสูงจอ (จอเตี้ย → กราฟเตี้ย ให้การ์ด + กราฟ + กล่อง "เปลี่ยนเพราะอะไร" อยู่ในจอแรก)
   // 150–280px (รอบ 4: จอสูงอย่าง 2560×1600 กราฟสูงขึ้นได้ถึง 280 · จอ Full HD ยังเท่าเดิม)
-  const H = vh ? Math.round(Math.min(280, Math.max(150, vh * 0.21))) : narrow ? 180 : 200;
+  // กล่องสูงกว่านั้น (กล่องข้าง ๆ ยาวกว่า) → กราฟยืดเต็มที่ว่าง (3 พ.ย. 2026)
+  const minH = vh ? Math.round(Math.min(280, Math.max(150, vh * 0.21))) : narrow ? 180 : 200;
+  const H = Math.max(minH, boxH);
   const L = narrow ? 56 : 64, R = 16, T = 12, B = 28;
   const vs = points.map((p) => p.v);
   let lo = Math.min(...vs), hi = Math.max(...vs);
@@ -74,14 +78,16 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
   const chg = last.v - first.v, chgPct = first.v ? (chg / Math.abs(first.v)) * 100 : null;
 
   return (
-    <div ref={box} className="relative">
+    <div className="flex flex-1 flex-col">
       <p className="mb-2 text-sm">
         <span className={`font-semibold tabular-nums ${Math.round(chg) < 0 ? "text-red-700" : Math.round(chg) > 0 ? "text-emerald-700" : "text-slate-700"}`}>
           {Math.round(chg) > 0 ? "+" : ""}{baht(chg)}{chgPct != null ? ` (${chgPct > 0 ? "+" : ""}${chgPct.toFixed(2).replace("-", "\u2212")}%)` : ""}
         </span>
         <span className="text-slate-500"> ตั้งแต่{first.label === "ตั้งต้น" ? "ยอดตั้งต้น" : ` ${first.label}`}</span>
       </p>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full touch-pan-y select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
+      {/* ที่ของกราฟ: สูงอย่างน้อย minH แล้วยืดตามกล่อง · SVG วางทับ (absolute) → ความสูงกราฟไม่ดันกล่องให้สูงขึ้นเอง */}
+      <div ref={box} className="relative flex-1" style={{ minHeight: minH }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full touch-pan-y select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
         role="img" tabIndex={0}
         aria-label={`กราฟ Net Worth: ${points.map((p) => `${p.label} ${fmtBaht(p.v)}`).join(", ")}`}
         onPointerMove={(e) => setActive(nearest(e))}
@@ -115,6 +121,7 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
           <div className="font-semibold tabular-nums">{fmtBaht(a.v)}</div>
         </div>
       )}
+      </div>
     </div>
   );
 }
