@@ -85,7 +85,7 @@ export async function loadDue(month: string, canWrite: boolean, showAsset: (asse
         : { data: [] as (Tx & { fee: number | null })[] };
       return { cashRows, cashInt };
     })(),
-    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name") : none,
+    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order") : none,
   ]);
   return { holdings, fcns, txs, cashRows, cashInt, banks };
 }

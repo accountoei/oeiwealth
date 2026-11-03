@@ -43,7 +43,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
       .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("families").select("go_live_date").maybeSingle(),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);

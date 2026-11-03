@@ -10,6 +10,7 @@ import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
 import ContractParties, { type PartyOptions, type PartyValues } from "../ContractParties";
 import PartyPicker, { type BorrowerBank } from "@/components/PartyPicker";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -126,7 +127,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-sm">วันที่ได้รับ *<input name="date" type="date" required value={date} onChange={(e) => onDate(e.target.value)} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">เข้าบัญชี *
-          <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
+          <select name="bank_asset_id" required className={input}><BankOptions banks={list} /></select>
         </label>
         <span />
         {owedI != null && (
@@ -187,7 +188,7 @@ export function DisburseForm({ assetId, currency, banks, today, minDate, hasOpen
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">จ่ายจากบัญชี *
-          <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
+          <select name="bank_asset_id" required className={input}><BankOptions banks={list} /></select>
         </label>
         <label className="text-sm">จำนวนเงิน *<input name="amount" required inputMode="decimal" className={input} /></label>
         <label className="text-sm md:col-span-3">รายละเอียด<input name="description" className={input} /></label>

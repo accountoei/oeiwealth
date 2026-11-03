@@ -58,7 +58,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       .in("status", ["OPEN", "IN_PROGRESS"]).order("created_at"),
     supabase.from("v_insurance_schedule_status").select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,paid_amount,remaining,status")
       .order("due_date").order("installment_no"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("insurance_cash_value_table").select("policy_id,policy_year,value_date,value").is("deleted_at", null).lte("value_date", today)

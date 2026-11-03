@@ -36,7 +36,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,received_to_asset_id,created_at").eq("asset_id", id).eq("income_type", "LOAN_INTEREST")
       .is("deleted_at", null).order("date", { ascending: false }),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status,grace_until")

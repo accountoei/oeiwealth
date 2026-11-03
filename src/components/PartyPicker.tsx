@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 
@@ -52,7 +53,7 @@ export default function PartyPicker({ label, nameField, personField, businessFie
         <label className="block text-sm text-slate-700">บัญชีของผู้กู้
           <select name={bankField} value={bank} onChange={(e) => setBank(e.target.value)} className={input}>
             <option value="">— ไม่บันทึกฝั่งผู้กู้ —</option>
-            {myBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+            <BankOptions banks={myBanks} ccy />
           </select>
           <span className="mt-1 block text-xs text-slate-500">
             {bank ? "ระบบบันทึกให้เอง: จ่ายเงินกู้ = เงินเข้าบัญชีนี้ · รับชำระ = เงินต้นออกจากบัญชีนี้ + ค่าใช้จ่ายดอกเบี้ยจ่ายของผู้กู้"

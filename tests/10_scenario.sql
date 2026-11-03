@@ -4416,6 +4416,25 @@ SELECT t.ok(NOT has_table_privilege('anon', 'public.portfolio_capital_transfers'
             AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.portfolio_capital_transfers'::regclass),
             'เงินโอนก่อน Go-live: RLS เปิด · anon อ่านไม่ได้');
 ROLLBACK;
+\echo '== 13zz32. บัญชีที่ใช้บ่อยขึ้นบนสุดของ dropdown (v_bank_accounts_safe · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT count(*) AS fq_n FROM public.v_bank_accounts_safe \gset
+SELECT max(use_count) + 1 AS fq_k FROM public.v_bank_accounts_safe \gset
+SELECT count(public.transfer_money(t.a('BBL USD'), t.a('Brokerage USD'), 1, current_date, 0, 'ทดสอบใช้บ่อย')) AS fq_t
+  FROM generate_series(1, :fq_k);
+SELECT t.ok((SELECT frequent AND pick_order = 1 AND use_count >= 2 FROM public.v_bank_accounts_safe WHERE asset_id = t.a('BBL USD'))
+            AND (SELECT count(*) FROM public.v_bank_accounts_safe) = :fq_n
+            AND (SELECT count(DISTINCT pick_order) = count(*) FROM public.v_bank_accounts_safe),
+            'บัญชีใช้บ่อย: บัญชีที่มีรายการมากสุดใน 90 วันอยู่ลำดับแรก · จำนวนแถวเท่าเดิม · ลำดับไม่ซ้ำ');
+SELECT t.ok((SELECT count(*) FILTER (WHERE frequent) <= 5 AND bool_and(NOT frequent OR (status = 'ACTIVE' AND use_count > 0))
+               FROM public.v_bank_accounts_safe)
+            AND (SELECT bool_and(f.pick_order < o.pick_order) FROM public.v_bank_accounts_safe f, public.v_bank_accounts_safe o
+                  WHERE f.frequent AND NOT o.frequent),
+            'บัญชีใช้บ่อย: ไม่เกิน 5 บัญชี · ต้องยังใช้งานและมีรายการ · อยู่ก่อนบัญชีอื่นทุกบัญชี');
+RESET ROLE;
+SELECT t.ok(NOT has_table_privilege('anon', 'public.v_bank_accounts_safe', 'SELECT'), 'บัญชีใช้บ่อย: anon อ่าน View ไม่ได้');
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

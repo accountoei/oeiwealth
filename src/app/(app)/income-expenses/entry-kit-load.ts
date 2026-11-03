@@ -16,7 +16,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   const none = Promise.resolve({ data: [] as never[] });
   const [{ data: banksRaw }, { data: cardsRaw }, { data: cardBal }, { data: liabRaw }, { data: persons }, { data: cats }, { data: hintRows },
     { data: incs }, { data: exps }, pfCash] = await Promise.all([
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),

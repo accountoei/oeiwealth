@@ -5,6 +5,7 @@ import { money, thDate } from "@/lib/format";
 import { payFromDrop, type ActionState, type Drop } from "./actions";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
@@ -35,7 +36,7 @@ export default function DropPrompt({ drop, currency, banks }: {
           <label className="text-xs">จ่ายจากบัญชี
             <select name="bank_asset_id" required defaultValue="" className={`mt-1 block ${small}`}>
               <option value="">— เลือก —</option>
-              {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+              <BankOptions banks={banks} />
             </select>
           </label>
           <label className="text-xs">ยอดที่จ่าย ({currency})

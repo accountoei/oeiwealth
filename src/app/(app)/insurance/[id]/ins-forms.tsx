@@ -11,6 +11,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -220,7 +221,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
         </select>
       </label>
       {via === "bank" && <label className="text-xs">บัญชี<select name="bank_asset_id" required className={`mt-1 block ${small}`}>
-        {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select></label>}
+        <BankOptions banks={sameBanks} /></select></label>}
       {via === "card" && <label className="text-xs">บัตร<select name="card_id" required className={`mt-1 block ${small}`}>
         {sameCards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>}
       {via === "cash" && <label className="text-xs">ผู้จ่าย<select name="person_id" required defaultValue={defaultPerson ?? undefined} className={`mt-1 block ${small}`}>
@@ -258,7 +259,7 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
         <label className="text-sm">ยอดที่ได้รับ ({currency}) *<input name="amount" required inputMode="decimal" defaultValue={amount ? amount.toFixed(2) : ""} className={input} /></label>
         <label className="text-sm">วันที่ได้รับ *<input name="date" type="date" required defaultValue={today} max={today} className={input} /></label>
         <label className="text-sm">เข้าบัญชี *<select name="bank_asset_id" required className={input}>
-          {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select></label>
+          <BankOptions banks={sameBanks} /></select></label>
         {canClose && (
           <label className="text-sm">เป็นการ
             <select name="outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} className={input}>

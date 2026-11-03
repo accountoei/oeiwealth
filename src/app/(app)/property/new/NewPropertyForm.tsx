@@ -8,6 +8,7 @@ import LeaseFields, { type Bank } from "../LeaseFields";
 import { PROPERTY_TYPE_LABEL, USAGE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import ComponentTable from "../ComponentTable";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -26,7 +27,7 @@ export default function NewPropertyForm(props: {
   const opening = !!earliest && earliest < goLive;
   const blocked = opening && !isSetup && !isAdmin;
   const [payMode, setPayMode] = useState<"PAID" | "CREDIT" | "NONE">("PAID");
-  const bankOptions = banks.filter((b) => b.currency === currency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>);
+  const bankOptions = <BankOptions banks={banks.filter((b) => b.currency === currency)} />;
 
   return (
     <form action={action} className="space-y-6">

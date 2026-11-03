@@ -9,6 +9,7 @@ import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
 import PartyPicker from "@/components/PartyPicker";
+import BankOptions from "@/components/BankOptions";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -112,7 +113,7 @@ export function PayLiabilityForm({ liabilityId, currency, banks, monthlyPayment,
         <label className="text-sm md:col-span-2">จ่ายจากบัญชี ({currency}) *
           <select name="bank_asset_id" required className={`mt-1 block w-full ${input}`}>
             <option value="">— เลือก —</option>
-            {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            <BankOptions banks={banks} />
           </select>
           {banks.length === 0 && <span className="mt-1 block text-xs text-amber-700">ไม่มีบัญชีสกุล {currency}</span>}
         </label>
