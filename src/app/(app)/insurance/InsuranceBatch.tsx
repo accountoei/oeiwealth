@@ -3,57 +3,73 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
+import { BENEFIT_TYPE_LABEL, INS_OPEN, INS_SCHED_STATUS, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
 
-export type InsLine = {
-  id: string; policyId: string; policy: string; person: string | null; no: number; due: string; remaining: number;
-  /** ยอดเต็มงวด · จ่าย / รับไปแล้ว (งวดที่ทยอยจ่าย / รับ → แสดงใต้ยอดค้าง) */
-  amount: number; paid: number; currency: string;
-  /** ที่จ่าย / รับแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
-  status: string; benefitType: string | null;
+/** แถวจาก v_insurance_schedule_status */
+export type YLine = { id: string; policy_id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string;
+  benefit_type: string | null; paid_amount: number; remaining: number; status: string };
+export type BoxLine = {
+  id: string; no: number; due: string; amount: number;
+  /** จ่าย / รับแล้ว (ก่อน Go-live นับเต็มงวด) · คงเหลือ (ปิด / ไม่ได้จ่าย = 0) */ paid: number; remaining: number;
+  currency: string; status: string; benefitType: string | null;
+  /** ที่จ่าย / รับแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ยกเลิก) */ edits?: Recorded[];
+  /** งวดนอกปีที่เลือก: "ค้างจากปี 2568" / "งวดปี 2570" */ tag?: string | null;
 };
+export type BoxPolicy = { id: string; name: string; person: string | null; active: boolean; lines: BoxLine[];
+  /** รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือก */ lumps: Recorded[] };
 export type PayOpt = { value: string; label: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const STATUS: Record<string, { text: string; cls: string }> = {
-  OVERDUE: { text: "เลยกำหนด", cls: "text-red-600" }, PARTIAL: { text: "จ่ายบางส่วน", cls: "text-amber-700" }, PENDING: { text: "รอ", cls: "text-slate-500" },
-  PAID: { text: "ครบแล้ว", cls: "text-emerald-700" },
-};
+const cur = (c: string) => (c !== "THB" ? c : undefined);
 
 /**
- * แท็บ "จ่ายชำระเบี้ยประกัน" (PREMIUM) / "บันทึกรับผลประโยชน์" (BENEFIT) ของหน้า Insurance (ตกลง 27 ต.ค. 2026)
- *   งวดที่ยังไม่จ่าย / ยังไม่รับ ของทุกกรมธรรม์ (ตั้งต้น: เลยกำหนด + ภายใน 60 วัน · ติ๊กเพื่อแสดงทุกงวด)
- *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องยอดว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
+ * แท็บ "บันทึกรับผลประโยชน์" (BENEFIT) / "จ่ายชำระเบี้ยประกัน" (PREMIUM) — กล่องเดียวต่อปีแบบเงินให้กู้ (ตกลง 3 พ.ย. 2026)
+ *   กรมธรรม์ละกลุ่ม: งวดในปีที่เลือก (ปีนี้ = รวมงวดค้างจากปีก่อน + งวดที่ครบภายใน 60 วัน) · ยอดงวด / จ่าย-รับแล้ว (กดแก้) / คงเหลือ
+ *   ช่องกรอกเฉพาะงวดที่ถึงกำหนด (ติ๊กเพื่อเปิดงวดที่ยังไม่ถึง) · วันที่ช่องเดียวใช้กับทุกแถว · ผิดแถวเดียว = ไม่บันทึกเลย
  */
-export default function InsuranceBatch({ kind, rows, pays, today, defaultDate = today, soon, minDate, canWrite }: {
-  kind: "PREMIUM" | "BENEFIT"; rows: InsLine[]; pays: PayOpt[]; today: string; defaultDate?: string; soon: string; minDate: string; canWrite: boolean;
+export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pays, today, defaultDate = today, soon, minDate, canWrite }: {
+  kind: "PREMIUM" | "BENEFIT"; year: number; years: { value: number; mark?: string }[]; hrefOf: string; policies: BoxPolicy[];
+  pays: PayOpt[]; today: string; defaultDate?: string; soon: string; minDate: string; canWrite: boolean;
 }) {
   const prem = kind === "PREMIUM";
   const router = useRouter();
   const cf = useConfirmSubmit();
+  const lines = policies.flatMap((p) => p.lines.map((l) => ({ ...l, policyId: p.id, policy: p.name, active: p.active })));
   const firstPay = (ccy: string) => pays.find((p) => p.currency === ccy)?.value ?? "";
   const [date, setDate] = useState(defaultDate);
   const [all, setAll] = useState(false);
+  const [expand, setExpand] = useState<Record<string, boolean>>({});
   const [vals, setVals] = useState<Record<string, string>>({});
-  const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.id, firstPay(r.currency)])));
+  const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, firstPay(l.currency)])));
   const [state, action, pending] = useActionState<ActionState, FormData>(prem ? batchPremiums : batchBenefits, {});
   useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
 
-  // งวดที่จ่าย / รับครบภายใน 60 วัน (PAID) แสดงไว้ให้กดแก้ยอดที่บันทึกแล้ว · ไม่มีช่องกรอก
-  const shown = all ? rows : rows.filter((r) => r.status === "OVERDUE" || r.status === "PAID" || r.due <= soon);
-  const hidden = rows.length - shown.length;
-  const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
-  const label = (r: InsLine) => `${r.policy} งวดที่ ${r.no}`;
-  const payload = chosen.map((r) => ({ policy_id: r.policyId, line_id: r.id, label: label(r), amount: vals[r.id], pay: pay[r.id] ?? "", currency: r.currency }));
+  const open = (l: (typeof lines)[number]) => l.active && INS_OPEN.includes(l.status) && l.remaining > 0.005;
+  const due = (l: (typeof lines)[number]) => open(l) && (l.status === "OVERDUE" || l.due <= soon);
+  const canInput = (l: (typeof lines)[number]) => canWrite && (due(l) || (all && open(l)));
+  const later = lines.filter((l) => open(l) && !due(l)).length;
+  const chosen = lines.filter((l) => canInput(l) && (vals[l.id] ?? "").trim() !== "");
+  const label = (l: (typeof lines)[number]) => `${l.policy} งวดที่ ${l.no}`;
+  const payload = chosen.map((l) => ({ policy_id: l.policyId, line_id: l.id, label: label(l), amount: vals[l.id], pay: pay[l.id] ?? "", currency: l.currency }));
   const payName = new Map(pays.map((p) => [p.value, p.label]));
   const what = prem ? "จ่ายเบี้ย" : "รับผลประโยชน์";
-  const onSubmit = cf.guard(`บันทึก${what} ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
-    `• ${label(r)} ${vals[r.id]} ${prem ? "จาก" : "→"} ${payName.get(pay[r.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = cf.guard(`บันทึก${what} ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((l) =>
+    `• ${label(l)} ${vals[l.id]} ${prem ? "จาก" : "→"} ${payName.get(pay[l.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const statusText = (s: string) => s === "PAID" ? (prem ? "จ่ายแล้ว" : "รับแล้ว") : s === "PENDING" ? (prem ? "รอจ่าย" : "รอรับ") : INS_SCHED_STATUS[s]?.text ?? s;
+  // ยอดรวมท้ายกล่อง = งวดที่ครบในปีที่เลือกเท่านั้น (งวดค้างจากปีก่อน / งวดปีหน้า แสดงในกล่องแต่ไม่นับรวม)
+  const inYear = (l: BoxLine) => !l.tag;
+  const thb = lines.filter((l) => l.currency === "THB" && inYear(l));
+  const outside = lines.some((l) => !inYear(l));
+  const sum = (f: (l: BoxLine) => number) => thb.reduce((t, l) => t + f(l), 0);
+  // กรมธรรม์ที่มีหลายงวดในปี (รายเดือน / ไตรมาส): งวดที่จบแล้วรวมเป็นบรรทัดเดียว กดเพื่อดูทุกงวด
+  const finished = (l: BoxLine) => ["PAID", "HISTORY", "SKIPPED", "CLOSED"].includes(l.status);
+  const cols = canWrite ? 7 : 5;
 
   return (
     <>
@@ -72,66 +88,114 @@ export default function InsuranceBatch({ kind, rows, pays, today, defaultDate = 
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">{prem ? "งวดเบี้ยที่ยังไม่จ่าย" : "งวดผลประโยชน์ที่ยังไม่ได้รับ"}</h2>
+          <h2 className="font-medium text-slate-900">{prem ? "เบี้ยประกัน" : "ผลประโยชน์"} ปี {year + 543}</h2>
           <div className="flex flex-wrap items-center gap-4 text-sm">
-            {(hidden > 0 || all) && (
+            {canWrite && later > 0 && (
               <label className="flex items-center gap-2 text-slate-600">
                 <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-                แสดงทุกงวด{hidden > 0 ? ` (อีก ${hidden} งวด)` : ""}
+                เปิดช่องกรอกงวดที่ยังไม่ถึงกำหนด ({later})
               </label>
             )}
-            {canWrite && shown.length > 0 && (
-              <button type="button" onClick={() => setVals({ ...vals, ...Object.fromEntries(shown.filter((r) => r.remaining > 0).map((r) => [r.id, fmt(r.remaining)])) })}
+            {canWrite && lines.some(canInput) && (
+              <button type="button" onClick={() => setVals({ ...vals, ...Object.fromEntries(lines.filter(canInput).map((l) => [l.id, fmt(l.remaining)])) })}
                 className="text-blue-700 hover:underline">ใส่ยอดตามงวดทุกแถว</button>
             )}
+            <YearSelect options={years} value={year} hrefOf={hrefOf} />
           </div>
         </div>
-        <table className="mt-3 w-full text-sm">
+        <table className="mt-3 w-full min-w-[60rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
-            <tr><th className="min-w-[12rem] px-3 py-2">กรมธรรม์</th><th className="w-44 px-3">งวด / ครบกำหนด</th><th className="w-44 px-3 text-right">{prem ? "ยอดค้าง" : "ยอดที่จะได้รับ"}</th>
-              {canWrite && <><th className="w-56 px-3 text-right">{prem ? "ยอดที่จ่าย" : "ยอดที่ได้รับ"}</th><th className="w-64 px-3">{prem ? "จ่ายจาก" : "เข้าบัญชี"}</th></>}</tr>
+            <tr><th className="min-w-[12rem] px-3 py-2">กรมธรรม์ / {prem ? "ผู้จ่าย" : "ผู้เอาประกัน"}</th><th className="w-48 px-3">งวด / ครบกำหนด</th>
+              <th className="w-32 px-3 text-right">ยอดงวด</th><th className="w-44 px-3 text-right">{prem ? "จ่ายแล้ว" : "รับแล้ว"}</th><th className="w-32 px-3 text-right">คงเหลือ</th>
+              {canWrite && <><th className="w-52 px-3 text-right">{prem ? "ยอดที่จ่าย" : "ยอดที่ได้รับ"}</th><th className="w-56 px-3">{prem ? "จ่ายจาก" : "เข้าบัญชี"}</th></>}</tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-              {rows.length === 0 ? `ไม่มีงวด${prem ? "เบี้ย" : "ผลประโยชน์"}ที่ค้าง (ตั้งตารางได้ที่หน้ากรมธรรม์)` : `ไม่มีงวดที่เลยกำหนดหรือถึงกำหนดถึง ${thDate(soon)}`}</td></tr>}
-            {shown.map((r) => {
-              const v = vals[r.id] ?? "";
-              const st = STATUS[r.status];
-              return (
-                <tr key={r.id} className={v.trim() ? "bg-blue-50/40" : ""}>
-                  <td className="px-3 py-2">
-                    <Link href={`/insurance/${r.policyId}`} className="font-medium text-slate-900 hover:underline">{r.policy}</Link>
-                    {r.person && <div className="text-xs text-slate-500">{r.person}</div>}
-                  </td>
-                  <td className="whitespace-nowrap px-3 text-xs">งวดที่ {r.no}{r.benefitType ? ` · ${BENEFIT_TYPE_LABEL[r.benefitType] ?? r.benefitType}` : ""}
-                    <div>{thDate(r.due)}{st && <span className={`ml-1 ${st.cls}`}>· {!prem && r.status === "PARTIAL" ? "รับบางส่วน" : st.text}</span>}</div></td>
-                  {/* ทยอยจ่าย / รับไปบางส่วน → บรรทัดเล็ก "จ่ายแล้ว / รับแล้ว" + ยอดเต็มงวด (ตกลง 28 ต.ค. 2026) */}
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{r.status !== "PAID" && money(r.remaining, r.currency)}
-                    {r.paid > 0.005 && <>
-                      {r.edits?.length ? <RecordedLines items={r.edits} />
-                        : <div className="text-xs text-emerald-700">{prem ? "จ่ายแล้ว" : "รับแล้ว"} {money(r.paid, r.currency)}</div>}
-                      {r.status !== "PAID" && <div className="text-xs text-slate-400">จากงวด {money(r.amount, r.currency)}</div>}
-                    </>}</td>
-                  {canWrite && r.status === "PAID" && <><td /><td /></>}
-                  {canWrite && r.status !== "PAID" && <>
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
-                      <button type="button" onClick={() => setVals({ ...vals, [r.id]: fmt(r.remaining) })} className="mr-2 text-xs text-blue-700 hover:underline">ตามงวด</button>
-                      <input inputMode="decimal" value={v} placeholder={r.currency} aria-label={`ยอด ${label(r)}`}
-                        onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })} className={`w-32 text-right ${small}`} />
-                    </td>
-                    <td className="px-3">
-                      <select value={pay[r.id] ?? ""} onChange={(e) => setPay({ ...pay, [r.id]: e.target.value })} className={`w-full max-w-[15rem] ${small}`}
-                        aria-label={`${prem ? "จ่ายจาก" : "เข้าบัญชี"} ${label(r)}`}>
-                        <option value="">{prem ? "— เลือกบัญชี / บัตร —" : "— เลือกบัญชี —"}</option>
-                        {pays.filter((p) => p.currency === r.currency).map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                      </select>
-                    </td>
-                  </>}
-                </tr>
-              );
-            })}
-          </tbody>
+          {policies.length === 0 && (
+            <tbody><tr><td colSpan={cols} className="px-4 py-6 text-center text-slate-500">
+              ไม่มีงวด{prem ? "เบี้ย" : "ผลประโยชน์"}ในปี {year + 543} (ตั้งตารางได้ที่หน้ากรมธรรม์)</td></tr></tbody>
+          )}
+          {policies.map((p) => {
+            const yl = p.lines.filter(inYear);
+            const done = p.lines.filter(finished);
+            const fold = p.lines.length > 4 && done.length > 1 && !expand[p.id];
+            const shown = fold ? p.lines.filter((l) => !finished(l)) : p.lines;
+            const head = (
+              <td rowSpan={Math.max(shown.length + (fold ? 1 : 0), 1)} className="px-3 py-2 align-top">
+                <Link href={`/insurance/${p.id}`} className="font-medium text-slate-900 hover:underline">{p.name}</Link>
+                {p.person && <div className="text-xs text-slate-500">{p.person}</div>}
+                {yl.length > 1 && <div className="text-xs text-slate-500">{yl.length} งวดในปี · รวม {money(yl.reduce((t, l) => t + l.amount, 0), cur(yl[0].currency))}</div>}
+                {p.lines.length > 4 && done.length > 1 && (expand[p.id] || !canWrite) && (
+                  <button type="button" onClick={() => setExpand({ ...expand, [p.id]: !expand[p.id] })} className="text-xs text-blue-700 hover:underline">
+                    {expand[p.id] ? "ย่องวดที่จบแล้ว" : `แสดงทุกงวด (${p.lines.length})`}</button>
+                )}
+                {!p.active && <div className="text-xs text-slate-400">กรมธรรม์ไม่มีผลแล้ว</div>}
+                <RecordedLines items={p.lumps} />
+              </td>
+            );
+            return (
+              <tbody key={p.id} className="divide-y divide-slate-100 border-t border-slate-200">
+                {p.lines.length === 0 && <tr>{head}<td colSpan={cols - 1} className="px-3 py-2 text-xs text-slate-400">ไม่มีงวดในปีนี้ · รับเงินก้อน</td></tr>}
+                {fold && (
+                  <tr className="align-top text-slate-500">
+                    {head}
+                    <td className="whitespace-nowrap px-3 py-2 text-xs">งวดที่ {done[0].no}–{done.at(-1)?.no} · จบแล้ว {done.length} งวด
+                      <div className="mt-0.5">{thDate(done[0].due)} – {thDate(done.at(-1)?.due)}</div></td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(done.reduce((t, l) => t + l.amount, 0), cur(done[0].currency))}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(done.reduce((t, l) => t + l.paid, 0), cur(done[0].currency))}</td>
+                    <td className="px-3 py-2 text-right text-slate-300">-</td>
+                    {canWrite && <td colSpan={2} className="px-3 py-2 text-xs"><button type="button" onClick={() => setExpand({ ...expand, [p.id]: true })}
+                      className="text-blue-700 hover:underline">ดู / แก้ทีละงวด</button></td>}
+                  </tr>
+                )}
+                {shown.map((l, i) => {
+                  const x = { ...l, policyId: p.id, policy: p.name, active: p.active };
+                  const v = vals[l.id] ?? "";
+                  const st = INS_SCHED_STATUS[l.status];
+                  return (
+                    <tr key={l.id} className={`align-top ${v.trim() ? "bg-blue-50/40" : ""}`}>
+                      {i === 0 && !fold && head}
+                      <td className="whitespace-nowrap px-3 py-2 text-xs">งวดที่ {l.no}{l.benefitType ? ` · ${BENEFIT_TYPE_LABEL[l.benefitType] ?? l.benefitType}` : ""}
+                        <div className="mt-0.5">{thDate(l.due)} <span className={`ml-1 rounded px-1.5 py-0.5 ${st?.cls ?? ""}`}>{statusText(l.status)}</span></div>
+                        {l.tag && <div className={l.due < `${year}-01-01` ? "text-red-600" : "text-slate-500"}>{l.tag}</div>}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(l.amount, cur(l.currency))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {l.edits?.length ? <RecordedLines items={l.edits} /> : l.paid > 0.005 ? <span className="text-slate-500">{money(l.paid, cur(l.currency))}</span> : <span className="text-slate-300">-</span>}</td>
+                      <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${l.status === "OVERDUE" ? "text-red-700" : ""}`}>
+                        {l.remaining > 0.005 ? money(l.remaining, cur(l.currency)) : <span className="text-slate-300">-</span>}</td>
+                      {canWrite && (canInput(x) ? <>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          <button type="button" onClick={() => setVals({ ...vals, [l.id]: fmt(l.remaining) })} className="mr-2 text-xs text-blue-700 hover:underline">ตามงวด</button>
+                          <input inputMode="decimal" value={v} placeholder={l.currency} aria-label={`ยอด ${label(x)}`}
+                            onChange={(e) => setVals({ ...vals, [l.id]: e.target.value })} className={`w-32 text-right ${small}`} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <select value={pay[l.id] ?? ""} onChange={(e) => setPay({ ...pay, [l.id]: e.target.value })} className={`w-full max-w-[15rem] ${small}`}
+                            aria-label={`${prem ? "จ่ายจาก" : "เข้าบัญชี"} ${label(x)}`}>
+                            <option value="">{prem ? "— เลือกบัญชี / บัตร —" : "— เลือกบัญชี —"}</option>
+                            {pays.filter((o) => o.currency === l.currency).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </td>
+                      </> : (
+                        <td colSpan={2} className="px-3 py-2 text-xs">
+                          {l.status === "PAID" ? <span className="text-emerald-700">{prem ? "จ่ายครบแล้ว" : "รับครบแล้ว"} ✓</span>
+                            : open(x) ? <span className="text-slate-400">ยังไม่ถึงกำหนด</span> : null}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            );
+          })}
+          {thb.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr><td colSpan={2} className="px-3 py-2">รวมปี {year + 543} (THB){outside && <div className="text-xs font-normal text-slate-500">ไม่รวมงวดค้างจากปีก่อน / งวดปีหน้า</div>}</td>
+                <td className="px-3 text-right tabular-nums">{money(sum((l) => l.amount))}</td>
+                <td className={`px-3 text-right tabular-nums ${prem ? "text-red-700" : "text-emerald-700"}`}>{money(sum((l) => l.paid))}</td>
+                <td className="px-3 text-right tabular-nums">{money(sum((l) => l.remaining))}</td>
+                {canWrite && <td colSpan={2} />}</tr>
+            </tfoot>
+          )}
         </table>
       </div>
       {canWrite && (
@@ -145,9 +209,10 @@ export default function InsuranceBatch({ kind, rows, pays, today, defaultDate = 
         </div>
       )}
       <p className="text-xs text-slate-500">
-        {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์</>
-          : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำที่หน้ากรมธรรม์</>}
-        {" "}· งวดที่{prem ? "จ่าย" : "รับ"}ครบภายใน 60 วันยังแสดงไว้ (&ldquo;ครบแล้ว&rdquo;) · {prem ? "กดยอดสีเขียวเพื่อแก้ / ลบ" : "แก้ยอดที่รับ: กด \"ยกเลิก\" (ย้อนทั้งก้อน) แล้วบันทึกใหม่"}
+        {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
+          {" "}· กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ (ลบแล้วงวดกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน)</>
+          : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · แก้ยอดที่รับ: กด &ldquo;ยกเลิก&rdquo; (ย้อนทั้งก้อน) แล้วบันทึกใหม่
+          {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
         {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
       </p>
     </form>

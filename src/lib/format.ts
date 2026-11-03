@@ -519,6 +519,8 @@ export const INS_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
 /** ยอดที่นับเป็นจ่าย / รับแล้วของงวด: เงินจริง + งวดประวัติก่อน Go-live (เต็มงวด) */
 export const insCountedPaid = (l: { status: string; amount: number; paid_amount: number }) =>
   l.status === "HISTORY" ? Number(l.amount) : Number(l.paid_amount);
+/** งวดประกันที่ยังจ่าย / รับไม่ครบ (สถานะจาก v_insurance_schedule_status) */
+export const INS_OPEN = ["PENDING", "OVERDUE", "PARTIAL"];
 export const FOLLOWUP_ROLE: Record<string, string> = { INSURED: "ผู้เอาประกัน", PAYER: "ผู้จ่ายเบี้ย", BENEFICIARY: "ผู้รับผลประโยชน์" };
 export const FOLLOWUP_STATUS: [string, string][] = [["OPEN", "ยังไม่เริ่ม"], ["IN_PROGRESS", "กำลังดำเนินการ"], ["DONE", "เสร็จแล้ว"], ["NOT_APPLICABLE", "ไม่ต้องทำ"]];
 
