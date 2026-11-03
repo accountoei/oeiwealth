@@ -1,4 +1,4 @@
-# บัญชีที่ใช้บ่อยขึ้นบนสุดของ dropdown บัญชีเงินฝาก
+# #307 · บัญชีที่ใช้บ่อยขึ้นบนสุดของ dropdown บัญชีเงินฝาก
 
 - วันที่: 3 พ.ย. 2026 · branch `feat/frequent-accounts`
 - SQL: `supabase/migrations/20261103090000_frequent_bank_accounts.sql` (แก้ View `v_bank_accounts_safe` อย่างเดียว · local md5 ของ `pg_get_viewdef` = c739d059918a8a9afed4e5806c1e43cc)
