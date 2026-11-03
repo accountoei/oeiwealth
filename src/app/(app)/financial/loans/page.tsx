@@ -65,7 +65,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
   // งวดถัดไป + งวดที่เลยกำหนด ของแต่ละสัญญา
   const nextDue = new Map<string, { due_date: string; amount: number }>();
   const overdue = new Map<string, { n: number; amount: number; oldest: string }>();
-  sched.filter((x) => ["OVERDUE", "PARTIAL", "PENDING"].includes(x.status)).forEach((x) => {
+  sched.filter((x) => ["OVERDUE", "DUE", "PARTIAL", "PENDING"].includes(x.status)).forEach((x) => {
     if (x.status === "OVERDUE") {
       const o = overdue.get(x.loan_asset_id);
       overdue.set(x.loan_asset_id, { n: (o?.n ?? 0) + 1, amount: (o?.amount ?? 0) + Number(x.total_remaining), oldest: o?.oldest ?? x.due_date });
@@ -116,7 +116,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
   // ---------------------------------------------------------------- แท็บบันทึกรับชำระคืนเงินกู้
   const loanOf = new Map(rows.map((r) => [r.asset_id, r]));
   const monthLines = sched.filter((x) => loanOf.has(x.loan_asset_id)
-    && ((x.due_date >= start && x.due_date <= end) || (x.due_date < start && ["OVERDUE", "PARTIAL"].includes(x.status))));
+    && ((x.due_date >= start && x.due_date <= end) || (x.due_date < start && ["OVERDUE", "DUE", "PARTIAL"].includes(x.status))));
   const lr = (x: Line) => loanOf.get(x.loan_asset_id)!;
   const dueMonth = monthLines.filter((x) => x.due_date >= start).reduce((t, x) => t + thbOf(lr(x), x.total_due), 0);
   const recvMonth = [...(pMoves ?? []).map((m) => ({ id: m.from_asset_id as string, d: m.movement_date as string, v: Number(m.amount) })),
@@ -159,7 +159,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     dueP: Math.round(upTo(r.asset_id, end, "principal_remaining") * 100) / 100, dueI: Math.round(upTo(r.asset_id, end, "interest_remaining") * 100) / 100,
     owe: (byLoan.get(r.asset_id) ?? []).filter((y) => Number(y.total_remaining) > 0.005)
       .map((y) => ({ due: y.due_date, p: Number(y.principal_remaining), i: Number(y.interest_remaining) })),
-    from: (byLoan.get(r.asset_id) ?? []).filter((y) => y.status === "OVERDUE").at(-1)?.due_date
+    from: (byLoan.get(r.asset_id) ?? []).filter((y) => y.status === "OVERDUE" || y.status === "DUE").at(-1)?.due_date
       ?? monthLines.find((y) => y.loan_asset_id === r.asset_id && Number(y.total_remaining) > 0.005)?.due_date,
     defaultBank: [lastBank.get(r.asset_id)].find((b) => b && bankList.some((x) => x.id === b && x.currency === r.currency))
       ?? bankList.find((x) => x.currency === r.currency)?.id ?? "",

@@ -559,6 +559,21 @@ SELECT t.ok((SELECT status = 'OVERDUE' AND principal_remaining = 50000 FROM publ
             AND (SELECT status = 'OVERDUE' AND principal_remaining = 100000 AND interest_remaining = 0
                    FROM public.v_loan_schedule_status WHERE installment_no = 6),
             'ก่อนปรับ: งวด 2 ค้างต้น 50,000 · งวด ก.ค. ได้ดอกแล้ว ค้างต้น 100,000');
+-- วันผ่อนผัน (3 พ.ย. 2026): เลยวันครบกำหนดแต่ยังไม่เกินวันผ่อนผัน = 'DUE' · เกิน = 'OVERDUE' · 0 = เหมือนเดิม
+SELECT (current_date - due_date) AS g_late FROM public.v_loan_schedule_status WHERE installment_no = 6 \gset
+SELECT t.ok((SELECT grace_days = 0 FROM public.loan_details) AND (SELECT grace_until = due_date FROM public.v_loan_schedule_status WHERE installment_no = 6),
+            'วันผ่อนผัน: ค่าเริ่มต้น 0 · grace_until = วันครบกำหนด');
+UPDATE public.loan_details SET grace_days = least(:g_late, 60);
+SELECT t.ok((SELECT status = CASE WHEN :g_late <= 60 THEN 'DUE' ELSE 'OVERDUE' END AND grace_until = due_date + least(:g_late, 60)
+               FROM public.v_loan_schedule_status WHERE installment_no = 6)
+            AND (SELECT status = 'PAID' FROM public.v_loan_schedule_status WHERE installment_no = 1),
+            'วันผ่อนผัน: ยังไม่เกินวันผ่อนผัน → ครบกำหนด (DUE) · งวดที่รับแล้วยังรับแล้ว');
+UPDATE public.loan_details SET grace_days = greatest(least(:g_late, 60) - 1, 0);
+SELECT t.ok((SELECT status = 'OVERDUE' FROM public.v_loan_schedule_status WHERE installment_no = 6),
+            'วันผ่อนผัน: เกินวันผ่อนผัน 1 วัน → เลยกำหนด');
+SELECT t.fails($$UPDATE public.loan_details SET grace_days = 61$$, 'grace_days_check', 'วันผ่อนผันเกิน 60 วันไม่ได้');
+UPDATE public.loan_details SET grace_days = 0;
+SELECT t.ok((SELECT status = 'OVERDUE' FROM public.v_loan_schedule_status WHERE installment_no = 2), 'วันผ่อนผัน 0: สถานะเท่าเดิม');
 SELECT t.fails($$SELECT public.restructure_loan_schedule(t.a('เงินกู้ญาติ'), '[{"due_date":"2026-01-31","principal":450000}]')$$,
   'หลังงวดที่รับครบแล้ว', 'ตารางใหม่เริ่มก่อนงวดที่รับครบแล้วไม่ได้');
 SELECT t.login('00000000-0000-0000-0000-00000000000c');

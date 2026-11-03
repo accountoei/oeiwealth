@@ -18,7 +18,7 @@ import { ActionBar } from "@/components/ActionBar";
 import { loanInterestFields } from "@/lib/source-edit";
 
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
-  notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
+  notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string; grace_until: string };
 
 export default async function LoanDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string; sched?: string; party?: string }>;
@@ -30,7 +30,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const supabase = await createClient();
   const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }, { data: businesses }, { data: owns }] = await Promise.all([
     supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
-    supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,at_risk_amount,risk_assessed_date,risk_note,${PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null).maybeSingle(),
+    supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,grace_days,at_risk_amount,risk_assessed_date,risk_note,${PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id")
       .or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`).is("deleted_at", null).order("movement_date", { ascending: false }),
@@ -39,7 +39,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status")
+    supabase.from("v_loan_schedule_status").select("id,installment_no,due_date,principal_due,interest_due,total_due,notes,principal_remaining,interest_remaining,total_remaining,status,grace_until")
       .eq("loan_asset_id", id).order("due_date").order("installment_no"),
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
     supabase.from("asset_ownerships").select("asset_id,person_id").is("deleted_at", null).is("end_date", null),
@@ -60,12 +60,14 @@ export default async function LoanDetailPage({ params, searchParams }: {
   // ตารางผ่อน: งวดที่ยังไม่ครบ = เลยกำหนด / รับบางส่วน / งวดถัดไป → มีปุ่มบันทึกรับ (เติมยอดคงค้างของงวดให้)
   const sched = (schedRaw as Sched[] | null) ?? [];
   const open = sched.filter((x) => x.status !== "PAID" && x.status !== "WRITTEN_OFF");
-  const nextDue = open.find((x) => x.status !== "OVERDUE");
+  const nextDue = open.find((x) => x.status !== "OVERDUE" && x.status !== "DUE");
   const overdue = open.filter((x) => x.status === "OVERDUE");
+  // ครบกำหนดแล้ว แต่ยังอยู่ในวันผ่อนผัน (ไม่ขึ้นแดง)
+  const inGrace = open.filter((x) => x.status === "DUE");
   const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
   // ปุ่ม "บันทึกรับชำระ" (ปุ่มเดียว): มีงวดเลยกำหนด → เติมเฉพาะงวดที่เลยกำหนด (ไม่รวมงวดที่ยังไม่ถึง · ตกลง 30 ต.ค. 2026)
   //   ไม่มี → งวดถัดไป · ในหน้าต่าง ยอดเปลี่ยนตาม "วันที่ได้รับ" (งวดที่ครบถึงวันนั้น)
-  const payTo = overdue.at(-1) ?? nextDue;
+  const payTo = [...overdue, ...inGrace].sort((a, b) => a.due_date.localeCompare(b.due_date)).at(-1) ?? nextDue;
   const dueLines = { lines: open.map((x) => ({ no: x.installment_no, due: x.due_date, p: Number(x.principal_remaining), i: Number(x.interest_remaining) })),
     from: payTo?.due_date ?? today };
   // ดอกเบี้ยค้างสะสมถึงงวดนั้น (ใช้แบ่งยอดรวมที่รับ: หักดอกก่อน ที่เหลือเป็นต้น)
@@ -230,7 +232,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                         fromSchedule: openingSched && openingSched.outstanding >= 0 ? openingSched.outstanding : null, live: family?.system_status === "LIVE", currency: l.currency }}
                       risk={l.status === "AT_RISK" ? { outstanding: leftP, currency: l.currency, today, date: extra?.risk_assessed_date ?? null, note: extra?.risk_note ?? null,
                         expected: extra?.at_risk_amount == null ? null : Math.max(leftP - Number(extra.at_risk_amount), 0) } : undefined} v={{ name: l.name, borrower_name: l.borrower_name, interest_rate: l.interest_rate == null ? null : Number(l.interest_rate), due_date: l.due_date, notes: l.notes,
-                      borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null }}
+                      borrower_phone: extra?.borrower_phone ?? null, contract_no: extra?.contract_no ?? null, purpose: extra?.purpose ?? null, grace_days: Number(extra?.grace_days ?? 0) }}
                       party={{ v: extra ?? {}, canSensitive: canDelete, persons: persons ?? [], borrowerBanks: withBankOwners(banks ?? [], owns ?? []),
                         opt: { banks: (banks ?? []).map((b) => ({ asset_id: b.asset_id, name: b.name, account_no_masked: b.account_no_masked })), businesses: businesses ?? [] } }} />
                   </WithStatus>
@@ -252,6 +254,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">อัตราดอกเบี้ย</dt><dd>{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">แบบการชำระ</dt><dd>{payType}</dd>
             <dt className="text-slate-500">วันครบกำหนด</dt><dd>{l.due_date ? thDate(l.due_date) : <span className="text-slate-400">—</span>}</dd>
+            {Number(extra?.grace_days ?? 0) > 0 && <><dt className="text-slate-500">ผ่อนผันหลังครบกำหนดงวด</dt><dd>{Number(extra!.grace_days)} วัน <span className="text-xs text-slate-500">(ระหว่างนี้ขึ้น &ldquo;ครบกำหนด&rdquo; ยังไม่ขึ้น &ldquo;เลยกำหนด&rdquo;)</span></dd></>}
             <dt className="text-slate-500">สถานะ</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[l.status] ?? "bg-slate-100 text-slate-700"}`}>● {LOAN_STATUS_LABEL[l.status] ?? l.status}</span></dd>
             <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}
               {extra?.borrower_person_id && <div className="text-xs text-slate-500">สมาชิกในครอบครัว · <Link href={`/family/members/${extra.borrower_person_id}`} className="text-blue-700 hover:underline">
@@ -291,6 +294,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 {sched.length} งวด · รวมเงินต้นตามตาราง {money(schedP, l.currency)}
                 {nextDue && <> · งวดถัดไป {thDate(nextDue.due_date)} <span className="tabular-nums">{money(nextDue.total_remaining)}</span></>}
                 {overdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {overdue.length} งวด รวม {money(overdueAmt)}</span>}
+                {inGrace.length > 0 && <span className="text-amber-700"> · ครบกำหนด {inGrace.length} งวด รวม {money(inGrace.reduce((s, x) => s + Number(x.total_remaining), 0))} (ผ่อนผันถึง {thDate(inGrace[0].grace_until)})</span>}
                 {open.length === 0 && <span className="text-emerald-700"> · รับครบทุกงวดแล้ว</span>}
               </div>
             ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
@@ -298,7 +302,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
             {openingMismatch && (
               <div className="mt-0.5 text-xs text-red-600">ยอดตั้งต้นที่บันทึกไว้ ({money(l.opening_outstanding_principal)}) ไม่ตรงกับตารางผ่อน: เงินต้นตามสัญญา − เงินต้นงวดที่ครบกำหนดถึง {thDate(l.opening_date)} = {money(openingSched!.outstanding)}
                 {canDelete ? <ApplyScheduleOpening assetId={id} value={money(openingSched!.outstanding)} /> : " · แจ้ง ADMIN / EDITOR ให้ปรับ"}
-                <span className="block text-slate-500">ถ้าผู้กู้ค้างชำระจริงก่อน Go-live ให้คงยอดเดิมไว้ — งวดที่ยังไม่ได้รับจะขึ้น &ldquo;เลยกำหนด&rdquo;</span></div>
+                <span className="block text-slate-500">{Number(l.opening_outstanding_principal ?? 0) < openingSched!.outstanding
+                  ? `ยอดที่บันทึกน้อยกว่าตาราง ${money(openingSched!.outstanding - Number(l.opening_outstanding_principal ?? 0))} = ผู้กู้คืนเงินต้นก่อนกำหนด · ถ้าจริง ให้กด "แก้ตารางผ่อนทั้งชุด" แทรกงวดวันที่คืน ใส่เงินต้นที่คืน แล้วกด "หักจากงวดท้าย" (ดอกเบี้ยงวดหลังจากนั้นคิดจากยอดใหม่) · ถ้ายอดที่บันทึกผิด ให้กดใช้ยอดจากตาราง`
+                  : `ยอดที่บันทึกมากกว่าตาราง ${money(Number(l.opening_outstanding_principal ?? 0) - openingSched!.outstanding)} = ผู้กู้ค้างชำระก่อน Go-live · ถ้าจริง ให้คงยอดเดิมไว้ งวดก่อน Go-live ที่ยังไม่ได้รับจะขึ้น "เลยกำหนด" ให้ตามทวง · ถ้ายอดที่บันทึกผิด ให้กดใช้ยอดจากตาราง`}</span></div>
             )}
             {sched.length > 0 && Math.abs(schedP - principalAll) > 0.01 && (
               <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา{extraLent > 0 ? " รวมที่ให้กู้เพิ่ม" : ""} ({money(principalAll)})

@@ -107,7 +107,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       // งวดเงินให้กู้: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
       supabase.from("v_loan_schedule_status")
         .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
-        .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
+        .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL,DUE),due_date.lt.${start})`)
         .neq("status", "WRITTEN_OFF").order("due_date"),
       // งวดเบี้ยประกัน / ผลประโยชน์: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
       supabase.from("v_insurance_schedule_status")

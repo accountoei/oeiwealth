@@ -102,7 +102,7 @@ export default function NewLoanSchedule({ amount, ratePct, loanDate, dueDate, to
           <>
             <ScheduleGrid rows={rows} setRows={setEdited} currency={currency}
               opts={{ amount, ratePct, dayCount: actual ? "ACTUAL_365" : "MONTHLY", interestFrom, flat: method === "FLAT" }}
-              opening={openingDate ? { date: openingDate, principal: amount } : undefined} />
+              opening={openingDate ? { date: openingDate, principal: amount } : undefined} recalcOnOpts={!!edited} />
             {lines.length > 0 && <p className="text-xs text-slate-500">วันครบกำหนดคืนจะตั้งเป็นวันงวดสุดท้ายให้ ({thDate(lines.at(-1)!.due_date)})</p>}
           </>
         )}

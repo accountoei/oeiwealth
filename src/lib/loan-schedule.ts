@@ -13,6 +13,7 @@ export const SCHED_METHOD_LABEL: Record<SchedMethod, string> = {
 export const LOAN_SCHED_STATUS: Record<string, { text: string; cls: string }> = {
   PAID: { text: "ได้รับแล้ว", cls: "bg-emerald-50 text-emerald-700" },
   PARTIAL: { text: "รับบางส่วน", cls: "bg-amber-50 text-amber-700" },
+  DUE: { text: "ครบกำหนด", cls: "bg-amber-50 text-amber-800" },   // เลยวันครบกำหนด ยังอยู่ในวันผ่อนผัน
   PENDING: { text: "รอรับ", cls: "bg-slate-100 text-slate-700" },
   OVERDUE: { text: "เลยกำหนด", cls: "bg-red-50 text-red-700" },
   WRITTEN_OFF: { text: "ตัดหนี้สูญ", cls: "bg-slate-100 text-slate-500" },
@@ -251,26 +252,68 @@ export function periodInterest(balance: number, ratePct: number, prev: string, c
   return r2(balance * (ratePct / 100) * frac);
 }
 
-/** งวดในตารางที่แก้ได้ · manual = ดอกเบี้ยพิมพ์เอง (คำนวณใหม่ไม่เขียนทับ) */
-export type GridLine = SchedLine & { manual?: boolean };
+/** งวดในตารางที่แก้ได้ · manual = ดอกเบี้ยพิมพ์เอง (คำนวณใหม่ไม่เขียนทับ)
+ *  carry = งวดคืนเงินต้นเพิ่มระหว่างงวด: ดอกเบี้ยถึงวันนั้นยกไปรวมกับงวดปกติถัดไป (งวดนี้ดอกเบี้ย 0) */
+export type GridLine = SchedLine & { manual?: boolean; carry?: boolean };
 export type RecalcOpts = { amount: number; ratePct: number; dayCount: DayCount; interestFrom?: string; flat?: boolean };
 
 /**
  * คำนวณดอกเบี้ยใหม่ตั้งแต่งวดที่ from (ลำดับในตาราง เริ่ม 0) ถึงงวดสุดท้าย · งวดก่อนหน้า from และงวด manual คงเดิม
  * ยอดคงเหลือ = เงินต้นตามสัญญา − เงินต้นของงวดก่อนหน้า · งวดแรกนับจาก interestFrom (ไม่มี = ก่อนงวดแรก 1 เดือน)
  * flat = ดอกเบี้ยคงที่ คิดจากเงินต้นตามสัญญาทุกงวด
+ * งวด carry: ดอกเบี้ยถึงวันคืนเพิ่ม (ยอดก่อนคืน) + ดอกเบี้ยจากวันคืนถึงงวดถัดไป (ยอดหลังคืน) = ดอกเบี้ยของงวดปกติถัดไป
+ *   (flat: ไม่นับวันคืนเพิ่ม — งวดถัดไปคิดเต็มงวดตามเดิม)
  */
 export function recalcInterest<T extends GridLine>(lines: T[], from: number, p: RecalcOpts): T[] {
   let bal = p.amount;
   let prevDate = "";   // วันครบกำหนดของงวดก่อนหน้า (ข้ามแถวที่ยังไม่ใส่วันที่)
+  let carried = 0;     // ดอกเบี้ยของงวด carry ที่รอรวมเข้างวดปกติถัดไป
   return lines.map((l, i) => {
     const before = bal;
     bal = r2(bal - (Number.isFinite(l.principal) ? l.principal : 0));
     const prev = prevDate || (p.interestFrom && p.interestFrom < l.due_date ? p.interestFrom : l.due_date ? addMonthsKeepDay(l.due_date, -1) : "");
-    if (l.due_date) prevDate = l.due_date;
-    if (i < from || l.manual || !l.due_date) return l;
-    return { ...l, interest: periodInterest(p.flat ? p.amount : Math.max(before, 0), p.ratePct, prev, l.due_date, p.dayCount) };
+    if (!l.due_date) return l;
+    if (l.carry) {
+      if (!p.flat) { carried = r2(carried + periodInterest(Math.max(before, 0), p.ratePct, prev, l.due_date, p.dayCount)); prevDate = l.due_date; }
+      return i < from || l.interest === 0 ? l : { ...l, interest: 0 };
+    }
+    prevDate = l.due_date;
+    const add = carried;
+    carried = 0;
+    if (i < from || l.manual) return l;
+    return { ...l, interest: r2(periodInterest(p.flat ? p.amount : Math.max(before, 0), p.ratePct, prev, l.due_date, p.dayCount) + add) };
   });
+}
+
+/** งวดนี้อยู่ระหว่างงวดปกติ (ห่างจากงวดถัดไปไม่ถึง 1 เดือน) = งวดคืนเงินต้นเพิ่มระหว่างงวด */
+export const isMidPeriod = (date: string, prev?: string, next?: string) =>
+  !!(date && next && date < next && (!prev || date > prev) && addMonthsKeepDay(date, 1) > next);
+
+/**
+ * ค่างวดเท่ากันทุกงวดสำหรับวันครบกำหนดที่กำหนดให้ (จบวันเดิม): หาค่างวดที่ทำให้งวดสุดท้ายหมดพอดี
+ * คืนเงินต้นของแต่ละงวด (งวดสุดท้าย = ที่เหลือทั้งหมด)
+ */
+export function annuityPrincipals(balance: number, ratePct: number, prev: string, dates: string[], dayCount: DayCount): number[] {
+  const run = (pay: number) => {
+    let bal = balance, d0 = prev;
+    const out: number[] = [];
+    dates.forEach((d, k) => {
+      const it = periodInterest(bal, ratePct, d0, d, dayCount);
+      const pr = k === dates.length - 1 ? bal : Math.min(Math.max(r2(pay - it), 0), bal);
+      out.push(r2(pr)); bal = r2(bal - pr); d0 = d;
+    });
+    return out;
+  };
+  if (!dates.length || !(balance > 0)) return dates.map(() => 0);
+  let lo = 0, hi = balance * 2 + 1;
+  for (let k = 0; k < 80; k++) {
+    const mid = (lo + hi) / 2;
+    const last = run(mid).at(-1)!;
+    const prevTotal = dates.length > 1 ? mid : 0;
+    // งวดสุดท้าย (ที่เหลือ + ดอก) มากกว่าค่างวด → ค่างวดต่ำไป
+    if (dates.length > 1 && last > prevTotal - periodInterest(last, ratePct, dates.at(-2)!, dates.at(-1)!, dayCount)) lo = mid; else hi = mid;
+  }
+  return run(r2(hi));
 }
 
 /**
