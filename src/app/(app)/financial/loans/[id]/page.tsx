@@ -62,7 +62,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const open = sched.filter((x) => x.status !== "PAID" && x.status !== "WRITTEN_OFF");
   const nextDue = open.find((x) => x.status !== "OVERDUE" && x.status !== "DUE");
   const overdue = open.filter((x) => x.status === "OVERDUE");
-  // ครบกำหนดแล้ว แต่ยังอยู่ในวันผ่อนผัน (ไม่ขึ้นแดง)
+  // ครบกำหนดแล้ว แต่ยังไม่เกินจำนวนวันที่ชำระล่าช้าได้ (ไม่ขึ้นแดง)
   const inGrace = open.filter((x) => x.status === "DUE");
   const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
   // ปุ่ม "บันทึกรับชำระ" (ปุ่มเดียว): มีงวดเลยกำหนด → เติมเฉพาะงวดที่เลยกำหนด (ไม่รวมงวดที่ยังไม่ถึง · ตกลง 30 ต.ค. 2026)
@@ -79,6 +79,8 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const prevDue = sched.filter((x) => x.due_date < restartAt).at(-1)?.due_date ?? l.loan_date ?? undefined;
   const methodGuess = open.length > 1 && open.slice(0, -1).every((x) => Number(x.principal_due) === 0) ? "INTEREST_ONLY" as const : "EQUAL_PAYMENT" as const;
   const schedP = sched.reduce((s, x) => s + Number(x.principal_due), 0);
+  // ดอกเบี้ยก่อน Go-live = ดอกเบี้ยของงวดที่ครบถึงวันยอดตั้งต้น (ระบบถือว่ารับแล้ว · ไม่ได้บันทึกเป็นรายได้ในระบบ)
+  const preInterest = sched.filter((x) => x.due_date <= l.opening_date).reduce((s, x) => s + Number(x.interest_due), 0);
   // สัญญาที่ให้กู้ก่อน Go-live (มียอดตั้งต้น · ไม่มีรายการจ่ายเงินกู้ในระบบ) → แก้เงินต้น / ยอดตั้งต้นได้ · ยอดตั้งต้นเทียบกับตารางผ่อน
   const isOpening = Number(l.opening_outstanding_principal ?? 0) > 0 || !(moves ?? []).some((m) => m.movement_type === "LOAN_DISBURSEMENT" && m.to_asset_id === id);
   const openingSched = isOpening && sched.length
@@ -87,6 +89,15 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const loanOpen = l.status !== "CLOSED" && l.status !== "WRITTEN_OFF";
   // บันทึกรับชำระแล้ว → แก้ตารางทั้งชุดไม่ได้ · งวดที่รับแล้วแก้ / ลบไม่ได้ (ฐานข้อมูลบังคับ: 20261010000200_loan_schedule_locks)
   const hasPayments = (moves ?? []).some((m) => m.movement_type === "LOAN_PRINCIPAL_RECEIPT") || (incomes ?? []).length > 0;
+  // ตั้ง / แก้ตารางผ่อนทั้งชุด: ยังไม่มีตาราง = ปุ่ม "+ ตั้งตารางผ่อน" ที่กล่องตารางผ่อน · มีตารางแล้ว = ปุ่มในกล่องรายละเอียด (ก่อนมีการรับชำระเท่านั้น)
+  const canEditSched = canDelete && loanOpen && (!hasPayments || sched.length === 0);
+  const scheduleEditor = (small: boolean) => (
+    <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0} small={small}
+      opening={isOpening ? { date: l.opening_date, recorded: Number(l.opening_outstanding_principal ?? 0) } : undefined}
+      current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
+      defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0), interestFrom: l.loan_date ?? undefined,
+        firstDue: addMonthsKeepDay(l.loan_date ?? today, 1), lastDue: l.due_date ?? undefined }} />
+  );
   // รายการเงินจริง: การรับชำระครั้งเดียว (เงินต้น + ดอกเบี้ย) แสดงเป็น 1 แถว ยอดรวมตรงกับ Statement ธนาคาร
   // จับคู่ด้วย movement_group_id ที่ receive_loan_payment ใส่ให้ทั้งรายการเงินต้นและรายการเงินเข้าของดอกเบี้ย
   const incomeIds = (incomes ?? []).map((i) => i.id);
@@ -257,7 +268,8 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 </div>
               </dl>
             </div>
-            <p className="mt-3 text-xs text-slate-500">ดอกเบี้ยรับแล้ว (รายได้) {money(interest, l.currency)}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าใน Net Worth = 0" : ""}
+            <p className="mt-3 text-xs text-slate-500">ดอกเบี้ยรับแล้ว (รายได้) {money(interest, l.currency)}
+              {preInterest > 0.005 ? ` · ก่อน Go-live ${money(preInterest)} (ตามตารางผ่อน ไม่ได้บันทึกเป็นรายได้ในระบบ)` : ""}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าใน Net Worth = 0" : ""}
               {riskAmt != null ? ` · ส่วนที่มีความเสี่ยงยังนับเต็มใน Net Worth จนกว่าจะตัดหนี้สูญ${extra?.risk_note ? ` · ${extra.risk_note}` : ""}` : ""}</p>
             {l.status === "CLOSED" && leftP > 0.005 && (
               <p className="mt-2 text-xs text-red-600">สถานะ &ldquo;ปิดแล้ว&rdquo; แต่ยังมีเงินต้นคงเหลือ — เปลี่ยนสถานะกลับเป็น &ldquo;ปกติ&rdquo; แล้วบันทึกรับชำระให้ครบ หรือเลือก &ldquo;ตัดหนี้สูญ&rdquo; (ยอดนี้ยังนับใน Net Worth)</p>
@@ -271,6 +283,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-3 flex items-start justify-between gap-3">
             <h2 className="font-medium text-slate-900">รายละเอียด</h2>
+            <div className="flex flex-wrap items-start justify-end gap-2">
+            {/* แก้ตารางผ่อนทั้งชุด: เฉพาะก่อนมีการรับชำระ (ฐานข้อมูลบังคับ) · หลังจากนั้นใช้ "คำนวณงวดที่เหลือใหม่" ที่กล่องตารางผ่อน */}
+            {canEditSched && sched.length > 0 && scheduleEditor(true)}
             {canWrite && (
               <EditButton title="แก้ไขรายละเอียด" small>
                 <div className="space-y-5">
@@ -297,6 +312,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
                 </div>
               </EditButton>
             )}
+            </div>
           </div>
           <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2.5 text-sm">
             <dt className="text-slate-500">เลขที่สัญญา</dt><dd>{extra?.contract_no || <span className="text-slate-400">—</span>}</dd>
@@ -306,7 +322,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">อัตราดอกเบี้ย</dt><dd>{l.interest_rate != null ? `${Number(l.interest_rate)}% ต่อปี` : <span className="text-slate-400">—</span>}</dd>
             <dt className="text-slate-500">แบบการชำระ</dt><dd>{payType}</dd>
             <dt className="text-slate-500">วันครบกำหนด</dt><dd>{l.due_date ? thDate(l.due_date) : <span className="text-slate-400">—</span>}</dd>
-            {Number(extra?.grace_days ?? 0) > 0 && <><dt className="text-slate-500">ผ่อนผันหลังครบกำหนดงวด</dt><dd>{Number(extra!.grace_days)} วัน <span className="text-xs text-slate-500">(ระหว่างนี้ขึ้น &ldquo;ครบกำหนด&rdquo; ยังไม่ขึ้น &ldquo;เลยกำหนด&rdquo;)</span></dd></>}
+            {Number(extra?.grace_days ?? 0) > 0 && <><dt className="text-slate-500">ชำระล่าช้าไม่เกิน</dt><dd>{Number(extra!.grace_days)} วัน <span className="text-xs text-slate-500">(ระหว่างนี้ขึ้น &ldquo;ครบกำหนด&rdquo; ยังไม่ขึ้น &ldquo;เลยกำหนด&rdquo;)</span></dd></>}
             <dt className="text-slate-500">สถานะ</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[l.status] ?? "bg-slate-100 text-slate-700"}`}>● {LOAN_STATUS_LABEL[l.status] ?? l.status}</span></dd>
             <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}
               {extra?.borrower_person_id && <div className="text-xs text-slate-500">สมาชิกในครอบครัว · <Link href={`/family/members/${extra.borrower_person_id}`} className="text-blue-700 hover:underline">
@@ -338,32 +354,10 @@ export default async function LoanDetailPage({ params, searchParams }: {
 
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-medium text-slate-900">ตารางผ่อนชำระ</h2>
-            {sched.length > 0 ? (
-              <div className="mt-0.5 text-sm text-slate-600">
-                {sched.length} งวด · รวมเงินต้นตามตาราง {money(schedP, l.currency)}
-                {nextDue && <> · งวดถัดไป {thDate(nextDue.due_date)} <span className="tabular-nums">{money(nextDue.total_remaining)}</span></>}
-                {overdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {overdue.length} งวด รวม {money(overdueAmt)}</span>}
-                {inGrace.length > 0 && <span className="text-amber-700"> · ครบกำหนด {inGrace.length} งวด รวม {money(inGrace.reduce((s, x) => s + Number(x.total_remaining), 0))} (ผ่อนผันถึง {thDate(inGrace[0].grace_until)})</span>}
-                {open.length === 0 && <span className="text-emerald-700"> · รับครบทุกงวดแล้ว</span>}
-              </div>
-            ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
-            {schedErr && sched.length === 0 && <p className="mt-1 text-sm text-red-600">บันทึกสัญญาแล้ว แต่ตั้งตารางผ่อนไม่สำเร็จ: {schedErr} · กด &ldquo;+ ตั้งตารางผ่อน&rdquo; เพื่อตั้งใหม่</p>}
-            {openingMismatch && (
-              <div className="mt-0.5 text-xs text-red-600">ยอดตั้งต้นที่บันทึกไว้ ({money(l.opening_outstanding_principal)}) ไม่ตรงกับตารางผ่อน: เงินต้นตามสัญญา − เงินต้นงวดที่ครบกำหนดถึง {thDate(l.opening_date)} = {money(openingSched!.outstanding)}
-                {canDelete ? <ApplyScheduleOpening assetId={id} value={money(openingSched!.outstanding)} /> : " · แจ้ง ADMIN / EDITOR ให้ปรับ"}
-                <span className="block text-slate-500">{Number(l.opening_outstanding_principal ?? 0) < openingSched!.outstanding
-                  ? `ยอดที่บันทึกน้อยกว่าตาราง ${money(openingSched!.outstanding - Number(l.opening_outstanding_principal ?? 0))} = ผู้กู้คืนเงินต้นก่อนกำหนด · ถ้าจริง ให้กด "แก้ตารางผ่อนทั้งชุด" แทรกงวดวันที่คืน ใส่เงินต้นที่คืน แล้วกด "หักจากงวดท้าย" (ดอกเบี้ยงวดหลังจากนั้นคิดจากยอดใหม่) · ถ้ายอดที่บันทึกผิด ให้กดใช้ยอดจากตาราง`
-                  : `ยอดที่บันทึกมากกว่าตาราง ${money(Number(l.opening_outstanding_principal ?? 0) - openingSched!.outstanding)} = ผู้กู้ค้างชำระก่อน Go-live · ถ้าจริง ให้คงยอดเดิมไว้ งวดก่อน Go-live ที่ยังไม่ได้รับจะขึ้น "เลยกำหนด" ให้ตามทวง · ถ้ายอดที่บันทึกผิด ให้กดใช้ยอดจากตาราง`}</span></div>
-            )}
-            {sched.length > 0 && Math.abs(schedP - principalAll) > 0.01 && (
-              <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา{extraLent > 0 ? " รวมที่ให้กู้เพิ่ม" : ""} ({money(principalAll)})
-                {extraLent > 0 ? " — กด “คำนวณงวดที่เหลือใหม่” เพื่อใส่ยอดที่ให้กู้เพิ่มในตาราง" : " — สถานะ “รับแล้ว” อาจคลาดเคลื่อน"}</p>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-2">
+        {/* แถวบน: ชื่อกล่องชิดซ้าย · ปุ่มเรียงกันชิดขวา (ตั้งตารางผ่อน / คำนวณงวดที่เหลือใหม่ + บันทึกรับชำระ) · ข้อความสรุปลงบรรทัดถัดไป */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-medium text-slate-900">ตารางผ่อนชำระ</h2>
+          <div className="ml-auto flex flex-wrap items-start justify-end gap-2">
           {canDelete && loanOpen && open.length > 0 && (
             <RestructureEditor assetId={id} currency={l.currency} outstanding={Number(l.outstanding_principal ?? 0)}
               ratePct={Number(l.interest_rate ?? 0)}
@@ -373,13 +367,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
               old={{ count: open.length, firstTotal: Number(nextDue?.total_due ?? open[0]?.total_due ?? 0),
                 interest: open.reduce((s, x) => s + Number(x.interest_remaining), 0), lastDue: open.at(-1)?.due_date ?? null }} />
           )}
-          {canDelete && loanOpen && (!hasPayments || sched.length === 0) && (
-            <ScheduleEditor assetId={id} currency={l.currency} hasSchedule={sched.length > 0}
-              opening={isOpening ? { date: l.opening_date, recorded: Number(l.opening_outstanding_principal ?? 0) } : undefined}
-              current={sched.map((x) => ({ due_date: x.due_date, principal: Number(x.principal_due), interest: Number(x.interest_due), notes: x.notes ?? undefined }))}
-              defaults={{ amount: Number(l.principal ?? 0), ratePct: Number(l.interest_rate ?? 0), interestFrom: l.loan_date ?? undefined,
-                firstDue: addMonthsKeepDay(l.loan_date ?? today, 1), lastDue: l.due_date ?? undefined }} />
-          )}
+          {canEditSched && sched.length === 0 && scheduleEditor(false)}
           {canWrite && loanOpen && (payTo ? (
             <PaymentForm assetId={id} currency={l.currency} banks={banks ?? []} today={today} minDate={goLive} outstanding={leftP}
               title={`${overdue.length > 1 ? `รับชำระงวดที่เลยกำหนด (งวดที่ ${overdue[0].installment_no}–${payTo.installment_no})`
@@ -391,10 +379,33 @@ export default async function LoanDetailPage({ params, searchParams }: {
           ))}
           </div>
         </div>
+        <div>
+          {sched.length > 0 ? (
+            <div className="mt-0.5 text-sm text-slate-600">
+              {sched.length} งวด · รวมเงินต้นตามตาราง {money(schedP, l.currency)}
+              {nextDue && <> · งวดถัดไป {thDate(nextDue.due_date)} <span className="tabular-nums">{money(nextDue.total_remaining)}</span></>}
+              {overdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {overdue.length} งวด รวม {money(overdueAmt)}</span>}
+              {inGrace.length > 0 && <span className="text-amber-700"> · ครบกำหนด {inGrace.length} งวด รวม {money(inGrace.reduce((s, x) => s + Number(x.total_remaining), 0))} (ชำระได้ถึง {thDate(inGrace[0].grace_until)})</span>}
+              {open.length === 0 && <span className="text-emerald-700"> · รับครบทุกงวดแล้ว</span>}
+            </div>
+          ) : <p className="mt-0.5 text-sm text-slate-500">ยังไม่ได้ตั้งตารางผ่อน — ตั้งได้จากสูตร หรือวางจาก Excel</p>}
+          {schedErr && sched.length === 0 && <p className="mt-1 text-sm text-red-600">บันทึกสัญญาแล้ว แต่ตั้งตารางผ่อนไม่สำเร็จ: {schedErr} · กด &ldquo;+ ตั้งตารางผ่อน&rdquo; เพื่อตั้งใหม่</p>}
+          {openingMismatch && (
+            <div className="mt-0.5 text-xs text-red-600">ยอดตั้งต้นที่บันทึกไว้ ({money(l.opening_outstanding_principal)}) ไม่ตรงกับตารางผ่อน: เงินต้นตามสัญญา − เงินต้นงวดที่ครบกำหนดถึง {thDate(l.opening_date)} = {money(openingSched!.outstanding)}
+              {canDelete ? <ApplyScheduleOpening assetId={id} value={money(openingSched!.outstanding)} /> : " · แจ้ง ADMIN / EDITOR ให้ปรับ"}
+              <span className="block text-slate-500">{Number(l.opening_outstanding_principal ?? 0) < openingSched!.outstanding
+                ? `ยอดที่บันทึกน้อยกว่าตาราง ${money(openingSched!.outstanding - Number(l.opening_outstanding_principal ?? 0))} = ผู้กู้คืนเงินต้นก่อนกำหนด · ถ้าจริง ให้กด "แก้ตารางผ่อนทั้งชุด" (กล่องรายละเอียด) แทรกงวดวันที่คืน ใส่เงินต้นที่คืน แล้วกด "หักจากงวดท้าย" (ดอกเบี้ยงวดหลังจากนั้นคิดจากยอดใหม่) · ถ้ายอดที่บันทึกผิด ให้กดใช้ยอดจากตาราง`
+                : `ยอดที่บันทึกมากกว่าตาราง ${money(Number(l.opening_outstanding_principal ?? 0) - openingSched!.outstanding)} = ผู้กู้ค้างชำระก่อน Go-live · ถ้าจริง ให้คงยอดเดิมไว้ งวดก่อน Go-live ที่ยังไม่ได้รับจะขึ้น "เลยกำหนด" ให้ตามทวง · ถ้ายอดที่บันทึกผิด ให้กดใช้ยอดจากตาราง`}</span></div>
+          )}
+          {sched.length > 0 && Math.abs(schedP - principalAll) > 0.01 && (
+            <p className="mt-0.5 text-xs text-amber-700">เงินต้นตามตาราง ({money(schedP)}) ไม่เท่ากับเงินต้นของสัญญา{extraLent > 0 ? " รวมที่ให้กู้เพิ่ม" : ""} ({money(principalAll)})
+              {extraLent > 0 ? " — กด “คำนวณงวดที่เหลือใหม่” เพื่อใส่ยอดที่ให้กู้เพิ่มในตาราง" : " — สถานะ “รับแล้ว” อาจคลาดเคลื่อน"}</p>
+          )}
+        </div>
         {(sched.length > 0 || events.length > 0) && <ScheduleTable rows={schedRows} events={events} currency={l.currency} />}
         {sched.length > 0 && <p className="text-xs text-slate-500">
           ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดที่เลยกำหนด (ไม่มี = งวดถัดไป) ให้ · เปลี่ยนวันที่ได้รับ = ยอดเปลี่ยนตามงวดที่ครบถึงวันนั้น · แก้ยอดได้ตามที่รับจริง ·
-          บันทึกผิด: แก้ / ลบที่แถวสีเขียวล่าสุด (แท็บ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo; · ลบแล้วตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "ตั้ง / แก้ตารางผ่อน"}&rdquo; ·
+          บันทึกผิด: แก้ / ลบที่แถวสีเขียวล่าสุด (แท็บ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo; · ลบแล้วตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "แก้ตารางผ่อนทั้งชุด"}&rdquo;{hasPayments ? "" : " (ปุ่มในกล่องรายละเอียด)"} ·
           สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
           ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
         </p>}

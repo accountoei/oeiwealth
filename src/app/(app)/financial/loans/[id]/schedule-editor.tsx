@@ -24,8 +24,10 @@ const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hove
  */
 type Mode = "GRID" | "FORMULA" | "TEXT";
 type XSheet = { sheet: string; data: unknown[][] };
-export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedule, opening }: {
+export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedule, opening, small }: {
   assetId: string; currency: string; current: SchedLine[]; hasSchedule: boolean;
+  /** ปุ่มเล็ก (ในกล่องรายละเอียด ข้างปุ่ม "แก้ไขข้อมูล") */
+  small?: boolean;
   /** amount = เงินต้นตามสัญญา · lastDue = วันครบกำหนดสัญญา → จำนวนงวดเริ่มต้นให้งวดสุดท้ายตรงวันนี้ */
   defaults: { amount: number; ratePct: number; firstDue: string; interestFrom?: string; lastDue?: string };
   /** สัญญาที่ให้กู้ก่อน Go-live: วันตั้งต้น + ยอดตั้งต้นที่บันทึกไว้ */
@@ -61,7 +63,7 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
   const openingDiff = !!(o && o.outstanding >= 0 && Math.abs(o.outstanding - opening!.recorded) > 0.005);
   const [syncOpening, setSyncOpening] = useState(true);
 
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(hasSchedule ? obtn : btn)}>{hasSchedule ? "แก้ตารางผ่อนทั้งชุด" : "+ ตั้งตารางผ่อน"}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(small ? (hasSchedule ? obtn : btn).replace("px-4 py-2", "px-3 py-1.5") : hasSchedule ? obtn : btn)}>{hasSchedule ? "แก้ตารางผ่อนทั้งชุด" : "+ ตั้งตารางผ่อน"}</button>;
   if (!open) return trigger;
 
   const fill = (ls: SchedLine[], isFlat = false) => { setRows(toRows(ls)); setFlat(isFlat); setMode("GRID"); };

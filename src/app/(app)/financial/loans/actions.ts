@@ -249,7 +249,7 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
   }
   const graceRaw = str(form.get("grace_days"));
   const grace = graceRaw == null ? 0 : Number(graceRaw.replace(/,/g, ""));
-  if (!Number.isInteger(grace) || grace < 0 || grace > 60) return { error: "วันผ่อนผันต้องเป็นจำนวนวันเต็ม 0–60" };
+  if (!Number.isInteger(grace) || grace < 0 || grace > 60) return { error: "ชำระล่าช้าไม่เกิน ต้องเป็นจำนวนวันเต็ม 0–60" };
   const { data: a, error: e1 } = await supabase.from("assets").update({ name }).eq("id", assetId).select("id");
   if (e1) return { error: friendlyError(e1.message) };
   if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
