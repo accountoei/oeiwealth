@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DeleteSlot } from "@/components/RowActions";
 import { updateTransfer, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 
@@ -23,12 +24,12 @@ export default function TransferEditor({ id, banks, values }: {
       <input type="hidden" name="id" value={id} />
       {f("จากบัญชี", (
         <select name="from_asset_id" defaultValue={values.from} className={cls}>
-          {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={banks} />
         </select>
       ))}
       {f("ไปบัญชี", (
         <select name="to_asset_id" defaultValue={values.to} className={cls}>
-          {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={banks} />
         </select>
       ))}
       {f("วันที่", <input name="movement_date" type="date" required defaultValue={values.date} className={cls} />)}

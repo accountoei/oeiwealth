@@ -6,6 +6,7 @@ import { demolishComponents, payForAsset, payPropertyLines, sellAsset, undoCompo
 import { money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -39,7 +40,7 @@ function SaleLines({ currency, banks, cards = [], demolish = false }: { currency
           <div key={r.key} className="grid grid-cols-[1fr_8rem_auto] gap-2">
             <select value={r.bank} onChange={(e) => setR(r.key, { bank: e.target.value })} aria-label="บัญชีที่รับเงิน" className={cellCls}>
               <option value="" disabled>— บัญชีที่รับเงิน —</option>
-              {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+              <BankOptions banks={banks} />
             </select>
             <input value={r.amount} onChange={(e) => setR(r.key, { amount: e.target.value })} inputMode="decimal" aria-label="จำนวนเงินที่รับ"
               placeholder="จำนวน" className={`${cellCls} text-right`} />
@@ -235,7 +236,7 @@ export function PayAssetForm({ assetId, currency, banks, today, minDate, paths, 
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">จ่ายจากบัญชี *
-          <select name="bank_asset_id" required className={input}>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</select>
+          <select name="bank_asset_id" required className={input}><BankOptions banks={list} /></select>
         </label>
         <label className="text-sm">จำนวนเงิน ({currency}) *<input name="amount" required inputMode="decimal" className={input} /></label>
         <label className="text-sm">ค่าธรรมเนียมโอน<input name="fee" inputMode="decimal" className={input} /></label>

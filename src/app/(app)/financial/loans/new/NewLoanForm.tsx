@@ -12,6 +12,7 @@ import NewLoanSchedule, { type NewSched } from "./NewLoanSchedule";
 import { openingFromSchedule } from "@/lib/loan-schedule";
 import ContractParties, { type PartyOptions } from "../ContractParties";
 import PartyPicker, { type BorrowerBank } from "@/components/PartyPicker";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -91,7 +92,7 @@ export default function NewLoanForm(props: {
           <div className="grid gap-4 md:grid-cols-2">
             <label className={label}>จ่ายเงินกู้จากบัญชี *
               <select name="disburse_from_asset_id" required className={input}>
-                {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                <BankOptions banks={banks} ccy />
               </select>
             </label>
             <label className={label}>วันที่จ่ายเงิน *<input name="disburse_date" type="date" required defaultValue={today} min={goLive} max={today} className={input} /></label>

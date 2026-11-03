@@ -52,7 +52,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     // รับชำระจริง: เงินต้น (เงินเข้าจากเงินให้กู้) + ดอกเบี้ย (รายได้)
     supabase.from("cash_movements").select("id,from_asset_id,to_asset_id,movement_date,amount,movement_group_id,is_derived").eq("movement_type", "LOAN_PRINCIPAL_RECEIPT").is("deleted_at", null),
     supabase.from("income_transactions").select("id,asset_id,date,amount,tax,currency,received_to_asset_id").eq("income_type", "LOAN_INTEREST").not("asset_id", "is", null).is("deleted_at", null),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     loadSortMap("assets"),
   ]);

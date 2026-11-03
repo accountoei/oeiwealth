@@ -9,6 +9,7 @@ import { CurrencySelect } from "@/components/CurrencyContext";
 import DropPrompt from "../DropPrompt";
 import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -153,7 +154,7 @@ export function CardAutopayForm({ cardId, banks, pfCash = [], bank, hold = null,
           {pfCash.length > 0 ? (<>
             <optgroup label="บัญชีธนาคาร">{banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}</optgroup>
             <optgroup label="เงินฝากในพอร์ต">{pfCash.map((h) => <option key={h.id} value={`h:${h.id}`}>{h.label}</option>)}</optgroup>
-          </>) : banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          </>) : <BankOptions banks={banks} />}
         </select>
       </label>
       {sel && (

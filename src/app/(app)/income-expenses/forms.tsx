@@ -16,6 +16,7 @@ import BalanceGuard from "@/components/BalanceGuard";
 import type { PfCash } from "@/lib/pf-cash";
 import { confirmCardPayment } from "@/app/(app)/liabilities/actions";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 export type Bank = { asset_id: string; name: string; currency: string };
 export type Card = { id: string; label: string; currency: string; outstanding_balance: number };
@@ -126,7 +127,7 @@ export function EntryEditor({ kind, id, currency, values, banks, cards = [], pfC
       {accountEditable && via === "bank" && f("บัญชี", (
         <select name="bank_asset_id" required defaultValue={values.bank ?? sameBanks[0]?.asset_id ?? ""} className={`${cls} max-w-56`}>
           {sameBanks.length === 0 && <option value="">— ไม่มีบัญชีสกุล {currency} —</option>}
-          {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={sameBanks} />
         </select>
       ))}
       {accountEditable && via === "card" && f("บัตร", (
@@ -198,7 +199,7 @@ export function IncomeForm({ banks, persons, today, minDate, subtypes = [] }: { 
             <label className={lbl}>เข้าบัญชี
               <select name="received_to_asset_id" value={bank} onChange={(e) => setBank(e.target.value)} className={input}>
                 <option value="">— ไม่ผ่านบัญชีในระบบ (เงินสด ฯลฯ) —</option>
-                {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                <BankOptions banks={banks} ccy />
               </select>
             </label>
             {!bank && (
@@ -267,7 +268,7 @@ export function ExpectedActions(props: {
       <label className="text-xs">เข้าบัญชี
         <select name="received_to_asset_id" defaultValue={receiveTo ?? list[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
           <option value="">— ไม่ผ่านบัญชี —</option>
-          {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={list} />
         </select>
       </label>
       <button disabled={recording} className={sbtn}>บันทึก</button>
@@ -313,7 +314,7 @@ export function TemplateForm({ banks, persons, today }: { banks: Bank[]; persons
             <label className={lbl}>เข้าบัญชีตามปกติ
               <select name="receive_to_asset_id" defaultValue="" className={input}>
                 <option value="">— ไม่ระบุ —</option>
-                {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                <BankOptions banks={banks} ccy />
               </select>
             </label>
             <label className={lbl}>เริ่มตั้งแต่ *<input name="start_date" type="date" required defaultValue={today} className={input} /></label>
@@ -385,7 +386,7 @@ export function ExpenseTemplateForm({ banks, cards, persons, categories, today }
               <label className={lbl}>บัญชี
                 <select name="pay_from_asset_id" defaultValue={banks[0]?.asset_id ?? ""} className={input}>
                   <option value="">— ไม่ระบุ —</option>
-                  {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                  <BankOptions banks={banks} ccy />
                 </select>
               </label>
             )}
@@ -507,7 +508,7 @@ export function RecurringPayActions(props: {
       {via === "bank" && (
         <label className="text-xs">บัญชี
           <select name="bank_asset_id" required defaultValue={bankId && sameBanks.some((b) => b.asset_id === bankId) ? bankId : sameBanks[0]?.asset_id} className={`mt-1 block ${small}`}>
-            {sameBanks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            <BankOptions banks={sameBanks} />
           </select>
         </label>
       )}
@@ -608,7 +609,7 @@ export function ExpenseForm({ banks, cards, pfCash = [], persons, today, minDate
             {via === "bank" && (
               <label className={lbl}>บัญชีที่จ่าย *
                 <select name="bank_asset_id" required value={bank} onChange={(e) => { touched.current.acc = true; setBank(e.target.value); }} className={input}>
-                  {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                  <BankOptions banks={banks} ccy />
                 </select>
               </label>
             )}
@@ -699,7 +700,7 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, c
       </label>
       {via === "bank" && (
         <select name="bank_asset_id" required className={small}>
-          {banks.filter((b) => b.currency === currency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={banks.filter((b) => b.currency === currency)} />
         </select>
       )}
       {via === "card" && (
@@ -764,14 +765,14 @@ export function MovementForm({ banks, cards, pfCash = [], liabilities, today, mi
                   {type === "CARD_PAYMENT" && pfCash.length > 0 ? (<>
                     <optgroup label="บัญชีธนาคาร">{banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}</optgroup>
                     <optgroup label="เงินฝากในพอร์ต">{pfCash.map((h) => <option key={h.id} value={`h:${h.id}`}>{h.label} ({h.currency})</option>)}</optgroup>
-                  </>) : banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                  </>) : <BankOptions banks={banks} ccy />}
                 </select>
               </label>
             )}
             {(type === "TRANSFER" || type === "FX_EXCHANGE" || type === "OTHER_IN") && (
               <label className={lbl}>{type === "OTHER_IN" ? "เข้าบัญชี *" : "ไปบัญชี *"}
                 <select name="to_asset_id" required className={input}>
-                  {toList.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+                  <BankOptions banks={toList} ccy />
                 </select>
                 {toList.length === 0 && <span className="mt-1 block text-xs text-amber-700">ไม่มีบัญชีที่ใช้ได้</span>}
               </label>

@@ -8,6 +8,7 @@ import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { useCostValueMirror } from "@/components/useCostValueMirror";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -117,7 +118,7 @@ export default function NewAlternativeForm(props: {
             <label className={`${label} md:col-span-2`}>จ่ายจากบัญชี
               <select name="pay_bank_asset_id" defaultValue="" className={input}>
                 <option value="">— ไม่บันทึกเงินออก (ยังไม่จ่าย / จ่ายเป็นงวด) —</option>
-                {banks.filter((b) => b.currency === currency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+                <BankOptions banks={banks.filter((b) => b.currency === currency)} />
               </select>
               <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ได้มา ณ วันที่ได้มา (บัญชีสกุลเดียวกับสินทรัพย์) · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าสินทรัพย์</span>
             </label>

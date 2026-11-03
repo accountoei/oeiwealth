@@ -9,7 +9,7 @@ export default async function NewLoanPage() {
   const [{ data: family }, { data: persons }, { data: banks }, { data: businesses }, { data: owns }] = await Promise.all([
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,account_no_masked,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
     supabase.from("asset_ownerships").select("asset_id,person_id").is("deleted_at", null).is("end_date", null),
   ]);

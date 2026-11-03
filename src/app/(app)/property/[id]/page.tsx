@@ -87,7 +87,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_lease_status").select("*").eq("property_asset_id", id).order("start_date", { ascending: false }),
     supabase.from("v_lease_rent_tracking").select("*").eq("property_asset_id", id)
       .order("income_period", { ascending: false }).limit(36),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("families").select("go_live_date,opportunity_method,opportunity_rate_pct").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_property_cost_tracking").select("utility_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,gap,currency,status,last_paid_date,dismissal_id,dismissal_reason")

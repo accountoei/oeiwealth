@@ -59,7 +59,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   // ดึงข้อมูลทุกชุดพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอทีละชุดต่อกันราว 10 ทอด → ช้ามากเมื่อ Supabase เพิ่งตื่น
   //   ชุดที่ต้องใช้ผลของอีกชุดเริ่มทันทีที่ชุดนั้นเสร็จ: ส่วนแบ่งรายบุคคล ← สมาชิกที่เลือก · ยอดอัปเดตในเดือน ← รายชื่อบัญชี
   const pvQ = loadPersonView(sp.p, { liabilities: true });
-  const banksQ = supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name").then((r) => r);
+  const banksQ = supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order").then((r) => r);
   const [pv, [{ data: incShares }, { data: expShares }],
     [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
       { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },

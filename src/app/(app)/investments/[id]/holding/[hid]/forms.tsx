@@ -12,6 +12,7 @@ import { SettleModeRadios } from "@/components/SettleMode";
 import { CashAccountSelect, type CashAcct } from "../../forms";
 import { defaultIncomeAccount, groupIncomeOptions, incomeAccountOptions } from "@/lib/income-account";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -137,7 +138,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
         {mode === "bank" && (
           <>
             <select name="bank_asset_id" required defaultValue={incomeAccount?.startsWith("a:") ? incomeAccount.slice(2) : ""} className={small}>
-              <option value="">— บัญชี ({currency}) —</option>{list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+              <option value="">— บัญชี ({currency}) —</option><BankOptions banks={list} />
             </select>
             {!mat && <label className="text-xs">วันเงินเข้าจริง<input name="settlement_date" type="date" className={`ml-1 ${small}`} /></label>}
           </>

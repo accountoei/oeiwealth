@@ -31,7 +31,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       .eq("liability_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes,movement_group_id")
       .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes,pending_split,currency")

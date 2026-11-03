@@ -5,6 +5,7 @@ import { FREQ_LABEL, UTILITIES_BILLING_LABEL, money, thDate } from "@/lib/format
 import { nextDay, termEnd, termMonths } from "@/lib/lease";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "./LeaseContractFields";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const label = "block text-sm text-slate-700";
@@ -123,7 +124,7 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
       <label className={label}>บัญชีรับค่าเช่า (ค่าตั้งต้นตอนบันทึกรับ · ใช้ในสัญญาที่พิมพ์)
         <select name="lease_rent_to_asset_id" defaultValue={p?.rent_to_asset_id ?? ""} className={input}>
           <option value="">— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —</option>
-          {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+          <BankOptions banks={banks} ccy />
         </select>
       </label>
       <label className={label}>ค่าน้ำ / ค่าไฟ
@@ -179,7 +180,7 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
             {carried ? `รับเงินประกันเพิ่ม ${money(extra)} เข้าบัญชี` : "รับเงินประกันเข้าบัญชี"}
             <select name="lease_deposit_to_asset_id" defaultValue="" className={input}>
               <option value="">— ไม่บันทึกเงินเข้าบัญชี —</option>
-              {banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+              <BankOptions banks={banks} ccy />
             </select>
             <span className="mt-1 block text-xs text-slate-500">ระบบสร้างรายการเงินเข้า &ldquo;รับเงินประกัน&rdquo; ให้ (ไม่ใช่รายได้)</span>
           </label>

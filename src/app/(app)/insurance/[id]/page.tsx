@@ -48,7 +48,7 @@ export default async function PolicyDetailPage({ params }: { params: Promise<{ i
       .eq("policy_id", id).order("due_date").order("installment_no"),
     supabase.from("insurance_coverages").select("id,coverage_type,limit_amount,currency,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
     supabase.from("insurance_followups").select("id,person_id,role,action,status,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order"),
     supabase.from("insurance_cash_value_table").select("policy_year,value_date,value").eq("policy_id", id).is("deleted_at", null).order("policy_year"),

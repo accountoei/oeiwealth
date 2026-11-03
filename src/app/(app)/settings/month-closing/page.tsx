@@ -112,7 +112,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const [{ data: checksRaw, error: checkErr }, { data: previewRaw, error: prevErr }, { data: banks }, { data: recons }, { data: balAt }, { data: igRaw }] = await Promise.all([
     supabase.rpc("month_closing_checks", { p_month: start }),
     supabase.rpc("month_net_worth_preview", { p_month: start }),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("bank_reconciliations").select("bank_asset_id,status").eq("year_month", start).is("deleted_at", null).neq("status", "OPEN"),
     supabase.rpc("bank_balances_at", { p_date: end < today ? end : today }),
     supabase.rpc("month_investment_gain", { p_month: start }),

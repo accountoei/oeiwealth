@@ -83,7 +83,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       supabase.from("v_lease_rent_tracking").select("lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status").eq("income_period", start),
       supabase.from("v_property_cost_tracking").select("utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status")
         .eq("cost_period", start).order("utility_type"),
-      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
       supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     ]),
     // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน

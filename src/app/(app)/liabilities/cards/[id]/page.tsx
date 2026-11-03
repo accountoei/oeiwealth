@@ -26,7 +26,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
     supabase.from("credit_card_statements").select("id,statement_date,balance,notes")
       .eq("credit_card_id", id).is("deleted_at", null).order("statement_date", { ascending: false }),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency").eq("status", "ACTIVE").order("name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
   ]);
   if (!c) notFound();
 

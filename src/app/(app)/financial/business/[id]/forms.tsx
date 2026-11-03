@@ -9,6 +9,7 @@ import BalanceGuard from "@/components/BalanceGuard";
 import BusinessBadge from "../badge";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -44,7 +45,7 @@ export function DividendForm({ assetId, banks, today, minDate }: { assetId: stri
         <label className="text-sm">ภาษีหัก ณ ที่จ่าย<input name="tax" inputMode="decimal" className={input} /></label>
         <label className="text-sm">เข้าบัญชี
           <select name="bank_asset_id" defaultValue={banks[0]?.asset_id ?? ""} className={input}>
-            <option value="">— ไม่ผ่านบัญชี —</option>{banks.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name} ({b.currency})</option>)}
+            <option value="">— ไม่ผ่านบัญชี —</option><BankOptions banks={banks} ccy />
           </select>
         </label>
         <label className="text-sm md:col-span-4">หมายเหตุ<input name="notes" className={input} /></label>
@@ -202,7 +203,7 @@ export function ShareSaleForm({ assetId, currency, banks, holders, familyShares,
         <label className="text-sm">เงินเข้าบัญชี
           <select name="bank_asset_id" defaultValue={list[0]?.asset_id ?? ""} className={input}>
             <option value="">— ไม่ผ่านบัญชี —</option>
-            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            <BankOptions banks={list} />
           </select>
         </label>
         <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" placeholder="ผู้ซื้อ / เลขที่สัญญา" className={input} /></label>
@@ -263,7 +264,7 @@ export function BuySharesForm({ assetId, currency, banks, persons, holders, avgC
         <label className="text-sm">วันที่ *<input name="date" type="date" required defaultValue={today} min={minDate} max={today} className={input} /></label>
         <label className="text-sm">จ่ายจากบัญชี *
           <select name="bank_asset_id" required defaultValue={list[0]?.asset_id ?? ""} className={input}>
-            {list.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            <BankOptions banks={list} />
           </select>
         </label>
         <label className="flex items-center gap-2 text-sm md:col-span-3">

@@ -49,7 +49,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       .is("deleted_at", null).order("sort_order").order("issuer"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,status"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,status,frequent").order("pick_order"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,status,overdraft_limit,overdraft_rate").not("overdraft_limit", "is", null).order("name"),
     supabase.rpc("bank_balances_at", { p_date: todayBangkok() }),
     // เงินกู้ภายในครอบครัว: สมาชิกเป็นผู้กู้ของ Loans Receivable → หนี้สินของผู้กู้ (Net Worth นับให้ · ตกลง 2 พ.ย. 2026)
@@ -109,7 +109,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
 
   // แท็บจ่ายชำระทั้งชุด: เงินกู้ที่ยังผ่อน (ยอดเต็ม) + บัตรที่ใช้งาน
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
-  const payBanks = (banksRaw ?? []).filter((b) => b.status === "ACTIVE").map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string }));
+  const payBanks = (banksRaw ?? []).filter((b) => b.status === "ACTIVE").map((b) => ({ id: b.asset_id as string, name: b.name as string, currency: b.currency as string, frequent: !!b.frequent }));
   // เดือนที่เลือก (แถบบน · ตกลง 28 ต.ค. 2026): รายการจ่ายแล้วของเดือนนั้น · วันที่ตั้งต้น = สิ้นเดือน (ไม่เกินวันนี้) · ยอดหนี้ในภาพรวม = ยอดล่าสุด
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
   const mEnd = monthRange(ym).end;

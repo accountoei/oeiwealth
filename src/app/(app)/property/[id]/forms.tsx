@@ -18,6 +18,7 @@ import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
+import BankOptions from "@/components/BankOptions";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -124,7 +125,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
       <label className="text-xs">เข้าบัญชี
         <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
           <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
-          {sameCcy.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={sameCcy} />
         </select>
       </label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
@@ -161,7 +162,7 @@ function LeaseDetailsBody({ assetId, leaseId, v, opt, canSensitive, banks, rentC
         <label className="text-sm">บัญชีรับค่าเช่า (ใช้ในสัญญาที่พิมพ์)
           <select name="lease_rent_to_asset_id" defaultValue={rentTo ?? ""} className={f}>
             <option value="">— ไม่ระบุ (เว้นให้เขียนเอง) —</option>
-            {banks.filter((b) => b.currency === rentCurrency).map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            <BankOptions banks={banks.filter((b) => b.currency === rentCurrency)} />
           </select>
         </label>
         <label className="text-sm">จำนวนเดือนที่วางประกัน
@@ -227,7 +228,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
         <label className="text-xs">จ่ายคืนจากบัญชี
           <select name="refund_from_asset_id" defaultValue={sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
             <option value="">— เลือกบัญชี —</option>
-            {sameCcy.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+            <BankOptions banks={sameCcy} />
           </select>
         </label>
       </div>
@@ -583,7 +584,7 @@ export function ReceiveChargeForm({ assetId, chargeId, amount, currency, banks, 
       <label className="text-xs">เข้าบัญชี
         <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
           <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
-          {sameCcy.map((b) => <option key={b.asset_id} value={b.asset_id}>{b.name}</option>)}
+          <BankOptions banks={sameCcy} />
         </select>
       </label>
       <button disabled={pending} className={sbtn}>บันทึก</button>
