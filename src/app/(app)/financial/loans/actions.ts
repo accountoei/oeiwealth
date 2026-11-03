@@ -247,6 +247,9 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
     risk = expected == null ? { at_risk_amount: null, risk_assessed_date: null, risk_note: str(form.get("risk_note")) }
       : { at_risk_amount: Math.round((out - expected) * 100) / 100, risk_assessed_date: str(form.get("risk_assessed_date")), risk_note: str(form.get("risk_note")) };
   }
+  const graceRaw = str(form.get("grace_days"));
+  const grace = graceRaw == null ? 0 : Number(graceRaw.replace(/,/g, ""));
+  if (!Number.isInteger(grace) || grace < 0 || grace > 60) return { error: "วันผ่อนผันต้องเป็นจำนวนวันเต็ม 0–60" };
   const { data: a, error: e1 } = await supabase.from("assets").update({ name }).eq("id", assetId).select("id");
   if (e1) return { error: friendlyError(e1.message) };
   if (!a?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
@@ -260,6 +263,7 @@ export async function updateLoanInfo(_: ActionState, form: FormData): Promise<Ac
     borrower_phone: str(form.get("borrower_phone")),
     contract_no: str(form.get("contract_no")),
     purpose: str(form.get("purpose")),
+    ...(form.has("grace_days") ? { grace_days: grace } : {}),
     ...partyPatch(form),
     ...borrowerPatch(form),
   }).eq("asset_id", assetId);

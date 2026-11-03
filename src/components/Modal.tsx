@@ -51,7 +51,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
     const greens = () => [...el.querySelectorAll(".text-emerald-700")].map((n) => (n.textContent ?? "").trim()).filter(Boolean);
     const disabledCount = () => el.querySelectorAll("button[disabled]").length;
     // ปุ่มสีแดง (เช่น ลบโลโก้) ไม่ใช่ข้อความผิดพลาด
-    const hasError = () => !!el.querySelector(".text-red-600:not(button), .text-red-700:not(button)");
+    const hasError = () => !!el.querySelector(".text-red-600:not(button):not([data-warn]), .text-red-700:not(button):not([data-warn])");
     let armed: { greens: Set<string>; base: number; busy: boolean } | null = null;
     const onSubmit = () => { armed = { greens: new Set(greens()), base: disabledCount(), busy: false }; };
     el.addEventListener("submit", onSubmit, true);

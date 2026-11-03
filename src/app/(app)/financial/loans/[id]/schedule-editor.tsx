@@ -221,7 +221,9 @@ export function ScheduleEditor({ assetId, currency, current, defaults, hasSchedu
           <label className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm">
             <input type="checkbox" name="sync_opening" checked={syncOpening} onChange={(e) => setSyncOpening(e.target.checked)} className="mt-1" />
             <span>ปรับยอดตั้งต้นเป็น <b>{money(o!.outstanding, currency)}</b> ตามตารางพร้อมบันทึก (ตอนนี้ {money(opening!.recorded)})
-              <span className="block text-xs text-slate-500">ไม่ติ๊ก = คงยอดตั้งต้นเดิม (ใช้เมื่อผู้กู้ค้างชำระจริงก่อน Go-live — งวดที่ยังไม่ได้รับจะขึ้น &ldquo;เลยกำหนด&rdquo;)</span></span>
+              <span className="block text-xs text-slate-500">{opening!.recorded > o!.outstanding
+                ? "ไม่ติ๊ก = คงยอดตั้งต้นเดิม (ใช้เมื่อผู้กู้ค้างชำระจริงก่อน Go-live · งวดก่อน Go-live ที่ยังไม่ได้รับจะขึ้น “เลยกำหนด”)"
+                : "ยอดตั้งต้นเดิมน้อยกว่าตาราง = ผู้กู้คืนเงินต้นก่อนกำหนด · ใส่งวดที่คืนจริงในตารางด้านบน แล้วกด “หักจากงวดท้าย” ยอดจะตรงกันเอง"}</span></span>
           </label>
         )}
         <div className="flex flex-wrap items-center gap-3">

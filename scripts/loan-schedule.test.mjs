@@ -1,7 +1,7 @@
 // node scripts/loan-schedule.test.mjs — ทดสอบตารางผ่อนที่แก้ได้ทีละช่อง (src/lib/loan-schedule.ts · ตัวเลขสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { generateSchedule, lastDueOf, openingFromSchedule, periodInterest, periodsUntil, recalcInterest } from "../src/lib/loan-schedule.ts";
+import { annuityPrincipals, generateSchedule, isMidPeriod, lastDueOf, openingFromSchedule, periodInterest, periodsUntil, recalcInterest } from "../src/lib/loan-schedule.ts";
 
 // จำนวนงวด ↔ งวดสุดท้ายครบกำหนด
 assert.equal(lastDueOf("2026-01-31", 3, 1), "2026-03-31");
@@ -46,5 +46,39 @@ assert.deepEqual(recalcInterest(base, 0, { ...opts, flat: true }).map((l) => l.i
 assert.deepEqual(openingFromSchedule(120000, base, "2026-03-31"), { count: 2, paid: 60000, outstanding: 60000 });
 assert.deepEqual(openingFromSchedule(120000, base, "2026-03-05"), { count: 2, paid: 60000, outstanding: 60000 });
 assert.deepEqual(openingFromSchedule(120000, base, "2026-01-31"), { count: 0, paid: 0, outstanding: 120000 });
+
+// คืนเงินต้นเพิ่มระหว่างงวด (carry): ดอกเบี้ยถึงวันคืน (ยอดเดิม) + จากวันคืนถึงงวดถัดไป (ยอดใหม่) รวมในงวดถัดไป
+// จ่ายแต่ดอก 6% วันจริง · เงินต้น 3,650,000 · คืนเพิ่ม 365,000 วันที่ 21 ก.พ. (21 วันหลังงวด 31 ม.ค.)
+const io = { amount: 3650000, ratePct: 6, dayCount: "ACTUAL_365", interestFrom: "2026-01-01" };
+const ioLines = [
+  { due_date: "2026-01-31", principal: 0, interest: 0 },
+  { due_date: "2026-02-21", principal: 365000, interest: 0, carry: true },
+  { due_date: "2026-02-28", principal: 0, interest: 0 },
+  { due_date: "2026-03-31", principal: 3285000, interest: 0 },
+];
+const c1 = recalcInterest(ioLines, 0, io);
+assert.equal(c1[0].interest, 18000);              // 3,650,000 × 6% × 30/365
+assert.equal(c1[1].interest, 0);                  // งวดคืนเพิ่ม: ดอกเบี้ย 0
+assert.equal(c1[2].interest, 12600 + 3780);       // 3,650,000 × 21 วัน + 3,285,000 × 7 วัน
+assert.equal(c1[3].interest, 16740);              // 3,285,000 × 31 วัน
+// แก้เฉพาะงวดหลัง (from = 2) ยังรวมดอกของงวดคืนเพิ่มที่อยู่ก่อนหน้า
+assert.equal(recalcInterest(ioLines, 2, io)[2].interest, 16380);
+// ไม่ใช่ carry: งวดคืนเพิ่มคิดดอกแยก งวดถัดไปนับจากวันคืน
+const c0 = recalcInterest(ioLines.map((l) => ({ ...l, carry: false })), 0, io);
+assert.equal(c0[1].interest, 12600);
+assert.equal(c0[2].interest, 3780);
+// แยกงวดคืนเพิ่ม = ระหว่างงวดปกติ และห่างงวดถัดไปไม่ถึงเดือน
+assert.equal(isMidPeriod("2026-02-21", "2026-01-31", "2026-02-28"), true);
+assert.equal(isMidPeriod("2026-02-28", "2026-01-31", "2026-03-31"), false);
+assert.equal(isMidPeriod("2026-02-21", "2026-01-31", undefined), false);
+
+// ค่างวดเท่ากันสำหรับวันที่ที่กำหนด (จบวันเดิม): งวดสุดท้ายหมดพอดี ทุกงวดยอดรวมใกล้กัน
+const dates = ["2026-02-05", "2026-03-05", "2026-04-05", "2026-05-05", "2026-06-05", "2026-07-05"];
+const ap = annuityPrincipals(60000, 12, "2026-01-05", dates, "MONTHLY");
+assert.equal(Math.round(ap.reduce((t, x) => t + x, 0) * 100) / 100, 60000);
+let bal = 60000;
+const tot = ap.map((p) => { const t = p + Math.round(bal * 0.01 * 100) / 100; bal -= p; return t; });
+assert.ok(Math.max(...tot) - Math.min(...tot) < 1, `ค่างวดเท่ากัน: ${tot}`);
+assert.deepEqual(annuityPrincipals(1000, 12, "2026-01-05", ["2026-02-05"], "MONTHLY"), [1000]);
 
 console.log("loan-schedule tests passed");
