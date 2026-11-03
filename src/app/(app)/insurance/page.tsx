@@ -23,7 +23,7 @@ import ModalButton from "@/components/ModalButton";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
-const TABS = [["overview", "ภาพรวม"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"], ["update", "อัปเดตมูลค่าเวนคืน"]] as const;
+const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
 
 export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; y?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
