@@ -1,4 +1,4 @@
-# #PR · การ์ดสินทรัพย์: บรรทัดสภาพคล่องไม่ถูกตัด · เมนู Cash & Bank Accounts → Bank Accounts
+# #316 · การ์ดสินทรัพย์: บรรทัดสภาพคล่องไม่ถูกตัด · เมนู Cash & Bank Accounts → Bank Accounts
 
 - วันที่: 4 พ.ย. 2026 · branch `feat/liquidity-label-bank-menu`
 - SQL: ไม่มี SQL · ไม่มี Edge Function
