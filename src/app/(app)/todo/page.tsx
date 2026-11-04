@@ -49,7 +49,7 @@ export default async function TodoPage({ searchParams }: { searchParams: Promise
         <TabPanel id="data">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-2 flex items-baseline justify-between">
-              <p className="text-xs text-slate-500">คิดจากข้อมูลที่แนะนำ (เอกสาร เจ้าของ มูลค่า ฯลฯ) · ไม่กระทบตัวเลข Net Worth</p>
+              <p className="text-xs text-slate-500">คิดจากข้อมูลที่แนะนำ (เอกสาร เจ้าของ มูลค่า ฯลฯ) · ไม่กระทบตัวเลขความมั่งคั่งสุทธิ</p>
               {avg != null && <span className="text-xl font-semibold tabular-nums">{avg}%</span>}
             </div>
             {comp.length > 0 && notDone.length === 0 ? <p className="text-sm text-emerald-700">ครบทุกรายการ ✓</p> : (

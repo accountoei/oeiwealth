@@ -108,7 +108,7 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
             <p className="mt-1 text-xs text-amber-800">บันทึกแล้วระบบโอนหัวหน้าให้คนใหม่ก่อน แล้วจึงเปลี่ยนสถานะ · ความสัมพันธ์ของทุกคนจะคำนวณใหม่ (เฉพาะ ADMIN)</p>
           </div>
         )}
-        {status === "INACTIVE" && <p className="text-xs text-slate-500 md:col-span-4">Inactive: ไม่ขึ้นในช่องเลือกคนตอนสร้างรายการใหม่ · รายการเดิมยังอยู่และนับใน Net Worth ตามปกติ</p>}
+        {status === "INACTIVE" && <p className="text-xs text-slate-500 md:col-span-4">Inactive: ไม่ขึ้นในช่องเลือกคนตอนสร้างรายการใหม่ · รายการเดิมยังอยู่และนับในความมั่งคั่งสุทธิตามปกติ</p>}
         <label className={label}>คำนำหน้า
           <input name="title_prefix" list="title-prefixes" defaultValue={p.title_prefix ?? ""} className={input} />
           <datalist id="title-prefixes">{TITLE_PREFIXES.map((t) => <option key={t} value={t} />)}</datalist>

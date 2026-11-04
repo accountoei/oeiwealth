@@ -215,7 +215,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const cardTable = cardRows.length > 0 && (
     <div className="mt-3 rounded-lg border border-slate-200">
       <p className="px-3 pt-2 text-xs text-slate-500">
-        บัตรเครดิต ณ {ended ? `สิ้นเดือน ${thDate(end)}` : `วันนี้ ${thDate(today)}`} · ยอด Statement ล่าสุด + รูดหลังวันตัดรอบ − จ่ายบัตร − เงินคืน = ยอดที่ใช้คิด Net Worth ·
+        บัตรเครดิต ณ {ended ? `สิ้นเดือน ${thDate(end)}` : `วันนี้ ${thDate(today)}`} · ยอด Statement ล่าสุด + รูดหลังวันตัดรอบ − จ่ายบัตร − เงินคืน = ยอดที่ใช้คิดความมั่งคั่งสุทธิ ·
         ถ้าต้องการยอดจริงสิ้นเดือน ใส่ยอดจากแอปธนาคารที่หน้าบัตร (ส่วนต่างรวมเข้าก้อนรอแยกของเดือนนี้)
       </p>
       <div className="overflow-x-auto px-3 pb-1">
@@ -259,7 +259,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
         <TabActions>
           <ActionBar>
             <FinalizeForm month={start} warnings={warnings} label={`ปิดเดือน ${thMonth(start)}`} blockers={closeBlockers}
-              summary={<>จะบันทึก Net Worth <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
+              summary={<>จะบันทึกความมั่งคั่งสุทธิ <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
                 {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}</>} />
           </ActionBar>
         </TabActions>
@@ -297,7 +297,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            Net Worth {p?.confirmed ? `ณ ${thDate(p?.as_of)}` : "ณ วันนี้ (ประมาณการ)"}
+            ความมั่งคั่งสุทธิ {p?.confirmed ? `ณ ${thDate(p?.as_of)}` : "ณ วันนี้ (ประมาณการ)"}
             {isFinal
               ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">FINAL v{snap?.version}</span>
               : <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{ended ? "DRAFT" : "ยังไม่สิ้นเดือน"}</span>}
@@ -379,7 +379,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
           <table className="mt-3 w-full min-w-[36rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr><th className="px-5 py-2">เดือน</th><th className="px-3 text-right">สินทรัพย์</th><th className="px-3 text-right">หนี้สิน</th>
-                <th className="px-3 text-right">Net Worth</th><th className="px-3 text-right">เปลี่ยนจากเดือนก่อน</th><th className="px-3">เวอร์ชัน</th></tr>
+                <th className="px-3 text-right">ความมั่งคั่งสุทธิ</th><th className="px-3 text-right">เปลี่ยนจากเดือนก่อน</th><th className="px-3">เวอร์ชัน</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {history.map((h, i) => {

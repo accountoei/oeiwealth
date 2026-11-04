@@ -68,7 +68,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
         <StatBox label="สมาชิกภาพใกล้หมดอายุ (60 วัน)" value={memberSoon} unit="รายการ"
           sub={memberExpired ? `เลยวันหมดอายุแล้ว ${memberExpired} รายการ` : "ไม่มีรายการเลยวันหมดอายุ"} subClass={(memberSoon + memberExpired > 0) ? "text-amber-700" : undefined} />
         <StatBox label="บัญชีแต้ม / ไมล์" value={pointRows.length} unit="บัญชี" sub={pointsStale ? `ยอดเกิน 90 วัน ${pointsStale} บัญชี` : "ยอดอัปเดตภายใน 90 วัน"} subClass={(pointsStale > 0) ? "text-amber-700" : undefined} />
-        <StatBox label="แต้มใกล้หมดอายุ (60 วัน)" value={pointSoon} unit="บัญชี" sub="แต้ม / ไมล์ ไม่นับใน Net Worth" subClass={(pointSoon > 0) ? "text-amber-700" : undefined} />
+        <StatBox label="แต้มใกล้หมดอายุ (60 วัน)" value={pointSoon} unit="บัญชี" sub="แต้ม / ไมล์ ไม่นับในความมั่งคั่งสุทธิ" subClass={(pointSoon > 0) ? "text-amber-700" : undefined} />
       </section>
 
       {/* สมาชิกภาพ + แต้มสะสม / ไมล์ ในกล่องเดียว แบ่งด้วยหัวกลุ่ม (ตกลง 28 ต.ค. 2026) */}
@@ -113,7 +113,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมใน Net Worth · กดแก้ไขเพื่ออัปเดตยอดตาม Statement ·
+        <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมในความมั่งคั่งสุทธิ · กดแก้ไขเพื่ออัปเดตยอดตาม Statement ·
           บัตรเครดิตอยู่ที่ <Link href="/liabilities#cards" className="text-blue-700 hover:underline">Liabilities → บัตรเครดิต</Link></p>
       </section>
     </div>

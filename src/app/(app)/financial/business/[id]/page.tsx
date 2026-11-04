@@ -130,7 +130,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         {((inLoans ?? []).length > 0 || (inDebts ?? []).length > 0) && (
           <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
             <h2 className="font-medium text-slate-900">เงินกู้กับสมาชิก</h2>
-            <p className="mt-0.5 text-xs text-slate-500">แสดงไว้อ้างอิง · ไม่นับเข้ามูลค่ากิจการ (มูลค่าตามส่วนของผู้ถือหุ้นรวมหนี้ / ลูกหนี้นี้ไว้แล้ว) · ฝั่งสมาชิกนับใน Net Worth ตามปกติ</p>
+            <p className="mt-0.5 text-xs text-slate-500">แสดงไว้อ้างอิง · ไม่นับเข้ามูลค่ากิจการ (มูลค่าตามส่วนของผู้ถือหุ้นรวมหนี้ / ลูกหนี้นี้ไว้แล้ว) · ฝั่งสมาชิกนับในความมั่งคั่งสุทธิตามปกติ</p>
             <ul className="mt-3 divide-y divide-slate-100 text-sm">
               {(inLoans ?? []).map((x) => (
                 <li key={x.asset_id} className="flex flex-wrap justify-between gap-2 py-2">

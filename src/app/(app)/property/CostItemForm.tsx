@@ -28,7 +28,7 @@ export default function CostItemForm({ assetId, currency, today, edit }: {
     <form action={action} className="grid gap-3 md:grid-cols-4">
       <input type="hidden" name="asset_id" value={assetId} />
       {edit?.item_id && <input type="hidden" name="id" value={edit.item_id} />}
-      <p className="text-xs text-slate-500 md:col-span-4">ใช้คิดราคาขายขั้นต่ำที่คุ้มเท่านั้น ไม่นับใน Net Worth · ดอกเบี้ยคิดจากวันที่จ่ายถึงวันนี้</p>
+      <p className="text-xs text-slate-500 md:col-span-4">ใช้คิดราคาขายขั้นต่ำที่คุ้มเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · ดอกเบี้ยคิดจากวันที่จ่ายถึงวันนี้</p>
       <label className="text-sm">วันที่จ่าย
         <input name="cost_date" type="date" required max={today} defaultValue={edit?.lot_date ?? ""} className={input} /></label>
       <label className="text-sm">ยอดเงิน ({currency})

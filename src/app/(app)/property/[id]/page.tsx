@@ -713,7 +713,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-medium text-slate-900">ของในทรัพย์สิน</h2>
-              <p className="text-xs text-slate-500">เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า กุญแจ บัตร รีโมท · ไม่นับใน Net Worth (ซื้อ = ค่าใช้จ่าย · ขาย = รายได้) · ใช้ทำรายการส่งมอบของแต่ละสัญญา (มิเตอร์ดึงจากสาธารณูปโภค){multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</p>
+              <p className="text-xs text-slate-500">เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า กุญแจ บัตร รีโมท · ไม่นับในความมั่งคั่งสุทธิ (ซื้อ = ค่าใช้จ่าย · ขาย = รายได้) · ใช้ทำรายการส่งมอบของแต่ละสัญญา (มิเตอร์ดึงจากสาธารณูปโภค){multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</p>
             </div>
             {canWrite && (
               <div className="flex flex-wrap items-center gap-2">

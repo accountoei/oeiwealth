@@ -222,7 +222,7 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">อัตราดอกเบี้ยเทียบ (ต้นทุนเสียโอกาส)</h2>
         <p className="mb-3 mt-1 text-xs text-slate-500">
-          ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับใน Net Worth ·
+          ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับในความมั่งคั่งสุทธิ ·
           แก้เป็นรายแปลงได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; ของทรัพย์สิน{isAdmin ? "" : " · แก้ได้เฉพาะ ADMIN"}
         </p>
         <OpportunityRateForm key={`${family?.opportunity_method}-${family?.opportunity_rate_pct}`} rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null}

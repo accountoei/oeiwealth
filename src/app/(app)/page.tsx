@@ -150,8 +150,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <HeaderFilters><DashboardFilters persons={persons.map((x) => ({ id: x.id, name: x.name }))} months={months}
         person={personId} month={ym} /></HeaderFilters>
 
-      {/* ------------------------------------------------ การ์ดหลัก: สินทรัพย์ → หนี้สิน → Net Worth (ขวาสุด · เด่นด้วยพื้นสีอ่อน) */}
-      <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} hero={i === 2} />)}</section>}>
+      {/* ------------------------------------------------ การ์ดหลัก: ความมั่งคั่งสุทธิ (ใบแรก · พื้นฟ้าอ่อน · 4 พ.ย. 2026) → สินทรัพย์ → หนี้สิน */}
+      <Suspense fallback={<section className={TOP_GRID}>{[0, 1, 2].map((i) => <CardSkeleton key={i} hero={i === 0} />)}</section>}>
         <TopCards start={start} personId={personId} personName={personName} isCurrent={isCurrent} />
       </Suspense>
 
@@ -159,7 +159,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ------------------------------------------------ กราฟ (สูงเต็มกล่อง = เท่ากล่อง "เปลี่ยนเพราะอะไร" ข้าง ๆ → ไม่มีที่ว่างใต้คำอธิบายสี) */}
         <div className={`flex flex-col rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 ${ROW_WIDE}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className={`min-w-0 truncate ${H2}`}>Net Worth {personName || "ทั้งครอบครัว"}</h2>
+            <h2 className={`min-w-0 truncate ${H2}`}>ความมั่งคั่งสุทธิ (Net Worth) · {personName || "ทั้งครอบครัว"}</h2>
             <nav className="flex flex-wrap gap-1" aria-label="ช่วงเวลากราฟ">
               {RANGES.map(([v, label]) => (v !== range && rangeOff(v)
                 ? <span key={v} aria-disabled="true" title="ข้อมูลยังไม่ถึงช่วงนี้" className={`${RANGE_BTN} cursor-not-allowed text-slate-300`}>{label}</span>
@@ -184,11 +184,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
           {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
           <PopupBox
-            title={<>Net Worth เปลี่ยนเพราะอะไร<span className="block text-xs font-normal text-slate-500">{thMonth(start)} · {personName || "ทั้งครอบครัว"}</span></>}
+            title={<>ความมั่งคั่งสุทธิเปลี่ยนเพราะอะไร<span className="block text-xs font-normal text-slate-500">{thMonth(start)} · {personName || "ทั้งครอบครัว"}</span></>}
             info={<>&ldquo;เงินคงเหลือสุทธิ&rdquo; = รายได้สุทธิ + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ (เป็นยอดย่อย ไม่บวกซ้ำ) ·
               &ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ประเมินใหม่ (อสังหาฯ / ธุรกิจ / ทอง) · อัตราแลกเปลี่ยนนอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก
               {personId ? " · ค่าใช้จ่ายส่วนกลาง (ไม่ได้จ่ายจากบัญชี / บัตรของใคร และไม่ได้ระบุคน) รวมอยู่ใน “อื่น ๆ”" : ""}</>}
-            popupTitle={`Net Worth เปลี่ยนเพราะอะไร ${thMonth(start)} · ${personName || "ทั้งครอบครัว"}`}
+            popupTitle={`ความมั่งคั่งสุทธิเปลี่ยนเพราะอะไร ${thMonth(start)} · ${personName || "ทั้งครอบครัว"}`}
             popup={<Suspense fallback={<Lines n={6} />}><ChangePopup start={start} isCurrent={isCurrent} personId={personId} /></Suspense>}>
             <Suspense fallback={<Lines n={6} />}>
               <ChangeBody start={start} isCurrent={isCurrent} personId={personId} />
@@ -201,7 +201,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className={ROW}>
         {/* ------------------------------------------------ สัดส่วนสินทรัพย์ (กว้าง 2 ช่อง · ปุ่ม "ดูรายละเอียด ›" → pop up รายการของแต่ละหมวด · รอบ 4) */}
         <PopupBox className={`flex flex-col ${ROW_WIDE}`} title={`สัดส่วนสินทรัพย์ตามหมวด · ${personName || "ทั้งครอบครัว"}`}
-          info="% คิดจากสินทรัพย์รวม · กด ดูรายละเอียด เพื่อดูรายการในแต่ละหมวด · Net Worth = สินทรัพย์รวม − หนี้สิน (การ์ดบนสุด)"
+          info="% คิดจากสินทรัพย์รวม · กด ดูรายละเอียด เพื่อดูรายการในแต่ละหมวด · ความมั่งคั่งสุทธิ = สินทรัพย์รวม − หนี้สิน (การ์ดบนสุด)"
           popupTitle={`สัดส่วนสินทรัพย์ตามหมวด ${thMonth(start)} · ${personName || "ทั้งครอบครัว"}`}
           popup={<Suspense fallback={<Lines n={7} />}><AllocationBody start={start} personId={personId} detail /></Suspense>}>
           <Suspense fallback={<Lines n={7} />}>
@@ -212,8 +212,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {/* ------------------------------------------------ รายบุคคล: Net Worth + % */}
         <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4">
           <div className="mb-3 flex items-center gap-1">
-            <h2 className={H2}>Net Worth รายบุคคล</h2>
-            <InfoTip label="คำอธิบายกล่องนี้">Net Worth ตามสัดส่วนเจ้าของ · % ของ Net Worth ครอบครัว · กดชื่อเพื่อดูของคนนั้น</InfoTip>
+            <h2 className={H2}>ความมั่งคั่งสุทธิรายบุคคล</h2>
+            <InfoTip label="คำอธิบายกล่องนี้">ความมั่งคั่งสุทธิตามสัดส่วนเจ้าของ · % ของความมั่งคั่งสุทธิทั้งครอบครัว · กดชื่อเพื่อดูของคนนั้น</InfoTip>
           </div>
           <Suspense fallback={<Lines n={4} />}>
             <PersonsBody start={start} ym={ym} personId={personId} />
@@ -227,11 +227,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 }
 
 // ---------------------------------------------------------------------------- โครงเทาระหว่างรอ
-/** การ์ดบน (ตกลง 1 พ.ย. 2026 รอบ 3): สินทรัพย์ · หนี้สิน · Net Worth (ขวาสุด) เรียง 3 ใบเมื่อเนื้อหากว้าง ≥ 56rem (896px)
- *  แคบกว่า (มือถือ / iPad แนวตั้ง): สินทรัพย์ + หนี้สินคู่กันแถวบน · Net Worth เต็มแถวด้านล่าง
+/** การ์ดบน: ความมั่งคั่งสุทธิ (ใบแรก · 4 พ.ย. 2026 · เดิมขวาสุดตั้งแต่รอบ 3) · สินทรัพย์ · หนี้สิน เรียง 3 ใบเมื่อเนื้อหากว้าง ≥ 56rem (896px)
+ *  แคบกว่า (มือถือ / iPad แนวตั้ง): ความมั่งคั่งสุทธิเต็มแถวบนสุด · สินทรัพย์ + หนี้สินคู่กันแถวล่าง
  *  ดูจากความกว้างเนื้อหา (@container/dash) ไม่ใช่ขนาดหน้าต่าง (3 พ.ย. 2026) */
 const TOP_GRID = "grid grid-cols-2 gap-3 sm:gap-4 @min-[56rem]/dash:grid-cols-3";
 const HERO = "col-span-2 @min-[56rem]/dash:col-span-1";
+/** พื้นการ์ดความมั่งคั่งสุทธิ: ฟ้าอ่อน (4 พ.ย. 2026 เทียบภาพ 3 แบบ ก. ฟ้าอ่อน / ข. น้ำเงินเข้ม / ค. น้ำเงินสด → เจ้าของเลือก ก.)
+ *  ถ้าจะเปลี่ยนเป็นพื้นเข้ม: แก้ HERO_BG + TONE.hero (ตัวหนังสือขาว · ป้ายพื้นขาว) และสีในแถวช่วงเวลา (NwPeriods) */
+const HERO_BG = "border-blue-200 bg-blue-50/70";
+/** สีข้อความของการ์ดใบเด่น / ใบปกติ */
+const TONE = {
+  hero: { label: "font-semibold text-ink", num: "text-ink", sub: "text-slate-500", icon: "bg-white text-blue-700 ring-1 ring-blue-100",
+    up: "bg-emerald-50 text-emerald-800", down: "bg-red-50 text-red-800", same: "bg-slate-100 text-slate-600" },
+  card: { label: "text-slate-500", num: "text-ink", sub: "text-slate-500", icon: "",
+    up: "bg-emerald-50 text-emerald-800", down: "bg-red-50 text-red-800", same: "bg-slate-100 text-slate-600" },
+};
 /** แถวกราฟ + "เปลี่ยนเพราะอะไร" และแถวสัดส่วน + รายบุคคล: คู่กัน (2 : 1) เมื่อเนื้อหากว้าง ≥ 58rem (928px · จอ 1,280 ที่เมนูกว้างปกติยังคู่กัน)
  *  แคบกว่า (iPad แนวตั้ง / แนวนอนที่เมนูกาง) → เรียงลงเต็มความกว้าง (เดิมกล่องขวาถูกบีบเหลือ ~230 px ตัวหนังสือตกบรรทัด) */
 const ROW = "grid gap-4 @min-[58rem]/dash:grid-cols-3";
@@ -243,7 +253,7 @@ const RANGE_BTN = "inline-flex min-h-9 items-center rounded-md px-2.5 text-xs sm
 
 function CardSkeleton({ hero }: { hero?: boolean }) {
   return (
-    <div className={`@container rounded-xl border border-slate-200 bg-white p-4 sm:p-5 xl:p-4 animate-pulse ${hero ? HERO : ""}`}>
+    <div className={`@container rounded-xl border p-4 sm:p-5 xl:p-4 animate-pulse ${hero ? `${HERO} ${HERO_BG}` : "border-slate-200 bg-white"}`}>
       <div className="flex justify-between"><div className="h-3 w-28 rounded bg-slate-100" /><div className="h-5 w-24 rounded-full bg-slate-100" /></div>
       <div className={CARD_SPLIT}>
         <div className="mt-3 flex items-center gap-3"><div className="hidden h-9 w-9 rounded-lg bg-slate-100 sm:block" />
@@ -295,6 +305,9 @@ async function TopCards({ start, personId, personName, isCurrent }: { start: str
   const ratio = Number(assets) > 0 ? (Number(liab) / Number(assets)) * 100 : null;
   return (
     <section className={TOP_GRID}>
+      <Big label="ความมั่งคั่งสุทธิ" who={who} value={nw} base={base ? Number(base.net_worth) : null} baseLabel={base?.label} hero
+        icon={<IconNetWorth />} note={`${asOfText} · หลังหักหนี้สินแล้ว`}
+        insight={<Suspense fallback={<InsightSlot />}><NwPeriods start={start} personId={personId} current={nw} asOf={asOf} base={base} isCurrent={isCurrent} /></Suspense>} />
       <Big label="สินทรัพย์รวม" shortLabel="สินทรัพย์" who={who} value={assets} base={base ? Number(base.total_assets) : null} baseLabel={base?.label}
         icon={<IconAssets />} note={asOfText}
         insight={<Suspense fallback={<InsightSlot />}><LiquidityRow start={start} personId={personId} /></Suspense>} />
@@ -302,9 +315,6 @@ async function TopCards({ start, personId, personName, isCurrent }: { start: str
         icon={<IconDebt />} insight={<DebtMeter ratio={ratio} />}
         note={monthly > 0 ? <>ค่างวด {baht(monthly)}<span className="hidden sm:inline"> บาท</span>/เดือน</> : asOfText}
         noteTitle={monthly > 0 ? `ค่างวดเงินกู้รวม ${baht(monthly)} บาท/เดือน (ค่างวดปัจจุบัน)` : undefined} />
-      <Big label="Net Worth" who={who} value={nw} base={base ? Number(base.net_worth) : null} baseLabel={base?.label} hero
-        icon={<IconNetWorth />} note={`${asOfText} · หลังหักหนี้สินแล้ว`}
-        insight={<Suspense fallback={<InsightSlot />}><NwPeriods start={start} personId={personId} current={nw} asOf={asOf} base={base} isCurrent={isCurrent} /></Suspense>} />
     </section>
   );
 }
@@ -496,7 +506,7 @@ function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
     // ดูจากความกว้างกล่องเอง (@container/alloc · 3 พ.ย. 2026) · กล่องสูงกว่าเนื้อหา (ข้างกล่องรายบุคคลที่ยาวกว่า) → แถวกระจายลงให้ขอบล่างตรงกัน
     <div className="@container/alloc flex flex-1 flex-col">
     <StackBar parts={groups.map((x) => ({ k: x.k, label: x.label, pct: total ? (x.v / total) * 100 : 0 }))} />
-    <div className="flex flex-1 flex-col justify-between text-sm @min-[40rem]/alloc:grid @min-[40rem]/alloc:justify-normal @min-[40rem]/alloc:grid-flow-col @min-[40rem]/alloc:grid-rows-[repeat(4,auto)] @min-[40rem]/alloc:content-between @min-[40rem]/alloc:gap-x-8 [&>*]:border-b [&>*]:border-slate-100">
+    <div className="flex flex-1 flex-col justify-between text-sm @min-[40rem]/alloc:grid @min-[40rem]/alloc:justify-normal @min-[40rem]/alloc:grid-flow-col @min-[40rem]/alloc:grid-rows-[repeat(4,auto)] @min-[40rem]/alloc:content-between @min-[40rem]/alloc:gap-x-8">
       {groups.map(({ k, label, list, v }) => (
         // หมวดที่ยังไม่มีรายการ: ตัวหนังสือสีเทา (ไม่ทำจาง) · แสดง — แทนตัวเลข
         <div key={k} className={`py-2 ${list.length ? "" : "text-slate-500"}`}>
@@ -504,7 +514,7 @@ function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
         </div>
       ))}
       {liabs.length > 0 && (
-        <div className="py-2"><AllocRow color={LIAB_COLOR} label="หนี้สิน" value={-liabTotal} count={liabs.length} /></div>
+        <div className="py-2"><AllocRow color={LIAB_COLOR} label="หนี้สิน" pct={total ? (liabTotal / total) * 100 : undefined} value={-liabTotal} count={liabs.length} negative /></div>
       )}
     </div>
     </div>
@@ -520,7 +530,7 @@ function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: 
     <details key={key} className="group border-b border-slate-100">
       <summary className="-mx-2 flex cursor-pointer list-none items-start gap-1.5 rounded-md px-2 py-2 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
         <span className="mt-0.5 text-xs text-slate-400 transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
-        <div className="min-w-0 flex-1"><AllocRow color={color} label={label} pct={pct} value={negative ? -sum : sum} count={items.length} /></div>
+        <div className="min-w-0 flex-1"><AllocRow color={color} label={label} pct={pct} value={negative ? -sum : sum} count={items.length} negative={negative} /></div>
       </summary>
       <div className="mb-3 ml-[1.125rem] rounded-lg bg-slate-50 px-3 py-2">
         <ItemTable items={items} sum={sum} showShare={showShare} negative={negative} />
@@ -532,17 +542,19 @@ function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: 
       <StackBar parts={groups.map((x) => ({ k: x.k, label: x.label, pct: total ? (x.v / total) * 100 : 0 }))} />
       <div className="@container/alloc text-sm">
         {groups.map(({ k, label, list, v }) => row(k, GROUP_COLOR[k], label, list, v, total ? (v / total) * 100 : 0))}
-        {liabs.length > 0 && row("liab", LIAB_COLOR, "หนี้สิน", liabs, liabTotal, undefined, true)}
+        {liabs.length > 0 && row("liab", LIAB_COLOR, "หนี้สิน", liabs, liabTotal, total ? (liabTotal / total) * 100 : undefined, true)}
       </div>
       <p className="text-xs text-slate-500">กดหมวดที่มี ▸ เพื่อดูรายการ · % ในบรรทัดหมวด = ของสินทรัพย์รวม · % ในรายการ = ของหมวดนั้น</p>
     </div>
   );
 }
 
-/** แถวหมวด: ชื่อ (จำนวนรายการ) · ยอด (ตัวหนา) · % (ตัวบาง อยู่หลังยอด · คอลัมน์กว้างคงที่ → % ตรงกันทุกแถว) · แถบ 10px
- *  เหมือนกล่อง Net Worth รายบุคคล (ตกลง 4 พ.ย. 2026) */
-function AllocRow({ color, label, pct, value, count }: { color: string; label: string; pct?: number; value: number; count: number }) {
-  const pctText = pct == null || !count ? "" : `${pct.toFixed(1)}%`;
+/** แถวหมวด: ชื่อ (จำนวนรายการ) · ยอด · % (ตัวหนา · กว้างคงที่ → % ตรงกันทุกแถว) · แถบ 10px · ไม่มีเส้นคั่นแถว (แถบสีคั่นอยู่แล้ว)
+ *  4 พ.ย. 2026: % หนา ยอดไม่หนา (กล่องนี้คือ "สัดส่วน") · เหมือนกล่องรายบุคคล
+ *  หนี้สิน (negative): % ของสินทรัพย์รวม (ฐานเดียวกับหมวดอื่น = ตัวเลขในการ์ดหนี้สิน) สีแดง + แถบแดงบนรางเทา */
+function AllocRow({ color, label, pct, value, count, negative }: { color: string; label: string; pct?: number; value: number; count: number; negative?: boolean }) {
+  // หนี้สิน: ทศนิยมแบบเดียวกับการ์ดหนี้สิน (ต่ำกว่า 10% → 2 ตำแหน่ง เช่น 0.11%)
+  const pctText = pct == null || !count ? "" : `${pct.toFixed(negative && pct < 10 ? 2 : 1)}%`;
   return (
     // คอลัมน์ตามความกว้างกล่อง (@container/alloc): แคบ = ชื่อ · ยอด · % แล้วแถบใต้ · 30–40rem = ชื่อ | แถบ | ยอด | % แถวเดียว · ≥ 40rem (2 คอลัมน์) = แบบแคบ
     <div className="grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-x-3 gap-y-1.5 @min-[30rem]/alloc:grid-cols-[11rem_1fr_8.5rem_3.5rem] @min-[40rem]/alloc:grid-cols-[minmax(0,1fr)_auto_3.5rem]">
@@ -551,11 +563,10 @@ function AllocRow({ color, label, pct, value, count }: { color: string; label: s
         <span className="shrink-0 text-xs text-slate-400">{count ? `(${count})` : ""}</span>
       </span>
       <div className={`col-span-3 row-start-2 h-2.5 overflow-hidden rounded-full bg-slate-100 ${pct == null ? "invisible" : ""} @min-[30rem]/alloc:col-span-1 @min-[30rem]/alloc:row-start-auto @min-[40rem]/alloc:col-span-3 @min-[40rem]/alloc:row-start-2`}>
-        {/* หนี้สินไม่มี % ของสินทรัพย์ → ซ่อนแถบ (คงความสูงแถวไว้) */}
-        {pct != null && pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
+        {pct != null && pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, minWidth: 4, background: color }} />}
       </div>
-      <span className={`text-right tabular-nums ${value < 0 ? "font-medium text-red-700" : count ? "font-medium text-slate-900" : ""}`}>{count ? baht(value) : "—"}</span>
-      <span className="text-right tabular-nums text-slate-600">{pctText}</span>
+      <span className={`text-right tabular-nums ${negative ? "text-red-700" : count ? "text-slate-700" : ""}`}>{count ? baht(value) : "—"}</span>
+      <span className={`text-right font-semibold tabular-nums ${negative ? "text-red-700" : "text-slate-900"}`}>{pctText}</span>
     </div>
   );
 }
@@ -643,7 +654,7 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
     // แถวละคน: ชื่อ · Net Worth · % แล้วแท่งสัดส่วนเต็มความกว้างใต้แถว (เดิมเป็นคอลัมน์แท่งในตาราง → กล่องแคบแล้วตัวเลขล้นขอบขวา)
     // กล่องสูงกว่าเนื้อหา (ข้างกล่องสัดส่วนที่ยาวกว่า) → บรรทัดรวมอยู่ล่างสุด ขอบล่างตรงกับกล่องข้าง ๆ
     <div className="flex flex-1 flex-col text-sm">
-      <ul className="divide-y divide-slate-100">
+      <ul>
         {rows.map((x) => {
           const v = Number(x.net_worth);
           const pct = total ? (v * 100) / total : 0;
@@ -657,8 +668,8 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
                     ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="truncate hover:underline" aria-current={sel ? "true" : undefined}>{x.name}</Link>
                     : <span className="truncate">{x.name}</span>}
                 </span>
-                <span className={`text-right font-medium tabular-nums ${v < 0 ? "text-red-700" : ""}`}>{baht(v)}</span>
-                <span className={`text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</span>
+                <span className={`text-right tabular-nums ${v < 0 ? "text-red-700" : "text-slate-700"}`}>{baht(v)}</span>
+                <span className={`text-right font-semibold tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-900"}`}>{pct.toFixed(1)}%</span>
               </div>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
                 {pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
@@ -667,14 +678,14 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
           );
         })}
       </ul>
-      <div className={`${PROW} mt-auto border-t border-slate-100 pt-2 font-medium`}>
-        <span>รวมครอบครัว</span><span className="text-right tabular-nums">{baht(total)}</span><span className="text-right font-normal tabular-nums text-slate-600">100.0%</span>
+      <div className={`${PROW} mt-auto border-t border-slate-200 pt-2`}>
+        <span className="font-medium">รวมครอบครัว</span><span className="text-right tabular-nums text-slate-700">{baht(total)}</span><span className="text-right font-semibold tabular-nums text-slate-900">100.0%</span>
       </div>
     </div>
   );
 }
 
-/** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · Net Worth (ตัวหนา) · % (ตัวบาง หลังตัวเลข · กว้างคงที่ → ตรงกันทุกแถว · 4 พ.ย. 2026) */
+/** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · ความมั่งคั่งสุทธิ · % (ตัวหนา หลังตัวเลข · กว้างคงที่ → ตรงกันทุกแถว · 4 พ.ย. 2026) · ไม่มีเส้นคั่นแถว */
 const PROW = "grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-x-3";
 
 /** การ์ดตัวเลขบน (2 พ.ย. 2026 ตามภาพที่เจ้าของส่งมา · 3 พ.ย. 2026 เส้นเล็กเปลี่ยนเป็นแถวข้อมูล):
@@ -695,20 +706,21 @@ function Big({ label, shortLabel, who, value, base, baseLabel, inverse, hero, ic
   const pct = diff && base ? Math.abs((diff / Math.abs(base)) * 100).toFixed(2) : null;
   // "สิ้นเดือน ต.ค. 2569 (อัตโนมัติ)" → "สิ้นเดือน ต.ค. 2569" (ชื่อเต็มอยู่ใน title เมื่อชี้)
   const shortBase = (baseLabel ?? "").replace(/\s*\([^)]*\)\s*$/, "");
+  const t = hero ? TONE.hero : TONE.card;
   return (
-    <div className={`@container min-w-0 rounded-xl border p-4 sm:p-5 xl:p-4 ${hero ? `${HERO} border-blue-200 bg-blue-50/70` : "border-slate-200 bg-white"}`}
+    <div className={`@container min-w-0 rounded-xl border p-4 sm:p-5 xl:p-4 ${hero ? `${HERO} ${HERO_BG}` : "border-slate-200 bg-white"}`}
       style={hero ? { boxShadow: "var(--card-shadow)" } : undefined}>
       <div className="flex items-start justify-between gap-2">
         {/* บรรทัดเดียว (ยาวตัด …) → เปลี่ยนคนแล้วกล่องไม่สูง / เตี้ยลง · ต่อท้ายชื่อคน / "ทั้งครอบครัว" (ตกลง PR #204)
-            การ์ดแคบ (เนื้อใน < 15rem: มือถือ) ใช้ชื่อสั้น (สินทรัพย์ / หนี้สิน) ไม่มีที่ต่อชื่อคน → ชื่อคนอยู่ที่การ์ด Net Worth (เต็มแถว)
+            การ์ดแคบ (เนื้อใน < 15rem: มือถือ) ใช้ชื่อสั้น (สินทรัพย์ / หนี้สิน) ไม่มีที่ต่อชื่อคน → ชื่อคนอยู่ที่การ์ดความมั่งคั่งสุทธิ (เต็มแถว)
             ดูจากความกว้างของการ์ดเอง (@container) ไม่ใช่ขนาดจอ (3 พ.ย. 2026) */}
-        <div className={`min-w-0 truncate pt-0.5 text-xs ${hero ? "font-semibold text-ink" : "text-slate-500"}`} title={`${label} · ${who}`}>
+        <div className={`min-w-0 truncate pt-0.5 text-xs ${t.label}`} title={`${label} · ${who}`}>
           {shortLabel ? <><span className="@min-[15rem]:hidden">{shortLabel}</span><span className="hidden @min-[15rem]:inline">{label}</span></> : label}
           <span className={hero ? "" : "hidden @min-[15rem]:inline"}> · {who}</span>
         </div>
         {diff != null && (diff === 0
-          ? <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">ไม่เปลี่ยนแปลง</span>
-          : <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${good ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}
+          ? <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${t.same}`}>ไม่เปลี่ยนแปลง</span>
+          : <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${good ? t.up : t.down}`}
               title={`${diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} ${baht(Math.abs(diff))} บาท จาก${baseLabel}`}>
               <Arrow up={diff > 0} />
               <span className="sr-only">{diff > 0 ? "เพิ่มขึ้น" : "ลดลง"}</span>
@@ -720,19 +732,19 @@ function Big({ label, shortLabel, who, value, base, baseLabel, inverse, hero, ic
       <div className={CARD_SPLIT}>
       <div className="mt-2 flex items-end gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:flex ${hero ? "bg-white text-blue-700 ring-1 ring-blue-100" : inverse ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{icon}</span>
+          <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:flex ${hero ? t.icon : inverse ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{icon}</span>
           <div className="min-w-0">
             {/* ขนาดตัวเลขเป็น text-[…] ไม่ใช่ text-xl / text-2xl: globals.css มีกฎ .text-2xl.tabular-nums บังคับสีเกือบดำ (#0b1220) */}
-            <div className={`whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums text-ink ${hero ? "text-[1.75rem] sm:text-3xl" : "text-[1.25rem] sm:text-[1.5rem]"}`}>
-              {m ?? baht(value)}<span className="ml-1.5 text-sm font-normal tracking-normal text-slate-500">{m ? "ล้านบาท" : "บาท"}</span>
+            <div className={`whitespace-nowrap font-semibold leading-tight tracking-tight tabular-nums ${t.num} ${hero ? "text-[1.75rem] sm:text-3xl" : "text-[1.25rem] sm:text-[1.5rem]"}`}>
+              {m ?? baht(value)}<span className={`ml-1.5 text-sm font-normal tracking-normal ${t.sub}`}>{m ? "ล้านบาท" : "บาท"}</span>
             </div>
-            {m && <div className="text-xs tabular-nums text-slate-500">{baht(value)} บาท</div>}
+            {m && <div className={`text-xs tabular-nums ${t.sub}`}>{baht(value)} บาท</div>}
           </div>
         </div>
       </div>
       <div className={INSIGHT_GAP}>{insight}</div>
       </div>
-      <div className="mt-2 flex items-baseline justify-between gap-2 text-xs text-slate-500">
+      <div className={`mt-2 flex items-baseline justify-between gap-2 text-xs ${t.sub}`}>
         <span className="min-w-0 truncate" title={noteTitle ?? (typeof note === "string" ? note : undefined)}>{note}</span>
         {/* การ์ดแคบ (เนื้อใน < 20rem เช่น 3 การ์ดบนจอ 1,280) ไม่มีที่ → ซ่อน "จาก…" ไม่ให้บรรทัดซ้ายถูกตัด (ป้ายด้านบนมี title บอกฐานเทียบ) */}
         {diff != null && shortBase && <span className="hidden shrink-0 @min-[20rem]:inline" title={`จาก${baseLabel}`}>จาก{shortBase}</span>}

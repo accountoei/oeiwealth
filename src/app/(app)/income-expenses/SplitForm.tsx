@@ -121,7 +121,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
         <button type="button" data-close onClick={close} className="text-xs text-slate-500">ปิด</button>
       </div>
       {state.error && <p className="text-xs text-red-600">{state.error}</p>}
-      <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (Net Worth ไม่เปลี่ยน)
+      <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (ความมั่งคั่งสุทธิไม่เปลี่ยน)
         {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
     </form>
     <Flash on={state} as="p" className="text-sm text-emerald-700" />

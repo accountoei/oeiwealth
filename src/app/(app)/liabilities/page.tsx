@@ -285,7 +285,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
               ))}
             </tbody>
           </table>
-          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">ยอดติดลบของบัญชีนับเป็นหนี้สินใน Net Worth อัตโนมัติ · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; จากบัญชีนั้น · ตั้งวงเงินที่หน้าบัญชี → แก้ไขข้อมูล</p>
+          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">ยอดติดลบของบัญชีนับเป็นหนี้สินในความมั่งคั่งสุทธิโดยอัตโนมัติ · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; จากบัญชีนั้น · ตั้งวงเงินที่หน้าบัญชี → แก้ไขข้อมูล</p>
         </div>
       )}
 

@@ -242,7 +242,7 @@ export function SettleDepositForm({ assetId, leaseId, deposit, currency, banks, 
             <span>บันทึกส่วนที่หักเป็นรายได้อื่น (แนะนำ)</span>
           </label>
           {!asIncome && (
-            <p className="text-xs text-amber-700">ถ้าไม่บันทึกเป็นรายได้: หนี้เงินประกันหายแต่เงินยังอยู่ในบัญชี → ความมั่งคั่งเพิ่มขึ้นเท่าส่วนที่หัก · ถ้ายังมีข้อพิพาท ให้รอก่อนจึงบันทึก</p>
+            <p className="text-xs text-amber-700">ถ้าไม่บันทึกเป็นรายได้: หนี้เงินประกันหายแต่เงินยังอยู่ในบัญชี → ความมั่งคั่งสุทธิเพิ่มขึ้นเท่าส่วนที่หัก · ถ้ายังมีข้อพิพาท ให้รอก่อนจึงบันทึก</p>
           )}
         </div>
       )}
@@ -367,7 +367,7 @@ function OpportunityFields({ p, family, f }: { p: Info; family: { method: string
         <option value="">ใช้ของครอบครัว ({opportunityText(family.method, family.rate)})</option>
         {Object.entries(OPPORTUNITY_METHOD_LABEL).reverse().map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
-      <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับใน Net Worth) · ของครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>
+      <span className="text-xs text-slate-500">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; (ไม่นับในความมั่งคั่งสุทธิ) · ของครอบครัวตั้งที่ Settings › FX &amp; Prices</span></label>
     <label className="text-sm">{cpi ? "ส่วนเพิ่มเหนือเงินเฟ้อ (% ต่อปี)" : "อัตรา (% ต่อปี)"}
       <input key={m} name="opportunity_rate_pct" inputMode="decimal" data-money="off" disabled={m === ""} required={m !== ""}
         defaultValue={m !== "" && m === init ? (p.opportunity_rate_pct ?? "") : ""}

@@ -141,7 +141,7 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
                 <tr className="text-slate-600">
                   <td className="px-4 py-2 font-normal" colSpan={7}>
                     ผลจากค่าเงินบาท (ทั้งพอร์ต)
-                    <div className="text-xs text-slate-500">ส่วนต่างระหว่างอัตราตอนซื้อ / ยอดตั้งต้น กับอัตราวันนี้ · ยังไม่รับรู้จนกว่าจะแลกกลับเป็นบาท · รวมอยู่ใน Net Worth แล้ว</div>
+                    <div className="text-xs text-slate-500">ส่วนต่างระหว่างอัตราตอนซื้อ / ยอดตั้งต้น กับอัตราวันนี้ · ยังไม่รับรู้จนกว่าจะแลกกลับเป็นบาท · รวมอยู่ในความมั่งคั่งสุทธิแล้ว</div>
                   </td>
                   <td className={`px-3 text-right tabular-nums ${cls(fxTotal)}`}>{sign(fxTotal)}</td>
                 </tr>

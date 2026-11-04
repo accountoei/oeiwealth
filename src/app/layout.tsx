@@ -10,7 +10,7 @@ import DateInputs from "@/components/DateInputs";
 
 export const metadata: Metadata = {
   title: "Family Wealth Vault",
-  description: "ระบบบันทึกทรัพย์สินและหนี้สินของครอบครัว",
+  description: "ระบบบันทึกสินทรัพย์และหนี้สินของครอบครัว",
   robots: { index: false, follow: false },
 };
 

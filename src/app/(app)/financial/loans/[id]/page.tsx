@@ -269,10 +269,10 @@ export default async function LoanDetailPage({ params, searchParams }: {
               </dl>
             </div>
             <p className="mt-3 text-xs text-slate-500">ดอกเบี้ยรับแล้ว (รายได้) {money(interest, l.currency)}
-              {preInterest > 0.005 ? ` · ก่อน Go-live ${money(preInterest)} (ตามตารางผ่อน ไม่ได้บันทึกเป็นรายได้ในระบบ)` : ""}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าใน Net Worth = 0" : ""}
-              {riskAmt != null ? ` · ส่วนที่มีความเสี่ยงยังนับเต็มใน Net Worth จนกว่าจะตัดหนี้สูญ${extra?.risk_note ? ` · ${extra.risk_note}` : ""}` : ""}</p>
+              {preInterest > 0.005 ? ` · ก่อน Go-live ${money(preInterest)} (ตามตารางผ่อน ไม่ได้บันทึกเป็นรายได้ในระบบ)` : ""}{l.status === "WRITTEN_OFF" ? " · ตัดหนี้สูญแล้ว มูลค่าในความมั่งคั่งสุทธิ = 0" : ""}
+              {riskAmt != null ? ` · ส่วนที่มีความเสี่ยงยังนับเต็มในความมั่งคั่งสุทธิจนกว่าจะตัดหนี้สูญ${extra?.risk_note ? ` · ${extra.risk_note}` : ""}` : ""}</p>
             {l.status === "CLOSED" && leftP > 0.005 && (
-              <p className="mt-2 text-xs text-red-600">สถานะ &ldquo;ปิดแล้ว&rdquo; แต่ยังมีเงินต้นคงเหลือ — เปลี่ยนสถานะกลับเป็น &ldquo;ปกติ&rdquo; แล้วบันทึกรับชำระให้ครบ หรือเลือก &ldquo;ตัดหนี้สูญ&rdquo; (ยอดนี้ยังนับใน Net Worth)</p>
+              <p className="mt-2 text-xs text-red-600">สถานะ &ldquo;ปิดแล้ว&rdquo; แต่ยังมีเงินต้นคงเหลือ — เปลี่ยนสถานะกลับเป็น &ldquo;ปกติ&rdquo; แล้วบันทึกรับชำระให้ครบ หรือเลือก &ldquo;ตัดหนี้สูญ&rdquo; (ยอดนี้ยังนับในความมั่งคั่งสุทธิ)</p>
             )}
           </div>
           <div className="flex flex-1 flex-col">
@@ -326,7 +326,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
             <dt className="text-slate-500">สถานะ</dt><dd><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[l.status] ?? "bg-slate-100 text-slate-700"}`}>● {LOAN_STATUS_LABEL[l.status] ?? l.status}</span></dd>
             <dt className="text-slate-500">ผู้กู้</dt><dd>{l.borrower_name}
               {extra?.borrower_person_id && <div className="text-xs text-slate-500">สมาชิกในครอบครัว · <Link href={`/family/members/${extra.borrower_person_id}`} className="text-blue-700 hover:underline">
-                {(persons ?? []).find((p) => p.id === extra.borrower_person_id)?.name ?? "ดูข้อมูล"}</Link> · นับเป็นหนี้สินของผู้กู้ใน Net Worth</div>}
+                {(persons ?? []).find((p) => p.id === extra.borrower_person_id)?.name ?? "ดูข้อมูล"}</Link> · นับเป็นหนี้สินของผู้กู้ในความมั่งคั่งสุทธิ</div>}
               {extra?.borrower_person_id && (extra.borrower_bank_asset_id
                 ? <div className="text-xs text-slate-500">บัญชีของผู้กู้ <Link href={`/financial/cash/${extra.borrower_bank_asset_id}`} className="text-blue-700 hover:underline">
                     {bankName.get(extra.borrower_bank_asset_id) ?? "ดูบัญชี"}</Link> · จ่ายเงินกู้ / รับชำระ บันทึกเงินเข้า–ออกและดอกเบี้ยจ่ายฝั่งผู้กู้ให้อัตโนมัติ</div>

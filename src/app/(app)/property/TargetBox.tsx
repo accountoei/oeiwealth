@@ -33,7 +33,7 @@ export default function TargetBox({ currency, target, unit, nwValue, lots, lastC
   );
   return (
     <div className="mt-4 border-t border-slate-100 pt-3">
-      <div className="text-xs text-slate-500">ราคาขายขั้นต่ำที่คุ้ม <span className="text-slate-400">(ต้นทุน + ดอกเบี้ย · ไม่นับใน Net Worth)</span></div>
+      <div className="text-xs text-slate-500">ราคาขายขั้นต่ำที่คุ้ม <span className="text-slate-400">(ต้นทุน + ดอกเบี้ย · ไม่นับในความมั่งคั่งสุทธิ)</span></div>
       {min == null ? (
         <p className="mt-1 text-sm text-slate-500">ยังไม่มีต้นทุน · ใส่ต้นทุนที่ได้มาในตารางส่วนประกอบ (ปุ่ม &ldquo;แก้ไข&rdquo; ของรายละเอียด)</p>
       ) : (<>

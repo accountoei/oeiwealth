@@ -41,7 +41,7 @@ export function PortfolioInfoForm({ assetId, name, institution, portfolioType, c
           <ul className="mt-1 list-disc pl-5 text-xs">
             <li>การโอนเงิน ธนาคาร ↔ พอร์ต ต้องใช้บัญชีธนาคารสกุล {ccy} หลังเปลี่ยน</li>
             <li>มูลค่าพอร์ตจะแสดงเป็น {ccy} · ยอดเงินฝาก / หลักทรัพย์แต่ละตัวยังเป็นสกุลเดิม</li>
-            <li>Net Worth (บาท) ไม่เปลี่ยน</li>
+            <li>ความมั่งคั่งสุทธิ (บาท) ไม่เปลี่ยน</li>
           </ul>
           <label className="mt-2 flex items-center gap-2 text-sm">
             <input type="checkbox" name="confirm_currency" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />

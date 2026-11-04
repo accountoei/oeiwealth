@@ -215,7 +215,7 @@ export default async function AssetTradeHistory({ assetId, currency, status, cos
           <div className="space-y-5">
             {valuationForm && (
               <div>
-                <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับใน Net Worth)</h3>
+                <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับในความมั่งคั่งสุทธิ)</h3>
                 {valuationHint && <p className="mb-2 text-xs text-slate-500">{valuationHint}</p>}
                 {valuationForm}
               </div>

@@ -45,7 +45,7 @@ export default function FontPicker({ onClose }: { onClose: () => void }) {
                 {on && <Check className="ml-auto h-4 w-4 shrink-0 text-blue-600" aria-hidden />}
               </span>
               <span className="mt-1 block text-sm text-slate-700">
-                สินทรัพย์สุทธิ · เปลี่ยนเพราะอะไร · <span className="tabular-nums">12,345,678.90</span>
+                ความมั่งคั่งสุทธิ · เปลี่ยนเพราะอะไร · <span className="tabular-nums">12,345,678.90</span>
               </span>
             </button>
           );

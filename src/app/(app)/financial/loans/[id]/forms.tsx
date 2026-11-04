@@ -300,7 +300,7 @@ export function LoanInfoForm({ assetId, v, minDue, risk, hasOpenSchedule = false
           <legend className="px-1 text-sm font-medium text-amber-800">มีความเสี่ยงไม่ได้คืน</legend>
           <label className="text-sm">มูลค่าคาดว่าจะได้รับคืน ({risk.currency})
             <input name="expected_recoverable" inputMode="decimal" defaultValue={risk.expected == null ? "" : amt(risk.expected) || "0.00"} className={input} />
-            <span className="mt-1 block text-xs text-slate-500">จากเงินต้นคงเหลือ {amt(risk.outstanding) || "0.00"} · ส่วนที่เหลือ = ส่วนที่มีความเสี่ยง (แสดงแยก · Net Worth ยังนับเต็มจนตัดหนี้สูญ)</span></label>
+            <span className="mt-1 block text-xs text-slate-500">จากเงินต้นคงเหลือ {amt(risk.outstanding) || "0.00"} · ส่วนที่เหลือ = ส่วนที่มีความเสี่ยง (แสดงแยก · ความมั่งคั่งสุทธิยังนับเต็มจนตัดหนี้สูญ)</span></label>
           <label className="text-sm">ประเมิน ณ วันที่<input name="risk_assessed_date" type="date" defaultValue={risk.date ?? risk.today} max={risk.today} className={input} /></label>
           <label className="text-sm md:col-span-2">เหตุผล / หมายเหตุการประเมิน<input name="risk_note" defaultValue={risk.note ?? ""} className={input} /></label>
         </fieldset>

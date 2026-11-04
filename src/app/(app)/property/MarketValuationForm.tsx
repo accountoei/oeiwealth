@@ -42,7 +42,7 @@ export default function MarketValuationForm({ assetId, currency, today, defaultU
     <form action={action} className="grid gap-3 md:grid-cols-4">
       <input type="hidden" name="asset_id" value={assetId} />
       {edit && <input type="hidden" name="id" value={edit.id} />}
-      <p className="text-xs text-slate-500 md:col-span-4">ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับเข้า Net Worth ไม่กระทบงวดที่ปิดแล้ว (อัปเดตมูลค่าใน Net Worth ที่ปุ่ม &ldquo;อัปเดตมูลค่า&rdquo;)</p>
+      <p className="text-xs text-slate-500 md:col-span-4">ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับเข้าความมั่งคั่งสุทธิ ไม่กระทบงวดที่ปิดแล้ว (อัปเดตมูลค่าในความมั่งคั่งสุทธิที่ปุ่ม &ldquo;อัปเดตมูลค่า&rdquo;)</p>
       <label className="text-sm">วันที่ประเมิน
         <input name="valuation_date" type="date" required defaultValue={edit?.valuation_date ?? today} max={today} className={input} /></label>
       <label className="text-sm">ใส่ราคาเป็น
