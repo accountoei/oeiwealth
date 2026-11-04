@@ -24,7 +24,7 @@ export type InvestmentGain = {
   by_portfolio: { asset_id: string; name: string; start: number; end: number; flows: number; gain: number; fx: number }[];
 };
 
-const GROUPS: [string, string][] = [["FINANCIAL", "เงินฝาก / เงินสด"], ["LOANS", "เงินให้กู้"], ["INVESTMENT", "การลงทุน"], ["BUSINESS", "ธุรกิจ"],
+const GROUPS: [string, string][] = [["FINANCIAL", "เงินฝากธนาคาร"], ["LOANS", "เงินให้กู้"], ["INVESTMENT", "การลงทุน"], ["BUSINESS", "ธุรกิจ"],
   ["PROPERTY", "อสังหาริมทรัพย์"], ["ALTERNATIVE", "สินทรัพย์อื่น"], ["INSURANCE", "ประกัน (มูลค่าเวนคืน)"]];
 type Item = { item_type: string; item_group: string; base_value: number | null };
 
