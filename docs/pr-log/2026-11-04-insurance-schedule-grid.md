@@ -1,4 +1,4 @@
-# Insurance: ตั้ง / แก้ตารางเบี้ย / ผลประโยชน์แบบแก้ทีละช่อง (แบบตารางผ่อนของสินเชื่อ)
+# #319 · Insurance: ตั้ง / แก้ตารางเบี้ย / ผลประโยชน์แบบแก้ทีละช่อง (แบบตารางผ่อนของสินเชื่อ)
 
 - วันที่: 4 พ.ย. 2026 · branch `feat/insurance-schedule-grid`
 - SQL: `supabase/migrations/20261104140000_insurance_schedule_skipped.sql` (รันก่อน Merge) · ไม่มี Edge Function
