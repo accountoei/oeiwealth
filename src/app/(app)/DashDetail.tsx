@@ -134,8 +134,11 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
       note: b.fx ? <>ในนั้นจาก FX {b.fx > 0 ? "+" : ""}{baht(b.fx)}</> : null,
       detail: !igDone ? wait : ig && ig.by_portfolio.length > 0 ? <GainTable ig={ig} /> : <p className="text-sm text-slate-500">ไม่มีพอร์ตลงทุน</p> },
     { key: "other", label: "± มูลค่าเปลี่ยน / อื่น ๆ", v: b.other, signed: true,
-      detail: g ? <GroupTable gs={g} /> : wait },
+      detail: g ? <OtherTable gs={g} other={b.other} /> : wait },
     { key: "end", label: b.endLabel, v: b.cur, bold: true },
+    // ตารางยอดทุกหมวดแยกเป็นบรรทัดสุดท้าย (4 พ.ย. 2026 · เดิมอยู่ใต้ "อื่น ๆ" → แถวการลงทุนซ้ำกับบรรทัดกำไร / ขาดทุน ดูสับสน)
+    { key: "groups", label: "ยอดตามหมวด ต้นงวด → สิ้นงวด", note: "รวมผลของทุกบรรทัดข้างบน", v: b.cur - b.prev, signed: true,
+      detail: g ? <GroupTable gs={g} /> : wait },
   ];
 
   return (
@@ -148,7 +151,8 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
             : <span className={`tabular-nums ${l.bold ? "text-ink" : ""} ${!l.bold && l.v < 0 ? "text-red-700" : ""}`}>{l.signed && Math.round(l.v) > 0 ? "+" : ""}{baht(l.v)}</span>;
           const label = <span className="min-w-0 text-left">{l.label}{l.note && <span className="block pl-3 text-xs font-normal text-slate-500">{l.note}</span>}</span>;
           return (
-            <div key={l.key} className={l.bold ? "font-medium" : ""}>
+            // บรรทัดตารางยอดตามหมวดเว้นห่างจาก "= ณ วันนี้" เล็กน้อย (เป็นตารางอ้างอิง ไม่ใช่บรรทัดที่บวกต่อ)
+            <div key={l.key} className={`${l.bold ? "font-medium" : ""} ${l.key === "groups" ? "mt-2" : ""}`}>
               {l.detail ? (
                 <button type="button" onClick={() => toggle(l.key)} aria-expanded={isOpen}
                   className="-mx-2 flex w-[calc(100%+1rem)] items-start justify-between gap-3 rounded-md px-2 py-2 hover:bg-slate-50">
@@ -172,11 +176,46 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
 }
 
 /** มูลค่าตามหมวด ต้นงวด → สิ้นงวด (ใต้บรรทัด "มูลค่าเปลี่ยน / อื่น ๆ") */
+/** "อื่น ๆ" แยกตามหมวด (4 พ.ย. 2026 · แบบ ก.): เฉพาะส่วนที่ไม่ได้อยู่ในบรรทัดข้างบน · รวมแล้ว = บรรทัด "อื่น ๆ" พอดี
+ *  เงินฝาก / เงินสด + การลงทุน = ยอดเปลี่ยนของสองหมวดนี้ − รายได้ / ค่าใช้จ่าย / กำไร / ขาดทุนข้างบน (เงินจากบรรทัดเหล่านั้นเข้า-ออกสองหมวดนี้)
+ *  คิดเป็นยอดที่เหลือจาก "อื่น ๆ" หลังหักหมวดอื่น → ผลรวมตรงกับบรรทัดเสมอ · หมวดอื่น = ยอดเปลี่ยนทั้งหมวด · แสดงเฉพาะแถวที่ไม่ใช่ 0 */
+function OtherTable({ gs, other }: { gs: GroupChange[]; other: number }) {
+  const rest = gs.filter((r) => r.key !== "FINANCIAL" && r.key !== "INVESTMENT")
+    .map((r) => ({ key: r.key, label: r.label, v: (r.end - r.start) * (r.key === "LIABILITY" ? -1 : 1) }));   // หนี้เพิ่ม = ความมั่งคั่งลด
+  const liquid = other - rest.reduce((t, r) => t + r.v, 0);
+  const rows = [{ key: "LIQUID", label: "เงินฝาก / เงินสด + การลงทุน", v: liquid }, ...rest].filter((r) => Math.round(r.v) !== 0);
+  return (
+    <>
+      <SubHead info={<>&ldquo;อื่น ๆ&rdquo; = ประเมินมูลค่าใหม่ (อสังหาฯ / ธุรกิจ / ทอง / สินทรัพย์อื่น) · อัตราแลกเปลี่ยนของเงินฝากต่างประเทศ · ยอดหนี้ · รายการที่ยังไม่ได้บันทึก ·
+        &ldquo;เงินฝาก / เงินสด + การลงทุน&rdquo; = ส่วนที่ไม่ได้อยู่ในบรรทัดรายได้ ค่าใช้จ่าย และกำไร / ขาดทุนข้างบน ·
+        เงินที่ย้ายระหว่างหมวดจะเห็นทั้งสองฝั่ง (เช่น จ่ายเงินซื้ออสังหาฯ 1,000,000: อสังหาริมทรัพย์ +1,000,000 · เงินฝาก −1,000,000 รวมแล้ว 0) ·
+        หนี้สินเพิ่ม = Net Worth ลด</>}>แยกตามหมวด (เฉพาะส่วนที่เป็น &ldquo;อื่น ๆ&rdquo;)</SubHead>
+      {rows.length === 0 ? <p className="text-sm text-slate-500">ไม่มี</p> : (
+        <table className="w-full text-sm">
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td className="py-1 pr-3">{r.label}{r.key === "LIQUID" && <span className="block text-xs text-slate-500">ส่วนที่ไม่ได้อยู่ในบรรทัดข้างบน</span>}</td>
+                <td className={`py-1 text-right align-top tabular-nums ${sign(r.v)}`}>{r.v > 0 ? "+" : ""}{baht(r.v)}</td>
+              </tr>
+            ))}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot className="border-t border-slate-200 font-medium">
+              <tr><td className="py-1">รวม</td><td className={`text-right tabular-nums ${sign(other)}`}>{other > 0 ? "+" : ""}{baht(other)}</td></tr>
+            </tfoot>
+          )}
+        </table>
+      )}
+    </>
+  );
+}
+
 function GroupTable({ gs }: { gs: GroupChange[] }) {
   const nw = (k: "start" | "end") => gs.reduce((t, r) => t + (r.key === "LIABILITY" ? -r[k] : r[k]), 0);
   return (
     <>
-      <SubHead info={<>&ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ประเมินใหม่ (อสังหาฯ / ธุรกิจ / ทอง) · อัตราแลกเปลี่ยนนอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก ·
+      <SubHead info={<>ยอดทุกหมวด ต้นงวด → สิ้นงวด · &ldquo;เปลี่ยน&rdquo; รวม = ผลของทุกบรรทัดข้างบนรวมกัน (รายได้ ค่าใช้จ่าย กำไร / ขาดทุน และอื่น ๆ) ·
         &ldquo;เปลี่ยน&rdquo; ของแต่ละหมวดรวมเงินที่ย้ายระหว่างหมวดด้วย (เช่น โอนธนาคาร → พอร์ต 100,000: เงินฝาก −100,000 · การลงทุน +100,000) ·
         หนี้สินเพิ่ม = Net Worth ลด</>}>มูลค่าตามหมวด ต้นงวด → สิ้นงวด</SubHead>
       <div className="overflow-x-auto">
