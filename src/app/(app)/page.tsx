@@ -39,12 +39,12 @@ type PersonDash = {
 type Family = { name: string; go_live_date: string; system_status: string };
 type InvGain = { gain: number; fx: number };
 
-/** สีหมวด (รอบ 4, 1 พ.ย. 2026 · เลือกด้วยวิธีของ Impeccable): ตั้งใน OKLCH ให้ความสว่าง / ความสดใกล้กัน (ไม่มีสีไหนเด่นเกิน)
- *  ต่างกันที่เฉดสี + ความสว่าง · ทุกสีเข้มพอบนพื้นขาว (≥ 3:1) · ใช้กับหมวดเท่านั้น (รายบุคคลใช้สีเดียว) · มีชื่อหมวด + % กำกับเสมอ (ไม่ใช้สีอย่างเดียว)
- *  ประกัน = เขียวมะกอกเข้ม (เดิมชมพู ใกล้แดงของหนี้สิน) · หนี้สิน = แดง (สีเดียวในหน้าที่เป็นโทนแดง) */
-const GROUP_COLOR: Record<string, string> = { financial: "#366bd3", loans: "#008c92", investment: "#7a4aba", business: "#586474",
-  property: "#298954", alternative: "#b68028", insurance: "#546316" };
-const LIAB_COLOR = "#c9302d";
+/** สีหมวด (4 พ.ย. 2026 เจ้าของขอ "สดใสเหมือนกล่องเงินฝากตามธนาคาร"): ชุดสีเดียวกับ BANK_COLORS (financial/cash/page.tsx)
+ *  เดิม (รอบ 4) เป็นสีหม่น OKLCH · ทุกสีเข้มพอบนพื้นขาว · ใช้กับหมวดเท่านั้น (รายบุคคลใช้สีเดียว) · มีชื่อหมวด + % กำกับเสมอ (ไม่ใช้สีอย่างเดียว)
+ *  ประกัน = เขียวมะนาว (ไม่ใช้ชมพู เพราะใกล้แดงของหนี้สิน) · หนี้สิน = แดง (สีเดียวในหน้าที่เป็นโทนแดง) */
+const GROUP_COLOR: Record<string, string> = { financial: "#2563eb", loans: "#0891b2", investment: "#7c3aed", business: "#475569",
+  property: "#059669", alternative: "#f59e0b", insurance: "#65a30d" };
+const LIAB_COLOR = "#dc2626";
 const GROUP: [string, string][] = [["financial", "เงินฝาก / เงินสด"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
 /** item_group ของรายการรายคน → คีย์หมวดบน Dashboard */
@@ -331,7 +331,7 @@ function Bar({ pct, fill, ticks = [] }: { pct: number; fill: string; ticks?: num
   );
 }
 
-/** การ์ดสินทรัพย์: สภาพคล่อง — ได้เงินเร็ว = เงินฝาก / เงินสด + การลงทุน · ที่เหลือ = ใช้เวลาขาย (อสังหาฯ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น)
+/** การ์ดสินทรัพย์ (คำ 4 พ.ย. 2026 · เดิม ได้เงินเร็ว / ใช้เวลาขาย): สภาพคล่องสูง = เงินฝาก / เงินสด + การลงทุน · ที่เหลือ = สภาพคล่องต่ำ (อสังหาฯ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น)
  *  ใช้รายการชุดเดียวกับกล่องสัดส่วน (cachedRpc → ไม่ถามฐานข้อมูลเพิ่ม) · แยก Suspense → ตัวเลขการ์ดขึ้นก่อน */
 const QUICK = ["financial", "investment"];
 async function LiquidityRow({ start, personId }: { start: string; personId: string }) {
@@ -340,11 +340,11 @@ async function LiquidityRow({ start, personId }: { start: string; personId: stri
   const quick = (QUICK.reduce((t, k) => t + sumItems(g.byKey[k] ?? []), 0) / g.total) * 100;
   const q = pctShort(quick), slow = pctShort(100 - Number(q));
   return (
-    <div className={INSIGHT} title={`ได้เงินเร็ว ${q}% = เงินฝาก / เงินสด + การลงทุน · ใช้เวลาขาย ${slow}% = อสังหาริมทรัพย์ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น`}>
+    <div className={INSIGHT} title={`สภาพคล่องสูง ${q}% = เงินฝาก / เงินสด + การลงทุน · สภาพคล่องต่ำ ${slow}% = อสังหาริมทรัพย์ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น`}>
       <Bar pct={quick} fill="bg-blue-600" />
       <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-slate-600">
-        <span className="min-w-0 truncate">ได้เงินเร็ว <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
-        <span className="hidden shrink-0 text-slate-500 sm:inline">ใช้เวลาขาย <span className="tabular-nums">{slow}%</span></span>
+        <span className="min-w-0 truncate">สภาพคล่องสูง <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
+        <span className="hidden shrink-0 text-slate-500 sm:inline">สภาพคล่องต่ำ <span className="tabular-nums">{slow}%</span></span>
       </div>
     </div>
   );
@@ -460,25 +460,44 @@ function groupItems(items: Item[]): Grouped {
   return { byKey, total: sumItems(assets), liabs, liabTotal: sumItems(liabs) };
 }
 
-/** สัดส่วน 7 หมวด แถวละหมวด (% ของสินทรัพย์รวม) · ต่อด้วยหนี้สิน (ใช้ทั้งภาพรวมครอบครัวและรายคน)
- *  รอบ 4 (1 พ.ย. 2026): แถวไม่กางแล้ว · รายการของแต่ละหมวดอยู่ใน pop up "ดูรายละเอียด ›" (เหมือนกล่อง Net Worth เปลี่ยนเพราะอะไร)
- *  ไม่มีบรรทัด Net Worth ท้ายกล่อง (ซ้ำกับการ์ดบนสุด) */
-function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
+/** หมวดที่มีรายการ เรียงมูลค่ามาก → น้อย แล้วต่อด้วยหมวดที่ยังไม่มีรายการ (ตกลง 4 พ.ย. 2026 · แบบ ข.: เรียงแล้วเทียบกันง่าย) */
+function sortedGroups(byKey: Record<string, Item[]>) {
+  return GROUP.map(([k, label]) => ({ k, label, list: byKey[k] ?? [], v: sumItems(byKey[k] ?? []) }))
+    .sort((a, b) => (b.list.length ? 1 : 0) - (a.list.length ? 1 : 0) || b.v - a.v);
+}
+
+/** แถบรวม 100% ของสินทรัพย์ แบ่งสีตามหมวด (มองแวบเดียวเห็นว่าก้อนไหนใหญ่) · ชี้แต่ละช่วงเห็นชื่อหมวด + % */
+function StackBar({ parts }: { parts: { k: string; label: string; pct: number }[] }) {
+  const shown = parts.filter((p) => p.pct > 0);
+  if (!shown.length) return null;
   return (
-    // กล่องกว้าง (เนื้อใน ≥ 40rem): 2 คอลัมน์ คอลัมน์ละ 4 แถว (เรียงลงก่อน) → กล่องเตี้ยลงครึ่งหนึ่ง · แคบกว่า: แถวเดียวเรียงลง
+    <div className="mb-1 flex h-3 w-full overflow-hidden rounded-full bg-slate-100" role="img"
+      aria-label={`สัดส่วนสินทรัพย์: ${shown.map((p) => `${p.label} ${p.pct.toFixed(1)}%`).join(" · ")}`}>
+      {shown.map((p) => (
+        <div key={p.k} className="h-full border-r-2 border-white last:border-r-0" title={`${p.label} ${p.pct.toFixed(1)}%`}
+          style={{ width: `${p.pct}%`, background: GROUP_COLOR[p.k] }} />
+      ))}
+    </div>
+  );
+}
+
+/** สัดส่วน 7 หมวด (% ของสินทรัพย์รวม) · ต่อด้วยหนี้สิน (ใช้ทั้งภาพรวมครอบครัวและรายคน)
+ *  4 พ.ย. 2026 (แบบ ข.): แถบรวม 100% ด้านบน · หมวดเรียงมาก → น้อย · ตัวเลขหนา % บางอยู่หลังตัวเลข · แถบหนา 10px สีสด
+ *  รายการของแต่ละหมวดอยู่ใน pop up "ดูรายละเอียด ›" · ไม่มีบรรทัด Net Worth ท้ายกล่อง (ซ้ำกับการ์ดบนสุด) */
+function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
+  const groups = sortedGroups(byKey);
+  return (
+    // กล่องกว้าง (เนื้อใน ≥ 40rem): 2 คอลัมน์ คอลัมน์ละ 4 แถว (เรียงลงก่อน: คอลัมน์ซ้าย = 4 หมวดใหญ่สุด) · แคบกว่า: แถวเดียวเรียงลง
     // ดูจากความกว้างกล่องเอง (@container/alloc · 3 พ.ย. 2026) · กล่องสูงกว่าเนื้อหา (ข้างกล่องรายบุคคลที่ยาวกว่า) → แถวกระจายลงให้ขอบล่างตรงกัน
     <div className="@container/alloc flex flex-1 flex-col">
+    <StackBar parts={groups.map((x) => ({ k: x.k, label: x.label, pct: total ? (x.v / total) * 100 : 0 }))} />
     <div className="flex flex-1 flex-col justify-between text-sm @min-[40rem]/alloc:grid @min-[40rem]/alloc:justify-normal @min-[40rem]/alloc:grid-flow-col @min-[40rem]/alloc:grid-rows-[repeat(4,auto)] @min-[40rem]/alloc:content-between @min-[40rem]/alloc:gap-x-8 [&>*]:border-b [&>*]:border-slate-100">
-      {GROUP.map(([k, label]) => {
-        const list = byKey[k] ?? [];
-        const v = sumItems(list);
+      {groups.map(({ k, label, list, v }) => (
         // หมวดที่ยังไม่มีรายการ: ตัวหนังสือสีเทา (ไม่ทำจาง) · แสดง — แทนตัวเลข
-        return (
-          <div key={k} className={`py-2 ${list.length ? "" : "text-slate-500"}`}>
-            <AllocRow color={GROUP_COLOR[k]} label={label} pct={total ? (v / total) * 100 : 0} value={v} count={list.length} />
-          </div>
-        );
-      })}
+        <div key={k} className={`py-2 ${list.length ? "" : "text-slate-500"}`}>
+          <AllocRow color={GROUP_COLOR[k]} label={label} pct={total ? (v / total) * 100 : 0} value={v} count={list.length} />
+        </div>
+      ))}
       {liabs.length > 0 && (
         <div className="py-2"><AllocRow color={LIAB_COLOR} label="หนี้สิน" value={-liabTotal} count={liabs.length} /></div>
       )}
@@ -487,10 +506,10 @@ function Allocation({ g: { byKey, total, liabs, liabTotal } }: { g: Grouped }) {
   );
 }
 
-/** pop up ของกล่องสัดส่วน (ตกลง 2 พ.ย. 2026 · แบบ ก.): หมวดละบรรทัดเหมือนในกล่อง กดหมวดเพื่อกางรายการใต้บรรทัด
+/** pop up ของกล่องสัดส่วน (ตกลง 2 พ.ย. 2026 · แบบ ก.): หมวดละบรรทัดเหมือนในกล่อง (เรียงมาก → น้อย) กดหมวดเพื่อกางรายการใต้บรรทัด
  *  (ชื่อรายการ · % ในหมวด · มูลค่า) · หมวดที่ไม่มีรายการไม่แสดง · ต่อด้วยหนี้สิน · ใช้ <details> → กางได้โดยไม่ต้องมี JavaScript */
 function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: { g: Grouped; showShare: boolean }) {
-  const groups = GROUP.filter(([k]) => byKey[k]?.length);
+  const groups = sortedGroups(byKey).filter((x) => x.list.length);
   if (!groups.length && !liabs.length) return <p className="text-sm text-slate-500">ยังไม่มีรายการ</p>;
   const row = (key: string, color: string, label: string, items: Item[], sum: number, pct?: number, negative?: boolean) => (
     <details key={key} className="group border-b border-slate-100">
@@ -505,12 +524,9 @@ function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: 
   );
   return (
     <div className="space-y-2">
+      <StackBar parts={groups.map((x) => ({ k: x.k, label: x.label, pct: total ? (x.v / total) * 100 : 0 }))} />
       <div className="@container/alloc text-sm">
-        {groups.map(([k, label]) => {
-          const list = byKey[k];
-          const v = sumItems(list);
-          return row(k, GROUP_COLOR[k], label, list, v, total ? (v / total) * 100 : 0);
-        })}
+        {groups.map(({ k, label, list, v }) => row(k, GROUP_COLOR[k], label, list, v, total ? (v / total) * 100 : 0))}
         {liabs.length > 0 && row("liab", LIAB_COLOR, "หนี้สิน", liabs, liabTotal, undefined, true)}
       </div>
       <p className="text-xs text-slate-500">กดหมวดที่มี ▸ เพื่อดูรายการ · % ในบรรทัดหมวด = ของสินทรัพย์รวม · % ในรายการ = ของหมวดนั้น</p>
@@ -518,22 +534,23 @@ function AllocationDetail({ g: { byKey, total, liabs, liabTotal }, showShare }: 
   );
 }
 
+/** แถวหมวด: ชื่อ (จำนวนรายการ) · ยอด (ตัวหนา) · % (ตัวบาง อยู่หลังยอด · คอลัมน์กว้างคงที่ → % ตรงกันทุกแถว) · แถบ 10px
+ *  เหมือนกล่อง Net Worth รายบุคคล (ตกลง 4 พ.ย. 2026) */
 function AllocRow({ color, label, pct, value, count }: { color: string; label: string; pct?: number; value: number; count: number }) {
-  const pctText = pct == null ? "" : count ? `${pct.toFixed(1)}%` : "—";
+  const pctText = pct == null || !count ? "" : `${pct.toFixed(1)}%`;
   return (
-    // คอลัมน์ตามความกว้างกล่อง (@container/alloc): แคบ = ชื่อ · ยอด แล้วแถบใต้ · 30–40rem = ชื่อ | แถบ | % | ยอด แถวเดียว · ≥ 40rem (2 คอลัมน์) = แบบแคบ
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 @min-[30rem]/alloc:grid-cols-[11rem_1fr_3.5rem_8.5rem] @min-[40rem]/alloc:grid-cols-[1fr_auto]">
-      <span className="flex items-center gap-2">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />{label}
-        <span className="text-xs text-slate-400">{count ? `(${count})` : ""}</span>
+    // คอลัมน์ตามความกว้างกล่อง (@container/alloc): แคบ = ชื่อ · ยอด · % แล้วแถบใต้ · 30–40rem = ชื่อ | แถบ | ยอด | % แถวเดียว · ≥ 40rem (2 คอลัมน์) = แบบแคบ
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-x-3 gap-y-1.5 @min-[30rem]/alloc:grid-cols-[11rem_1fr_8.5rem_3.5rem] @min-[40rem]/alloc:grid-cols-[minmax(0,1fr)_auto_3.5rem]">
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} /><span className="truncate">{label}</span>
+        <span className="shrink-0 text-xs text-slate-400">{count ? `(${count})` : ""}</span>
       </span>
-      <div className="col-span-2 row-start-2 h-1.5 overflow-hidden rounded-full bg-slate-100 @min-[30rem]/alloc:col-span-1 @min-[30rem]/alloc:row-start-auto @min-[30rem]/alloc:h-2 @min-[40rem]/alloc:col-span-2 @min-[40rem]/alloc:row-start-2 @min-[40rem]/alloc:h-1.5">
+      <div className={`col-span-3 row-start-2 h-2.5 overflow-hidden rounded-full bg-slate-100 ${pct == null ? "invisible" : ""} @min-[30rem]/alloc:col-span-1 @min-[30rem]/alloc:row-start-auto @min-[40rem]/alloc:col-span-3 @min-[40rem]/alloc:row-start-2`}>
+        {/* หนี้สินไม่มี % ของสินทรัพย์ → ซ่อนแถบ (คงความสูงแถวไว้) */}
         {pct != null && pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
       </div>
-      <span className={`hidden text-right tabular-nums @min-[30rem]/alloc:block @min-[40rem]/alloc:hidden ${count ? "font-medium text-slate-700" : ""}`}>{pctText}</span>
-      <span className={`text-right tabular-nums ${value < 0 ? "text-red-700" : count ? "text-slate-700" : ""}`}>
-        {count > 0 && <span className="mr-2 font-medium @min-[30rem]/alloc:hidden @min-[40rem]/alloc:inline">{pctText}</span>}{count ? baht(value) : "—"}
-      </span>
+      <span className={`text-right tabular-nums ${value < 0 ? "font-medium text-red-700" : count ? "font-medium text-slate-900" : ""}`}>{count ? baht(value) : "—"}</span>
+      <span className="text-right tabular-nums text-slate-600">{pctText}</span>
     </div>
   );
 }
@@ -618,7 +635,7 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
   const total = Number(dm?.net_worth ?? 0);                                // % ของ Net Worth ครอบครัว (รวมส่วนที่ไม่ระบุเจ้าของ)
   if (!rows.length) return <p className="text-sm text-slate-500">ยังไม่มีข้อมูล</p>;
   return (
-    // แถวละคน: ชื่อ · % · Net Worth แล้วแท่งสัดส่วนเต็มความกว้างใต้แถว (เดิมเป็นคอลัมน์แท่งในตาราง → กล่องแคบแล้วตัวเลขล้นขอบขวา)
+    // แถวละคน: ชื่อ · Net Worth · % แล้วแท่งสัดส่วนเต็มความกว้างใต้แถว (เดิมเป็นคอลัมน์แท่งในตาราง → กล่องแคบแล้วตัวเลขล้นขอบขวา)
     // กล่องสูงกว่าเนื้อหา (ข้างกล่องสัดส่วนที่ยาวกว่า) → บรรทัดรวมอยู่ล่างสุด ขอบล่างตรงกับกล่องข้าง ๆ
     <div className="flex flex-1 flex-col text-sm">
       <ul className="divide-y divide-slate-100">
@@ -635,8 +652,8 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
                     ? <Link href={`/?p=${x.person_id}&m=${ym}`} className="truncate hover:underline" aria-current={sel ? "true" : undefined}>{x.name}</Link>
                     : <span className="truncate">{x.name}</span>}
                 </span>
-                <span className={`text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</span>
                 <span className={`text-right font-medium tabular-nums ${v < 0 ? "text-red-700" : ""}`}>{baht(v)}</span>
+                <span className={`text-right tabular-nums ${pct < 0 ? "text-red-700" : "text-slate-600"}`}>{pct.toFixed(1)}%</span>
               </div>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
                 {pct > 0 && <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />}
@@ -646,14 +663,14 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
         })}
       </ul>
       <div className={`${PROW} mt-auto border-t border-slate-100 pt-2 font-medium`}>
-        <span>รวมครอบครัว</span><span className="text-right tabular-nums">100.0%</span><span className="text-right tabular-nums">{baht(total)}</span>
+        <span>รวมครอบครัว</span><span className="text-right tabular-nums">{baht(total)}</span><span className="text-right font-normal tabular-nums text-slate-600">100.0%</span>
       </div>
     </div>
   );
 }
 
-/** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · % · Net Worth */
-const PROW = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3";
+/** คอลัมน์ของกล่องรายบุคคล: ชื่อ (ยืด / ตัด …) · Net Worth (ตัวหนา) · % (ตัวบาง หลังตัวเลข · กว้างคงที่ → ตรงกันทุกแถว · 4 พ.ย. 2026) */
+const PROW = "grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-x-3";
 
 /** การ์ดตัวเลขบน (2 พ.ย. 2026 ตามภาพที่เจ้าของส่งมา · 3 พ.ย. 2026 เส้นเล็กเปลี่ยนเป็นแถวข้อมูล):
  *  แถวบน   ชื่อการ์ด · คน ................ ป้าย ▲/▼ ยอดเปลี่ยน (%)   (เขียว = ดีขึ้น · แดง = แย่ลง · หนี้ลด = ดีขึ้น · ลูกศร = ทิศของยอด)
