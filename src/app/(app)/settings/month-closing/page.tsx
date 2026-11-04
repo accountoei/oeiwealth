@@ -22,7 +22,7 @@ type Preview = {
 };
 
 const CAT: Record<string, string> = {
-  CASH: "Cash & Bank Accounts (อัปเดตยอดคงเหลือ)", INVESTMENTS: "Investments", PROPERTY_OTHER: "Property / สินทรัพย์อื่น",
+  CASH: "Bank Accounts (อัปเดตยอดคงเหลือ)", INVESTMENTS: "Investments", PROPERTY_OTHER: "Property / สินทรัพย์อื่น",
   LIABILITIES: "Liabilities / บัตรเครดิต", INCOME_EXPENSES: "Income & Expenses", OWNERSHIP: "สัดส่วนเจ้าของ", FX_SYSTEM: "FX & ระบบ",
 };
 const PILL: Record<string, string> = {
@@ -254,7 +254,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
     <div className="space-y-4">
       <PageInfo>ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</PageInfo>
       {/* ปุ่มปิดเดือนอยู่แถวแท็บ (ขึ้นเสมอ · ถ้ายังปิดไม่ได้ กดแล้วบอกเหตุผล ไม่มีปุ่มยืนยัน)
-          ปุ่มอัปเดตยอด → ใช้ลิงก์ "ไปแก้" ในแถว Cash & Bank ของ Checklist · ยกเลิกการปิดเดือน → กล่องเดือนที่ปิดแล้ว (ตกลง 4 พ.ย. 2026) */}
+          ปุ่มอัปเดตยอด → ใช้ลิงก์ "ไปแก้" ในแถว Bank Accounts ของ Checklist · ยกเลิกการปิดเดือน → กล่องเดือนที่ปิดแล้ว (ตกลง 4 พ.ย. 2026) */}
       {!isFinal && canClose && (
         <TabActions>
           <ActionBar>

@@ -342,9 +342,13 @@ async function LiquidityRow({ start, personId }: { start: string; personId: stri
   return (
     <div className={INSIGHT} title={`สภาพคล่องสูง ${q}% = เงินฝาก / เงินสด + การลงทุน · สภาพคล่องต่ำ ${slow}% = อสังหาริมทรัพย์ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น`}>
       <Bar pct={quick} fill="bg-blue-600" />
-      <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-slate-600">
-        <span className="min-w-0 truncate">สภาพคล่องสูง <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
-        <span className="hidden shrink-0 text-slate-500 sm:inline">สภาพคล่องต่ำ <span className="tabular-nums">{slow}%</span></span>
+      {/* 4 พ.ย. 2026: ฝั่งขวาสั้นเหลือ "ต่ำ X%" · ช่องแคบกว่า 11rem (การ์ดแคบ / มือถือ) → ซ่อนฝั่งขวา (ดูจากแถบแทน) ไม่ตัดคำฝั่งซ้ายเป็น "…"
+          ดูจากความกว้างของแถวนี้เอง (@container/liq) ไม่ใช่ขนาดจอ */}
+      <div className="@container/liq">
+        <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-slate-600">
+          <span className="whitespace-nowrap">สภาพคล่องสูง <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
+          <span className="hidden shrink-0 whitespace-nowrap text-slate-500 @min-[11rem]/liq:inline">ต่ำ <span className="tabular-nums">{slow}%</span></span>
+        </div>
       </div>
     </div>
   );

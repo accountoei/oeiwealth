@@ -179,7 +179,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Cash &amp; Bank Accounts</Link>
+          <Link href="/financial/cash" className="text-sm text-slate-500 hover:underline">← Bank Accounts</Link>
           <h1 className="mt-1 text-2xl font-semibold text-slate-900">{acc.name}</h1>
           <p className="text-sm text-slate-500">{info}</p>
         </div>

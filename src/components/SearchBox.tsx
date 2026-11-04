@@ -9,12 +9,13 @@ import { NAV } from "./nav";
 
 // หน้า / แท็บในระบบ (ค้นได้ทันทีไม่ต้องรอเซิร์ฟเวอร์) · words = คำค้นเพิ่มเติม
 const PAGES: { label: string; href: string; words?: string }[] = [
-  ...NAV.filter((g) => g.href && g.href !== "/todo").map((g) => ({ label: g.label, href: g.href! })),
+  // Bank Accounts เดิมชื่อ "Cash & Bank Accounts" (เปลี่ยน 4 พ.ย. 2026) → พิมพ์ cash / เงินฝาก / ธนาคาร ยังเจอ
+  ...NAV.filter((g) => g.href && g.href !== "/todo").map((g) => ({ label: g.label, href: g.href!, words: g.href === "/financial/cash" ? "cash เงินฝาก ธนาคาร" : undefined })),
   { label: "Income & Expenses · รายได้", href: "/income-expenses?tab=income", words: "รายรับ" },
   { label: "Income & Expenses · ค่าใช้จ่าย", href: "/income-expenses?tab=expense", words: "รายจ่าย" },
   { label: "Income & Expenses · ตั้งค่า (รายการประจำ / หมวด)", href: "/income-expenses?tab=settings", words: "ค่าใช้จ่ายประจำ รายได้ประจำ หมวด" },
-  { label: "Cash · อัปเดตยอดคงเหลือ", href: "/financial/cash?tab=update", words: "statement ยอดธนาคาร" },
-  { label: "Cash · รับดอกเบี้ย", href: "/financial/cash?tab=interest" },
+  { label: "Bank Accounts · อัปเดตยอดคงเหลือ", href: "/financial/cash?tab=update", words: "statement ยอดธนาคาร" },
+  { label: "Bank Accounts · รับดอกเบี้ย", href: "/financial/cash?tab=interest" },
   { label: "Investments · อัปเดตยอดคงเหลือ", href: "/investments?tab=update", words: "statement ราคา" },
   { label: "To-Do List · สิ่งที่ต้องทำ", href: "/todo", words: "งานค้าง แจ้งเตือน" },
   { label: "ความครบถ้วนของข้อมูล", href: "/todo?tab=data" },

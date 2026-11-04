@@ -9,7 +9,7 @@ export const NAV: NavGroup[] = [
   // ย้ายจากแถบซ้ายไปเป็นปุ่มกระดิ่งที่แถบบน (ตกลง 2 พ.ย. 2026)
   { label: "To-Do List", href: "/todo", ready: true, icon: "todo", sidebar: false },
   { label: "Income & Expenses", href: "/income-expenses", ready: true, icon: "income" },
-  { label: "Cash & Bank Accounts", href: "/financial/cash", ready: true, icon: "cash" },
+  { label: "Bank Accounts", href: "/financial/cash", ready: true, icon: "cash" },
   { label: "Loans Receivable", href: "/financial/loans", ready: true, icon: "loans" },
   { label: "Investments", href: "/investments", ready: true, icon: "investments" },
   { label: "Private Business", href: "/financial/business", ready: true, icon: "business" },
