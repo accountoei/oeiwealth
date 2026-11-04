@@ -12,7 +12,7 @@ import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import LoanBatch, { type LoanRow } from "./LoanBatch";
-import { recEdit, recLabel, recLink, wholeUndo, type Recorded } from "@/lib/recorded-edit";
+import { recEdit, recLabel, recLink, recPair, wholeUndo, type Recorded } from "@/lib/recorded-edit";
 import { loanInterestFields } from "@/lib/source-edit";
 
 const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "มีความเสี่ยง", CLOSED: "ปิดแล้ว", WRITTEN_OFF: "ตัดหนี้สูญ" };
@@ -141,14 +141,26 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     const ps = pMonth.filter((m) => m.from_asset_id === loan), is = iMonth.filter((i) => i.asset_id === loan);
     const both = (g: string | null | undefined) => !!g && ps.some((m) => m.movement_group_id === g) && is.some((i) => iGroup.get(i.id) === g);
     const undo = (g: string, d: string) => canOrder ? wholeUndo(g, lp, `ลบการรับชำระวันที่ ${thDate(d)}?\nเงินต้น + ดอกเบี้ยของครั้งนี้จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`) : undefined;
+    // ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → บรรทัดเดียว แก้ทั้งคู่ในหน้าต่างเดียว (ตกลง 4 พ.ย. 2026)
+    const intOf = new Map(is.flatMap((i) => { const g = iGroup.get(i.id); return g ? [[g, i] as const] : []; }));
+    const pairs = ps.flatMap((m) => {
+      const i = !m.is_derived && m.movement_group_id ? intOf.get(m.movement_group_id) : undefined;
+      return i ? [{ m, i, g: m.movement_group_id as string }] : [];
+    });
+    const paired = new Set(pairs.flatMap((x) => [x.m.id as string, x.i.id as string]));
     return [
-      ...ps.map((m) => ({ d: m.movement_date as string, x: { id: m.id as string, node: m.is_derived ? recLink(recLabel("เงินต้น", m.movement_date, Number(m.amount), ccy), `/financial/loans/${loan}`)
+      ...pairs.map(({ m, i, g }) => ({ d: m.movement_date as string, x: { id: m.id as string, node: recPair({ canWrite,
+        label: recLabel("รับชำระ", m.movement_date, Number(m.amount) + Number(i.amount), ccy), group: g, paths: lp, canDelete: canOrder, direction: "IN", currency: ccy,
+        principal: { id: m.id as string, date: m.movement_date as string, amount: Number(m.amount) },
+        interest: { table: "income_transactions", id: i.id as string, date: i.date as string, amount: Number(i.amount), tax: i.tax == null ? null : Number(i.tax) },
+        confirmText: `ลบการรับชำระวันที่ ${thDate(m.movement_date)}?\nเงินต้น ${money(m.amount)} + ดอกเบี้ย ${money(i.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)` }) } })),
+      ...ps.filter((m) => !paired.has(m.id as string)).map((m) => ({ d: m.movement_date as string, x: { id: m.id as string, node: m.is_derived ? recLink(recLabel("เงินต้น", m.movement_date, Number(m.amount), ccy), `/financial/loans/${loan}`)
         : recEdit({ canWrite, canDelete: canOrder && !both(m.movement_group_id), table: "cash_movements", id: m.id as string, paths: lp,
-          label: recLabel("เงินต้น", m.movement_date, Number(m.amount), ccy), extra: both(m.movement_group_id) ? undo(m.movement_group_id!, m.movement_date) : undefined,
+          label: recLabel("เงินต้น", m.movement_date, Number(m.amount), ccy), deleteControl: both(m.movement_group_id) ? undo(m.movement_group_id!, m.movement_date) : undefined,
           fields: [{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "เงินต้น", type: "number", value: m.amount }] }) } })),
-      ...is.map((i) => ({ d: i.date as string, x: { id: i.id as string, node: recEdit({ canWrite, canDelete: canOrder && !both(iGroup.get(i.id)), table: "income_transactions",
+      ...is.filter((i) => !paired.has(i.id as string)).map((i) => ({ d: i.date as string, x: { id: i.id as string, node: recEdit({ canWrite, canDelete: canOrder && !both(iGroup.get(i.id)), table: "income_transactions",
         id: i.id as string, paths: lp, label: recLabel("ดอกเบี้ย", i.date, Number(i.amount), ccy),
-        extra: both(iGroup.get(i.id)) ? undo(iGroup.get(i.id)!, i.date) : undefined, fields: loanInterestFields(i) }) } })),
+        deleteControl: both(iGroup.get(i.id)) ? undo(iGroup.get(i.id)!, i.date) : undefined, fields: loanInterestFields(i) }) } })),
     ].sort((a, b) => a.d.localeCompare(b.d)).map((y) => y.x);
   };
   const toRow = (r: R): LoanRow => ({

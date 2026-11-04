@@ -13,7 +13,7 @@ import { CardBalanceForm } from "./cards/forms";
 import { StatBox } from "@/components/Boxes";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import PayBatch, { type DebtRow } from "./PayBatch";
-import { recEdit, recLabel, recLink, wholeUndo, type Recorded } from "@/lib/recorded-edit";
+import { recEdit, recLabel, recLink, recPair, wholeUndo, type Recorded } from "@/lib/recorded-edit";
 import { debtInterestFields } from "@/lib/source-edit";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
@@ -138,13 +138,25 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     const ps = ((lPays ?? []) as PM[]).filter((m) => m.to_liability_id === lid), is = ((lInts ?? []) as PI[]).filter((e) => e.liability_id === lid);
     const both = (g: string | null | undefined) => !!g && ps.some((m) => m.movement_group_id === g) && is.some((e) => intGroup.get(e.id) === g);
     const undo = (g: string, d: string) => canOrder ? wholeUndo(g, lp, `ยกเลิกการจ่ายวันที่ ${thDate(d)} ทั้งก้อน?\nเงินต้น + ดอกเบี้ยของครั้งนี้จะถูกลบพร้อมกัน`) : undefined;
+    // จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → บรรทัดเดียว แก้ทั้งคู่ในหน้าต่างเดียว (ตกลง 4 พ.ย. 2026)
+    const intOf = new Map(is.flatMap((e) => { const g = intGroup.get(e.id); return g ? [[g, e] as const] : []; }));
+    const pairs = ps.flatMap((m) => {
+      const e = !m.is_derived && m.movement_group_id ? intOf.get(m.movement_group_id) : undefined;
+      return e ? [{ m, e, g: m.movement_group_id as string }] : [];
+    });
+    const paired = new Set(pairs.flatMap((x) => [x.m.id, x.e.id]));
     return [
-      ...ps.map((m) => ({ d: m.movement_date, x: { id: m.id, node: m.is_derived ? recLink(recLabel("เงินต้น", m.movement_date, Number(m.amount), m.currency), `/liabilities/${lid}`)
+      ...pairs.map(({ m, e, g }) => ({ d: m.movement_date, x: { id: m.id, node: recPair({ canWrite,
+        label: recLabel("จ่ายชำระ", m.movement_date, Number(m.amount) + Number(e.amount), m.currency), group: g, paths: lp, canDelete: canOrder, direction: "OUT", currency: m.currency,
+        principal: { id: m.id, date: m.movement_date, amount: Number(m.amount) },
+        interest: { table: "expense_items", id: e.id, date: e.date, amount: Number(e.amount) },
+        confirmText: `ยกเลิกการจ่ายวันที่ ${thDate(m.movement_date)} ทั้งก้อน?\nเงินต้น ${money(m.amount)} + ดอกเบี้ย ${money(e.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)` }) } })),
+      ...ps.filter((m) => !paired.has(m.id)).map((m) => ({ d: m.movement_date, x: { id: m.id, node: m.is_derived ? recLink(recLabel("เงินต้น", m.movement_date, Number(m.amount), m.currency), `/liabilities/${lid}`)
         : recEdit({ canWrite, canDelete: canOrder && !both(m.movement_group_id), table: "cash_movements", id: m.id, paths: lp,
-          label: recLabel("เงินต้น", m.movement_date, Number(m.amount), m.currency), extra: both(m.movement_group_id) ? undo(m.movement_group_id!, m.movement_date) : undefined,
+          label: recLabel("เงินต้น", m.movement_date, Number(m.amount), m.currency), deleteControl: both(m.movement_group_id) ? undo(m.movement_group_id!, m.movement_date) : undefined,
           fields: [{ name: "movement_date", label: "วันที่", type: "date", value: m.movement_date }, { name: "amount", label: "เงินต้น", type: "number", value: m.amount }] }) } })),
-      ...is.map((e) => ({ d: e.date, x: { id: e.id, node: recEdit({ canWrite, canDelete: canOrder && !both(intGroup.get(e.id)), table: "expense_items", id: e.id, paths: lp,
-        label: recLabel("ดอกเบี้ย", e.date, Number(e.amount), e.currency), extra: both(intGroup.get(e.id)) ? undo(intGroup.get(e.id)!, e.date) : undefined,
+      ...is.filter((e) => !paired.has(e.id)).map((e) => ({ d: e.date, x: { id: e.id, node: recEdit({ canWrite, canDelete: canOrder && !both(intGroup.get(e.id)), table: "expense_items", id: e.id, paths: lp,
+        label: recLabel("ดอกเบี้ย", e.date, Number(e.amount), e.currency), deleteControl: both(intGroup.get(e.id)) ? undo(intGroup.get(e.id)!, e.date) : undefined,
         fields: debtInterestFields(e) }) } })),
     ].sort((a, b) => a.d.localeCompare(b.d)).map((y) => y.x);
   };

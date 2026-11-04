@@ -7,6 +7,7 @@ import { ApplyScheduleOpening, DisburseForm, LoanInfoForm, PaymentForm } from ".
 import EditButton from "@/components/EditButton";
 import ScheduleTable, { type SchedEvent, type SchedRow } from "./ScheduleTable";
 import RowActions from "@/components/RowActions";
+import PairEdit from "@/components/PairEdit";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import { WithStatus } from "@/components/StatusSelect";
@@ -179,19 +180,26 @@ export default async function LoanDetailPage({ params, searchParams }: {
   // รายการเงินจริง แทรกในตารางผ่อนตามวันที่ (แทนกล่องประวัติเดิม · ตกลง 3 พ.ย. 2026) · แก้ / ลบได้เฉพาะรายการล่าสุด
   const btn = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50";
   const actionsFor = (e: Entry) => {
-    const both = !!(e.principal && e.interest);
     const group = e.principal?.movement_group_id ?? (e.interest ? incGroup.get(e.interest.id) : null);
-    // รับชำระครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่มลบปุ่มเดียว ลบทั้งการรับชำระครั้งนั้น (ถ้าผิดแค่ยอด ให้แก้ยอดแทน)
-    const wholeDelete = canDelete && both && group ? <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้"
-      confirmText={`ลบการรับชำระวันที่ ${thDate(e.date)}?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined;
+    // รับชำระครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ปุ่ม "แก้ไข" ปุ่มเดียว แก้ทั้งคู่ · ลบ = ลบทั้งการรับชำระครั้งนั้น (ข้างปุ่มบันทึก · ตกลง 4 พ.ย. 2026)
+    if (e.principal && e.interest && group && !e.principal.is_derived) return (
+      <PairEdit button="แก้ไข" buttonClass={btn} group={group} paths={paths} canDelete={canDelete} direction="IN" currency={l.currency}
+        principal={{ id: e.principal.id, date: e.principal.movement_date, amount: Number(e.principal.amount) }}
+        interest={{ table: "income_transactions", id: e.interest.id, date: e.interest.date, amount: Number(e.interest.amount), tax: e.interest.tax == null ? null : Number(e.interest.tax) }}
+        confirmText={`ลบการรับชำระวันที่ ${thDate(e.date)}?\nเงินต้น ${money(e.principal.amount)} + ดอกเบี้ย ${money(e.interest.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} />
+    );
+    // ไม่ครบคู่ (รับเงินต้นอย่างเดียว / ดอกเบี้ยอย่างเดียว / เงินต้นเป็นรายการที่ระบบสร้าง) → แก้ทีละรายการ
+    const both = !!(e.principal && e.interest);
+    const wholeDelete = canDelete && both && group ? <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้ทั้งก้อน" size="md"
+      confirmText={`ลบการรับชำระวันที่ ${thDate(e.date)}?\nเงินต้น ${money(e.principal?.amount)} + ดอกเบี้ย ${money(e.interest?.amount)} จะถูกลบพร้อมกัน`} /> : undefined;
     const items = [
-      e.principal && !e.principal.is_derived && <RowActions key="p" table="cash_movements" id={e.principal.id} paths={paths} button={both ? "แก้เงินต้น" : "แก้ไข / ลบ"} buttonClass={btn}
-        canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={[
+      e.principal && !e.principal.is_derived && <RowActions key="p" table="cash_movements" id={e.principal.id} paths={paths} button={both ? "แก้เงินต้น" : "แก้ไข"} buttonClass={btn}
+        canDelete={canDelete} fields={[
         { name: "movement_date", label: "วันที่", type: "date", value: e.principal.movement_date },
         { name: "amount", label: "เงินต้น", type: "number", value: e.principal.amount }]} />,
-      e.interest && <RowActions key="i" table="income_transactions" id={e.interest.id} paths={paths} button={both ? "แก้ดอกเบี้ย" : "แก้ไข / ลบ"} buttonClass={btn}
-        canDelete={canDelete && !(both && group)} extra={wholeDelete} fields={loanInterestFields(e.interest)} />,
-      e.disburse && !e.disburse.is_derived && <RowActions key="d" table="cash_movements" id={e.disburse.id} paths={paths} button="แก้ไข / ลบ" buttonClass={btn}
+      e.interest && <RowActions key="i" table="income_transactions" id={e.interest.id} paths={paths} button={both ? "แก้ดอกเบี้ย" : "แก้ไข"} buttonClass={btn}
+        canDelete={canDelete && !(both && group)} deleteControl={wholeDelete} fields={loanInterestFields(e.interest)} />,
+      e.disburse && !e.disburse.is_derived && <RowActions key="d" table="cash_movements" id={e.disburse.id} paths={paths} button="แก้ไข" buttonClass={btn}
         canDelete={canDelete} fields={[
         { name: "movement_date", label: "วันที่", type: "date", value: e.disburse.movement_date },
         { name: "amount", label: "จำนวน", type: "number", value: e.disburse.amount }]} />,

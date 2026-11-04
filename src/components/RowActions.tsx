@@ -71,6 +71,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   const cf = useConfirmSubmit();
   const router = useRouter();
   const delFormId = `del-${useId()}`;
+  const editFormId = `edit-${useId()}`;
   useEffect(() => { if (ds.ok) router.refresh(); }, [ds.ok, router]);   // ลบแล้ว → รีเฟรชหน้า
   if (ds.ok) return <span className="text-xs text-slate-400">ลบแล้ว</span>;
 
@@ -105,22 +106,25 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   );
   const delForm = canDelete ? <form id={delFormId} action={delAction} onSubmit={confirmDelete}>{hidden}</form> : null;
   const editorWithDelete = editor && <DeleteSlotCtx.Provider value={canDelete ? delButton : null}>{editor}</DeleteSlotCtx.Provider>;
+  // แถวปุ่มอยู่นอก <form> (ปุ่มบันทึกผูกด้วย form={id}) → ปุ่มลบแบบอื่นที่มีฟอร์มของตัวเอง (deleteControl) วางข้างปุ่มบันทึกได้โดยไม่ซ้อนฟอร์ม
   const editForm = (
-    <form action={editAction} className="space-y-3"
-      onInput={fields.some((f) => f.calc) ? (e) => {
-        const n = (e.target as HTMLElement).dataset?.f;
-        if (n) recalc(e.currentTarget, n, fields);
-      } : undefined}>
-      {hidden}
-      <div className={`grid gap-3 sm:grid-cols-2 ${cols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>{fieldInputs}</div>
+    <div className="space-y-3">
+      <form id={editFormId} action={editAction}
+        onInput={fields.some((f) => f.calc) ? (e) => {
+          const n = (e.target as HTMLElement).dataset?.f;
+          if (n) recalc(e.currentTarget, n, fields);
+        } : undefined}>
+        {hidden}
+        <div className={`grid gap-3 sm:grid-cols-2 ${cols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>{fieldInputs}</div>
+      </form>
       <div className="flex flex-wrap items-center gap-3">
-        <button disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button form={editFormId} disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
         {canDelete && delInline && delButton}
         {deleteControl}
         {es.error && <span className="text-sm text-red-600">{es.error}</span>}
         <Flash on={es} as="span" className="text-sm text-emerald-700" />
       </div>
-    </form>
+    </div>
   );
 
   // เนื้อหาในหน้าต่าง: ฟอร์มแก้ไข (ถ้ามี) + ปุ่มเพิ่มเติม / ลบ
