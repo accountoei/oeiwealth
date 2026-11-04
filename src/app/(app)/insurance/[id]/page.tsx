@@ -9,7 +9,8 @@ import {
 import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
 import FlowTable, { type FlowRow } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { AddCashValueForm, BenefitForm, CashValueTableEditor, CoverageForm, InsScheduleEditor, PayPremiumForm, PolicyInfoForm, SyncCashValueButton } from "./ins-forms";
+import { AddCashValueForm, BenefitForm, CashValueTableEditor, CoverageForm, PayPremiumForm, PolicyInfoForm, SyncCashValueButton } from "./ins-forms";
+import InsScheduleEditor from "./InsScheduleEditor";
 import EditToggle from "@/components/EditToggle";
 import BeneficiaryEditor from "../Beneficiaries";
 import ClaimForm from "./ClaimForm";
@@ -517,9 +518,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
           <TabPanel id="flow">
             <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
               <ActionBar right={canDelete && policyActive ? <div className="flex flex-wrap justify-end gap-2">
-                  <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
+                  <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} current={premiums} goLive={family?.go_live_date ?? null}
                     defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />
-                  {!isProp && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
+                  {!isProp && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} current={benefits} goLive={family?.go_live_date ?? null}
                     defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
                 </div> : undefined}>
                 <div className="space-y-0.5">

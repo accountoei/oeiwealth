@@ -99,11 +99,12 @@ export async function saveInsSchedule(_: ActionState, form: FormData): Promise<A
   const id = String(form.get("policy_id"));
   let lines: unknown;
   try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "อ่านตารางไม่ได้" }; }
-  if (!Array.isArray(lines) || lines.length === 0) return { error: "ตารางต้องมีอย่างน้อย 1 งวด" };
+  // ตารางว่าง = ลบงวดที่ยังไม่ชำระทั้งหมด (ตกลง 4 พ.ย. 2026 · งวดที่ชำระแล้วฐานข้อมูลเก็บไว้)
+  if (!Array.isArray(lines)) return { error: "อ่านตารางไม่ได้" };
   const { data, error } = await supabase.rpc("set_insurance_schedule", { p_policy_id: id, p_kind: String(form.get("kind")), p_lines: lines });
   if (error) return { error: friendlyError(error.message) };
   refresh(id);
-  return { ok: `บันทึกตาราง ${data} งวดแล้ว` };
+  return { ok: lines.length ? `บันทึกตาราง ${data} งวดแล้ว` : "ลบงวดที่ยังไม่ชำระแล้ว" };
 }
 
 /** จ่ายเบี้ยตามงวด → ค่าใช้จ่ายหมวด "ประกัน" ผูกงวด */
