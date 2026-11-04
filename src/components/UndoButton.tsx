@@ -6,8 +6,10 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
 
 /** ปุ่ม "ยกเลิกทั้งก้อน" · ถามยืนยันก่อน · ฐานข้อมูลย้อนทุกส่วนพร้อมกัน */
-export default function UndoButton({ kind, id, paths = [], label = "ยกเลิกทั้งก้อน", confirmText }: {
+export default function UndoButton({ kind, id, paths = [], label = "ยกเลิกทั้งก้อน", confirmText, size = "sm" }: {
   kind: "BENEFIT" | "DEPOSIT" | "PAYMENT" | "ALT_PART_SALE"; id: string; paths?: string[]; label?: string; confirmText: string;
+  /** md = ขนาดเดียวกับปุ่มบันทึก (วางข้างปุ่มบันทึกในหน้าต่างแก้ไข) */
+  size?: "sm" | "md";
 }) {
   const [state, action, pending] = useActionState<UndoState, FormData>(undoWhole, {});
   const cf = useConfirmSubmit();
@@ -17,7 +19,7 @@ export default function UndoButton({ kind, id, paths = [], label = "ยกเล
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="paths" value={paths.join(",")} />
-      <button disabled={pending} className="whitespace-nowrap rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">
+      <button disabled={pending} className={`whitespace-nowrap rounded-md border border-red-300 ${size === "md" ? "px-3 py-2 text-sm" : "px-2 py-1 text-xs"} text-red-700 hover:bg-red-50 disabled:opacity-50`}>
         {pending ? "…" : label}
       </button>
       {state.error && <span className="mt-1 max-w-60 text-right text-xs text-red-600">{state.error}</span>}

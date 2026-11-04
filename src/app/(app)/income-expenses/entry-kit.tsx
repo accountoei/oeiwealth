@@ -176,7 +176,7 @@ export function makeEntryKit(c: KitCtx) {
       return (
         <RowActions table="income_transactions" id={i.id} paths={[...PATHS, src.href, "/property", "/financial/loans", "/financial/business"]}
           canDelete={canDelete && !whole} fields={fields} button={button}
-          extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/financial/loans"]}
+          deleteControl={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" size="md" paths={[...PATHS, src.href, "/financial/loans"]}
             confirmText={`ลบการรับชำระวันที่ ${thDate(i.date)}?\nเงินต้น ${money(loanPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
       );
     }
@@ -201,7 +201,7 @@ export function makeEntryKit(c: KitCtx) {
       return (
         <RowActions table="expense_items" id={i.id} paths={[...PATHS, src.href.split("?")[0], "/liabilities", "/property", "/insurance"]}
           canDelete={canDelete && !whole} fields={fields} button={button}
-          extra={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" paths={[...PATHS, src.href, "/liabilities"]}
+          deleteControl={canDelete && whole && grp ? <UndoButton kind="PAYMENT" id={grp} label="ลบรายการนี้" size="md" paths={[...PATHS, src.href, "/liabilities"]}
             confirmText={`ลบการจ่ายวันที่ ${thDate(i.date)}?\nเงินต้น ${money(groupPrincipal.get(grp))} + ดอกเบี้ย ${money(i.full_amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอดดอกเบี้ย ให้แก้ยอดแล้วกดบันทึกแทน)`} /> : undefined} />
       );
     }

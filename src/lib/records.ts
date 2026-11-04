@@ -123,6 +123,51 @@ export async function updateRecord(_: RecState, form: FormData): Promise<RecStat
   return { ok: "บันทึกการแก้ไขแล้ว" };
 }
 
+/**
+ * แก้การรับ / จ่ายครั้งเดียวกัน (เงินต้น = cash_movements + ดอกเบี้ย = income_transactions / expense_items) ในหน้าต่างเดียว (ตกลง 4 พ.ย. 2026)
+ *   วันที่ช่องเดียวใช้กับทั้งคู่ · ตรวจยอดก่อน (ตรงกับ CHECK ในฐานข้อมูล) → บันทึกเงินต้นก่อน (ไม่ผ่าน = ไม่มีอะไรถูกแก้) → ดอกเบี้ย
+ *   ส่วนที่ไม่เปลี่ยนไม่ส่งไปบันทึก · สิทธิ์ / งวดปิด / รายการที่ระบบสร้าง กันด้วย RLS + Trigger เหมือนการแก้ทีละรายการ
+ */
+export async function updatePaymentPair(_: RecState, form: FormData): Promise<RecState> {
+  const itable = String(form.get("itable"));
+  if (itable !== "income_transactions" && itable !== "expense_items") return { error: "แก้ไขรายการประเภทนี้ไม่ได้" };
+  const withTax = itable === "income_transactions";
+  const date = parse(form.get("date"), "date") as string | null;
+  const p = parse(form.get("principal"), "num") as number | null;
+  const i = parse(form.get("interest"), "num") as number | null;
+  const tax = withTax ? ((parse(form.get("tax"), "num") as number | null) ?? 0) : 0;
+  if (!date) return { error: "กรุณาใส่วันที่" };
+  if (p == null || i == null || [p, i, tax].some((v) => Number.isNaN(v))) return { error: "ตัวเลขไม่ถูกต้อง" };
+  if (p <= 0) return { error: "เงินต้นต้องมากกว่า 0 · ถ้าครั้งนี้ไม่มีเงินต้น ให้ลบรายการนี้แล้วบันทึกใหม่" };
+  if (i <= 0) return { error: "ดอกเบี้ยต้องมากกว่า 0 · ถ้าครั้งนี้ไม่มีดอกเบี้ย ให้ลบรายการนี้แล้วบันทึกใหม่" };
+  if (tax < 0 || tax > i) return { error: "ภาษีหัก ณ ที่จ่าย ต้องไม่ติดลบ และไม่เกินดอกเบี้ย" };
+
+  const same = (a: number, b: FormDataEntryValue | null) => Math.abs(a - Number(String(b ?? "").replace(/,/g, ""))) < 0.00005;
+  const pChanged = date !== String(form.get("o_pdate")) || !same(p, form.get("o_principal"));
+  const iChanged = date !== String(form.get("o_idate")) || !same(i, form.get("o_interest")) || (withTax && !same(tax, form.get("o_tax")));
+  if (!pChanged && !iChanged) return { error: "ไม่มีข้อมูลที่แก้" };
+
+  const supabase = await createClient();
+  const noRight = "คุณไม่มีสิทธิ์แก้ไขรายการนี้ (ผู้บันทึกแก้ได้เฉพาะรายการของตัวเองภายใน 24 ชม.)";
+  if (pChanged) {
+    const { data, error } = await supabase.from("cash_movements").update({ movement_date: date, amount: p })
+      .eq("id", String(form.get("pid"))).select("id");
+    if (error) return { error: friendlyError(error.message) };
+    if (!data?.length) return { error: noRight };
+  }
+  if (iChanged) {
+    const { data, error } = await supabase.from(itable).update(withTax ? { date, amount: i, tax: tax || null } : { date, amount: i })
+      .eq("id", String(form.get("iid"))).select("id");
+    if (error || !data?.length) {
+      if (pChanged) refresh(form);
+      const why = error ? friendlyError(error.message) : noRight;
+      return { error: pChanged ? `บันทึกเงินต้นแล้ว แต่แก้ดอกเบี้ยไม่สำเร็จ: ${why} · แก้ดอกเบี้ยแล้วกดบันทึกอีกครั้ง` : why };
+    }
+  }
+  refresh(form);
+  return { ok: "บันทึกการแก้ไขแล้ว" };
+}
+
 export async function deleteRecord(_: RecState, form: FormData): Promise<RecState> {
   const table = String(form.get("table"));
   if (!DELETABLE.has(table)) return { error: "ลบรายการประเภทนี้ไม่ได้" };

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import RowActions, { type FieldSpec } from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
+import PairEdit from "@/components/PairEdit";
 import { money, thDate } from "@/lib/format";
 
 /**
@@ -21,11 +22,23 @@ export const recLabel = (verb: string, date: string, amount: number, ccy?: strin
 /** บรรทัดที่กดแก้ไขได้ (ไม่มีสิทธิ์แก้ = ข้อความเฉย ๆ) */
 export function recEdit(o: {
   canWrite: boolean; label: string; table: string; id: string; paths: string[]; fields: FieldSpec[];
-  canDelete: boolean; deleteEffect?: string; deleteNote?: string; extra?: ReactNode;
+  canDelete: boolean; deleteEffect?: string; deleteNote?: string;
+  /** ปุ่มลบแบบอื่น (เช่น ลบทั้งก้อน) — วางข้างปุ่มบันทึกแทนปุ่มลบปกติ (ใช้กับ canDelete: false) */
+  deleteControl?: ReactNode;
 }): ReactNode {
   if (!o.canWrite) return <span className={TEXT}>{o.label}</span>;
   return <RowActions table={o.table} id={o.id} paths={o.paths} fields={o.fields} canDelete={o.canDelete} deleteEffect={o.deleteEffect}
-    deleteNote={o.deleteNote} extra={o.extra} button={`${o.label} ✎`} buttonClass={LINK} />;
+    deleteNote={o.deleteNote} deleteControl={o.deleteControl} button={`${o.label} ✎`} buttonClass={LINK} />;
+}
+
+/**
+ * การรับ / จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → บรรทัดเดียว "รับชำระ 5 ต.ค. · 20,000.00 ✎" (ยอดรวมเงินต้น + ดอกเบี้ย)
+ *   กดแล้วแก้ทั้งคู่ในหน้าต่างเดียว · ลบทั้งก้อนอยู่ข้างปุ่มบันทึก (ตกลง 4 พ.ย. 2026)
+ */
+export function recPair(o: { canWrite: boolean; label: string } & Omit<ComponentProps<typeof PairEdit>, "button" | "buttonClass">): ReactNode {
+  const { canWrite, label, ...rest } = o;
+  if (!canWrite) return <span className={TEXT}>{label}</span>;
+  return <PairEdit {...rest} button={`${label} ✎`} buttonClass={LINK} />;
 }
 
 /** บรรทัดที่แก้ที่หน้านี้ไม่ได้ → ลิงก์ไปหน้าต้นทาง */
@@ -33,9 +46,9 @@ export function recLink(label: string, href: string): ReactNode {
   return <Link href={href} className={LINK} title="แก้ / ลบที่หน้าต้นทาง">{label} →</Link>;
 }
 
-/** ปุ่มลบการรับ / จ่ายครั้งเดียวกันทั้งก้อน (เงินต้น + ดอกเบี้ย) — วางในหน้าต่างแก้ไขของแต่ละส่วน */
+/** ปุ่มลบการรับ / จ่ายครั้งเดียวกันทั้งก้อน (เงินต้น + ดอกเบี้ย) — วางข้างปุ่มบันทึกในหน้าต่างแก้ไขของแต่ละส่วน (deleteControl) */
 export function wholeUndo(group: string, paths: string[], text: string): ReactNode {
-  return <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้ทั้งก้อน" confirmText={text} />;
+  return <UndoButton kind="PAYMENT" id={group} paths={paths} label="ลบรายการนี้ทั้งก้อน" size="md" confirmText={text} />;
 }
 
 /** แสดงรายการที่บันทึกแล้ว (บรรทัดละครั้ง) */
