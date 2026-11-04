@@ -1,4 +1,13 @@
 import { Suspense } from "react";
+// แบบอักษรที่ให้เลือกเพิ่ม (src/lib/fonts.ts) · ประกาศไว้เฉย ๆ เบราว์เซอร์โหลดไฟล์เฉพาะแบบที่ใช้จริง
+import "@fontsource/noto-sans-thai-looped/400.css";
+import "@fontsource/noto-sans-thai-looped/500.css";
+import "@fontsource/noto-sans-thai-looped/600.css";
+import "@fontsource/noto-sans-thai-looped/700.css";
+import "@fontsource/sarabun/400.css";
+import "@fontsource/sarabun/500.css";
+import "@fontsource/sarabun/600.css";
+import "@fontsource/sarabun/700.css";
 import { cookies } from "next/headers";
 import Sidebar from "@/components/Sidebar";
 import AppHeader from "@/components/AppHeader";
@@ -15,6 +24,7 @@ import { Toaster } from "@/components/Modal";
 import KeepHeight from "@/components/KeepHeight";
 import { monthToClose } from "@/lib/closing";
 import { getTodoCount } from "@/lib/attention";
+import { DEFAULT_FONT, FONT_COOKIE, fontKey, fontStack } from "@/lib/fonts";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
@@ -29,8 +39,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const order = decodeURIComponent(jar.get(NAV_ORDER_COOKIE)?.value ?? "").split("|").filter(Boolean);
   // แถบเมนูยุบ: "1" = ยุบ · "0" = ขยาย (กดเลือกเอง) · ไม่มี = ยังไม่เคยเลือก (iPad ยุบให้เอง)
   const navCollapsed = jar.get(NAV_COLLAPSED_COOKIE)?.value;
+  // แบบอักษรที่เลือกไว้ที่เครื่องนี้ → ใส่ตั้งแต่ Server สร้างหน้า (ไม่กระพริบเป็นแบบเดิมก่อน) · มีผลทั้งหน้า รวม pop up
+  const font = fontKey(jar.get(FONT_COOKIE)?.value);
   return (
     <div className="flex min-h-screen">
+      {font !== DEFAULT_FONT && <style>{`:root{--font-sans:${fontStack(font)}}`}</style>}
       <Sidebar dots={due ? ["/settings/month-closing"] : []} initialOrder={order}
         initialCollapsed={navCollapsed === "1" ? true : navCollapsed === "0" ? false : undefined} initialWidth={Number(jar.get(NAV_WIDTH_COOKIE)?.value)}
         familyName={(family as { name: string } | null)?.name ?? ""} familyPhoto={(family as { photo: string | null } | null)?.photo ?? null} />

@@ -25,7 +25,13 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
-  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { data: autoHolds }, { data: autoGolds }, { data: lastPrice }, { data: lastRefresh }, { data: cpiRows }] = await Promise.all([
+  // ราคาอัตโนมัติ: ราคาล่าสุดของแต่ละรายการ + ย้อนหลัง ~45 วัน (กดขยาย) → ดึงต่อจากรายการได้ทันที ในรอบเดียวกับข้อมูลอื่น (4 พ.ย. 2026)
+  const since = addDays(todayBangkok(), -45);
+  const autoHoldsP = supabase.from("investment_holdings").select("id,name,symbol,holding_type,currency,price_pending,investment_portfolios(asset_id)")
+    .eq("auto_price", true).eq("status", "ACTIVE").is("deleted_at", null).order("name").then((r) => r);
+  const autoGoldsP = supabase.from("alternative_asset_details").select("asset_id,price_pending,assets!inner(name,status,deleted_at)")
+    .eq("auto_price", true).is("deleted_at", null).eq("assets.status", "ACTIVE").is("assets.deleted_at", null).then((r) => r);
+  const [{ data: family }, { data: fx }, { data: jobs }, { data: recent }, { data: autoHolds }, { data: autoGolds }, { data: lastPrice }, { data: lastRefresh }, { data: cpiRows }, hv, gv] = await Promise.all([
     supabase.from("families").select("base_currency,go_live_date,system_status,fx_source,fx_bbl_rate,fx_source_since,opportunity_rate_pct,opportunity_method").maybeSingle(),
     supabase.from("v_fx_status").select("currency,latest_rate_date,rate_to_thb,source,is_override,age_days,is_stale").order("currency"),
     isAdmin
@@ -34,10 +40,7 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
     // อัตราย้อนหลัง ~3 สัปดาห์ (แสดงเมื่อกดขยายแถวของสกุลนั้น)
     supabase.from("fx_rates").select("rate_date,currency,rate_to_thb,source,override_reason").is("deleted_at", null)
       .gte("rate_date", addDays(todayBangkok(), -21)).order("rate_date", { ascending: false }).limit(500),
-    supabase.from("investment_holdings").select("id,name,symbol,holding_type,currency,price_pending,investment_portfolios(asset_id)")
-      .eq("auto_price", true).eq("status", "ACTIVE").is("deleted_at", null).order("name"),
-    supabase.from("alternative_asset_details").select("asset_id,price_pending,assets!inner(name,status,deleted_at)")
-      .eq("auto_price", true).is("deleted_at", null).eq("assets.status", "ACTIVE").is("assets.deleted_at", null),
+    autoHoldsP, autoGoldsP,
     supabase.from("investment_valuations").select("valuation_date").eq("source", "MARKET").is("deleted_at", null).order("valuation_date", { ascending: false }).limit(1),
     // ปุ่มอัปเดตอัตรา: ครั้งล่าสุด + วันหมดอายุของ GitHub token (เตือนก่อน 30 วัน)
     isAdmin
@@ -46,26 +49,26 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
       : Promise.resolve({ data: [] as { event_at: string; metadata: unknown }[] }),
     // ดัชนีเงินเฟ้อรายปี (อัตราดอกเบี้ยเทียบแบบ เงินเฟ้อ + ส่วนเพิ่ม)
     supabase.from("cpi_annual").select("year,cpi_index,inflation_pct,source,notes").is("deleted_at", null).order("year", { ascending: false }),
+    autoHoldsP.then(async ({ data }): Promise<{ holding_id: string; valuation_date: string; price: number | null; source: string }[]> => {
+      const ids = (data ?? []).map((h) => h.id);
+      if (!ids.length) return [];
+      const { data: v } = await supabase.from("investment_valuations").select("holding_id,valuation_date,price,source").in("holding_id", ids).is("deleted_at", null)
+        .gte("valuation_date", since).order("valuation_date", { ascending: false }).limit(2000);
+      return v ?? [];
+    }),
+    autoGoldsP.then(async ({ data }): Promise<{ asset_id: string; valuation_date: string; value: number; source: string; notes: string | null }[]> => {
+      const ids = (data ?? []).map((g) => g.asset_id);
+      if (!ids.length) return [];
+      const { data: v } = await supabase.from("asset_valuations").select("asset_id,valuation_date,value,source,notes").in("asset_id", ids).is("deleted_at", null)
+        .gte("valuation_date", since).order("valuation_date", { ascending: false }).limit(2000);
+      return v ?? [];
+    }),
   ]);
   const tokenExp = ((lastRefresh?.[0]?.metadata as { token_expires?: string | null } | null)?.token_expires ?? "").slice(0, 10);
   const tokenDays = tokenExp ? Math.round((Date.parse(tokenExp) - Date.parse(todayBangkok())) / 86400000) : null;
 
   const fxSource = family?.fx_source === "BBL" ? "BBL" : "BOT";
 
-  // ราคาอัตโนมัติ: ราคาล่าสุดของแต่ละรายการ + ย้อนหลัง ~45 วัน (กดขยาย)
-  const since = addDays(todayBangkok(), -45);
-  const holdIds = (autoHolds ?? []).map((h) => h.id);
-  const goldIds = (autoGolds ?? []).map((g) => g.asset_id);
-  const [{ data: hv }, { data: gv }] = await Promise.all([
-    holdIds.length
-      ? supabase.from("investment_valuations").select("holding_id,valuation_date,price,source").in("holding_id", holdIds).is("deleted_at", null)
-          .gte("valuation_date", since).order("valuation_date", { ascending: false }).limit(2000)
-      : Promise.resolve({ data: [] as { holding_id: string; valuation_date: string; price: number | null; source: string }[] }),
-    goldIds.length
-      ? supabase.from("asset_valuations").select("asset_id,valuation_date,value,source,notes").in("asset_id", goldIds).is("deleted_at", null)
-          .gte("valuation_date", since).order("valuation_date", { ascending: false }).limit(2000)
-      : Promise.resolve({ data: [] as { asset_id: string; valuation_date: string; value: number; source: string; notes: string | null }[] }),
-  ]);
   const VAL_SOURCE: Record<string, string> = { MARKET: "อัตโนมัติ", STATEMENT: "Statement", USER: "ผู้ใช้", APPRAISAL: "ประเมิน", OPENING: "ยอดตั้งต้น" };
   const today = todayBangkok();
   const status = (date: string | undefined, pending: unknown) => pending

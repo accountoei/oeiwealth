@@ -14,27 +14,34 @@ const PAGE = 100;
 
 export type SecuritySp = { show?: string; action?: string; user?: string; entity?: string; page?: string };
 
-/** ส่วน Security (MFA · Audit Log) — แสดงต่อจากผู้ใช้ในแท็บ User & Security */
-export default async function SecuritySection({ sp }: { sp: SecuritySp }) {
-  const me = await requireAppUser();
-  const isAdmin = me.role === "ADMIN";
+type Log = { id: number; event_at: string; user_id: string | null; actor_type: string; action: string; entity_type: string;
+  entity_id: string | null; field_name: string | null; metadata: Record<string, unknown> | null };
+export type SecurityData = { logs: Log[]; users: { id: string; email: string }[] };
+
+/**
+ * ข้อมูลของส่วน Security — หน้า User & Security เริ่มดึงพร้อมข้อมูลผู้ใช้ (ไม่ต้องรอหน้าเสร็จก่อน · 4 พ.ย. 2026)
+ * รายการ Audit Log ดึงเมื่อกด "กรอง" แล้วเท่านั้น (show=1) · รายชื่อผู้ใช้โหลดเสมอ (ใช้ในตัวกรอง) · เฉพาะ ADMIN
+ */
+export async function loadSecurity(isAdmin: boolean, sp: SecuritySp): Promise<SecurityData> {
+  if (!isAdmin) return { logs: [], users: [] };
   const supabase = await createClient();
   const page = Math.max(0, Number(sp.page ?? 0) || 0);
+  let q = supabase.from("audit_logs").select("id,event_at,user_id,actor_type,action,entity_type,entity_id,field_name,metadata")
+    .order("event_at", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
+  if (sp.action) q = q.eq("action", sp.action);
+  if (sp.user) q = q.eq("user_id", sp.user);
+  if (sp.entity) q = q.eq("entity_type", sp.entity);
+  const [l, { data: u }] = await Promise.all([sp.show === "1" ? q.then((r) => r.data) : Promise.resolve(null), supabase.from("app_users").select("id,email").order("email")]);
+  return { logs: (l ?? []) as Log[], users: u ?? [] };
+}
 
-  let logs: { id: number; event_at: string; user_id: string | null; actor_type: string; action: string; entity_type: string;
-    entity_id: string | null; field_name: string | null; metadata: Record<string, unknown> | null }[] = [];
-  let users: { id: string; email: string }[] = [];
-  // รายการ Audit Log แสดงเมื่อกด "กรอง" แล้วเท่านั้น (show=1) · รายชื่อผู้ใช้โหลดเสมอ (ใช้ในตัวกรอง)
+/** ส่วน Security (MFA · Audit Log) — แสดงต่อจากผู้ใช้ในแท็บ User & Security */
+export default async function SecuritySection({ sp, data }: { sp: SecuritySp; data: Promise<SecurityData> }) {
+  const me = await requireAppUser();
+  const isAdmin = me.role === "ADMIN";
+  const page = Math.max(0, Number(sp.page ?? 0) || 0);
   const shown = sp.show === "1";
-  if (isAdmin) {
-    let q = supabase.from("audit_logs").select("id,event_at,user_id,actor_type,action,entity_type,entity_id,field_name,metadata")
-      .order("event_at", { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
-    if (sp.action) q = q.eq("action", sp.action);
-    if (sp.user) q = q.eq("user_id", sp.user);
-    if (sp.entity) q = q.eq("entity_type", sp.entity);
-    const [l, { data: u }] = await Promise.all([shown ? q.then((r) => r.data) : Promise.resolve(null), supabase.from("app_users").select("id,email").order("email")]);
-    logs = l ?? []; users = u ?? [];
-  }
+  const { logs, users } = await data;
   const email = new Map(users.map((u) => [u.id, u.email]));
   const qs = (p: Record<string, string | number | undefined>) =>
     "/settings/family-users?" + new URLSearchParams(Object.entries({ ...sp, ...p }).filter(([, v]) => v !== undefined && v !== "") as [string, string][]);

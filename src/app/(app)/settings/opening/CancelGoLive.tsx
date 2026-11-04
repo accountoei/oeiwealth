@@ -22,11 +22,11 @@ export default function CancelGoLive({ goLive, finalMonths }: { goLive: string; 
       <ul className="list-disc space-y-0.5 pl-5 text-sm text-slate-700">
         <li>ระบบกลับเป็นช่วงตั้งค่า (SETUP): แก้ยอดตั้งต้น · ลงรายการย้อนหลัง · เปลี่ยนวัน Go-live ได้ แล้วกด Confirm Go-live ใหม่</li>
         <li>ข้อมูลที่บันทึกไว้ไม่ถูกลบ · ยอดสิ้นเดือนอัตโนมัติจะคำนวณใหม่หลัง Confirm</li>
-        <li>เดือนที่ Reopen ไว้ (ยังไม่ปิดใหม่) จะถูกล้าง ต้องปิดเดือนใหม่หลัง Confirm</li>
+        <li>เดือนที่ยกเลิกการปิดไว้ (ยังไม่ปิดใหม่) จะถูกล้าง ต้องปิดเดือนใหม่หลัง Confirm</li>
       </ul>
       {blocked ? (
         <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          ยังมีเดือนที่ปิดอยู่ {finalMonths} เดือน — ไปที่ <Link href="/settings/month-closing" className="underline">Month Closing</Link> แล้ว Reopen ทุกเดือนก่อน (ไล่จากเดือนล่าสุด)
+          ยังมีเดือนที่ปิดอยู่ {finalMonths} เดือน — ไปที่ <Link href="/settings/month-closing" className="underline">Month Closing</Link> แล้วกด “ยกเลิกการปิดเดือน” ทุกเดือนก่อน (ไล่จากเดือนล่าสุด)
         </p>
       ) : (
         <>
