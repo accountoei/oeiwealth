@@ -199,7 +199,7 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
           </tbody>
           <tfoot className="border-t-2 border-slate-200">
             <tr className="align-top">
-              <td className="py-2 font-medium" colSpan={2}>รวมทั้งทรัพย์สิน <span className="font-normal text-xs text-slate-500">(มูลค่ารวมนับใน Net Worth)</span></td>
+              <td className="py-2 font-medium" colSpan={2}>รวมทั้งทรัพย์สิน <span className="font-normal text-xs text-slate-500">(มูลค่ารวมนับในความมั่งคั่งสุทธิ)</span></td>
               <td className="py-2 pr-2 text-xs tabular-nums text-slate-600">{areaSum > 0 ? `${areaSum.toLocaleString("en-US", { maximumFractionDigits: 2 })} ตร.ว.` : ""}</td>
               <td></td>
               <td className="py-1 pr-2 text-right">{allCost
@@ -251,7 +251,7 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       {partial && <p className="text-sm text-amber-700">ใส่มูลค่าให้ครบทุกแถว หรือลบมูลค่ารายแถวออกให้หมดแล้วใส่ยอดรวม</p>}
       {resplit && (
         <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-800">แยก / ลบแถว → ระบบแบ่งมูลค่ารายแถวใหม่ (ตัวเลขสีน้ำเงิน · ที่ดินเฉลี่ยตามเนื้อที่) ·
-          ยอดรวมเท่าเดิม <span className="tabular-nums">{money(editTotal, undefined, 2)}</span> · Net Worth ไม่เปลี่ยน · ถ้ามูลค่าจริงต่างจากนี้ ปรับที่ปุ่ม &ldquo;ปรับมูลค่า / ประวัติ&rdquo; หลังบันทึก</p>
+          ยอดรวมเท่าเดิม <span className="tabular-nums">{money(editTotal, undefined, 2)}</span> · ความมั่งคั่งสุทธิไม่เปลี่ยน · ถ้ามูลค่าจริงต่างจากนี้ ปรับที่ปุ่ม &ldquo;ปรับมูลค่า / ประวัติ&rdquo; หลังบันทึก</p>
       )}
     </div>
   );

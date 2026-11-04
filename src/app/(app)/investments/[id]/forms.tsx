@@ -530,7 +530,7 @@ function BankTransferBody({ assetId, currency, banks, cashAccounts, today, minDa
         {rate && <li className="text-slate-700">{rate}</li>}
         <li>ยอดที่เข้าจริง = ยอดหลังหักค่าธรรมเนียมฝั่งปลายทาง (ตาม Statement) · ค่าธรรมเนียมทั้ง 2 ฝั่งลงเป็นค่าใช้จ่าย &ldquo;ค่าธรรมเนียมธนาคาร&rdquo;</li>
         <li>ส่วนต่างอัตราแลกเปลี่ยน = มูลค่าเปลี่ยน (ไม่ใช่ค่าใช้จ่าย)</li>
-        <li>รอยอด: ยอดที่ส่งยังนับรวมใน Net Worth (ไม่หาย) · ใส่ยอดแล้วเงินเข้ายอดบัญชีเงินฝากทันที · ใส่ยอดได้ที่กล่อง &ldquo;รอยอดปลายทาง&rdquo;</li>
+        <li>รอยอด: ยอดที่ส่งยังนับรวมในความมั่งคั่งสุทธิ (ไม่หาย) · ใส่ยอดแล้วเงินเข้ายอดบัญชีเงินฝากทันที · ใส่ยอดได้ที่กล่อง &ldquo;รอยอดปลายทาง&rdquo;</li>
       </ul>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>

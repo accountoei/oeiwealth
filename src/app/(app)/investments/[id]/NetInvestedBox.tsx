@@ -110,7 +110,7 @@ function AddForm({ assetId, currency, goLive }: { assetId: string; currency: str
         {fx && <label className="block text-sm text-slate-700">{currency} ที่พอร์ตได้รับ<input name="amount_ccy" inputMode="decimal" className={input} /></label>}
         <label className="block text-sm text-slate-700 sm:col-span-full">หมายเหตุ<input name="notes" className={input} /></label>
       </div>
-      <p className="text-xs text-slate-500">ใช้เทียบเงินลงทุนกับมูลค่าล่าสุดเท่านั้น ไม่กระทบยอดบัญชี มูลค่าพอร์ต หรือ Net Worth · ต้องเป็นวันที่ก่อน Go-live ({thDate(goLive)}) · โอนตั้งแต่วัน Go-live ใช้ปุ่ม &ldquo;โอนเงิน&rdquo;
+      <p className="text-xs text-slate-500">ใช้เทียบเงินลงทุนกับมูลค่าล่าสุดเท่านั้น ไม่กระทบยอดบัญชี มูลค่าพอร์ต หรือความมั่งคั่งสุทธิ · ต้องเป็นวันที่ก่อน Go-live ({thDate(goLive)}) · โอนตั้งแต่วัน Go-live ใช้ปุ่ม &ldquo;โอนเงิน&rdquo;
         {fx && ` · ไม่ทราบยอด ${currency} เว้นว่างได้ (ยอดเทียบเป็น ${currency} จะยังไม่แสดง)`}</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>

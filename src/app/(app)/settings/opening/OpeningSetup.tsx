@@ -19,7 +19,7 @@ const CATEGORY: { key: string; label: string }[] = [
   { key: "FINANCIAL", label: "สินทรัพย์ทางการเงินอื่น (เงินให้กู้ / ธุรกิจ / มูลค่าเวนคืนประกัน)" },
   { key: "INVESTMENT", label: "การลงทุน" },
   { key: "PROPERTY", label: "อสังหาริมทรัพย์" },
-  { key: "ALTERNATIVE", label: "ทรัพย์สินอื่น" },
+  { key: "ALTERNATIVE", label: "สินทรัพย์อื่น" },
   { key: "LIABILITY", label: "หนี้สินและบัตรเครดิต" },
   { key: "OWNERSHIP", label: "การระบุเจ้าของ" },
   { key: "FX", label: "อัตราแลกเปลี่ยน" },

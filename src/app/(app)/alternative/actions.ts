@@ -30,7 +30,7 @@ export async function createAlternative(_: ActionState, form: FormData): Promise
   if (pay) {
     const e2 = await recordAssetPurchase(supabase, String(data), pay);
     revalidatePath("/financial/cash", "layout");
-    if (e2) return { error: `บันทึกสินทรัพย์แล้ว แต่บันทึกเงินออกจากบัญชีไม่สำเร็จ (${e2}) — เปิดหน้าสินทรัพย์แล้วใช้ปุ่ม "+ จ่ายซื้อ / จ่ายเพิ่ม"`, created: `/alternative/${data}` };
+    if (e2) return { error: `บันทึกทรัพย์สินแล้ว แต่บันทึกเงินออกจากบัญชีไม่สำเร็จ (${e2}) — เปิดหน้าทรัพย์สินแล้วใช้ปุ่ม "+ จ่ายซื้อ / จ่ายเพิ่ม"`, created: `/alternative/${data}` };
   }
   redirect(`/alternative/${data}`);
 }

@@ -107,7 +107,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
     <div className="space-y-6">
       <PageInfo>ทอง เครื่องประดับ นาฬิกา ของสะสม คริปโต และอื่น ๆ</PageInfo>
       <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
-      {me.role !== "VIEWER" && <TabActions><Link href="/alternative/new" className={ADD_BTN}>+ เพิ่มสินทรัพย์</Link></TabActions>}
+      {me.role !== "VIEWER" && <TabActions><Link href="/alternative/new" className={ADD_BTN}>+ เพิ่มทรัพย์สิน</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 

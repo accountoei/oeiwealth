@@ -114,7 +114,7 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
           </tbody>
           <tfoot className="border-t-2 border-slate-200">
             <tr className="align-top">
-              <td className="py-2 font-medium">มูลค่ารวม (นับใน Net Worth)</td>
+              <td className="py-2 font-medium">มูลค่ารวม (นับในความมั่งคั่งสุทธิ)</td>
               <td className="py-2 text-right tabular-nums">{costTotal != null ? money(costTotal, undefined, 0) : "-"}</td>
               <td className="py-2 text-right tabular-nums">{currentValue != null ? money(currentValue, undefined, 0) : "-"}</td>
               <td className="pl-2 pt-1">

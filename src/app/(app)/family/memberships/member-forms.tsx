@@ -58,7 +58,7 @@ export function PointsForm({ persons, links, today }: { persons: P[]; links: { v
         <label className="text-sm">ณ วันที่<input name="balance_date" type="date" defaultValue={today} max={today} className={input} /></label>
         <label className="text-sm">แต้มหมดอายุ<input name="expiry_date" type="date" className={input} /></label>
       </div>
-      <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมใน Net Worth</p>
+      <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมในความมั่งคั่งสุทธิ</p>
     </Shell>
   );
 }

@@ -127,8 +127,8 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
           </label>
         </div>
         <p className="text-xs text-slate-500">
-          มูลค่าใหม่ = มูลค่าที่นับใน Net Worth (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
-          · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับใน Net Worth กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}
+          มูลค่าใหม่ = มูลค่าที่นับในความมั่งคั่งสุทธิ (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
+          · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}
         </p>
       </div>
 
@@ -137,11 +137,11 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="min-w-[12rem] px-3 py-2">ทรัพย์สิน</th>
-              <th className="w-40 px-3 text-right">มูลค่าใน Net Worth</th>
+              <th className="w-40 px-3 text-right">มูลค่าในความมั่งคั่งสุทธิ</th>
               <th className="w-40 px-3 text-right">มูลค่าใหม่</th>
               <th className="w-40 px-3 text-right">ราคาขั้นต่ำที่คุ้ม</th>
               <th className="w-40 px-3 text-right">ราคาตลาด (อ้างอิง)</th>
-              <th className="w-40 px-3 text-right">ส่วนต่างจาก Net Worth</th>
+              <th className="w-40 px-3 text-right">ส่วนต่างจากความมั่งคั่งสุทธิ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

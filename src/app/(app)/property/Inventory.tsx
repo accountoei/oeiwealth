@@ -114,7 +114,7 @@ function InventoryAddBody({ assetId, rooms, roomsWithItems, pays, today, minDate
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <Msg s={state} />
       </div>
-      <p className="text-xs text-slate-500">ไม่นับใน Net Worth · มิเตอร์ไฟ / น้ำ เพิ่มที่ &ldquo;ค่าใช้จ่ายประจำ / สาธารณูปโภค&rdquo; (ดึงเข้ารายการส่งมอบให้เอง) · มูลค่าทดแทนใช้เสนอค่าเสียหายตอนหักเงินประกัน{multi ? ` · ห้องว่าง = ${COMMON_ROOM_LABEL} (ส่งมอบให้ทุกสัญญา)` : ""}</p>
+      <p className="text-xs text-slate-500">ไม่นับในความมั่งคั่งสุทธิ · มิเตอร์ไฟ / น้ำ เพิ่มที่ &ldquo;ค่าใช้จ่ายประจำ / สาธารณูปโภค&rdquo; (ดึงเข้ารายการส่งมอบให้เอง) · มูลค่าทดแทนใช้เสนอค่าเสียหายตอนหักเงินประกัน{multi ? ` · ห้องว่าง = ${COMMON_ROOM_LABEL} (ส่งมอบให้ทุกสัญญา)` : ""}</p>
     </form>
   );
 }

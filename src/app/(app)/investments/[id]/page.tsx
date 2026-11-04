@@ -209,7 +209,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         {/* ซ้าย: มูลค่า + เอกสาร */}
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ใน Net Worth)</div>
+            <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (
               <div className="mt-1 text-xs text-slate-500">= {money(pv?.portfolio_value ?? null, a.currency, 0)}
@@ -271,7 +271,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       {waitingTransfers.length > 0 && (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <h2 className="font-medium text-amber-900">รอยอดปลายทาง ({waitingTransfers.length})</h2>
-          <p className="text-xs text-amber-800">โอนแล้วแต่ยังไม่ได้ใส่ยอดที่เข้าจริง — นับรวมใน Net Worth แล้ว (ยอดที่ส่ง) · ได้ Statement แล้วกด &ldquo;ใส่ยอดที่เข้า&rdquo; เงินจะเข้ายอดบัญชีเงินฝากทันที</p>
+          <p className="text-xs text-amber-800">โอนแล้วแต่ยังไม่ได้ใส่ยอดที่เข้าจริง — นับรวมในความมั่งคั่งสุทธิแล้ว (ยอดที่ส่ง) · ได้ Statement แล้วกด &ldquo;ใส่ยอดที่เข้า&rdquo; เงินจะเข้ายอดบัญชีเงินฝากทันที</p>
           <ul className="mt-2 divide-y divide-amber-200">
             {waitingTransfers.map((m) => (
               <li key={m.id} className="py-2 text-sm">
@@ -438,7 +438,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             </tbody>
           </table>
           <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
-            มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับ Net Worth
+            มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับความมั่งคั่งสุทธิ
             · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
             · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / รับปันผล · ดอกเบี้ย · คืนเงินต้น
           </p>

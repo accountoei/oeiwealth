@@ -189,7 +189,7 @@ function OtherTable({ gs, other }: { gs: GroupChange[]; other: number }) {
       <SubHead info={<>&ldquo;อื่น ๆ&rdquo; = ประเมินมูลค่าใหม่ (อสังหาฯ / ธุรกิจ / ทอง / สินทรัพย์อื่น) · อัตราแลกเปลี่ยนของเงินฝากต่างประเทศ · ยอดหนี้ · รายการที่ยังไม่ได้บันทึก ·
         &ldquo;เงินฝากธนาคาร + การลงทุน&rdquo; = ส่วนที่ไม่ได้อยู่ในบรรทัดรายได้ ค่าใช้จ่าย และกำไร / ขาดทุนข้างบน ·
         เงินที่ย้ายระหว่างหมวดจะเห็นทั้งสองฝั่ง (เช่น จ่ายเงินซื้ออสังหาฯ 1,000,000: อสังหาริมทรัพย์ +1,000,000 · เงินฝาก −1,000,000 รวมแล้ว 0) ·
-        หนี้สินเพิ่ม = Net Worth ลด</>}>แยกตามหมวด (เฉพาะส่วนที่เป็น &ldquo;อื่น ๆ&rdquo;)</SubHead>
+        หนี้สินเพิ่ม = ความมั่งคั่งสุทธิลด</>}>แยกตามหมวด (เฉพาะส่วนที่เป็น &ldquo;อื่น ๆ&rdquo;)</SubHead>
       {rows.length === 0 ? <p className="text-sm text-slate-500">ไม่มี</p> : (
         <table className="w-full text-sm">
           <tbody className="divide-y divide-slate-100">
@@ -217,7 +217,7 @@ function GroupTable({ gs }: { gs: GroupChange[] }) {
     <>
       <SubHead info={<>ยอดทุกหมวด ต้นงวด → สิ้นงวด · &ldquo;เปลี่ยน&rdquo; รวม = ผลของทุกบรรทัดข้างบนรวมกัน (รายได้ ค่าใช้จ่าย กำไร / ขาดทุน และอื่น ๆ) ·
         &ldquo;เปลี่ยน&rdquo; ของแต่ละหมวดรวมเงินที่ย้ายระหว่างหมวดด้วย (เช่น โอนธนาคาร → พอร์ต 100,000: เงินฝาก −100,000 · การลงทุน +100,000) ·
-        หนี้สินเพิ่ม = Net Worth ลด</>}>มูลค่าตามหมวด ต้นงวด → สิ้นงวด</SubHead>
+        หนี้สินเพิ่ม = ความมั่งคั่งสุทธิลด</>}>มูลค่าตามหมวด ต้นงวด → สิ้นงวด</SubHead>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-slate-500">
@@ -237,7 +237,7 @@ function GroupTable({ gs }: { gs: GroupChange[] }) {
             })}
           </tbody>
           <tfoot className="border-t border-slate-200 font-medium">
-            <tr><td className="py-1">Net Worth</td><td className="text-right tabular-nums">{baht(nw("start"))}</td>
+            <tr><td className="py-1">ความมั่งคั่งสุทธิ</td><td className="text-right tabular-nums">{baht(nw("start"))}</td>
               <td className="text-right tabular-nums">{baht(nw("end"))}</td>
               <td className={`text-right tabular-nums ${sign(nw("end") - nw("start"))}`}>{nw("end") - nw("start") > 0 ? "+" : ""}{baht(nw("end") - nw("start"))}</td></tr>
           </tfoot>

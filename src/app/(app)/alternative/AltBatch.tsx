@@ -71,12 +71,12 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
-            <tr><th className="min-w-[12rem] px-3 py-2">สินทรัพย์</th>
+            <tr><th className="min-w-[12rem] px-3 py-2">ทรัพย์สิน</th>
               {canWrite && <><th className="w-40 px-3 text-right">ยอดที่ได้รับ (ก่อนภาษี)</th><th className="w-36 px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-44 px-3 text-right">สุทธิ</th>
                 <th className="w-60 px-3">เข้าบัญชี</th><th className="w-48 px-3">หมายเหตุ</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีสินทรัพย์ที่ถืออยู่</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีทรัพย์สินที่ถืออยู่</td></tr>}
             {rows.map((r) => {
               const v = vals[r.id] ?? "";
               const has = v.trim() !== "" && !Number.isNaN(n(v));
@@ -118,7 +118,7 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
           <Result s={state} />
         </form>
       )}
-      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;อื่น ๆ&rdquo; ผูกกับสินทรัพย์ · แบ่งให้เจ้าของตามสัดส่วน · ยอดเป็นสกุลของบัญชีที่รับ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</p>
+      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;อื่น ๆ&rdquo; ผูกกับทรัพย์สิน · แบ่งให้เจ้าของตามสัดส่วน · ยอดเป็นสกุลของบัญชีที่รับ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</p>
     </section>
   );
 }
@@ -154,10 +154,10 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Alt
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[40rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">สินทรัพย์</th><th className="w-48 px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <th className="w-60 px-3 text-right">มูลค่าใหม่</th>}</tr>
+            <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="w-48 px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <th className="w-60 px-3 text-right">มูลค่าใหม่</th>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">ไม่มีสินทรัพย์ที่ถืออยู่</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">ไม่มีทรัพย์สินที่ถืออยู่</td></tr>}
             {rows.map((r) => {
               const v = vals[r.id] ?? "";
               return (
@@ -189,7 +189,7 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Alt
           <Result s={state} />
         </form>
       )}
-      <p className="text-xs text-slate-500">ทองที่ตั้งราคาอัตโนมัติ ระบบลงราคารับซื้อให้ทุกวันทำการ · ทองที่ปิดราคาอัตโนมัติ / ต้องคำนวณจากน้ำหนัก ใช้ฟอร์มในหน้าสินทรัพย์ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</p>
+      <p className="text-xs text-slate-500">ทองที่ตั้งราคาอัตโนมัติ ระบบลงราคารับซื้อให้ทุกวันทำการ · ทองที่ปิดราคาอัตโนมัติ / ต้องคำนวณจากน้ำหนัก ใช้ฟอร์มในหน้าทรัพย์สิน · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</p>
     </section>
   );
 }

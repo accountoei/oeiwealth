@@ -89,7 +89,7 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
       <div ref={box} className="relative flex-1" style={{ minHeight: minH }}>
       <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full touch-pan-y select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
         role="img" tabIndex={0}
-        aria-label={`กราฟ Net Worth: ${points.map((p) => `${p.label} ${fmtBaht(p.v)}`).join(", ")}`}
+        aria-label={`กราฟความมั่งคั่งสุทธิ: ${points.map((p) => `${p.label} ${fmtBaht(p.v)}`).join(", ")}`}
         onPointerMove={(e) => setActive(nearest(e))}
         onPointerDown={(e) => setActive(nearest(e))}
         onPointerLeave={(e) => { if (e.pointerType === "mouse") setActive(null); }}

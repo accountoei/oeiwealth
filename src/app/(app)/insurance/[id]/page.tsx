@@ -126,7 +126,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   // มูลค่าเวนคืน: ใช้ทั้งปุ่มในกล่องด้านบน (pop up) และแท็บ "มูลค่าเวนคืน" (ตกลง 3 พ.ย. 2026)
   const cvUpdate = cvAsset && canWrite ? (
     <div>
-      <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับใน Net Worth)</h3>
+      <h3 className="mb-1 text-sm font-medium text-slate-800">อัปเดตมูลค่า (นับในความมั่งคั่งสุทธิ)</h3>
       <p className="mb-2 text-xs text-slate-500">ตามหนังสือแจ้งจากบริษัทประกัน (ปีละครั้ง) · ถ้าใส่ตารางตามสัญญาไว้ ระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
       <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={family?.go_live_date ?? ""} paths={paths}
         methods={[["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]]} />

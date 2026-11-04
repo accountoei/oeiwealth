@@ -45,7 +45,7 @@ export default function NewAlternativeForm(props: {
     <div className="space-y-6">
       <form action={action} className="space-y-6">
         <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
-          <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลสินทรัพย์</h2>
+          <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลทรัพย์สิน</h2>
           {!isSetup && isAdmin && !late && (
             <button type="button" onClick={() => setLate(true)} className="md:col-span-2 text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
           )}
@@ -120,7 +120,7 @@ export default function NewAlternativeForm(props: {
                 <option value="">— ไม่บันทึกเงินออก (ยังไม่จ่าย / จ่ายเป็นงวด) —</option>
                 <BankOptions banks={banks.filter((b) => b.currency === currency)} />
               </select>
-              <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ได้มา ณ วันที่ได้มา (บัญชีสกุลเดียวกับสินทรัพย์) · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าสินทรัพย์</span>
+              <span className="mt-1 block text-xs text-slate-500">เลือกบัญชี → บันทึกเงินออก &ldquo;ซื้อทรัพย์สิน&rdquo; = ราคาที่ได้มา ณ วันที่ได้มา (บัญชีสกุลเดียวกับทรัพย์สิน) · จ่ายเป็นงวด ให้เว้นว่างแล้วใช้ &ldquo;+ จ่ายซื้อ / จ่ายเพิ่ม&rdquo; ในหน้าทรัพย์สิน</span>
             </label>
           )}
           <label className={`${label} md:col-span-2`}>หมายเหตุ {opening && !isSetup && "(เหตุผล · จำเป็น)"}<textarea name="notes" rows={2} required={opening && !isSetup} className={input} /></label>
@@ -128,7 +128,7 @@ export default function NewAlternativeForm(props: {
 
         <OwnerShares persons={persons} title="เจ้าของ" />
 
-        {state.error && <p className="text-sm text-red-600">{state.error}{state.created && <> · <Link href={state.created} className="underline">เปิดหน้าสินทรัพย์</Link></>}</p>}
+        {state.error && <p className="text-sm text-red-600">{state.error}{state.created && <> · <Link href={state.created} className="underline">เปิดหน้าทรัพย์สิน</Link></>}</p>}
         <div className="flex gap-3">
           <button disabled={pending || !!state.created} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
           <Link href="/alternative" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>

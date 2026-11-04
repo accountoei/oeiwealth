@@ -205,7 +205,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                 <span className="flex-1">สมาชิก</span>
                 <span className="hidden w-20 shrink-0 text-right md:block">กรมธรรม์</span>
                 <span className="hidden w-40 shrink-0 text-right md:block">สิ่งที่ต้องดู</span>
-                <span className="w-48 shrink-0 text-right">Net Worth</span>
+                <span className="w-48 shrink-0 text-right">ความมั่งคั่งสุทธิ</span>
                 <span className="invisible shrink-0">›</span>
               </div>
             </div>

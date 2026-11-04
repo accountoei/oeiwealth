@@ -350,7 +350,7 @@ export async function saveMarketValuation(_: ActionState, form: FormData): Promi
   }
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   revalidateProperty(assetId);
-  return { ok: "บันทึกราคาตลาดแล้ว (ไม่นับเข้า Net Worth)" };
+  return { ok: "บันทึกราคาตลาดแล้ว (ไม่นับเข้าความมั่งคั่งสุทธิ)" };
 }
 
 /** ต้นทุนเพิ่ม (ราคาขายขั้นต่ำที่คุ้ม · ไม่นับใน Net Worth) — เพิ่ม / แก้ · ผูก "จ่ายเพิ่ม" ในระบบ = ยอด / วันที่ตามเงินออก (แก้ได้แค่อาคาร / ปี / รายละเอียด) */
@@ -378,7 +378,7 @@ export async function saveCostItem(_: ActionState, form: FormData): Promise<Acti
   if (error) return { error: error.message.includes("pci_movement_uq") ? "รายการจ่ายนี้ตั้งไว้แล้ว — แก้ที่รายการเดิม" : friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
   revalidateProperty(assetId);
-  return { ok: "บันทึกต้นทุนแล้ว (ไม่นับใน Net Worth)" };
+  return { ok: "บันทึกต้นทุนแล้ว (ไม่นับในความมั่งคั่งสุทธิ)" };
 }
 
 /** แท็บ อัปเดตมูลค่า: มูลค่าใน Net Worth ของหลายทรัพย์สินพร้อมกัน (วันที่ / วิธีเดียวกันทั้งชุด) · บันทึกครั้งเดียว ผิดแถวเดียว = ไม่บันทึกเลย

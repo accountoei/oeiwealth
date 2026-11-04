@@ -202,13 +202,13 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
               })}
             </tbody>
             <tfoot className="border-t-2 border-slate-200 bg-blue-50/40 font-medium">
-              <tr><td className="px-3 py-2.5">รวมใน Net Worth</td><td className="px-3 text-right tabular-nums">{gCount}</td>
+              <tr><td className="px-3 py-2.5">รวมในความมั่งคั่งสุทธิ</td><td className="px-3 text-right tabular-nums">{gCount}</td>
                 <td className="px-3 text-right tabular-nums">{money(gTotal, undefined, 0)}</td><td className="px-3 text-right tabular-nums">100%</td>
                 <td className="px-3"><div className="h-2.5 rounded-full bg-blue-600" /></td></tr>
             </tfoot>
           </table>
-          <p className="mt-2 text-xs text-slate-500">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ใน Net Worth
-            {riskTotal > 0.005 && ` · ส่วนที่มีความเสี่ยงไม่ได้คืน ${money(riskTotal, undefined, 0)} ยังนับใน Net Worth จนกว่าจะตัดหนี้สูญ`}</p>
+          <p className="mt-2 text-xs text-slate-500">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ในความมั่งคั่งสุทธิ
+            {riskTotal > 0.005 && ` · ส่วนที่มีความเสี่ยงไม่ได้คืน ${money(riskTotal, undefined, 0)} ยังนับในความมั่งคั่งสุทธิจนกว่าจะตัดหนี้สูญ`}</p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">

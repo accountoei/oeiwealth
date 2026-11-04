@@ -102,7 +102,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         {/* ซ้าย: Net Worth + เอกสาร */}
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">Net Worth (ตามสัดส่วน)</div>
+            <div className="text-xs text-slate-500">ความมั่งคั่งสุทธิ (ตามสัดส่วน)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(nw?.net_worth ?? 0, "THB", 0)}</div>
             <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
               <div className="flex justify-between gap-3"><dt className="text-slate-500">สินทรัพย์</dt><dd className="tabular-nums">{money(nw?.total_assets ?? 0, "THB", 0)}</dd></div>
@@ -190,7 +190,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
         <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-5">
           <h2 className="font-medium text-slate-900">ทรัพย์สินที่ต้องจัดการ</h2>
           <p className="mb-3 text-xs text-slate-500">
-            รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับใน Net Worth ตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง
+            รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับในความมั่งคั่งสุทธิตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง
           </p>
           {(estate ?? []).length === 0 ? <p className="text-sm text-emerald-700">ไม่มีรายการค้าง — จัดการครบแล้ว</p> : (
             <table className="w-full text-sm">

@@ -22,7 +22,7 @@ export default function MarketBox({ assetId, currency, today, propertyType, area
   );
   return (
     <div className="mt-4 border-t border-slate-100 pt-3">
-      <div className="text-xs text-slate-500">ราคาตลาด <span className="text-slate-400">(อ้างอิง · ไม่นับใน Net Worth)</span></div>
+      <div className="text-xs text-slate-500">ราคาตลาด <span className="text-slate-400">(อ้างอิง · ไม่นับในความมั่งคั่งสุทธิ)</span></div>
       {!last ? <p className="mt-1 text-sm text-slate-500">ยังไม่ได้ประเมินราคาตลาด</p> : (<>
         <div className="mt-1 text-xl font-semibold tabular-nums">{money(last.market_value, currency, 0)}</div>
         {(last.value_low != null || last.value_high != null || last.confidence) && (
@@ -41,7 +41,7 @@ export default function MarketBox({ assetId, currency, today, propertyType, area
         <dl className="mt-2 space-y-0.5 text-xs">
           {(() => { const mk = Number(last.market_value), base = minPrice ?? nwValue, ok = mk >= base; return (
             <div className="flex justify-between gap-2"><dt className="text-slate-500">{minPrice != null
-              ? (ok ? "สูงกว่าราคาขายขั้นต่ำ → ขายตอนนี้คุ้ม" : "ต่ำกว่าราคาขายขั้นต่ำ → ยังไม่คุ้ม") : "ส่วนต่างจากมูลค่าใน Net Worth"}</dt>
+              ? (ok ? "สูงกว่าราคาขายขั้นต่ำ → ขายตอนนี้คุ้ม" : "ต่ำกว่าราคาขายขั้นต่ำ → ยังไม่คุ้ม") : "ส่วนต่างจากมูลค่าในความมั่งคั่งสุทธิ"}</dt>
               <dd className={`tabular-nums ${minPrice != null ? "font-medium " : ""}${ok ? "text-emerald-700" : "text-red-600"}`}>{diffText(mk - base, base)}</dd></div>); })()}
           {Number(last.selling_cost) > 0 && (
             <div className="flex justify-between gap-2"><dt className="text-slate-500">ค่าใช้จ่ายขายโดยประมาณ</dt><dd className="tabular-nums">{minusMoney(last.selling_cost)}</dd></div>
