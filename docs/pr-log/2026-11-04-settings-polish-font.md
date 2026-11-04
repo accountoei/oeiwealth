@@ -1,4 +1,4 @@
-# ปรับหน้า Settings (Opening Setup · Month Closing · โหลดเร็วขึ้น) · เลือกแบบอักษรได้
+# #314 · ปรับหน้า Settings (Opening Setup · Month Closing · โหลดเร็วขึ้น) · เลือกแบบอักษรได้
 
 - วันที่: 4 พ.ย. 2026 · branch `claude/settings-polish-font`
 - SQL: ไม่มี SQL · ไม่มี Edge Function
