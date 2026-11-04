@@ -3,7 +3,7 @@ import { PageInfo } from "@/components/HeaderBar";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
 import { InviteButton, UserManage } from "./forms";
 import { TabActions } from "@/components/TabActions";
-import SecuritySection, { type SecuritySp } from "../security/SecuritySection";
+import SecuritySection, { loadSecurity, type SecuritySp } from "../security/SecuritySection";
 
 const USER_STATUS: Record<string, string> = { INVITED: "รอเข้าใช้ครั้งแรก", ACTIVE: "ใช้งาน", DISABLED: "ปิดการใช้งาน" };
 
@@ -12,6 +12,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   const me = await requireAppUser();
   const supabase = await createClient();
   const isAdmin = me.role === "ADMIN";
+  // ส่วน Security เริ่มดึงข้อมูลพร้อมกัน (ไม่รอข้อมูลผู้ใช้เสร็จก่อน)
+  const security = loadSecurity(isAdmin, sp);
 
   const [{ data: family }, { data: persons }, { data: users, error: usersError }] = await Promise.all([
     supabase.from("families").select("name,go_live_date,system_status").maybeSingle(),
@@ -63,7 +65,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         </div>
       </section>
 
-      <SecuritySection sp={sp} />
+      <SecuritySection sp={sp} data={security} />
     </div>
   );
 }

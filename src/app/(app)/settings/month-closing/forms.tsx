@@ -110,7 +110,7 @@ export function FinalizeForm({ month, warnings, label, summary, blockers = [] }:
       <div className="text-sm text-slate-700">{summary}</div>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" name="confirm" className="mt-1" />
-        <span>ตรวจตัวเลขแล้ว{warnings > 0 ? ` และยอมรับคำเตือน ${warnings} รายการ (จะถูกบันทึกไว้กับงวดนี้)` : ""} · หลังปิดเดือนจะแก้รายการในเดือนนี้ไม่ได้จนกว่าจะ Reopen</span>
+        <span>ตรวจตัวเลขแล้ว{warnings > 0 ? ` และยอมรับคำเตือน ${warnings} รายการ (จะถูกบันทึกไว้กับงวดนี้)` : ""} · หลังปิดเดือนจะแก้รายการในเดือนนี้ไม่ได้จนกว่าจะยกเลิกการปิดเดือน (Reopen)</span>
       </label>
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังปิดเดือน…" : "ยืนยันปิดเดือน (Finalize)"}</button>
@@ -121,20 +121,25 @@ export function FinalizeForm({ month, warnings, label, summary, blockers = [] }:
   ));
 }
 
-export function ReopenForm({ month }: { month: string }) {
+/** ยกเลิกการปิดเดือน (Reopen) เดือนที่ปิดล่าสุด · ADMIN · ปุ่มอยู่ที่กล่อง "เดือนที่ปิดแล้ว" (ตกลง 4 พ.ย. 2026) */
+export function ReopenForm({ month, label = "ยกเลิกการปิดเดือน" }: { month: string; label?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(reopenMonth, {});
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50")}>Reopen เดือนนี้</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50")}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
-    <form action={action} className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
+    <form action={action} className="space-y-3">
       <input type="hidden" name="month" value={month} />
-      <p className="font-medium text-red-800">Reopen เดือนนี้</p>
-      <p className="text-xs text-red-800">เปิดเดือนกลับเป็น DRAFT เพื่อแก้ไข แล้วต้องปิดเดือนใหม่ (เลขเวอร์ชันเพิ่ม) · บันทึกใน Audit Log</p>
-      <input name="reason" required placeholder="เหตุผล เช่น ลืมบันทึกค่าใช้จ่าย" className={`w-full ${small}`} />
-      <div className="flex items-center gap-2">
-        <button disabled={pending} className="rounded-md bg-red-700 px-3 py-1.5 text-xs text-white disabled:opacity-50">ยืนยัน Reopen</button>
-        <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
+      <h2 className="font-medium text-slate-900">{label} (Reopen)</h2>
+      <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        เปิดเดือนกลับเป็น DRAFT เพื่อแก้ไข แล้วต้องปิดเดือนใหม่ (เลขเวอร์ชันเพิ่ม) · บันทึกใน Audit Log</p>
+      <label className="block text-sm text-slate-700">เหตุผล *
+        <input name="reason" required placeholder="เช่น ลืมบันทึกค่าใช้จ่าย" className={`mt-1 block w-full ${small}`} />
+      </label>
+      <div className="flex items-center gap-3">
+        <button disabled={pending} className="rounded-md bg-red-700 px-4 py-2 text-sm text-white hover:bg-red-800 disabled:opacity-50">
+          {pending ? "กำลังยกเลิก…" : "ยืนยันยกเลิกการปิดเดือน"}</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ยกเลิก</button>
       </div>
       <Msg s={state} />
     </form>

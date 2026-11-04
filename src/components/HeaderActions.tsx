@@ -2,8 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { Suspense, use, useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, ChevronDown, LogOut } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Type } from "lucide-react";
 import IntentLink from "./IntentLink";
+import FontPicker from "./FontPicker";
 import { familyInitials } from "@/lib/format";
 
 /** งานค้างที่ปุ่มกระดิ่ง (โหลดตามหลัง ไม่ทำให้หน้าช้า) · red = เรื่องด่วน */
@@ -12,7 +13,7 @@ export type TodoCount = { total: number; red: number };
 /**
  * ปุ่มขวาสุดของแถบบน (ตกลง 2 พ.ย. 2026 · แทน To-Do List และกล่องผู้ใช้ที่แถบซ้าย)
  *   กระดิ่ง = ไปหน้า To-Do List (ตัวเลขงานค้าง แดง = ด่วน / เหลือง = รอทำ)
- *   วงกลมชื่อย่อ = ชี้แล้วเห็นชื่อ · กด / แตะ = เมนู ชื่อ · อีเมล · สิทธิ์ · ออกจากระบบ
+ *   วงกลมชื่อย่อ = ชี้แล้วเห็นชื่อ · กด / แตะ = เมนู ชื่อ · อีเมล · สิทธิ์ · การแสดงผล (เลือกแบบอักษร · 4 พ.ย. 2026) · ออกจากระบบ
  */
 export default function HeaderActions({ todo, user, className = "" }: {
   todo: Promise<TodoCount | null>; user: { name: string; email: string; role: string }; className?: string;
@@ -65,6 +66,7 @@ function UserMenu({ user }: { user: { name: string; email: string; role: string 
   const btn = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
   const byKey = useRef(false);
+  const [fontOpen, setFontOpen] = useState(false);
   const name = user.name.trim() || user.email;
   const initials = user.name.trim() ? familyInitials(user.name) : user.email.charAt(0).toUpperCase();
 
@@ -106,14 +108,21 @@ function UserMenu({ user }: { user: { name: string; email: string; role: string 
               <span className="mt-1.5 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">สิทธิ์: {user.role}</span>
             </div>
           </div>
+          <div className="border-t border-slate-100 p-1">
+            <button ref={first} type="button" role="menuitem" onClick={() => { setOpenAt(null); setFontOpen(true); }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none">
+              <Type className="h-4 w-4 shrink-0" aria-hidden />การแสดงผล
+            </button>
+          </div>
           <form action="/auth/signout" method="post" className="border-t border-slate-100 p-1">
-            <button ref={first} role="menuitem"
+            <button role="menuitem"
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-red-50 hover:text-red-700 focus-visible:bg-red-50 focus-visible:text-red-700 focus-visible:outline-none">
               <LogOut className="h-4 w-4 shrink-0" aria-hidden />ออกจากระบบ
             </button>
           </form>
         </div>
       )}
+      {fontOpen && <FontPicker onClose={() => setFontOpen(false)} />}
     </div>
   );
 }

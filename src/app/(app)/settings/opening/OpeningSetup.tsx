@@ -5,9 +5,8 @@ import { addDays, money, thDate } from "@/lib/format";
 import ConfirmGoLive from "./ConfirmGoLive";
 import ChangeGoLive from "./ChangeGoLive";
 import CancelGoLive from "./CancelGoLive";
-import { ActionBar } from "@/components/ActionBar";
+import { ChevronDown } from "lucide-react";
 import { PageInfo } from "@/components/HeaderBar";
-import { TabActions } from "@/components/TabActions";
 
 type Row = {
   category: string; entity_type: string; entity_id: string | null; name: string; currency: string | null;
@@ -70,36 +69,60 @@ export default async function OpeningSetup() {
   const count = (s: string) => list.filter((r) => r.status === s).length;
   const order = { MISSING: 0, WARN: 1, READY: 2, NOT_REQUIRED: 3 } as Record<string, number>;
   const isLive = family.system_status === "LIVE";
-  // วัน Go-live + วันของยอดตั้งต้น → อยู่ในกล่อง Confirm Go-live (ตกลง 30 ต.ค. 2026)
+  // วัน Go-live + วันของยอดตั้งต้น → อยู่ในกล่องบนสุด (ตกลง 30 ต.ค. 2026 · ย้ายขึ้นบน 4 พ.ย. 2026)
   const goLiveLine = <p className="text-sm">Go-live {thDate(family.go_live_date)} · ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}</p>;
 
-  return (
-    <div className="space-y-6">
-      <PageInfo>ตรวจยอดตั้งต้นก่อน Go-live · ยอดตั้งต้น = ยอด ณ สิ้นวันก่อน Go-live</PageInfo>
-      {me.role === "ADMIN" && (
-        <TabActions>
-          <ActionBar>
-            {isLive
-              ? <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />
-              : <ChangeGoLive current={family.go_live_date} />}
-          </ActionBar>
-        </TabActions>
+  const rowEl = (r: Row, i: number) => (
+    <li key={`${r.entity_type}-${r.entity_id ?? r.name}-${i}`} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
+      <span className={`rounded border px-2 py-0.5 text-xs ${BADGE[r.status]}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+      <span className="min-w-40 flex-1 font-medium text-slate-800">{r.name}</span>
+      <span className="tabular-nums text-slate-600">
+        {r.opening_value != null && r.category !== "OWNERSHIP" ? money(r.opening_value, r.currency ?? undefined) : ""}
+        {r.opening_date && r.category !== "OWNERSHIP" ? ` · ${thDate(r.opening_date)}` : ""}
+      </span>
+      {r.message && <span className="w-full text-xs text-slate-500 sm:w-auto">{r.message}</span>}
+      {(r.status === "MISSING" || r.status === "WARN") && fixLink(r) && (
+        <Link href={fixLink(r)} className="text-xs text-slate-700 underline">ไปแก้</Link>
       )}
+    </li>
+  );
 
+  return (
+    <div className="space-y-4">
+      <PageInfo>ตรวจยอดตั้งต้นก่อน Go-live · ยอดตั้งต้น = ยอด ณ สิ้นวันก่อน Go-live</PageInfo>
+
+      {/* กล่องบนสุด (ตกลง 4 พ.ย. 2026): วัน Go-live + สรุป + ปุ่มเรื่อง Go-live ทั้งหมดอยู่ที่เดียว (ADMIN) */}
       {isLive ? (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
-          {goLiveLine}
-          <div className="mt-1">ระบบ LIVE แล้ว (ยืนยันเมื่อ {thDate(family.go_live_confirmed_at)}) · ยอดตั้งต้นถูกล็อก แก้ได้เฉพาะ ADMIN พร้อมเหตุผล
-          {me.role === "ADMIN" && " · ถ้าต้องแก้ยอดตั้งต้นมาก ๆ หรือเปลี่ยนวัน Go-live ใช้ปุ่ม “ยกเลิก Go-live” ด้านบน"}</div>
+        <section className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
+          <div className="min-w-0 flex-1">
+            {goLiveLine}
+            <div className="mt-1">ระบบ LIVE แล้ว (ยืนยันเมื่อ {thDate(family.go_live_confirmed_at)}) · ยอดตั้งต้นถูกล็อก แก้ได้เฉพาะ ADMIN พร้อมเหตุผล
+            {me.role === "ADMIN" && " · ถ้าต้องแก้ยอดตั้งต้นมาก ๆ หรือเปลี่ยนวัน Go-live ใช้ปุ่ม “ยกเลิก Go-live”"}</div>
+          </div>
+          {me.role === "ADMIN" && <CancelGoLive goLive={family.go_live_date} finalMonths={finalMonths ?? 0} />}
         </section>
       ) : (
-        <section className="grid gap-3 sm:grid-cols-3">
-          {(["MISSING", "WARN", "READY"] as const).map((s) => (
-            <div key={s} className={`num-box rounded-xl border p-4 ${BADGE[s]}`}>
-              <div className="text-xs">{STATUS_LABEL[s]}</div>
-              <div className="text-2xl font-semibold">{count(s)}</div>
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-medium text-slate-900">Go-live {thDate(family.go_live_date)}</h2>
+              <p className="text-sm text-slate-600">ยอดตั้งต้น = ยอด ณ สิ้นวัน {thDate(addDays(family.go_live_date, -1))}</p>
             </div>
-          ))}
+            {me.role === "ADMIN" ? (
+              <div className="flex flex-wrap gap-2">
+                <ChangeGoLive current={family.go_live_date} />
+                <ConfirmGoLive missing={count("MISSING")} warn={count("WARN")} goLive={thDate(family.go_live_date)} />
+              </div>
+            ) : <p className="text-sm text-slate-500">เปลี่ยนวัน / Confirm Go-live ได้เฉพาะผู้ดูแลระบบ (ADMIN)</p>}
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            {(["MISSING", "WARN", "READY"] as const).map((s) => (
+              <div key={s} className={`num-box rounded-xl border px-4 py-3 ${BADGE[s]}`}>
+                <div className="text-xs">{STATUS_LABEL[s]}</div>
+                <div className="text-2xl font-semibold">{count(s)}</div>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
@@ -110,41 +133,39 @@ export default async function OpeningSetup() {
         </p>
       )}
 
+      {/* หมวด: แถวเดียวพร้อมจำนวน · หมวดที่มี "ยังขาด / ควรตรวจ" เปิดเอง แสดงเฉพาะแถวที่ต้องแก้ · ที่เหลือยุบไว้ กดเปิดดูได้ (ตกลง 4 พ.ย. 2026) */}
+      {list.length > 0 && <section className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
       {CATEGORY.map(({ key, label }) => {
         const items = list.filter((r) => r.category === key).sort((a, b) => order[a.status] - order[b.status]);
         if (items.length === 0) return null;
+        const todo = items.filter((r) => r.status === "MISSING" || r.status === "WARN");
+        const rest = items.filter((r) => r.status !== "MISSING" && r.status !== "WARN");
+        const n = (s: string) => items.filter((r) => r.status === s).length;
         return (
-          <section key={key} className="rounded-xl border border-slate-200 bg-white">
-            <h2 className="border-b border-slate-100 px-5 py-3 font-medium text-slate-900">{label}</h2>
-            <ul className="divide-y divide-slate-100">
-              {items.map((r, i) => (
-                <li key={`${r.entity_type}-${r.entity_id ?? r.name}-${i}`} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
-                  <span className={`rounded border px-2 py-0.5 text-xs ${BADGE[r.status]}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
-                  <span className="min-w-40 flex-1 font-medium text-slate-800">{r.name}</span>
-                  <span className="tabular-nums text-slate-600">
-                    {r.opening_value != null && r.category !== "OWNERSHIP" ? money(r.opening_value, r.currency ?? undefined) : ""}
-                    {r.opening_date && r.category !== "OWNERSHIP" ? ` · ${thDate(r.opening_date)}` : ""}
-                  </span>
-                  {r.message && <span className="w-full text-xs text-slate-500 sm:w-auto">{r.message}</span>}
-                  {(r.status === "MISSING" || r.status === "WARN") && fixLink(r) && (
-                    <Link href={fixLink(r)} className="text-xs text-slate-700 underline">ไปแก้</Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
+          <details key={key} open={!isLive && todo.length > 0} className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden">
+              <h2 className="min-w-0 flex-1 font-medium text-slate-900">{label}</h2>
+              <span className="flex flex-wrap justify-end gap-1.5">
+                {(["MISSING", "WARN", "READY", "NOT_REQUIRED"] as const).filter((s) => n(s) > 0).map((s) => (
+                  <span key={s} className={`rounded border px-2 py-0.5 text-xs ${BADGE[s]}`}>{STATUS_LABEL[s]} {n(s)}</span>
+                ))}
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
+            </summary>
+            <ul className="divide-y divide-slate-100 border-t border-slate-100">{(todo.length ? todo : rest).map(rowEl)}</ul>
+            {todo.length > 0 && rest.length > 0 && (
+              <details className="group/rest border-t border-slate-100">
+                <summary className="cursor-pointer list-none px-5 py-2.5 text-xs text-slate-600 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
+                  <span className="group-open/rest:hidden">แสดงที่พร้อมแล้ว ({rest.length})</span>
+                  <span className="hidden group-open/rest:inline">ซ่อนที่พร้อมแล้ว</span>
+                </summary>
+                <ul className="divide-y divide-slate-100 border-t border-slate-100">{rest.map(rowEl)}</ul>
+              </details>
+            )}
+          </details>
         );
       })}
-
-      {!isLive && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-medium text-slate-900">Confirm Go-live</h2>
-          <div className="mb-2 text-slate-600">{goLiveLine}</div>
-          {me.role === "ADMIN"
-            ? <ConfirmGoLive missing={count("MISSING")} warn={count("WARN")} goLive={thDate(family.go_live_date)} />
-            : <p className="text-sm text-slate-500">เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่ Confirm Go-live ได้</p>}
-        </section>
-      )}
+      </section>}
     </div>
   );
 }
