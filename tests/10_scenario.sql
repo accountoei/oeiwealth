@@ -2837,6 +2837,22 @@ SELECT t.ok((SELECT status = 'SKIPPED' AND remaining = 0 FROM public.v_insurance
             'ติ๊ก "ไม่ได้จ่าย" → สถานะไม่ได้จ่าย');
 SELECT t.fails(format($q$UPDATE public.insurance_schedule_lines SET skipped = true WHERE policy_id = %L AND due_date = current_date - 3 AND deleted_at IS NULL$q$, :'hpol'),
   'LOCKED|ไม่ได้จ่าย', 'งวดที่มีเงินแล้วติ๊ก "ไม่ได้จ่าย" ไม่ได้');
+-- บันทึกทั้งชุดจากตารางแก้ทีละช่อง: เก็บ "ไม่ได้จ่าย" ต่องวด · ชนิดผลประโยชน์ต่องวด · ตารางว่าง = ลบงวดที่ยังไม่ชำระ (4 พ.ย. 2026)
+SELECT t.ok(public.set_insurance_schedule(:'hpol', 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', '2024-01-15', 'amount', 12000), jsonb_build_object('due_date', '2025-01-15', 'amount', 12000, 'skipped', true),
+  jsonb_build_object('due_date', current_date + 30, 'amount', 12500))) = 3, 'ตารางทั้งชุด: บันทึก 3 งวด (งวดที่จ่ายแล้วเก็บไว้)');
+SELECT t.ok((SELECT string_agg(installment_no || ':' || status, ',' ORDER BY due_date) = '1:HISTORY,2:SKIPPED,3:PAID,4:PENDING'
+               FROM public.v_insurance_schedule_status WHERE policy_id = :'hpol' AND kind = 'PREMIUM'),
+            'ตารางทั้งชุด: ติ๊ก "ไม่ได้จ่าย" ติดไปกับงวด · งวดที่จ่ายแล้วคงเดิม');
+SELECT public.set_insurance_schedule(:'hpol', 'BENEFIT', jsonb_build_array(
+    jsonb_build_object('due_date', current_date + 365, 'amount', 5000, 'benefit_type', 'CASH_BACK'),
+    jsonb_build_object('due_date', current_date + 730, 'amount', 200000, 'benefit_type', 'MATURITY'))) AS hben;
+SELECT t.ok((SELECT string_agg(benefit_type, ',' ORDER BY due_date) = 'CASH_BACK,MATURITY' FROM public.insurance_schedule_lines
+              WHERE policy_id = :'hpol' AND kind = 'BENEFIT' AND deleted_at IS NULL),
+  'ตารางผลประโยชน์: ชนิดต่องวด (เงินคืน + ครบสัญญา ในตารางเดียว)');
+SELECT t.ok(public.set_insurance_schedule(:'hpol', 'BENEFIT', '[]'::jsonb) = 0, 'ตารางว่าง: บันทึกได้ (0 งวด)');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.insurance_schedule_lines WHERE policy_id = :'hpol' AND kind = 'BENEFIT' AND deleted_at IS NULL),
+  'ตารางว่าง = ลบงวดที่ยังไม่ชำระทั้งหมด');
 SELECT public.set_insurance_cash_value_table(:'hpol', jsonb_build_array(jsonb_build_object('policy_year', 2, 'value', 20000, 'value_date', current_date - 1))) IS NOT NULL AS hcv;
 SELECT t.ok((SELECT a.current_value = 20000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = :'hpol'),
             'งวดประวัติ / ไม่ได้จ่าย ไม่นับเป็นค้างเบี้ย → ลงมูลค่าเวนคืนตามตารางได้');

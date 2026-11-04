@@ -2,12 +2,10 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addCashValue, addCoverage, payPremium, receiveBenefit, saveCashValueTable, saveInsSchedule, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
+import { addCashValue, addCoverage, payPremium, receiveBenefit, saveCashValueTable, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { parseCashValueText, type CvLine } from "@/lib/insurance-schedule";
-import { amountScheduleToText, generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
-import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, ROW_BTN, money, thDate, numOrZero as num } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
+import { COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
@@ -28,147 +26,6 @@ function Msg({ s }: { s: ActionState }) {
   if (s.error) return <span className="text-sm text-red-600">{s.error}</span>;
   if (s.ok) return <Flash on={s} as="span" className="text-sm text-emerald-700" />;
   return null;
-}
-
-/**
- * ตั้ง / แทนตารางเบี้ย (PREMIUM) หรือ ตารางรับผลประโยชน์ (BENEFIT)
- * ทางที่ 1 สูตร: ยอดเท่ากันทุกงวด (จำนวนงวด หรือ จนถึงวันที่) · ทางที่ 2 อัปโหลด / วาง Excel (ยอดต่างกันได้ เช่น เบี้ยสุขภาพตามอายุ)
- * งวดที่มีการชำระแล้วเก็บไว้ · แทนเฉพาะงวดที่ยังไม่ชำระ
- */
-export function InsScheduleEditor({ policyId, kind, currency, hasLines, defaultAmount, defaultFirstDue }: {
-  policyId: string; kind: "PREMIUM" | "BENEFIT"; currency: string; hasLines: boolean; defaultAmount?: number; defaultFirstDue: string;
-}) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
-  const [mode, setMode] = useState<"FORMULA" | "TEXT">("FORMULA");
-  const [amount, setAmount] = useState(defaultAmount ? defaultAmount.toFixed(2) : "");
-  const [every, setEvery] = useState(kind === "PREMIUM" ? "12" : "24");
-  const [by, setBy] = useState<"COUNT" | "UNTIL">("COUNT");
-  const [count, setCount] = useState(kind === "PREMIUM" ? "10" : "1");
-  const [until, setUntil] = useState("");
-  const [first, setFirst] = useState(defaultFirstDue);
-  const [btype, setBtype] = useState(kind === "BENEFIT" ? "CASH_BACK" : "");
-  const [generated, setGenerated] = useState<AmountLine[] | null>(null);
-  const [calcErr, setCalcErr] = useState("");
-  const [text, setText] = useState("");
-  const [fileMsg, setFileMsg] = useState("");
-  const [state, action, pending] = useActionState<ActionState, FormData>(saveInsSchedule, {});
-  const cf = useConfirmSubmit();
-  const parsed = useMemo(() => parseAmountText(text), [text]);
-  const lines = mode === "FORMULA" ? generated ?? [] : parsed.lines;
-  const errors = mode === "FORMULA" ? [] : parsed.errors;
-  const total = lines.reduce((s, l) => s + l.amount, 0);
-  const label = kind === "PREMIUM" ? "ตารางเบี้ย" : "ตารางรับผลประโยชน์";
-
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(hasLines ? obtn : btn)}>{hasLines ? `แก้${label} (งวดที่ยังไม่ชำระ)` : `+ ตั้ง${label}`}</button>;
-  if (!open) return trigger;
-
-  const calc = () => {
-    const r = generateAmountSchedule({ amount: num(amount), everyMonths: Number(every), firstDue: first,
-      periods: by === "COUNT" ? num(count) : undefined, until: by === "UNTIL" ? until : undefined });
-    setCalcErr(r.error ?? ""); setGenerated(r.error ? null : r.lines);
-    if (!r.error) setText(amountScheduleToText(r.lines));
-  };
-  const onFile = async (f: File | undefined) => {
-    if (!f) return;
-    setFileMsg("กำลังอ่านไฟล์…");
-    try {
-      const { default: readXlsxFile } = await import("read-excel-file/universal");
-      const sheets = (await readXlsxFile(f)) as { sheet: string; data: unknown[][] }[];
-      const sh = sheets.find((x) => parseAmountRows(x.data).lines.length > 0);
-      if (!sh) { setFileMsg("ไม่พบงวดในไฟล์ — ต้องมีคอลัมน์วันที่ และยอด (เช่น หัวตาราง \"วันครบกำหนด\" / \"เบี้ยประกัน\")"); return; }
-      const r = parseAmountRows(sh.data);
-      setText(amountScheduleToText(r.lines));
-      setFileMsg(`อ่านแผ่นงาน "${sh.sheet}" ได้ ${r.lines.length} งวด${r.skipped ? ` · ข้ามยอด 0 จำนวน ${r.skipped} แถว` : ""}`);
-    } catch { setFileMsg("อ่านไฟล์ไม่ได้ — รองรับเฉพาะ .xlsx"); }
-  };
-  // ส่งชนิดผลประโยชน์ไปกับทุกงวด (ทางที่ 2 ใช้ค่าที่เลือก)
-  const payload = lines.map((l) => ({ ...l, benefit_type: kind === "BENEFIT" ? btype : undefined }));
-
-  return present(trigger, (
-    <div className="w-full space-y-3 rounded-xl border border-blue-200 bg-blue-50/40 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-medium text-slate-900">{hasLines ? `แก้${label}` : `ตั้ง${label}`}</h3>
-          <p className="text-xs text-slate-500">งวดที่มีการชำระ / รับแล้วเก็บไว้ · แทนเฉพาะงวดที่ยังไม่ชำระ · งวดใหม่ต้องอยู่หลังงวดที่ชำระแล้ว · ตั้งย้อนหลังได้ตั้งแต่วันเริ่มสัญญา: งวดก่อน Go-live เป็นประวัติให้เอง (นับว่าจ่าย / รับแล้ว ไม่มีเงินเข้า–ออก) · งวดไหนไม่ได้จ่ายจริง แก้ที่งวดนั้นเป็น &ldquo;ไม่ได้จ่าย&rdquo;</p>
-        </div>
-        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
-      </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <label className="text-sm md:col-span-2">วิธีใส่
-          <select value={mode} onChange={(e) => setMode(e.target.value as "FORMULA" | "TEXT")} className={input}>
-            <option value="FORMULA">ทางที่ 1 · ยอดเท่ากันทุกงวด</option>
-            <option value="TEXT">ทางที่ 2 · อัปโหลด / วางจาก Excel / แก้ทีละงวด (ยอดต่างกันได้)</option>
-          </select>
-        </label>
-        {kind === "BENEFIT" && (
-          <label className="text-sm">ชนิดผลประโยชน์
-            <select value={btype} onChange={(e) => setBtype(e.target.value)} className={input}>
-              {Object.entries(BENEFIT_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
-
-      {mode === "FORMULA" && (
-        <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-sm">ยอดต่องวด ({currency})<input value={amount} onChange={(e) => { setAmount(e.target.value); setGenerated(null); }} inputMode="decimal" className={input} /></label>
-            <label className="text-sm">ทุก
-              <select value={every} onChange={(e) => { setEvery(e.target.value); setGenerated(null); }} className={input}>
-                <option value="1">ทุกเดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option>
-                <option value="12">ทุกปี</option><option value="24">ทุก 2 ปี</option><option value="36">ทุก 3 ปี</option><option value="60">ทุก 5 ปี</option>
-              </select>
-            </label>
-            <label className="text-sm">ครบกำหนดงวดแรก<input type="date" value={first} onChange={(e) => { setFirst(e.target.value); setGenerated(null); }} className={input} /></label>
-            <label className="text-sm">กำหนดจาก
-              <select value={by} onChange={(e) => { setBy(e.target.value as "COUNT" | "UNTIL"); setGenerated(null); }} className={input}>
-                <option value="COUNT">จำนวนงวด</option><option value="UNTIL">จนถึงวันที่</option>
-              </select>
-            </label>
-            {by === "COUNT"
-              ? <label className="text-sm">จำนวนงวด<input value={count} onChange={(e) => { setCount(e.target.value); setGenerated(null); }} name="quantity" inputMode="decimal" className={input} /></label>
-              : <label className="text-sm">งวดสุดท้ายไม่เกินวันที่<input type="date" value={until} onChange={(e) => { setUntil(e.target.value); setGenerated(null); }} className={input} /></label>}
-          </div>
-          <div className="flex items-center gap-3"><button type="button" onClick={calc} className={obtn}>คำนวณ</button>
-            {calcErr && <span className="text-sm text-red-600">{calcErr}</span>}</div>
-        </section>
-      )}
-
-      {mode === "TEXT" && (
-        <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
-          <label className="text-sm">อัปโหลดไฟล์ Excel (.xlsx)
-            <input type="file" accept=".xlsx" onChange={(e) => onFile(e.target.files?.[0])}
-              className="mt-1 block text-sm file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm" />
-          </label>
-          {fileMsg && <p className="text-xs text-slate-600">{fileMsg}</p>}
-          <p className="text-xs text-slate-500">หรือวาง: 1 บรรทัด = 1 งวด · <b>วันครบกำหนด · ยอด · หมายเหตุ</b> (มีหัวตาราง &ldquo;เบี้ย&rdquo; / &ldquo;จำนวนเงิน&rdquo; ก็ได้) · ไฟล์อ่านในเครื่อง ไม่ถูกเก็บ</p>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} data-plain
-            placeholder={"2026-11-15\t25000.00\n2027-11-15\t26500.00"} className="block w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs" />
-          {parsed.errors.length > 0 && <ul className="text-xs text-red-600">{parsed.errors.slice(0, 5).map((e) => <li key={e}>{e}</li>)}</ul>}
-        </section>
-      )}
-
-      {lines.length > 0 && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="mb-2 text-sm font-medium">ตัวอย่าง {lines.length} งวด · รวม {money(total, currency)}</div>
-          <div className="max-h-60 overflow-y-auto">
-            <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
-              {lines.map((l, i) => <tr key={i}><td className="py-1">{i + 1}</td><td>{thDate(l.due_date)}</td>
-                <td className="text-right tabular-nums">{money(l.amount)}</td><td className="pl-3 text-xs text-slate-500">{l.notes}</td></tr>)}
-            </tbody></table>
-          </div>
-        </section>
-      )}
-      <form action={action} className="flex flex-wrap items-center gap-3"
-        onSubmit={cf.guard("แทนงวดที่ยังไม่ชำระด้วยตารางนี้?", {}, hasLines)}>{cf.dialog}
-        <input type="hidden" name="policy_id" value={policyId} />
-        <input type="hidden" name="kind" value={kind} />
-        <input type="hidden" name="lines" value={JSON.stringify(payload)} />
-        <button disabled={pending || !lines.length || errors.length > 0} className={btn}>{pending ? "กำลังบันทึก…" : `บันทึก (${lines.length} งวด)`}</button>
-        <Msg s={state} />
-      </form>
-    </div>
-  ));
 }
 
 /** บันทึกจ่ายเบี้ยของงวด → ค่าใช้จ่ายหมวด "ประกัน" (บัญชี / บัตร / เงินสด) */
