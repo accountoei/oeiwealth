@@ -3,8 +3,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, insCountedPaid, money, thDate, todayBangkok,
+  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, insCountedPaid, money,
+  signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
+import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
+import FlowTable, { type FlowRow } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
 import { AddCashValueForm, BenefitForm, CashValueTableEditor, CoverageForm, InsScheduleEditor, PayPremiumForm, PolicyInfoForm, SyncCashValueButton } from "./ins-forms";
 import EditToggle from "@/components/EditToggle";
@@ -82,8 +85,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     ? await supabase.from("expense_items").select("id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes")
         .in("insurance_schedule_line_id", premiums.map((x) => x.id)).is("deleted_at", null).order("date", { ascending: false })
     : { data: [] };
-  const lineNo = new Map(premiums.map((x) => [x.id, x.installment_no]));
-  const benNo = new Map(benefits.map((x) => [x.id, x.installment_no]));
   const { data: receipts } = await supabase.from("insurance_benefit_receipts")
     .select("id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes,created_at")
     .eq("policy_id", id).is("undone_at", null).is("deleted_at", null).order("receipt_date", { ascending: false }).order("created_at", { ascending: false });
@@ -184,11 +185,92 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const insuredHref = `/${insured?.asset_group === "ALTERNATIVE" ? "alternative" : "property"}/${p.asset_id}`;
   // แก้ / ลบเบี้ยที่จ่ายแล้ว → หน้าทรัพย์สินที่เอาประกันอัปเดตด้วย (เบี้ยนับเป็นค่าใช้จ่ายของทรัพย์สิน)
   const payPaths = [...paths, "/income-expenses", ...(insured ? [insuredHref, "/property"] : [])];
-  // หน้ากรมธรรม์เป็นแท็บ (ตกลง 3 พ.ย. 2026): ความคุ้มครอง (+ เคลม) · มูลค่าเวนคืน · รับผลประโยชน์ · ชำระเบี้ย · เปิดที่ความคุ้มครองเสมอ
-  //   ประกันทรัพย์สิน: ไม่มีแท็บรับผลประโยชน์ · แท็บมูลค่าเวนคืนเฉพาะที่มีมูลค่าเวนคืน
+  // หน้ากรมธรรม์เป็นแท็บ (ตกลง 3 พ.ย. 2026): ความคุ้มครอง (+ เคลม) · มูลค่าเวนคืน · เบี้ยและผลประโยชน์ · เปิดที่ความคุ้มครองเสมอ
+  //   รับผลประโยชน์ + ชำระเบี้ย รวมเป็นแท็บเดียว (ตกลง 4 พ.ย. 2026 · ลิงก์เดิม ?tab=premium / benefit เปิดแท็บนี้)
+  //   ประกันทรัพย์สิน: ชื่อแท็บ "ชำระเบี้ย" (ไม่มีผลประโยชน์) · แท็บมูลค่าเวนคืนเฉพาะที่มีมูลค่าเวนคืน
   const TABS: [string, string][] = [["coverage", "ความคุ้มครอง"], ...(!isProp || showCv ? [["cv", "มูลค่าเวนคืน"] as [string, string]] : []),
-    ...(!isProp ? [["benefit", "รับผลประโยชน์"] as [string, string]] : []), ["premium", "ชำระเบี้ย"]];
-  const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "coverage";
+    ["flow", isProp ? "ชำระเบี้ย" : "เบี้ยและผลประโยชน์"]];
+  const askTab = sp.tab === "premium" || sp.tab === "benefit" ? "flow" : sp.tab;
+  const tab = TABS.some(([k]) => k === askTab) ? (askTab as string) : "coverage";
+  // แท็บ "เบี้ยและผลประโยชน์" (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย): ตารางเดียว · เงินจริงแทรกใต้งวด · สุทธิสะสม + จุดคุ้มทุน · IRR 3 ตัว
+  const lumps = (receipts ?? []).filter((r) => !r.line_id);
+  const flow = runningNet(lines, lumps.map((r) => ({ key: r.id as string, date: r.receipt_date as string, amount: Number(r.amount) })), policyActive);
+  const netOf = new Map(flow.rows.map((r) => [r.key, r]));
+  const flowPos = new Map(flow.rows.map((r, i) => [r.key, i]));
+  const showNet = !isProp && (benefits.length > 0 || lumps.length > 0);
+  const schedPrem = premiums.reduce((s2, x) => s2 + Number(x.amount), 0);
+  const schedBen = benefits.reduce((s2, x) => s2 + Number(x.amount), 0);
+  const flowCcy = lines[0]?.currency ?? ccy;
+  const flowCash: FlowCash[] = [
+    ...(premPays ?? []).map((e) => ({ kind: "PREMIUM" as const, line_id: e.insurance_schedule_line_id as string | null, date: e.date as string, amount: Number(e.amount), currency: e.currency as string })),
+    ...(receipts ?? []).map((r) => ({ kind: "BENEFIT" as const, line_id: r.line_id as string | null, date: r.receipt_date as string, amount: Number(r.amount), currency: r.currency as string })),
+  ];
+  const mixedCcy = lines.some((x) => x.currency !== flowCcy) || flowCash.some((c) => c.currency !== flowCcy);
+  const cvFlow = cvAsset && cvAsset.current_value != null && cvAsset.currency === flowCcy ? Number(cvAsset.current_value) : null;
+  const showIrr = !isProp && premiums.length > 0 && (showNet || cvFlow != null);
+  const irrWhy = mixedCcy ? "หลายสกุลเงิน คำนวณไม่ได้" : null;
+  const irrBoxes: { label: string; value: number | null; sub: string; why: string }[] = [
+    { label: "ตามสัญญา", value: mixedCcy ? null : xirr(contractFlows(lines)), sub: "ทุกงวดในตาราง ตามวันครบกำหนด",
+      why: irrWhy ?? (benefits.length === 0 ? "ยังไม่มีตารางผลประโยชน์" : "คำนวณไม่ได้") },
+    { label: policyActive ? "คาดการณ์" : "จริง", value: mixedCcy ? null : xirr(projectedFlows(lines, flowCash, today, policyActive)),
+      sub: policyActive ? "จ่าย / รับจริง + งวดที่เหลือตามตาราง" : "จากเงินที่จ่าย / รับจริง (กรมธรรม์จบแล้ว)",
+      why: irrWhy ?? "ยังไม่มีเงินรับ ทั้งที่รับแล้วและในตาราง" },
+    ...(policyActive && cvFlow != null ? [{ label: "ถ้าเวนคืนวันนี้", value: mixedCcy ? null : xirr(surrenderFlows(lines, flowCash, today, cvFlow)),
+      sub: `เงินจริงถึงวันนี้ + มูลค่าเวนคืน ${money(cvFlow, undefined, 0)} (${thDate(cvAsset?.current_value_date)})`, why: irrWhy ?? "ยังไม่ได้จ่ายเบี้ย" }] : []),
+  ];
+  // เงินจริงแทรกใต้งวด (เก่า → ใหม่) · ยกเลิกการรับ: รายการล่าสุด หรือรายการที่ไม่ได้ปิดกรมธรรม์
+  const payBy = new Map<string, NonNullable<typeof premPays>>();
+  [...(premPays ?? [])].reverse().forEach((e) => { const k = e.insurance_schedule_line_id as string; payBy.set(k, [...(payBy.get(k) ?? []), e]); });
+  const recvBy = new Map<string, NonNullable<typeof receipts>>();
+  [...(receipts ?? [])].reverse().forEach((r) => { if (r.line_id) recvBy.set(r.line_id, [...(recvBy.get(r.line_id) ?? []), r]); });
+  const recvIdx = new Map((receipts ?? []).map((r, i) => [r.id as string, i]));
+  type Receipt = NonNullable<typeof receipts>[number];
+  const undo = (r: Receipt) => canDelete && (recvIdx.get(r.id) === 0 || !r.outcome) ? <UndoButton kind="BENEFIT" id={r.id} paths={paths}
+    confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} /> : null;
+  const recvDetail = (r: Receipt) => [Number(r.cash_value_part) > 0 ? `จากมูลค่าเวนคืน ${money(r.cash_value_part)}` : null,
+    Number(r.income_part) > 0 ? `รายได้ ${money(r.income_part)}` : null, r.notes].filter(Boolean).join(" · ") || null;
+  const recvText = (r: Receipt, first: string) => [r.outcome ? OUTCOME[r.outcome] ?? r.outcome : first, r.bank_asset_id ? `เข้า ${bankName.get(r.bank_asset_id) ?? "บัญชี"}` : null].filter(Boolean).join(" · ");
+  const firstOpen = lines.find((x) => INS_OPEN.includes(x.status))?.id;
+  const lineFields = (x: Line, ben: boolean) => [
+    { name: "due_date", label: "ครบกำหนด", type: "date" as const, value: x.due_date },
+    { name: "amount", label: "ยอด", type: "number" as const, value: x.amount },
+    ...(Number(x.paid_amount) === 0 ? [{ name: "skipped", label: ben ? "ได้รับจริงไหม" : "จ่ายจริงไหม", type: "select" as const, value: x.skipped ? "true" : "false",
+      options: [["false", ben ? "ได้รับ / รอรับ" : "จ่าย / รอจ่าย"], ["true", ben ? "ไม่ได้รับ" : "ไม่ได้จ่าย"]] as [string, string][] }] : []),
+    { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }];
+  const flowRows: FlowRow[] = [
+    ...lines.map((x): FlowRow => {
+      const ben = x.kind === "BENEFIT";
+      const st = INS_SCHED_STATUS[x.status];
+      const n = netOf.get(x.id);
+      const paidAmt = Number(x.paid_amount);
+      return {
+        key: x.id, kind: ben ? "BENEFIT" : "PREMIUM", date: x.due_date, notes: x.notes, amount: Number(x.amount),
+        label: ben ? `${BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]} งวดที่ ${x.installment_no}` : `เบี้ยงวดที่ ${x.installment_no}`,
+        statusText: ben && x.status === "PAID" ? "รับแล้ว" : ben && x.status === "SKIPPED" ? "ไม่ได้รับ" : st?.text ?? x.status, statusCls: st?.cls,
+        progress: x.status === "PARTIAL" || (x.status === "CLOSED" && paidAmt > 0)
+          ? `${ben ? "รับ" : "จ่าย"}แล้ว ${money(paidAmt)}${x.status === "PARTIAL" ? ` · ค้าง ${money(x.remaining)}` : ""}` : null,
+        muted: ["PAID", "CLOSED", "SKIPPED", "HISTORY"].includes(x.status), next: x.id === firstOpen,
+        net: showNet ? n?.net ?? null : null, projected: n?.projected, breakEven: showNet && flow.breakEven?.key === x.id,
+        actions: <>
+          {canWrite && INS_OPEN.includes(x.status) && (ben
+            ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks ?? []} persons={persons ?? []}
+                hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value} today={today} small canClose={canDelete} />
+            : <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)} label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency}
+                banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId} defaultPay={payDefault} today={today} cashValue={cvCtx} />)}
+          {canWrite && x.status !== "PAID" && <div className="mt-1"><RowActions table="insurance_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={lineFields(x, ben)} /></div>}
+        </>,
+        cash: ben
+          ? (recvBy.get(x.id) ?? []).map((r) => ({ key: r.id, kind: "RECV" as const, date: r.receipt_date, text: recvText(r, "รับ"), detail: recvDetail(r), amount: Number(r.amount), actions: undo(r) }))
+          : (payBy.get(x.id) ?? []).map((e) => ({ key: e.id, kind: "PAY" as const, date: e.date, amount: Number(e.amount), detail: e.notes,
+              text: `จ่ายจาก ${e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}`,
+              actions: canWrite ? <RowActions table="expense_items" id={e.id} paths={payPaths} canDelete={canDelete} fields={premiumPaymentFields(e)} /> : null })),
+      };
+    }),
+    ...lumps.map((r): FlowRow => ({ key: r.id, kind: "BENEFIT", date: r.receipt_date, label: "", amount: Number(r.amount),
+      lump: { text: recvText(r, "รับเงินก้อน"), detail: recvDetail(r) },
+      net: showNet ? netOf.get(r.id)?.net ?? null : null, breakEven: flow.breakEven?.key === r.id, actions: undo(r) })),
+  ].sort((a, b) => (flowPos.get(a.key) ?? 0) - (flowPos.get(b.key) ?? 0));
+
 
   return (
     <div className="space-y-6">
@@ -432,146 +514,61 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               </div>
             </TabPanel>
           )}
-          {!isProp && (
-            <TabPanel id="benefit">
-              <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-                <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
-                    defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} /> : undefined}>
-                  <div>
-                    <h2 className="font-medium text-slate-900">ผลประโยชน์ที่จะได้รับ</h2>
-                    <p className="text-sm text-slate-600">
-                      {benefits.length > 0 ? <>{benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด · รับแล้ว {money(benReceived, ccy)}</> : "รายงวด (เงินคืน / บำนาญ) ตั้งเป็นตาราง · ก้อนเดียว (ครบสัญญา / เวนคืน / สินไหม) กดปุ่มรับเงินก้อนได้เลย"}
-                    </p>
-                    {cvAsset && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
-                  </div>
-                </ActionBar>
-                {benefits.length > 0 && <ScheduleTable lines={benefits} canWrite={canWrite} canDelete={canDelete} paths={paths} benefit action={(x) =>
-                  canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
-                    currency={x.currency} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value}
-                    today={today} small canClose={canDelete} /> : null} />}
-                {(receipts ?? []).length > 0 && (
-                  <div>
-                    <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติรับผลประโยชน์</h3>
-                    <p className="mb-2 text-xs text-slate-500">
-                      &ldquo;ยกเลิกทั้งก้อน&rdquo; ย้อนทุกส่วนพร้อมกัน: เงินที่ถอนจากมูลค่าเวนคืน · รายได้ส่วนเกิน · สถานะกรมธรรม์ / มูลค่าเวนคืน · ยกเลิกได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน
-                    </p>
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-xs text-slate-500">
-                        <tr><th className="py-1">วันที่รับ</th><th>รายการ</th><th className="text-right">ยอดรวม</th><th className="text-right">จากมูลค่าเวนคืน</th>
-                          <th className="text-right">รายได้</th><th></th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {(receipts ?? []).map((r, i) => (
-                          <tr key={r.id} className="align-top">
-                            <td className="py-1.5">{thDate(r.receipt_date)}</td>
-                            <td className="text-xs text-slate-600">
-                              {r.line_id ? `งวดที่ ${benNo.get(r.line_id) ?? "-"}` : "รับเงินก้อน"}{r.outcome && ` · ${OUTCOME[r.outcome] ?? r.outcome}`}
-                              {r.notes && <div className="text-slate-400">{r.notes}</div>}
-                            </td>
-                            <td className="text-right tabular-nums">{money(r.amount, r.currency)}</td>
-                            <td className="text-right tabular-nums">{Number(r.cash_value_part) > 0 ? money(r.cash_value_part) : "-"}</td>
-                            <td className="text-right tabular-nums">{Number(r.income_part) > 0 ? money(r.income_part) : "-"}</td>
-                            <td className="pl-2 text-right">
-                              {canDelete && (i === 0 || !r.outcome) && <UndoButton kind="BENEFIT" id={r.id} paths={paths}
-                                confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} />}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            </TabPanel>
-          )}
-          <TabPanel id="premium">
-            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-              <ActionBar right={canDelete && policyActive ? <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
-                  defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} /> : undefined}>
-                <div>
-                  <h2 className="font-medium text-slate-900">ตารางเบี้ย</h2>
+          <TabPanel id="flow">
+            <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+              <ActionBar right={canDelete && policyActive ? <div className="flex flex-wrap justify-end gap-2">
+                  <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} hasLines={premiums.length > 0}
+                    defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />
+                  {!isProp && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} hasLines={benefits.length > 0}
+                    defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
+                </div> : undefined}>
+                <div className="space-y-0.5">
+                  <h2 className="font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : "เบี้ยและผลประโยชน์"}</h2>
                   {premiums.length > 0 ? (
-                    <p className="text-sm text-slate-600">{premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด · จ่ายแล้ว {money(premPaid, ccy)}
+                    <p className="text-sm text-slate-600">เบี้ย {premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด
                       {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
                       {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
                       {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
                   ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
+                  {!isProp && (benefits.length > 0
+                    ? <p className="text-sm text-slate-600">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</p>
+                    : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กดปุ่ม &ldquo;รับเงินก้อน&rdquo; ด้านบน</p>)}
+                  {cvAsset && !isProp && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
                 </div>
               </ActionBar>
-              {premiums.length > 0 && <ScheduleTable lines={premiums} canWrite={canWrite} canDelete={canDelete} paths={paths} action={(x) =>
-                canWrite && ["PENDING", "OVERDUE", "PARTIAL"].includes(x.status) ? <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)}
-                  label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency} banks={banks ?? []} cards={cards} persons={persons ?? []}
-                  defaultPerson={payerId} defaultPay={payDefault} today={today} cashValue={cvCtx} /> : null} />}
-              {(premPays ?? []).length > 0 && (
-                <div>
-                  <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่ายเบี้ย</h3>
-                  <p className="mb-2 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
-                  <table className="w-full text-sm">
-                    <thead className="text-left text-xs text-slate-500">
-                      <tr><th className="py-1">วันที่จ่าย</th><th>งวด</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(premPays ?? []).map((e) => (
-                        <tr key={e.id} className="align-top">
-                          <td className="py-1.5">{thDate(e.date)}</td>
-                          <td>{lineNo.get(e.insurance_schedule_line_id as string) ?? "-"}{e.notes && <div className="text-xs text-slate-400">{e.notes}</div>}</td>
-                          <td className="text-right tabular-nums">{money(e.amount, e.currency)}</td>
-                          <td className="pl-4 text-xs text-slate-600">
-                            {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
-                          </td>
-                          <td className="pl-2 text-right">
-                            {canWrite && <RowActions table="expense_items" id={e.id} paths={payPaths} canDelete={canDelete}
-                              fields={premiumPaymentFields(e)} />}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {showNet && (
+                <dl className="grid gap-x-6 gap-y-2 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                  <div><dt className="text-xs text-slate-500">จ่ายเบี้ยแล้ว</dt><dd className="tabular-nums">{money(premPaid, ccy)}</dd></div>
+                  <div><dt className="text-xs text-slate-500">รับผลประโยชน์แล้ว</dt><dd className="tabular-nums">{money(benReceived, ccy)}</dd></div>
+                  <div><dt className="text-xs text-slate-500">สุทธิถึงวันนี้</dt>
+                    <dd className={`tabular-nums ${benReceived - premPaid >= -0.005 ? "text-emerald-700" : ""}`}>{signedMoney(benReceived - premPaid, ccy)}</dd></div>
+                  <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
+                    <dd>{flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="text-xs text-slate-500"> (คาดการณ์)</span>}</span>
+                      : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>
+                  <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
+                    {!flow.breakEven && benefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
+                </dl>
+              )}
+              {showIrr && (
+                <div className="space-y-1">
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {irrBoxes.map((b) => (
+                      <div key={b.label} className="rounded-lg border border-slate-200 px-3 py-2">
+                        <div className="text-xs text-slate-500">IRR {b.label}</div>
+                        <div className={`text-lg font-semibold tabular-nums ${b.value == null ? "text-slate-400" : b.value < 0 ? "text-red-600" : "text-slate-900"}`}>
+                          {b.value == null ? "–" : `${signedPct(b.value * 100)} / ปี`}</div>
+                        <div className="text-xs text-slate-500">{b.value == null ? b.why : b.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500">ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</p>
                 </div>
               )}
+              {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} />}
             </section>
           </TabPanel>
         </div>
       </TabsProvider>
-    </div>
-  );
-}
-
-/** ตารางงวด (เบี้ย / ผลประโยชน์) · งวดที่ชำระครบแล้วแก้ / ลบไม่ได้ */
-function ScheduleTable({ lines, canWrite, canDelete, paths, action, benefit = false }: {
-  lines: Line[]; canWrite: boolean; canDelete: boolean; paths: string[]; action: (x: Line) => React.ReactNode; benefit?: boolean;
-}) {
-  return (
-    <div className="max-h-[26rem] overflow-y-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-white text-left text-xs text-slate-500">
-          <tr><th className="py-1">งวด</th><th>ครบกำหนด</th>{benefit && <th>ชนิด</th>}<th className="text-right">ยอด</th><th className="text-right">ชำระ / รับแล้ว</th><th className="pl-4">สถานะ</th><th></th></tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {lines.map((x) => {
-            const st = INS_SCHED_STATUS[x.status];
-            return (
-              <tr key={x.id} className={`align-top ${x.status === "PAID" || x.status === "CLOSED" ? "text-slate-400" : ""}`}>
-                <td className="py-1.5">{x.installment_no}</td>
-                <td>{thDate(x.due_date)}{x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}</td>
-                {benefit && <td className="text-xs">{BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]}</td>}
-                <td className="text-right tabular-nums">{money(x.amount, x.currency)}</td>
-                <td className="text-right tabular-nums">{x.status === "HISTORY" ? <span className="text-slate-400">{money(x.amount)}</span> : Number(x.paid_amount) > 0 ? money(x.paid_amount) : "-"}</td>
-                <td className="pl-4"><span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{x.status === "SKIPPED" && benefit ? "ไม่ได้รับ" : st?.text ?? x.status}</span></td>
-                <td className="pl-2 text-right">
-                  {action(x)}
-                  {canWrite && x.status !== "PAID" && <div className="mt-1"><RowActions table="insurance_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={[
-                    { name: "due_date", label: "ครบกำหนด", type: "date", value: x.due_date },
-                    { name: "amount", label: "ยอด", type: "number", value: x.amount },
-                    ...(Number(x.paid_amount) === 0 ? [{ name: "skipped", label: benefit ? "ได้รับจริงไหม" : "จ่ายจริงไหม", type: "select" as const, value: x.skipped ? "true" : "false",
-                      options: [["false", benefit ? "ได้รับ / รอรับ" : "จ่าย / รอจ่าย"], ["true", benefit ? "ไม่ได้รับ" : "ไม่ได้จ่าย"]] as [string, string][] }] : []),
-                    { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }]} /></div>}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }

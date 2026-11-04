@@ -973,7 +973,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                       {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
                     </td>
                     <td className="pl-2 text-right text-xs">
-                      {e.policyId && <Link href={`/insurance/${e.policyId}?tab=premium`} className="text-blue-700 hover:underline" title="แก้ / ลบที่หน้ากรมธรรม์">กรมธรรม์ →</Link>}
+                      {e.policyId && <Link href={`/insurance/${e.policyId}?tab=flow`} className="text-blue-700 hover:underline" title="แก้ / ลบที่หน้ากรมธรรม์">กรมธรรม์ →</Link>}
                     </td>
                   </tr>
                 ))}
