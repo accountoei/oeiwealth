@@ -45,7 +45,8 @@ type InvGain = { gain: number; fx: number };
 const GROUP_COLOR: Record<string, string> = { financial: "#2563eb", loans: "#0891b2", investment: "#7c3aed", business: "#475569",
   property: "#059669", alternative: "#f59e0b", insurance: "#65a30d" };
 const LIAB_COLOR = "#dc2626";
-const GROUP: [string, string][] = [["financial", "เงินฝาก / เงินสด"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
+/** ชื่อหมวด (4 พ.ย. 2026: "เงินฝาก / เงินสด" → "เงินฝากธนาคาร" · ไม่มีประเภทเงินสดในระบบ) */
+const GROUP: [string, string][] = [["financial", "เงินฝากธนาคาร"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
 /** item_group ของรายการรายคน → คีย์หมวดบน Dashboard */
 const GROUP_FIELD: Record<string, string> = { FINANCIAL: "financial", LOANS: "loans", INVESTMENT: "investment", BUSINESS: "business",
@@ -331,7 +332,7 @@ function Bar({ pct, fill, ticks = [] }: { pct: number; fill: string; ticks?: num
   );
 }
 
-/** การ์ดสินทรัพย์ (คำ 4 พ.ย. 2026 · เดิม ได้เงินเร็ว / ใช้เวลาขาย): สภาพคล่องสูง = เงินฝาก / เงินสด + การลงทุน · ที่เหลือ = สภาพคล่องต่ำ (อสังหาฯ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น)
+/** การ์ดสินทรัพย์ (คำ 4 พ.ย. 2026 · เดิม ได้เงินเร็ว / ใช้เวลาขาย): สภาพคล่องสูง = เงินฝากธนาคาร + การลงทุน · ที่เหลือ = สภาพคล่องต่ำ (อสังหาฯ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น)
  *  ใช้รายการชุดเดียวกับกล่องสัดส่วน (cachedRpc → ไม่ถามฐานข้อมูลเพิ่ม) · แยก Suspense → ตัวเลขการ์ดขึ้นก่อน */
 const QUICK = ["financial", "investment"];
 async function LiquidityRow({ start, personId }: { start: string; personId: string }) {
@@ -340,11 +341,15 @@ async function LiquidityRow({ start, personId }: { start: string; personId: stri
   const quick = (QUICK.reduce((t, k) => t + sumItems(g.byKey[k] ?? []), 0) / g.total) * 100;
   const q = pctShort(quick), slow = pctShort(100 - Number(q));
   return (
-    <div className={INSIGHT} title={`สภาพคล่องสูง ${q}% = เงินฝาก / เงินสด + การลงทุน · สภาพคล่องต่ำ ${slow}% = อสังหาริมทรัพย์ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น`}>
+    <div className={INSIGHT} title={`สภาพคล่องสูง ${q}% = เงินฝากธนาคาร + การลงทุน · สภาพคล่องต่ำ ${slow}% = อสังหาริมทรัพย์ ธุรกิจ เงินให้กู้ ประกัน สินทรัพย์อื่น`}>
       <Bar pct={quick} fill="bg-blue-600" />
-      <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-slate-600">
-        <span className="min-w-0 truncate">สภาพคล่องสูง <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
-        <span className="hidden shrink-0 text-slate-500 sm:inline">สภาพคล่องต่ำ <span className="tabular-nums">{slow}%</span></span>
+      {/* 4 พ.ย. 2026: ฝั่งขวาสั้นเหลือ "ต่ำ X%" · ช่องแคบกว่า 11rem (การ์ดแคบ / มือถือ) → ซ่อนฝั่งขวา (ดูจากแถบแทน) ไม่ตัดคำฝั่งซ้ายเป็น "…"
+          ดูจากความกว้างของแถวนี้เอง (@container/liq) ไม่ใช่ขนาดจอ */}
+      <div className="@container/liq">
+        <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-slate-600">
+          <span className="whitespace-nowrap">สภาพคล่องสูง <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
+          <span className="hidden shrink-0 whitespace-nowrap text-slate-500 @min-[11rem]/liq:inline">ต่ำ <span className="tabular-nums">{slow}%</span></span>
+        </div>
       </div>
     </div>
   );

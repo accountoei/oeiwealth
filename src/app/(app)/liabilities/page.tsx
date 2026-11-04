@@ -264,7 +264,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-3 px-4 pt-4">
             <h2 className="font-medium text-slate-900">เงินเบิกเกินบัญชี (O/D)</h2>
-            <span className="text-xs text-slate-500">ใช้ไป {money(odUsed, "THB")} จากวงเงิน {money(odLimit, "THB")} · ยอดมาจากบัญชีกระแสรายวัน (อัปเดตยอดที่หน้า Cash &amp; Bank)</span>
+            <span className="text-xs text-slate-500">ใช้ไป {money(odUsed, "THB")} จากวงเงิน {money(odLimit, "THB")} · ยอดมาจากบัญชีกระแสรายวัน (อัปเดตยอดที่หน้า Bank Accounts)</span>
           </div>
           <table className="mt-2 w-full min-w-[44rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">

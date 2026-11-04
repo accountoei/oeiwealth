@@ -21,7 +21,7 @@ export async function loadUpdate(portfolios: { asset_id: string }[]) {
   return { list, extra };
 }
 
-/** แท็บ "อัปเดตยอดคงเหลือ": ราคา / ยอดตาม Statement ทุกพอร์ต (แบบเดียวกับแท็บอัปเดตยอดคงเหลือของ Cash & Bank) · data = ผลของ loadUpdate(portfolios) */
+/** แท็บ "อัปเดตยอดคงเหลือ": ราคา / ยอดตาม Statement ทุกพอร์ต (แบบเดียวกับแท็บอัปเดตยอดคงเหลือของ Bank Accounts) · data = ผลของ loadUpdate(portfolios) */
 export function UpdateTab({ data, today, date, goLive, portfolios, canWrite }: {
   data: Awaited<ReturnType<typeof loadUpdate>>; today: string; date?: string; goLive: string; portfolios: { asset_id: string; name: string }[]; canWrite: boolean;
 }) {
