@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { PageInfo } from "@/components/HeaderBar";
-import { TabActions } from "@/components/TabActions";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { requireAppUser } from "@/lib/auth";
 import Link from "next/link";
 import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, SMALL_BTN, thDate, todayBangkok } from "@/lib/format";
@@ -69,7 +68,7 @@ function FamilyView({ list, fam, yearAgo }: { list: { id: string; name: string }
   return (
     <div className="space-y-6">
       {INFO}
-      <TabActions><PersonFilter persons={list} value="" shareNote={false} /></TabActions>
+      <HeaderFilters><PersonFilter persons={list} value="" shareNote={false} /></HeaderFilters>
       <section className="grid items-start gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-medium text-slate-900">ภาพรวมทั้งครอบครัว</h2>
@@ -189,7 +188,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-6">
       {INFO}
-      <TabActions><PersonFilter persons={list} value={pid} shareNote={false} /></TabActions>
+      <HeaderFilters><PersonFilter persons={list} value={pid} shareNote={false} /></HeaderFilters>
 
       {/* ภาพรวม (รวม 4 กล่องเล็กเดิม) คู่กับผลย้อนหลัง · ผลรายครั้งรวมเข้าตารางผลย้อนหลัง (ตกลง 5 พ.ย. 2026) */}
       <section className="grid items-start gap-4 lg:grid-cols-3">

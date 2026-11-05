@@ -6,7 +6,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { DeleteSlot } from "@/components/RowActions";
 import ModalButton from "@/components/ModalButton";
 import { useNavPending } from "@/components/HeaderBar";
-import { DONATION_FORM_LABEL, DONATION_TAX_KIND_LABEL, DONATION_TAX_STATUS_LABEL, DONEE_TYPE_LABEL } from "@/lib/format";
+import { DONATION_FORM_LABEL, DONATION_TAX_KIND_LABEL, DONATION_TAX_STATUS_LABEL, DONEE_TYPE_LABEL, ROW_BTN } from "@/lib/format";
 import { saveDonation, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
 
@@ -39,7 +39,8 @@ function Fields({ v, persons, businesses, lockAmount }: { v: DonationValues; per
           <select name="donor" value={donor} onChange={(e) => setDonor(e.target.value)} className={input}>
             <optgroup label="สมาชิก">{persons.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.name}</option>)}</optgroup>
             {businesses.length > 0 && <optgroup label="ในนามกิจการ">{businesses.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}</optgroup>}
-            <option value="g">ไม่ระบุ / กลุ่ม</option>
+            {/* ไม่มีการบริจาคแบบไม่ระบุผู้บริจาคแล้ว (5 พ.ย. 2026) · เหลือไว้เฉพาะตอนแก้รายการกลุ่มเดิม */}
+            {v.donor === "g" && <option value="g">กลุ่ม (ข้อมูลเดิม)</option>}
           </select>
         </label>
         {isPerson ? (
@@ -108,16 +109,16 @@ function Buttons({ pending, state, del }: { pending: boolean; state: ActionState
 
 const note = <p className="text-xs text-slate-500">บันทึกประวัติอย่างเดียว ไม่ตัดเงินจากบัญชี · ถ้าจ่ายเงินแล้วหลัง Go-live ให้บันทึกรายจ่ายหมวด &ldquo;บริจาค&rdquo; ที่ Income &amp; Expenses แล้วกด &ldquo;กรอกรายละเอียด&rdquo; ที่หน้านี้ (ไม่นับเงินออกซ้ำ)</p>;
 
-/** ปุ่ม "+ บันทึกการบริจาค" (แถวแท็บ) */
+/** ปุ่ม "+ บันทึกการบริจาค" (มุมขวาบนของกล่องสรุป) */
 export function DonationAdd({ persons, businesses, today }: { persons: Opt[]; businesses: Opt[]; today: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(saveDonation, {});
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>+ บันทึกการบริจาค</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>+ บันทึกการบริจาค</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3">
       <h3 className="font-medium text-slate-900">บันทึกการบริจาค</h3>
-      <Fields v={{ donation_date: today, donor: persons[0] ? `p:${persons[0].id}` : "g" }} persons={persons} businesses={businesses} />
+      <Fields v={{ donation_date: today, donor: persons[0] ? `p:${persons[0].id}` : businesses[0] ? `b:${businesses[0].id}` : "" }} persons={persons} businesses={businesses} />
       {note}
       <Buttons pending={pending} state={state} />
     </form>
@@ -153,33 +154,27 @@ export function FromExpense({ v, persons, businesses }: { v: DonationValues; per
   );
 }
 
-/** ตัวกรอง ปี / ผู้บริจาค (?y= ปี ค.ศ. · ?d= p:id / b:id / g / persons / business) */
-export function DonationFilters({ years, persons, businesses, y, d }: { years: number[]; persons: Opt[]; businesses: Opt[]; y: string; d: string }) {
+/** ตัวกรองผู้บริจาค (แถบบน ตำแหน่งเดียวกับตัวกรอง "ทั้งครอบครัว" ของเมนูอื่น · ?d= p:id / b:id / g / persons / business) · ปีอยู่ในกล่องสรุป */
+export function DonorFilter({ persons, businesses, d, hasGroup }: { persons: Opt[]; businesses: Opt[]; d: string; hasGroup: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const { start } = useNavPending();
-  const go = (k: string, v: string) => {
+  const go = (v: string) => {
     const q = new URLSearchParams(sp.toString());
-    if (v) q.set(k, v); else q.delete(k);
+    if (v) q.set("d", v); else q.delete("d");
     start(() => router.replace(q.size ? `${pathname}?${q}` : pathname, { scroll: false }));
   };
-  const cls = (on: boolean) => `rounded-md border px-3 py-1.5 text-sm ${on ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-300 bg-white"}`;
   return (
-    <div className="flex items-center gap-2">
-      <select aria-label="ผู้บริจาค" value={d} onChange={(e) => go("d", e.target.value)} className={cls(!!d)}>
-        <option value="">ผู้บริจาคทั้งหมด</option>
-        <option value="persons">เฉพาะบุคคล</option>
-        {persons.map((p) => <option key={p.id} value={`p:${p.id}`}>· {p.name}</option>)}
-        {businesses.length > 0 && <option value="business">เฉพาะในนามกิจการ</option>}
-        {/* ชื่อย่อกิจการเท่านั้น ("OEI · บริษัท …" → "OEI") ให้ช่องไม่ยาวเกิน */}
-        {businesses.map((b) => <option key={b.id} value={`b:${b.id}`}>· {b.name.split(" · ")[0]}</option>)}
-        <option value="g">ไม่ระบุ / กลุ่ม</option>
-      </select>
-      <select aria-label="ปี" value={y} onChange={(e) => go("y", e.target.value)} className={cls(!!y)}>
-        <option value="">ทุกปี (สรุปรายปี)</option>
-        {years.map((x) => <option key={x} value={x}>ปี {x + 543}</option>)}
-      </select>
-    </div>
+    <select aria-label="ผู้บริจาค" value={d} onChange={(e) => go(e.target.value)}
+      className={`rounded-md border px-3 py-1.5 text-sm ${d ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-300 bg-white"}`}>
+      <option value="">ทั้งครอบครัว</option>
+      <option value="persons">เฉพาะบุคคล</option>
+      {persons.map((p) => <option key={p.id} value={`p:${p.id}`}>· {p.name}</option>)}
+      {businesses.length > 0 && <option value="business">เฉพาะในนามกิจการ</option>}
+      {/* ชื่อย่อกิจการเท่านั้น ("ABC · บริษัท …" → "ABC") ให้ช่องไม่ยาวเกิน */}
+      {businesses.map((b) => <option key={b.id} value={`b:${b.id}`}>· {b.name.split(" · ")[0]}</option>)}
+      {hasGroup && <option value="g">กลุ่ม (ข้อมูลเดิม)</option>}
+    </select>
   );
 }

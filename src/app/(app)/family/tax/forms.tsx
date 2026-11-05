@@ -1,9 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, type ReactNode } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import ModalButton from "@/components/ModalButton";
-import { useNavPending } from "@/components/HeaderBar";
 import { TAX_FORM_LABEL, TAX_METHOD_LABEL, TAX_SETTLEMENT_LABEL, money } from "@/lib/format";
 import { amendReturn, createReturn, deleteReturn, refreshReturn, saveLine, saveSettlement, setStatus, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
@@ -177,29 +176,3 @@ export function LineEditor({ v, children }: { v: LineV; children?: ReactNode }) 
   );
 }
 
-/** ตัวเลือก ผู้เสียภาษี / ปีภาษี (?p= · ?y= ปี ค.ศ.) */
-export function TaxFilters({ persons, years, p, y }: { persons: { id: string; name: string }[]; years: number[]; p: string; y: number }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const sp = useSearchParams();
-  const { start } = useNavPending();
-  const go = (k: string, v: string) => {
-    const q = new URLSearchParams(sp.toString());
-    q.set(k, v);
-    start(() => router.replace(`${pathname}?${q}`, { scroll: false }));
-  };
-  const cls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm";
-  return (
-    <div className="flex items-center gap-2">
-      {persons.length > 1 && (
-        <select aria-label="ผู้เสียภาษี" value={p} onChange={(e) => go("p", e.target.value)} className={cls}>
-          <option value="all">ทั้งครอบครัว</option>
-          {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-      )}
-      <select aria-label="ปีภาษี" value={y} onChange={(e) => go("y", e.target.value)} className={cls}>
-        {years.map((x) => <option key={x} value={x}>ปีภาษี {x + 543}</option>)}
-      </select>
-    </div>
-  );
-}

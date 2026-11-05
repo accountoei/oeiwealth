@@ -1,16 +1,14 @@
 import Form from "next/form";
 import { PageInfo } from "@/components/HeaderBar";
-import { TabActions } from "@/components/TabActions";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { DOC_CATEGORY_LABEL, DOC_MODULE_LABEL, addDays, docCategory, fileSize, thDate, todayBangkok } from "@/lib/format";
+import { DOC_CATEGORY_LABEL, DOC_MODULE_LABEL, ROW_BTN, addDays, docCategory, fileSize, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpload";
 import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
 import LinkDocument from "@/components/docs/LinkDocument";
 import { ActionBar } from "@/components/ActionBar";
-import { StatBox } from "@/components/Boxes";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string; derived_status: string | null };
@@ -129,53 +127,66 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   return (
     <div className="space-y-6">
       <PageInfo>ไฟล์เก็บใน Google Drive ของระบบ · เปิดได้เฉพาะผู้ใช้ในระบบ (ทุกการเปิดบันทึกใน Audit Log)</PageInfo>
-      {/* ปุ่มอัปโหลด · เปิดโฟลเดอร์ (ขวาสุด) อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
-      <TabActions>
-        {canWrite && st.connected && <ActionBar><DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" primary /></ActionBar>}
-        {isAdmin && st.connected && st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">เปิดโฟลเดอร์</a>}
-      </TabActions>
-
       {sp.drive === "connected" && <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">เชื่อม Google Drive เรียบร้อยแล้ว</p>}
       {sp.drive_error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">เชื่อม Google Drive ไม่สำเร็จ: {sp.drive_error}</p>}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className={`rounded-xl border p-5 ${st.connected ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50"}`}>
-          <div className="text-xs text-slate-500">Google Drive</div>
-          {st.connected ? (
-            <>
-              <div className="mt-1 text-xl font-semibold text-emerald-700">เชื่อมแล้ว</div>
-              <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email}</div>
-              <div className="text-xs text-slate-500">ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
-              {isAdmin && (
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <ConnectDrive link label="เปลี่ยนบัญชี"
-                    ask={"เปลี่ยนบัญชี / เชื่อม Google Drive ใหม่?\n\nระบบจะพาไปหน้า Google ให้เข้าสู่ระบบและกดอนุญาตอีกครั้ง\nใช้เมื่อต้องการเปลี่ยนบัญชีที่เก็บเอกสาร หรือเมื่อเปิด / อัปโหลดไฟล์แล้วแจ้งว่าการเชื่อมถูกยกเลิก\nถ้าใช้บัญชีอื่น เอกสารเดิมยังอยู่ในบัญชีเดิม"} />
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="mt-1 text-xl font-semibold text-amber-900">ยังไม่ได้เชื่อม</div>
-              {isAdmin ? (
-                <div className="mt-2 space-y-2 text-xs text-amber-900">
-                  <p>เข้าสู่ระบบด้วยบัญชี Google ที่จะเก็บเอกสาร แล้วกดอนุญาต — ระบบเห็นเฉพาะไฟล์ที่ระบบสร้างเอง</p>
-                  <ConnectDrive />
-                </div>
-              ) : <p className="mt-1 text-xs text-amber-900">ให้ผู้ดูแลระบบ (ADMIN) เชื่อมก่อน จึงจะแนบเอกสารได้</p>}
-            </>
+      {/* 4 กล่องเล็กรวมเป็นกล่องเดียว · ปุ่มอัปโหลด + เปิดโฟลเดอร์ มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+      <section className={`rounded-xl border p-5 ${st.connected ? "border-slate-200 bg-white" : "border-amber-200 bg-white"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="font-medium text-slate-900">ภาพรวมเอกสาร</h2>
+          {st.connected && (canWrite || (isAdmin && st.root_folder_id)) && (
+            <ActionBar className="shrink-0">
+              {canWrite && <DocumentUpload entityOptions={options} label="+ อัปโหลดเอกสาร" primary />}
+              {isAdmin && st.root_folder_id && <a href={`https://drive.google.com/drive/folders/${st.root_folder_id}`} target="_blank" rel="noreferrer"
+                className={ROW_BTN}>เปิดโฟลเดอร์</a>}
+            </ActionBar>
           )}
         </div>
-        <StatBox label={<>เอกสาร{sp.c && DOC_CATEGORY_LABEL[sp.c] ? `หมวด ${DOC_CATEGORY_LABEL[sp.c]}` : sp.m ? `หมวด ${DOC_MODULE_LABEL[sp.m] ?? sp.m}` : ""}{sp.q ? " (ตามที่ค้นหา)" : ""}</>} value={docs.length} unit="ไฟล์" sub={<>{totalSize ? `รวม ${fileSize(totalSize)}` : "-"}{sp.all ? " · รวมฉบับเก่า" : ""}</>} />
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">หมดอายุ / ใกล้หมด (60 วัน)</div>
-          <div className={`mt-1 text-xl font-semibold tabular-nums ${exp.length ? "text-amber-700" : ""}`}>{exp.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
-          <div className={`mt-1 text-xs ${expired ? "text-red-600" : "text-slate-500"}`}>{expired ? `หมดแล้ว ${expired} ไฟล์` : "ยังไม่มีไฟล์ที่หมดแล้ว"}</div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-slate-100 xl:[&>*:not(:first-child)]:pl-4">
+          <div className={st.connected ? "" : "rounded-lg bg-amber-50 p-3"}>
+            <div className="text-xs text-slate-500">Google Drive</div>
+            {st.connected ? (
+              <>
+                <div className="mt-1 text-xl font-semibold text-emerald-700">เชื่อมแล้ว</div>
+                <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email}</div>
+                <div className="text-xs text-slate-500">ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
+                {isAdmin && (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <ConnectDrive link label="เปลี่ยนบัญชี"
+                      ask={"เปลี่ยนบัญชี / เชื่อม Google Drive ใหม่?\n\nระบบจะพาไปหน้า Google ให้เข้าสู่ระบบและกดอนุญาตอีกครั้ง\nใช้เมื่อต้องการเปลี่ยนบัญชีที่เก็บเอกสาร หรือเมื่อเปิด / อัปโหลดไฟล์แล้วแจ้งว่าการเชื่อมถูกยกเลิก\nถ้าใช้บัญชีอื่น เอกสารเดิมยังอยู่ในบัญชีเดิม"} />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="mt-1 text-xl font-semibold text-amber-900">ยังไม่ได้เชื่อม</div>
+                {isAdmin ? (
+                  <div className="mt-2 space-y-2 text-xs text-amber-900">
+                    <p>เข้าสู่ระบบด้วยบัญชี Google ที่จะเก็บเอกสาร แล้วกดอนุญาต — ระบบเห็นเฉพาะไฟล์ที่ระบบสร้างเอง</p>
+                    <ConnectDrive />
+                  </div>
+                ) : <p className="mt-1 text-xs text-amber-900">ให้ผู้ดูแลระบบ (ADMIN) เชื่อมก่อน จึงจะแนบเอกสารได้</p>}
+              </>
+            )}
+          </div>
+          <div>
+            <div className="text-xs text-slate-500">เอกสาร{sp.c && DOC_CATEGORY_LABEL[sp.c] ? `หมวด ${DOC_CATEGORY_LABEL[sp.c]}` : sp.m ? `หมวด ${DOC_MODULE_LABEL[sp.m] ?? sp.m}` : ""}{sp.q ? " (ตามที่ค้นหา)" : ""}</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums">{docs.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
+            <div className="mt-1 text-xs text-slate-500">{totalSize ? `รวม ${fileSize(totalSize)}` : "-"}{sp.all ? " · รวมฉบับเก่า" : ""}</div>
+          </div>
+          <div>
+            <div className="text-xs text-slate-500">หมดอายุ / ใกล้หมด (60 วัน)</div>
+            <div className={`mt-1 text-xl font-semibold tabular-nums ${exp.length ? "text-amber-700" : ""}`}>{exp.length} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
+            <div className={`mt-1 text-xs ${expired ? "text-red-600" : "text-slate-500"}`}>{expired ? `หมดแล้ว ${expired} ไฟล์` : "ยังไม่มีไฟล์ที่หมดแล้ว"}</div>
+          </div>
+          {/* กดเพื่อกรองเฉพาะที่ยังไม่ผูก (กดอีกครั้ง = แสดงทั้งหมด) */}
+          <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false}
+            className={`block rounded-lg ${sp.u ? "ring-2 ring-blue-600 ring-offset-4" : "hover:bg-slate-50"}`}>
+            <div className="text-xs text-slate-500">ยังไม่ผูกกับรายการ</div>
+            <div className={`mt-1 text-xl font-semibold tabular-nums ${unlinked ? "text-amber-700" : ""}`}>{unlinked} <span className="text-sm font-normal text-slate-500">ไฟล์</span></div>
+            <div className="mt-1 text-xs text-slate-500">{unlinked ? (sp.u ? "กำลังแสดงเฉพาะที่ยังไม่ผูก · กดอีกครั้งเพื่อแสดงทั้งหมด" : "กดเพื่อดูเฉพาะที่ยังไม่ผูก แล้วกดที่บรรทัดเพื่อผูก") : "ผูกครบทุกไฟล์แล้ว"}</div>
+          </Link>
         </div>
-        <Link href={href({ u: sp.u ? undefined : "1" })} scroll={false} className={`block rounded-xl [&>div]:h-full ${sp.u ? "ring-2 ring-blue-600" : "hover:ring-1 hover:ring-slate-300"}`}>
-          <StatBox label="ยังไม่ผูกกับรายการ" value={unlinked} unit="ไฟล์" valueClass={unlinked ? "text-amber-700" : ""}
-            sub={unlinked ? (sp.u ? "กำลังแสดงเฉพาะที่ยังไม่ผูก · กดอีกครั้งเพื่อแสดงทั้งหมด" : "กดเพื่อดูเฉพาะที่ยังไม่ผูก แล้วกดที่บรรทัดเพื่อผูก") : "ผูกครบทุกไฟล์แล้ว"} />
-        </Link>
       </section>
 
       {exp.length > 0 && (

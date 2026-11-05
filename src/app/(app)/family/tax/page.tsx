@@ -1,13 +1,15 @@
 import Link from "next/link";
-import { PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { StatBox } from "@/components/Boxes";
-import { TabActions } from "@/components/TabActions";
+import PersonFilter from "@/components/PersonFilter";
+import YearSelect from "@/components/YearSelect";
+import { redirect } from "next/navigation";
 import DocumentUpload from "@/components/docs/DocumentUpload";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { INCOME_TYPE_LABEL, TAX_FORM_LABEL, TAX_METHOD_LABEL, TAX_RETURN_STATUS_LABEL, TAX_SETTLEMENT_LABEL, money, thDate, todayBangkok } from "@/lib/format";
 import { calcTax } from "@/lib/tax";
-import { ActButton, AmendReturn, CreateReturn, DeleteReturn, FileReturn, LineEditor, SettlementForm, TaxFilters, type LineV } from "./forms";
+import { ActButton, AmendReturn, CreateReturn, DeleteReturn, FileReturn, LineEditor, SettlementForm, type LineV } from "./forms";
 
 type Ret = {
   id: string; tax_year: number; version: number; form_type: string; status: string; amend_reason: string | null; filed_date: string | null;
@@ -84,9 +86,12 @@ function FamilyTax({ info, people, fam, thisYear, today }: {
   return (
     <div className="space-y-6">
       {info}
-      <TabActions><TaxFilters persons={people} years={fam.years} p="all" y={y} /></TabActions>
+      <HeaderFilters><PersonFilter persons={people} value="" shareNote={false} /></HeaderFilters>
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">ทั้งครอบครัว · ปีภาษี {y + 543}</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="font-medium text-slate-900">ทั้งครอบครัว</h2>
+          <YearSelect label="ปีภาษี" value={y} options={fam.years.map((v) => ({ value: v }))} hrefOf="/family/tax?y=__Y__" />
+        </div>
         <p className="mb-3 text-xs text-slate-500">
           ยอดจากแบบภาษีที่สร้างไว้ของแต่ละคน (ไม่ดึงยอดจากระบบใหม่) · ยื่นแล้วใช้ยอดตามที่ยื่น · คนที่ยังไม่สร้างแบบร่าง กดที่ชื่อเพื่อเข้าไปสร้าง
           {y >= thisYear && <span className="text-amber-700"> · ปีภาษียังไม่จบ ยอดเป็นข้อมูลถึงวันที่ {thDate(today)}</span>}
@@ -155,13 +160,18 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   const info = <PageInfo>ภาษีเงินได้บุคคลธรรมดารายปีของสมาชิกแต่ละคน · ยอดดึงจากรายได้ / รายจ่าย / ประกัน / หนี้ / การบริจาคที่บันทึกไว้แล้ว (ไม่ต้องกรอกซ้ำ) ·
     แก้ยอดใช้ยื่นได้พร้อมเหตุผล · ยื่นแล้วล็อกยอดตามที่ยื่น · ADMIN เห็นทุกคน บทบาทอื่นเห็นเฉพาะของตัวเอง</PageInfo>;
 
-  // ทั้งครอบครัว (ADMIN): อ่านเฉพาะยอดที่เก็บไว้ในแบบภาษี ไม่ดึงยอดจากระบบมาคำนวณใหม่ (ตกลง 5 พ.ย. 2026)
-  if (isAdmin && sp.p === "all") {
+  const noPerson = <div className="space-y-4">{info}<p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+    บัญชีผู้ใช้ของคุณยังไม่ได้ผูกกับสมาชิกครอบครัว จึงยังไม่มีข้อมูลภาษีให้ดู · ให้ ADMIN ผูกที่ Settings → User &amp; Security</p></div>;
+
+  // ไม่เลือกคน = ทั้งครอบครัว (ค่าเริ่มต้นทุกบทบาท · 5 พ.ย. 2026): อ่านเฉพาะยอดที่เก็บไว้ในแบบภาษี ไม่ดึงยอดจากระบบมาคำนวณใหม่
+  //   ADMIN เห็นทุกคน · บทบาทอื่นเห็นแถวของตัวเองแถวเดียว (รายชื่อ = ตัวเอง · RLS ของแบบภาษีให้เห็นเฉพาะของตัวเอง)
+  if (!sp.p || sp.p === "all") {
     const [people, fam] = await Promise.all([personsP, loadFamilyTax(supabase, sp.y, thisYear)]);
+    if (people.length === 0) return noPerson;
     return <FamilyTax info={info} people={people} fam={fam} thisYear={thisYear} today={today} />;
   }
 
-  const guess = sp.p && sp.p !== "all" ? sp.p : me.person_id ?? null;
+  const guess = sp.p;
   const loadOne = (pid: string) => supabase.from("tax_returns")
     .select("id,tax_year,version,form_type,status,amend_reason,filed_date,reference_no,tax_result,settlement_status,settled_date,refreshed_at,notes")
     .eq("person_id", pid).is("deleted_at", null).order("tax_year", { ascending: false }).order("version", { ascending: false })
@@ -182,17 +192,13 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
       ]);
       return { pid, all, years, y, versions, cur, lineRows: lineRes.data as unknown[] | null, lineErr: lineRes.error, links };
     });
-  const firstP = guess ? loadOne(guess) : null;
-  const [people, first, { data: drive }] = await Promise.all([personsP, firstP, supabase.rpc("drive_status")]);
-  if (people.length === 0) {
-    return <div className="space-y-4">{info}<p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-      บัญชีผู้ใช้ของคุณยังไม่ได้ผูกกับสมาชิกครอบครัว จึงยังไม่มีข้อมูลภาษีให้ดู · ให้ ADMIN ผูกที่ Settings → User &amp; Security</p></div>;
-  }
-  const p = people.find((x) => x.id === sp.p)?.id ?? people.find((x) => x.id === me.person_id)?.id ?? people[0].id;
+  const [people, first, { data: drive }] = await Promise.all([personsP, loadOne(guess), supabase.rpc("drive_status")]);
+  if (people.length === 0) return noPerson;
+  const p = people.find((x) => x.id === sp.p)?.id;
+  if (!p) redirect(`/family/tax${sp.y ? `?y=${encodeURIComponent(sp.y)}` : ""}`);   // ลิงก์เก่า / ไม่มีสิทธิ์ดูคนนี้ → ทั้งครอบครัว
   const canWrite = isAdmin || ((me.role === "EDITOR" || me.role === "CONTRIBUTOR") && p === me.person_id);
   const canDelete = canWrite && (isAdmin || me.role === "EDITOR");
-  // คนที่เริ่มดึงไว้ไม่ใช่คนที่เปิดจริง (ลิงก์เก่า / ไม่มีสิทธิ์) → ดึงใหม่ของคนที่ถูก (ไม่ค่อยเกิด)
-  const { all, years, y, versions, cur, lineRows, lineErr, links } = first && first.pid === p ? first : await loadOne(p);
+  const { all, years, y, versions, cur, lineRows, lineErr, links } = first;
   const lines = ((lineRows ?? []) as Line[]).map((l, i) => ({ ...l, id: l.id ?? `preview-${i}` }));
   const connected = !!(drive as { connected?: boolean } | null)?.connected;
   const docs = (links ?? []).map((l) => (Array.isArray(l.documents) ? l.documents[0] : l.documents) as { id: string; title: string; deleted_at: string | null } | null)
@@ -212,12 +218,13 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   return (
     <div className="space-y-6">
       {info}
-      {/* ตัวกรองผู้เสียภาษี / ปีภาษี อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
-      <TabActions><TaxFilters persons={people} years={years} p={p} y={y} /></TabActions>
+      {/* ผู้เสียภาษี = แถบบน (เหมือนเมนูอื่น) · ปีภาษี = ในกล่องแรก (ตกลง 5 พ.ย. 2026) */}
+      <HeaderFilters><PersonFilter persons={people} value={p} shareNote={false} /></HeaderFilters>
 
       <section className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="mr-auto">
-          <div className="font-medium text-slate-900">{personName} · ปีภาษี {y + 543}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-medium text-slate-900">{personName}
+            <YearSelect label="ปีภาษี" value={y} options={years.map((v) => ({ value: v }))} hrefOf={`/family/tax?p=${p}&y=__Y__`} />
             {cur && <span className={`ml-2 rounded px-1.5 py-0.5 text-xs ${STATUS_CLS[cur.status]}`}>{TAX_RETURN_STATUS_LABEL[cur.status]}</span>}
             {cur && <span className="ml-2 text-sm font-normal text-slate-500">{TAX_FORM_LABEL[cur.form_type]}{cur.version > 1 ? ` · ยื่นเพิ่มเติมครั้งที่ ${cur.version - 1}` : ""}</span>}</div>
           <div className="text-xs text-slate-500">

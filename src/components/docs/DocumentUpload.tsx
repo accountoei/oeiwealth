@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { callDrive } from "./drive";
 import Modal from "@/components/Modal";
 import { createClient } from "@/lib/supabase/client";
-import { DOC_MODULE_LABEL, DOC_TYPES_BY_CATEGORY, ENTITY_MODULE, docCategory, thDate } from "@/lib/format";
+import { DOC_MODULE_LABEL, DOC_TYPES_BY_CATEGORY, ENTITY_MODULE, ROW_BTN, docCategory, thDate } from "@/lib/format";
 import Flash from "@/components/Flash";
 
 type Cand = { id: string; title: string; expiry_date: string | null; created_at: string };
@@ -30,7 +30,7 @@ export type EntityOption = { type: string; id: string; label: string; group: str
 export default function DocumentUpload({ module: fixedModule, link, entityOptions, supersedes, label = "+ แนบเอกสาร", category, primary = false }: {
   module?: string; link?: { type: string; id: string }; entityOptions?: EntityOption[];
   supersedes?: { id: string; title: string; document_type: string; module: string }; label?: string;
-  /** ปุ่มสีน้ำเงิน (ปุ่ม "+ เพิ่ม…" ท้ายแถวแท็บ หน้า Documents) */ primary?: boolean;
+  /** ปุ่มสีน้ำเงิน (ปุ่ม "+ อัปโหลดเอกสาร" มุมขวาบนกล่องภาพรวม หน้า Documents) */ primary?: boolean;
   /** หมวดเอกสาร (หน้าที่แนบ) → รายการประเภทให้เลือก */
   category?: string;
 }) {
@@ -56,7 +56,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
     <span className="inline-flex items-center gap-2">
       <button type="button" onClick={() => { setOpen(true); setMsg({}); }}
         className={supersedes ? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-50"
-          : primary ? "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700" : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
+          : primary ? ROW_BTN : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"}>{label}</button>
       <Flash on={msg} as="span" className="text-xs text-emerald-700" />
     </span>
   );
