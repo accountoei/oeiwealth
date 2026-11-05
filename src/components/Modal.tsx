@@ -20,6 +20,7 @@ export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST
  *   ไม่ต้องการให้ปิดเอง (เช่น ถามต่อหลังบันทึก) → ใส่ data-keep-open ในเนื้อหา
  *   ฟอร์มที่ไม่ใช่การบันทึก (เช่น แสดงเลขบัญชีเต็ม) → ใส่ data-no-close ที่ <form> · กดแล้วหน้าต่างไม่ปิด
  *   ข้อความสีเขียวที่แสดงค้างไว้ (เช่น "รวม 100%") → ใส่ data-info · ไม่นับเป็นข้อความบันทึกสำเร็จ
+ *   บันทึกไม่สำเร็จ = มีข้อความสีแดงขึ้นใหม่หลังกดบันทึก · สีแดงที่มีอยู่ก่อนกด (ดอกจันช่องบังคับ ตัวเลขติดลบ "เลยกำหนด") ไม่นับ (5 พ.ย. 2026)
  */
 export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: "md" | "lg"; title?: string }) {
   const [mounted, setMounted] = useState(false);
@@ -52,12 +53,21 @@ export default function Modal({ children, onClose, size = "md", title }: { child
     if (!mounted || !el) return;
     const greens = () => [...el.querySelectorAll(".text-emerald-700:not([data-info])")].map((n) => (n.textContent ?? "").trim()).filter(Boolean);
     const disabledCount = () => el.querySelectorAll("button[disabled]").length;
-    // ปุ่มสีแดง (เช่น ลบโลโก้) ไม่ใช่ข้อความผิดพลาด
-    const hasError = () => !!el.querySelector(".text-red-600:not(button):not([data-warn]), .text-red-700:not(button):not([data-warn])");
-    let armed: { greens: Set<string>; base: number; busy: boolean } | null = null;
+    // ตัวหนังสือสีแดง (ปุ่มสีแดง เช่น ลบโลโก้ ไม่นับ) → นับจำนวนตามข้อความ
+    const reds = () => {
+      const m = new Map<string, number>();
+      for (const n of el.querySelectorAll(".text-red-600:not(button):not([data-warn]), .text-red-700:not(button):not([data-warn])")) {
+        const t = (n.textContent ?? "").trim();
+        m.set(t, (m.get(t) ?? 0) + 1);
+      }
+      return m;
+    };
+    // ผิดพลาด = มีสีแดงขึ้นใหม่หลังกดบันทึก (สีแดงที่มีอยู่ก่อน เช่น ดอกจัน * ตัวเลขติดลบ "เลยกำหนด" ไม่นับ)
+    const hasError = (before: Map<string, number>) => [...reds()].some(([t, n]) => n > (before.get(t) ?? 0));
+    let armed: { greens: Set<string>; reds: Map<string, number>; base: number; busy: boolean } | null = null;
     const onSubmit = (e: Event) => {
       if ((e.target as Element | null)?.closest?.("[data-no-close]")) return;   // ไม่ใช่การบันทึก
-      armed = { greens: new Set(greens()), base: disabledCount(), busy: false };
+      armed = { greens: new Set(greens()), reds: reds(), base: disabledCount(), busy: false };
     };
     el.addEventListener("submit", onSubmit, true);
     const obs = new MutationObserver(() => {
@@ -67,7 +77,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
       const g = greens();
       const fresh = g.find((t) => !armed!.greens.has(t));
       if (!fresh && !(armed.busy && g.length)) return;
-      if (hasError()) { armed = null; return; }                // บันทึกไม่สำเร็จ → หน้าต่างยังเปิด
+      if (hasError(armed.reds)) { armed = null; return; }      // บันทึกไม่สำเร็จ → หน้าต่างยังเปิด
       armed = null;
       toast(fresh ?? g[0]);
       close.current();
