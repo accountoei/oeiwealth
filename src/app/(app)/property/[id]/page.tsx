@@ -38,6 +38,7 @@ import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
 import { CopyRoomButton, DisposeButton, HandoverButton, InventoryAddButton, UndoDisposalButton, type HandoverItem } from "../Inventory";
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 import type { LeasePrefill } from "../LeaseFields";
+import { InfoTip } from "@/components/HeaderBar";
 
 const INS_STATUS_LABEL = Object.fromEntries(INS_STATUS);
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
@@ -309,7 +310,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   );
   const compTable = (
     <div className="mt-4 border-t border-slate-100 pt-3">
-      <h3 className="mb-2 text-sm font-medium text-slate-800">ส่วนประกอบ {comps.length > 0 && <span className="font-normal text-slate-500">({comps.length})</span>}</h3>
+      <h3 className="mb-2 text-sm font-medium text-slate-800">ส่วนประกอบ {comps.length > 0 && <span className="font-normal text-slate-500">({comps.length})</span>} {!hasLatest && <InfoTip label="คำอธิบาย">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว · แยกรายแถวได้ที่ปุ่มแก้ไข หรือ &ldquo;ปรับมูลค่า / ประวัติ&rdquo;</InfoTip>}</h3>
       {comps.length === 0 && endedList}
       {comps.length === 0 ? (endedComps.length > 0 ? null : <p className="text-sm text-slate-500">ยังไม่มีข้อมูลที่ดิน / อาคาร · กด &ldquo;แก้ไข&rdquo; แล้วเพิ่มแถวละโฉนด / หลัง</p>) : (
         <div className="overflow-x-auto">
@@ -344,7 +345,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             </tfoot>
           </table>
           {endedList}
-          {!hasLatest && <p className="mt-1 text-xs text-slate-500">มูลค่าล่าสุดยังเป็นยอดรวมอย่างเดียว · แยกรายแถวได้ที่ปุ่มแก้ไข หรือ &ldquo;ปรับมูลค่า / ประวัติ&rdquo;</p>}
         </div>
       )}
     </div>
@@ -721,8 +721,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="font-medium text-slate-900">ของในทรัพย์สิน</h2>
-              <p className="text-xs text-slate-500">เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า กุญแจ บัตร รีโมท · ไม่นับในความมั่งคั่งสุทธิ (ซื้อ = ค่าใช้จ่าย · ขาย = รายได้) · ใช้ทำรายการส่งมอบของแต่ละสัญญา (มิเตอร์ดึงจากสาธารณูปโภค){multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</p>
+              <h2 className="font-medium text-slate-900">ของในทรัพย์สิน <InfoTip label="คำอธิบาย">เฟอร์นิเจอร์ เครื่องใช้ไฟฟ้า กุญแจ บัตร รีโมท · ไม่นับในความมั่งคั่งสุทธิ (ซื้อ = ค่าใช้จ่าย · ขาย = รายได้) · ใช้ทำรายการส่งมอบของแต่ละสัญญา (มิเตอร์ดึงจากสาธารณูปโภค){multiRoom ? " · ของส่วนกลางส่งมอบให้ทุกห้อง" : ""}</InfoTip></h2>
             </div>
             {canWrite && (
               <div className="flex flex-wrap items-center gap-2">
@@ -812,8 +811,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
       {(rents.length > 0 || otherPaid.length > 0) && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-1 font-medium text-slate-900">ค่าเช่า</h2>
-          <p className="mb-3 text-xs text-slate-500">ควรได้ vs ได้รับจริง นับตั้งแต่เดือน Go-live · การบันทึกรับจะสร้างรายได้ค่าเช่าและเงินเข้าบัญชีให้ · กดยอดที่รับแล้วเพื่อแก้ไข / ลบ (ลบแล้วงวดนั้นกลับเป็น &ldquo;รอรับ&rdquo; · ผิดบัญชีให้ลบแล้วบันทึกรับใหม่ · งวดที่ปิดแล้วต้อง Reopen ก่อน)</p>
+          <h2 className="mb-3 font-medium text-slate-900">ค่าเช่า <InfoTip label="คำอธิบาย">ควรได้ vs ได้รับจริง นับตั้งแต่เดือน Go-live · การบันทึกรับจะสร้างรายได้ค่าเช่าและเงินเข้าบัญชีให้ · กดยอดที่รับแล้วเพื่อแก้ไข / ลบ (ลบแล้วงวดนั้นกลับเป็น &ldquo;รอรับ&rdquo; · ผิดบัญชีให้ลบแล้วบันทึกรับใหม่ · งวดที่ปิดแล้วต้อง Reopen ก่อน)</InfoTip></h2>
           {rents.length > 0 && (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -887,8 +885,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
       {charges.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-1 font-medium text-slate-900">ค่าน้ำไฟเรียกเก็บผู้เช่า (รอรับ)</h2>
-          <p className="mb-3 text-xs text-slate-500">เราจ่ายไปแล้ว รอผู้เช่าจ่ายคืน · รับคืนแล้วนับเป็นรายได้ของ Property · ไม่เรียกเก็บแล้ว = กดที่แถวแล้วลบ</p>
+          <h2 className="mb-3 font-medium text-slate-900">ค่าน้ำไฟเรียกเก็บผู้เช่า (รอรับ) <InfoTip label="คำอธิบาย">เราจ่ายไปแล้ว รอผู้เช่าจ่ายคืน · รับคืนแล้วนับเป็นรายได้ของ Property · ไม่เรียกเก็บแล้ว = กดที่แถวแล้วลบ</InfoTip></h2>
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr><th className="py-1">งวด</th><th>รายการ</th><th>สัญญา</th><th className="text-right">จ่ายไป</th><th className="text-right">เรียกเก็บ</th><th></th></tr>
@@ -923,8 +920,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       <section id="expenses" className="scroll-mt-20 space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายของทรัพย์สินนี้</h2>
-            <p className="text-xs text-slate-500">ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า ค่าใช้จ่ายประจำ และเบี้ยประกัน · เข้าหน้า Income &amp; Expenses ไม่เพิ่มราคาที่ได้มา</p>
+            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายของทรัพย์สินนี้ <InfoTip label="คำอธิบาย">ซ่อม / ปรับปรุงที่ไม่เพิ่มมูลค่า ค่าใช้จ่ายประจำ และเบี้ยประกัน · เข้าหน้า Income &amp; Expenses ไม่เพิ่มราคาที่ได้มา</InfoTip></h2>
             {[...yearly.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
               <p key={ccy} className="text-xs text-slate-500">ประมาณการต่อปี <span className="font-medium tabular-nums text-slate-700">{money(v, ccy, 0)}</span></p>
             ))}
@@ -1069,8 +1065,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
         {(costPaid ?? []).length > 0 && (
           <div>
-            <h3 className="mb-1 text-sm font-medium text-slate-700">ประวัติจ่าย</h3>
-            <p className="mb-2 text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</p>
+            <h3 className="mb-2 text-sm font-medium text-slate-700">ประวัติจ่าย <InfoTip label="คำอธิบาย">กดที่แถวเพื่อแก้ไข / ลบ · ลบแล้วงวดนั้นกลับเป็น &ldquo;รอจ่าย&rdquo; · งวดที่ปิดแล้วต้อง Reopen ก่อน</InfoTip></h3>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500">
                 <tr><th className="py-1">วันที่จ่าย</th><th>งวด</th><th>รายการ</th><th className="text-right">ยอด</th><th className="pl-4">จ่ายด้วย</th><th></th></tr>
@@ -1104,8 +1099,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง</h2>
-            <p className="text-xs text-slate-500">ที่ดิน + สิ่งปลูกสร้าง (หักค่าเสื่อม) − ยกเว้น = ฐานภาษี × อัตรา − ส่วนลด · ปีปัจจุบันตั้งเป็นยอดประมาณ &ldquo;ภาษีที่ดิน&rdquo; ในค่าใช้จ่ายประจำให้</p>
+            <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง <InfoTip label="คำอธิบาย">ที่ดิน + สิ่งปลูกสร้าง (หักค่าเสื่อม) − ยกเว้น = ฐานภาษี × อัตรา − ส่วนลด · ปีปัจจุบันตั้งเป็นยอดประมาณ &ldquo;ภาษีที่ดิน&rdquo; ในค่าใช้จ่ายประจำให้</InfoTip></h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <TaxYearSelect years={taxYears} value={ty} withData={taxDataYears} hrefOf={`/property/${id}?ty=__Y__`} />

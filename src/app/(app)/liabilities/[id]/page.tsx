@@ -14,6 +14,7 @@ import { debtDropIncomeFields, debtInterestFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
 import SplitForm from "../../income-expenses/SplitForm";
 import { DetailItem as Item } from "@/components/Boxes";
+import { InfoTip } from "@/components/HeaderBar";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
@@ -157,8 +158,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-1 font-medium text-slate-900">ประวัติการจ่าย</h2>
-        <p className="mb-3 text-xs text-slate-500">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo; · หนี้เพิ่ม / หนี้ลด = ยอดตาม Statement ต่างจากที่คำนวณ · กดที่แถวเพื่อแยกรายการ / ลงเป็นการจ่าย / แก้ / ลบ</p>
+        <h2 className="mb-3 font-medium text-slate-900">ประวัติการจ่าย <InfoTip label="คำอธิบาย">เงินต้นลดยอดหนี้ให้ทันที · ดอกเบี้ยอยู่ในค่าใช้จ่าย หมวด &ldquo;ดอกเบี้ยจ่าย&rdquo; · หนี้เพิ่ม / หนี้ลด = ยอดตาม Statement ต่างจากที่คำนวณ · กดที่แถวเพื่อแยกรายการ / ลงเป็นการจ่าย / แก้ / ลบ</InfoTip></h2>
         {payRows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีการจ่าย</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -198,8 +198,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         <div>
-          <h2 className="font-medium text-slate-900">ยอดคงค้าง</h2>
-          <p className="text-xs text-slate-500">กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด</p>
+          <h2 className="font-medium text-slate-900">ยอดคงค้าง <InfoTip label="คำอธิบาย">กรอกยอดเงินต้นคงเหลือจาก Statement / แอปธนาคาร · ยอดนี้ใช้แทนยอดที่ระบบหักจากเงินต้นที่จ่ายก่อนวันที่ของยอด</InfoTip></h2>
         </div>
         {canWrite && l.status === "ACTIVE" && <AddBalanceForm liabilityId={id} currency={l.currency} today={today} minDate={minDate} banks={banks.filter((b) => b.currency === l.currency)} />}
         {(vals ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มียอด</p> : (

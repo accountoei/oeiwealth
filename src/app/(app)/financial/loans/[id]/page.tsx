@@ -17,6 +17,7 @@ import { RestructureEditor } from "./restructure-editor";
 import { addMonthsKeepDay, LOAN_SCHED_STATUS, openingFromSchedule } from "@/lib/loan-schedule";
 import { ActionBar } from "@/components/ActionBar";
 import { loanInterestFields } from "@/lib/source-edit";
+import { InfoTip } from "@/components/HeaderBar";
 
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string; grace_until: string };
@@ -367,7 +368,10 @@ export default async function LoanDetailPage({ params, searchParams }: {
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         {/* แถวบน: ชื่อกล่องชิดซ้าย · ปุ่มเรียงกันชิดขวา (ตั้งตารางผ่อน / คำนวณงวดที่เหลือใหม่ + บันทึกรับชำระ) · ข้อความสรุปลงบรรทัดถัดไป */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium text-slate-900">ตารางผ่อนชำระ</h2>
+          <h2 className="font-medium text-slate-900">ตารางผ่อนชำระ {sched.length > 0 && <InfoTip label="คำอธิบาย">ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดที่เลยกำหนด (ไม่มี = งวดถัดไป) ให้ · เปลี่ยนวันที่ได้รับ = ยอดเปลี่ยนตามงวดที่ครบถึงวันนั้น · แก้ยอดได้ตามที่รับจริง ·
+          บันทึกผิด: แก้ / ลบที่แถวสีเขียวล่าสุด (แท็บ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo; · ลบแล้วตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "แก้ตารางผ่อนทั้งชุด"}&rdquo;{hasPayments ? "" : " (ปุ่มในกล่องรายละเอียด)"} ·
+          สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
+          ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น</InfoTip>}</h2>
           <div className="ml-auto flex flex-wrap items-start justify-end gap-2">
           {canDelete && loanOpen && open.length > 0 && (
             <RestructureEditor assetId={id} currency={l.currency} outstanding={Number(l.outstanding_principal ?? 0)}
@@ -414,12 +418,6 @@ export default async function LoanDetailPage({ params, searchParams }: {
           )}
         </div>
         {(sched.length > 0 || events.length > 0) && <ScheduleTable rows={schedRows} events={events} currency={l.currency} />}
-        {sched.length > 0 && <p className="text-xs text-slate-500">
-          ปุ่ม &ldquo;บันทึกรับชำระ&rdquo; ด้านบนตารางเติมยอดงวดที่เลยกำหนด (ไม่มี = งวดถัดไป) ให้ · เปลี่ยนวันที่ได้รับ = ยอดเปลี่ยนตามงวดที่ครบถึงวันนั้น · แก้ยอดได้ตามที่รับจริง ·
-          บันทึกผิด: แก้ / ลบที่แถวสีเขียวล่าสุด (แท็บ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo; · ลบแล้วตารางกลับเป็นเหมือนเดิม) · เพิ่ม / แก้งวดใช้ &ldquo;{hasPayments ? "คำนวณงวดที่เหลือใหม่" : "แก้ตารางผ่อนทั้งชุด"}&rdquo;{hasPayments ? "" : " (ปุ่มในกล่องรายละเอียด)"} ·
-          สถานะคิดจากยอดที่รับจริง: เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · ดอกเบี้ยนับเฉพาะงวดหลังวันยอดตั้งต้น ({thDate(l.opening_date)}) ·
-          ตารางผ่อนเป็นแผน ไม่กระทบยอดเงิน — ยอดจริงมาจาก &ldquo;บันทึกรับชำระ&rdquo; เท่านั้น
-        </p>}
       </section>
 
 

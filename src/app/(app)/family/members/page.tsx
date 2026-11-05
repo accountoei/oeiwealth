@@ -1,5 +1,5 @@
 import Form from "next/form";
-import { PageInfo } from "@/components/HeaderBar";
+import { PageInfo, InfoTip } from "@/components/HeaderBar";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -153,9 +153,10 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-medium text-slate-900">สมาชิกครอบครัว</h2>
+            <h2 className="font-medium text-slate-900">สมาชิกครอบครัว <InfoTip label="คำอธิบาย">รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
+          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{ordering && " · โหมดจัดลำดับ: กด ↑ ↓ (มีผลทันที) แล้วกด เสร็จ"}</InfoTip></h2>
             <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs">
               <Link scroll={false} href={url({ archived: sp.archived === "1" })} className={`px-2.5 py-1 ${!tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>รายชื่อ</Link>
               <Link scroll={false} href={url({ view: "tree", archived: sp.archived === "1" })} className={`border-l border-slate-300 px-2.5 py-1 ${tree ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>ผังครอบครัว</Link>
@@ -171,10 +172,6 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
             <SortToggle active={ordering} href={url({ archived: sp.archived === "1", order: true })} doneHref={url({ archived: sp.archived === "1" })} />
           )}
         </div>
-        <p className="mb-3 mt-2 text-xs text-slate-500">
-          รายชื่อนี้ใช้เลือกเจ้าของทรัพย์สินและมุมมองรายบุคคล · ผู้ดูแลระบบที่ไม่ใช่สมาชิกครอบครัวจะไม่อยู่ในรายชื่อนี้
-          · กดที่ชื่อเพื่อดูและแก้ข้อมูลของแต่ละคน{ordering && " · โหมดจัดลำดับ: กด ↑ ↓ (มีผลทันที) แล้วกด เสร็จ"}
-        </p>
         {!tree && !ordering && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Form action="/family/members" scroll={false} className="flex items-center gap-1">

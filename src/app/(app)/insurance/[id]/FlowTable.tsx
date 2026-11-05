@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { money, signedMoney, thDate } from "@/lib/format";
+import { InfoTip } from "@/components/HeaderBar";
 
 /** เงินจริงของงวด (จ่ายเบี้ย / รับผลประโยชน์) แสดงแทรกใต้งวดนั้น */
 export type FlowSub = { key: string; kind: "PAY" | "RECV"; date: string; text: string; detail?: string | null; amount: number; actions?: ReactNode };
@@ -75,7 +76,8 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
           </colgroup>
           <thead className="sticky top-0 z-10 bg-white text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100">
-              <th className="py-1.5"></th><th>ครบกำหนด / วันที่</th><th>รายการ</th>
+              <th className="py-1.5"> <InfoTip label="คำอธิบาย">แถวสีเทาอ่อน = เบี้ยที่จ่ายจริง · แถวสีเขียว = เงินที่รับจริง{net && " · สุทธิสะสมตัวจาง = คาดการณ์ตามตาราง (งวดที่ยังไม่ถึง)"} ·
+        แก้ / ลบการจ่ายที่แถวนั้น (ลบแล้วงวดกลับเป็น &ldquo;รอ&rdquo;) · ยกเลิกการรับได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน</InfoTip></th><th>ครบกำหนด / วันที่</th><th>รายการ</th>
               <th className="text-right">จ่ายเบี้ย</th><th className="text-right">รับผลประโยชน์</th>
               {net && <th className="text-right" title="ผลประโยชน์ − เบี้ย นับรวมตั้งแต่งวดแรกถึงแถวนั้น · ตัวจาง = คาดการณ์ตามตาราง">สุทธิสะสม</th>}
               <th className="pl-4">สถานะ</th><th></th>
@@ -129,10 +131,6 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">
-        แถวสีเทาอ่อน = เบี้ยที่จ่ายจริง · แถวสีเขียว = เงินที่รับจริง{net && " · สุทธิสะสมตัวจาง = คาดการณ์ตามตาราง (งวดที่ยังไม่ถึง)"} ·
-        แก้ / ลบการจ่ายที่แถวนั้น (ลบแล้วงวดกลับเป็น &ldquo;รอ&rdquo;) · ยกเลิกการรับได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน
-      </p>
     </div>
   );
 }

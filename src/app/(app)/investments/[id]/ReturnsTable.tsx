@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { HOLDING_TYPE_LABEL, money, signedMoney } from "@/lib/format";
+import { InfoTip } from "@/components/HeaderBar";
 
 /** ผลตอบแทนเป็นบาท (investment_returns) */
 export type Ret = {
@@ -83,7 +84,11 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
     <section className={bare ? "" : "overflow-x-auto rounded-xl border border-slate-200 bg-white"}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
         {bare ? <span className="text-sm text-slate-600">หน่วย: {unit}</span>
-          : <h2 className="font-medium text-slate-900">{title ?? "ผลตอบแทน"} ({unit})</h2>}
+          : <h2 className="font-medium text-slate-900">{title ?? "ผลตอบแทน"} ({unit}) <InfoTip label="คำอธิบาย">{showFx && "“จาก FX” = ส่วนของกำไร/ขาดทุนที่เกิดจากค่าเงินเปลี่ยน (สินทรัพย์สกุลต่างประเทศ) · "}
+        เงินฝากในพอร์ตไม่แสดงในตารางนี้ · ค่าธรรมเนียมซื้อขายรวมอยู่ในต้นทุน / เงินขายแล้ว</InfoTip> <InfoTip label="คำอธิบาย">ต้นทุนเฉลี่ย · นับตั้งแต่ยอดตั้งต้น / Go-live ·{" "}
+        {isPf ? `ไม่รวมผลจากค่าเงินบาท${otherCcy ? ` · สกุลอื่นแปลงเป็น ${portfolioCurrency} ด้วยอัตราล่าสุด` : ""}`
+          : hasFxLine ? "สกุลต่างประเทศ: ผลตอบแทนในสกุลเดิมแปลงเป็นบาทด้วยอัตราล่าสุด (ต้นทุนและมูลค่าใช้อัตราเดียวกัน) · ผลจากค่าเงินแสดงแยกท้ายตาราง"
+          : "ตีเป็นบาทด้วยอัตราวันที่ทำรายการ และอัตราล่าสุดสำหรับมูลค่าปัจจุบัน"}</InfoTip></h2>}
         {canLocal && (
           <div className="inline-flex rounded-md border border-slate-300 p-0.5 text-xs" role="group" aria-label="สกุลที่ใช้แสดงผลตอบแทน">
             {(["PF", "THB"] as const).map((v) => (
@@ -95,12 +100,6 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
           </div>
         )}
       </div>
-      <p className="px-4 pt-1 text-xs text-slate-500">
-        ต้นทุนเฉลี่ย · นับตั้งแต่ยอดตั้งต้น / Go-live ·{" "}
-        {isPf ? `ไม่รวมผลจากค่าเงินบาท${otherCcy ? ` · สกุลอื่นแปลงเป็น ${portfolioCurrency} ด้วยอัตราล่าสุด` : ""}`
-          : hasFxLine ? "สกุลต่างประเทศ: ผลตอบแทนในสกุลเดิมแปลงเป็นบาทด้วยอัตราล่าสุด (ต้นทุนและมูลค่าใช้อัตราเดียวกัน) · ผลจากค่าเงินแสดงแยกท้ายตาราง"
-          : "ตีเป็นบาทด้วยอัตราวันที่ทำรายการ และอัตราล่าสุดสำหรับมูลค่าปัจจุบัน"}
-      </p>
       <table className="mt-2 w-full text-sm">
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
           <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">ต้นทุน (ที่ยังถือ)</th><th className="px-3 text-right">มูลค่าปัจจุบัน</th>
@@ -154,10 +153,6 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
           </tfoot>
         )}
       </table>
-      <p className="px-4 py-3 text-xs text-slate-500">
-        {showFx && "“จาก FX” = ส่วนของกำไร/ขาดทุนที่เกิดจากค่าเงินเปลี่ยน (สินทรัพย์สกุลต่างประเทศ) · "}
-        เงินฝากในพอร์ตไม่แสดงในตารางนี้ · ค่าธรรมเนียมซื้อขายรวมอยู่ในต้นทุน / เงินขายแล้ว
-      </p>
     </section>
   );
 }

@@ -5,7 +5,7 @@ import { ADD_BTN, LIABILITY_TYPE_LABEL, money, monthOptions, monthRange, thDate,
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo, InfoTip } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -213,7 +213,8 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       {/* บัตรเครดิตอยู่บนสุด (ตกลง 27 ต.ค. 2026) */}
       <div id="cards" className="scroll-mt-20 overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">บัตรเครดิต</h2>
+          <h2 className="font-medium text-slate-900">บัตรเครดิต <InfoTip label="คำอธิบาย">ยอดค้าง = ยอดตาม Statement ล่าสุด + รูดบัตรที่บันทึก − จ่ายบัตร หลังวันที่ของยอด (คำนวณให้) · อัปเดตยอดตาม Statement ทุกเดือน ·
+          กดชื่อบัตรเพื่อดูรายการ ประวัติยอด ตั้งตัดบัญชีอัตโนมัติ และแก้ไขข้อมูลบัตร</InfoTip></h2>
           {canOrder && cards.length > 1 && <SortToggle active={ordering === "cards"} {...orderHrefs("/liabilities", { p: sp.p }, "cards")} />}
         </div>
         <table className="mt-2 w-full text-sm">
@@ -266,16 +267,12 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
             </tfoot>
           )}
         </table>
-        <p className="px-4 py-3 text-xs text-slate-500">
-          ยอดค้าง = ยอดตาม Statement ล่าสุด + รูดบัตรที่บันทึก − จ่ายบัตร หลังวันที่ของยอด (คำนวณให้) · อัปเดตยอดตาม Statement ทุกเดือน ·
-          กดชื่อบัตรเพื่อดูรายการ ประวัติยอด ตั้งตัดบัญชีอัตโนมัติ และแก้ไขข้อมูลบัตร
-        </p>
       </div>
 
       {ods.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-3 px-4 pt-4">
-            <h2 className="font-medium text-slate-900">เงินเบิกเกินบัญชี (O/D)</h2>
+            <h2 className="font-medium text-slate-900">เงินเบิกเกินบัญชี (O/D) <InfoTip label="คำอธิบาย">ยอดติดลบของบัญชีนับเป็นหนี้สินในความมั่งคั่งสุทธิโดยอัตโนมัติ · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; จากบัญชีนั้น · ตั้งวงเงินที่หน้าบัญชี → แก้ไขข้อมูล</InfoTip></h2>
             <span className="text-xs text-slate-500">ใช้ไป {money(odUsed, "THB")} จากวงเงิน {money(odLimit, "THB")} · ยอดมาจากบัญชีกระแสรายวัน (อัปเดตยอดที่หน้า Bank Accounts)</span>
           </div>
           <table className="mt-2 w-full min-w-[44rem] text-sm">
@@ -297,14 +294,12 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
               ))}
             </tbody>
           </table>
-          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">ยอดติดลบของบัญชีนับเป็นหนี้สินในความมั่งคั่งสุทธิโดยอัตโนมัติ · ดอกเบี้ย O/D ที่ธนาคารตัด บันทึกเป็นค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; จากบัญชีนั้น · ตั้งวงเงินที่หน้าบัญชี → แก้ไขข้อมูล</p>
         </div>
       )}
 
       {internal.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900">เงินกู้ภายในครอบครัว</h2>
-          <p className="px-4 text-xs text-slate-500">สมาชิกกู้จากสมาชิกคนอื่น · ยอดตามเงินต้นคงเหลือของสัญญา (บันทึกรับชำระที่หน้า Loans Receivable) · ยอดรวมครอบครัวหักกับลูกหนี้เป็น 0</p>
+          <h2 className="px-4 pt-4 font-medium text-slate-900">เงินกู้ภายในครอบครัว <InfoTip label="คำอธิบาย">สมาชิกกู้จากสมาชิกคนอื่น · ยอดตามเงินต้นคงเหลือของสัญญา (บันทึกรับชำระที่หน้า Loans Receivable) · ยอดรวมครอบครัวหักกับลูกหนี้เป็น 0</InfoTip></h2>
           <table className="mt-2 w-full text-sm">
             <tbody className="divide-y divide-slate-100">
               {internal.map((r) => (
@@ -321,7 +316,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">เงินกู้ &amp; เงินประกันการเช่า</h2>
+          <h2 className="font-medium text-slate-900">เงินกู้ &amp; เงินประกันการเช่า <InfoTip label="คำอธิบาย">เงินต้นที่บันทึกจ่าย (แยกเงินต้น / ดอกเบี้ย) ลดยอดให้ทันที · อัปเดตยอดตาม Statement เป็นระยะเพื่อความถูกต้อง</InfoTip></h2>
           {canOrder && loans.length > 1 && <SortToggle active={ordering === "1"} {...orderHrefs("/liabilities", { p: sp.p })} />}
         </div>
         <table className="mt-2 w-full text-sm">
@@ -363,9 +358,6 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
             </tfoot>
           )}
         </table>
-        <p className="px-4 py-3 text-xs text-slate-500">
-          เงินต้นที่บันทึกจ่าย (แยกเงินต้น / ดอกเบี้ย) ลดยอดให้ทันที · อัปเดตยอดตาม Statement เป็นระยะเพื่อความถูกต้อง
-        </p>
       </div>
       </TabPanel>
     </div>

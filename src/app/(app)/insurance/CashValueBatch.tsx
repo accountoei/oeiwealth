@@ -7,6 +7,7 @@ import { diffText, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
 import { batchCashValues, syncAllCashValues, type ActionState } from "./actions";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type CvRow = {
   policyId: string; assetId: string | null; name: string; person: string | null; currency: string;
@@ -80,12 +81,9 @@ export default function CashValueBatch({ rows, today, minDate, canWrite, canCrea
             </select></label>
           <label className="ml-auto flex items-center gap-2">มูลค่า ณ วันที่
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-          </label>
+           <InfoTip label="คำอธิบาย">กรอกเฉพาะกรมธรรม์ที่มูลค่าเปลี่ยน (ช่องว่าง = ไม่บันทึก) · แถวสีเหลือง = ถึงวันครบปีตามตารางในสัญญาแล้วแต่ยังไม่ได้ลง (กรอกค่าตามสัญญาไว้ให้ · แก้ได้)
+          · ระบบลงตามตารางให้เองทุกเช้า เมื่อจ่ายเบี้ยก่อนหน้าครบ{shareNote && ` · ${shareNote}`}</InfoTip></label>
         </div>
-        <p className="text-xs text-slate-500">
-          กรอกเฉพาะกรมธรรม์ที่มูลค่าเปลี่ยน (ช่องว่าง = ไม่บันทึก) · แถวสีเหลือง = ถึงวันครบปีตามตารางในสัญญาแล้วแต่ยังไม่ได้ลง (กรอกค่าตามสัญญาไว้ให้ · แก้ได้)
-          · ระบบลงตามตารางให้เองทุกเช้า เมื่อจ่ายเบี้ยก่อนหน้าครบ{shareNote && ` · ${shareNote}`}
-        </p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

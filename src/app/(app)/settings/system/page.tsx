@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { PageInfo } from "@/components/HeaderBar";
+import { PageInfo, InfoTip } from "@/components/HeaderBar";
 import { requireAppUser } from "@/lib/auth";
 import Link from "next/link";
 import { FX_BBL_RATE_LABEL, FX_SOURCE_LABEL, HOLDING_TYPE_LABEL, addDays, money, thDate, todayBangkok } from "@/lib/format";
@@ -137,9 +137,9 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
     <div className="space-y-6">
       <PageInfo>สกุลเงินหลัก {family?.base_currency} · Go-live {thDate(family?.go_live_date)} · {family?.system_status}</PageInfo>
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="font-medium text-slate-900">อัตราแลกเปลี่ยนของสกุลที่ใช้งาน</h2>
+            <h2 className="font-medium text-slate-900">อัตราแลกเปลี่ยนของสกุลที่ใช้งาน <InfoTip label="คำอธิบาย">ดึงอัตราทุกวันราว 09:15 · 14:15 · 19:15 (GitHub อาจเริ่มช้ากว่านี้ได้) · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน</InfoTip></h2>
             <p className="mt-1 text-sm text-slate-700">
               แหล่งปัจจุบัน: <b>{fxSource === "BBL" ? "ธนาคารกรุงเทพ" : "ธปท."}</b>
               {fxSource === "BBL" && <> · {FX_BBL_RATE_LABEL[family?.fx_bbl_rate ?? "MID"]}</>}
@@ -149,9 +149,6 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
           {/* ปุ่ม FX 3 ปุ่ม มุมขวาบนของกล่อง (ตกลง 5 พ.ย. 2026) */}
           {isAdmin && <ActionBar><FxRefreshButton /><FxSourceForm source={fxSource} bblRate={family?.fx_bbl_rate ?? "MID"} /><OverrideForm today={todayBangkok()} /></ActionBar>}
         </div>
-        <p className="mb-3 mt-1 text-xs text-slate-500">
-          ดึงอัตราทุกวันราว 09:15 · 14:15 · 19:15 (GitHub อาจเริ่มช้ากว่านี้ได้) · การคำนวณใช้ Rate <b>ของวันเดียวกัน</b> (ยังไม่มี = Rate ล่าสุดก่อนหน้า) · Rate ที่อัปเดตระหว่างวันมีผลทันที แต่ยอดบาทของรายการที่บันทึกแล้วไม่เปลี่ยน · Rate เก่ากว่า 5 วัน = FX_STALE (ปิดเดือนไม่ได้) · เปลี่ยนแหล่งแล้วอัตราที่บันทึกไว้เดิมไม่เปลี่ยน
-        </p>
         {isAdmin && lastRefresh?.[0] && (
           <p className={`mb-3 text-xs ${tokenDays != null && tokenDays <= 30 ? "text-amber-700" : "text-slate-500"}`}>
             กดอัปเดตครั้งล่าสุด {thDate(lastRefresh[0].event_at.slice(0, 10))}
@@ -167,15 +164,12 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">ราคาอัตโนมัติ</h2>
+        <h2 className="font-medium text-slate-900">ราคาอัตโนมัติ <InfoTip label="คำอธิบาย">ดึงวันจันทร์–ศุกร์ วันละ 3 รอบ ราว 09:15 · 14:15 · 19:15 (ทองคำในวันเดียวกันใช้ราคารอบล่าสุด) · หุ้นไทย / ต่างประเทศจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · กองทุนไทยจาก ก.ล.ต. (ต้องตั้ง SEC_API_KEY) ·
+          ทองคำประมาณจากราคาตลาดโลก × อัตราแลกเปลี่ยน · เปิดทีละรายการที่หน้าหลักทรัพย์ / หน้าทองคำ → แก้ไขข้อมูล ·
+          ราคาครั้งแรก (หรือเว้นไปเกิน 30 วัน) และราคาที่ต่างจากราคาครั้งก่อนเกิน 20% ยังไม่บันทึก — รอ ADMIN / EDITOR กดยืนยันที่หน้ารายการ (แจ้งในหน้าแรก) · ไม่ทับราคาจาก Statement</InfoTip></h2>
         <p className="mt-1 text-sm text-slate-700">
           เปิดอยู่: หลักทรัพย์ {autoHolds?.length ?? 0} ตัว · ทองคำ {autoGolds?.length ?? 0} รายการ
           {lastPrice?.[0]?.valuation_date && <span className="text-slate-500"> · ราคาล่าสุด {thDate(lastPrice[0].valuation_date)}</span>}
-        </p>
-        <p className="mt-1 text-xs text-slate-500">
-          ดึงวันจันทร์–ศุกร์ วันละ 3 รอบ ราว 09:15 · 14:15 · 19:15 (ทองคำในวันเดียวกันใช้ราคารอบล่าสุด) · หุ้นไทย / ต่างประเทศจาก Yahoo Finance (ฟรี ไม่เป็นทางการ) · กองทุนไทยจาก ก.ล.ต. (ต้องตั้ง SEC_API_KEY) ·
-          ทองคำประมาณจากราคาตลาดโลก × อัตราแลกเปลี่ยน · เปิดทีละรายการที่หน้าหลักทรัพย์ / หน้าทองคำ → แก้ไขข้อมูล ·
-          ราคาครั้งแรก (หรือเว้นไปเกิน 30 วัน) และราคาที่ต่างจากราคาครั้งก่อนเกิน 20% ยังไม่บันทึก — รอ ADMIN / EDITOR กดยืนยันที่หน้ารายการ (แจ้งในหน้าแรก) · ไม่ทับราคาจาก Statement
         </p>
         {priceRows.length > 0 && (
           <div className="mt-3 overflow-x-auto">
@@ -219,11 +213,8 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
 
       {/* อัตราดอกเบี้ยเทียบ (ตกลง 28 ต.ค. 2026 · วิธีเงินเฟ้อ + ส่วนเพิ่ม 2 พ.ย. 2026) · กล่องล่างสุดของแท็บ FX & Prices */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium text-slate-900">อัตราดอกเบี้ยเทียบ (ต้นทุนเสียโอกาส)</h2>
-        <p className="mb-3 mt-1 text-xs text-slate-500">
-          ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับในความมั่งคั่งสุทธิ ·
-          แก้เป็นรายแปลงได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; ของทรัพย์สิน{isAdmin ? "" : " · แก้ได้เฉพาะ ADMIN"}
-        </p>
+        <h2 className="mb-3 font-medium text-slate-900">อัตราดอกเบี้ยเทียบ (ต้นทุนเสียโอกาส) <InfoTip label="คำอธิบาย">ใช้คิด &ldquo;ราคาขายขั้นต่ำที่คุ้ม&rdquo; ของ Property = ต้นทุนแต่ละก้อน + ดอกเบี้ยทบต้นตามระยะเวลาที่ถือ − ค่าเสื่อมอาคาร · ข้อมูลอ้างอิง ไม่นับในความมั่งคั่งสุทธิ ·
+          แก้เป็นรายแปลงได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; ของทรัพย์สิน{isAdmin ? "" : " · แก้ได้เฉพาะ ADMIN"}</InfoTip></h2>
         <OpportunityRateForm key={`${family?.opportunity_method}-${family?.opportunity_rate_pct}`} rate={family?.opportunity_rate_pct != null ? Number(family.opportunity_rate_pct) : null}
           method={family?.opportunity_method ?? "FIXED"} canEdit={isAdmin} />
         <div className="mt-5" />

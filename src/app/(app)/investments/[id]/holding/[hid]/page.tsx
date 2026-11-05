@@ -17,6 +17,7 @@ import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
 import HoldingHistory from "./history";
+import { InfoTip } from "@/components/HeaderBar";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
@@ -217,7 +218,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       {isStructured && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <div>
-              <h2 className="mb-2 font-medium text-slate-900">หุ้นอ้างอิง (Underlying)</h2>
+              <h2 className="mb-2 font-medium text-slate-900">หุ้นอ้างอิง (Underlying) <InfoTip label="คำอธิบาย">ราคา Strike / Barrier ที่ไม่ได้ใส่ คำนวณจากราคาเริ่มต้น × ระดับ % · Knock-in ให้ติ๊กในแก้ไขข้อมูลเมื่อธนาคารแจ้ง</InfoTip></h2>
               {unders.length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ใส่</p> : (
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">หุ้น</th><th className="text-right">ราคาเริ่มต้น</th>
@@ -244,7 +245,6 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               )}
               {canWrite && (fcn ? <div className="mt-2"><UnderlyingForm assetId={id} fcnId={fcn.id} /></div>
                 : <p className="mt-2 text-xs text-slate-500">เพิ่มหุ้นอ้างอิงได้หลังใส่ผู้ออก + เงินต้น ใน &ldquo;แก้ไขข้อมูล&rdquo; ของกล่องรายละเอียด</p>)}
-              <p className="mt-2 text-xs text-slate-500">ราคา Strike / Barrier ที่ไม่ได้ใส่ คำนวณจากราคาเริ่มต้น × ระดับ % · Knock-in ให้ติ๊กในแก้ไขข้อมูลเมื่อธนาคารแจ้ง</p>
           </div>
         </section>
       )}

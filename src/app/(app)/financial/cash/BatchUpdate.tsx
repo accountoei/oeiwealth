@@ -8,6 +8,7 @@ import { batchUpdate, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type BatchRow = {
   id: string; name: string; bank: string; currency: string;
@@ -67,9 +68,8 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
           )}
           <label className="ml-auto flex items-center gap-2">ยอด ณ วันที่
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && pickDate(e.target.value)} className={small} />
-          </label>
+           <InfoTip label="คำอธิบาย">กรอกยอดจริงจากแอปธนาคาร / Statement เฉพาะบัญชีที่ต้องการ (ช่องว่าง = ไม่บันทึก) · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ · สลับธนาคารได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</InfoTip></label>
         </div>
-        <p className="text-xs text-slate-500">กรอกยอดจริงจากแอปธนาคาร / Statement เฉพาะบัญชีที่ต้องการ (ช่องว่าง = ไม่บันทึก) · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ · สลับธนาคารได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

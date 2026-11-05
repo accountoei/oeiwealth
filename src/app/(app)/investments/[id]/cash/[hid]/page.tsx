@@ -15,6 +15,7 @@ import { CashInfoForm, CashStatementForm, SetDefaultButton } from "./forms";
 import { PfPayButton } from "../../pf-pay-forms";
 import { EXP_SELECT, makeEntryKit } from "../../../../income-expenses/entry-kit";
 import { loadKitCtx } from "../../../../income-expenses/entry-kit-load";
+import { InfoTip } from "@/components/HeaderBar";
 
 type HC = LHolding & { name: string; status: string; purpose: string | null; interest_rate: number | null;
   current_value: number | null; current_value_date: string | null; value_thb: number | null; fx_rate: number | null; holding_type: string };
@@ -275,7 +276,8 @@ export default async function PortfolioCashPage({ params, searchParams }: {
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium text-slate-900">รายการเงินเข้า–ออก {thMonth(start)}</h2>
+          <h2 className="font-medium text-slate-900">รายการเงินเข้า–ออก {thMonth(start)} <InfoTip label="คำอธิบาย">ซื้อ / ขาย / ปันผล ฯลฯ บันทึกที่หน้าพอร์ต · กดที่แถวเพื่อแก้ไข / ลบ · ยอดตาม Statement เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ ·
+          เงินโอนธนาคาร ↔ พอร์ต นับในยอดคงเหลือทันที (เหมือนบัญชีธนาคาร) · ยังไม่ทราบยอดที่เข้า = ป้าย &ldquo;รอยอด&rdquo; กดที่แถวเพื่อใส่ยอด</InfoTip></h2>
           <MonthPicker months={months} value={ym} />
         </div>
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -287,10 +289,6 @@ export default async function PortfolioCashPage({ params, searchParams }: {
           <MovesView rows={rows} banks={[]} showActions={canWrite} fixedAcct={hid}
             openings={{ [hid]: opening }} statements={{ [hid]: stmts }} monthStart={start} />
         </div>
-        <p className="mt-3 text-xs text-slate-500">
-          ซื้อ / ขาย / ปันผล ฯลฯ บันทึกที่หน้าพอร์ต · กดที่แถวเพื่อแก้ไข / ลบ · ยอดตาม Statement เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ ·
-          เงินโอนธนาคาร ↔ พอร์ต นับในยอดคงเหลือทันที (เหมือนบัญชีธนาคาร) · ยังไม่ทราบยอดที่เข้า = ป้าย &ldquo;รอยอด&rdquo; กดที่แถวเพื่อใส่ยอด
-        </p>
       </section>
     </div>
   );

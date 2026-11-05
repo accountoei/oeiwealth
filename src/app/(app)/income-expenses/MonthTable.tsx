@@ -118,7 +118,8 @@ export default function MonthTable({ kind, rows, empty, banks = [], cards = [], 
             ))}
             {nSplit > 0 && <button type="button" onClick={() => pickSource(SPLIT)}
               className={`${chip(source === SPLIT)} ${source === SPLIT ? "" : "border-amber-300 text-amber-800"}`}>{SPLIT} ({cnt(SPLIT)})</button>}
-            {info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}
+            <InfoTip label="คำอธิบาย">{info}{info && <><br /><br /></>}รายการค้างอยู่บนสุด · กดชื่อรายการเพื่อไปหน้าต้นทาง · บันทึก / แก้ไข (ลบอยู่ในหน้าต่างแก้ไข) / แยกรายละเอียด ที่ปุ่มในช่องสถานะ
+          {inc ? " · ยอดได้รับ = สุทธิหลังภาษี" : ""} · รายการที่คาดไว้ซึ่ง{inc ? "รับ" : "จ่าย"}ครบแล้ว แสดงเป็นรายการที่บันทึกแล้วแถวเดียว</InfoTip>
           </div>
           {actions && <div className="flex flex-wrap items-start gap-2">{actions}</div>}
         </div>
@@ -191,10 +192,6 @@ export default function MonthTable({ kind, rows, empty, banks = [], cards = [], 
           </table>
         </div>
         )}
-        <p className="mt-2 text-xs text-slate-500">
-          รายการค้างอยู่บนสุด · กดชื่อรายการเพื่อไปหน้าต้นทาง · บันทึก / แก้ไข (ลบอยู่ในหน้าต่างแก้ไข) / แยกรายละเอียด ที่ปุ่มในช่องสถานะ
-          {inc ? " · ยอดได้รับ = สุทธิหลังภาษี" : ""} · รายการที่คาดไว้ซึ่ง{inc ? "รับ" : "จ่าย"}ครบแล้ว แสดงเป็นรายการที่บันทึกแล้วแถวเดียว
-        </p>
       </section>
     </div>
   );

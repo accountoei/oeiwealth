@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo, InfoTip } from "@/components/HeaderBar";
 import { requireAppUser } from "@/lib/auth";
 import Link from "next/link";
 import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, SMALL_BTN, thDate, todayBangkok } from "@/lib/format";
@@ -216,7 +216,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500">
                     <tr className="align-bottom">
-                      <th className="sticky left-0 z-10 bg-white py-1 pr-2">รายการ</th>
+                      <th className="sticky left-0 z-10 bg-white py-1 pr-2">รายการ <InfoTip label="คำอธิบาย">● = ผิดปกติตามใบผล (สีแดง = สูง / ผิดปกติ · สีฟ้า = ต่ำ){canWrite && " · กดที่ตัวเลขเพื่อแก้ผลรายการนั้น · ปุ่มแก้ไขใต้วันที่ = แก้ / ลบผลตรวจครั้งนั้น"}</InfoTip></th>
                       <th className="whitespace-nowrap px-2">ค่าปกติ</th>
                       {recent.map((c) => (
                         <th key={c.id} className="whitespace-nowrap px-2 text-right font-normal">
@@ -270,7 +270,6 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                   </tbody>
                 </table>
               </div>
-              <p className="mt-2 text-xs text-slate-500">● = ผิดปกติตามใบผล (สีแดง = สูง / ผิดปกติ · สีฟ้า = ต่ำ){canWrite && " · กดที่ตัวเลขเพื่อแก้ผลรายการนั้น · ปุ่มแก้ไขใต้วันที่ = แก้ / ลบผลตรวจครั้งนั้น"}</p>
               {noted.length > 0 && (
                 <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-xs text-slate-600">
                   {noted.map((c) => (
