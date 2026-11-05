@@ -1,4 +1,4 @@
-# 2026-11-05 · Family: ปุ่มเข้ากล่อง · Health / Tax มุมมองทั้งครอบครัว · User & Security (PR #TBD)
+# 2026-11-05 · Family: ปุ่มเข้ากล่อง · Health / Tax มุมมองทั้งครอบครัว · User & Security (PR #332)
 
 Branch `claude/family-boxes-health-tax` · **ไม่มี SQL** · ไม่มี Edge Function
 
