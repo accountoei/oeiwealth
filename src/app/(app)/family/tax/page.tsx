@@ -198,7 +198,7 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   if (!p) redirect(`/family/tax${sp.y ? `?y=${encodeURIComponent(sp.y)}` : ""}`);   // ลิงก์เก่า / ไม่มีสิทธิ์ดูคนนี้ → ทั้งครอบครัว
   const canWrite = isAdmin || ((me.role === "EDITOR" || me.role === "CONTRIBUTOR") && p === me.person_id);
   const canDelete = canWrite && (isAdmin || me.role === "EDITOR");
-  const { all, years, y, versions, cur, lineRows, lineErr, links } = first;
+  const { years, y, versions, cur, lineRows, lineErr, links } = first;
   const lines = ((lineRows ?? []) as Line[]).map((l, i) => ({ ...l, id: l.id ?? `preview-${i}` }));
   const connected = !!(drive as { connected?: boolean } | null)?.connected;
   const docs = (links ?? []).map((l) => (Array.isArray(l.documents) ? l.documents[0] : l.documents) as { id: string; title: string; deleted_at: string | null } | null)

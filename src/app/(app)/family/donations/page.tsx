@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import UrlSelect from "@/components/UrlSelect";
 import { ActionBar } from "@/components/ActionBar";
@@ -8,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { DONATION_TAX_KIND_LABEL, DONATION_TAX_STATUS_LABEL, DONEE_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
 import { DonationAdd, DonationEditor, DonorFilter, FromExpense, type Opt } from "./forms";
+import { ProjectTable, YearSummary } from "./tables";
 
 type Don = {
   id: string; donation_date: string; year_only: boolean; donor_kind: "PERSON" | "BUSINESS" | "GROUP"; donor_person_id: string | null;
@@ -85,7 +85,7 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
     if (r.donation_date < p.first) p.first = r.donation_date;
     if (r.donation_date > p.last) p.last = r.donation_date;
     return m.set(r.project_name, p);
-  }, new Map<string, { name: string; total: number; n: number; first: string; last: string }>()).values()].sort((a, b) => b.total - a.total);
+  }, new Map<string, { name: string; total: number; n: number; first: string; last: string }>()).values()];
 
   // หลักฐานของรายการที่แสดง (entity DONATION)
   const shown = y || d ? rows : [];
@@ -170,63 +170,9 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
         </section>
       )}
 
-      {!y && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900">สรุปรายปี{filterNote}</h2>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr><th className="px-4 py-2">ปี</th><th className="px-4 text-right">บุคคล</th><th className="px-4 text-right">ในนามกิจการ</th>{hasGroup && <th className="px-4 text-right">กลุ่ม (ข้อมูลเดิม)</th>}<th className="px-4 text-right">รวม</th><th className="px-4 text-right">รายการ</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {summary.length === 0 && <tr><td colSpan={hasGroup ? 6 : 5} className="px-4 py-4 text-center text-slate-500">ยังไม่มีรายการ</td></tr>}
-                {summary.map((s) => {
-                  const q = new URLSearchParams({ y: String(s.yr), ...(d ? { d } : {}) });
-                  return (
-                    <tr key={s.yr}>
-                      <td className="px-4 py-2"><Link href={`/family/donations?${q}`} className="text-blue-700 hover:underline">{s.yr + 543}</Link></td>
-                      <td className="px-4 text-right tabular-nums">{s.person ? money(s.person) : "-"}</td>
-                      <td className="px-4 text-right tabular-nums">{s.business ? money(s.business) : "-"}</td>
-                      {hasGroup && <td className="px-4 text-right tabular-nums">{s.group ? money(s.group) : "-"}</td>}
-                      <td className="px-4 text-right font-medium tabular-nums">{money(s.total)}</td>
-                      <td className="px-4 text-right text-slate-500">{s.n}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              {summary.length > 1 && (
-                <tfoot className="border-t border-slate-200 bg-slate-50 font-medium">
-                  <tr><td className="px-4 py-2">รวมทุกปี</td>
-                    <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.person, 0))}</td>
-                    <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.business, 0))}</td>
-                    {hasGroup && <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.group, 0))}</td>}
-                    <td className="px-4 text-right tabular-nums">{money(sum(scoped))}</td>
-                    <td className="px-4 text-right text-slate-500">{scoped.length}</td></tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-          <p className="text-xs text-slate-500">กดปีเพื่อดูรายการ · หรือเลือกผู้บริจาคด้านบนเพื่อดูรายการทุกปีของคนนั้น</p>
-        </section>
-      )}
-
-      {projects.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900">โครงการ</h2>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โครงการ</th><th className="px-4">ช่วงเวลา</th><th className="px-4 text-right">รายการ</th><th className="px-4 text-right">ยอดรวม</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {projects.map((p) => (
-                  <tr key={p.name}><td className="px-4 py-2 font-medium">{p.name}</td>
-                    <td className="px-4 text-slate-600">{p.first === p.last ? thDate(p.first) : `${thDate(p.first)} – ${thDate(p.last)}`}</td>
-                    <td className="px-4 text-right text-slate-500">{p.n}</td><td className="px-4 text-right tabular-nums">{money(p.total)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      {/* ชื่อตาราง = หัวคอลัมน์แรก (ไม่มีหัวข้อเหนือกล่อง) · 5 แถวล่าสุด + ดูทั้งหมด · โครงการเรียงตามช่วงเวลา / ยอดรวมได้ (ตกลง 5 พ.ย. 2026) */}
+      {!y && <YearSummary rows={summary} hasGroup={hasGroup} d={d} allTotal={sum(scoped)} allCount={scoped.length} />}
+      {projects.length > 0 && <ProjectTable projects={projects} />}
 
       {shown.length > 0 && (
         <section className="space-y-2">

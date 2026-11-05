@@ -11,7 +11,6 @@ import { MoveButtons, SortToggle, neighbors } from "@/components/SortControls";
 import { orderHrefs } from "@/lib/sort";
 import { ActionBar } from "@/components/ActionBar";
 import { addDays } from "@/lib/format";
-import { StatBox } from "@/components/Boxes";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null };
 
@@ -54,35 +53,22 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
       <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></HeaderFilters>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
-      {/* 2 กล่อง: สมาชิกภาพ (รวมใกล้หมดอายุ) · แต้ม / ไมล์ (รวมแต้มใกล้หมดอายุ) (ตกลง 5 พ.ย. 2026) */}
-      <section className="grid gap-4 sm:grid-cols-2">
-        <StatBox label={<div className="flex items-start justify-between gap-2">สมาชิกภาพที่ใช้งาน
-            {canWrite && <ActionBar className="shrink-0"><MembershipForm persons={persons ?? []} /></ActionBar>}</div>}
-          value={activeMembers.length} unit="รายการ" sub={`ทั้งหมด ${memberRows.length} รายการ`}>
-          <div className={`mt-1 text-xs ${memberSoon + memberExpired > 0 ? "text-amber-700" : "text-slate-500"}`}>
-            {memberSoon + memberExpired === 0 ? "ไม่มีรายการใกล้หมดอายุ (60 วัน)"
-              : [memberSoon > 0 && `ใกล้หมดอายุ (60 วัน) ${memberSoon} รายการ`, memberExpired > 0 && `เลยวันหมดอายุแล้ว ${memberExpired} รายการ`].filter(Boolean).join(" · ")}
+      {/* กล่องเดียว: ปุ่มเพิ่มมุมขวาบน · ตัวเลขสรุปอยู่ในแถวหัวของแต่ละกลุ่ม (ตกลง 5 พ.ย. 2026) */}
+      <section className="space-y-2">
+        <div className="rounded-xl border border-slate-200 bg-white">
+          <div className="flex flex-wrap items-start justify-between gap-3 px-4 pb-3 pt-4">
+            <h2 className="font-medium text-slate-900">สมาชิกภาพ · แต้มสะสม / ไมล์</h2>
+            {canWrite && <ActionBar className="shrink-0"><MembershipForm persons={persons ?? []} /><PointsForm persons={persons ?? []} today={today} links={pointLinks} /></ActionBar>}
           </div>
-        </StatBox>
-        <StatBox label={<div className="flex items-start justify-between gap-2">บัญชีแต้ม / ไมล์
-            {canWrite && <ActionBar className="shrink-0"><PointsForm persons={persons ?? []} today={today} links={pointLinks} /></ActionBar>}</div>}
-          value={pointRows.length} unit="บัญชี" sub={pointsStale ? `ยอดเกิน 90 วัน ${pointsStale} บัญชี` : "ยอดอัปเดตภายใน 90 วัน"}
-          subClass={pointsStale > 0 ? "text-amber-700" : undefined}>
-          <div className={`mt-1 text-xs ${pointSoon > 0 ? "text-amber-700" : "text-slate-500"}`}>
-            {pointSoon > 0 ? `แต้มใกล้หมดอายุ (60 วัน) ${pointSoon} บัญชี` : "ไม่มีแต้มใกล้หมดอายุ (60 วัน)"}</div>
-          <div className="mt-1 text-xs text-slate-500">แต้ม / ไมล์ ไม่นับในความมั่งคั่งสุทธิ</div>
-        </StatBox>
-      </section>
-
-      {/* สมาชิกภาพ + แต้มสะสม / ไมล์ ในกล่องเดียว แบ่งด้วยหัวกลุ่ม (ตกลง 28 ต.ค. 2026) */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">สมาชิกภาพ · แต้มสะสม / ไมล์</h2>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">โปรแกรม</th><th className="px-4">สมาชิก</th><th className="px-4">ระดับ / สิทธิ · แต้มคงเหลือ</th><th className="px-4">หมดอายุ</th><th></th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               <tr className="bg-slate-50/60"><td colSpan={5} className="px-4 py-1.5">
-                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-600">สมาชิกภาพ</span>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs"><span className="font-semibold text-slate-600">สมาชิกภาพ</span>
+                  <span className="text-slate-500"> · ใช้งาน {activeMembers.length} / {memberRows.length} รายการ</span>
+                  <span className={memberSoon + memberExpired > 0 ? "text-amber-700" : "text-slate-500"}> · {memberSoon + memberExpired === 0 ? "ไม่มีรายการใกล้หมดอายุ (60 วัน)"
+                    : [memberSoon > 0 && `ใกล้หมดอายุ (60 วัน) ${memberSoon} รายการ`, memberExpired > 0 && `เลยวันหมดอายุแล้ว ${memberExpired} รายการ`].filter(Boolean).join(" · ")}</span></span>
                   {canOrder && memberRows.length > 1 && <SortToggle active={ordering === "members"} {...oh("members")} />}</div></td></tr>
               {memberRows.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
               {memberRows.map((m, i) => (
@@ -99,7 +85,10 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
                 </tr>
               ))}
               <tr className="bg-slate-50/60"><td colSpan={5} className="px-4 py-1.5">
-                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-slate-600">แต้มสะสม / ไมล์</span>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs"><span className="font-semibold text-slate-600">แต้มสะสม / ไมล์</span>
+                  <span className="text-slate-500"> · {pointRows.length} บัญชี</span>
+                  <span className={pointsStale > 0 ? "text-amber-700" : "text-slate-500"}> · {pointsStale ? `ยอดเกิน 90 วัน ${pointsStale} บัญชี` : "ยอดอัปเดตภายใน 90 วัน"}</span>
+                  <span className={pointSoon > 0 ? "text-amber-700" : "text-slate-500"}> · {pointSoon > 0 ? `แต้มใกล้หมดอายุ (60 วัน) ${pointSoon} บัญชี` : "ไม่มีแต้มใกล้หมดอายุ (60 วัน)"}</span></span>
                   {canOrder && pointRows.length > 1 && <SortToggle active={ordering === "points"} {...oh("points")} />}</div></td></tr>
               {pointRows.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-center text-slate-500">ยังไม่มี</td></tr>}
               {pointRows.map((pt, i) => (
@@ -115,6 +104,7 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
         <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมในความมั่งคั่งสุทธิ · กดแก้ไขเพื่ออัปเดตยอดตาม Statement ·
           บัตรเครดิตอยู่ที่ <Link href="/liabilities#cards" className="text-blue-700 hover:underline">Liabilities → บัตรเครดิต</Link></p>
