@@ -464,10 +464,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
             <ShareRows label="การใช้งาน" rows={usageRows} total={totalValue} />
           </div>
         </section>
-        <p className="-mt-3 text-xs text-slate-500">
-          มูลค่า = มูลค่าประเมินล่าสุด{pv.personId && ` · แสดงเฉพาะส่วนของ ${pv.personName} ตามสัดส่วนความเป็นเจ้าของ`} · สกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด
-        </p>
-        <PropertyTable rows={propRows} empty={pv.personId ? `ไม่มีทรัพย์สินของ ${pv.personName}` : "ยังไม่มีทรัพย์สิน"}
+        <PropertyTable rows={propRows} note={<>มูลค่า = มูลค่าประเมินล่าสุด{pv.personId && ` · แสดงเฉพาะส่วนของ ${pv.personName} ตามสัดส่วนความเป็นเจ้าของ`} · สกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</>}
+          empty={pv.personId ? `ไม่มีทรัพย์สินของ ${pv.personName}` : "ยังไม่มีทรัพย์สิน"}
           toggle={canOrder && props.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/property", { p: sp.p, m: sp.m })} /> : null} />
       </TabPanel>
 

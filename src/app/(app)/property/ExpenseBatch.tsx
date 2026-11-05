@@ -8,6 +8,7 @@ import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
@@ -93,8 +94,9 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายทรัพย์สิน งวด {thMonth(`${ym}-01`)}
-              {rows.some((r) => r.period < `${ym}-01` && r.status === "OVERDUE") && <span className="text-sm font-normal text-red-700"> + ค้างจ่ายยกมา</span>}</h2>
+            <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">ค่าใช้จ่ายทรัพย์สิน งวด {thMonth(`${ym}-01`)}
+              {rows.some((r) => r.period < `${ym}-01` && r.status === "OVERDUE") && <span className="text-sm font-normal text-red-700"> + ค้างจ่ายยกมา</span>}
+              <InfoTip label="คำอธิบาย">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า) · กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ</InfoTip></h2>
             {kinds.length > 1 && (
               <div className="flex flex-wrap gap-1 text-xs">
                 {[["", "ทั้งหมด"] as [string, string], ...kinds].map(([k, l]) => (
@@ -224,7 +226,6 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
           <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </form>
       )}
-      <p className="text-xs text-slate-500">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า) · กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ</p>
     </div>
     </>
   );

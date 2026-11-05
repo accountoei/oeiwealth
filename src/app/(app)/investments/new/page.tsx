@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok } from "@/lib/format";
 import NewPortfolioForm from "./NewPortfolioForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 export default async function NewPortfolioPage() {
   const me = await requireAppUser();
@@ -15,8 +16,7 @@ export default async function NewPortfolioPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มพอร์ตลงทุน</h1>
-        <p className="text-sm text-slate-500">1 พอร์ต = 1 บัญชีที่โบรกเกอร์ / บลจ. · เพิ่มหุ้นหรือกองทุนในพอร์ตได้หลังบันทึก</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มพอร์ตลงทุน <InfoTip label="คำอธิบาย">1 พอร์ต = 1 บัญชีที่โบรกเกอร์ / บลจ. · เพิ่มหุ้นหรือกองทุนในพอร์ตได้หลังบันทึก</InfoTip></h1>
       </div>
       <NewPortfolioForm persons={persons ?? []} goLive={family.go_live_date} openingDate={addDays(family.go_live_date, -1)}
         today={todayBangkok()} isSetup={family.system_status === "SETUP"} isAdmin={me.role === "ADMIN"} />

@@ -272,12 +272,11 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
             </tbody>
             {docs.length > 0 && (
               <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
-                <tr><td className="px-4 py-2.5">รวม {docs.length} ไฟล์{totalSize ? ` · ${fileSize(totalSize)}` : ""}</td><td colSpan={3}></td></tr>
+                <tr><td className="px-4 py-2.5">รวม {docs.length} ไฟล์{totalSize ? ` · ${fileSize(totalSize)}` : ""}</td><td colSpan={3} className="px-4 text-right text-xs font-normal text-slate-500">{docs.length >= 300 && "แสดง 300 รายการล่าสุด — ใช้ตัวกรองหรือค้นหาเพื่อดูรายการอื่น"}</td></tr>
               </tfoot>
             )}
           </table>
         </div>
-        {docs.length >= 300 && <p className="text-xs text-slate-500">แสดง 300 รายการล่าสุด — ใช้ตัวกรองหรือค้นหาเพื่อดูรายการอื่น</p>}
       </section>
     </div>
   );

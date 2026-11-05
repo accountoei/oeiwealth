@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { money } from "@/lib/format";
 import { useOnMainTab } from "./tabs";
 import DateSortHead from "@/components/DateSortHead";
+import { InfoTip } from "@/components/HeaderBar";
 
 /**
  * ตารางรายได้ / ค่าใช้จ่ายของเดือน (รวม "ที่ต้องได้รับ / จ่าย" + "บันทึกแล้ว" เป็นตารางเดียว)
@@ -29,7 +30,7 @@ export type MonthRow = {
 type Opt = { id: string; label: string };
 const SPLIT = "รอแยกรายละเอียด";
 
-export default function MonthTable({ kind, rows, empty, banks = [], cards = [], actions, initialSource = "", focus }: {
+export default function MonthTable({ kind, rows, empty, banks = [], cards = [], actions, initialSource = "", focus, info }: {
   kind: "income" | "expense"; rows: MonthRow[]; empty: string;
   /** "split" = เปิดตัวกรอง "รอแยกรายละเอียด" ไว้ก่อน (ลิงก์จากหน้าอื่น) */
   initialSource?: string;
@@ -39,6 +40,8 @@ export default function MonthTable({ kind, rows, empty, banks = [], cards = [], 
   actions?: ReactNode;
   /** บรรทัดที่เปิดมาจากช่องค้นหา (?hl=) → แสดงทุกสถานะ ไม่ให้ตัวกรอง "ยังไม่ได้บันทึก" ซ่อนบรรทัดนั้น */
   focus?: string;
+  /** คำอธิบายแท็บ → ⓘ ท้ายแถวตัวกรอง */
+  info?: ReactNode;
 }) {
   const inc = kind === "income";
   const split0 = initialSource === "split";
@@ -115,6 +118,7 @@ export default function MonthTable({ kind, rows, empty, banks = [], cards = [], 
             ))}
             {nSplit > 0 && <button type="button" onClick={() => pickSource(SPLIT)}
               className={`${chip(source === SPLIT)} ${source === SPLIT ? "" : "border-amber-300 text-amber-800"}`}>{SPLIT} ({cnt(SPLIT)})</button>}
+            {info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}
           </div>
           {actions && <div className="flex flex-wrap items-start gap-2">{actions}</div>}
         </div>

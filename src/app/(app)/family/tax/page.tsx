@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { StatBox } from "@/components/Boxes";
 import PersonFilter from "@/components/PersonFilter";
 import YearSelect from "@/components/YearSelect";
@@ -295,7 +295,9 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
       })}
 
       <section className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-900">5. คำนวณภาษี (ประมาณการ)</h2>
+        <h2 className="flex items-center gap-1 text-lg font-semibold text-slate-900">5. คำนวณภาษี (ประมาณการ)
+          <InfoTip label="วิธีคำนวณ">ประมาณการตามอัตราและเพดานของปีภาษี {calc.rulesYear + 543} จากยอดใช้ยื่นด้านบน · ไม่รวม &ldquo;รอตรวจสอบ&rdquo; ·
+          บุตรคนที่ 2 ขึ้นไปที่เกิดตั้งแต่ปี 2561 ได้ 60,000 / ค่าเช่าที่ดิน / 40(8) บางประเภทมีอัตราเหมาต่างกัน — แก้ยอดในรายการด้านบน · ยอดจริงให้ยึดตามแบบที่ยื่นกับกรมสรรพากร</InfoTip></h2>
         {calc.warning && <p className="text-sm text-amber-700">{calc.warning}</p>}
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -337,8 +339,6 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
             )}
           </div>
         </div>
-        <p className="text-xs text-slate-500">ประมาณการตามอัตราและเพดานของปีภาษี {calc.rulesYear + 543} จากยอดใช้ยื่นด้านบน · ไม่รวม &ldquo;รอตรวจสอบ&rdquo; ·
-          บุตรคนที่ 2 ขึ้นไปที่เกิดตั้งแต่ปี 2561 ได้ 60,000 / ค่าเช่าที่ดิน / 40(8) บางประเภทมีอัตราเหมาต่างกัน — แก้ยอดในรายการด้านบน · ยอดจริงให้ยึดตามแบบที่ยื่นกับกรมสรรพากร</p>
       </section>
 
       {cur && (
@@ -349,7 +349,6 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
               <span key={d.id}>{connected ? <a href={`/view/${d.id}`} target="_blank" rel="noopener" className="text-blue-700 hover:underline">{d.title}</a> : d.title}</span>))}
             {canWrite && connected && <span className="ml-auto"><DocumentUpload module="FAMILY" link={{ type: "TAX_RETURN", id: cur.id }} category="TAX" label="+ แนบแบบ ภ.ง.ด. / 50 ทวิ / ใบเสร็จ" /></span>}
           </div>
-          <p className="text-xs text-slate-500">เอกสารที่แนบเก็บใน Google Drive และแสดงในแท็บ Documents ตามสิทธิ์ของหน้า Documents</p>
         </section>
       )}
 

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok } from "@/lib/format";
 import NewPropertyForm from "./NewPropertyForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 export default async function NewPropertyPage() {
   const me = await requireAppUser();
@@ -16,8 +17,7 @@ export default async function NewPropertyPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มทรัพย์สิน (อสังหาริมทรัพย์)</h1>
-        <p className="text-sm text-slate-500">บ้าน · คอนโด · ที่ดิน · ฟอร์มสัญญาเช่าจะเปิดเมื่อเลือก &ldquo;ปล่อยเช่า&rdquo;</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มทรัพย์สิน (อสังหาริมทรัพย์) <InfoTip label="คำอธิบาย">บ้าน · คอนโด · ที่ดิน · ฟอร์มสัญญาเช่าจะเปิดเมื่อเลือก &ldquo;ปล่อยเช่า&rdquo;</InfoTip></h1>
       </div>
       <NewPropertyForm persons={persons ?? []} banks={banks ?? []} goLive={family.go_live_date}
         openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}

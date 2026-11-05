@@ -18,7 +18,7 @@ const STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: 
 const small = "ml-2 rounded-md border border-slate-300 px-2 py-1 text-sm";
 
 /** ทรัพย์สินทั้งหมด + ตัวกรอง ประเภท / การใช้งาน / กลุ่มทำเล / สถานะ (ตั้งต้น = ถืออยู่) · ยอดรวมตามตัวกรองด้านบน */
-export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]; empty: string; toggle?: ReactNode }) {
+export default function PropertyTable({ rows, empty, toggle, note }: { rows: PropRow[]; empty: string; toggle?: ReactNode; /** บรรทัดเล็กใต้ยอดรวม */ note?: ReactNode }) {
   const [type, setType] = useState("");
   const [usage, setUsage] = useState("");
   const [loc, setLoc] = useState("");
@@ -61,6 +61,7 @@ export default function PropertyTable({ rows, empty, toggle }: { rows: PropRow[]
         {shown.length > 0 && (
           <span className="ml-auto text-right text-sm text-slate-700">
             รวม{filtered ? "ตามตัวกรอง" : ""} {shown.length} รายการ · มูลค่าล่าสุด <b className="tabular-nums">{money(sum((r) => r.value), "THB")}</b>
+            {note && <span className="block text-xs text-slate-500">{note}</span>}
           </span>
         )}
         {toggle && <span className={shown.length > 0 ? "" : "ml-auto"}>{toggle}</span>}

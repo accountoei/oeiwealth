@@ -8,6 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchAltIncome, batchAltValues, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean;
   /** ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -60,7 +61,8 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
     <section className="space-y-3">
       {cf.dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-slate-900">รับผลตอบแทน <span className="text-xs font-normal text-slate-500">(ค่าเช่า / ค่าให้ยืม · Staking · ผลตอบแทนอื่น)</span></h2>
+        <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">รับผลตอบแทน <span className="text-xs font-normal text-slate-500">(ค่าเช่า / ค่าให้ยืม · Staking · ผลตอบแทนอื่น)</span>
+          <InfoTip label="คำอธิบาย">บันทึกเป็นรายได้ &ldquo;อื่น ๆ&rdquo; ผูกกับทรัพย์สิน · แบ่งให้เจ้าของตามสัดส่วน · ยอดเป็นสกุลของบัญชีที่รับ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</InfoTip></h2>
         {canWrite && (
           <label className="flex items-center gap-2 text-sm">วันที่รับ
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
@@ -118,7 +120,6 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
           <Result s={state} />
         </form>
       )}
-      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;อื่น ๆ&rdquo; ผูกกับทรัพย์สิน · แบ่งให้เจ้าของตามสัดส่วน · ยอดเป็นสกุลของบัญชีที่รับ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</p>
     </section>
   );
 }
@@ -139,7 +140,7 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Alt
     <section className="space-y-3">
       {cf.dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-slate-900">อัปเดตมูลค่า</h2>
+        <h2 className="flex items-center gap-1 font-medium text-slate-900">อัปเดตมูลค่า <InfoTip label="คำอธิบาย">ทองที่ตั้งราคาอัตโนมัติ ระบบลงราคารับซื้อให้ทุกวันทำการ · ทองที่ปิดราคาอัตโนมัติ / ต้องคำนวณจากน้ำหนัก ใช้ฟอร์มในหน้าทรัพย์สิน · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</InfoTip></h2>
         {canWrite && (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <label className="flex items-center gap-2">ณ วันที่
@@ -189,7 +190,6 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Alt
           <Result s={state} />
         </form>
       )}
-      <p className="text-xs text-slate-500">ทองที่ตั้งราคาอัตโนมัติ ระบบลงราคารับซื้อให้ทุกวันทำการ · ทองที่ปิดราคาอัตโนมัติ / ต้องคำนวณจากน้ำหนัก ใช้ฟอร์มในหน้าทรัพย์สิน · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</p>
     </section>
   );
 }

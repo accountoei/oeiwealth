@@ -299,9 +299,6 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
 
       {/* ============================================================ บันทึกรับชำระคืนเงินกู้ */}
       <TabPanel id="monthly">
-        <div>
-          <p className="text-sm text-slate-500">งวดที่ครบกำหนดในเดือนที่เลือก + งวดที่ยังค้างจากเดือนก่อน · บันทึกที่นี่หรือที่หน้า Income &amp; Expenses ก็ได้ (คำสั่งเดียวกัน ไม่นับซ้ำ)</p>
-        </div>
         <section className="grid gap-4 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ต้องรับเดือนนี้ (เงินต้น + ดอกเบี้ย)</div>
@@ -319,8 +316,9 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
             <div className="mt-1 text-xs text-slate-500">{overdueAll.length} งวด</div>
           </div>
         </section>
-        <LoanBatch rows={batchRows} others={batchOthers} banks={bankList} today={today} minDate={goLive} canWrite={canWrite} />
-        <p className="text-xs text-slate-500">เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้ (เห็นในหน้า Income &amp; Expenses ด้วย) · ยอดในกล่องเป็นบาท{pv.personId ? " ตามสัดส่วนของสมาชิกที่เลือก" : ""}</p>
+        <LoanBatch rows={batchRows} others={batchOthers} banks={bankList} today={today} minDate={goLive} canWrite={canWrite}
+          info={<>งวดที่ครบกำหนดในเดือนที่เลือก + งวดที่ยังค้างจากเดือนก่อน · บันทึกที่นี่หรือที่หน้า Income &amp; Expenses ก็ได้ (คำสั่งเดียวกัน ไม่นับซ้ำ)
+            {" "}· เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้ (เห็นในหน้า Income &amp; Expenses ด้วย) · ยอดในกล่องเป็นบาท{pv.personId ? " ตามสัดส่วนของสมาชิกที่เลือก" : ""}</>} />
       </TabPanel>
     </div>
     </TabsProvider>

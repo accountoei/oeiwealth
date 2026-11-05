@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok } from "@/lib/format";
 import NewAlternativeForm from "./NewAlternativeForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 export default async function NewAlternativePage() {
   const me = await requireAppUser();
@@ -17,8 +18,7 @@ export default async function NewAlternativePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มสินทรัพย์อื่น</h1>
-        <p className="text-sm text-slate-500">ทอง เครื่องประดับ นาฬิกา ของสะสม คริปโต ฯลฯ · มูลค่าประเมินเอง (แนะนำทุก 90 วัน)</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มสินทรัพย์อื่น <InfoTip label="คำอธิบาย">ทอง เครื่องประดับ นาฬิกา ของสะสม คริปโต ฯลฯ · มูลค่าประเมินเอง (แนะนำทุก 90 วัน)</InfoTip></h1>
       </div>
       <NewAlternativeForm persons={persons ?? []} categories={(cats ?? []).map((c) => ({ id: c.id, name: c.category_name, code: c.category_code, unit: c.default_unit }))}
         goLive={family.go_live_date} openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}

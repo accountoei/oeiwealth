@@ -8,6 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
   /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -72,7 +73,7 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
     <section className="space-y-3">
       {cf.dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-slate-900">รับปันผล (แยกตามผู้ถือหุ้น)</h2>
+        <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">รับปันผล (แยกตามผู้ถือหุ้น) <InfoTip label="คำอธิบาย">กรอกเฉพาะผู้ถือหุ้นที่ได้รับ (ช่องว่าง = ไม่บันทึก) · รายได้ &ldquo;ปันผลกิจการ&rdquo; เป็นของคนนั้น 100% เข้าบัญชีที่เลือก · ผู้ถือหุ้นคนไหนผิด จะไม่บันทึกเลยทั้งชุด · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses</InfoTip></h2>
         {canWrite && (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <label className="flex items-center gap-2">วันที่รับ
@@ -151,7 +152,6 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
           <Result s={state} />
         </form>
       )}
-      <p className="text-xs text-slate-500">กรอกเฉพาะผู้ถือหุ้นที่ได้รับ (ช่องว่าง = ไม่บันทึก) · รายได้ &ldquo;ปันผลกิจการ&rdquo; เป็นของคนนั้น 100% เข้าบัญชีที่เลือก · ผู้ถือหุ้นคนไหนผิด จะไม่บันทึกเลยทั้งชุด · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses</p>
     </section>
   );
 }
@@ -171,7 +171,7 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
     <section className="space-y-3">
       {cf.dialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-slate-900">อัปเดตมูลค่า</h2>
+        <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ</InfoTip></h2>
         {canWrite && (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <label className="flex items-center gap-2">ณ วันที่
@@ -224,7 +224,6 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
           <Result s={state} />
         </form>
       )}
-      <p className="text-xs text-slate-500">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ</p>
     </section>
   );
 }
