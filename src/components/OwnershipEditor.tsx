@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { setOwnership, type RecState } from "@/lib/records";
 import Flash from "@/components/Flash";
+import { SMALL_BTN } from "@/lib/format";
 
 /** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability) */
 export default function OwnershipEditor({ kind, id, persons, current, paths, today, startOpen = false, unit = "percent", totalShares }: {
@@ -22,7 +23,7 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
   const [state, action, pending] = useActionState<RecState, FormData>(setOwnership, {});
   const total = Object.values(shares).reduce((s, v) => s + (Number(String(v).replace(/,/g, "")) || 0), 0);
   const over = bySh ? !!totalShares && total > totalShares : total > 100;
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>{bySh ? "แก้จำนวนหุ้น" : "แก้สัดส่วน"}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>{bySh ? "แก้จำนวนหุ้น" : "แก้สัดส่วน"}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3 text-sm">

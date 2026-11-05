@@ -5,7 +5,7 @@ import Modal from "@/components/Modal";
 import Flash from "@/components/Flash";
 import RowActions from "@/components/RowActions";
 import { addCapitalTransfer, type ActionState } from "../actions";
-import { money, thDate, signedMoney, signedPct } from "@/lib/format";
+import { SMALL_BTN, money, thDate, signedMoney, signedPct } from "@/lib/format";
 import { vsInvested, type CapitalLine } from "@/lib/net-invested";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -49,8 +49,8 @@ export default function NetInvestedBox({ assetId, currency, investedThb, investe
       )}
       {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน</p>}
       <div className="mt-3 flex flex-wrap gap-3 text-sm">
-        {lines.length > 0 && <button type="button" onClick={() => setList(true)} className="text-slate-600 underline">ดูรายการเงินโอน ({lines.length})</button>}
-        {canWrite && goLive && <button type="button" onClick={() => setAdd(true)} className="text-slate-600 underline">+ เงินโอนก่อน Go-live</button>}
+        {lines.length > 0 && <button type="button" onClick={() => setList(true)} className={SMALL_BTN}>ดูรายการเงินโอน ({lines.length})</button>}
+        {canWrite && goLive && <button type="button" onClick={() => setAdd(true)} className={SMALL_BTN}>+ เงินโอนก่อน Go-live</button>}
       </div>
 
       {list && (
@@ -69,7 +69,7 @@ export default function NetInvestedBox({ assetId, currency, investedThb, investe
                     <td className={`text-right tabular-nums ${sign(l.thb)}`}>{signed(l.thb)}</td>
                     {fx && <td className={`text-right tabular-nums ${l.ccy == null ? "text-slate-400" : sign(l.ccy)}`}>{l.ccy == null ? "—" : signed(l.ccy)}</td>}
                     <td className="pl-2 text-right">{l.pre && canWrite && <RowActions table="portfolio_capital_transfers" id={l.pre.id} paths={paths} canDelete={canDelete}
-                      button="แก้ไข" deleteEffect="ลบเฉพาะข้อมูลอ้างอิง ไม่กระทบยอดบัญชี / มูลค่าพอร์ต"
+                      deleteEffect="ลบเฉพาะข้อมูลอ้างอิง ไม่กระทบยอดบัญชี / มูลค่าพอร์ต"
                       fields={[{ name: "transfer_date", label: "วันที่โอน", type: "date", value: l.pre.transfer_date },
                         { name: "amount_thb", label: "เงินบาทที่โอน", type: "number", value: l.pre.amount_thb },
                         ...(fx ? [{ name: "amount_ccy", label: `${currency} ที่พอร์ตได้รับ`, type: "number" as const, value: l.pre.amount_ccy }] : []),

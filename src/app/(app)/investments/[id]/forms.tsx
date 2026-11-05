@@ -6,7 +6,7 @@ import { useRowPanel } from "@/components/RowPanel";
 import {
   addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
 } from "../actions";
-import { HOLDING_TYPE_LABEL, ROW_BTN, money, qty, thDate } from "@/lib/format";
+import { SMALL_BTN, HOLDING_TYPE_LABEL, ROW_BTN, money, qty, thDate } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -564,7 +564,7 @@ export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate,
   const [got, setGot] = useState(t.counter_amount != null ? String(Number(t.counter_amount)) : t.counter_currency == null ? String(Number(t.amount)) : "");
   const trigger = (
     <button type="button" onClick={() => setOpen(!open)}
-      className={activeCls(waiting ? "rounded-md bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700" : "text-xs text-slate-700 underline")}>
+      className={activeCls(waiting ? "rounded-md bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700" : SMALL_BTN)}>
       {waiting ? "ใส่ยอดที่เข้า" : "แก้การโอน"}
     </button>
   );

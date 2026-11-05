@@ -12,7 +12,7 @@ import {
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
 import ModalButton from "@/components/ModalButton";
-import { COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText } from "@/lib/format";
+import { SMALL_BTN, COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -25,7 +25,7 @@ const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const sbtn = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50";
 const BOX_BTN = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50";
-const link = "text-xs text-slate-700 underline";
+const link = SMALL_BTN;   // ปุ่มเล็ก (เดิมเป็นลิงก์ขีดเส้นใต้ · กติกา 5 พ.ย. 2026)
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
@@ -141,7 +141,7 @@ export function LeaseDetailsForm({ assetId, leaseId, v, opt, canSensitive, banks
   banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null;
 }) {
   return (
-    <ModalButton label="รายละเอียดสัญญา" title="รายละเอียดสัญญา (สำหรับพิมพ์)" size="lg" className="text-sm text-slate-700 underline">
+    <ModalButton label="รายละเอียดสัญญา" title="รายละเอียดสัญญา (สำหรับพิมพ์)" size="lg" className={SMALL_BTN}>
       <LeaseDetailsBody assetId={assetId} leaseId={leaseId} v={v} opt={opt} canSensitive={canSensitive} banks={banks}
         rentCurrency={rentCurrency} rentTo={rentTo} depositMonths={depositMonths} />
     </ModalButton>

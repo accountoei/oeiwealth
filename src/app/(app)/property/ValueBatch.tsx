@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
-import { addDays, diffText, marketStale, money, PROPERTY_TYPE_LABEL, thDate, USAGE_LABEL } from "@/lib/format";
+import { SMALL_BTN, addDays, diffText, marketStale, money, PROPERTY_TYPE_LABEL, thDate, USAGE_LABEL } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import ModalButton from "@/components/ModalButton";
 import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm";
@@ -194,7 +194,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
                   </>)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                     {!m ? (canWrite ? (
-                      <ModalButton label="ประเมิน" title={`ประเมินราคาตลาด · ${r.name}`} size="lg" className="text-xs text-blue-700 hover:underline">
+                      <ModalButton label="ประเมิน" title={`ประเมินราคาตลาด · ${r.name}`} size="lg" className={SMALL_BTN}>
                         <MarketValuationForm assetId={r.id} currency={r.currency} today={today} defaultUnit={r.defaultUnit} areaSqWa={r.areaSqWa} last={m} />
                       </ModalButton>
                     ) : <span className="text-xs text-slate-400">ยังไม่ประเมิน</span>) : (<>

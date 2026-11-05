@@ -9,7 +9,7 @@ import {
   payRecurringExpense, saveEntry, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
   type ActionState,
 } from "./actions";
-import { HOME_CATEGORY, INCOME_TYPE_LABEL, PROPERTY_COST_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
+import { SMALL_BTN, HOME_CATEGORY, INCOME_TYPE_LABEL, PROPERTY_COST_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { findHint, type ExpHint } from "@/lib/category-hints";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -684,7 +684,7 @@ export function ReimbursementForm({ itemId, remaining, currency, banks, cards, c
   const [via, setVia] = useState("bank");
   const [state, action, pending] = useActionState<ActionState, FormData>(addReimbursement, {});
   if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-800 underline")}>บันทึกเงินคืน</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>บันทึกเงินคืน</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2 text-left">

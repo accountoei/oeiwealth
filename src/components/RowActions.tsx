@@ -7,6 +7,7 @@ import { useRowPanel } from "@/components/RowPanel";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Modal from "@/components/Modal";
 import Flash from "@/components/Flash";
+import { SMALL_BTN, SMALL_DEL_BTN } from "@/lib/format";
 
 export type FieldSpec = {
   name: string; label: string; type?: "text" | "number" | "date" | "select";
@@ -159,11 +160,11 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
       {cf.dialog}
       <span className="inline-flex flex-wrap items-center gap-2 text-xs">
         {extra}
-        {editable && <button type="button" onClick={() => setEditing(true)} className="text-slate-600 underline">แก้ไข</button>}
+        {editable && <button type="button" onClick={() => setEditing(true)} className={SMALL_BTN}>แก้ไข</button>}
         {canDelete && (
           <form action={delAction} className="inline" onSubmit={confirmDelete}>
             {hidden}
-            <button disabled={deleting} className="text-red-600 underline disabled:opacity-50">{deleting ? "…" : "ลบ"}</button>
+            <button disabled={deleting} className={SMALL_DEL_BTN}>{deleting ? "…" : "ลบ"}</button>
           </form>
         )}
       </span>

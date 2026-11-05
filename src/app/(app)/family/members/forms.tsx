@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { useActionSlot } from "@/components/ActionBar";
 import { addPerson, updateFamily, type ActionState } from "./actions";
-import { familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
+import { SMALL_BTN, familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
 import { resizePhoto } from "./[id]/details-form";
 import Flash from "@/components/Flash";
 
@@ -40,7 +40,7 @@ export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
   const [photoErr, setPhotoErr] = useState("");
   const c = useConfirmSubmit();
   const reset = () => { setHead(headId ?? ""); setPhoto(photo0); setNewPhoto(""); setClear(false); setPhotoErr(""); };
-  const trigger = <button type="button" onClick={() => { reset(); setOpen(!open); }} className={activeCls("text-xs text-blue-700 underline")}>แก้ไข</button>;
+  const trigger = <button type="button" onClick={() => { reset(); setOpen(!open); }} className={activeCls(SMALL_BTN)}>แก้ไข</button>;
   if (!open) return trigger;
   const newHead = candidates.find((x) => x.id === head)?.name;
   async function pick(f: File | undefined) {

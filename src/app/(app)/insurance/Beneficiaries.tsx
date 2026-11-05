@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { saveBeneficiaries, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { SMALL_BTN } from "@/lib/format";
 
 type Row = { person_id: string; name: string; percent: string };
 
@@ -46,7 +47,7 @@ export default function BeneficiaryEditor({ policyId, persons, current, startOpe
   const { open, setOpen, present, activeCls } = useActionSlot(startOpen);
   const [rows, setRows] = useState<Row[]>(current.map((c) => ({ person_id: c.person_id ?? "", name: c.name ?? "", percent: String(c.percent) })));
   const [state, action, pending] = useActionState<ActionState, FormData>(saveBeneficiaries, {});
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>แก้ผู้รับผลประโยชน์</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>แก้ผู้รับผลประโยชน์</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">

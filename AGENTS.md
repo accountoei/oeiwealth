@@ -73,6 +73,12 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 - Number inputs: use `inputMode="decimal"` — `src/components/NumberInputs.tsx` formats them globally (commas while typing, `.00` on blur; names matching quantity/percent/rate/level/day get no `.00`; `data-money="off"` opts out of `.00`, `data-plain` opts out entirely). Server actions must strip commas before `Number()` (use `numOrNull`); client-side running totals use `numOrZero`. Server actions return `FormState` (extend it per page) from `src/lib/format.ts`.
 - Success messages: render with `<Flash on={state} />` (`src/components/Flash.tsx`, hides after 4 s; errors stay; outside a `Modal` it shows as a bottom-right toast instead — `toast()` / `useInModal()` in `src/components/Modal.tsx`) — not `{state.ok && <p>…</p>}`.
 - Theme lives in `src/app/globals.css` (`@theme` overrides): primary buttons `bg-blue-600 hover:bg-blue-700`, cards `rounded-xl border border-slate-200 bg-white`.
+- **Buttons vs row click vs links** (owner, 5 Nov 2026) — same job, same look on every page:
+  - **Button** = do something / record something new (opens a popup, or a full page for a long "+ เพิ่ม…" form; delete / confirm-type buttons only ask to confirm). Primary: blue (`ADD_BTN`, `ROW_BTN`). Secondary: `SMALL_BTN`; red for delete / undo: `SMALL_DEL_BTN` (both in `src/lib/format.ts`).
+  - **Click the table row** = edit / delete an existing record (`RowActions` / `PairEdit` / `useRowPanel` without `button`). Use a per-record small button only when one row holds several separately editable records.
+  - **Link** (text, `<Link>` / `<a>`) = go to another page only. Never use a link-looking button to open a popup or run an action.
+  - Allowed small exceptions: underlined helper links *inside* a form (fill a value, "+ เพิ่มบรรทัด", clear, back) and an amount with ✎ / dotted underline in a table cell that opens that cell's record.
+  - In popups: Save first, then Delete or Status beside it; no Cancel / Close (the popup has ✕ / Esc — mark such buttons `data-close`).
 - `"use client"` files must not export constants used by server components — put shared constants/labels in `src/lib/format.ts`.
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.
 - Shared lists that many PRs add to (e.g. `DELETABLE`, label maps): one entry per line, inserted in alphabetical order — never appended at the end or onto a long single line, so parallel PRs do not conflict.
