@@ -429,7 +429,7 @@ function NewComponentFields({ pick }: { pick: string }) {
             className={`w-28 ${small}`} /><span className="text-xs text-slate-500">ตร.ม.</span>
           {/* ราคาซาก: บาท หรือ % ช่องเดียว · อายุใช้งาน ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม (ตกลง 5 พ.ย. 2026) */}
           <span className="text-xs text-slate-500">ราคาซาก</span>
-          <input name="nc_salvage" placeholder="บาท หรือ %" aria-label="ราคาซาก (บาท หรือ %)" data-plain className={`w-32 text-right ${small}`} />
+          <input name="nc_salvage" placeholder="บาท หรือ %" aria-label="ราคาซาก (บาท หรือ %)" data-num="pct" className={`w-32 text-right ${small}`} />
           <span className="text-xs text-slate-500">อายุใช้งาน</span>
           <input name="nc_years" placeholder="20" aria-label="อายุใช้งาน (ปี)" inputMode="numeric" data-plain className={`w-16 text-right ${small}`} />
           <span className="text-xs text-slate-500">ปี <span className="text-slate-400">(ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม)</span></span>

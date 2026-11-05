@@ -10,7 +10,7 @@ import { TabActions } from "@/components/TabActions";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import PropertyTable, { type PropRow } from "./PropertyTable";
-import RentBatch, { type RentRow } from "./RentBatch";
+import RentBatch, { type OtherIncome, type RentRow } from "./RentBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { assetIncomeFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
@@ -30,7 +30,7 @@ type Prop = { id: string; asset_id: string; property_type: string; usage_type: s
 type Lease = { id: string; property_asset_id: string; tenant_name: string; unit_label: string | null; rent_amount: number;
   rent_currency: string; payment_frequency: string; start_date: string; end_date: string; lease_status: string };
 type Inc = { id: string; asset_id: string; lease_id: string | null; received_to_asset_id: string | null; income_type: string; date: string; amount: number; currency: string; base_amount: number | null; notes: string | null;
-  tax: number | null; income_subtype: string | null; pending_split: boolean | null };
+  tax: number | null; income_subtype: string | null; pending_split: boolean | null; income_period: string | null };
 type Exp = { id: string; related_asset_id: string | null; property_utility_id: string | null; date: string; description: string;
   amount: number; currency: string; base_amount: number | null; notes: string | null; pending_split: boolean | null;
   source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null };
@@ -66,6 +66,24 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const paths = ["/property"];
 
   const canWrite = me.role !== "VIEWER";
+  /**
+   * รายการรายงวด (ค่าเช่า / ค่าใช้จ่ายประจำ): งวดเดือนนี้ + งวดก่อนที่ยังค้าง (OVERDUE · ยกมา)
+   *   + งวดก่อนที่รับ / จ่ายในเดือนนี้ (paidQ = รายการรับ / จ่ายที่ผูกงวด → ดึงงวดนั้นมาด้วย ไม่หายจากตารางทันทีหลังบันทึก)
+   */
+  const withCarried = async (view: string, cols: string, idCol: string, periodCol: string, paidQ: PromiseLike<{ data: unknown }>) => {
+    const [{ data: cur }, { data: paidNow }] = await Promise.all([
+      supabase.from(view).select(cols).or(`${periodCol}.eq.${start},and(status.eq.OVERDUE,${periodCol}.lt.${start})`),
+      paidQ,
+    ]);
+    const pairs = (paidNow ?? []) as unknown as Record<string, string>[];
+    const back = pairs.length
+      ? (await supabase.from(view).select(cols).in(idCol, [...new Set(pairs.map((x) => x[idCol]))]).in(periodCol, [...new Set(pairs.map((x) => x[periodCol]))])).data
+      : null;
+    const want = new Set(pairs.map((x) => `${x[idCol]}:${x[periodCol]}`));
+    const rows = [...((cur ?? []) as unknown as Record<string, string>[]),
+      ...((back ?? []) as unknown as Record<string, string>[]).filter((x) => want.has(`${x[idCol]}:${x[periodCol]}`))];
+    return { data: [...new Map(rows.map((x) => [`${x[idCol]}:${x[periodCol]}`, x])).values()] as unknown[] };
+  };
   // ดึงข้อมูลเป็น 2 รอบ (30 ต.ค. 2026) — เดิมรอทีละชุดต่อกันราว 9 ทอด → ช้ามากเมื่อ Supabase เพิ่งตื่น
   //   รอบแรก = ทุกชุดที่ไม่ต้องรอใคร · รอบสอง = ชุดที่ต้องใช้รายชื่อทรัพย์สิน (ชุดที่ต้องรอกันอีกทอดอยู่ในวงเล็บของตัวเอง)
   const [pv, [{ data, error }, { data: leases }, { data: fx }, { data: family }, sortMap, { data: rentTrack }, { data: costTrack },
@@ -80,9 +98,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       supabase.from("v_fx_status").select("currency,rate_to_thb"),
       supabase.from("families").select("go_live_date").maybeSingle(),
       loadSortMap("assets"),
-      supabase.from("v_lease_rent_tracking").select("lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status").eq("income_period", start),
-      supabase.from("v_property_cost_tracking").select("utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status")
-        .eq("cost_period", start).order("utility_type"),
+      // งวดเดือนนี้ + งวดก่อนที่ยังค้าง (ยกมา) + งวดก่อนที่รับ / จ่ายในเดือนนี้ (ยังเห็นหลังบันทึก) · ตกลง 5 พ.ย. 2026
+      withCarried("v_lease_rent_tracking", "lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status",
+        "lease_id", "income_period", supabase.from("income_transactions").select("lease_id,income_period").eq("income_type", "RENT").not("lease_id", "is", null)
+          .lt("income_period", start).gte("date", start).lte("date", end).is("deleted_at", null)),
+      withCarried("v_property_cost_tracking", "utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status",
+        "utility_id", "cost_period", supabase.from("expense_items").select("utility_id:property_utility_id,cost_period").not("property_utility_id", "is", null)
+          .lt("cost_period", start).gte("date", start).lte("date", end).is("deleted_at", null)),
       supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
       supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     ]),
@@ -99,7 +121,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const shown = new Set(props.map((p) => p.asset_id));
   type RT = { lease_id: string; property_asset_id: string; name: string; income_period: string; due_date: string | null; expected_amount: number; received_amount: number | null; currency: string; status: string };
   const leaseIds = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.lease_id))];
+  const rentPeriods = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.income_period))];
   const utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
+  const costPeriods = [...new Set(((costTrack ?? []) as { cost_period: string }[]).map((c) => c.cost_period))];
   const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
   const [{ utils, utilProp, expU }, { taxDataYears, taxYears, taxYear, taxRaw }, { latestVal, partRaw },
     [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }]] = await Promise.all([
@@ -141,7 +165,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       return { latestVal, partRaw };
     })(),
     Promise.all([
-      ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split")
+      ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split,income_period")
         .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
       ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
       // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
@@ -150,11 +174,11 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       // ส่วนประกอบ → แท็บอัปเดตมูลค่ากางรายแถว
       ids.length ? supabase.from("property_deeds").select("id,property_id,sort_order,created_at,component_type,label,title_type,title_deed_no,land_no,land_area_sq_wa")
         .in("property_id", allProps.map((p) => p.id)).is("deleted_at", null).is("ended_date", null).order("sort_order").order("created_at") : none,
-      // รับแล้ว / จ่ายแล้วของงวดที่เลือก (กดยอดเพื่อแก้ / ลบ · ด้านล่าง)
+      // รับแล้ว / จ่ายแล้วของงวดในตาราง (กดยอดเพื่อแก้ / ลบ · ด้านล่าง)
       leaseIds.length ? supabase.from("income_transactions").select("id,lease_id,income_period,date,amount,tax,notes,currency").in("lease_id", leaseIds)
-        .eq("income_type", "RENT").eq("income_period", start).is("deleted_at", null).order("date") : none,
+        .eq("income_type", "RENT").in("income_period", rentPeriods).is("deleted_at", null).order("date") : none,
       utilIds.length ? supabase.from("expense_items").select("id,property_utility_id,cost_period,date,amount,notes,currency,related_asset_id").in("property_utility_id", utilIds)
-        .eq("cost_period", start).is("deleted_at", null).order("date") : none,
+        .in("cost_period", costPeriods).is("deleted_at", null).order("date") : none,
     ]),
   ]);
   // "จ่ายจาก" ที่ตั้งไว้ในแต่ละรายการค่าใช้จ่ายประจำ → ค่าตั้งต้นของแท็บบันทึกค่าใช้จ่าย
@@ -263,18 +287,53 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const banks = ((bankRows ?? []) as { asset_id: string; name: string; currency: string }[]).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }));
   const lastBank = new Map<string, string>();
   [...incAll].sort((a, b) => a.date.localeCompare(b.date)).forEach((x) => { if (x.lease_id && x.received_to_asset_id) lastBank.set(x.lease_id, x.received_to_asset_id); });
-  const rentRows: RentRow[] = ((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => ({
-    key: `${r.lease_id}:${r.income_period}`, leaseId: r.lease_id, assetId: r.property_asset_id, property: propName.get(r.property_asset_id) ?? "",
-    tenant: r.name, period: r.income_period, due: r.due_date, expected: Number(r.expected_amount), received: Number(r.received_amount ?? 0),
-    currency: r.currency, status: r.status,
-    bank: [rentTo.get(r.lease_id), lastBank.get(r.lease_id)].find((b) => b && banks.some((x) => x.id === b && x.currency === r.currency))
-      ?? banks.find((b) => b.currency === r.currency)?.id ?? "",
-  })).sort((a, b) => a.property.localeCompare(b.property, "th"));
-  // รับแล้ว / จ่ายแล้วของงวดที่เลือก → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้าทรัพย์สิน · ตกลง 28 ต.ค. 2026)
-  type GotRow = { id: string; lease_id: string; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
-  type PaidRow = { id: string; property_utility_id: string; date: string; amount: number; notes: string | null; currency: string; related_asset_id: string | null };
+  // แท็บรับค่าเช่า = ตารางเดียว (ตกลง 5 พ.ย. 2026): งวดค่าเช่า (เดือนนี้ + ค้างรับยกมา) · สัญญาที่ไม่มีงวดเดือนนี้ · ค่าน้ำไฟเรียกเก็บ
+  //   · รายได้อื่นที่รับในเดือนนี้ · ยอดรับเข้ารวม (เดิมแยก 3 ตาราง: รับค่าเช่า / รายได้ที่บันทึกแล้ว / สัญญาเช่าที่มีผล)
+  const leaseById = new Map(((leases as Lease[] | null) ?? []).map((l) => [l.id, l]));
+  const who = (l: Lease) => [l.unit_label, l.tenant_name].filter(Boolean).join(" · ");
+  const bankFor = (leaseId: string, ccy: string) => [rentTo.get(leaseId), lastBank.get(leaseId)].find((b) => b && banks.some((x) => x.id === b && x.currency === ccy))
+    ?? banks.find((b) => b.currency === ccy)?.id ?? "";
+  const monthNo = (d: string) => Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1;
+  const monthOf = (n: number) => `${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, "0")}-01`;
+  // สัญญาที่ไม่มีงวดในเดือนนี้ (รายไตรมาส / รายปี / ยังไม่เริ่ม) → บอกงวดถัดไป
+  const nextNote = (l: Lease) => {
+    if (l.lease_status === "UPCOMING") return `เริ่มสัญญา ${thDate(l.start_date)}`;
+    const step = PER_MONTHS[l.payment_frequency];
+    if (!step) return "ไม่มีตารางงวด";
+    const s0 = monthNo(l.start_date);
+    const next = s0 + Math.max(0, Math.ceil((monthNo(start) + 1 - s0) / step)) * step;
+    return next > monthNo(l.end_date) ? "ไม่มีงวดเหลือในสัญญา" : `ไม่มีงวดเดือนนี้ · งวดถัดไป ${thMonth(monthOf(next))}`;
+  };
+  const rentRows: RentRow[] = ((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => {
+    const l = leaseById.get(r.lease_id);
+    const property = propName.get(r.property_asset_id) ?? "";
+    return {
+      key: `${r.lease_id}:${r.income_period}`, leaseId: r.lease_id, assetId: r.property_asset_id, property,
+      tenant: l ? who(l) : r.name.startsWith(`${property} · `) ? r.name.slice(property.length + 3) : r.name,
+      period: r.income_period, due: r.due_date, expected: Number(r.expected_amount), received: Number(r.received_amount ?? 0),
+      currency: r.currency, status: r.status, bank: bankFor(r.lease_id, r.currency),
+    };
+  });
+  const withRow = new Set(rentRows.map((r) => r.leaseId));
+  rentRows.push(...props.flatMap((p) => (byProp.get(p.asset_id) ?? []).filter((l) => !withRow.has(l.id)).map((l): RentRow => ({
+    key: `l:${l.id}`, leaseId: l.id, assetId: p.asset_id, property: p.assets.name, tenant: who(l), period: start, due: null,
+    expected: Number(l.rent_amount), received: 0, currency: l.rent_currency, status: "NONE", bank: "", note: nextNote(l),
+  }))));
+  // เรียงตามทรัพย์สิน → ผู้เช่า → งวด · รายละเอียดสัญญาแสดงที่แถวแรกของสัญญา
+  rentRows.sort((a, b) => a.property.localeCompare(b.property, "th") || a.tenant.localeCompare(b.tenant, "th") || a.period.localeCompare(b.period));
+  const leaseShown = new Set<string>();
   rentRows.forEach((r) => {
-    r.edits = ((rentGot ?? []) as GotRow[]).filter((i) => i.lease_id === r.leaseId).map((i) => ({ id: i.id, node: recEdit({
+    const l = leaseById.get(r.leaseId);
+    if (!l || leaseShown.has(l.id)) return;
+    leaseShown.add(l.id);
+    const st = l.lease_status === "ACTIVE" ? undefined : LEASE_STATUS[l.lease_status];
+    r.lease = { id: l.id, term: `${thDate(l.start_date)} – ${thDate(l.end_date)}`, freq: FREQ_TEXT[l.payment_frequency] ?? "", badge: st };
+  });
+  // รับแล้วของงวด → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้าทรัพย์สิน · ตกลง 28 ต.ค. 2026)
+  type GotRow = { id: string; lease_id: string; income_period: string; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
+  type PaidRow = { id: string; property_utility_id: string; cost_period: string; date: string; amount: number; notes: string | null; currency: string; related_asset_id: string | null };
+  rentRows.forEach((r) => {
+    r.edits = ((rentGot ?? []) as GotRow[]).filter((i) => i.lease_id === r.leaseId && i.income_period === r.period).map((i) => ({ id: i.id, node: recEdit({
       canWrite, canDelete: canOrder, table: "income_transactions", id: i.id, label: recLabel("รับแล้ว", i.date, Number(i.amount), i.currency),
       paths: [...paths, `/property/${r.assetId}`, "/income-expenses"], fields: rentIncomeFields(i) }) }));
   });
@@ -283,10 +342,19 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   rentRows.push(...((chargeRaw ?? []) as CH[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
     key: `c:${c.id}`, leaseId: c.lease_id, chargeId: c.id, assetId: c.property_asset_id, property: propName.get(c.property_asset_id) ?? "",
     tenant: `${REBILL_SUBTYPE} · ${c.description}`, period: c.cost_period, due: null, expected: Number(c.amount), received: 0,
-    currency: c.currency, status: "PENDING",
-    bank: [rentTo.get(c.lease_id), lastBank.get(c.lease_id)].find((b) => b && banks.some((x) => x.id === b && x.currency === c.currency))
-      ?? banks.find((b) => b.currency === c.currency)?.id ?? "",
+    currency: c.currency, status: "PENDING", bank: bankFor(c.lease_id, c.currency),
   })));
+  // รายได้ที่รับในเดือนนี้ที่ไม่ได้อยู่ในแถวงวดค่าเช่า (รายได้อื่น · ค่าน้ำไฟที่รับคืนแล้ว · ค่าเช่างวดอื่น) → แถวท้ายตาราง
+  const rentKeys = new Set(rentRows.map((r) => r.key));
+  const otherInc: OtherIncome[] = incMonth.filter((x) => !(x.income_type === "RENT" && x.lease_id && rentKeys.has(`${x.lease_id}:${x.income_period}`)))
+    .map((x) => ({
+      key: x.id, assetId: x.asset_id, property: propName.get(x.asset_id) ?? "", date: x.date, amount: incAmt(x),
+      label: [x.income_type === "RENT" && x.income_period ? `ค่าเช่างวด ${thMonth(x.income_period)}` : INCOME_TYPE_LABEL[x.income_type] ?? x.income_type,
+        x.income_subtype, x.notes].filter(Boolean).join(" · "),
+    }));
+  // ยอดรับเข้าเดือนนี้ (ตามวันที่รับ · ส่วนของสมาชิกที่เลือก) แยกตามทรัพย์สิน → ท้ายตาราง (กรองทรัพย์สินแล้วรวมใหม่)
+  const incByAsset: Record<string, number> = {};
+  incMonth.forEach((x) => { incByAsset[x.asset_id] = (incByAsset[x.asset_id] ?? 0) + incOf(x); });
   // สัญญาที่ตั้ง "เรียกเก็บผู้เช่า" ของแต่ละทรัพย์สิน → ติ๊กเรียกเก็บในแท็บค่าใช้จ่าย (ไฟ / น้ำ)
   //   มิเตอร์ผูกห้อง → สัญญาของห้องนั้นก่อน
   const utilRoom = new Map(((utils ?? []) as { id: string; unit_label: string | null }[]).map((u) => [u.id, u.unit_label?.trim().toLowerCase() ?? ""]));
@@ -306,10 +374,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       const l = ["ELECTRICITY", "WATER"].includes(c.utility_type) ? rebillOf(c.property_asset_id, c.utility_id) : undefined;
       return l ? { rebillLease: l.id, rebillLabel: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") } : {};
     })(),
-    edits: ((costPaid ?? []) as PaidRow[]).filter((e) => e.property_utility_id === c.utility_id).map((e) => ({ id: e.id, node: recEdit({
+    edits: ((costPaid ?? []) as PaidRow[]).filter((e) => e.property_utility_id === c.utility_id && e.cost_period === c.cost_period).map((e) => ({ id: e.id, node: recEdit({
       canWrite, canDelete: canOrder, table: "expense_items", id: e.id, label: recLabel("จ่ายแล้ว", e.date, Number(e.amount), e.currency),
       paths: [...paths, `/property/${c.property_asset_id}`, "/income-expenses"], fields: propertyCostFields(e) }) })),
-  })).sort((a, b) => a.property.localeCompare(b.property, "th"));
+  })).sort((a, b) => a.property.localeCompare(b.property, "th") || a.label.localeCompare(b.label, "th") || a.period.localeCompare(b.period));
   // ---------------------------------------------------------------- ภาษีที่ดิน (ปีที่เลือก) รายทรัพย์สิน
   type TL = TaxLineRow & { asset_id: string; tax_year: number };
   const taxLinesAll = ((taxRaw ?? []) as TL[]);
@@ -400,51 +468,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       </TabPanel>
 
       <TabPanel id="income">
-        <div className="space-y-4">
-          <RentBatch key={`r${ym}`} rows={rentRows} banks={banks} defaultDate={defaultDate} today={today} minDate={family?.go_live_date ?? ""} canWrite={canWrite} />
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <h2 className="px-4 pt-4 font-medium text-slate-900">รายได้จากทรัพย์สินที่บันทึกแล้ว · {thMonth(start)}</h2>
-            <table className="mt-2 w-full min-w-[40rem] text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr><th className="px-3 py-2">วันที่</th><th className="px-3">ทรัพย์สิน</th><th className="px-3">ประเภท</th><th className="px-3">รายละเอียด</th><th className="px-3 text-right">จำนวน (THB)</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {incMonth.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ยังไม่มีรายได้ในเดือนนี้</td></tr>}
-                {incMonth.map((x) => (
-                  <tr key={x.id}>
-                    <td className="whitespace-nowrap px-3 py-2">{thDate(x.date)}</td>
-                    <td className="px-3"><Link href={`/property/${x.asset_id}`} className="hover:underline">{propName.get(x.asset_id)}</Link></td>
-                    <td className="px-3">{INCOME_TYPE_LABEL[x.income_type] ?? x.income_type}</td>
-                    <td className="px-3 text-xs text-slate-500">{x.notes}</td>
-                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-emerald-700">{incAmt(x)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {incMonth.length > 0 && <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium"><tr><td colSpan={4} className="px-3 py-2">รวม</td><td className="px-3 text-right tabular-nums text-emerald-700">{money(incTotal)}</td></tr></tfoot>}
-            </table>
-          </div>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <h2 className="px-4 pt-4 font-medium text-slate-900">สัญญาเช่าที่มีผล</h2>
-            <table className="mt-2 w-full min-w-[40rem] text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3">ผู้เช่า</th><th className="px-3">สถานะ</th><th className="px-3">ระยะสัญญา</th><th className="px-3 text-right">ค่าเช่า</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {props.flatMap((p) => byProp.get(p.asset_id) ?? []).length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">ไม่มีสัญญาเช่าที่มีผล</td></tr>}
-                {props.flatMap((p) => (byProp.get(p.asset_id) ?? []).map((l) => (
-                  <tr key={l.id}>
-                    <td className="px-3 py-2"><Link href={`/property/${p.asset_id}`} className="hover:underline">{p.assets.name}</Link></td>
-                    <td className="px-3">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
-                      <Link href={`/print/lease/${l.id}`} target="_blank" className="ml-2 text-xs text-blue-700 hover:underline">พิมพ์สัญญา</Link></td>
-                    <td className="px-3"><span className={`rounded px-1.5 py-0.5 text-xs ${LEASE_STATUS[l.lease_status]?.cls ?? ""}`}>{LEASE_STATUS[l.lease_status]?.text ?? l.lease_status}</span></td>
-                    <td className="whitespace-nowrap px-3 text-xs text-slate-500">{thDate(l.start_date)} – {thDate(l.end_date)}</td>
-                    <td className="px-3 text-right tabular-nums">{money(l.rent_amount, l.rent_currency)}<span className="text-xs text-slate-400">{FREQ_TEXT[l.payment_frequency] ?? ""}</span></td>
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <RentBatch key={`r${ym}`} rows={rentRows} others={otherInc} incByAsset={incByAsset} banks={banks} defaultDate={defaultDate} today={today}
+          minDate={family?.go_live_date ?? ""} canWrite={canWrite}
+          totalLabel={`รับเข้า${mLabel}รวม (ตามวันที่รับ)${pv.personId ? ` · ส่วนของ ${pv.personName}` : ""}`} />
       </TabPanel>
 
       <TabPanel id="expense">

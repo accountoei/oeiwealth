@@ -271,7 +271,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       const open = e.status === "PENDING" || e.status === "OVERDUE";
       const got = Number(e.received_amount ?? 0);
       return {
-        key: `t-${e.source_type}-${e.source_id}`, date: e.due_date as string, source: e.source_type === "LEASE" ? "ค่าเช่า" : "รายได้ประจำ",
+        key: `t-${e.source_type}-${e.source_id}-${e.income_period}`, date: e.due_date as string, source: e.source_type === "LEASE" ? "ค่าเช่า" : "รายได้ประจำ",
         status: open ? "OPEN" : "DISMISSED", currency: e.currency as string, expected: Number(e.expected_amount), done: got || null,
         thbDone: 0, thbLeft: open ? thb(Math.max(Number(e.expected_amount) - got, 0), e.currency) * share(e.pct) : 0,
         item: <>
@@ -280,11 +280,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             : toSettings("income", e.name)}</div>
           <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
             {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
+          {late(e.income_period as string)}
         </>,
         account: e.receive_to_asset_id ? name.get(e.receive_to_asset_id) ?? "บัญชี" : "",
         late: e.status === "OVERDUE",
         action: canWrite && open ? (
-          <ExpectedActions sourceType={e.source_type} sourceId={e.source_id} period={start} incomeType={e.income_type}
+          <ExpectedActions sourceType={e.source_type} sourceId={e.source_id} period={e.income_period} incomeType={e.income_type}
             personId={tpl?.person_id ?? null} expected={Number(e.expected_amount)} currency={e.currency}
             receiveTo={e.receive_to_asset_id} banks={banks} today={maxDate} minDate={minDate} />
         ) : badge(EXP_STATUS[e.status]?.text ?? e.status, EXP_STATUS[e.status]?.cls ?? ""),

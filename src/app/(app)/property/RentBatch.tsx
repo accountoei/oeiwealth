@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { batchRent, type BatchState } from "./actions";
@@ -14,7 +14,12 @@ export type RentRow = {
   expected: number; received: number; currency: string; status: string; bank: string;
   /** ค่าน้ำไฟที่เราจ่ายแล้วเรียกเก็บผู้เช่า (lease_utility_charges) */ chargeId?: string;
   /** ค่าเช่าที่รับแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
+  /** รายละเอียดสัญญา (แถวแรกของสัญญา · เดิมอยู่ตาราง "สัญญาเช่าที่มีผล") */
+  lease?: { id: string; term: string; freq: string; badge?: { text: string; cls: string } };
+  /** สัญญาที่ไม่มีงวดเดือนนี้ (status NONE) → งวดถัดไป / เริ่มสัญญา */ note?: string;
 };
+/** รายได้ที่รับในเดือนนี้ที่ไม่อยู่ในแถวงวดค่าเช่า (เดิมอยู่ตาราง "รายได้จากทรัพย์สินที่บันทึกแล้ว") · amount = ยอดบาท กดแก้ได้ */
+export type OtherIncome = { key: string; assetId: string; property: string; date: string; label: string; amount: ReactNode };
 export type BankOpt = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -29,8 +34,9 @@ function RentStatus({ r, today }: { r: RentRow; today: string }) {
   if (r.status === "DISMISSED") return <span className="text-slate-400">ยกเว้น</span>;
   if (r.status === "OVERDUE") {
     const d = r.due ? Math.round((Date.parse(today) - Date.parse(r.due)) / 86400000) : 0;
-    return <span className="text-red-700">ค้างรับ{d > 0 && ` · เลยกำหนด ${d} วัน`}</span>;
+    return <span className="whitespace-nowrap text-red-700">ค้างรับ{d > 0 && ` · เลยกำหนด ${d} วัน`}</span>;
   }
+  if (r.status === "NONE") return <span className="text-slate-500">{r.note}</span>;
   if (r.due && r.due === today) return <span className="text-amber-700">ถึงกำหนดวันนี้</span>;
   return <span className="text-slate-500">{r.chargeId ? "รอรับคืน" : "รอรับ"}</span>;
 }
@@ -39,9 +45,12 @@ function RentStatus({ r, today }: { r: RentRow; today: string }) {
  * รับค่าเช่าหลายสัญญาพร้อมกัน: สัญญาที่มีงวดในเดือนที่เลือกขึ้นเป็นแถวให้อัตโนมัติ · กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
  *   จัดแบบเดียวกับแท็บรับของ Investments / Cash (ตกลง 2 พ.ย. 2026): กล่องบน = ตัวกรองทรัพย์สิน + กรอกตามสัญญาทุกแถว · คิดภาษี 5% + วันที่รับ
  *   สถานะใต้วันครบกำหนด · รับแล้วใต้ยอดตามสัญญา · คอลัมน์กว้างคงที่ · ภาษีหัก ณ ที่จ่าย + ยอดเข้าบัญชีสุทธิ
+ *   ตารางเดียวทั้งแท็บ (ตกลง 5 พ.ย. 2026): งวดเดือนก่อนที่ยังค้างรับยกมา · สัญญาทุกฉบับ (ไม่มีงวดเดือนนี้ = บอกงวดถัดไป)
+ *   · รายได้อื่นที่รับในเดือนนี้ต่อท้าย · บรรทัดสุดท้าย = ยอดรับเข้าเดือนนี้ (ตามวันที่รับ)
  */
-export default function RentBatch({ rows, banks, defaultDate, today, minDate, canWrite }: {
-  rows: RentRow[]; banks: BankOpt[]; defaultDate: string; today: string; minDate: string; canWrite: boolean;
+export default function RentBatch({ rows, others, incByAsset, totalLabel, banks, defaultDate, today, minDate, canWrite }: {
+  rows: RentRow[]; others: OtherIncome[]; incByAsset: Record<string, number>; totalLabel: string;
+  banks: BankOpt[]; defaultDate: string; today: string; minDate: string; canWrite: boolean;
 }) {
   const router = useRouter();
   const [prop, setProp] = useState("");
@@ -55,7 +64,10 @@ export default function RentBatch({ rows, banks, defaultDate, today, minDate, ca
 
   const propList = [...new Map(rows.map((r) => [r.assetId, r.property])).entries()].sort((a, b) => a[1].localeCompare(b[1], "th"));
   const shown = rows.filter((r) => !prop || r.assetId === prop);
-  const editable = (r: RentRow) => canWrite && r.status !== "RECEIVED" && r.status !== "DISMISSED";
+  const shownOthers = others.filter((o) => !prop || o.assetId === prop);
+  const total = Object.entries(incByAsset).reduce((t, [id, v]) => t + (!prop || id === prop ? v : 0), 0);
+  const cols = canWrite ? 7 : 3;
+  const editable = (r: RentRow) => canWrite && (r.status === "PENDING" || r.status === "OVERDUE");
   const gap = (r: RentRow) => Math.max(r.expected - r.received, 0);
   const filled = (r: RentRow) => editable(r) && (vals[r.key] ?? "").trim() !== "";
   const chosen = rows.filter(filled);
@@ -100,7 +112,7 @@ export default function RentBatch({ rows, banks, defaultDate, today, minDate, ca
           </div>
           <p className="text-xs text-slate-500">กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ)
             · ยอดก่อนภาษี = ค่าเช่าเต็มตามสัญญา ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย (ผู้เช่านิติบุคคลหัก 5%)
-            · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</p>
+            · งวดเดือนก่อนที่ยังค้างรับยกมาให้ · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</p>
         </div>
       )}
 
@@ -108,27 +120,35 @@ export default function RentBatch({ rows, banks, defaultDate, today, minDate, ca
         {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="min-w-[13rem] px-3 py-2">ทรัพย์สิน / ผู้เช่า</th><th className="w-40 px-3">วันครบกำหนด</th>
+            <tr><th className="min-w-[13rem] px-3 py-2">ทรัพย์สิน / ผู้เช่า</th><th className="w-44 px-3">วันครบกำหนด</th>
               <th className="w-40 px-3 text-right">ค่าเช่าตามสัญญา</th>
               {canWrite && <><th className="w-32 px-2 text-right">ยอดก่อนภาษี</th><th className="w-28 px-2 text-right">ภาษีหัก ณ ที่จ่าย</th>
                 <th className="w-40 whitespace-nowrap px-2 text-right">ยอดเข้าบัญชีสุทธิ</th><th className="w-44 px-2">เข้าบัญชี</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shown.length === 0 && <tr><td colSpan={canWrite ? 7 : 3} className="px-4 py-6 text-center text-slate-500">ไม่มีค่าเช่างวดเดือนนี้</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={cols} className="px-4 py-6 text-center text-slate-500">ไม่มีสัญญาเช่า / ค่าเช่าในเดือนนี้</td></tr>}
             {shown.map((r) => {
               const open = editable(r);
               const v = vals[r.key] ?? "";
               const has = v.trim() !== "" && !Number.isNaN(n(v));
               const sameCcy = banks.filter((b) => b.currency === r.currency);
               return (
-                <tr key={r.key} className={`${!open && r.status === "RECEIVED" ? "text-slate-500" : ""} ${open && v.trim() ? "bg-blue-50/40" : ""}`}>
+                <tr key={r.key} className={`${!open && (r.status === "RECEIVED" || r.status === "NONE") ? "text-slate-500" : ""} ${open && v.trim() ? "bg-blue-50/40" : ""}`}>
                   <td className="break-words px-3 py-2.5">
                     <Link href={`/property/${r.assetId}`} className="font-medium text-slate-900 hover:underline">{r.property}</Link>
-                    <div className="text-xs text-slate-500">{r.tenant} · {r.currency}</div>
+                    <div className="text-xs text-slate-500">{r.tenant}</div>
+                    {r.lease && (
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-400">
+                        <span className="whitespace-nowrap">สัญญา {r.lease.term}</span>
+                        {r.lease.badge && <span className={`whitespace-nowrap rounded px-1.5 py-0.5 ${r.lease.badge.cls}`}>{r.lease.badge.text}</span>}
+                        <Link href={`/print/lease/${r.lease.id}`} target="_blank" className="whitespace-nowrap text-blue-700 hover:underline">พิมพ์สัญญา</Link>
+                      </div>
+                    )}
                   </td>
-                  <td className="px-3 py-2.5"><div className="whitespace-nowrap">{r.due ? thDate(r.due) : <span className="text-slate-400">-</span>}</div>
+                  <td className="px-3 py-2.5"><div className="whitespace-nowrap">{r.due ? thDate(r.due) : r.status !== "NONE" && <span className="text-slate-400">-</span>}</div>
                     <div className="text-xs"><RentStatus r={r} today={today} /></div></td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{money(r.expected, r.currency)}
+                    {r.lease?.freq && <span className="text-xs text-slate-400">{r.lease.freq}</span>}
                     {r.edits?.length ? <RecordedLines items={r.edits} />
                       : r.received > 0 && <div className="text-xs text-emerald-700">รับแล้ว {money(r.received, r.currency)}</div>}</td>
                   {canWrite && (!open ? <td colSpan={4} /> : <>
@@ -151,7 +171,25 @@ export default function RentBatch({ rows, banks, defaultDate, today, minDate, ca
                 </tr>
               );
             })}
+            {shownOthers.length > 0 && (
+              <tr className="bg-slate-50/60"><td colSpan={cols} className="px-3 py-1.5 text-xs font-medium text-slate-500">รายได้อื่นที่รับในเดือนนี้</td></tr>
+            )}
+            {shownOthers.map((o) => (
+              <tr key={o.key}>
+                <td className="break-words px-3 py-2.5">
+                  <Link href={`/property/${o.assetId}`} className="font-medium text-slate-900 hover:underline">{o.property}</Link>
+                  <div className="text-xs text-slate-500">{o.label}</div>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2.5">{thDate(o.date)}<div className="text-xs text-emerald-700">รับแล้ว</div></td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-right text-emerald-700">{o.amount} <span className="text-slate-400">THB</span></td>
+                {canWrite && <td colSpan={4} />}
+              </tr>
+            ))}
           </tbody>
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+            <tr><td colSpan={2} className="px-3 py-2">{totalLabel}</td>
+              <td className="whitespace-nowrap px-3 text-right tabular-nums text-emerald-700">{money(total, "THB")}</td>{canWrite && <td colSpan={4} />}</tr>
+          </tfoot>
         </table>
       </div>
 
