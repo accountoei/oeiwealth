@@ -10,6 +10,7 @@ export type CostLot = {
   description: string | null; is_building: boolean; depreciation_years: number | null; notes: string | null;
   rate_pct: number; years_held: number; interest: number; depreciation: number;
   /** วิธีคิด FIXED / CPI_PLUS · ตัวคูณเงินเฟ้อ (CPI_PLUS) · ปีล่าสุดที่มีดัชนี */ method?: string; cpi_factor?: number | null; cpi_to_year?: number | null;
+  /** ราคาซากของก้อนนี้ (สิ่งปลูกสร้าง · ตกลง 5 พ.ย. 2026) */ salvage?: number | null;
 };
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";

@@ -85,7 +85,8 @@ export function CostLotsSection({ assetId, currency, today, lots, canWrite, canD
               <tr key={`${l.source}-${l.item_id ?? l.movement_id ?? i}`} className="align-top">
                 <td className="whitespace-nowrap py-1.5">{thDate(l.lot_date)}</td>
                 <td>{l.description || SOURCE_LABEL[l.source]}
-                  <div className="text-xs text-slate-400">{SOURCE_LABEL[l.source]}{l.is_building && ` · สิ่งปลูกสร้าง ${l.depreciation_years} ปี`}{l.notes && ` · ${l.notes}`}
+                  <div className="text-xs text-slate-400">{SOURCE_LABEL[l.source]}{l.is_building && (Number(l.depreciation_years) === 0 ? " · สิ่งปลูกสร้าง ไม่หักค่าเสื่อม" : ` · สิ่งปลูกสร้าง ${l.depreciation_years} ปี`)}
+                    {Number(l.salvage) > 0 && ` · ราคาซาก ${money(l.salvage)}`}{l.notes && ` · ${l.notes}`}
                     {l.cpi_factor != null && ` · เงินเฟ้อ ×${Number(l.cpi_factor).toFixed(3)}`}</div></td>
                 <td className="text-right tabular-nums">{money(l.amount)}</td>
                 <td className="text-right tabular-nums">{Number(l.years_held).toFixed(1)}</td>
@@ -104,7 +105,7 @@ export function CostLotsSection({ assetId, currency, today, lots, canWrite, canD
       </div>
       <p className="text-xs text-slate-500">{lots[0]?.method === "CPI_PLUS"
           ? <>ดอกเบี้ย = ยอด × (ดัชนีเงินเฟ้อปี {lots[0].cpi_to_year != null ? lots[0].cpi_to_year + 543 : "ล่าสุด"} ÷ ดัชนีปีที่จ่าย × (1 + ส่วนเพิ่ม)^(ปีที่ถือ) − 1) · จ่ายหลังปีล่าสุดที่มีดัชนี = ไม่คิดเงินเฟ้อ</>
-          : <>ดอกเบี้ย = ยอด × ((1 + อัตรา)^(ปีที่ถือ) − 1)</>} · สิ่งปลูกสร้างหักค่าเสื่อมเท่ากันทุกปีจนครบอายุ ·
+          : <>ดอกเบี้ย = ยอด × ((1 + อัตรา)^(ปีที่ถือ) − 1)</>} · สิ่งปลูกสร้างหักค่าเสื่อม (ยอด − ราคาซาก) เท่ากันทุกปีจนครบอายุ (อายุ 0 ปี = ไม่หัก) ·
         ต้นทุนที่ได้มา แก้ที่ตารางส่วนประกอบ (ปุ่ม &ldquo;แก้ไข&rdquo;) · จ่ายเพิ่มในระบบนับให้อัตโนมัติ</p>
     </div>
   );

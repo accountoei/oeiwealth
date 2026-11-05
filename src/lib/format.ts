@@ -747,3 +747,14 @@ export function familyInitials(name: string | null | undefined): string {
   const words = n.split(/[\s\-_.]+/).filter(Boolean);
   return (words.length > 1 ? words[0].charAt(0) + words[1].charAt(0) : words[0].slice(0, 2)).toUpperCase();
 }
+
+/** ราคาซาก (ตกลง 5 พ.ย. 2026): ช่องเดียวใส่ได้ทั้งบาท ("100,000") หรือ % ("10%") · ว่าง = 0 */
+export function parseSalvage(text: string | null | undefined): { salvage_value: string; salvage_pct: string } | { error: string } {
+  const t = String(text ?? "").replace(/[,\s]/g, "");
+  if (!t) return { salvage_value: "", salvage_pct: "" };
+  const pct = t.endsWith("%");
+  const n = pct ? t.slice(0, -1) : t;
+  if (!/^\d+(\.\d+)?$/.test(n)) return { error: "ราคาซากใส่เป็นจำนวนเงิน เช่น 100,000 หรือเปอร์เซ็นต์ เช่น 10%" };
+  if (pct && Number(n) > 100) return { error: "ราคาซากต้องไม่เกิน 100%" };
+  return pct ? { salvage_value: "", salvage_pct: n } : { salvage_value: n, salvage_pct: "" };
+}

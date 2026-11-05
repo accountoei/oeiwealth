@@ -4463,6 +4463,46 @@ SELECT t.ok((SELECT count(*) FILTER (WHERE frequent) <= 5 AND bool_and(NOT frequ
 RESET ROLE;
 SELECT t.ok(NOT has_table_privilege('anon', 'public.v_bank_accounts_safe', 'SELECT'), 'บัญชีใช้บ่อย: anon อ่าน View ไม่ได้');
 ROLLBACK;
+\echo '== 13zz33. ราคาซากสิ่งปลูกสร้าง (บาท / %) · อายุใช้งาน 0 ปี = ไม่หักค่าเสื่อม (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT d.id AS deed_s FROM public.property_deeds d JOIN public.property_details pd ON pd.id = d.property_id
+ WHERE pd.asset_id = t.a('บ้าน A') AND d.deleted_at IS NULL LIMIT 1 \gset
+SELECT land_area_sq_wa AS area_s FROM public.property_details WHERE asset_id = t.a('บ้าน A') \gset
+SELECT t.fails(format($$SELECT public.save_property_components('%s', '[{"type":"BUILDING","label":"บ้าน","salvage_pct":"150"}]', '{}', null)$$, t.a('บ้าน A')),
+  'ราคาซาก', 'ราคาซาก: เกิน 100% บันทึกไม่ได้');
+SELECT t.fails(format($$SELECT public.save_property_components('%s', '[{"type":"BUILDING","label":"บ้าน","salvage_pct":"10","salvage_value":"5000"}]', '{}', null)$$, t.a('บ้าน A')),
+  'ราคาซาก', 'ราคาซาก: ใส่ทั้งบาทและ % พร้อมกันไม่ได้');
+SELECT ids[2] AS bld_p, ids[3] AS bld_v, ids[4] AS bld_0 FROM (SELECT public.save_property_components(t.a('บ้าน A'),
+  format('[{"id":"%s","type":"LAND","land_area_sq_wa":"%s","salvage_pct":"10"},
+           {"type":"BUILDING","label":"บ้าน","useful_life_years":"20","salvage_pct":"10","acquired_date":"%s","acq_cost":"1000000"},
+           {"type":"BUILDING","label":"โกดัง","useful_life_years":"20","salvage_value":"100000","acquired_date":"%s","acq_cost":"600000"},
+           {"type":"BUILDING","label":"ถมดิน","useful_life_years":"0","acquired_date":"%s","acq_cost":"300000"}]',
+         :'deed_s', :'area_s', current_date - 3650, current_date - 3650, current_date - 3650)::jsonb, '{}', null) AS ids) x \gset
+SELECT t.ok((SELECT salvage_pct IS NULL AND salvage_value IS NULL FROM public.property_deeds WHERE id = :'deed_s')
+            AND (SELECT salvage_pct = 10 AND salvage_value IS NULL FROM public.property_deeds WHERE id = :'bld_p')
+            AND (SELECT salvage_value = 100000 AND salvage_pct IS NULL FROM public.property_deeds WHERE id = :'bld_v'),
+            'ราคาซาก: เก็บเฉพาะสิ่งปลูกสร้าง (ที่ดินไม่มีราคาซาก) · เป็น % หรือบาทอย่างใดอย่างหนึ่ง');
+SELECT t.ok((SELECT salvage = 100000 AND depreciation = 450000 FROM public.v_property_cost_lots WHERE component_id = :'bld_p'),
+            'ราคาซาก 10%: ต้นทุน 1,000,000 ถือ 10 ปีจาก 20 → ค่าเสื่อม (1,000,000 − 100,000) × 10/20 = 450,000');
+SELECT t.ok((SELECT is_building AND depreciation_years = 0 AND depreciation = 0 FROM public.v_property_cost_lots WHERE component_id = :'bld_0'),
+            'อายุใช้งาน 0 ปี = ไม่หักค่าเสื่อม');
+SELECT public.pay_property(t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), current_date, 400000, null, 'ต่อเติมโกดัง', false, :'bld_v', null) AS mv_s \gset
+SELECT t.ok((SELECT salvage = 60000 AND depreciation = 270000 FROM public.v_property_cost_lots WHERE component_id = :'bld_v' AND source = 'ACQUISITION')
+            AND (SELECT salvage = 40000 FROM public.v_property_cost_lots WHERE movement_id = :'mv_s')
+            AND (SELECT sum(salvage) = 100000 FROM public.v_property_cost_lots WHERE component_id = :'bld_v'),
+            'ราคาซากเป็นบาท + ต้นทุนหลายก้อน → แบ่งตามสัดส่วนต้นทุน (600,000 : 400,000) รวมเท่าราคาซาก');
+SELECT t.ok((SELECT depreciation_total = (SELECT sum(depreciation) FROM public.v_property_cost_lots WHERE asset_id = t.a('บ้าน A'))
+               FROM public.v_property_target_price WHERE asset_id = t.a('บ้าน A')),
+            'ราคาขายขั้นต่ำ: ค่าเสื่อมรวมใช้ค่าเสื่อมหลังหักราคาซาก');
+SELECT public.pay_property(t.a('บ้าน A'), t.a('KBank ออมทรัพย์'), current_date, 50000, null, 'สร้างรั้ว', false, null,
+  '{"type":"BUILDING","label":"รั้ว","useful_life_years":"0","salvage_pct":"5"}') AS mv_s2 \gset
+SELECT t.ok((SELECT useful_life_years = 0 AND salvage_pct = 5 FROM public.property_deeds WHERE source_movement_id = :'mv_s2' AND deleted_at IS NULL),
+            'จ่ายเพิ่ม: สิ่งปลูกสร้างแถวใหม่ใส่ราคาซาก + อายุ 0 ปีได้');
+SELECT t.fails(format($$SELECT public.pay_property('%s', '%s', current_date, 1000, null, 'x', false, null, '{"type":"BUILDING","label":"ศาลา","salvage_value":"-5"}')$$,
+  t.a('บ้าน A'), t.a('KBank ออมทรัพย์')), 'ราคาซาก', 'จ่ายเพิ่ม: ราคาซากติดลบบันทึกไม่ได้');
+RESET ROLE;
+ROLLBACK;
 \echo '== 14. Views'
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT person_name, round(total_assets) AS assets, round(total_liabilities) AS liabilities, round(net_worth) AS net_worth

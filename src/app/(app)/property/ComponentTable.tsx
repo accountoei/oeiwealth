@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SMALL_DEL_BTN, SMALL_BTN, money, numOrZero } from "@/lib/format";
-import { COMP_TYPE_LABEL, type CompInput, type CompType, type Component } from "./components";
+import { COMP_TYPE_LABEL, salvageText, type CompInput, type CompType, type Component } from "./components";
 import { splitByArea } from "./valueParts";
 
 const cell = "w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm";
@@ -13,7 +13,8 @@ const filled = (s: string) => plain(s) !== "";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 type Row = CompInput & { key: string; rai: string; ngan: string; wa: string; value: string;
-  /** ฟอร์มเพิ่มใหม่: แก้มูลค่าแถวนี้เองแล้ว (มูลค่าไม่ตามต้นทุนอีก) */ vTouched?: boolean };
+  /** ฟอร์มเพิ่มใหม่: แก้มูลค่าแถวนี้เองแล้ว (มูลค่าไม่ตามต้นทุนอีก) */ vTouched?: boolean;
+  /** ราคาซากตามที่พิมพ์ ("100,000.00" หรือ "10%") */ salvage: string };
 
 function toRow(c: Component, value: number | undefined, defaultDate: string): Row {
   const w = c.land_area_sq_wa != null ? Number(c.land_area_sq_wa) : null;
@@ -24,19 +25,26 @@ function toRow(c: Component, value: number | undefined, defaultDate: string): Ro
     land_area_sq_wa: s(w), rai: w != null ? String(Math.floor(w / 400)) : "", ngan: w != null ? String(Math.floor((w % 400) / 100)) : "",
     wa: w != null ? String(+(w % 100).toFixed(2)) : "", building_area_sqm: s(c.building_area_sqm), useful_life_years: s(c.useful_life_years),
     acquired_date: c.acquired_date ?? defaultDate, acq_cost: c.acq_cost != null ? fmt(Number(c.acq_cost)) : "", notes: s(c.notes),
-    value: value != null ? fmt(value) : "",
+    value: value != null ? fmt(value) : "", salvage: salvageText(c),
   };
 }
 const blank = (type: CompType): Row => ({
   key: `n${Math.random().toString(36).slice(2)}`, type, label: "", title_type: type === "LAND" ? "โฉนด" : "", title_deed_no: "", land_no: "",
   deed_book: "", deed_page: "", map_sheet: "", survey_page: "", land_area_sq_wa: "", rai: "", ngan: "", wa: "", building_area_sqm: "",
-  useful_life_years: type === "LAND" ? "" : "20", acquired_date: "", acq_cost: "", notes: "", value: "",
+  // อายุใช้งานเริ่มว่าง (ตัวจาง 20 = ว่างคิด 20 ปี · ตกลง 5 พ.ย. 2026)
+  useful_life_years: "", acquired_date: "", acq_cost: "", notes: "", value: "", salvage: "",
 });
 const sqwa = (r: Row) => (filled(r.rai) || filled(r.ngan) || filled(r.wa)
   ? numOrZero(r.rai) * 400 + numOrZero(r.ngan) * 100 + numOrZero(r.wa) : null);
 /** แถวว่าง (ยังไม่ได้กรอกอะไร) ไม่ส่งไปบันทึก */
 const isEmpty = (r: Row) => !r.id && ![r.label, r.title_deed_no, r.land_no, r.rai, r.ngan, r.wa, r.building_area_sqm, r.acq_cost, r.value, r.notes,
-  r.deed_book, r.deed_page, r.map_sheet, r.survey_page].some(filled);
+  r.deed_book, r.deed_page, r.map_sheet, r.survey_page, r.salvage].some(filled);
+/** ออกจากช่องราคาซาก: บาท → ใส่จุลภาค + .00 · % → "10%" (ใส่อย่างอื่นไว้ตามเดิม ให้ server แจ้ง) */
+const tidySalvage = (v: string) => {
+  const t = v.replace(/[,\s]/g, "");
+  if (/^\d+(\.\d+)?%$/.test(t)) return `${+t.slice(0, -1)}%`;
+  return /^\d+(\.\d+)?$/.test(t) ? fmt(Number(t)) : v;
+};
 
 /**
  * ตารางส่วนประกอบของทรัพย์สิน (ตกลง 29 ต.ค. 2026) — ใช้ทั้งฟอร์มเพิ่มใหม่และฟอร์มแก้ไข
@@ -119,6 +127,7 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       deed_book: r.deed_book, deed_page: r.deed_page, map_sheet: r.map_sheet, survey_page: r.survey_page,
       land_area_sq_wa: r.type === "LAND" ? String(sqwa(r) ?? "") : "", building_area_sqm: plain(r.building_area_sqm),
       useful_life_years: plain(r.useful_life_years), acquired_date: r.acquired_date, acq_cost: plain(r.acq_cost), notes: r.notes,
+      salvage: r.type === "LAND" ? "" : r.salvage,
     };
     if (isNew ? allValue : resplit) out.value = isNew ? plain(r.value) : String(editValues[r.key]);
     return out;
@@ -244,7 +253,7 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       </div>
       )}
       <p className="text-xs text-slate-500">
-        สิ่งปลูกสร้างแต่ละรายการมีต้นทุน มูลค่า และอายุใช้งานของตัวเอง (ใช้หักค่าเสื่อมในราคาขายขั้นต่ำที่คุ้ม) · ไม่ใส่ต้นทุนรายแถว = ใส่ยอดรวมที่แถวรวม
+        สิ่งปลูกสร้างแต่ละรายการมีต้นทุน มูลค่า ราคาซาก และอายุใช้งานของตัวเอง (ใช้หักค่าเสื่อมในราคาขายขั้นต่ำที่คุ้ม · ราคาซากใส่เป็นบาท หรือ % ของต้นทุน เช่น 10%) · ไม่ใส่ต้นทุนรายแถว = ใส่ยอดรวมที่แถวรวม
         {isNew ? " · มูลค่าขึ้นตามต้นทุนเอง แก้ได้ถ้ามูลค่าวันนี้ไม่เท่าต้นทุน" : " · ปรับมูลค่าที่ปุ่ม “ปรับมูลค่า / ประวัติ”"}
       </p>
       {costShort && <p className="text-sm text-amber-700">ต้นทุนรวมน้อยกว่าผลรวมต้นทุนรายแถว ({money(costSum, undefined, 2)})</p>}
@@ -298,14 +307,20 @@ function RowView({ r, set, cost, value, del }: {
       <tr className="border-b border-slate-100 align-top">
         <td></td>
         <td className="pb-2 pr-2 pt-1">
-          {land && <div className="grid grid-cols-3 gap-1">{t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}</div>}
+          {land ? <div className="grid grid-cols-3 gap-1">{t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}</div> : (
+            // ราคาซาก: ช่องเดียวใส่บาท หรือ % (ตกลง 5 พ.ย. 2026) · อยู่หน้าช่องอายุใช้งาน
+            <label className="flex items-center justify-end gap-1 whitespace-nowrap text-xs text-slate-600">ราคาซาก
+              <input value={r.salvage} onChange={(e) => set(r.key, { salvage: e.target.value })} onBlur={(e) => set(r.key, { salvage: tidySalvage(e.target.value) })}
+                placeholder="บาท หรือ %" aria-label="ราคาซาก (บาท หรือ %)" data-plain className={`${cell} min-w-0 max-w-36 text-right tabular-nums`} /></label>
+          )}
         </td>
         <td className="pb-2 pr-2 pt-1">
-          {land ? t("survey_page", "หน้าสำรวจ") : (
+          {land ? t("survey_page", "หน้าสำรวจ") : (<>
             <label className="flex items-center gap-1 whitespace-nowrap text-xs text-slate-600">อายุใช้งาน
               <input value={r.useful_life_years} onChange={(e) => set(r.key, { useful_life_years: e.target.value })} inputMode="numeric" data-plain
-                aria-label="อายุใช้งาน (ปี)" className={`${cell} !w-14 text-right`} />ปี</label>
-          )}
+                placeholder="20" aria-label="อายุใช้งาน (ปี)" className={`${cell} !w-14 text-right`} />ปี</label>
+            <span className="mt-0.5 block text-[11px] text-slate-400">ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม</span>
+          </>)}
         </td>
         <td colSpan={3} className="pb-2 pr-2 pt-1">{t("notes", "หมายเหตุ")}</td>
         <td></td>

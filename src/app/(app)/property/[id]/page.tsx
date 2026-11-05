@@ -24,7 +24,7 @@ import MarketBox from "../MarketBox";
 import TargetBox, { CostLotsSection, type TargetPrice } from "../TargetBox";
 import PropertyPaymentForm from "../PropertyPaymentForm";
 import ValuePartsForm, { type DeedOpt } from "../ValuePartsForm";
-import { COMPONENT_FIELDS, COMP_TYPE_LABEL, END_REASON_LABEL, compName, type Component } from "../components";
+import { COMPONENT_FIELDS, COMP_TYPE_LABEL, END_REASON_LABEL, compName, lifeText, type Component } from "../components";
 import type { ValuePart } from "../valueParts";
 import type { CostLot } from "../CostItemForm";
 import type { MarketValuation } from "../MarketValuationForm";
@@ -325,7 +325,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="text-xs text-slate-600">{(c.component_type === "LAND"
                     ? [c.land_no && `เลขที่ดิน ${c.land_no}`, c.deed_book && `เล่ม ${c.deed_book}`, c.deed_page && `หน้า ${c.deed_page}`, c.map_sheet && `ระวาง ${c.map_sheet}`,
                        c.survey_page && `หน้าสำรวจ ${c.survey_page}`]
-                    : [c.useful_life_years && `อายุใช้งาน ${c.useful_life_years} ปี`]).filter(Boolean).join(" · ") || "-"}
+                    : [lifeText(c)]).filter(Boolean).join(" · ") || "-"}
                     {c.notes && <div className="text-slate-400">{c.notes}</div>}</td>
                   <td className="text-right text-xs tabular-nums">{c.component_type === "LAND" ? (c.land_area_sq_wa != null ? landText(c.land_area_sq_wa) : "-")
                     : c.building_area_sqm != null ? `${Number(c.building_area_sqm).toLocaleString("en-US")} ตร.ม.` : "-"}</td>
