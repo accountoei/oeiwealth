@@ -263,7 +263,7 @@ export function ConvertUnitsForm({ assetId, holdingId, isFund, lump, symbol, ope
   const prominent = isFund && !lump;
   return (
     <details open={prominent} className={prominent ? "" : "text-sm"}>
-    <summary className={prominent ? "hidden" : "cursor-pointer text-xs text-blue-700 hover:underline"}>{lump ? "รู้จำนวนหน่วยแล้ว? แปลงมูลค่าก้อนเดียวเป็นจำนวนหน่วย" : "ยอดตั้งต้นเป็น 1 หน่วย — แปลงเป็นจำนวนหน่วย / มูลค่าก้อนเดียว"}</summary>
+    <summary className={prominent ? "hidden" : `${SMALL_BTN} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>{lump ? "รู้จำนวนหน่วยแล้ว? แปลงมูลค่าก้อนเดียวเป็นจำนวนหน่วย" : "ยอดตั้งต้นเป็น 1 หน่วย — แปลงเป็นจำนวนหน่วย / มูลค่าก้อนเดียว"}</summary>
     <div className="mt-2 space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
       <div>
         <div className="font-medium text-amber-900">{lump ? "มูลค่าก้อนเดียว — แปลงเป็นจำนวนหน่วยได้" : "ยอดตั้งต้นเป็น 1 หน่วย — ใส่มูลค่ารวมแทนจำนวนหน่วยหรือไม่?"}</div>

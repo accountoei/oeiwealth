@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { createClient } from "@/lib/supabase/client";
 import Flash from "@/components/Flash";
+import {  } from "@/lib/format";
 
 type Factor = { id: string; friendly_name?: string; status: string; created_at: string };
 const box = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
@@ -108,7 +109,7 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
             <div className="flex gap-2">
               <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" data-code placeholder="รหัส 6 หลัก" className={input} />
               <button disabled={busy} className={btn}>ยืนยัน</button>
-              <button type="button" onClick={() => setEnroll(null)} className="text-sm text-slate-500">ยกเลิก</button>
+              <button type="button" onClick={() => setEnroll(null)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">ยกเลิก</button>
             </div>
           </form>
         )}

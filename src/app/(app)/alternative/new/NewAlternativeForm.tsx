@@ -4,7 +4,7 @@ import Link from "next/link";
 import { startTransition, useActionState, useRef, useState } from "react";
 import { addCategory, createAlternative, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { ALT_UNITS_ANY, ALT_UNITS_BY_CODE, thDate } from "@/lib/format";
+import { SMALL_BTN, ALT_UNITS_ANY, ALT_UNITS_BY_CODE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import { useCostValueMirror } from "@/components/useCostValueMirror";
 import Flash from "@/components/Flash";
@@ -47,7 +47,7 @@ export default function NewAlternativeForm(props: {
         <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
           <h2 className="md:col-span-2 font-medium text-slate-900">ข้อมูลทรัพย์สิน</h2>
           {!isSetup && isAdmin && !late && (
-            <button type="button" onClick={() => setLate(true)} className="md:col-span-2 text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+            <button type="button" onClick={() => setLate(true)} className={`${SMALL_BTN} md:col-span-2 justify-self-start`}>เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
           )}
           {(isSetup || late) && (
             <label className="md:col-span-2 flex items-start gap-2 text-sm">
@@ -65,7 +65,7 @@ export default function NewAlternativeForm(props: {
               {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             {!newCat ? (
-              <button type="button" onClick={() => setNewCat(true)} className="mt-1 text-xs text-slate-600 underline">+ เพิ่มหมวดเอง</button>
+              <button type="button" onClick={() => setNewCat(true)} className={`${SMALL_BTN} mt-1`}>+ เพิ่มหมวดเอง</button>
             ) : (
               <div className="mt-2 rounded-lg bg-slate-50 p-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -77,7 +77,7 @@ export default function NewAlternativeForm(props: {
                   <datalist id="alt-units-any">{ALT_UNITS_ANY.map((u) => <option key={u} value={u} />)}</datalist>
                   <button type="button" onClick={addCat} disabled={adding}
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{adding ? "…" : "เพิ่มหมวด"}</button>
-                  <button type="button" onClick={() => setNewCat(false)} className="text-xs text-slate-500">ปิด</button>
+                  <button type="button" onClick={() => setNewCat(false)} className={SMALL_BTN}>ปิด</button>
                 </div>
                 {cs.error && <p className="mt-1 text-xs text-red-600">{cs.error}</p>}
                 <Flash on={cs} as="p" className="mt-1 text-xs text-emerald-700" />

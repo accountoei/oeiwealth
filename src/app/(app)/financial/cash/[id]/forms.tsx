@@ -4,7 +4,7 @@ import Modal from "@/components/Modal";
 
 import { useActionState, useEffect, useState } from "react";
 import { revealAccountNo, setAccountNo, settleLatest, updateAccountInfo, updateBalance, type ActionState } from "../actions";
-import { ACCOUNT_TYPE_LABEL } from "@/lib/format";
+import { SMALL_BTN, ACCOUNT_TYPE_LABEL } from "@/lib/format";
 import BankSelect from "@/components/BankSelect";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
@@ -67,9 +67,9 @@ export function AccountNoPanel({ assetId, bankAccountId, masked, canReveal, canS
             </button>
           </form>
         )}
-        {shown && <button onClick={() => setShown(null)} className="text-xs text-slate-500 hover:underline">ซ่อน</button>}
+        {shown && <button type="button" onClick={() => setShown(null)} className={SMALL_BTN}>ซ่อน</button>}
         {canSet && !editing && (
-          <button onClick={() => setEditing(true)} className="text-xs text-slate-500 hover:underline">
+          <button type="button" onClick={() => setEditing(true)} className={SMALL_BTN}>
             {masked ? "เปลี่ยนเลขบัญชี" : "บันทึกเลขบัญชี"}
           </button>
         )}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { SMALL_BTN } from "@/lib/format";
 
 type Mode = "loading" | "enroll" | "verify";
 
@@ -90,7 +91,7 @@ export default function MfaPage() {
           </>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button type="button" onClick={onSignOut} className="w-full text-xs text-slate-500 hover:underline">ออกจากระบบ</button>
+        <button type="button" onClick={onSignOut} className={`${SMALL_BTN} w-full justify-center`}>ออกจากระบบ</button>
       </form>
     </main>
   );

@@ -77,7 +77,8 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
   - **Button** = do something / record something new (opens a popup, or a full page for a long "+ เพิ่ม…" form; delete / confirm-type buttons only ask to confirm). Primary: blue (`ADD_BTN`, `ROW_BTN`). Secondary: `SMALL_BTN`; red for delete / undo: `SMALL_DEL_BTN` (both in `src/lib/format.ts`).
   - **Click the table row** = edit / delete an existing record (`RowActions` / `PairEdit` / `useRowPanel` without `button`). Use a per-record small button only when one row holds several separately editable records.
   - **Link** (text, `<Link>` / `<a>`) = go to another page only. Never use a link-looking button to open a popup or run an action.
-  - Allowed small exceptions: underlined helper links *inside* a form (fill a value, "+ เพิ่มบรรทัด", clear, back) and an amount with ✎ / dotted underline in a table cell that opens that cell's record.
+  - Inside forms too: **add / remove a line = button** (`SMALL_BTN` "+ เพิ่มบรรทัด", `SMALL_DEL_BTN` "ลบ" — not ✕ / ×, not red text); a "no / cancel / close" answer next to a confirm button is an outline button, not plain text.
+  - Allowed small exceptions (text is fine): helpers that only **fill or clear values** before Save ("กรอกตาม…", "ตามงวด", "เต็มจำนวน", "คิดภาษี x%", "ใช้ยอดจากตาราง", "ล้างช่องที่กรอก", "ล้างตัวกรอง"), "← กลับไป…" inside a form, show-more / collapse toggles ("ดูทั้งหมด", "▸ รายแถว"), and an amount with ✎ / dotted underline in a table cell that opens that cell's record.
   - In popups: Save first, then Delete or Status beside it; no Cancel / Close (the popup has ✕ / Esc — mark such buttons `data-close`).
 - `"use client"` files must not export constants used by server components — put shared constants/labels in `src/lib/format.ts`.
 - Generic edit/delete goes through `src/lib/records.ts` (`EDITABLE` / `DELETABLE` whitelists). Add a table there only if RLS + triggers already protect it.

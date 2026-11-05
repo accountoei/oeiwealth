@@ -554,7 +554,7 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending} className={sbtn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
-        {utilityId && <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>}
+        {utilityId && <button type="button" onClick={() => setMode("dismiss")} className={`${SMALL_BTN} ml-auto`}>เดือนนี้ไม่ได้จ่าย…</button>}
       </div>
       <Msg s={state} />
     </form>

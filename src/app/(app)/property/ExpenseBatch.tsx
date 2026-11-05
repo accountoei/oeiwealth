@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { COST_STATUS, PROPERTY_COST_TYPE_LABEL, money, thDate, thMonth } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COST_STATUS, PROPERTY_COST_TYPE_LABEL, money, thDate, thMonth } from "@/lib/format";
 import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
@@ -172,14 +172,14 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
                   <td className="px-3 text-right"><input inputMode="decimal" value={x.amount} onChange={(e) => setX(x.id, { amount: e.target.value })} className={`w-32 text-right ${small}`} /></td>
                   <td className="px-3"><PaySelect value={x.pay} onChange={(v) => setX(x.id, { pay: v })} ccy="THB" /></td>
                   <td className="px-3 text-right">
-                    {extra.length > 1 && <button type="button" onClick={() => setExtra(extra.filter((y) => y.id !== x.id))} className="text-xs text-slate-500 hover:text-red-700">ลบแถว</button>}
+                    {extra.length > 1 && <button type="button" onClick={() => setExtra(extra.filter((y) => y.id !== x.id))} className={SMALL_DEL_BTN}>ลบ</button>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="px-4 py-3">
-            <button type="button" onClick={() => setExtra([...extra, blank(Date.now())])} className="text-sm text-blue-700 hover:underline">+ เพิ่มแถว</button>
+            <button type="button" onClick={() => setExtra([...extra, blank(Date.now())])} className={SMALL_BTN}>+ เพิ่มแถว</button>
           </div>
         </div>
       )}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BENEFIT_TYPE_LABEL, INS_OPEN, INS_SCHED_STATUS, money, thDate } from "@/lib/format";
+import { SMALL_BTN, BENEFIT_TYPE_LABEL, INS_OPEN, INS_SCHED_STATUS, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
@@ -128,7 +128,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
                 {p.person && <div className="text-xs text-slate-500">{p.person}</div>}
                 {yl.length > 1 && <div className="text-xs text-slate-500">{yl.length} งวดในปี · รวม {money(yl.reduce((t, l) => t + l.amount, 0), cur(yl[0].currency))}</div>}
                 {p.lines.length > 4 && done.length > 1 && (expand[p.id] || !canWrite) && (
-                  <button type="button" onClick={() => setExpand({ ...expand, [p.id]: !expand[p.id] })} className="text-xs text-blue-700 hover:underline">
+                  <button type="button" onClick={() => setExpand({ ...expand, [p.id]: !expand[p.id] })} className={`${SMALL_BTN} mt-1`}>
                     {expand[p.id] ? "ย่องวดที่จบแล้ว" : `แสดงทุกงวด (${p.lines.length})`}</button>
                 )}
                 {!p.active && <div className="text-xs text-slate-400">กรมธรรม์ไม่มีผลแล้ว</div>}
@@ -147,7 +147,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
                     <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(done.reduce((t, l) => t + l.paid, 0), cur(done[0].currency))}</td>
                     <td className="px-3 py-2 text-right text-slate-300">-</td>
                     {canWrite && <td colSpan={2} className="px-3 py-2 text-xs"><button type="button" onClick={() => setExpand({ ...expand, [p.id]: true })}
-                      className="text-blue-700 hover:underline">ดู / แก้ทีละงวด</button></td>}
+                      className={SMALL_BTN}>ดู / แก้ทีละงวด</button></td>}
                   </tr>
                 )}
                 {shown.map((l, i) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { SMALL_BTN, money, numOrZero } from "@/lib/format";
+import { SMALL_DEL_BTN, SMALL_BTN, money, numOrZero } from "@/lib/format";
 import { COMP_TYPE_LABEL, type CompInput, type CompType, type Component } from "./components";
 import { splitByArea } from "./valueParts";
 
@@ -188,9 +188,9 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
               <RowView key={r.key} r={r} set={set} cost={money2(r, "acq_cost", !!r.id && lockedSet.has(r.id))} value={valueCell(r)}
                 del={canRemove(r) ? (confirmKey === r.key
                   ? <span className="flex flex-col items-end gap-1"><span className="text-slate-600">ลบแถวนี้?</span>
-                      <span><button type="button" onClick={() => remove(r)} className="text-red-600 hover:underline">ยืนยันลบ</button>
-                        <button type="button" onClick={() => setConfirmKey(null)} className="ml-2 text-slate-500 hover:underline">ไม่</button></span></span>
-                  : <button type="button" onClick={() => (isEmpty(r) ? remove(r) : setConfirmKey(r.key))} className="text-red-600 hover:underline">ลบ</button>)
+                      <span><button type="button" onClick={() => remove(r)} className={SMALL_DEL_BTN}>ยืนยันลบ</button>
+                        <button type="button" onClick={() => setConfirmKey(null)} className={`${SMALL_BTN} ml-2`}>ไม่</button></span></span>
+                  : <button type="button" onClick={() => (isEmpty(r) ? remove(r) : setConfirmKey(r.key))} className={SMALL_DEL_BTN}>ลบ</button>)
                   : <span className="text-slate-400" title={r.id && lockedSet.has(r.id) ? "ผูกกับรายการจ่าย — ลบ / ย้ายรายการจ่ายก่อน"
                       : onlyLand(r) ? "ที่ดินแถวเดียว — ถ้าขาย / เปลี่ยนที่ดิน ใช้ปุ่ม “ขาย / รื้อถอน”" : "ต้องเหลืออย่างน้อย 1 แถว"}>
                       {r.id && lockedSet.has(r.id) ? "ผูกรายการจ่าย" : onlyLand(r) ? "" : "แถวสุดท้าย"}</span>} />
@@ -227,8 +227,8 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       ) : (
       <div className="space-y-2 text-sm">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-          <button type="button" onClick={() => setRows((rs) => [...rs, blank("LAND")])} className="text-blue-700 hover:underline">+ ที่ดิน (โฉนด)</button>
-          <button type="button" onClick={() => setRows((rs) => [...rs, blank("BUILDING")])} className="text-blue-700 hover:underline">+ สิ่งปลูกสร้าง</button>
+          <button type="button" onClick={() => setRows((rs) => [...rs, blank("LAND")])} className={SMALL_BTN}>+ ที่ดิน (โฉนด)</button>
+          <button type="button" onClick={() => setRows((rs) => [...rs, blank("BUILDING")])} className={SMALL_BTN}>+ สิ่งปลูกสร้าง</button>
           {!isNew && <span className="text-xs text-slate-500">ใช้แก้ข้อมูลที่กรอกตกหล่น / แยกโฉนดที่รวมอยู่ในแถวเดียว · ซื้อที่ดินเพิ่ม / สร้างใหม่ ให้ใช้ปุ่ม &ldquo;จ่ายซื้อ / จ่ายเพิ่ม&rdquo; (บันทึกเงินออกจากบัญชีด้วย)</span>}
         </div>
         {rows.filter((r) => r.type === "LAND").length > 1 && (

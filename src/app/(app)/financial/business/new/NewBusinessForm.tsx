@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createBusiness, type ActionState } from "../actions";
 import OwnerShares from "@/components/OwnerShares";
-import { thDate } from "@/lib/format";
+import { SMALL_BTN, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -58,7 +58,7 @@ export default function NewBusinessForm(props: {
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">มูลค่าส่วนของครอบครัว (บังคับ)</h2>
         {!isSetup && isAdmin && !late && (
-          <button type="button" onClick={() => setLate(true)} className="text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+          <button type="button" onClick={() => setLate(true)} className={`${SMALL_BTN} self-start justify-self-start`}>เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
         )}
         {(isSetup || late) && (
           <label className="flex items-start gap-2 text-sm">

@@ -225,7 +225,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
               {busy ? "กำลังอัปโหลด…" : pending.cands.length > 1 ? `ใช่ — เป็นฉบับใหม่แทนที่ติ๊กไว้ (${pending.picked.length})` : "ใช่ — เป็นฉบับใหม่ (ฉบับเดิมเป็นฉบับเก่า)"}</button>
             <button type="button" disabled={busy} onClick={() => send(pending.file, pending.meta, [])}
               className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs disabled:opacity-50">ไม่ใช่ — เพิ่มเป็นอีกฉบับ</button>
-            <button type="button" disabled={busy} onClick={() => setPending(null)} className="text-xs text-sky-800 underline">ยกเลิก</button>
+            <button type="button" disabled={busy} onClick={() => setPending(null)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">ยกเลิก</button>
           </div>
           <p className="text-xs text-sky-700">ฉบับเก่ายังเก็บไว้ เปิดดูได้ แต่จะไม่เตือนวันหมดอายุอีก</p>
         </div>

@@ -141,7 +141,7 @@ export function CardAutopayForm({ cardId, banks, pfCash = [], bank, hold = null,
   const [sel, setSel] = useState(bank ?? (hold ? `h:${hold}` : ""));
   if (!edit) {
     return (
-      <button type="button" onClick={() => setEdit(true)} className="mt-1 text-left text-xs text-blue-700 hover:underline">
+      <button type="button" onClick={() => setEdit(true)} className={`${SMALL_BTN} mt-1`}>
         {bank || hold ? "แก้ตัดบัญชีอัตโนมัติ" : "+ ตั้งตัดบัญชีอัตโนมัติ"}
       </button>
     );
@@ -166,7 +166,7 @@ export function CardAutopayForm({ cardId, banks, pfCash = [], bank, hold = null,
       )}
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-white hover:bg-blue-700 disabled:opacity-50">{pending ? "…" : "บันทึก"}</button>
-        <button type="button" onClick={() => setEdit(false)} className="text-slate-500">ปิด</button>
+        <button type="button" onClick={() => setEdit(false)} className={SMALL_BTN}>ปิด</button>
       </div>
       <Msg s={state} />
     </form>

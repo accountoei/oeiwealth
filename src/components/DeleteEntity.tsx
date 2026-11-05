@@ -4,7 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { deleteEntity, type RecState } from "@/lib/records";
 import Modal from "./Modal";
-import { SMALL_DEL_BTN } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN } from "@/lib/format";
 
 /** ตัวเลือก "ลบ…" ในช่องสถานะ (ทำแบบเดียวกับ "สถานะพอร์ต") */
 export type RemoveOpt = {
@@ -29,7 +29,7 @@ export function DeleteForm({ kind, id, redirectTo, paths = [], label = "ลบ�
       {needReason && <input name="reason" required placeholder="เหตุผลที่ลบ (บันทึกใน Audit Log)" className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm" />}
       <div className="flex items-center gap-2">
         <button disabled={pending} className="rounded-md bg-red-700 px-3 py-1.5 text-xs text-white disabled:opacity-50">{pending ? "กำลังลบ…" : "ยืนยันลบ"}</button>
-        <button type="button" onClick={onCancel} className="text-xs text-slate-500">ยกเลิก</button>
+        <button type="button" onClick={onCancel} className={SMALL_BTN}>ยกเลิก</button>
       </div>
       {state.error && <p className="text-xs text-red-700">{state.error}</p>}
     </form>

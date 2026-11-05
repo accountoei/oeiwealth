@@ -9,7 +9,7 @@ import {
   payRecurringExpense, saveEntry, setMonthStatus, toggleExpenseTemplate, toggleTemplate, undoDismissExpense,
   type ActionState,
 } from "./actions";
-import { SMALL_BTN, HOME_CATEGORY, INCOME_TYPE_LABEL, PROPERTY_COST_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
+import { SMALL_DEL_BTN, SMALL_BTN, HOME_CATEGORY, INCOME_TYPE_LABEL, PROPERTY_COST_TYPE_LABEL, ROW_BTN, money } from "@/lib/format";
 import { findHint, type ExpHint } from "@/lib/category-hints";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -273,7 +273,7 @@ export function ExpectedActions(props: {
       </label>
       <button disabled={recording} className={sbtn}>บันทึก</button>
       <button type="button" data-close onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
-      <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้รับ…</button>
+      <button type="button" onClick={() => setMode("dismiss")} className={`${SMALL_BTN} ml-auto`}>เดือนนี้ไม่ได้รับ…</button>
       <div className="w-full"><Msg s={rs} /></div>
     </form>
   );
@@ -462,7 +462,7 @@ export function UndoDismissButton({ id }: { id: string }) {
   return (
     <form action={action} className="inline">
       <input type="hidden" name="id" value={id} />
-      <button disabled={pending} className="text-xs text-slate-600 underline disabled:opacity-50">ยกเลิก</button>
+      <button disabled={pending} className={SMALL_DEL_BTN}>ยกเลิก</button>
       {state.error && <span className="ml-2 text-xs text-red-600">{state.error}</span>}
     </form>
   );
@@ -529,7 +529,7 @@ export function RecurringPayActions(props: {
       <button disabled={pending} className={sbtn}>บันทึก</button>
       <BalanceGuard />
       <button type="button" data-close onClick={close} className="text-xs text-slate-500">ยกเลิก</button>
-      <button type="button" onClick={() => setMode("dismiss")} className="ml-auto text-xs text-slate-600 underline">เดือนนี้ไม่ได้จ่าย…</button>
+      <button type="button" onClick={() => setMode("dismiss")} className={`${SMALL_BTN} ml-auto`}>เดือนนี้ไม่ได้จ่าย…</button>
       <div className="w-full"><Msg s={rs} /></div>
     </form>
   ));
@@ -857,7 +857,7 @@ export function AutopayConfirmForm({ cardId, bankId, holdId = null, currency, du
       </label>
       <button disabled={pending} className={sbtn}>{pending ? "…" : "บันทึก"}</button>
       <BalanceGuard />
-      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+      <button type="button" onClick={() => setOpen(false)} className={SMALL_BTN}>ปิด</button>
       <div className="w-full"><Msg s={state} /></div>
     </form>
   );
