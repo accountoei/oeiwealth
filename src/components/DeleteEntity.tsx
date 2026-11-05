@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { deleteEntity, type RecState } from "@/lib/records";
 import Modal from "./Modal";
+import { SMALL_DEL_BTN } from "@/lib/format";
 
 /** ตัวเลือก "ลบ…" ในช่องสถานะ (ทำแบบเดียวกับ "สถานะพอร์ต") */
 export type RemoveOpt = {
@@ -61,7 +62,7 @@ export function useStatusDelete(remove: RemoveOpt | undefined, value: string) {
 }
 
 /** ปุ่มลบแยก (ใช้กับรายการย่อยที่ไม่มีช่องสถานะ เช่น สัญญาเช่า) */
-export default function DeleteEntity({ kind, id, redirectTo, paths = [], label = "ลบรายการนี้", hint, needReason = true, buttonCls = "text-xs text-red-600 underline" }: RemoveOpt & { buttonCls?: string }) {
+export default function DeleteEntity({ kind, id, redirectTo, paths = [], label = "ลบรายการนี้", hint, needReason = true, buttonCls = SMALL_DEL_BTN }: RemoveOpt & { buttonCls?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(buttonCls)}>{label}</button>;
   if (!open) return trigger;

@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { confirmRecon, finalizeMonth, prepareRecon, reopenMonth, settleRecon, type ActionState } from "./actions";
-import { money } from "@/lib/format";
+import { SMALL_BTN, money } from "@/lib/format";
 import Flash from "@/components/Flash";
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -22,7 +22,7 @@ export function PrepareButton({ assetId, month, label }: { assetId: string; mont
     <form action={action} className="inline-flex items-center gap-2">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="month" value={month} />
-      <button disabled={pending} className="text-xs text-slate-800 underline disabled:opacity-50">{pending ? "กำลังคำนวณ…" : label}</button>
+      <button disabled={pending} className={SMALL_BTN}>{pending ? "กำลังคำนวณ…" : label}</button>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
   );
@@ -152,7 +152,7 @@ export function SettleLaterButton({ id, diff, currency }: { id: string; diff: nu
   return (
     <form action={action} className="mt-1 flex flex-wrap items-center gap-2">
       <input type="hidden" name="id" value={id} />
-      <button disabled={pending} className="text-xs text-blue-700 underline disabled:opacity-50">
+      <button disabled={pending} className={SMALL_BTN}>
         {pending ? "กำลังบันทึก…" : `ลงผลต่าง ${money(Math.abs(diff), currency)} เป็น${diff < 0 ? "ค่าใช้จ่าย" : "รายได้"}ก้อน (รอแยกรายละเอียด)`}
       </button>
       <Msg s={state} />

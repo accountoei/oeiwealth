@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { money, numOrZero } from "@/lib/format";
+import { SMALL_BTN, money, numOrZero } from "@/lib/format";
 import { COMP_TYPE_LABEL, type CompInput, type CompType, type Component } from "./components";
 import { splitByArea } from "./valueParts";
 
@@ -222,7 +222,7 @@ export default function ComponentTable({ mode, currency, initial = [], latest = 
       </div>
       {/* ฟอร์มแก้ไข: เพิ่มแถวได้เฉพาะ "กรอกตกหล่น / แยกโฉนด" (ไม่มีเงินเข้าออก) · ซื้อเพิ่ม / สร้างใหม่ ใช้ปุ่ม "จ่ายซื้อ / จ่ายเพิ่ม" */}
       {!addOpen ? (
-        <button type="button" onClick={() => setAddOpen(true)} className="text-xs text-slate-500 underline hover:text-slate-700">
+        <button type="button" onClick={() => setAddOpen(true)} className={SMALL_BTN}>
           + เพิ่มแถวที่กรอกตกหล่น / แยกโฉนด (ไม่มีเงินเข้าออก)</button>
       ) : (
       <div className="space-y-2 text-sm">

@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { demolishComponents, payForAsset, payPropertyLines, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
-import { money, numOrZero } from "@/lib/format";
+import { SMALL_DEL_BTN, money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
@@ -449,7 +449,7 @@ export function UndoComponentEvent({ eventId, paths }: { eventId: string; paths:
         <button disabled={pending} className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-50">
           {pending ? "กำลังยกเลิก…" : "ยืนยันยกเลิก"}</button>
         <button type="button" onClick={() => setAsk(false)} className="text-xs text-slate-500">ไม่ใช่</button>
-      </> : <button type="button" onClick={() => setAsk(true)} className="text-xs text-slate-500 underline hover:text-slate-700">ยกเลิกรายการนี้</button>}
+      </> : <button type="button" onClick={() => setAsk(true)} className={SMALL_DEL_BTN}>ยกเลิกรายการนี้</button>}
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
   );

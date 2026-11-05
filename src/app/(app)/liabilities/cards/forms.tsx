@@ -10,6 +10,7 @@ import DropPrompt from "../DropPrompt";
 import { useStatusDelete, type RemoveOpt } from "@/components/DeleteEntity";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
+import { SMALL_BTN } from "@/lib/format";
 
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -76,7 +77,7 @@ export function CardBalanceForm({ cardId, currency, today, minDate, banks = [], 
   { cardId: string; currency: string; today: string; minDate: string; banks?: { asset_id: string; name: string }[]; label?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateCardBalance, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-xs text-slate-700 underline")}>{label}</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (<div className="mt-2 space-y-2">
     <form action={action} className="flex flex-wrap items-end gap-2">

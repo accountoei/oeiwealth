@@ -108,6 +108,11 @@ a.underline, button.underline { text-underline-offset: 3px; }
 
 /* หน้าพิมพ์ (สัญญาเงินกู้ ฯลฯ): กระดาษ A4 · ขอบบน-ล่าง 14 มม. ซ้าย-ขวา 16 มม. */
 @page { size: A4; margin: 14mm 16mm; }
+/* แถวตารางที่กดเพื่อแก้ไข / ลบได้ (RowPanel) — จอสัมผัสไม่มีการชี้เมาส์ให้แถวเปลี่ยนสี จึงใส่ › ท้ายแถว (ตกลง 5 พ.ย. 2026) */
+@media (hover: none) {
+  tr[data-row-panel-row] > td:last-child::after { content: "›"; margin-left: 0.375rem; color: var(--color-slate-400, #94a3b8); }
+}
+
 @media print {
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

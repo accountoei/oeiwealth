@@ -389,6 +389,13 @@ export function withBankOwners<T extends { asset_id: string }>(banks: T[], own: 
 }
 
 export const ROW_BTN = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50";
+/**
+ * ปุ่มเล็ก (ขอบเทา) — คำสั่งรองในแถว / ในกล่อง (ตกลง 5 พ.ย. 2026)
+ *   กติกา: ปุ่ม = สั่งทำรายการ (เปิด pop up) · กดที่แถว = แก้ / ลบรายการเดิม · ลิงก์ = ไปหน้าอื่นเท่านั้น (ไม่เปิด pop up)
+ */
+export const SMALL_BTN = "inline-flex items-center whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50";
+/** ปุ่มเล็กสีแดง — ลบ / ยกเลิกรายการ (ถามยืนยันก่อนเสมอ) */
+export const SMALL_DEL_BTN = "inline-flex items-center whitespace-nowrap rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50";
 
 export const INS_TYPE: [string, string][] = [["LIFE", "ประกันชีวิต / สะสมทรัพย์"], ["HEALTH", "ประกันสุขภาพ"], ["ACCIDENT", "ประกันอุบัติเหตุ"], ["PROPERTY", "ประกันทรัพย์สิน"]];
 export const INS_STATUS: [string, string][] = [["ACTIVE", "มีผล"], ["LAPSED", "ขาดอายุ"], ["SURRENDERED", "เวนคืนแล้ว"], ["MATURED", "ครบสัญญา"], ["CLAIMED", "เคลมจบแล้ว"], ["CANCELLED", "ยกเลิก"]];

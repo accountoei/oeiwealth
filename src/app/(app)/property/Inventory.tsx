@@ -2,7 +2,7 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import { addInventoryItems, copyInventoryRoom, copyInventoryToLease, disposeInventoryItem, saveHandover, undoInventoryDisposal, type ActionState } from "./actions";
-import { COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, money } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, money } from "@/lib/format";
 import ModalButton from "@/components/ModalButton";
 import Flash from "@/components/Flash";
 
@@ -165,7 +165,7 @@ export function HandoverButton({ assetId, leaseId, label, items, canWrite, curre
   assetId: string; leaseId: string; label: string; items: HandoverItem[]; canWrite: boolean; currency: string; docs?: ReactNode;
 }) {
   return (
-    <ModalButton label={label} title="รายการส่งมอบ (รับมอบ / ส่งคืน)" size="lg" className="text-sm text-slate-700 underline">
+    <ModalButton label={label} title="รายการส่งมอบ (รับมอบ / ส่งคืน)" size="lg" className={SMALL_BTN}>
       {/* รายการเปลี่ยน (ดึงของ / บันทึก) → เริ่มตารางใหม่จากข้อมูลล่าสุด */}
       <HandoverBody key={items.map((x) => x.id).join(",")} assetId={assetId} leaseId={leaseId} items={items} canWrite={canWrite} currency={currency} />
       {docs && <div className="mt-5 border-t border-slate-200 pt-4">{docs}</div>}
@@ -270,7 +270,7 @@ export function DisposeButton({ assetId, itemId, name, banks, today, minDate }: 
   assetId: string; itemId: string; name: string; banks: [string, string][]; today: string; minDate?: string;
 }) {
   return (
-    <ModalButton label="ขาย / ทิ้ง" title={`ขาย / ทิ้ง: ${name}`} className="text-xs text-slate-500 underline hover:text-slate-800">
+    <ModalButton label="ขาย / ทิ้ง" title={`ขาย / ทิ้ง: ${name}`} className={SMALL_BTN}>
       <DisposeBody assetId={assetId} itemId={itemId} banks={banks} today={today} minDate={minDate} />
     </ModalButton>
   );
@@ -315,7 +315,7 @@ export function UndoDisposalButton({ assetId, itemId }: { assetId: string; itemI
     <form action={action} className="inline-flex items-center gap-2">
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="item_id" value={itemId} />
-      <button disabled={pending} className="text-xs text-slate-500 underline hover:text-slate-800">{pending ? "…" : "ยกเลิก"}</button>
+      <button disabled={pending} className={SMALL_DEL_BTN}>{pending ? "…" : "ยกเลิก"}</button>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
   );

@@ -5,7 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addUnderlying, recordMaturity, recordTx, restateUnits, saveFcn, type ActionState } from "../../../actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { updateRecord, type RecState } from "@/lib/records";
-import { COUPON_FREQ_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
+import { SMALL_BTN, COUPON_FREQ_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import { COUPON_FREQ_OPTIONS } from "@/lib/coupon-schedule";
 import SecNavPicker from "@/components/SecNavPicker";
 import { SettleModeRadios } from "@/components/SettleMode";
@@ -69,7 +69,7 @@ function FcnFields({ assetId, holdingId, fcn, defaultPrincipal, label }: { asset
 export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addUnderlying, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls("text-sm text-slate-600 underline")}>+ เพิ่มหุ้นอ้างอิง</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>+ เพิ่มหุ้นอ้างอิง</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3">

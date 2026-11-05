@@ -5,6 +5,7 @@ import Modal from "@/components/Modal";
 import { useActionState, useState } from "react";
 import { addCategory, moveCategory, renameCategory, toggleCategory, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { SMALL_BTN } from "@/lib/format";
 
 export type Cat = { id: string; name: string; active: boolean; used: number };
 
@@ -28,7 +29,7 @@ export default function CategoryManager({ kind, cats, canEdit, unit }: {
               <th className="px-2">สถานะ</th>{canEdit && <th className="text-right font-normal">
                 {cats.length > 1 && (ordering
                   ? <button type="button" onClick={() => setOrdering(false)} className="rounded-md bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">เสร็จ</button>
-                  : <button type="button" onClick={() => setOrdering(true)} className="text-xs text-slate-600 underline hover:text-slate-900">จัดลำดับ</button>)}
+                  : <button type="button" onClick={() => setOrdering(true)} className={SMALL_BTN}>จัดลำดับ</button>)}
               </th>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
