@@ -6,6 +6,7 @@ import { ageFrom, EDUCATION_LEVEL_LABEL, GENDER_LABEL, genderOf, kinLabel, money
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { PersonDetailsForm, type PersonDetails } from "./details-form";
 import { DetailItem as Item } from "@/components/Boxes";
+import { InfoTip } from "@/components/HeaderBar";
 
 const FIELDS = "id,name,relationship,status,title_prefix,full_name_th,full_name_en,nickname,birth_date,photo,phone,email,address," +
   "emergency_contact_name,emergency_contact_phone,national_id,passport_no,passport_expiry,house_registration_no,notes,father_id,mother_id,spouse_id,death_date," +
@@ -170,7 +171,7 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             <p className="mt-2 text-xs text-slate-500">ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{headLabel ? ` (${headLabel})` : ""}</p>
           </div>
           <div className="border-t border-slate-100 pt-4">
-            <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว</h2>
+            <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว <InfoTip label="คำอธิบาย">แนบสำเนาที่กล่อง &ldquo;เอกสารส่วนตัว&rdquo; โดยเลือกประเภท บัตรประชาชน / ทะเบียนบ้าน / หนังสือเดินทาง — ลิงก์จะขึ้นข้างเลขให้เอง</InfoTip></h2>
             <dl className="text-sm grid gap-4 sm:grid-cols-3">
               <div className="space-y-1"><Item dash label="เลขบัตรประชาชน">{fmtNid(p.national_id)}</Item><DocLink types={["บัตรประชาชน"]} /></div>
               <div className="space-y-1"><Item dash label="เลขทะเบียนบ้าน">{p.house_registration_no}</Item><DocLink types={["ทะเบียนบ้าน"]} /></div>
@@ -181,17 +182,13 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
                 <DocLink types={["หนังสือเดินทาง", "passport"]} />
               </div>
             </dl>
-            <p className="mt-3 text-xs text-slate-500">แนบสำเนาที่กล่อง &ldquo;เอกสารส่วนตัว&rdquo; โดยเลือกประเภท บัตรประชาชน / ทะเบียนบ้าน / หนังสือเดินทาง — ลิงก์จะขึ้นข้างเลขให้เอง</p>
           </div>
         </div>
       </section>
 
       {archived && (
         <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-5">
-          <h2 className="font-medium text-slate-900">ทรัพย์สินที่ต้องจัดการ</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับในความมั่งคั่งสุทธิตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง
-          </p>
+          <h2 className="mb-3 font-medium text-slate-900">ทรัพย์สินที่ต้องจัดการ <InfoTip label="คำอธิบาย">รายการที่ยังมีชื่อของสมาชิกคนนี้ (นับในความมั่งคั่งสุทธิตามสัดส่วน) · โอนให้ทายาท: เปิดรายการ → แก้เจ้าของ → เลือก &ldquo;เปลี่ยนเจ้าของ&rdquo; พร้อมวันที่มีผล · โอนหมดแล้วรายการจะหายไปเอง</InfoTip></h2>
           {(estate ?? []).length === 0 ? <p className="text-sm text-emerald-700">ไม่มีรายการค้าง — จัดการครบแล้ว</p> : (
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500">

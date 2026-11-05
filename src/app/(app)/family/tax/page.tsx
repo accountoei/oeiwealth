@@ -88,14 +88,11 @@ function FamilyTax({ info, people, fam, thisYear, today }: {
       {info}
       <HeaderFilters><PersonFilter persons={people} value="" shareNote={false} /></HeaderFilters>
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 className="font-medium text-slate-900">ทั้งครอบครัว</h2>
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="font-medium text-slate-900">ทั้งครอบครัว <InfoTip label="คำอธิบาย">ยอดจากแบบภาษีที่สร้างไว้ของแต่ละคน (ไม่ดึงยอดจากระบบใหม่) · ยื่นแล้วใช้ยอดตามที่ยื่น · คนที่ยังไม่สร้างแบบร่าง กดที่ชื่อเพื่อเข้าไปสร้าง</InfoTip></h2>
           <YearSelect label="ปีภาษี" value={y} options={fam.years.map((v) => ({ value: v }))} hrefOf="/family/tax?y=__Y__" />
+          {y >= thisYear && <span className="text-xs text-amber-700">ปีภาษียังไม่จบ ยอดเป็นข้อมูลถึงวันที่ {thDate(today)}</span>}
         </div>
-        <p className="mb-3 text-xs text-slate-500">
-          ยอดจากแบบภาษีที่สร้างไว้ของแต่ละคน (ไม่ดึงยอดจากระบบใหม่) · ยื่นแล้วใช้ยอดตามที่ยื่น · คนที่ยังไม่สร้างแบบร่าง กดที่ชื่อเพื่อเข้าไปสร้าง
-          {y >= thisYear && <span className="text-amber-700"> · ปีภาษียังไม่จบ ยอดเป็นข้อมูลถึงวันที่ {thDate(today)}</span>}
-        </p>
         {fam.error && <p className="mb-2 text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {fam.error.message}</p>}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

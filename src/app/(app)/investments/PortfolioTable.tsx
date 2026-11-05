@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, useState, type ReactNode } from "react";
 import { MoveButtons, neighbors } from "@/components/SortControls";
 import { money, thDate, signedMoney, signedPct } from "@/lib/format";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type PortfolioRow = {
   asset_id: string; name: string; sub: string; currency: string; value: number | null; valueThb: number; valueDate: string | null;
@@ -32,7 +33,8 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
     <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด</h2>
+          <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด <InfoTip label="คำอธิบาย">ต้นทุน = ต้นทุนเฉลี่ยของหลักทรัพย์ที่ถืออยู่ · ผลตอบแทนนับตั้งแต่ยอดตั้งต้น · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
+        {hasInv && " · เงินลงทุนสุทธิ = เงินที่โอนเข้าพอร์ต (ก่อน + หลัง Go-live) − โอนกลับ · กำไรเทียบเงินลงทุน = มูลค่า − เงินลงทุนสุทธิ (รวมผลค่าเงิน) · แถวรวมนับเฉพาะพอร์ตที่ยังเปิด"}</InfoTip></h2>
           {filter}
         </div>
         {toggle}
@@ -120,10 +122,6 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
           </tfoot>
         )}
       </table>
-      <p className="px-4 py-3 text-xs text-slate-500">
-        ต้นทุน = ต้นทุนเฉลี่ยของหลักทรัพย์ที่ถืออยู่ · ผลตอบแทนนับตั้งแต่ยอดตั้งต้น · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
-        {hasInv && " · เงินลงทุนสุทธิ = เงินที่โอนเข้าพอร์ต (ก่อน + หลัง Go-live) − โอนกลับ · กำไรเทียบเงินลงทุน = มูลค่า − เงินลงทุนสุทธิ (รวมผลค่าเงิน) · แถวรวมนับเฉพาะพอร์ตที่ยังเปิด"}
-      </p>
     </section>
   );
 }

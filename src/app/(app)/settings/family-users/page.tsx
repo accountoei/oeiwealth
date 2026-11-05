@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { PageInfo } from "@/components/HeaderBar";
+import { PageInfo, InfoTip } from "@/components/HeaderBar";
 import { requireAppUser, ROLE_LABEL, type Role } from "@/lib/auth";
 import { InviteButton, UserManage } from "./forms";
 import SecuritySection, { loadSecurity, type SecuritySp } from "../security/SecuritySection";
@@ -25,16 +25,13 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       <PageInfo>{family?.name} · Go-live {family?.go_live_date} · {family?.system_status}</PageInfo>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="font-medium text-slate-900">ผู้ใช้ระบบ</h2>
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <h2 className="font-medium text-slate-900">ผู้ใช้ระบบ <InfoTip label="คำอธิบาย">{isAdmin ? "กด “จัดการ” เพื่อเปลี่ยนสิทธิ์ · เปิด / ปิดการใช้งาน · ลิงก์ตั้งรหัสผ่านใหม่ · รีเซ็ต MFA · ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อย 1 คนเสมอ"
+                   : "แสดงเฉพาะบัญชีของคุณ"}</InfoTip></h2>
           {/* ปุ่มเชิญ มุมขวาบนของกล่อง (ตกลง 5 พ.ย. 2026) */}
           {isAdmin && <InviteButton persons={(persons ?? []).filter((p) => p.status === "ACTIVE"
             && !(users ?? []).some((u) => u.person_id === p.id)).map((p) => ({ id: p.id, name: p.name }))} />}
         </div>
-        <p className="mb-3 text-xs text-slate-500">
-          {isAdmin ? "กด “จัดการ” เพื่อเปลี่ยนสิทธิ์ · เปิด / ปิดการใช้งาน · ลิงก์ตั้งรหัสผ่านใหม่ · รีเซ็ต MFA · ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อย 1 คนเสมอ"
-                   : "แสดงเฉพาะบัญชีของคุณ"}
-        </p>
         {usersError && <p className="mb-2 text-sm text-red-600">โหลดรายชื่อผู้ใช้ไม่สำเร็จ: {usersError.message}</p>}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

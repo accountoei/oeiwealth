@@ -22,7 +22,7 @@ import MonthPicker from "@/components/MonthPicker";
 import CategoryManager from "./CategoryManager";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, PageInfo, InfoTip } from "@/components/HeaderBar";
 import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
@@ -586,7 +586,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <section id="moves" className="scroll-mt-4 space-y-4 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้</h2>
+                <h2 className="font-medium text-slate-900">เงินเข้า–ออกบัญชีเดือนนี้ <InfoTip label="คำอธิบาย">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;
+              · โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</InfoTip></h2>
                 <p className="text-xs text-slate-500">ทุกบัญชีธนาคารในระบบ · ยอดสรุปไม่นับโอนระหว่างบัญชีตัวเอง · {moveSum.count} รายการ</p>
               </div>
             </div>
@@ -601,8 +602,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             </div>
             {autopay.length > 0 && (
               <div className={`rounded-lg border p-4 ${autopayPending.length ? "border-amber-200 bg-amber-50/40" : "border-slate-200"}`}>
-                <h3 className="mb-1 text-sm font-medium text-slate-900">บัตรเครดิตตัดบัญชีอัตโนมัติ เดือน {thMonth(start)}</h3>
-                <p className="mb-3 text-xs text-slate-500">ถึงวันครบชำระแล้วขึ้น &ldquo;รอยืนยัน&rdquo; · ตรวจยอดที่ตัดจริงในบัญชีแล้วกดยืนยัน ระบบจึงบันทึกเงินออกจากบัญชีให้</p>
+                <h3 className="mb-3 text-sm font-medium text-slate-900">บัตรเครดิตตัดบัญชีอัตโนมัติ เดือน {thMonth(start)} <InfoTip label="คำอธิบาย">ถึงวันครบชำระแล้วขึ้น &ldquo;รอยืนยัน&rdquo; · ตรวจยอดที่ตัดจริงในบัญชีแล้วกดยืนยัน ระบบจึงบันทึกเงินออกจากบัญชีให้</InfoTip></h3>
                 <div className="grid gap-3 md:grid-cols-2">
                   {autopay.map((x) => (
                     <div key={x.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
@@ -631,8 +631,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
               </div>
             )}
             <MovesView rows={moveRows(canWrite)} banks={bankOpts} showActions={canWrite} openings={openings} statements={statements} monthStart={start} limit={sp.hl?.startsWith("m-") ? undefined : 20} />
-            <p className="text-xs text-slate-500">ทุกรายการที่ทำให้ยอดเงินในบัญชีธนาคารเปลี่ยน · เลือกบัญชีเพื่อเทียบกับ Statement · รายการที่มาจากหน้าอื่นกด &ldquo;แก้ที่หน้า …&rdquo;
-              · โอนเข้า/ออกพอร์ตลงทุนทำที่หน้า Investments · การรับ/คืนเงินประกันทำที่หน้า Property</p>
           </section>
       </TabPanel>
 
@@ -698,19 +696,18 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           </section>
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-slate-900">ค่าเช่าจากสัญญาเช่า</h2>
+              <h2 className="font-medium text-slate-900">ค่าเช่าจากสัญญาเช่า <InfoTip label="คำอธิบาย">ดูอย่างเดียว · สัญญาที่ยังมีผล (รวมสัญญาที่ยังไม่เริ่ม) · เพิ่ม / แก้ไข / ต่อสัญญา ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน){pv.personId ? " · ยอดตามสัดส่วนที่ถือ" : ""}</InfoTip></h2>
               {[...leaseYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
                 <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
               ))}
             </div>
             <PropertyCostTable rows={leaseRowsView} itemHead="ผู้เช่า · ห้อง / ยูนิต" freqLabel="ความถี่ในการรับ" whenHead="รับเมื่อ" />
-            <p className="text-xs text-slate-500">ดูอย่างเดียว · สัญญาที่ยังมีผล (รวมสัญญาที่ยังไม่เริ่ม) · เพิ่ม / แก้ไข / ต่อสัญญา ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน){pv.personId ? " · ยอดตามสัดส่วนที่ถือ" : ""}</p>
           </section>
           </SubPanel>
           <SubPanel id="expense">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำทั่วไป</h2>
+              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำทั่วไป {canWrite && rexpTpl.length > 0 && <InfoTip label="คำอธิบาย">กดที่แถวเพื่อแก้ไข / หยุดใช้ / ลบ · เปลี่ยนบัญชีที่จ่ายประจำ: หยุดใช้รายการเดิมแล้วเพิ่มใหม่ (ตอนบันทึกจ่ายเลือกบัญชีอื่นได้ทุกครั้ง)</InfoTip>}</h2>
               {[...rexpYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
                 <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
               ))}
@@ -753,24 +750,21 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 </table>
               </div>
             )}
-            {canWrite && rexpTpl.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / หยุดใช้ / ลบ · เปลี่ยนบัญชีที่จ่ายประจำ: หยุดใช้รายการเดิมแล้วเพิ่มใหม่ (ตอนบันทึกจ่ายเลือกบัญชีอื่นได้ทุกครั้ง)</p>}
           </section>
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำของทรัพย์สิน</h2>
+              <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำของทรัพย์สิน <InfoTip label="คำอธิบาย">ดูอย่างเดียว · เพิ่ม / แก้ไข / ลบ ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน) · ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;</InfoTip></h2>
               {[...costYear.entries()].filter(([, v]) => v > 0).map(([ccy, v]) => (
                 <span key={ccy} className="text-sm text-slate-600">ประมาณการต่อปี <span className="font-medium tabular-nums">{money(v, ccy, 0)}</span></span>
               ))}
             </div>
             <PropertyCostTable rows={utilRowsView} />
-            <p className="text-xs text-slate-500">ดูอย่างเดียว · เพิ่ม / แก้ไข / ลบ ที่หน้าทรัพย์สิน (กดชื่อทรัพย์สิน) · ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;</p>
           </section>
           </SubPanel>
           <SubPanel id="types">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">ประเภทรายได้</h2>
-            <p className="mb-3 text-xs text-slate-500">ประเภทหลักระบบกำหนดไว้ (ใช้คำนวณภาษี / รายงาน และผูกกับหน้าลงทุน / ทรัพย์สิน / ประกัน) จึงแก้ไม่ได้
-              · ถ้าต้องการแยกละเอียดขึ้น ให้ตั้ง &ldquo;ประเภทย่อยของรายได้อื่น&rdquo; ด้านล่าง</p>
+            <h2 className="mb-3 font-medium text-slate-900">ประเภทรายได้ <InfoTip label="คำอธิบาย">ประเภทหลักระบบกำหนดไว้ (ใช้คำนวณภาษี / รายงาน และผูกกับหน้าลงทุน / ทรัพย์สิน / ประกัน) จึงแก้ไม่ได้
+              · ถ้าต้องการแยกละเอียดขึ้น ให้ตั้ง &ldquo;ประเภทย่อยของรายได้อื่น&rdquo; ด้านล่าง</InfoTip></h2>
             <div className="flex flex-wrap gap-2">
               {Object.entries(INCOME_TYPE_LABEL).map(([k, v]) => (
                 <span key={k} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">{v}</span>
@@ -778,17 +772,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             </div>
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">ประเภทย่อยของรายได้อื่น</h2>
-            <p className="mb-3 text-xs text-slate-500">เช่น ขายของมือสอง · ค่าคอมมิชชั่น · เงินรางวัล — เลือกได้ตอนบันทึก &ldquo;รายได้อื่น&rdquo; (ไม่บังคับ) และแยกแท่งในกราฟภาพรวม</p>
+            <h2 className="mb-3 font-medium text-slate-900">ประเภทย่อยของรายได้อื่น <InfoTip label="คำอธิบาย">เช่น ขายของมือสอง · ค่าคอมมิชชั่น · เงินรางวัล — เลือกได้ตอนบันทึก &ldquo;รายได้อื่น&rdquo; (ไม่บังคับ) และแยกแท่งในกราฟภาพรวม</InfoTip></h2>
             <CategoryManager kind="INCOME_OTHER" cats={incSubAll} canEdit={canDelete} unit="ประเภทย่อย" />
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-1 font-medium text-slate-900">หมวดค่าใช้จ่าย</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              ใช้เป็นตัวเลือกตอนบันทึก / แยกรายการ / แก้ไขค่าใช้จ่าย · เปลี่ยนชื่อแล้วรายการเดิมทุกเดือนเปลี่ยนตาม (ยอดเงินไม่เปลี่ยน)
+            <h2 className="mb-3 font-medium text-slate-900">หมวดค่าใช้จ่าย <InfoTip label="คำอธิบาย">ใช้เป็นตัวเลือกตอนบันทึก / แยกรายการ / แก้ไขค่าใช้จ่าย · เปลี่ยนชื่อแล้วรายการเดิมทุกเดือนเปลี่ยนตาม (ยอดเงินไม่เปลี่ยน)
               · &ldquo;ซ่อน&rdquo; = ไม่ขึ้นในตัวเลือกอีก แต่รายการเดิมยังอยู่ · ลำดับนี้ใช้ในตัวเลือกทุกที่
-              · ค่าใช้จ่ายประจำของ Property ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;
-            </p>
+              · ค่าใช้จ่ายประจำของ Property ทุกรายการ (รวมภาษีที่ดิน) ใช้หมวด &ldquo;บ้าน / สาธารณูปโภค&rdquo;</InfoTip></h2>
             <CategoryManager kind="EXPENSE" cats={expCatAll} canEdit={canDelete} unit="หมวด" />
           </section>
           {!canDelete && <p className="text-xs text-slate-500">เฉพาะ ADMIN / EDITOR เพิ่มหรือแก้ไขได้</p>}

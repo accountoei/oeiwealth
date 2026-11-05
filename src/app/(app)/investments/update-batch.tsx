@@ -7,6 +7,7 @@ import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { batchValuations, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type UpdateRow = {
   id: string; pf: string; pfName: string; name: string; symbol: string | null; type: string; currency: string; qty: number;
@@ -65,9 +66,8 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
           )}
           <label className="ml-auto flex items-center gap-2">ราคา ณ วันที่
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-          </label>
+           <InfoTip label="คำอธิบาย">กรอกตาม Statement เฉพาะตัวที่มีราคาใหม่ (ช่องว่าง = ไม่บันทึก) · ใส่ราคาต่อหน่วย หรือมูลค่ารวม · บัญชีเงินฝากในพอร์ต / มูลค่าก้อนเดียว ใส่มูลค่า · ราคาจาก Statement ใช้แทนราคาอัตโนมัติของวันนั้น · สลับพอร์ตได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</InfoTip></label>
         </div>
-        <p className="text-xs text-slate-500">กรอกตาม Statement เฉพาะตัวที่มีราคาใหม่ (ช่องว่าง = ไม่บันทึก) · ใส่ราคาต่อหน่วย หรือมูลค่ารวม · บัญชีเงินฝากในพอร์ต / มูลค่าก้อนเดียว ใส่มูลค่า · ราคาจาก Statement ใช้แทนราคาอัตโนมัติของวันนั้น · สลับพอร์ตได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

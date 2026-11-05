@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, thDate } from "@/lib/format";
 import { StatBox } from "@/components/Boxes";
 import ModalButton from "@/components/ModalButton";
+import { InfoTip } from "@/components/HeaderBar";
 
 /**
  * แท็บ "ความคุ้มครอง" หน้า Insurance (ตกลง 3 พ.ย. 2026 · แท็บท้ายสุด)
@@ -109,10 +110,9 @@ export default function CoverageTab({ persons, personId, personName, policies, i
       {/* เลื่อนซ้าย-ขวาเฉพาะตาราง (หัวกล่อง / ปุ่มพิมพ์ / คำอธิบายอยู่กับที่) */}
       <section className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">ความคุ้มครอง · {who}</h2>
+          <h2 className="font-medium text-slate-900">ความคุ้มครอง · {who} <InfoTip label="คำอธิบาย">จากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองใช้ทุนประกันของกรมธรรม์</InfoTip></h2>
           <Link href={printHref} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">พิมพ์สรุปสำหรับโรงพยาบาล</Link>
         </div>
-        <p className="px-4 text-xs text-slate-500">จากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองใช้ทุนประกันของกรมธรรม์</p>
         {groups.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีข้อมูลความคุ้มครอง · กรอกได้ที่หน้ากรมธรรม์แต่ละฉบับ</p>
           : personId ? (
           <div className="overflow-x-auto"><table className="mt-2 w-full min-w-[44rem] text-sm">

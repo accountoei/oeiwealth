@@ -26,6 +26,7 @@ import { premiumPaymentFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { payDefaultValue } from "../PayDefaultSelect";
+import { InfoTip } from "@/components/HeaderBar";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -156,11 +157,10 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   ) : null;
   const cvContract = (
     <>
-      <p className="text-xs text-slate-500">มูลค่า ณ สิ้นปีกรมธรรม์ (จากเล่มกรมธรรม์) · ระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยก่อนหน้านั้นครบ (ไม่ทับยอดที่ลงไว้ใหม่กว่า)</p>
       <div className="flex flex-wrap items-center gap-2">
         {cvPending && canWrite && <SyncCashValueButton policyId={id} />}
         {canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={cvTableCurrent} />}
-      </div>
+       <InfoTip label="คำอธิบาย">มูลค่า ณ สิ้นปีกรมธรรม์ (จากเล่มกรมธรรม์) · ระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยก่อนหน้านั้นครบ (ไม่ทับยอดที่ลงไว้ใหม่กว่า)</InfoTip></div>
       {cvPending && <p className="text-xs text-amber-700">ปีที่ {cvDue?.policy_year} ถึงวันแล้วแต่ยังไม่ได้ลงมูลค่า</p>}
       <div className="max-h-[26rem] overflow-y-auto">
         <table className="w-full text-sm">
@@ -453,7 +453,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             </section>
             <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-medium text-slate-900">เคลม</h2>
+                <h2 className="font-medium text-slate-900">เคลม <InfoTip label="คำอธิบาย">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</InfoTip></h2>
                 {canWrite && policyActive && <ClaimForm policyId={id} currency={ccy} today={today}
                   coverages={(covs ?? []).map((c) => ({ id: c.id, coverage_type: c.coverage_type, limit_amount: Number(c.limit_amount) }))} />}
               </div>
@@ -485,7 +485,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                   </tbody>
                 </table>
               )}
-              <p className="text-xs text-slate-500">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</p>
             </section>
           </TabPanel>
           {TABS.some(([k]) => k === "cv") && (

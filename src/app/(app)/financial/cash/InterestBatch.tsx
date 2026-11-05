@@ -9,6 +9,7 @@ import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
@@ -79,12 +80,11 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
             )}
             <label className="flex items-center gap-2">วันที่รับ
               <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-            </label>
+             <InfoTip label="คำอธิบาย">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
+          · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
+          · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</InfoTip></label>
           </div>
         </div>
-        <p className="text-xs text-slate-500">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
-          · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
-          · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -92,7 +92,8 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
-              <th className="min-w-[13rem] px-3 py-2">บัญชี</th><th className="w-32 px-3">วันครบกำหนด</th>
+              <th className="min-w-[13rem] px-3 py-2"><span className="inline-flex items-center gap-1">บัญชี <InfoTip label="คำอธิบาย">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · กดยอด &ldquo;รับแล้ว …&rdquo; เพื่อแก้ / ลบ (หรือที่หน้า Income &amp; Expenses)
+        · ดอกเบี้ยบัญชีเงินฝากในพอร์ตลงทุน บันทึกที่หน้า Investments → แท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo;</InfoTip></span></th><th className="w-32 px-3">วันครบกำหนด</th>
               <th className="w-40 px-3 text-right">ยอดคาดว่าจะได้รับ</th>
               <th className="w-40 px-3 text-right">ดอกเบี้ยก่อนภาษี</th><th className="w-36 px-3 text-right">ภาษีหัก ณ ที่จ่าย</th><th className="w-44 whitespace-nowrap px-3 text-right">ยอดเข้าบัญชีสุทธิ</th>
             </tr>
@@ -142,8 +143,6 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
           <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
-      <p className="text-xs text-slate-500">บันทึกเป็นรายได้ &ldquo;ดอกเบี้ย&rdquo; เข้าบัญชีนั้น (แบ่งตามเจ้าของบัญชี) · กดยอด &ldquo;รับแล้ว …&rdquo; เพื่อแก้ / ลบ (หรือที่หน้า Income &amp; Expenses)
-        · ดอกเบี้ยบัญชีเงินฝากในพอร์ตลงทุน บันทึกที่หน้า Investments → แท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo;</p>
     </form>
     </>
   );

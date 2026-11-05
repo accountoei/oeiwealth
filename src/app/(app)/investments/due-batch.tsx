@@ -127,11 +127,10 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
               {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>}
               <label className="flex items-center gap-2">วันที่รับ
                 <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-              </label>
+               <InfoTip label="คำอธิบาย">กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
+            · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</InfoTip></label>
             </div>
           </div>
-          <p className="text-xs text-slate-500">กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
-            · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</p>
         </div>
       )}
 

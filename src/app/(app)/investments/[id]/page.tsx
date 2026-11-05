@@ -28,6 +28,7 @@ import { WithStatus } from "@/components/StatusSelect";
 import { ActionBar } from "@/components/ActionBar";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
+import { InfoTip } from "@/components/HeaderBar";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
@@ -290,7 +291,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
           <div className="flex items-baseline gap-3">
-            <h2 className="font-medium text-slate-900">เงินฝากในพอร์ต</h2>
+            <h2 className="font-medium text-slate-900">เงินฝากในพอร์ต {multiCash && <InfoTip label="คำอธิบาย">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง) · กดชื่อบัญชีเพื่อดูรายการเงินเข้า–ออก / บันทึกยอดตาม Statement / แก้ไข</InfoTip>}</h2>
             {canDelete && shownCash.length > 1 && <OrderToggle id={id} mode="cash" active={orderMode === "cash"} />}
           </div>
           <span className="text-sm text-slate-500">รวม <span className="font-medium tabular-nums text-slate-900">{money(cashThb, "THB", 0)}</span></span>
@@ -351,7 +352,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             })}
           </tbody>
         </table>
-        {multiCash && <p className="px-4 pb-3 pt-2 text-xs text-slate-500">★ บัญชีหลัก = บัญชีที่ระบบเลือกให้ก่อนเมื่อบันทึกรายการสกุลนั้น (เปลี่ยนในฟอร์มได้ทุกครั้ง) · กดชื่อบัญชีเพื่อดูรายการเงินเข้า–ออก / บันทึกยอดตาม Statement / แก้ไข</p>}
       </section>
 
       {(unsettled ?? []).length > 0 && (
@@ -376,7 +376,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           <TabPanel id="hold" className="flex items-baseline gap-3 pb-2">
             {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
             <span className="text-sm text-slate-500">รวมหลักทรัพย์ <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
-          </TabPanel>
+           <InfoTip label="คำอธิบาย">มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับความมั่งคั่งสุทธิ
+            · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
+            · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / รับปันผล · ดอกเบี้ย · คืนเงินต้น</InfoTip></TabPanel>
         </div>
 
         <TabPanel id="hold">
@@ -434,11 +436,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               })}
             </tbody>
           </table>
-          <p className="px-4 pb-3 pt-2 text-xs text-slate-500">
-            มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับความมั่งคั่งสุทธิ
-            · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
-            · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / รับปันผล · ดอกเบี้ย · คืนเงินต้น
-          </p>
         </TabPanel>
 
         <TabPanel id="ret">
@@ -458,7 +455,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500">
-                    <tr><th className="py-1">วันที่</th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
+                    <tr><th className="py-1">วันที่ <InfoTip label="คำอธิบาย">กดที่รายการเพื่อแก้ไข / ลบ · &ldquo;—&rdquo; ในช่องเงินฝากเพิ่ม / ลด = เงินผ่านบัญชีธนาคารโดยตรง · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)</InfoTip></th><th>ประเภท</th><th>หลักทรัพย์</th><th className="text-right">จำนวน × ราคา</th>
                       <th className="text-right">ยอด</th><th className="text-right">เงินฝากเพิ่ม / ลด</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -542,9 +539,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 </table>
               </div>
             )}
-            <p className="mt-3 text-xs text-slate-500">
-              กดที่รายการเพื่อแก้ไข / ลบ · &ldquo;—&rdquo; ในช่องเงินฝากเพิ่ม / ลด = เงินผ่านบัญชีธนาคารโดยตรง · ผลตอบแทนนับตั้งแต่ Go-live (ยอดตั้งต้นใช้ต้นทุนเดิม)
-            </p>
           </div>
         </TabPanel>
       </section>

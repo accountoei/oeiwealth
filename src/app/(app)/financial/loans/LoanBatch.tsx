@@ -162,10 +162,9 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
       {canWrite && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
           {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
-          <span className="text-xs text-slate-500">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</span>
           <label className="ml-auto flex shrink-0 items-center gap-2">วันที่ได้รับ
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && onDate(e.target.value)} className={small} />
-          </label>
+           <InfoTip label="คำอธิบาย">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</InfoTip></label>
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

@@ -8,6 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchPayDebts, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
@@ -72,16 +73,15 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
       {canWrite && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
           {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
-          <span className="text-xs text-slate-500">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</span>
           <label className="ml-auto flex shrink-0 items-center gap-2">วันที่จ่าย
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-          </label>
+           <InfoTip label="คำอธิบาย">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</InfoTip></label>
         </div>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">เงินกู้</h2>
+          <h2 className="flex items-center gap-1 font-medium text-slate-900">เงินกู้ <InfoTip label="คำอธิบาย">เงินต้นลดยอดหนี้ · ดอกเบี้ยลงค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; · อัปเดตยอดตาม Statement ทำที่หน้าเงินกู้ · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</InfoTip></h2>
           {canWrite && loans.some((r) => r.monthly) && (
             <button type="button" onClick={() => setPr({ ...pr, ...Object.fromEntries(loans.filter((r) => r.monthly).map((r) => [r.key, fmt(r.monthly!)])) })}
               className="text-sm text-blue-700 hover:underline">ใส่ค่างวดเป็นเงินต้นทุกแถว</button>
@@ -117,7 +117,7 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">บัตรเครดิต</h2>
+          <h2 className="flex items-center gap-1 font-medium text-slate-900">บัตรเครดิต <InfoTip label="คำอธิบาย">จ่ายบัตรไม่เปลี่ยนยอด Statement (ยอดปัจจุบันลดตามการจ่าย) · จ่ายบัตรจากบัญชีเงินฝากในพอร์ต / อัปเดตยอดตาม Statement ทำที่หน้าบัตร · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</InfoTip></h2>
           {canWrite && cards.some((r) => r.balance > 0) && (
             <button type="button" onClick={() => setPr({ ...pr, ...Object.fromEntries(cards.filter((r) => r.balance > 0).map((r) => [r.key, fmt(r.balance)])) })}
               className="text-sm text-blue-700 hover:underline">ใส่ยอดค้างเต็มจำนวนทุกบัตร</button>
@@ -159,7 +159,6 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
           <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </div>
       )}
-      <p className="text-xs text-slate-500">เงินต้นลดยอดหนี้ · ดอกเบี้ยลงค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; · จ่ายบัตรไม่เปลี่ยนยอด Statement (ยอดปัจจุบันลดตามการจ่าย) · จ่ายบัตรจากบัญชีเงินฝากในพอร์ต / อัปเดตยอดตาม Statement ทำที่หน้าบัตร / หน้าเงินกู้ · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</p>
     </form>
     </>
   );

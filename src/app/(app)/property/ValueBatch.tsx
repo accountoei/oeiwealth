@@ -10,6 +10,7 @@ import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm
 import { batchPropertyValues, type ActionState } from "./actions";
 import { splitByArea } from "./valueParts";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type ValueRow = {
   id: string; name: string; typeLabel: string; /** ตัวกรองด้านบน */ type: string; usage: string; currency: string; value: number | null; date: string | null;
@@ -124,12 +125,9 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
             </select></label>
           <label className="ml-auto flex items-center gap-2">มูลค่า ณ วันที่
             <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-          </label>
+           <InfoTip label="คำอธิบาย">มูลค่าใหม่ = มูลค่าที่นับในความมั่งคั่งสุทธิ (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
+          · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}</InfoTip></label>
         </div>
-        <p className="text-xs text-slate-500">
-          มูลค่าใหม่ = มูลค่าที่นับในความมั่งคั่งสุทธิ (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
-          · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}
-        </p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

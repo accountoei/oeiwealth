@@ -5,6 +5,7 @@ import { useResetSync } from "@/lib/useResetSync";
 import { deleteCpiYear, saveCpiYear, type FxState } from "./actions";
 import Flash from "@/components/Flash";
 import {  } from "@/lib/format";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type CpiRow = { year: number; cpi_index: number; inflation_pct: number | null; source: string; notes: string | null };
 
@@ -51,16 +52,13 @@ export default function CpiTable({ rows, canEdit, thisYear }: { rows: CpiRow[]; 
     <div className="space-y-3 text-sm">
       <div ref={headRef}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-medium text-slate-800">อัตราเงินเฟ้อรายปี (ดัชนีราคาผู้บริโภคทั่วไปของไทย · ค่าเฉลี่ยทั้งปี)</h3>
+          <h3 className="text-sm font-medium text-slate-800">อัตราเงินเฟ้อรายปี (ดัชนีราคาผู้บริโภคทั่วไปของไทย · ค่าเฉลี่ยทั้งปี) <InfoTip label="คำอธิบาย">ใช้กับวิธี &ldquo;เงินเฟ้อ + ส่วนเพิ่ม&rdquo; และข้อความเทียบในกล่องราคาขายขั้นต่ำ · คิดถึงปีล่าสุดที่มีข้อมูลทั้งปี (ไม่ใช้ข้อมูลบางเดือน) ·
+          ข้อมูลย้อนหลังจาก World Bank ซึ่งมาจากตัวเลขของ สนค. กระทรวงพาณิชย์</InfoTip></h3>
           {rows.length > 10 && (
             <button type="button" onClick={toggle} className="text-xs text-blue-700 hover:underline">
               {all ? "ย่อ (แสดง 10 ปีล่าสุด)" : `ดูย้อนหลังทั้งหมด (${rows.length} ปี ตั้งแต่ พ.ศ. ${rows[rows.length - 1].year + 543})`}</button>
           )}
         </div>
-        <p className="mt-1 text-xs text-slate-500">
-          ใช้กับวิธี &ldquo;เงินเฟ้อ + ส่วนเพิ่ม&rdquo; และข้อความเทียบในกล่องราคาขายขั้นต่ำ · คิดถึงปีล่าสุดที่มีข้อมูลทั้งปี (ไม่ใช้ข้อมูลบางเดือน) ·
-          ข้อมูลย้อนหลังจาก World Bank ซึ่งมาจากตัวเลขของ สนค. กระทรวงพาณิชย์
-        </p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[32rem] text-sm">

@@ -13,6 +13,7 @@ import { splitMoves } from "@/lib/split-moves";
 import { buildHints } from "@/lib/category-hints";
 import { DetailItem as Item } from "@/components/Boxes";
 import { loadPfCash } from "@/lib/pf-cash";
+import { InfoTip } from "@/components/HeaderBar";
 
 type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean };
 
@@ -169,11 +170,8 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-1 font-medium text-slate-900">รายการบัตร</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          ตั้งแต่ {thDate(from === "1900-01-01" ? null : from)} · รายการหลัง Statement ล่าสุด ({thDate(latest)}) นับรวมในยอดค้างปัจจุบัน ·
-          บันทึก / แก้ไขรายการที่ <Link href="/income-expenses" className="text-blue-700 hover:underline">Income &amp; Expenses</Link>
-        </p>
+        <h2 className="mb-3 font-medium text-slate-900">รายการบัตร <InfoTip label="คำอธิบาย">ตั้งแต่ {thDate(from === "1900-01-01" ? null : from)} · รายการหลัง Statement ล่าสุด ({thDate(latest)}) นับรวมในยอดค้างปัจจุบัน ·
+          บันทึก / แก้ไขรายการที่หน้า Income &amp; Expenses</InfoTip></h2>
         {lines.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
@@ -205,10 +203,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-1 font-medium text-slate-900">ประวัติยอดตาม Statement</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          ส่วนต่างจากยอดครั้งก่อนในตารางนี้ลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ · บันทึกยอดวันที่เดิมซ้ำ → ระบบคำนวณก้อนใหม่ให้
-        </p>
+        <h2 className="mb-3 font-medium text-slate-900">ประวัติยอดตาม Statement <InfoTip label="คำอธิบาย">ส่วนต่างจากยอดครั้งก่อนในตารางนี้ลงเป็นก้อน &ldquo;รอแยกรายละเอียด&rdquo; ให้อัตโนมัติ · บันทึกยอดวันที่เดิมซ้ำ → ระบบคำนวณก้อนใหม่ให้</InfoTip></h2>
         {statements.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มียอด</p> : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">

@@ -15,6 +15,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { businessDividendFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
+import { InfoTip } from "@/components/HeaderBar";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -129,8 +130,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         </div>
         {((inLoans ?? []).length > 0 || (inDebts ?? []).length > 0) && (
           <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
-            <h2 className="font-medium text-slate-900">เงินกู้กับสมาชิก</h2>
-            <p className="mt-0.5 text-xs text-slate-500">แสดงไว้อ้างอิง · ไม่นับเข้ามูลค่ากิจการ (มูลค่าตามส่วนของผู้ถือหุ้นรวมหนี้ / ลูกหนี้นี้ไว้แล้ว) · ฝั่งสมาชิกนับในความมั่งคั่งสุทธิตามปกติ</p>
+            <h2 className="font-medium text-slate-900">เงินกู้กับสมาชิก <InfoTip label="คำอธิบาย">แสดงไว้อ้างอิง · ไม่นับเข้ามูลค่ากิจการ (มูลค่าตามส่วนของผู้ถือหุ้นรวมหนี้ / ลูกหนี้นี้ไว้แล้ว) · ฝั่งสมาชิกนับในความมั่งคั่งสุทธิตามปกติ</InfoTip></h2>
             <ul className="mt-3 divide-y divide-slate-100 text-sm">
               {(inLoans ?? []).map((x) => (
                 <li key={x.asset_id} className="flex flex-wrap justify-between gap-2 py-2">
@@ -198,7 +198,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
 
       {saleList.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">ประวัติซื้อ / ขายหุ้น</h2>
+          <h2 className="mb-2 font-medium text-slate-900">ประวัติซื้อ / ขายหุ้น <InfoTip label="คำอธิบาย">กำไร / ขาดทุน = เงินขายสุทธิ − มูลค่าตามราคาประเมินล่าสุด (ลงเป็นรายได้ / ค่าใช้จ่ายของผู้ขาย) · เทียบทุน = ดูเป็นข้อมูล · ยกเลิกได้เฉพาะครั้งล่าสุด</InfoTip></h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-slate-500">
@@ -230,7 +230,6 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs text-slate-500">กำไร / ขาดทุน = เงินขายสุทธิ − มูลค่าตามราคาประเมินล่าสุด (ลงเป็นรายได้ / ค่าใช้จ่ายของผู้ขาย) · เทียบทุน = ดูเป็นข้อมูล · ยกเลิกได้เฉพาะครั้งล่าสุด</p>
         </section>
       )}
 

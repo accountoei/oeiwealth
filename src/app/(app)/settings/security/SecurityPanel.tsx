@@ -5,6 +5,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { createClient } from "@/lib/supabase/client";
 import Flash from "@/components/Flash";
 import {  } from "@/lib/format";
+import { InfoTip } from "@/components/HeaderBar";
 
 type Factor = { id: string; friendly_name?: string; status: string; created_at: string };
 const box = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
@@ -88,7 +89,7 @@ export default function SecurityPanel({ isAdmin, account }: { isAdmin: boolean; 
       </form>
 
       <div className={box}>
-        <h2 className="font-medium text-slate-900">MFA (แอป Authenticator)</h2>
+        <h2 className="font-medium text-slate-900">MFA (แอป Authenticator) <InfoTip label="คำอธิบาย">เปลี่ยนมือถือ: เพิ่มอุปกรณ์ใหม่ก่อน แล้วค่อยลบอันเก่า · ทำมือถือหาย: ให้ผู้ดูแลระบบกด &ldquo;รีเซ็ต MFA&rdquo; ที่หน้า Users<br />สงสัยว่ามีคนอื่นใช้บัญชี: เปลี่ยนรหัสผ่าน แล้วกด &ldquo;ออกจากระบบทุกอุปกรณ์&rdquo;</InfoTip></h2>
         {factors.length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ตั้ง MFA{isAdmin ? "" : " (ไม่บังคับสำหรับสิทธิ์นี้ แต่แนะนำ)"}</p> : (
           <ul className="space-y-1 text-sm">
             {factors.map((f) => (
@@ -118,7 +119,6 @@ export default function SecurityPanel({ isAdmin, account }: { isAdmin: boolean; 
         )}
         {mfaMsg.error && <p className="text-sm text-red-600">{mfaMsg.error}</p>}
         <Flash on={mfaMsg} as="p" className="text-sm text-emerald-700" />
-        <p className="text-xs text-slate-500">เปลี่ยนมือถือ: เพิ่มอุปกรณ์ใหม่ก่อน แล้วค่อยลบอันเก่า · ทำมือถือหาย: ให้ผู้ดูแลระบบกด &ldquo;รีเซ็ต MFA&rdquo; ที่หน้า Users<br />สงสัยว่ามีคนอื่นใช้บัญชี: เปลี่ยนรหัสผ่าน แล้วกด &ldquo;ออกจากระบบทุกอุปกรณ์&rdquo;</p>
       </div>
     </div>
   );
