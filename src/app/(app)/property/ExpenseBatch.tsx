@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SMALL_BTN, SMALL_DEL_BTN, COST_STATUS, PROPERTY_COST_TYPE_LABEL, money, thDate, thMonth } from "@/lib/format";
 import { batchPropertyExpenses, type BatchState } from "./actions";
@@ -17,6 +17,8 @@ export type CostRow = {
   /** ที่จ่ายแล้วของงวด (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[];
 };
 export type PayOpt = { value: string; label: string; currency: string };
+/** ค่าใช้จ่ายที่จ่ายในเดือนนี้ที่ไม่อยู่ในแถวค่าใช้จ่ายประจำ (เดิมอยู่ตาราง "ค่าใช้จ่ายทรัพย์สินที่บันทึกแล้ว") · amount = ยอดบาท กดแก้ได้ */
+export type OtherCost = { key: string; assetId: string; property: string; date: string; label: string; amount: ReactNode };
 type Extra = { id: number; asset: string; ctype: string; description: string; amount: string; pay: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -24,12 +26,15 @@ const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2,
 const OTHER_CATEGORY = "บ้าน / สาธารณูปโภค";
 
 /**
- * บันทึกค่าใช้จ่ายของทรัพย์สินหลายรายการพร้อมกัน
- *   ส่วนบน = ค่าใช้จ่ายประจำงวดเดือนนี้ (ไฟ / น้ำ / ส่วนกลาง / ภาษีที่ดิน) + งวดก่อนที่ยังค้างจ่าย (ยกมา · 5 พ.ย. 2026) · ส่วนล่าง = รายการอื่น (ซ่อม ฯลฯ) เพิ่มแถวได้
+ * บันทึกค่าใช้จ่ายของทรัพย์สินหลายรายการพร้อมกัน · ตารางเดียว (ตกลง 5 พ.ย. 2026 · เดิม 3 กล่อง)
+ *   ค่าใช้จ่ายประจำงวดเดือนนี้ (ไฟ / น้ำ / ส่วนกลาง / ภาษีที่ดิน) + งวดก่อนที่ยังค้างจ่าย (ยกมา) → ค่าใช้จ่ายอื่น (ซ่อม ฯลฯ) เพิ่มแถวได้
+ *   → รายการอื่นที่จ่ายแล้วในเดือนนี้ → ยอดจ่ายเดือนนี้รวม (ตามวันที่จ่าย)
  *   ช่องยอดว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
+ *   ฟอร์มบันทึกครอบเฉพาะปุ่มบันทึก ไม่ครอบตาราง (ในตารางอาจมีปุ่มที่เป็นฟอร์มของตัวเอง · ฟอร์มซ้อนฟอร์ม = กดไม่ได้)
  */
-export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym, canWrite }: {
-  rows: CostRow[]; props: { id: string; name: string }[]; pays: PayOpt[]; defaultDate: string; today: string; ym: string; canWrite: boolean;
+export default function ExpenseBatch({ rows, others, total, totalLabel, props, pays, defaultDate, today, ym, canWrite }: {
+  rows: CostRow[]; others: OtherCost[]; total: number; totalLabel: string;
+  props: { id: string; name: string }[]; pays: PayOpt[]; defaultDate: string; today: string; ym: string; canWrite: boolean;
 }) {
   const router = useRouter();
   const firstPay = (ccy: string) => pays.find((p) => p.currency === ccy)?.value ?? "";
@@ -62,6 +67,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
     ...chosen.map((r) => `• ${r.property} · ${r.label} ${vals[r.key]}${rebillOn(r) ? " (เรียกเก็บผู้เช่า)" : ""}`),
     ...extras.map((x) => `• ${name.get(x.asset) ?? "(ยังไม่เลือกทรัพย์สิน)"} · ${PROPERTY_COST_TYPE_LABEL[x.ctype] ?? "(ยังไม่เลือกประเภท)"} · ${x.description || "(ไม่มีรายการ)"} ${x.amount}`),
   ].join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const cols = canWrite ? 6 : 4;
   const setX = (id: number, patch: Partial<Extra>) => setExtra(extra.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const PaySelect = ({ value, onChange, ccy }: { value: string; onChange: (v: string) => void; ccy?: string }) => (
     <select value={value} onChange={(e) => onChange(e.target.value)} className={`max-w-[14rem] ${small}`}>
@@ -73,8 +79,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
   return (
     <>
     {cf.dialog}
-    <form action={action} onSubmit={onSubmit} className="space-y-3">
-      <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+    <div className="space-y-3">
       {canWrite && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
           {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
@@ -88,7 +93,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ งวด {thMonth(`${ym}-01`)}
+            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายทรัพย์สิน งวด {thMonth(`${ym}-01`)}
               {rows.some((r) => r.period < `${ym}-01` && r.status === "OVERDUE") && <span className="text-sm font-normal text-red-700"> + ค้างจ่ายยกมา</span>}</h2>
             {kinds.length > 1 && (
               <div className="flex flex-wrap gap-1 text-xs">
@@ -111,7 +116,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
               <th className="px-3">สถานะ</th>{canWrite && <><th className="px-3 text-right">ยอดที่จ่าย</th><th className="px-3">จ่ายจาก</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shownRows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีค่าใช้จ่ายประจำงวดเดือนนี้หรือค้างจ่าย (ตั้งค่าได้ที่หน้าของทรัพย์สิน)</td></tr>}
+            {shownRows.length === 0 && <tr><td colSpan={cols} className="px-4 py-4 text-center text-slate-500">ไม่มีค่าใช้จ่ายประจำงวดเดือนนี้หรือค้างจ่าย (ตั้งค่าได้ที่หน้าของทรัพย์สิน)</td></tr>}
             {shownRows.map((r) => {
               const done = r.status === "PAID" || r.status === "DISMISSED";
               const v = vals[r.key] ?? "";
@@ -145,50 +150,70 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
                 </tr>
               );
             })}
-          </tbody>
-        </table>
-      </div>
-
-      {canWrite && (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <h2 className="px-4 pt-4 font-medium text-slate-900">ค่าใช้จ่ายอื่นของทรัพย์สิน <span className="text-xs font-normal text-slate-500">(ซ่อมแซม · ประกันอัคคีภัย · ค่านายหน้า ฯลฯ)</span></h2>
-          <table className="mt-3 w-full min-w-[52rem] text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3">ประเภท</th><th className="px-3">รายการ</th><th className="px-3 text-right">ยอดที่จ่าย (THB)</th><th className="px-3">จ่ายจาก</th><th className="px-3"></th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+            {/* ค่าใช้จ่ายอื่น (เดิมกล่องแยก) · ใช้คอลัมน์ยอดที่จ่าย / จ่ายจาก เดียวกับแถวด้านบน */}
+            {canWrite && <>
+              <tr className="bg-slate-50/60"><td colSpan={cols} className="px-3 py-1.5 text-xs font-medium text-slate-500">
+                ค่าใช้จ่ายอื่นของทรัพย์สิน <span className="font-normal">(ซ่อมแซม · ประกันอัคคีภัย · ค่านายหน้า ฯลฯ)</span></td></tr>
               {extra.map((x) => (
                 <tr key={x.id} className={x.amount.trim() ? "bg-blue-50/40" : ""}>
                   <td className="px-3 py-2">
-                    <select value={x.asset} onChange={(e) => setX(x.id, { asset: e.target.value })} className={`max-w-[14rem] ${small}`}>
+                    <select value={x.asset} onChange={(e) => setX(x.id, { asset: e.target.value })} aria-label="ทรัพย์สิน" className={`w-full max-w-[14rem] ${small}`}>
                       <option value="">— เลือกทรัพย์สิน —</option>
                       {props.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </td>
-                  <td className="px-3">
-                    <select value={x.ctype} onChange={(e) => setX(x.id, { ctype: e.target.value })} aria-label="ประเภท" className={small}>
-                      <option value="">— เลือกประเภท —</option>
-                      {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                  <td colSpan={3} className="px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select value={x.ctype} onChange={(e) => setX(x.id, { ctype: e.target.value })} aria-label="ประเภท" className={small}>
+                        <option value="">— เลือกประเภท —</option>
+                        {Object.entries(PROPERTY_COST_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                      <input value={x.description} onChange={(e) => setX(x.id, { description: e.target.value })} placeholder="รายการ เช่น ซ่อมหลังคา" aria-label="รายการ"
+                        className={`min-w-0 flex-1 ${small}`} />
+                    </div>
                   </td>
-                  <td className="px-3"><input value={x.description} onChange={(e) => setX(x.id, { description: e.target.value })} placeholder="เช่น ซ่อมหลังคา" className={`w-56 ${small}`} /></td>
-                  <td className="px-3 text-right"><input inputMode="decimal" value={x.amount} onChange={(e) => setX(x.id, { amount: e.target.value })} className={`w-32 text-right ${small}`} /></td>
-                  <td className="px-3"><PaySelect value={x.pay} onChange={(v) => setX(x.id, { pay: v })} ccy="THB" /></td>
-                  <td className="px-3 text-right">
-                    {extra.length > 1 && <button type="button" onClick={() => setExtra(extra.filter((y) => y.id !== x.id))} className={SMALL_DEL_BTN}>ลบ</button>}
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    <input inputMode="decimal" value={x.amount} placeholder="THB" aria-label="ยอดที่จ่าย (THB)" onChange={(e) => setX(x.id, { amount: e.target.value })}
+                      className={`w-32 text-right ${small}`} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <PaySelect value={x.pay} onChange={(v) => setX(x.id, { pay: v })} ccy="THB" />
+                      {extra.length > 1 && <button type="button" onClick={() => setExtra(extra.filter((y) => y.id !== x.id))} className={SMALL_DEL_BTN}>ลบ</button>}
+                    </div>
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-          <div className="px-4 py-3">
-            <button type="button" onClick={() => setExtra([...extra, blank(Date.now())])} className={SMALL_BTN}>+ เพิ่มแถว</button>
-          </div>
-        </div>
-      )}
+              <tr><td colSpan={cols} className="px-3 py-2">
+                <button type="button" onClick={() => setExtra([...extra, blank(Date.now())])} className={SMALL_BTN}>+ เพิ่มแถว</button></td></tr>
+            </>}
+            {/* รายการอื่นที่จ่ายแล้วในเดือนนี้ (เดิมตาราง "ค่าใช้จ่ายทรัพย์สินที่บันทึกแล้ว") */}
+            {others.length > 0 && (
+              <tr className="bg-slate-50/60"><td colSpan={cols} className="px-3 py-1.5 text-xs font-medium text-slate-500">รายการอื่นที่จ่ายแล้วในเดือนนี้</td></tr>
+            )}
+            {others.map((o) => (
+              <tr key={o.key}>
+                <td className="px-3 py-2">
+                  <Link href={`/property/${o.assetId}`} className="font-medium text-slate-900 hover:underline">{o.property}</Link>
+                  <div className="text-xs text-slate-500">{o.label}</div>
+                </td>
+                <td className="whitespace-nowrap px-3 text-xs">{thDate(o.date)}</td>
+                <td className="whitespace-nowrap px-3 text-right text-red-700">{o.amount} <span className="text-slate-400">THB</span></td>
+                <td className="px-3 text-xs text-emerald-700">จ่ายแล้ว</td>
+                {canWrite && <td colSpan={2} />}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+            <tr><td colSpan={2} className="px-3 py-2">{totalLabel}</td>
+              <td className="whitespace-nowrap px-3 text-right tabular-nums text-red-700">{money(total, "THB")}</td><td colSpan={cols - 3} /></tr>
+          </tfoot>
+        </table>
+      </div>
 
       {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
+        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
           <button disabled={pending || count === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
             {pending ? "กำลังบันทึก…" : `บันทึกค่าใช้จ่าย ${count} รายการ`}
           </button>
@@ -197,10 +222,10 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
           )}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
           <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </div>
+        </form>
       )}
-      <p className="text-xs text-slate-500">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า)</p>
-    </form>
+      <p className="text-xs text-slate-500">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า) · กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ</p>
+    </div>
     </>
   );
 }

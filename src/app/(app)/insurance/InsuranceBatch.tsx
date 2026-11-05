@@ -77,9 +77,8 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   return (
     <>
     {cf.dialog}
-    <form action={action} onSubmit={onSubmit} className="space-y-3">
-      <input type="hidden" name="date" value={date} />
-      <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+    {/* ฟอร์มบันทึกครอบเฉพาะปุ่มบันทึกด้านล่าง ไม่ครอบตาราง: ในตารางมีปุ่ม "ยกเลิก" ที่เป็นฟอร์มของตัวเอง (ฟอร์มซ้อนฟอร์ม = กดไม่ได้ · 5 พ.ย. 2026) */}
+    <div className="space-y-3">
       {canWrite && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
           {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
@@ -202,14 +201,16 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
         </table>
       </div>
       {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
+        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
+          <input type="hidden" name="date" value={date} />
+          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
           <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
             {pending ? "กำลังบันทึก…" : `บันทึก${what} ${chosen.length} รายการ`}
           </button>
           {chosen.length > 0 && !pending && <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
           <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </div>
+        </form>
       )}
       <p className="text-xs text-slate-500">
         {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
@@ -218,7 +219,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
           {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
         {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
       </p>
-    </form>
+    </div>
     </>
   );
 }

@@ -14,7 +14,7 @@ import RentBatch, { type OtherIncome, type RentRow } from "./RentBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { assetIncomeFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
-import ExpenseBatch, { type CostRow, type PayOpt } from "./ExpenseBatch";
+import ExpenseBatch, { type CostRow, type OtherCost, type PayOpt } from "./ExpenseBatch";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { TabNav, TabPanel, TabsProvider } from "../income-expenses/tabs";
 import { StatBox } from "@/components/Boxes";
@@ -33,7 +33,7 @@ type Inc = { id: string; asset_id: string; lease_id: string | null; received_to_
   tax: number | null; income_subtype: string | null; pending_split: boolean | null; income_period: string | null };
 type Exp = { id: string; related_asset_id: string | null; property_utility_id: string | null; date: string; description: string;
   amount: number; currency: string; base_amount: number | null; notes: string | null; pending_split: boolean | null;
-  source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null };
+  source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null; cost_period: string | null };
 
 // ทรัพย์สินทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=all → ภาพรวม)
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["income", "บันทึกรับค่าเช่า/สัญญาเช่า"], ["expense", "ค่าใช้จ่าย"]];
@@ -124,7 +124,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const rentPeriods = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.income_period))];
   const utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
   const costPeriods = [...new Set(((costTrack ?? []) as { cost_period: string }[]).map((c) => c.cost_period))];
-  const expCols = "id,related_asset_id,property_utility_id,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
+  const expCols = "id,related_asset_id,property_utility_id,cost_period,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
   const [{ utils, utilProp, expU }, { taxDataYears, taxYears, taxYear, taxRaw }, { latestVal, partRaw },
     [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }]] = await Promise.all([
     // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของเดือนที่ผูกกับรายการเหล่านั้น
@@ -378,6 +378,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       canWrite, canDelete: canOrder, table: "expense_items", id: e.id, label: recLabel("จ่ายแล้ว", e.date, Number(e.amount), e.currency),
       paths: [...paths, `/property/${c.property_asset_id}`, "/income-expenses"], fields: propertyCostFields(e) }) })),
   })).sort((a, b) => a.property.localeCompare(b.property, "th") || a.label.localeCompare(b.label, "th") || a.period.localeCompare(b.period));
+  // ค่าใช้จ่ายที่จ่ายในเดือนนี้ที่ไม่อยู่ในแถวค่าใช้จ่ายประจำ → แถวท้ายตารางเดียวกัน (เดิมตาราง "ค่าใช้จ่ายทรัพย์สินที่บันทึกแล้ว" · ตกลง 5 พ.ย. 2026)
+  const costKeys = new Set(costRows.map((r) => r.key));
+  const otherCost: OtherCost[] = expRows.filter((x) => !(x.property_utility_id && costKeys.has(`${x.property_utility_id}:${x.cost_period}`)))
+    .map((x) => ({ key: x.id, assetId: x.prop, property: propName.get(x.prop) ?? "", date: x.date, label: x.description, amount: expAmt(x) }));
   // ---------------------------------------------------------------- ภาษีที่ดิน (ปีที่เลือก) รายทรัพย์สิน
   type TL = TaxLineRow & { asset_id: string; tax_year: number };
   const taxLinesAll = ((taxRaw ?? []) as TL[]);
@@ -475,31 +479,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
 
       <TabPanel id="expense">
         <div className="space-y-4">
-          <ExpenseBatch key={`e${ym}`} rows={costRows} props={props.filter((p) => p.assets.status === "ACTIVE").map((p) => ({ id: p.asset_id, name: p.assets.name }))}
+          <ExpenseBatch key={`e${ym}`} rows={costRows} others={otherCost} total={expTotal}
+            totalLabel={`จ่าย${mLabel}รวม (ตามวันที่จ่าย)${pv.personId ? ` · ส่วนของ ${pv.personName}` : ""}`}
+            props={props.filter((p) => p.assets.status === "ACTIVE").map((p) => ({ id: p.asset_id, name: p.assets.name }))}
             pays={pays} defaultDate={defaultDate} today={today} ym={ym} canWrite={canWrite} />
           <LandTaxTable rows={taxPropRows} year={taxYear} years={taxYears} dataYears={taxDataYears}
             hrefOf={`/property?tab=expense&m=${ym}${sp.p ? `&p=${sp.p}` : ""}&ty=__Y__`} canWrite={canWrite} canDelete={canOrder}
             note={`คำนวณจากข้อมูลภาษีของทรัพย์สินแต่ละรายการ · ใช้ตรวจกับใบแจ้งภาษีของเขต / อบต.${pv.personId ? ` · แสดงเต็มจำนวนของทรัพย์สินที่ ${pv.personName} ถือ` : ""} · สถานะการจ่ายดูที่ค่าใช้จ่ายประจำด้านบน`} />
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <h2 className="px-4 pt-4 font-medium text-slate-900">ค่าใช้จ่ายทรัพย์สินที่บันทึกแล้ว · {thMonth(start)}</h2>
-            <table className="mt-2 w-full min-w-[36rem] text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr><th className="px-3 py-2">วันที่</th><th className="px-3">ทรัพย์สิน</th><th className="px-3">รายการ</th><th className="px-3 text-right">จำนวน (THB)</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {expRows.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">ยังไม่มีค่าใช้จ่ายในเดือนนี้</td></tr>}
-                {expRows.map((x) => (
-                  <tr key={x.id}>
-                    <td className="whitespace-nowrap px-3 py-2">{thDate(x.date)}</td>
-                    <td className="px-3"><Link href={`/property/${x.prop}`} className="hover:underline">{propName.get(x.prop)}</Link></td>
-                    <td className="px-3">{x.description}</td>
-                    <td className="whitespace-nowrap px-3 text-right tabular-nums text-red-700">{expAmt(x)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {expRows.length > 0 && <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium"><tr><td colSpan={3} className="px-3 py-2">รวม</td><td className="px-3 text-right tabular-nums text-red-700">{money(expTotal)}</td></tr></tfoot>}
-            </table>
-          </div>
         </div>
       </TabPanel>
       <TabPanel id="update">
