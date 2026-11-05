@@ -2,6 +2,7 @@
 
 import { Fragment, useState, type ReactNode } from "react";
 import { money, thDate } from "@/lib/format";
+import { InfoTip } from "@/components/HeaderBar";
 
 /** แถวตารางผ่อน (คำนวณสถานะจากยอดที่รับจริงที่ฐานข้อมูล) · บันทึกรับใช้ปุ่ม "บันทึกรับชำระ" ด้านบนตาราง (ปุ่มเดียว) */
 export type SchedRow = {
@@ -57,6 +58,8 @@ export default function ScheduleTable({ rows, events = [], currency }: { rows: S
         <button type="button" onClick={() => setF("paid")} className={chip(f === "paid")}>ชำระแล้ว ({rows.length - unpaid.length})</button>
         <button type="button" onClick={() => setF("all")} className={chip(f === "all")}>ทั้งหมด ({rows.length})</button>
         {events.length > 0 && f === "open" && <span className="text-xs text-slate-500">รายการรับชำระ / ให้กู้ที่บันทึกแล้ว ดูได้ที่ &ldquo;ชำระแล้ว&rdquo; หรือ &ldquo;ทั้งหมด&rdquo;</span>}
+        {events.length > 0 && <InfoTip label="คำอธิบายตาราง">แถวสีเขียว = เงินที่รับจริง (รวม = เงินเข้าบัญชีหลังหักภาษี ณ ที่จ่าย ตรงกับ Statement · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้) · แถวสีฟ้า = จ่ายเงินให้กู้ ·
+          แก้ / ลบได้เฉพาะรายการล่าสุด ถ้ารายการเก่าผิด ให้ลบย้อนจากรายการล่าสุดลงมา</InfoTip>}
       </div>}
       <div className="overflow-x-auto">
         {/* ความกว้างคอลัมน์กำหนดเอง (table-fixed): ช่องวันที่ / รายการกว้าง · ตัวเลขกว้างเท่ากันทุกช่อง · สถานะคงที่ (ตกลง 3 พ.ย. 2026) */}
@@ -127,10 +130,6 @@ export default function ScheduleTable({ rows, events = [], currency }: { rows: S
           )}
         </table>
       </div>
-      {events.length > 0 && f !== "open" && (
-        <p className="text-xs text-slate-500">แถวสีเขียว = เงินที่รับจริง (รวม = เงินเข้าบัญชีหลังหักภาษี ณ ที่จ่าย ตรงกับ Statement · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้) · แถวสีฟ้า = จ่ายเงินให้กู้ ·
-          แก้ / ลบได้เฉพาะรายการล่าสุด ถ้ารายการเก่าผิด ให้ลบย้อนจากรายการล่าสุดลงมา</p>
-      )}
     </div>
   );
 }

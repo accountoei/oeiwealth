@@ -138,7 +138,8 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-medium text-slate-900">รายการทั้งหมด</h2>
+            <div><h2 className="font-medium text-slate-900">รายการทั้งหมด</h2>
+              <p className="text-xs text-slate-500">สกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · ทองคำ 1 บาท = 15.244 กรัม</p></div>
             {cats.length > 1 && (
               <div className="flex flex-wrap gap-1 text-xs">
                 <Link href={href()} scroll={false} className={`rounded-full border px-2.5 py-0.5 ${!catFilter ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>ทั้งหมด</Link>
@@ -207,7 +208,6 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
           )}
         </table>
       </div>
-      <p className="text-xs text-slate-500">มูลค่าสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · ทองคำ 1 บาททองคำ = 15.244 กรัม · ต่อหน่วย = มูลค่า ÷ จำนวน</p>
       </TabPanel>
     </div>
     </TabsProvider>

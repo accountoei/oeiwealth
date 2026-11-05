@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { INS_TYPE, addDays, todayBangkok } from "@/lib/format";
 import NewPolicyForm from "./NewPolicyForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 // ?type=PROPERTY&asset=<id>: กดจากกล่อง "ประกันของทรัพย์สินนี้" ในหน้าทรัพย์สิน → เลือกประเภท / ทรัพย์สินไว้ให้ (ตกลง 3 พ.ย. 2026)
 export default async function NewPolicyPage({ searchParams }: { searchParams: Promise<{ type?: string; asset?: string }> }) {
@@ -23,8 +24,7 @@ export default async function NewPolicyPage({ searchParams }: { searchParams: Pr
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มกรมธรรม์ประกัน</h1>
-        <p className="text-sm text-slate-500">ประกันชีวิต / สุขภาพ / อุบัติเหตุ / ทรัพย์สิน · กรมธรรม์ที่มีมูลค่าเวนคืนนับเป็นสินทรัพย์</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มกรมธรรม์ประกัน <InfoTip label="คำอธิบาย">ประกันชีวิต / สุขภาพ / อุบัติเหตุ / ทรัพย์สิน · กรมธรรม์ที่มีมูลค่าเวนคืนนับเป็นสินทรัพย์</InfoTip></h1>
       </div>
       <NewPolicyForm persons={persons ?? []} assets={assets ?? []} goLive={family.go_live_date} initialType={initialType} initialAsset={initialAsset}
         banks={(banks ?? []) as { asset_id: string; name: string; currency: string; frequent: boolean | null }[]}

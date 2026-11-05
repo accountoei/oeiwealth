@@ -9,6 +9,7 @@ import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 /** แถวจาก v_insurance_schedule_status */
 export type YLine = { id: string; policy_id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string;
@@ -90,7 +91,14 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">{prem ? "เบี้ยประกัน" : "ผลประโยชน์"} ปี {year + 543}</h2>
+          <h2 className="flex items-center gap-1 font-medium text-slate-900">{prem ? "เบี้ยประกัน" : "ผลประโยชน์"} ปี {year + 543}
+            <InfoTip label="คำอธิบาย">
+        {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
+          {" "}· กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ (ลบแล้วงวดกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน)</>
+          : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · แก้ยอดที่รับ: กด &ldquo;ยกเลิก&rdquo; (ย้อนทั้งก้อน) แล้วบันทึกใหม่
+          {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
+        {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
+            </InfoTip></h2>
           <div className="flex flex-wrap items-center gap-4 text-sm">
             {canWrite && later > 0 && (
               <label className="flex items-center gap-2 text-slate-600">
@@ -212,13 +220,6 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
           <Flash on={state} as="span" className="text-sm text-emerald-700" />
         </form>
       )}
-      <p className="text-xs text-slate-500">
-        {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
-          {" "}· กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ (ลบแล้วงวดกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน)</>
-          : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · แก้ยอดที่รับ: กด &ldquo;ยกเลิก&rdquo; (ย้อนทั้งก้อน) แล้วบันทึกใหม่
-          {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
-        {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
-      </p>
     </div>
     </>
   );

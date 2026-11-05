@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -57,7 +56,8 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
       <section className="space-y-2">
         <div className="rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-wrap items-start justify-between gap-3 px-4 pb-3 pt-4">
-            <h2 className="font-medium text-slate-900">สมาชิกภาพ · แต้มสะสม / ไมล์</h2>
+            <div><h2 className="font-medium text-slate-900">สมาชิกภาพ · แต้มสะสม / ไมล์</h2>
+              <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมในความมั่งคั่งสุทธิ</p></div>
             {canWrite && <ActionBar className="shrink-0"><MembershipForm persons={persons ?? []} /><PointsForm persons={persons ?? []} today={today} links={pointLinks} /></ActionBar>}
           </div>
           <div className="overflow-x-auto">
@@ -106,8 +106,6 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
           </table>
           </div>
         </div>
-        <p className="text-xs text-slate-500">แต้ม / ไมล์ ไม่นับรวมในความมั่งคั่งสุทธิ · กดแก้ไขเพื่ออัปเดตยอดตาม Statement ·
-          บัตรเครดิตอยู่ที่ <Link href="/liabilities#cards" className="text-blue-700 hover:underline">Liabilities → บัตรเครดิต</Link></p>
       </section>
     </div>
   );

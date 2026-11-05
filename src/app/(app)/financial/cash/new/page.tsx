@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok } from "@/lib/format";
 import NewAccountForm from "./NewAccountForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 export default async function NewAccountPage() {
   const me = await requireAppUser();
@@ -16,8 +17,7 @@ export default async function NewAccountPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มบัญชีเงินฝาก</h1>
-        <p className="text-sm text-slate-500">สร้างบัญชีพร้อมยอดคงเหลือแรกและเจ้าของบัญชีในครั้งเดียว</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มบัญชีเงินฝาก <InfoTip label="คำอธิบาย">สร้างบัญชีพร้อมยอดคงเหลือแรกและเจ้าของบัญชีในครั้งเดียว</InfoTip></h1>
       </div>
       <NewAccountForm
         persons={persons ?? []}

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok } from "@/lib/format";
 import NewLiabilityForm from "./NewLiabilityForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 export default async function NewLiabilityPage() {
   const me = await requireAppUser();
@@ -17,8 +18,7 @@ export default async function NewLiabilityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มเงินกู้ / หนี้สิน</h1>
-        <p className="text-sm text-slate-500">เงินกู้ · วงเงินสินเชื่อ · บัตรเครดิต (เลือกที่ช่องประเภท) · เงินประกันการเช่ามาจากสัญญาเช่าอัตโนมัติ</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มเงินกู้ / หนี้สิน <InfoTip label="คำอธิบาย">เงินกู้ · วงเงินสินเชื่อ · บัตรเครดิต (เลือกที่ช่องประเภท) · เงินประกันการเช่ามาจากสัญญาเช่าอัตโนมัติ</InfoTip></h1>
       </div>
       <NewLiabilityForm persons={persons ?? []} assets={assets ?? []} goLive={family.go_live_date}
         openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}

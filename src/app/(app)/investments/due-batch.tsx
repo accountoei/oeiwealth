@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
@@ -11,6 +11,7 @@ import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 // แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
@@ -49,8 +50,10 @@ const TAX_RATE = 0.15;
 /** แถวในตาราง: รายการตามตาราง (ดอกเบี้ย / เงินต้น) หรือดอกเบี้ยบัญชีเงินฝากในพอร์ต */
 type Row = { key: string; pf: string; pfName: string; currency: string; item?: DueItem; cash?: PfCash };
 
-export default function DueBatch({ groups, cash, banks, today, minDate, defaultDate, canWrite }: {
+export default function DueBatch({ groups, cash, banks, today, minDate, defaultDate, canWrite, info }: {
   groups: DueGroup[]; cash: PfCash[]; banks: Bank[]; today: string; minDate: string; defaultDate: string; canWrite: boolean;
+  /** คำอธิบายแท็บ → ⓘ ที่หัวคอลัมน์แรก */
+  info?: ReactNode;
 }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
@@ -137,7 +140,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
             ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="min-w-[13rem] px-3 py-2">หลักทรัพย์ / บัญชี</th><th className="w-40 px-3">วันครบกำหนด</th>
+            <tr><th className="min-w-[13rem] px-3 py-2"><span className="inline-flex items-center gap-1">หลักทรัพย์ / บัญชี{info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}</span></th><th className="w-40 px-3">วันครบกำหนด</th>
               <th className="w-40 px-3 text-right">ยอดคาดว่าจะได้รับ</th>
               {canWrite && <><th className="w-32 px-2 text-right">ยอดก่อนภาษี</th><th className="w-28 px-2 text-right">ภาษีหัก ณ ที่จ่าย</th>
                 <th className="w-40 whitespace-nowrap px-2 text-right">ยอดเข้าบัญชีสุทธิ</th><th className="w-44 px-2">เข้าบัญชี</th></>}</tr>

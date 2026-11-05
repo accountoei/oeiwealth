@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
@@ -32,8 +33,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
  *   เงินต้นที่รับไม่เท่าที่ถึงกำหนด (เกิน / ขาด) → หลังบันทึกถาม: ตารางเดิม หรือ "คำนวณงวดที่เหลือใหม่" ของสัญญานั้น
  */
-export default function LoanBatch({ rows: rows0, others: others0, banks, today, minDate, canWrite }: {
+export default function LoanBatch({ rows: rows0, others: others0, banks, today, minDate, canWrite, info }: {
   rows: LoanRow[]; others: LoanRow[]; banks: BankOpt[]; today: string; minDate: string; canWrite: boolean;
+  /** คำอธิบายแท็บ → ⓘ ที่หัวตาราง */
+  info?: ReactNode;
 }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
@@ -167,9 +170,11 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+          <span className="inline-flex items-center gap-2">
           <label className="inline-flex items-center gap-2 text-sm text-slate-600">
             <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} />
             แสดงสัญญาอื่นที่ยังไม่ปิด ({others.length})</label>
+          {info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}</span>
           {canWrite && shown.some((r) => r.dueP + r.dueI > 0.005) && (
             <button type="button" onClick={() => fill(shown)} className="text-sm text-blue-700 hover:underline">ใส่ยอดตามงวดทุกแถว</button>
           )}

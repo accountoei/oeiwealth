@@ -157,7 +157,6 @@ export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
   return (
     <div className="space-y-4">
       {/* ตัวเลือกเดือนอยู่ที่แถบบนของหน้า Investments (28 ต.ค. 2026) */}
-      <p className="text-sm text-slate-600">ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยเงินฝากในพอร์ต · ทุกพอร์ตในตารางเดียว · ตั้งข้อมูลที่หลักทรัพย์ → แก้ไขข้อมูล (เงินต้น · อัตรา · จ่ายทุก)</p>
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">ยังไม่บันทึกรับ</div>
           <div className="text-2xl font-semibold">{open.length} รายการ</div>
@@ -174,7 +173,8 @@ export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
         </p>
       )}
       <DueBatch groups={dueGroups} cash={pfCash} banks={(banks as Bank[] | null) ?? []} today={today} minDate={goLive}
-        defaultDate={end < today ? end : today} canWrite={canWrite} />
+        defaultDate={end < today ? end : today} canWrite={canWrite}
+        info="ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยเงินฝากในพอร์ต · ทุกพอร์ตในตารางเดียว · ตั้งข้อมูลที่หลักทรัพย์ → แก้ไขข้อมูล (เงินต้น · อัตรา · จ่ายทุก)" />
     </div>
   );
 }

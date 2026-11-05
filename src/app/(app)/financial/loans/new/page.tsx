@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok, withBankOwners } from "@/lib/format";
 import NewLoanForm from "./NewLoanForm";
+import { InfoTip } from "@/components/HeaderBar";
 
 export default async function NewLoanPage() {
   const me = await requireAppUser();
@@ -18,8 +19,7 @@ export default async function NewLoanPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">เพิ่มเงินให้กู้ยืม</h1>
-        <p className="text-sm text-slate-500">เงินที่ครอบครัวให้คนอื่นยืม (เป็นสินทรัพย์) · มูลค่า = เงินต้นคงเหลือ</p>
+        <h1 className="flex items-center gap-1 text-2xl font-semibold text-slate-900">เพิ่มเงินให้กู้ยืม <InfoTip label="คำอธิบาย">เงินที่ครอบครัวให้คนอื่นยืม (เป็นสินทรัพย์) · มูลค่า = เงินต้นคงเหลือ</InfoTip></h1>
       </div>
       <NewLoanForm persons={persons ?? []} banks={banks ?? []} goLive={family.go_live_date}
         openingDate={addDays(family.go_live_date, -1)} today={todayBangkok()}
