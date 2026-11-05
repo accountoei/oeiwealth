@@ -1,6 +1,7 @@
 "use client";
 
 import { TabActionsSlot } from "@/components/TabActions";
+import { resetKeptHeight } from "@/components/KeepHeight";
 import TabLabel from "@/components/TabLabel";
 import { tabClass } from "@/lib/format";
 import Link from "next/link";
@@ -30,6 +31,7 @@ export function TabsProvider({ initial, children }: { initial: string; children:
   // ลิงก์ในหน้าเดียวกันที่เปลี่ยน ?tab= (เช่น "ดูรายการทั้งหมด →") → สลับแท็บตามทันที ไม่ต้อง Refresh
   useEffect(() => { setState(initial); }, [initial]);
   const setActive = (k: string) => {
+    if (k !== active) resetKeptHeight();   // แท็บใหม่ = หน้ายาวพอดีกับแท็บนั้น (ไม่ค้างความสูงของแท็บที่ยาวกว่า)
     setState(k);
     try {
       const u = new URL(window.location.href);
