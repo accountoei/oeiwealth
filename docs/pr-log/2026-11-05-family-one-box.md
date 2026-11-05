@@ -1,4 +1,4 @@
-# 2026-11-05 · Family: Donations ตารางสั้นลง · Health / Membership เหลือกล่องเดียว (PR #TBD)
+# 2026-11-05 · Family: Donations ตารางสั้นลง · Health / Membership เหลือกล่องเดียว (PR #337)
 
 Branch `claude/family-one-box`
 ไม่มี SQL · ไม่มี Edge Function · scenario 1104 checks ผ่าน
