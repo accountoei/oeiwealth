@@ -1,4 +1,4 @@
-# 2026-11-05 · ย้ายปุ่ม Settings กลับเข้ากล่อง + บรรทัดสถานะปิดเดือนสีเขียว (PR #TBD)
+# 2026-11-05 · ย้ายปุ่ม Settings กลับเข้ากล่อง + บรรทัดสถานะปิดเดือนสีเขียว (PR #328)
 
 Branch `claude/settings-buttons-in-boxes` · **ไม่มี SQL** · ไม่มี Edge Function
 
