@@ -39,12 +39,6 @@ const sqwa = (r: Row) => (filled(r.rai) || filled(r.ngan) || filled(r.wa)
 /** แถวว่าง (ยังไม่ได้กรอกอะไร) ไม่ส่งไปบันทึก */
 const isEmpty = (r: Row) => !r.id && ![r.label, r.title_deed_no, r.land_no, r.rai, r.ngan, r.wa, r.building_area_sqm, r.acq_cost, r.value, r.notes,
   r.deed_book, r.deed_page, r.map_sheet, r.survey_page, r.salvage].some(filled);
-/** ออกจากช่องราคาซาก: บาท → ใส่จุลภาค + .00 · % → "10%" (ใส่อย่างอื่นไว้ตามเดิม ให้ server แจ้ง) */
-const tidySalvage = (v: string) => {
-  const t = v.replace(/[,\s]/g, "");
-  if (/^\d+(\.\d+)?%$/.test(t)) return `${+t.slice(0, -1)}%`;
-  return /^\d+(\.\d+)?$/.test(t) ? fmt(Number(t)) : v;
-};
 
 /**
  * ตารางส่วนประกอบของทรัพย์สิน (ตกลง 29 ต.ค. 2026) — ใช้ทั้งฟอร์มเพิ่มใหม่และฟอร์มแก้ไข
@@ -310,8 +304,8 @@ function RowView({ r, set, cost, value, del }: {
           {land ? <div className="grid grid-cols-3 gap-1">{t("deed_book", "เล่ม")}{t("deed_page", "หน้า")}{t("map_sheet", "ระวาง")}</div> : (
             // ราคาซาก: ช่องเดียวใส่บาท หรือ % (ตกลง 5 พ.ย. 2026) · อยู่หน้าช่องอายุใช้งาน
             <label className="flex items-center justify-end gap-1 whitespace-nowrap text-xs text-slate-600">ราคาซาก
-              <input value={r.salvage} onChange={(e) => set(r.key, { salvage: e.target.value })} onBlur={(e) => set(r.key, { salvage: tidySalvage(e.target.value) })}
-                placeholder="บาท หรือ %" aria-label="ราคาซาก (บาท หรือ %)" data-plain className={`${cell} min-w-0 max-w-36 text-right tabular-nums`} /></label>
+              <input value={r.salvage} onChange={(e) => set(r.key, { salvage: e.target.value })}
+                placeholder="บาท หรือ %" aria-label="ราคาซาก (บาท หรือ %)" data-num="pct" className={`${cell} min-w-0 max-w-36 text-right tabular-nums`} /></label>
           )}
         </td>
         <td className="pb-2 pr-2 pt-1">

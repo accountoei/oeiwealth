@@ -25,7 +25,7 @@ const OTHER_CATEGORY = "บ้าน / สาธารณูปโภค";
 
 /**
  * บันทึกค่าใช้จ่ายของทรัพย์สินหลายรายการพร้อมกัน
- *   ส่วนบน = ค่าใช้จ่ายประจำงวดเดือนนี้ที่ยังไม่จ่าย (ไฟ / น้ำ / ส่วนกลาง / ภาษีที่ดิน) · ส่วนล่าง = รายการอื่น (ซ่อม ฯลฯ) เพิ่มแถวได้
+ *   ส่วนบน = ค่าใช้จ่ายประจำงวดเดือนนี้ (ไฟ / น้ำ / ส่วนกลาง / ภาษีที่ดิน) + งวดก่อนที่ยังค้างจ่าย (ยกมา · 5 พ.ย. 2026) · ส่วนล่าง = รายการอื่น (ซ่อม ฯลฯ) เพิ่มแถวได้
  *   ช่องยอดว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
  */
 export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym, canWrite }: {
@@ -88,7 +88,8 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ งวด {thMonth(`${ym}-01`)}</h2>
+            <h2 className="font-medium text-slate-900">ค่าใช้จ่ายประจำ งวด {thMonth(`${ym}-01`)}
+              {rows.some((r) => r.period < `${ym}-01` && r.status === "OVERDUE") && <span className="text-sm font-normal text-red-700"> + ค้างจ่ายยกมา</span>}</h2>
             {kinds.length > 1 && (
               <div className="flex flex-wrap gap-1 text-xs">
                 {[["", "ทั้งหมด"] as [string, string], ...kinds].map(([k, l]) => (
@@ -110,7 +111,7 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
               <th className="px-3">สถานะ</th>{canWrite && <><th className="px-3 text-right">ยอดที่จ่าย</th><th className="px-3">จ่ายจาก</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {shownRows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีค่าใช้จ่ายประจำงวดเดือนนี้ (ตั้งค่าได้ที่หน้าของทรัพย์สิน)</td></tr>}
+            {shownRows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ไม่มีค่าใช้จ่ายประจำงวดเดือนนี้หรือค้างจ่าย (ตั้งค่าได้ที่หน้าของทรัพย์สิน)</td></tr>}
             {shownRows.map((r) => {
               const done = r.status === "PAID" || r.status === "DISMISSED";
               const v = vals[r.key] ?? "";
@@ -120,7 +121,9 @@ export default function ExpenseBatch({ rows, props, pays, defaultDate, today, ym
                     <Link href={`/property/${r.assetId}`} className="font-medium text-slate-900 hover:underline">{r.property}</Link>
                     <div className="text-xs text-slate-500">{r.label}</div>
                   </td>
-                  <td className="whitespace-nowrap px-3 text-xs">{thDate(r.due)}</td>
+                  <td className="whitespace-nowrap px-3 text-xs">{thDate(r.due)}
+                    {/* งวดเดือนก่อน: ค้างจ่ายยกมา / จ่ายในเดือนนี้ (ตกลง 5 พ.ย. 2026) */}
+                    {r.period < `${ym}-01` && <div className={r.status === "OVERDUE" ? "text-red-700" : "text-slate-500"}>งวด {thMonth(r.period)}</div>}</td>
                   <td className="px-3 text-right tabular-nums">{r.expected > 0 ? money(r.expected, r.currency) : <span className="text-slate-400">-</span>}</td>
                   <td className={`px-3 text-xs ${COST_STATUS[r.status]?.cls ?? ""}`}>{COST_STATUS[r.status]?.text ?? r.status}
                     {r.edits?.length ? <RecordedLines items={r.edits} />

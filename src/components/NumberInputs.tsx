@@ -7,14 +7,19 @@ import { useEffect } from "react";
  *  - พิมพ์: ใส่คอมมาคั่นหลักพันทันที (1234567 → 1,234,567)
  *  - ออกจากช่อง: ทศนิยมอย่างน้อย 2 ตำแหน่ง (1,234 → 1,234.00 · 35.1234 คงไว้)
  *  - ช่องจำนวนหน่วย / % / อัตรา / ระดับ / วันที่ของเดือน: ใส่คอมมาแต่ไม่เติม .00
+ *  - ช่องที่ใส่ได้ทั้งเงินหรือ % (เช่น ราคาซาก) → ใส่ data-num="pct" แทน inputMode (ใช้แป้นพิมพ์เต็ม จะได้พิมพ์ % ได้บน iPad / มือถือ)
+ *      พิมพ์ 100000 → 100,000 · ออกจากช่อง → 100,000.00 · พิมพ์ 10% → คงเป็น 10% (ไม่เติม .00) · 5 พ.ย. 2026
  * ฝั่ง Server ตัดคอมมาออกก่อนบันทึกทุกครั้ง (numOrNull / clean)
  */
 const NO_PAD = /(quantity|qty|shares|percent|pct|rate|level|fx|day|owner_|sq_?wa|land_|ngan|rai|wa$)/i;
 const SKIP = "data-plain";
 
 function sel(el: Element): el is HTMLInputElement {
-  return el instanceof HTMLInputElement && el.inputMode === "decimal" && !el.hasAttribute(SKIP) && el.type !== "hidden";
+  return el instanceof HTMLInputElement && (el.inputMode === "decimal" || pctOk(el)) && !el.hasAttribute(SKIP) && el.type !== "hidden";
 }
+/** ช่องที่ลงท้ายด้วย % ได้ (data-num="pct") */
+const pctOk = (el: HTMLInputElement) => el.dataset.num === "pct";
+const hasPct = (el: HTMLInputElement, v: string) => pctOk(el) && v.includes("%");
 
 function group(intPart: string) {
   return intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -60,21 +65,24 @@ const pad = (el: HTMLInputElement) => !NO_PAD.test(el.name) && el.dataset.money 
 
 export default function NumberInputs() {
   useEffect(() => {
+    // ช่องที่มี % → จัดรูปเฉพาะตัวเลขข้างหน้า แล้วต่อ % ท้าย
+    const liveOf = (el: HTMLInputElement, v: string) => (hasPct(el, v) ? `${live(v)}%` : live(v));
+    const fullOf = (el: HTMLInputElement, v: string) => (hasPct(el, v) ? `${full(v.replace(/%/g, ""), false)}%` : full(v, pad(el)));
     const onInput = (e: Event) => {
       if (busy || !e.target || !sel(e.target as Element)) return;
       const el = e.target as HTMLInputElement;
       const caret = el.selectionStart ?? el.value.length;
       const digitsBefore = el.value.slice(0, caret).replace(/[^0-9.\-]/g, "").length;
-      put(el, live(el.value), digitsBefore);
+      put(el, liveOf(el, el.value), digitsBefore);
     };
     const onBlur = (e: Event) => {
       if (!e.target || !sel(e.target as Element)) return;
       const el = e.target as HTMLInputElement;
-      put(el, full(el.value, pad(el)));
+      put(el, fullOf(el, el.value));
     };
     const fmtAll = (root: ParentNode) => {
       root.querySelectorAll?.("input").forEach((el) => {
-        if (sel(el) && el.value && document.activeElement !== el) put(el, full(el.value, pad(el)));
+        if (sel(el) && el.value && document.activeElement !== el) put(el, fullOf(el, el.value));
       });
     };
     document.addEventListener("input", onInput, true);
