@@ -5,7 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { saveInsSchedule, type ActionState } from "../actions";
 import { generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { fillDown, gridNum, gridToLines, guessEvery, nextRow, sortGrid, type GridLine } from "@/lib/insurance-grid";
-import { BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
+import { SMALL_BTN, BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
 
@@ -230,7 +230,7 @@ export default function InsScheduleEditor({ policyId, kind, currency, current, g
           </table>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={addLast} className="text-sm text-blue-700 hover:underline">+ เพิ่มงวดท้ายตาราง</button>
+          <button type="button" onClick={addLast} className={SMALL_BTN}>+ เพิ่มงวดท้ายตาราง</button>
           {rows.length === 0 && <span className="text-sm text-slate-500">ยังไม่มีงวด — คำนวณจากสูตร วางจาก Excel หรือกดเพิ่มงวด</span>}
         </div>
         <p className="mt-1 text-xs text-slate-500">ยอดนี้ ↓ = ใช้ยอดของงวดนี้กับงวดถัดไปทั้งหมด · ออกจากช่องวันที่แล้วเรียงตามวันที่ให้เอง · งวดที่เพิ่มใช้วันที่ถัดไปตามรอบของงวดก่อนหน้า</p>

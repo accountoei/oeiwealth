@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { updatePersonDetails, type ActionState } from "../actions";
-import { EDUCATION_LEVEL_LABEL, GENDER_LABEL, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, EDUCATION_LEVEL_LABEL, GENDER_LABEL, PERSON_STATUS_LABEL, RELATIONSHIP_LABEL, TITLE_PREFIXES } from "@/lib/format";
 import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -67,10 +67,10 @@ export function PersonDetailsForm({ p, others, isHead = false, headCandidates = 
           ? <img src={photo} alt="" className="h-20 w-20 rounded-full object-cover" />
           : <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">ไม่มีรูป</div>}
         <div className="space-y-1 text-sm">
-          <label className="cursor-pointer text-blue-700 underline">
+          <label className={`${SMALL_BTN} cursor-pointer`}>
             เลือกรูปโปรไฟล์<input type="file" accept="image/*" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
           </label>
-          {photo && <button type="button" onClick={() => { setPhoto(null); setNewPhoto(""); setClear(true); }} className="block text-xs text-slate-500 underline">ลบรูป</button>}
+          {photo && <button type="button" onClick={() => { setPhoto(null); setNewPhoto(""); setClear(true); }} className={`${SMALL_DEL_BTN} ml-2`}>ลบรูป</button>}
           <p className="text-xs text-slate-500">ไม่บังคับ · ระบบย่อรูปให้อัตโนมัติ</p>
           {photoErr && <p className="text-xs text-red-600">{photoErr}</p>}
         </div>

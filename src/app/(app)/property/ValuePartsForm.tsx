@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { savePropertyValuation, type ActionState } from "./actions";
-import { diffText, money, numOrZero } from "@/lib/format";
+import { SMALL_DEL_BTN, diffText, money, numOrZero } from "@/lib/format";
 import { partsSum, splitByArea, type ValuePart } from "./valueParts";
 import Flash from "@/components/Flash";
 
@@ -107,7 +107,7 @@ export default function ValuePartsForm({ assetId, currency, today, minDate, deed
                         placeholder={r.last != null ? money(r.last, undefined, 2) : ""} className={`w-full ${input}`} />}</td>
                   {diffCell(eff[r.key], r.cost)}
                   <td className="pl-2 text-right">{!r.deed_id &&
-                    <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="text-xs text-red-600 hover:underline">ลบ</button>}</td>
+                    <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className={SMALL_DEL_BTN}>ลบ</button>}</td>
                 </tr>
               );
             })}

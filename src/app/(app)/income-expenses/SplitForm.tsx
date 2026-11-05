@@ -6,7 +6,7 @@ import { useRowPanel } from "@/components/RowPanel";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { splitPending, type ActionState } from "./actions";
-import { INCOME_TYPE_LABEL, money } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, INCOME_TYPE_LABEL, money } from "@/lib/format";
 import type { SplitMove } from "@/lib/split-moves";
 import { findHint, type ExpHint } from "@/lib/category-hints";
 import Flash from "@/components/Flash";
@@ -102,11 +102,11 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
             </select>
           )}
           <input value={l.amount} onChange={(e) => set(i, { amount: e.target.value })} inputMode="decimal" placeholder="จำนวน" className={`w-32 ${small}`} />
-          {lines.length > 1 && <button type="button" onClick={() => setLines(lines.filter((_, k) => k !== i))} className="text-xs text-slate-500">ลบ</button>}
+          {lines.length > 1 && <button type="button" onClick={() => setLines(lines.filter((_, k) => k !== i))} className={SMALL_DEL_BTN}>ลบ</button>}
         </div>
       ))}
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        <button type="button" onClick={() => setLines([...lines, blank()])} className="text-slate-700 underline">+ เพิ่มบรรทัด</button>
+        <button type="button" onClick={() => setLines([...lines, blank()])} className={SMALL_BTN}>+ เพิ่มบรรทัด</button>
         {missingCat && <span className="text-amber-700">เลือก{income ? "ประเภท" : "หมวด"}ให้ทุกบรรทัดก่อนบันทึก</span>}
         {missingTo && <span className="text-amber-700">เลือกบัญชี / บัตร / หนี้ ของบรรทัดเคลื่อนเงินก่อนบันทึก</span>}
         <span>แยกแล้ว {money(sum, currency)} · {left < 0

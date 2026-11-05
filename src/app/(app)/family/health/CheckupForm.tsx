@@ -5,6 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addCheckup, type ActionState } from "./actions";
 import { METRICS } from "./metrics";
 import Flash from "@/components/Flash";
+import { SMALL_BTN, SMALL_DEL_BTN } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const cell = "w-full rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -61,12 +62,12 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
                   <option value="">อัตโนมัติ</option><option value="H">สูง</option><option value="L">ต่ำ</option><option value="ABNORMAL">ผิดปกติ</option>
                 </select>
               </td>
-              <td><button type="button" onClick={() => setRows(rows.filter((_, k) => k !== i))} className="text-xs text-red-600">ลบ</button></td>
+              <td><button type="button" onClick={() => setRows(rows.filter((_, k) => k !== i))} className={SMALL_DEL_BTN}>ลบ</button></td>
             </tr>
           ))}
         </tbody>
       </table>
-      <button type="button" onClick={() => setRows([...rows, blank("WEIGHT")])} className="text-xs text-slate-700 underline">+ เพิ่มรายการ</button>
+      <button type="button" onClick={() => setRows([...rows, blank("WEIGHT")])} className={SMALL_BTN}>+ เพิ่มรายการ</button>
       <p className="text-xs text-slate-500">เว้นช่องผลว่างได้ (ไม่บันทึก) · &ldquo;อัตโนมัติ&rdquo; = ระบบเทียบกับค่าปกติที่กรอกให้ · ค่าปกติเริ่มต้นเป็นค่าทั่วไป ควรแก้ตามใบผลแล็บ</p>
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>

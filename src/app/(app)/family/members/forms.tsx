@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { useActionSlot } from "@/components/ActionBar";
 import { addPerson, updateFamily, type ActionState } from "./actions";
-import { SMALL_BTN, familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
+import { SMALL_DEL_BTN, SMALL_BTN, familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
 import { resizePhoto } from "./[id]/details-form";
 import Flash from "@/components/Flash";
 
@@ -62,10 +62,10 @@ export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
             ? <img src={photo} alt="" className="h-16 w-16 rounded-xl object-cover" />
             : <span className="grid h-16 w-16 place-items-center rounded-xl bg-blue-600 text-lg font-bold text-white">{familyInitials(name)}</span>}
           <div className="space-y-1 text-sm">
-            <label className="cursor-pointer text-blue-700 underline">
+            <label className={`${SMALL_BTN} cursor-pointer`}>
               เลือกรูปครอบครัว<input type="file" accept="image/*" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
             </label>
-            {photo && <button type="button" onClick={() => { setPhoto(null); setNewPhoto(""); setClear(true); }} className="block text-xs text-slate-500 underline">ลบรูป (ใช้ชื่อย่อแทน)</button>}
+            {photo && <button type="button" onClick={() => { setPhoto(null); setNewPhoto(""); setClear(true); }} className={`${SMALL_DEL_BTN} ml-2`}>ลบรูป (ใช้ชื่อย่อแทน)</button>}
             <p className="text-xs text-slate-500">ไม่บังคับ · แสดงมุมซ้ายบนของเมนู · ระบบย่อรูปให้อัตโนมัติ</p>
             {photoErr && <p className="text-xs text-red-600">{photoErr}</p>}
           </div>

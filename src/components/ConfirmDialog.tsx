@@ -2,6 +2,7 @@
 
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import Modal from "./Modal";
+import {  } from "@/lib/format";
 
 type Ask = { text: string; danger?: boolean; okLabel?: string; resolve: (ok: boolean) => void };
 
@@ -24,7 +25,7 @@ export function useConfirm() {
             className={`rounded-md px-4 py-2 text-sm text-white ${cur.danger ? "bg-red-700 hover:bg-red-800" : "bg-blue-600 hover:bg-blue-700"}`}>
             {cur.okLabel ?? "ยืนยัน"}
           </button>
-          <button type="button" onClick={() => done(false)} className="text-sm text-slate-500 hover:text-slate-800">ยกเลิก</button>
+          <button type="button" onClick={() => done(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">ยกเลิก</button>
         </div>
       </div>
     </Modal>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
-import { INS_TYPE, thDate } from "@/lib/format";
+import { SMALL_BTN, INS_TYPE, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import PayDefaultSelect from "../PayDefaultSelect";
 
@@ -84,7 +84,7 @@ export default function NewPolicyForm(props: {
         {hasCv && (
           <>
             {!isSetup && isAdmin && !late && (
-              <button type="button" onClick={() => setLate(true)} className="text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+              <button type="button" onClick={() => setLate(true)} className={`${SMALL_BTN} self-start justify-self-start`}>เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
             )}
             {(isSetup || late) && (
               <label className="flex items-start gap-2 text-sm">

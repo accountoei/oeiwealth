@@ -4,6 +4,7 @@ import { useActionState, useCallback, useLayoutEffect, useRef, useState } from "
 import { useResetSync } from "@/lib/useResetSync";
 import { deleteCpiYear, saveCpiYear, type FxState } from "./actions";
 import Flash from "@/components/Flash";
+import {  } from "@/lib/format";
 
 export type CpiRow = { year: number; cpi_index: number; inflation_pct: number | null; source: string; notes: string | null };
 
@@ -111,7 +112,7 @@ export default function CpiTable({ rows, canEdit, thisYear }: { rows: CpiRow[]; 
           ) : (<>
             <button formAction={delAction} formNoValidate disabled={delPending}
               className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50">ยืนยันลบปี {last + 543}</button>
-            <button type="button" onClick={() => setConfirmDel(false)} className="px-1 py-1.5 text-sm text-slate-600 hover:underline">ยกเลิก</button>
+            <button type="button" onClick={() => setConfirmDel(false)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">ยกเลิก</button>
           </>))}
           {state.error && <span className="text-red-600">{state.error}</span>}
           {delState.error && <span className="text-red-600">{delState.error}</span>}

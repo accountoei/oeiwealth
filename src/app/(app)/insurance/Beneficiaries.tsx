@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { saveBeneficiaries, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
-import { SMALL_BTN } from "@/lib/format";
+import { SMALL_DEL_BTN, SMALL_BTN } from "@/lib/format";
 
 type Row = { person_id: string; name: string; percent: string };
 
@@ -28,11 +28,11 @@ export function BeneficiaryRows({ persons, rows, setRows }: {
           {!r.person_id && <input value={r.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="ชื่อ" className={cls} />}
           <input value={r.percent} onChange={(e) => set(i, { percent: e.target.value })} inputMode="decimal" placeholder="%" className={`w-20 text-right ${cls}`} />
           <span className="text-xs text-slate-500">%</span>
-          <button type="button" onClick={() => setRows(rows.filter((_, k) => k !== i))} className="text-xs text-red-600">ลบ</button>
+          <button type="button" onClick={() => setRows(rows.filter((_, k) => k !== i))} className={SMALL_DEL_BTN}>ลบ</button>
         </div>
       ))}
       <div className="flex items-center gap-3">
-        <button type="button" onClick={() => setRows([...rows, { person_id: "", name: "", percent: "" }])} className="text-xs text-slate-700 underline">+ เพิ่มผู้รับผลประโยชน์</button>
+        <button type="button" onClick={() => setRows([...rows, { person_id: "", name: "", percent: "" }])} className={SMALL_BTN}>+ เพิ่มผู้รับผลประโยชน์</button>
         <span className={`text-xs ${total === 100 ? "text-emerald-700" : total > 100 ? "text-red-600" : "text-amber-700"}`}>รวม {total}%</span>
       </div>
     </div>
