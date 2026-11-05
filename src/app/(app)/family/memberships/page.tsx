@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { PageInfo } from "@/components/HeaderBar";
-import { TabActions } from "@/components/TabActions";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { thDate, todayBangkok } from "@/lib/format";
@@ -51,8 +50,8 @@ export default async function MembershipsPage({ searchParams }: { searchParams: 
   return (
     <div className="space-y-6">
       <PageInfo>สมาชิกภาพ / สิทธิประโยชน์ และแต้มสะสม / ไมล์ ของสมาชิกในครอบครัว</PageInfo>
-      {/* ตัวเลือกคนอยู่แถวแท็บ · ปุ่มเพิ่มอยู่ในกล่องของตัวเอง (ตกลง 5 พ.ย. 2026) */}
-      <TabActions><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></TabActions>
+      {/* ตัวเลือกคนอยู่แถบบน (เหมือนเมนูอื่น) · ปุ่มเพิ่มอยู่ในกล่องของตัวเอง (ตกลง 5 พ.ย. 2026) */}
+      <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} shareNote={false} /></HeaderFilters>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
 
       {/* 2 กล่อง: สมาชิกภาพ (รวมใกล้หมดอายุ) · แต้ม / ไมล์ (รวมแต้มใกล้หมดอายุ) (ตกลง 5 พ.ย. 2026) */}

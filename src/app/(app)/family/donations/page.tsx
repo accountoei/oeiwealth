@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { PageInfo } from "@/components/HeaderBar";
-import { TabActions } from "@/components/TabActions";
+import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import UrlSelect from "@/components/UrlSelect";
 import { ActionBar } from "@/components/ActionBar";
-import { StatBox } from "@/components/Boxes";
 import RowActions from "@/components/RowActions";
 import DocumentUpload from "@/components/docs/DocumentUpload";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { DONATION_TAX_KIND_LABEL, DONATION_TAX_STATUS_LABEL, DONEE_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
-import { DonationAdd, DonationEditor, DonationFilters, FromExpense, type Opt } from "./forms";
+import { DonationAdd, DonationEditor, DonorFilter, FromExpense, type Opt } from "./forms";
 
 type Don = {
   id: string; donation_date: string; year_only: boolean; donor_kind: "PERSON" | "BUSINESS" | "GROUP"; donor_person_id: string | null;
@@ -50,7 +49,7 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
   });
   const pName = new Map(people.map((p) => [p.id, p.name]));
   const bName = new Map(businesses.map((b) => [b.id, b.name]));
-  const donorOf = (r: Don) => r.donor_kind === "PERSON" ? pName.get(r.donor_person_id!) ?? "-" : r.donor_kind === "BUSINESS" ? bName.get(r.donor_asset_id!) ?? "-" : r.donor_name || "ไม่ระบุ";
+  const donorOf = (r: Don) => r.donor_kind === "PERSON" ? pName.get(r.donor_person_id!) ?? "-" : r.donor_kind === "BUSINESS" ? bName.get(r.donor_asset_id!) ?? "-" : r.donor_name || "กลุ่ม (ข้อมูลเดิม)";
 
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
@@ -63,6 +62,8 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
   const scoped = all.filter(byDonor);
   const rows = y ? scoped.filter((r) => year(r.donation_date) === Number(y)) : scoped;
   const years = [...new Set(all.map((r) => year(r.donation_date)))].sort((a, b) => b - a);
+  // แบบกลุ่ม = ข้อมูลเดิมที่ยังไม่ได้ย้ายไปเป็นกิจการ (SQL 20261105072000) · ไม่มีแล้ว → ไม่แสดงตัวเลือก / คอลัมน์
+  const hasGroup = all.some((r) => r.donor_kind === "GROUP");
   const sum = (list: Don[]) => list.reduce((s, r) => s + Number(r.amount), 0);
   const eligible = rows.filter((r) => r.tax_status === "ELIGIBLE");
   const pending = rows.filter((r) => r.donor_kind === "PERSON" && r.tax_status === "PENDING");
@@ -100,24 +101,48 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
   }
   const paths = ["/family/donations"];
   const filterNote = d ? " (ตามผู้บริจาคที่เลือก)" : "";
+  const yearHref = (v: string) => { const q = new URLSearchParams({ ...(d ? { d } : {}), ...(v ? { y: v } : {}) }); return q.size ? `/family/donations?${q}` : "/family/donations"; };
 
   return (
     <div className="space-y-6">
       <PageInfo>ประวัติการบริจาคของครอบครัว ทั้งในนามบุคคลและในนามกิจการ ทั้งที่ใช้และไม่ใช้สิทธิลดหย่อนภาษี · บันทึกย้อนหลังก่อน Go-live ได้ ·
         หน้านี้ไม่ตัดเงินจากบัญชี (เงินจ่ายจริงบันทึกเป็นรายจ่ายหมวด &ldquo;บริจาค&rdquo; ที่ Income &amp; Expenses แล้วผูกรายละเอียดที่นี่)</PageInfo>
-      {/* ปุ่ม · ผู้บริจาค · ปี (ขวาสุด) อยู่แถวแท็บ (ตกลง 30 ต.ค. 2026) */}
-      <TabActions>
-        {canWrite && <ActionBar><DonationAdd persons={people} businesses={businesses} today={today} /></ActionBar>}
-        <DonationFilters years={years} persons={people} businesses={businesses} y={y} d={d} />
-      </TabActions>
+      {/* ผู้บริจาค = แถบบน (เหมือนตัวกรองทั้งครอบครัวของเมนูอื่น) · ปี + ปุ่มบันทึก = ในกล่องสรุป (ตกลง 5 พ.ย. 2026) */}
+      <HeaderFilters><DonorFilter persons={people} businesses={businesses} d={d} hasGroup={hasGroup} /></HeaderFilters>
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error}</p>}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatBox label={y ? `ยอดบริจาคปี ${Number(y) + 543}` : "ยอดบริจาคทั้งหมด"} value={money(sum(rows))} unit="บาท" sub={`${rows.length.toLocaleString("th-TH")} รายการ${filterNote}`} />
-        <StatBox label="บุคคล · ในนามกิจการ" value={money(sum(rows.filter((r) => r.donor_kind === "PERSON")))} unit="บาท"
-          sub={`ในนามกิจการ ${money(sum(rows.filter((r) => r.donor_kind === "BUSINESS")))} บาท`} />
-        <StatBox label="ใช้สิทธิลดหย่อนได้" value={money(sum(eligible))} unit="บาท" sub={`${eligible.length} รายการ · ยอดจริงที่หักได้ดูที่แท็บ Tax`} />
-        <StatBox label="รอตรวจสอบสิทธิภาษี" value={pending.length} unit="รายการ" sub="เฉพาะผู้บริจาคที่เป็นบุคคล" subClass={pending.length ? "text-amber-700" : undefined} />
+      {/* 4 กล่องเล็กรวมเป็นกล่องเดียว (ตกลง 5 พ.ย. 2026) */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="font-medium text-slate-900">สรุปการบริจาค{filterNote}</h2>
+            <span className="text-sm text-slate-600"><UrlSelect label="ปี" value={y} options={[{ value: "", label: "ทุกปี (สรุปรายปี)" }, ...years.map((x) => ({ value: String(x), label: String(x + 543) }))]
+              .map((o) => ({ ...o, href: yearHref(o.value) }))} /></span>
+          </div>
+          {canWrite && <ActionBar className="shrink-0"><DonationAdd persons={people} businesses={businesses} today={today} /></ActionBar>}
+        </div>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-slate-100 xl:[&>div:not(:first-child)]:pl-4">
+          <div>
+            <dt className="text-xs text-slate-500">{y ? `ยอดบริจาคปี ${Number(y) + 543}` : "ยอดบริจาคทั้งหมด"}</dt>
+            <dd className="mt-1 text-xl font-semibold tabular-nums">{money(sum(rows))} <span className="text-sm font-normal text-slate-500">บาท</span></dd>
+            <dd className="mt-1 text-xs text-slate-500">{rows.length.toLocaleString("th-TH")} รายการ</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">บุคคล · ในนามกิจการ</dt>
+            <dd className="mt-1 text-xl font-semibold tabular-nums">{money(sum(rows.filter((r) => r.donor_kind === "PERSON")))} <span className="text-sm font-normal text-slate-500">บาท</span></dd>
+            <dd className="mt-1 text-xs text-slate-500">ในนามกิจการ {money(sum(rows.filter((r) => r.donor_kind === "BUSINESS")))} บาท</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">ใช้สิทธิลดหย่อนได้</dt>
+            <dd className="mt-1 text-xl font-semibold tabular-nums">{money(sum(eligible))} <span className="text-sm font-normal text-slate-500">บาท</span></dd>
+            <dd className="mt-1 text-xs text-slate-500">{eligible.length} รายการ · ยอดจริงที่หักได้ดูที่แท็บ Tax</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">รอตรวจสอบสิทธิภาษี</dt>
+            <dd className="mt-1 text-xl font-semibold tabular-nums">{pending.length} <span className="text-sm font-normal text-slate-500">รายการ</span></dd>
+            <dd className={`mt-1 text-xs ${pending.length ? "text-amber-700" : "text-slate-500"}`}>เฉพาะผู้บริจาคที่เป็นบุคคล</dd>
+          </div>
+        </dl>
       </section>
 
       {canWrite && unlinked.length > 0 && (
@@ -133,7 +158,7 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
                     <td className="px-4">{e.description}</td>
                     <td className="px-4 text-right tabular-nums">{money(e.amount)} {e.currency !== "THB" && e.currency}</td>
                     <td className="px-4 py-1.5 text-right">
-                      <FromExpense persons={people} businesses={businesses} v={{ donation_date: e.date, donor: e.person_id ? `p:${e.person_id}` : people[0] ? `p:${people[0].id}` : "g",
+                      <FromExpense persons={people} businesses={businesses} v={{ donation_date: e.date, donor: e.person_id ? `p:${e.person_id}` : people[0] ? `p:${people[0].id}` : businesses[0] ? `b:${businesses[0].id}` : "",
                         claimant_person_id: e.person_id, donee_name: e.description, amount: Number(e.base_amount ?? e.amount), expense_item_id: e.id }} />
                     </td>
                   </tr>
@@ -151,10 +176,10 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr><th className="px-4 py-2">ปี</th><th className="px-4 text-right">บุคคล</th><th className="px-4 text-right">ในนามกิจการ</th><th className="px-4 text-right">ไม่ระบุ / กลุ่ม</th><th className="px-4 text-right">รวม</th><th className="px-4 text-right">รายการ</th></tr>
+                <tr><th className="px-4 py-2">ปี</th><th className="px-4 text-right">บุคคล</th><th className="px-4 text-right">ในนามกิจการ</th>{hasGroup && <th className="px-4 text-right">กลุ่ม (ข้อมูลเดิม)</th>}<th className="px-4 text-right">รวม</th><th className="px-4 text-right">รายการ</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {summary.length === 0 && <tr><td colSpan={6} className="px-4 py-4 text-center text-slate-500">ยังไม่มีรายการ</td></tr>}
+                {summary.length === 0 && <tr><td colSpan={hasGroup ? 6 : 5} className="px-4 py-4 text-center text-slate-500">ยังไม่มีรายการ</td></tr>}
                 {summary.map((s) => {
                   const q = new URLSearchParams({ y: String(s.yr), ...(d ? { d } : {}) });
                   return (
@@ -162,7 +187,7 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
                       <td className="px-4 py-2"><Link href={`/family/donations?${q}`} className="text-blue-700 hover:underline">{s.yr + 543}</Link></td>
                       <td className="px-4 text-right tabular-nums">{s.person ? money(s.person) : "-"}</td>
                       <td className="px-4 text-right tabular-nums">{s.business ? money(s.business) : "-"}</td>
-                      <td className="px-4 text-right tabular-nums">{s.group ? money(s.group) : "-"}</td>
+                      {hasGroup && <td className="px-4 text-right tabular-nums">{s.group ? money(s.group) : "-"}</td>}
                       <td className="px-4 text-right font-medium tabular-nums">{money(s.total)}</td>
                       <td className="px-4 text-right text-slate-500">{s.n}</td>
                     </tr>
@@ -174,7 +199,7 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
                   <tr><td className="px-4 py-2">รวมทุกปี</td>
                     <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.person, 0))}</td>
                     <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.business, 0))}</td>
-                    <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.group, 0))}</td>
+                    {hasGroup && <td className="px-4 text-right tabular-nums">{money(summary.reduce((s, x) => s + x.group, 0))}</td>}
                     <td className="px-4 text-right tabular-nums">{money(sum(scoped))}</td>
                     <td className="px-4 text-right text-slate-500">{scoped.length}</td></tr>
                 </tfoot>
