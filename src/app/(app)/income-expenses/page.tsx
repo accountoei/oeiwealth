@@ -12,7 +12,7 @@ import {
   RecurringPayActions, UndoDismissButton, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { makeEntryKit, pname, type Move } from "./entry-kit";
+import { INC_SELECT, MOVE_SELECT, makeEntryKit, pname, type Move } from "./entry-kit";
 import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
 import { TabActions } from "@/components/TabActions";
 import MonthTable, { type MonthRow } from "./MonthTable";
@@ -83,7 +83,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
       supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
       supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
       supabase.from("v_fx_status").select("currency,rate_to_thb"),
-      supabase.from("income_transactions").select("id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name)")
+      supabase.from("income_transactions").select(INC_SELECT)
         .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
       supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
       supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
@@ -93,7 +93,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
       supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
       supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
-      supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata")
+      supabase.from("cash_movements").select(MOVE_SELECT)
         .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons!insurance_policies_person_id_fkey(name))")
         .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
