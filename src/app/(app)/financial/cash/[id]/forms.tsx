@@ -60,7 +60,7 @@ export function AccountNoPanel({ assetId, bankAccountId, masked, canReveal, canS
       <div className="flex flex-wrap items-center gap-3">
         <span className="font-mono text-base">{shown ?? masked ?? "ยังไม่ได้บันทึก"}</span>
         {canReveal && masked && !shown && (
-          <form action={revealAction}>
+          <form action={revealAction} data-no-close>
             <input type="hidden" name="bank_account_id" value={bankAccountId} />
             <button disabled={revealing} className="rounded-md border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50">
               {revealing ? "…" : "แสดงเลขเต็ม"}

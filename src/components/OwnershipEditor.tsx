@@ -60,7 +60,7 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
           {over && " · เกินจำนวนหุ้นทั้งหมด"} · ใส่ตาม บอจ.5 ฉบับล่าสุด (ไม่ต้องใส่ผู้ถือหุ้นนอกครอบครัว) · ราคาทุนต่อหุ้นไม่บังคับ (ว่าง = เฉลี่ยจากเงินลงทุน)
         </div>
       ) : (
-        <div className={`text-xs ${total === 100 ? "text-emerald-700" : total > 100 ? "text-red-600" : "text-amber-700"}`}>
+        <div data-info className={`text-xs ${total === 100 ? "text-emerald-700" : total > 100 ? "text-red-600" : "text-amber-700"}`}>
           รวม {total}%{total < 100 && ` · ส่วนที่เหลือ ${100 - total}% จะเป็น "ยังไม่ระบุเจ้าของ"`}
         </div>
       )}

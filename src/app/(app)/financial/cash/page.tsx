@@ -215,6 +215,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             <div className="text-xs text-slate-500">ยอดเงินฝากรวม (THB Equivalent){asOf < end ? " · ถึงวันนี้" : ""}</div>
             <div className="mt-1 text-xl font-semibold tabular-nums">{money(totalNow, "THB")}</div>
             <div className="mt-1 text-xs"><Delta v={pct(totalNow, totalPrev)} /> {Math.abs(totalPrev) > 0.005 && <span className="text-slate-400">({money(totalPrev, undefined, 0)})</span>}</div>
+            <p className="mt-1 text-xs text-slate-400">ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</p>
             {byCcy.length > 0 && (
               <ul className="mt-3 space-y-1 text-xs">
                 {byCcy.map(([c, v], i) => (
@@ -232,9 +233,9 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             lines={SPEND_KEYS.filter((k) => k !== "FEE" || flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
           <FlowCard title={`รายการอื่นๆ ${mName.trim()}`} total={flowSum(flow, OTHER_KEYS)} count={flowCount(flow, OTHER_KEYS)} href={movesHref}
             empty="ไม่มีรายการลงทุน / เงินกู้ / ซื้อขายทรัพย์สิน"
+            note="ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง (ค่าธรรมเนียมโอนอยู่ในรายจ่าย) · เงินออกแสดงเป็นยอดติดลบ"
             lines={OTHER_KEYS.filter((k) => flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
         </section>
-        <p className="-mt-3 text-xs text-slate-500">ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง · ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด · เงินออกแสดงเป็นยอดติดลบ</p>
         <div className="grid gap-4 lg:grid-cols-2">
           <ShareBars title="เงินฝากตามธนาคาร" rows={bankRows} />
           <div className="flex flex-col gap-4">

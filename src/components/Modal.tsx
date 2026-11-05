@@ -18,6 +18,8 @@ export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST
  *   ปุ่ม ปิด / ยกเลิก ของฟอร์ม (ใส่ data-close) ซ่อนเมื่ออยู่ในหน้าต่างนี้ (มี ✕ แล้ว · ตกลง 27 ต.ค. 2026) · ฟอร์มที่กางในหน้ายังเห็นปุ่มนี้
  *   บันทึกสำเร็จ (ฟอร์มขึ้นข้อความสีเขียวใหม่หลังกดบันทึก) → ปิดเอง + แจ้งข้อความมุมจอ + รีเฟรชหน้า
  *   ไม่ต้องการให้ปิดเอง (เช่น ถามต่อหลังบันทึก) → ใส่ data-keep-open ในเนื้อหา
+ *   ฟอร์มที่ไม่ใช่การบันทึก (เช่น แสดงเลขบัญชีเต็ม) → ใส่ data-no-close ที่ <form> · กดแล้วหน้าต่างไม่ปิด
+ *   ข้อความสีเขียวที่แสดงค้างไว้ (เช่น "รวม 100%") → ใส่ data-info · ไม่นับเป็นข้อความบันทึกสำเร็จ
  */
 export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: "md" | "lg"; title?: string }) {
   const [mounted, setMounted] = useState(false);
@@ -48,12 +50,15 @@ export default function Modal({ children, onClose, size = "md", title }: { child
   useEffect(() => {
     const el = body.current;
     if (!mounted || !el) return;
-    const greens = () => [...el.querySelectorAll(".text-emerald-700")].map((n) => (n.textContent ?? "").trim()).filter(Boolean);
+    const greens = () => [...el.querySelectorAll(".text-emerald-700:not([data-info])")].map((n) => (n.textContent ?? "").trim()).filter(Boolean);
     const disabledCount = () => el.querySelectorAll("button[disabled]").length;
     // ปุ่มสีแดง (เช่น ลบโลโก้) ไม่ใช่ข้อความผิดพลาด
     const hasError = () => !!el.querySelector(".text-red-600:not(button):not([data-warn]), .text-red-700:not(button):not([data-warn])");
     let armed: { greens: Set<string>; base: number; busy: boolean } | null = null;
-    const onSubmit = () => { armed = { greens: new Set(greens()), base: disabledCount(), busy: false }; };
+    const onSubmit = (e: Event) => {
+      if ((e.target as Element | null)?.closest?.("[data-no-close]")) return;   // ไม่ใช่การบันทึก
+      armed = { greens: new Set(greens()), base: disabledCount(), busy: false };
+    };
     el.addEventListener("submit", onSubmit, true);
     const obs = new MutationObserver(() => {
       if (!armed || el.querySelector("[data-keep-open]")) return;
