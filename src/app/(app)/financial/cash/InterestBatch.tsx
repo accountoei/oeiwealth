@@ -8,8 +8,8 @@ import { batchInterest, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
@@ -48,7 +48,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
   const net = (r: InterestRow) => n(vals[r.id] ?? "") - (tax[r.id]?.trim() ? n(tax[r.id]) : 0);
   const payload = chosen.map((r) => ({ asset_id: r.id, amount: vals[r.id], tax: tax[r.id] ?? "" }));
-  const onSubmit = cf.guard(`บันทึกรับดอกเบี้ย ${chosen.length} บัญชี วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""}`).join("\n")}`,
+  const onSubmit = cf.guard(`บันทึกรับดอกเบี้ย ${chosen.length} บัญชี ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
   // กรอกตามยอดคาดว่าจะได้รับ (แถวที่แสดง ยังว่าง มียอดคาดการณ์) · แบบแท็บบันทึกรับผลตอบแทนของ Investments
   const fillable = shown.filter((r) => r.expected != null && !(vals[r.id] ?? "").trim());
@@ -58,10 +58,8 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
   return (
     <>
     {cf.dialog}
-    <form action={action} onSubmit={onSubmit} className="space-y-3">
-      <input type="hidden" name="date" value={date} />
-      <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-      <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+    <div className="space-y-3">
+      <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             {bankList.length > 1 && (
@@ -74,16 +72,17 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
             )}
             {canWrite && fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามยอดคาดว่าจะได้รับ ({fillable.length})</button>}
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-3">
+          <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+            count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}
+            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} บัญชีที่กรอกไว้ในธนาคารอื่น</span>}
+            info={<>กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
+          · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
+          · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</>}>
             {canWrite && chosen.length > 0 && (
               <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>
             )}
-            <label className="flex items-center gap-2">วันที่รับ
-              <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-             <InfoTip label="คำอธิบาย">กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
-          · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
-          · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</InfoTip></label>
-          </div>
+          </BatchSave>
         </div>
       </div>
 
@@ -130,20 +129,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
         </table>
       </div>
 
-      {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกรับดอกเบี้ย ${chosen.length} บัญชี`}
-          </button>
-          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} บัญชีที่กรอกไว้ในธนาคารอื่น</span>}
-          {chosen.length > 0 && !pending && (
-            <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
-          )}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </div>
-      )}
-    </form>
+    </div>
     </>
   );
 }

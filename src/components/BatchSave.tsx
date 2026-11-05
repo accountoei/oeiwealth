@@ -1,0 +1,82 @@
+"use client";
+
+import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import Flash from "./Flash";
+import { InfoTip } from "./HeaderBar";
+
+/**
+ * แถบบันทึกของตารางบันทึกหลายรายการ (แท็บอัปเดตยอด / มูลค่า และแท็บบันทึกรับ / จ่าย ทุกเมนู · ตกลง 5 พ.ย. 2026)
+ *   อยู่ด้านบนตาราง ชิดขวา เรียงเหมือนกันทุกหน้า: [ข้อความผิดพลาด / หมายเหตุ] · ล้างช่องที่กรอก · [บันทึก N รายการ] · ณ วันที่ [วันที่] ⓘ
+ *   "ล้างช่องที่กรอก" อยู่ที่เดิมเสมอ (ยังไม่ได้กรอก = สีจาง กดไม่ได้) → ปุ่มไม่ขยับ
+ *   หน้าต่างยืนยันของแต่ละหน้ายังบอกชื่อเต็ม (บันทึกรับดอกเบี้ย 2 บัญชี ณ วันที่ …) · ไม่มีสิทธิ์บันทึก = แสดงเฉพาะช่องวันที่
+ *   กล่อง / แถวที่ครอบแถบนี้ใส่ STICKY_BAR → ค้างใต้แถบบนตอนเลื่อนตารางยาว ๆ ลง (จอ iPad ขึ้นไป · มือถือไม่ค้าง กันบังจอ)
+ */
+export const STICKY_BAR = "z-[5] md:sticky md:top-[var(--app-header-h,4rem)]";
+
+const SMALL = "rounded-md border border-slate-300 px-2 py-1 text-sm";
+
+export function BatchSave({ canWrite = true, action, onSubmit, fields, count, pending, disabled, onClear, canClear, date, onDate, minDate, maxDate, info, state, note, children }: {
+  canWrite?: boolean;
+  action: (fd: FormData) => void;
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  /** ช่องซ่อนที่ส่งไปกับฟอร์ม (name → value) */
+  fields: Record<string, string>;
+  /** จำนวนรายการที่จะบันทึก */
+  count: number;
+  pending: boolean;
+  /** ปิดปุ่มบันทึกเพิ่ม (เช่น ยังกรอกไม่ครบ) */
+  disabled?: boolean;
+  onClear: () => void;
+  /** มีช่องที่กรอกไว้ให้ล้าง (ไม่ใส่ = count > 0) */
+  canClear?: boolean;
+  date: string;
+  onDate: (d: string) => void;
+  minDate?: string;
+  maxDate?: string;
+  /** คำอธิบาย → ⓘ หลังช่องวันที่ */
+  info?: ReactNode;
+  state: { ok?: string | null; error?: string | null };
+  /** ข้อความเล็กก่อน "ล้างช่องที่กรอก" (เช่น รวม 2 รายการที่กรอกไว้ในพอร์ตอื่น) */
+  note?: ReactNode;
+  /** ปุ่ม / ตัวเลือกที่ใช้กับทั้งชุด วางก่อน "ล้างช่องที่กรอก" (เช่น คิดภาษี 15% ทุกแถวที่กรอก · วิธีประเมิน) */
+  children?: ReactNode;
+}) {
+  const dateField = (
+    <label className="flex shrink-0 items-center gap-2">ณ วันที่
+      <input type="date" value={date} min={minDate || undefined} max={maxDate || undefined} onChange={(e) => e.target.value && onDate(e.target.value)} className={SMALL} />
+      {info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}
+    </label>
+  );
+  if (!canWrite) return <div className="ml-auto flex flex-wrap items-center justify-end gap-3">{children}{dateField}</div>;
+  const clearable = canClear ?? count > 0;
+  return (
+    <form action={action} onSubmit={onSubmit} className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+      {Object.entries(fields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+      {state.error && <span className="text-sm text-red-600">{state.error}</span>}
+      <Flash on={state} as="span" className="text-sm text-emerald-700" />
+      {!pending && note}
+      {children}
+      <button type="button" onClick={onClear} disabled={pending || !clearable}
+        className="text-sm text-slate-500 underline hover:text-slate-800 disabled:cursor-default disabled:text-slate-300 disabled:no-underline">ล้างช่องที่กรอก</button>
+      <button disabled={pending || count === 0 || disabled} className="rounded-md bg-blue-600 px-4 py-2 text-sm tabular-nums text-white hover:bg-blue-700 disabled:opacity-50">
+        {pending ? "กำลังบันทึก…" : `บันทึก ${count} รายการ`}
+      </button>
+      {dateField}
+    </form>
+  );
+}
+
+/** วัดความสูงแถบบน (มี 1–2 บรรทัดตามความกว้างจอ) → --app-header-h ให้แถบที่ค้าง (STICKY_BAR) อยู่ใต้แถบบนพอดี · ใส่ไว้ใน <header> */
+export function HeaderHeightVar() {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const h = ref.current?.closest("header");
+    if (!h) return;
+    const set = () => document.documentElement.style.setProperty("--app-header-h", `${h.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(h);
+    return () => ro.disconnect();
+  }, []);
+  return <span ref={ref} hidden />;
+}

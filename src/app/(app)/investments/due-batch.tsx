@@ -10,8 +10,8 @@ import { defaultIncomeAccount, INCOME_GROUP, incomeAccountOptions } from "@/lib/
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 // แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
@@ -101,7 +101,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
   const taxable = shown.filter((r) => filled(r) && r.item?.kind !== "PRINCIPAL" && !Number.isNaN(n(vals[r.key])));
   const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
 
-  const onSubmit = cf.guard(`บันทึกรับ ${lines.length} รายการ วันที่ ${thDate(date)} ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""}`).join("\n")}`
+  const onSubmit = cf.guard(`บันทึกรับ ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""}`).join("\n")}`
     + (maturities ? `\n\nเงินต้นครบกำหนด ${maturities} รายการ: หลักทรัพย์จะปิดเป็น "ครบกำหนด" (เงินต้นไม่ใช่รายได้)` : ""), { okLabel: "ยืนยันบันทึก" });
 
   if (rows.length === 0) return null;
@@ -110,7 +110,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
     {cf.dialog}
     <div className="space-y-3">
       {canWrite && (
-        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
               {pfList.length > 1 && (
@@ -123,13 +123,14 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
               )}
               {fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามตารางทุกแถว ({fillable.length})</button>}
             </div>
-            <div className="ml-auto flex flex-wrap items-center gap-3">
+            <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(lines.map((l) => ({ ...l, title: undefined }))) }}
+              count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
+              date={date} onDate={setDate} minDate={minDate} maxDate={today}
+              note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
+              info={<>กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
+            · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</>}>
               {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>}
-              <label className="flex items-center gap-2">วันที่รับ
-                <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-               <InfoTip label="คำอธิบาย">กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
-            · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</InfoTip></label>
-            </div>
+            </BatchSave>
           </div>
         </div>
       )}
@@ -195,18 +196,6 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
         </table>
       </div>
 
-      {canWrite && rows.some(editable) && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="rows" value={JSON.stringify(lines.map((l) => ({ ...l, title: undefined })))} />
-          <button disabled={pending || lines.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกรับ ${lines.length} รายการ ณ ${thDate(date)}`}
-          </button>
-          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
-          {lines.length > 0 && !pending && <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </form>
-      )}
     </div>
     </>
   );

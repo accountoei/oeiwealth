@@ -7,8 +7,8 @@ import { SMALL_BTN, SMALL_DEL_BTN, COST_STATUS, PROPERTY_COST_TYPE_LABEL, money,
 import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
@@ -64,7 +64,7 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
   ];
   const name = new Map(props.map((p) => [p.id, p.name]));
   const count = payload.length;
-  const onSubmit = cf.guard(`บันทึกค่าใช้จ่าย ${count} รายการ วันที่ ${thDate(date)} ?\n${[
+  const onSubmit = cf.guard(`บันทึกค่าใช้จ่าย ${count} รายการ ณ วันที่ ${thDate(date)} ?\n${[
     ...chosen.map((r) => `• ${r.property} · ${r.label} ${vals[r.key]}${rebillOn(r) ? " (เรียกเก็บผู้เช่า)" : ""}`),
     ...extras.map((x) => `• ${name.get(x.asset) ?? "(ยังไม่เลือกทรัพย์สิน)"} · ${PROPERTY_COST_TYPE_LABEL[x.ctype] ?? "(ยังไม่เลือกประเภท)"} · ${x.description || "(ไม่มีรายการ)"} ${x.amount}`),
   ].join("\n")}`, { okLabel: "ยืนยันบันทึก" });
@@ -82,11 +82,12 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
     {cf.dialog}
     <div className="space-y-3">
       {canWrite && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-          {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
-          <label className="ml-auto flex shrink-0 items-center gap-2">วันที่จ่าย
-            <input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} className={small} />
-           <InfoTip label="คำอธิบาย">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</InfoTip></label>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
+          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
+            count={count} pending={pending} onClear={() => { setVals({}); setExtra([blank(Date.now())]); }} state={state}
+            date={date} onDate={setDate} maxDate={today}
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
         </div>
       )}
 
@@ -212,19 +213,6 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
         </table>
       </div>
 
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || count === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกค่าใช้จ่าย ${count} รายการ`}
-          </button>
-          {count > 0 && !pending && (
-            <button type="button" onClick={() => { setVals({}); setExtra([blank(Date.now())]); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
-          )}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </form>
-      )}
     </div>
     </>
   );

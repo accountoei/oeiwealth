@@ -7,8 +7,8 @@ import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
@@ -91,7 +91,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
     list.filter((r) => r.dueP + r.dueI > 0.005).forEach((r) => { p[r.id] = fmt(r.dueP); i[r.id] = fmt(r.dueI); t[r.id] = fmt(r2(r.dueP + r.dueI)); });
     setPr(p); setInt(i); setTot(t);
   };
-  const guard = cf.guard(`บันทึกรับชำระ ${chosen.length} สัญญา วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+  const guard = cf.guard(`บันทึกรับชำระ ${chosen.length} สัญญา ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
     `• ${r.name} ${fmt(total(r)) || "0.00"} (เงินต้น ${pr[r.id] || "0.00"} · ดอกเบี้ย ${int[r.id] || "0.00"}) เข้า ${bankName.get(bank[r.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -156,15 +156,25 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   return (
     <>
     {cf.dialog}
-    <form action={action} onSubmit={onSubmit} className="space-y-3">
-      <input type="hidden" name="date" value={date} />
-      <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+    <div className="space-y-3">
       {canWrite && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-          {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
-          <label className="ml-auto flex shrink-0 items-center gap-2">วันที่ได้รับ
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && onDate(e.target.value)} className={small} />
-           <InfoTip label="คำอธิบาย">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</InfoTip></label>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
+          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+            count={chosen.length} pending={pending} onClear={() => { setTot({}); setPr({}); setInt({}); setTax({}); }} state={state}
+            date={date} onDate={onDate} minDate={minDate} maxDate={today}
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</>} />
+        </div>
+      )}
+      {state.ok && over.length > 0 && (
+        <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+          <p className="font-medium text-slate-900">เงินต้นที่รับไม่เท่างวด — จะคำนวณงวดที่เหลือใหม่จากเงินต้นคงเหลือจริงไหม? (ดอกเบี้ยงวดที่เหลือคิดใหม่ตามยอดคงเหลือ)</p>
+          {over.map((x) => (
+            <p key={x.id}>{x.name} {x.extra > 0 ? "เกิน" : "ขาด"} {money(Math.abs(x.extra))} ·{" "}
+              <Link href={`/financial/loans/${x.id}?restructure=end`} className="text-blue-700 hover:underline">{x.extra > 0 ? "ลดค่างวด" : "เพิ่มค่างวด"} (จบวันเดิม)</Link>{" · "}
+              <Link href={`/financial/loans/${x.id}?restructure=payment`} className="text-blue-700 hover:underline">{x.extra > 0 ? "จบเร็วขึ้น" : "ขยายงวด"} (ค่างวดเดิม)</Link></p>
+          ))}
+          <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — ตารางเดิม: ส่วนที่เกินหักงวดถัดไปตามลำดับ · ส่วนที่ขาดเป็นยอดค้างของงวดนั้น</p>
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -190,28 +200,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
           </tbody>
         </table>
       </div>
-      {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกรับ ${chosen.length} สัญญา`}
-          </button>
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => { setTot({}); setPr({}); setInt({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </div>
-      )}
-      {state.ok && over.length > 0 && (
-        <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-          <p className="font-medium text-slate-900">เงินต้นที่รับไม่เท่างวด — จะคำนวณงวดที่เหลือใหม่จากเงินต้นคงเหลือจริงไหม? (ดอกเบี้ยงวดที่เหลือคิดใหม่ตามยอดคงเหลือ)</p>
-          {over.map((x) => (
-            <p key={x.id}>{x.name} {x.extra > 0 ? "เกิน" : "ขาด"} {money(Math.abs(x.extra))} ·{" "}
-              <Link href={`/financial/loans/${x.id}?restructure=end`} className="text-blue-700 hover:underline">{x.extra > 0 ? "ลดค่างวด" : "เพิ่มค่างวด"} (จบวันเดิม)</Link>{" · "}
-              <Link href={`/financial/loans/${x.id}?restructure=payment`} className="text-blue-700 hover:underline">{x.extra > 0 ? "จบเร็วขึ้น" : "ขยายงวด"} (ค่างวดเดิม)</Link></p>
-          ))}
-          <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — ตารางเดิม: ส่วนที่เกินหักงวดถัดไปตามลำดับ · ส่วนที่ขาดเป็นยอดค้างของงวดนั้น</p>
-        </div>
-      )}
-    </form>
+    </div>
     </>
   );
 }

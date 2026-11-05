@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { batchValuations, type ActionState } from "./actions";
-import Flash from "@/components/Flash";
-import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type UpdateRow = {
   id: string; pf: string; pfName: string; name: string; symbol: string | null; type: string; currency: string; qty: number;
@@ -44,17 +43,14 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
   const newValue = (r: UpdateRow) => filled(mv[r.id]) ? n(mv[r.id]) : !r.cash && !r.lump && filled(price[r.id]) ? n(price[r.id]) * r.qty : null;
   const chosen = rows.filter((r) => filled(mv[r.id]) || (!r.cash && !r.lump && filled(price[r.id])));
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
-  const onSubmit = cf.guard(`บันทึกราคา / ยอดตาม Statement ${chosen.length} รายการ ณ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.pfName} · ${r.name}`).join("\n")}`,
+  const onSubmit = cf.guard(`บันทึกราคา / ยอดตาม Statement ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.pfName} · ${r.name}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
 
   return (
     <>
     {cf.dialog}
-    <form action={action} onSubmit={onSubmit} className="space-y-3">
-      <input type="hidden" name="date" value={date} />
-      <input type="hidden" name="rows" value={JSON.stringify(chosen.map((r) => ({
-        holding_id: r.id, mv: filled(mv[r.id]) ? mv[r.id] : undefined, price: !r.cash && !r.lump && filled(price[r.id]) ? price[r.id] : undefined })))} />
-      <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+    <div className="space-y-3">
+      <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           {pfList.length > 1 && (
             <label className="flex items-center gap-2">พอร์ต
@@ -64,9 +60,12 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
               </select>
             </label>
           )}
-          <label className="ml-auto flex items-center gap-2">ราคา ณ วันที่
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-           <InfoTip label="คำอธิบาย">กรอกตาม Statement เฉพาะตัวที่มีราคาใหม่ (ช่องว่าง = ไม่บันทึก) · ใส่ราคาต่อหน่วย หรือมูลค่ารวม · บัญชีเงินฝากในพอร์ต / มูลค่าก้อนเดียว ใส่มูลค่า · ราคาจาก Statement ใช้แทนราคาอัตโนมัติของวันนั้น · สลับพอร์ตได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</InfoTip></label>
+          <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(chosen.map((r) => ({
+              holding_id: r.id, mv: filled(mv[r.id]) ? mv[r.id] : undefined, price: !r.cash && !r.lump && filled(price[r.id]) ? price[r.id] : undefined }))) }}
+            count={chosen.length} pending={pending} onClear={() => { setPrice({}); setMv({}); }} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}
+            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
+            info={<>กรอกตาม Statement เฉพาะตัวที่มีราคาใหม่ (ช่องว่าง = ไม่บันทึก) · ใส่ราคาต่อหน่วย หรือมูลค่ารวม · บัญชีเงินฝากในพอร์ต / มูลค่าก้อนเดียว ใส่มูลค่า · ราคาจาก Statement ใช้แทนราคาอัตโนมัติของวันนั้น · สลับพอร์ตได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</>} />
         </div>
       </div>
 
@@ -131,20 +130,7 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
         </table>
       </div>
 
-      {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึก ${chosen.length} รายการ ณ ${thDate(date)}`}
-          </button>
-          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
-          {chosen.length > 0 && !pending && (
-            <button type="button" onClick={() => { setPrice({}); setMv({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
-          )}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </div>
-      )}
-    </form>
+    </div>
     </>
   );
 }

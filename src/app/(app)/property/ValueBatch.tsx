@@ -9,8 +9,7 @@ import ModalButton from "@/components/ModalButton";
 import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm";
 import { batchPropertyValues, type ActionState } from "./actions";
 import { splitByArea } from "./valueParts";
-import Flash from "@/components/Flash";
-import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type ValueRow = {
   id: string; name: string; typeLabel: string; /** ตัวกรองด้านบน */ type: string; usage: string; currency: string; value: number | null; date: string | null;
@@ -94,7 +93,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
     return pl.parts ? { asset_id: r.id, parts: pl.parts } : { asset_id: r.id, value: nv[r.id] };
   });
   const setSub = (r: ValueRow, pid: string, v: string) => setPv({ ...pv, [r.id]: { ...(pv[r.id] ?? {}), [pid]: v } });
-  const onSubmit = cf.guard(`บันทึกมูลค่าใหม่ ${chosen.length} รายการ ณ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = cf.guard(`บันทึกมูลค่าใหม่ ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   // ยอดรวม (บาท · ตามสัดส่วนของสมาชิกที่เลือก) · ราคาตลาดรวมเฉพาะรายการที่ประเมินแล้ว
   //   ตามตัวกรองด้านบน · ตัวเลขที่กรอกไว้ในแถวที่ถูกกรองออกยังอยู่และบันทึกด้วย (หน้าต่างยืนยันแสดงชื่อทุกรายการ)
   const shown = rows.filter((r) => (!ty || r.type === ty) && (!us || r.usage === us));
@@ -109,9 +108,9 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
   return (
     <>
     {cf.dialog}
-    {/* ฟอร์มบันทึกอยู่ล่างตาราง (ตารางมีฟอร์มราคาตลาดใน pop up ของแต่ละแถว → ห้ามซ้อนฟอร์ม) */}
+    {/* ฟอร์มบันทึกครอบเฉพาะแถบบันทึกด้านบน ไม่ครอบตาราง (ตารางมีฟอร์มราคาตลาดใน pop up ของแต่ละแถว → ห้ามซ้อนฟอร์ม) */}
     <div className="space-y-3">
-      <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+      <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2">ประเภท
             <select value={ty} onChange={(e) => setTy(e.target.value)} className={small}>
@@ -123,10 +122,13 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
               <option value="">ทั้งหมด</option>
               {usageOpts.map((k) => <option key={k} value={k}>{USAGE_LABEL[k] ?? k}</option>)}
             </select></label>
-          <label className="ml-auto flex items-center gap-2">มูลค่า ณ วันที่
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-           <InfoTip label="คำอธิบาย">มูลค่าใหม่ = มูลค่าที่นับในความมั่งคั่งสุทธิ (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
-          · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}</InfoTip></label>
+          <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, valuation_method: "USER_ESTIMATE", rows: JSON.stringify(payload) }}
+            count={chosen.length} pending={pending} disabled={incomplete.length > 0} onClear={() => { setNv({}); setPv({}); }} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}
+            note={<>{hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้แต่ถูกตัวกรองซ่อน</span>}
+              {incomplete.length > 0 && <span className="text-sm text-amber-700">{incomplete.map((r) => `${r.name}: ${planOfRow(r).error}`).join(" · ")}</span>}</>}
+            info={<>มูลค่าใหม่ = มูลค่าที่นับในความมั่งคั่งสุทธิ (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
+          · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}</>} />
         </div>
       </div>
 
@@ -242,23 +244,6 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
         </table>
       </div>
 
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="valuation_method" value="USER_ESTIMATE" />
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || chosen.length === 0 || incomplete.length > 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกมูลค่า ${chosen.length} รายการ ณ ${thDate(date)}`}
-          </button>
-          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้แต่ถูกตัวกรองซ่อน</span>}
-          {chosen.length > 0 && !pending && (
-            <button type="button" onClick={() => { setNv({}); setPv({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>
-          )}
-          {incomplete.length > 0 && <span className="text-sm text-amber-700">{incomplete.map((r) => `${r.name}: ${planOfRow(r).error}`).join(" · ")}</span>}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </form>
-      )}
     </div>
     </>
   );

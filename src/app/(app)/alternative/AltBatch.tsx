@@ -7,8 +7,8 @@ import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchAltIncome, batchAltValues, type ActionState } from "./actions";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean;
   /** ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -17,10 +17,6 @@ export type AltBank = { id: string; name: string; currency: string };
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 const METHODS: [string, string][] = [["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน / ร้าน"], ["LATEST_TRANSACTION", "ราคาตลาดล่าสุด"]];
-
-function Result({ s }: { s: ActionState }) {
-  return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}<Flash on={s} as="span" className="text-sm text-emerald-700" /></>;
-}
 
 /**
  * แท็บ "บันทึกรับผลตอบแทน/อัพเดตมูลค่า" ของหน้า Alternative Assets (ตกลง 27 ต.ค. 2026) — 2 ส่วน แต่ละส่วนกดบันทึกครั้งเดียว
@@ -54,19 +50,21 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
   const payload = chosen.map((r) => ({ asset_id: r.id, label: r.name, amount: vals[r.id], tax: tax[r.id] ?? "", bank_asset_id: bank[r.id] ?? "", notes: notes[r.id] ?? "" }));
   const bankOf = new Map(banks.map((b) => [b.id, b]));
-  const onSubmit = cf.guard(`บันทึกรับผลตอบแทน ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+  const onSubmit = cf.guard(`บันทึกรับผลตอบแทน ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
     `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""} → ${bankOf.get(bank[r.id] ?? "")?.name ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
 
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className={`flex flex-wrap items-center justify-between gap-3 bg-[var(--page-bg)] py-1 ${STICKY_BAR}`}>
         <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">รับผลตอบแทน <span className="text-xs font-normal text-slate-500">(ค่าเช่า / ค่าให้ยืม · Staking · ผลตอบแทนอื่น)</span>
           <InfoTip label="คำอธิบาย">บันทึกเป็นรายได้ &ldquo;อื่น ๆ&rdquo; ผูกกับทรัพย์สิน · แบ่งให้เจ้าของตามสัดส่วน · ยอดเป็นสกุลของบัญชีที่รับ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</InfoTip></h2>
         {canWrite && (
-          <label className="flex items-center gap-2 text-sm">วันที่รับ
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-          </label>
+          <div className="ml-auto text-sm">
+            <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+              count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); setNotes({}); }} state={state}
+              date={date} onDate={setDate} minDate={minDate} maxDate={today} />
+          </div>
         )}
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -109,17 +107,6 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
           </tbody>
         </table>
       </div>
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกรับผลตอบแทน ${chosen.length} รายการ`}
-          </button>
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => { setVals({}); setTax({}); setNotes({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          <Result s={state} />
-        </form>
-      )}
     </section>
   );
 }
@@ -139,16 +126,17 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Alt
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className={`flex flex-wrap items-center justify-between gap-3 bg-[var(--page-bg)] py-1 ${STICKY_BAR}`}>
         <h2 className="flex items-center gap-1 font-medium text-slate-900">อัปเดตมูลค่า <InfoTip label="คำอธิบาย">ทองที่ตั้งราคาอัตโนมัติ ระบบลงราคารับซื้อให้ทุกวันทำการ · ทองที่ปิดราคาอัตโนมัติ / ต้องคำนวณจากน้ำหนัก ใช้ฟอร์มในหน้าทรัพย์สิน · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</InfoTip></h2>
         {canWrite && (
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <label className="flex items-center gap-2">ณ วันที่
-              <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-            </label>
-            <label className="flex items-center gap-2">วิธีประเมิน
-              <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>{METHODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-            </label>
+          <div className="ml-auto text-sm">
+            <BatchSave action={action} onSubmit={onSubmit} fields={{ date, method, rows: JSON.stringify(payload) }}
+              count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
+              date={date} onDate={setDate} minDate={minDate} maxDate={today}>
+              <label className="flex items-center gap-2">วิธีประเมิน
+                <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>{METHODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+              </label>
+            </BatchSave>
           </div>
         )}
       </div>
@@ -178,18 +166,6 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Alt
           </tbody>
         </table>
       </div>
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="method" value={method} />
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกมูลค่า ${chosen.length} รายการ`}
-          </button>
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          <Result s={state} />
-        </form>
-      )}
     </section>
   );
 }

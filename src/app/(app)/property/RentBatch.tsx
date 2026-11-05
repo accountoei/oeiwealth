@@ -7,8 +7,7 @@ import { money, thDate } from "@/lib/format";
 import { batchRent, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
-import Flash from "@/components/Flash";
-import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type RentRow = {
   key: string; leaseId: string; assetId: string; property: string; tenant: string; period: string; due: string | null;
@@ -83,7 +82,7 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
   const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.key, fmt(gap(r))])) });
   const taxable = shown.filter((r) => filled(r) && !r.chargeId && !Number.isNaN(n(vals[r.key])));
   const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
-  const onSubmit = cf.guard(`บันทึกรับค่าเช่า ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+  const onSubmit = cf.guard(`บันทึกรับค่าเช่า ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
     `• ${r.property} · ${r.tenant} ${vals[r.key]}${taxOf(r).trim() ? ` (ภาษี ${taxOf(r)})` : ""}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
 
   return (
@@ -91,7 +90,7 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
     {cf.dialog}
     <div className="space-y-3">
       {canWrite && (
-        <div className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
               {propList.length > 1 && (
@@ -104,14 +103,15 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
               )}
               {fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามสัญญาทุกแถว ({fillable.length})</button>}
             </div>
-            <div className="ml-auto flex flex-wrap items-center gap-3">
-              {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 5% ทุกแถวที่กรอก</button>}
-              <label className="flex items-center gap-2">วันที่รับ
-                <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-               <InfoTip label="คำอธิบาย">กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ)
+            <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
+              count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
+              date={date} onDate={setDate} minDate={minDate} maxDate={today}
+              note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในทรัพย์สินอื่น</span>}
+              info={<>กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ)
             · ยอดก่อนภาษี = ค่าเช่าเต็มตามสัญญา ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย (ผู้เช่านิติบุคคลหัก 5%)
-            · งวดเดือนก่อนที่ยังค้างรับยกมาให้ · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</InfoTip></label>
-            </div>
+            · งวดเดือนก่อนที่ยังค้างรับยกมาให้ · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</>}>
+              {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 5% ทุกแถวที่กรอก</button>}
+            </BatchSave>
           </div>
         </div>
       )}
@@ -193,18 +193,6 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
         </table>
       </div>
 
-      {canWrite && rows.some(editable) && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกรับ ${chosen.length} รายการ ณ ${thDate(date)}`}
-          </button>
-          {hiddenChosen > 0 && !pending && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในทรัพย์สินอื่น</span>}
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => { setVals({}); setTax({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </form>
-      )}
     </div>
     </>
   );
