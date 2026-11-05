@@ -427,9 +427,12 @@ function NewComponentFields({ pick }: { pick: string }) {
           <input name="nc_label" required placeholder="เช่น บ้านหลังเล็ก · รั้ว · สระว่ายน้ำ" aria-label="ชื่อ" className={`w-64 ${small}`} />
           <input name="nc_area" placeholder="พื้นที่ใช้สอย" aria-label="พื้นที่ใช้สอย (ตร.ม.)" inputMode="decimal" data-money="off"
             className={`w-28 ${small}`} /><span className="text-xs text-slate-500">ตร.ม.</span>
+          {/* ราคาซาก: บาท หรือ % ช่องเดียว · อายุใช้งาน ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม (ตกลง 5 พ.ย. 2026) */}
+          <span className="text-xs text-slate-500">ราคาซาก</span>
+          <input name="nc_salvage" placeholder="บาท หรือ %" aria-label="ราคาซาก (บาท หรือ %)" data-plain className={`w-32 text-right ${small}`} />
           <span className="text-xs text-slate-500">อายุใช้งาน</span>
-          <input name="nc_years" defaultValue="20" aria-label="อายุใช้งาน (ปี)" inputMode="numeric" data-plain className={`w-16 text-right ${small}`} />
-          <span className="text-xs text-slate-500">ปี</span>
+          <input name="nc_years" placeholder="20" aria-label="อายุใช้งาน (ปี)" inputMode="numeric" data-plain className={`w-16 text-right ${small}`} />
+          <span className="text-xs text-slate-500">ปี <span className="text-slate-400">(ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม)</span></span>
         </div>
       )}
       <p className="text-xs text-slate-500">แถวใหม่ วันที่ได้มา = วันที่จ่าย · แก้รายละเอียดได้ที่ปุ่มแก้ไขของทรัพย์สิน{pick !== "new:LAND" && " · สิ่งปลูกสร้างหักค่าเสื่อมตามอายุ"}</p>

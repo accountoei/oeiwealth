@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "@/lib/revalidate";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, strOrNull as str } from "@/lib/format";
+import { friendlyError, numOrNull as num, parseSalvage, strOrNull as str } from "@/lib/format";
 import { payLinesFromForm } from "@/lib/money-endpoint";
 
 export type TradeState = { error?: string; ok?: string };
@@ -189,9 +189,12 @@ function componentFromForm(form: FormData): { id?: string; create?: Record<strin
     return { create: { type, title_type: t("title_type"), title_deed_no: t("title_deed_no"), land_no: t("land_no"), deed_book: t("deed_book"),
       deed_page: t("deed_page"), map_sheet: t("map_sheet"), survey_page: t("survey_page"), land_area_sq_wa: area } };
   }
+  // อายุใช้งาน: ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม · ราคาซาก บาท หรือ % (ตกลง 5 พ.ย. 2026)
   const years = g("years") ? Number(g("years")) : 20;
-  if (!Number.isInteger(years) || years < 1 || years > 100) return { error: "อายุใช้งานต้องเป็นจำนวนปีเต็ม 1–100" };
-  return { create: { type, label: str(form.get("nc_label")), building_area_sqm: g("area"), useful_life_years: years } };
+  if (!Number.isInteger(years) || years < 0 || years > 100) return { error: "อายุใช้งานต้องเป็นจำนวนปีเต็ม 0–100" };
+  const sv = parseSalvage(str(form.get("nc_salvage")));
+  if ("error" in sv) return { error: sv.error };
+  return { create: { type, label: str(form.get("nc_label")), building_area_sqm: g("area"), useful_life_years: years, ...sv } };
 }
 
 /** รายการจ่ายที่เลือกแถวแล้ว: ล้างติ๊กอาคารแบบเดิม (property_cost_items ผูกกับรายการจ่าย) — อาคาร / ไม่ใช่ ตามชนิดของแถว · คืนข้อความผิดพลาด หรือ null */

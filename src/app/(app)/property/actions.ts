@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, HOME_CATEGORY, numOrNull as num, ownersFromForm, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { friendlyError, HOME_CATEGORY, numOrNull as num, ownersFromForm, parseSalvage, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { bankId, cardId, parseEndpoint, payLinesFromForm } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
@@ -88,8 +88,14 @@ function componentsFromForm(form: FormData): { rows: CompInput[]; removed: strin
   for (const [i, r] of list.entries()) {
     if (bad(r.land_area_sq_wa) || bad(r.building_area_sqm)) return { error: `แถวที่ ${i + 1}: เนื้อที่ / พื้นที่ต้องเป็นตัวเลข` };
     if (bad(r.acq_cost) || bad(r.value)) return { error: `แถวที่ ${i + 1}: ต้นทุน / มูลค่าต้องเป็นตัวเลขไม่ติดลบ` };
+    // อายุใช้งาน: ว่าง = 20 ปี · 0 = ไม่หักค่าเสื่อม (ตกลง 5 พ.ย. 2026)
     const y = r.useful_life_years ? Number(r.useful_life_years) : null;
-    if (y !== null && !(Number.isInteger(y) && y >= 1 && y <= 100)) return { error: `แถวที่ ${i + 1}: อายุใช้งานต้องเป็นจำนวนปี 1–100` };
+    if (y !== null && !(Number.isInteger(y) && y >= 0 && y <= 100)) return { error: `แถวที่ ${i + 1}: อายุใช้งานต้องเป็นจำนวนปี 0–100` };
+    // ราคาซาก: ช่องเดียว บาท หรือ % → salvage_value / salvage_pct
+    const sv = parseSalvage(r.type === "LAND" ? "" : r.salvage);
+    if ("error" in sv) return { error: `แถวที่ ${i + 1}: ${sv.error}` };
+    delete r.salvage;
+    Object.assign(r, sv);
   }
   const sum = list.reduce((t, r) => t + (Number(r.acq_cost) || 0), 0);
   const acq = num(form.get("acquisition_cost"));
