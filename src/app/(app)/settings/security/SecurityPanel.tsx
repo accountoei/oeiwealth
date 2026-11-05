@@ -14,7 +14,7 @@ const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-7
 const obtn = "inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50";
 const rbtn = "inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50";
 
-export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
+export default function SecurityPanel({ isAdmin, account }: { isAdmin: boolean; account?: string }) {
   const supabase = createClient();
   const [pw, setPw] = useState(""); const [pw2, setPw2] = useState("");
   const [pwMsg, setPwMsg] = useState<{ ok?: string; error?: string }>({});
@@ -76,7 +76,10 @@ export default function SecurityPanel({ isAdmin }: { isAdmin: boolean }) {
     <div className="grid gap-4 lg:grid-cols-2">
       {dialog}
       <form onSubmit={changePassword} className={box}>
-        <h2 className="font-medium text-slate-900">เปลี่ยนรหัสผ่าน</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h2 className="font-medium text-slate-900">เปลี่ยนรหัสผ่าน</h2>
+          {account && <span className="min-w-0 truncate text-xs text-slate-500">{account}</span>}
+        </div>
         <input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="รหัสผ่านใหม่ (อย่างน้อย 10 ตัว)" className={`block w-full ${input}`} />
         <input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="ยืนยันรหัสผ่านใหม่" className={`block w-full ${input}`} />
         <button disabled={busy} className={btn}>เปลี่ยนรหัสผ่าน</button>

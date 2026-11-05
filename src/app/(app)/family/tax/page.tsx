@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageInfo } from "@/components/HeaderBar";
 import { StatBox } from "@/components/Boxes";
 import { TabActions } from "@/components/TabActions";
@@ -42,6 +43,102 @@ function Detail({ l }: { l: Line }) {
   );
 }
 
+const LINE_COLS = "id,section,code,label,sort_order,system_amount,qty,detail,filed_amount,filed_qty,method,reason";
+/** ปีภาษีที่เลือกได้: ปีนี้ย้อนหลัง 4 ปี + ปีที่มีแบบภาษี */
+const yearsOf = (thisYear: number, extra: number[]) =>
+  [...new Set([thisYear, thisYear - 1, thisYear - 2, thisYear - 3, thisYear - 4, ...extra])].sort((a, b) => b - a);
+type Sb = Awaited<ReturnType<typeof createClient>>;
+
+/** ทั้งครอบครัว: แบบภาษีฉบับล่าสุดของแต่ละคนในปีที่เลือก + บรรทัดที่เก็บไว้ (2 รอบ · ไม่เรียก tax_system_lines) */
+async function loadFamilyTax(supabase: Sb, yParam: string | undefined, thisYear: number) {
+  const { data } = await supabase.from("tax_returns").select("id,person_id,tax_year,version,status,tax_result")
+    .is("deleted_at", null).order("version", { ascending: false });
+  const rets = (data ?? []) as { id: string; person_id: string; tax_year: number; version: number; status: string; tax_result: number | null }[];
+  const years = yearsOf(thisYear, rets.map((r) => r.tax_year));
+  const y = /^\d{4}$/.test(yParam ?? "") && years.includes(Number(yParam)) ? Number(yParam) : Math.max(0, ...rets.map((r) => r.tax_year)) || thisYear;
+  const latest = new Map<string, (typeof rets)[number]>();
+  rets.filter((r) => r.tax_year === y).forEach((r) => { if (!latest.has(r.person_id)) latest.set(r.person_id, r); });
+  const ids = [...latest.values()].map((r) => r.id);
+  const { data: lineRows, error } = ids.length
+    ? await supabase.from("tax_return_lines").select(`return_id,${LINE_COLS}`).in("return_id", ids).is("deleted_at", null)
+    : { data: [], error: null };
+  return { years, y, latest, lines: (lineRows ?? []) as (Line & { return_id: string })[], error };
+}
+
+function FamilyTax({ info, people, fam, thisYear, today }: {
+  info: React.ReactNode; people: { id: string; name: string; birth_date: string | null }[];
+  fam: Awaited<ReturnType<typeof loadFamilyTax>>; thisYear: number; today: string;
+}) {
+  const { y } = fam;
+  const rows = people.map((x) => {
+    const ret = fam.latest.get(x.id);
+    if (!ret) return { ...x, ret, calc: null };
+    const age = x.birth_date ? y - Number(x.birth_date.slice(0, 4)) : null;
+    return { ...x, ret, calc: calcTax(fam.lines.filter((l) => l.return_id === ret.id), y, { age }) };
+  });
+  const done = rows.filter((r) => r.calc);
+  const resultOf = (r: (typeof rows)[number]) => (r.ret?.status === "FILED" && r.ret.tax_result != null ? Number(r.ret.tax_result) : r.calc?.result ?? 0);
+  const tot = (f: (c: NonNullable<(typeof rows)[number]["calc"]>) => number) => done.reduce((t, r) => t + f(r.calc!), 0);
+  const totResult = done.reduce((t, r) => t + resultOf(r), 0);
+  const num = "px-3 text-right tabular-nums whitespace-nowrap";
+  return (
+    <div className="space-y-6">
+      {info}
+      <TabActions><TaxFilters persons={people} years={fam.years} p="all" y={y} /></TabActions>
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-medium text-slate-900">ทั้งครอบครัว · ปีภาษี {y + 543}</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          ยอดจากแบบภาษีที่สร้างไว้ของแต่ละคน (ไม่ดึงยอดจากระบบใหม่) · ยื่นแล้วใช้ยอดตามที่ยื่น · คนที่ยังไม่สร้างแบบร่าง กดที่ชื่อเพื่อเข้าไปสร้าง
+          {y >= thisYear && <span className="text-amber-700"> · ปีภาษียังไม่จบ ยอดเป็นข้อมูลถึงวันที่ {thDate(today)}</span>}
+        </p>
+        {fam.error && <p className="mb-2 text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {fam.error.message}</p>}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr><th className="py-2 pr-3">ผู้เสียภาษี</th><th className="pr-3">สถานะ</th><th className="px-3 text-right">เงินได้พึงประเมิน</th>
+                <th className="px-3 text-right">หักค่าใช้จ่าย / ลดหย่อน</th><th className="px-3 text-right">เงินได้สุทธิ</th><th className="px-3 text-right">ภาษีทั้งปี</th>
+                <th className="px-3 text-right">หัก ณ ที่จ่าย / เครดิต</th><th className="pl-3 text-right">ชำระเพิ่ม / ขอคืน</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => {
+                const c = r.calc;
+                const res = resultOf(r);
+                return (
+                  <tr key={r.id} className="align-top">
+                    <td className="whitespace-nowrap py-2 pr-3"><Link href={`/family/tax?p=${r.id}&y=${y}`} scroll={false} className="font-medium text-blue-700 hover:underline">{r.name}</Link></td>
+                    <td className="whitespace-nowrap pr-3">{r.ret
+                      ? <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_CLS[r.ret.status]}`}>{TAX_RETURN_STATUS_LABEL[r.ret.status]}{r.ret.version > 1 ? ` (ครั้งที่ ${r.ret.version})` : ""}</span>
+                      : <span className="text-xs text-slate-400">ยังไม่สร้างแบบร่าง</span>}</td>
+                    {c ? (
+                      <>
+                        <td className={num}>{money(c.assessable)}</td>
+                        <td className={num}>{money(c.expenses + c.deductions + c.donations)}</td>
+                        <td className={num}>{money(c.taxable)}</td>
+                        <td className={num}>{money(c.tax)}</td>
+                        <td className={num}>{money(c.credits)}</td>
+                        <td className={`pl-3 text-right tabular-nums whitespace-nowrap ${res < 0 ? "text-emerald-700" : ""}`}>{res < 0 ? "ขอคืน" : "ชำระ"} {money(Math.abs(res))}
+                          {r.ret?.status !== "FILED" && <div className="text-xs text-slate-500">ประมาณการ</div>}</td>
+                      </>
+                    ) : <td colSpan={6} className="px-3 text-center text-xs text-slate-400">-</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+            {done.length > 1 && (
+              <tfoot className="border-t border-slate-200 font-medium">
+                <tr><td className="py-2 pr-3">รวม {done.length} คน</td><td />
+                  <td className={num}>{money(tot((c) => c.assessable))}</td><td className={num}>{money(tot((c) => c.expenses + c.deductions + c.donations))}</td>
+                  <td className={num}>{money(tot((c) => c.taxable))}</td><td className={num}>{money(tot((c) => c.tax))}</td><td className={num}>{money(tot((c) => c.credits))}</td>
+                  <td className={`pl-3 text-right tabular-nums whitespace-nowrap ${totResult < 0 ? "text-emerald-700" : ""}`}>{totResult < 0 ? "ขอคืน" : "ชำระ"} {money(Math.abs(totResult))}</td></tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default async function TaxPage({ searchParams }: { searchParams: Promise<{ p?: string; y?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
@@ -50,12 +147,43 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   const today = todayBangkok();
   const thisYear = Number(today.slice(0, 4));
 
-  const { data: persons } = isAdmin
-    ? await supabase.from("persons").select("id,name,birth_date").is("deleted_at", null).order("sort_order").order("created_at")
-    : me.person_id ? await supabase.from("persons").select("id,name,birth_date").eq("id", me.person_id) : { data: [] };
-  const people = (persons ?? []) as { id: string; name: string; birth_date: string | null }[];
+  // ความเร็ว (5 พ.ย. 2026): รายชื่อ · แบบภาษีของคนที่น่าจะเปิด · สถานะ Drive เริ่มพร้อมกัน แล้วบรรทัดภาษีต่อจากแบบภาษีในรอบเดียวกัน (เดิม 3 รอบ → 2 รอบ)
+  const personsP = (isAdmin
+    ? supabase.from("persons").select("id,name,birth_date").is("deleted_at", null).order("sort_order").order("created_at").then((r) => r.data ?? [])
+    : me.person_id ? supabase.from("persons").select("id,name,birth_date").eq("id", me.person_id).then((r) => r.data ?? []) : Promise.resolve([]))
+    .then((d) => d as { id: string; name: string; birth_date: string | null }[]);
   const info = <PageInfo>ภาษีเงินได้บุคคลธรรมดารายปีของสมาชิกแต่ละคน · ยอดดึงจากรายได้ / รายจ่าย / ประกัน / หนี้ / การบริจาคที่บันทึกไว้แล้ว (ไม่ต้องกรอกซ้ำ) ·
     แก้ยอดใช้ยื่นได้พร้อมเหตุผล · ยื่นแล้วล็อกยอดตามที่ยื่น · ADMIN เห็นทุกคน บทบาทอื่นเห็นเฉพาะของตัวเอง</PageInfo>;
+
+  // ทั้งครอบครัว (ADMIN): อ่านเฉพาะยอดที่เก็บไว้ในแบบภาษี ไม่ดึงยอดจากระบบมาคำนวณใหม่ (ตกลง 5 พ.ย. 2026)
+  if (isAdmin && sp.p === "all") {
+    const [people, fam] = await Promise.all([personsP, loadFamilyTax(supabase, sp.y, thisYear)]);
+    return <FamilyTax info={info} people={people} fam={fam} thisYear={thisYear} today={today} />;
+  }
+
+  const guess = sp.p && sp.p !== "all" ? sp.p : me.person_id ?? null;
+  const loadOne = (pid: string) => supabase.from("tax_returns")
+    .select("id,tax_year,version,form_type,status,amend_reason,filed_date,reference_no,tax_result,settlement_status,settled_date,refreshed_at,notes")
+    .eq("person_id", pid).is("deleted_at", null).order("tax_year", { ascending: false }).order("version", { ascending: false })
+    .then(async ({ data: rets }) => {
+      const all = (rets ?? []) as Ret[];
+      const years = yearsOf(thisYear, all.map((r) => r.tax_year));
+      const y = /^\d{4}$/.test(sp.y ?? "") && years.includes(Number(sp.y)) ? Number(sp.y) : all[0]?.tax_year ?? thisYear;
+      const versions = all.filter((r) => r.tax_year === y);
+      const cur = versions[0];
+      const [lineRes, { data: links }] = await Promise.all([
+        cur
+          ? supabase.from("tax_return_lines").select(LINE_COLS).eq("return_id", cur.id).is("deleted_at", null).order("sort_order")
+          // ยังไม่สร้างแบบร่าง → ดึงยอดจากระบบมาแสดงเป็นตัวอย่าง (ครั้งเดียวที่ต้องคำนวณจากรายได้ / รายจ่าย)
+          : supabase.rpc("tax_system_lines", { p_person: pid, p_year: y }),
+        versions.length
+          ? supabase.from("document_links").select("entity_id,documents(id,title,deleted_at)").eq("entity_type", "TAX_RETURN").in("entity_id", versions.map((v) => v.id)).is("deleted_at", null)
+          : Promise.resolve({ data: [] as { entity_id: string; documents: unknown }[] }),
+      ]);
+      return { pid, all, years, y, versions, cur, lineRows: lineRes.data as unknown[] | null, lineErr: lineRes.error, links };
+    });
+  const firstP = guess ? loadOne(guess) : null;
+  const [people, first, { data: drive }] = await Promise.all([personsP, firstP, supabase.rpc("drive_status")]);
   if (people.length === 0) {
     return <div className="space-y-4">{info}<p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
       บัญชีผู้ใช้ของคุณยังไม่ได้ผูกกับสมาชิกครอบครัว จึงยังไม่มีข้อมูลภาษีให้ดู · ให้ ADMIN ผูกที่ Settings → User &amp; Security</p></div>;
@@ -63,26 +191,8 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
   const p = people.find((x) => x.id === sp.p)?.id ?? people.find((x) => x.id === me.person_id)?.id ?? people[0].id;
   const canWrite = isAdmin || ((me.role === "EDITOR" || me.role === "CONTRIBUTOR") && p === me.person_id);
   const canDelete = canWrite && (isAdmin || me.role === "EDITOR");
-
-  const { data: rets } = await supabase.from("tax_returns")
-    .select("id,tax_year,version,form_type,status,amend_reason,filed_date,reference_no,tax_result,settlement_status,settled_date,refreshed_at,notes")
-    .eq("person_id", p).is("deleted_at", null).order("tax_year", { ascending: false }).order("version", { ascending: false });
-  const all = (rets ?? []) as Ret[];
-  const years = [...new Set([thisYear, thisYear - 1, thisYear - 2, thisYear - 3, thisYear - 4, ...all.map((r) => r.tax_year)])].sort((a, b) => b - a);
-  const y = /^\d{4}$/.test(sp.y ?? "") && years.includes(Number(sp.y)) ? Number(sp.y) : all[0]?.tax_year ?? thisYear;
-  const versions = all.filter((r) => r.tax_year === y);
-  const cur = versions[0];
-
-  const [{ data: lineRows, error: lineErr }, { data: drive }, { data: links }] = await Promise.all([
-    cur
-      ? supabase.from("tax_return_lines").select("id,section,code,label,sort_order,system_amount,qty,detail,filed_amount,filed_qty,method,reason")
-          .eq("return_id", cur.id).is("deleted_at", null).order("sort_order")
-      : supabase.rpc("tax_system_lines", { p_person: p, p_year: y }),
-    supabase.rpc("drive_status"),
-    versions.length
-      ? supabase.from("document_links").select("entity_id,documents(id,title,deleted_at)").eq("entity_type", "TAX_RETURN").in("entity_id", versions.map((v) => v.id)).is("deleted_at", null)
-      : Promise.resolve({ data: [] as { entity_id: string; documents: unknown }[] }),
-  ]);
+  // คนที่เริ่มดึงไว้ไม่ใช่คนที่เปิดจริง (ลิงก์เก่า / ไม่มีสิทธิ์) → ดึงใหม่ของคนที่ถูก (ไม่ค่อยเกิด)
+  const { all, years, y, versions, cur, lineRows, lineErr, links } = first && first.pid === p ? first : await loadOne(p);
   const lines = ((lineRows ?? []) as Line[]).map((l, i) => ({ ...l, id: l.id ?? `preview-${i}` }));
   const connected = !!(drive as { connected?: boolean } | null)?.connected;
   const docs = (links ?? []).map((l) => (Array.isArray(l.documents) ? l.documents[0] : l.documents) as { id: string; title: string; deleted_at: string | null } | null)

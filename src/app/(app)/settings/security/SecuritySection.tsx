@@ -53,11 +53,8 @@ export default async function SecuritySection({ sp, data }: { sp: SecuritySp; da
 
   return (
     <div id="security" className="scroll-mt-20 space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">Security</h2>
-        <p className="text-sm text-slate-500">{me.email} · {ROLE_LABEL[me.role]}</p>
-      </div>
-      <SecurityPanel isAdmin={isAdmin} />
+      {/* ไม่มีหัว "Security" · อีเมล · สิทธิ์ อยู่มุมขวากล่องเปลี่ยนรหัสผ่าน (ตกลง 5 พ.ย. 2026) */}
+      <SecurityPanel isAdmin={isAdmin} account={`${me.email} · ${ROLE_LABEL[me.role]}`} />
 
       {isAdmin && (
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">

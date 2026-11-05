@@ -5,7 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addCheckup, type ActionState } from "./actions";
 import { METRICS } from "./metrics";
 import Flash from "@/components/Flash";
-import { SMALL_BTN, SMALL_DEL_BTN } from "@/lib/format";
+import { ROW_BTN, SMALL_BTN, SMALL_DEL_BTN } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const cell = "w-full rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -20,7 +20,7 @@ export default function CheckupForm({ personId, today }: { personId: string; tod
   const [rows, setRows] = useState<R[]>(["SYSTOLIC_BP", "DIASTOLIC_BP", "FBS", "CHOLESTEROL", "LDL", "HDL"].map(blank));
   const [state, action, pending] = useActionState<ActionState, FormData>(addCheckup, {});
   const set = (i: number, p: Partial<R>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...p } : r)));
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>+ บันทึกผลตรวจสุขภาพ</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>+ บันทึกผลตรวจ</button>;
   if (!open) return trigger;
   const payload = rows.filter((r) => r.metric && r.value.trim()).map((r) => {
     const n = Number(r.value.replace(/,/g, ""));
