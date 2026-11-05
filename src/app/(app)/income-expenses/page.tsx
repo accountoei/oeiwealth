@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Fragment } from "react";
-import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import RowActions from "@/components/RowActions";
 import {
@@ -12,7 +11,7 @@ import {
   RecurringPayActions, UndoDismissButton, MovementForm, ReimbursementForm, TemplateForm, TemplateToggle,
   type Bank, type Card, type Claim, type Liab,
 } from "./forms";
-import { INC_SELECT, MOVE_SELECT, makeEntryKit, pname, type Move } from "./entry-kit";
+import { makeEntryKit, pname, type Move } from "./entry-kit";
 import { ScrollToHash, SubPanel, SubTabs, TabLink, TabNav, TabPanel, TabsProvider } from "./tabs";
 import { TabActions } from "@/components/TabActions";
 import MonthTable, { type MonthRow } from "./MonthTable";
@@ -28,11 +27,10 @@ import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
 import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
-import { buildHints } from "@/lib/category-hints";
 import { stripPending } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
 import { StatBox } from "@/components/Boxes";
-import { loadPfCash } from "@/lib/pf-cash";
+import { loadIeMonth, loadIePersonShares, loadIeRef } from "./page-data";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -48,7 +46,6 @@ type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: stri
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
   const me = await requireAppUser();
-  const supabase = await createClient();
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   // ?tab=moves (ลิงก์เดิม) → ภาพรวม แล้วเลื่อนไปกล่อง "เงินเข้า–ออกบัญชีเดือนนี้"
@@ -57,122 +54,28 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   // ดึงข้อมูลทุกชุดพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอทีละชุดต่อกันราว 10 ทอด → ช้ามากเมื่อ Supabase เพิ่งตื่น
-  //   ชุดที่ต้องใช้ผลของอีกชุดเริ่มทันทีที่ชุดนั้นเสร็จ: ส่วนแบ่งรายบุคคล ← สมาชิกที่เลือก · ยอดอัปเดตในเดือน ← รายชื่อบัญชี
+  // แยกเป็นชุดไม่ขึ้นกับเดือน / ชุดของเดือน / ส่วนแบ่งรายบุคคล แล้วจำไว้จนกว่าจะมีการบันทึก (5 พ.ย. 2026 · page-data.ts)
+  //   → เปลี่ยนเดือน / กลับเข้าหน้า ถามเฉพาะชุดที่ยังไม่ได้จำ · ส่วนแบ่งรายบุคคลเริ่มทันทีที่รู้สมาชิกที่เลือก
+  //   มุมมองรายบุคคล: ระบุคนเอง → 100% · ไม่ระบุ: ค่าใช้จ่าย = เจ้าของบัตร / เจ้าของบัญชีที่จ่าย · รายได้ = เจ้าของทรัพย์สิน / เจ้าของบัญชีที่รับ
   const pvQ = loadPersonView(sp.p, { liabilities: true });
-  const banksQ = supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order").then((r) => r);
-  const [pv, [{ data: incShares }, { data: expShares }],
-    [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
-      { data: incomes }, { data: expected }, { data: templates }, { data: month }, { data: items }, { data: reimbStatus },
-      { data: reimbs }, { data: moves }, { data: claimsRaw }, { data: costRows }, { data: utilRows }, { data: loanRows }, { data: insRows }],
-    [{ data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc }, { data: rexpRows }, { data: rexpTplRaw }, { data: leaseRaw }, { data: covRaw }],
-    [pfCash, { data: pfCardPays }], { data: hintRows }, { data: propRows }, { data: openRaw }, { data: stmtRaw }] = await Promise.all([
+  const [pv, { incShares, expShares }, ref, mon] = await Promise.all([
     pvQ,
-    // มุมมองรายบุคคล: ส่วนแบ่งรายได้ / ค่าใช้จ่ายของคนที่เลือก (กติกาเดียวกับ Dashboard)
-    //   ระบุคนเอง → 100% · ไม่ระบุ: ค่าใช้จ่าย = เจ้าของบัตร / เจ้าของบัญชีที่จ่าย · รายได้ = เจ้าของทรัพย์สิน / เจ้าของบัญชีที่รับ
-    pvQ.then(async (v) => v.personId ? Promise.all([
-      supabase.from("v_income_by_person").select("income_id,share_percent,amount_share,tax_share,base_amount_share")
-        .eq("person_id", v.personId).gte("date", start).lte("date", end),
-      supabase.from("v_expense_by_person").select("expense_item_id,share_percent,amount_share,base_amount_share")
-        .eq("person_id", v.personId).gte("date", start).lte("date", end),
-    ]) : [{ data: null }, { data: null }] as const),
-    Promise.all([
-      supabase.from("families").select("go_live_date").maybeSingle(),
-      banksQ,
-      supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_cash_holding_id,autopay_mode")
-        .is("deleted_at", null).neq("status", "CLOSED"),
-      supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
-      supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-      supabase.from("v_fx_status").select("currency,rate_to_thb"),
-      supabase.from("income_transactions").select(INC_SELECT)
-        .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
-      supabase.from("v_expected_income").select("*").eq("income_period", start).order("due_date"),
-      supabase.from("recurring_income_templates").select("id,name,income_type,expected_amount,currency,frequency,due_day,active,person_id,receive_to_asset_id,start_date,end_date,persons(name)")
-        .is("deleted_at", null).order("name"),
-      supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-      supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id),internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)")
-        .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
-      supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status").eq("is_reimbursable", true),
-      supabase.from("expense_reimbursements").select("id,received_date,amount,currency,expense_item_id").is("deleted_at", null).gte("received_date", start).lte("received_date", end),
-      supabase.from("cash_movements").select(MOVE_SELECT)
-        .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end).order("movement_date", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("insurance_claims").select("id,claim_date,claimed_amount,received_amount,currency,status,insurance_policies(insurer,policy_no,persons!insurance_policies_person_id_fkey(name))")
-        .is("deleted_at", null).in("status", ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_PAID"]).order("claim_date", { ascending: false }),
-      // ค่าใช้จ่ายประจำ (อสังหาฯ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-      supabase.from("v_property_cost_tracking")
-        .select("utility_id,property_asset_id,property_name,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
-        .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
-      supabase.from("property_utilities")
-        .select("id,utility_type,provider,expected_amount,currency,frequency,due_day,due_month,property_details!inner(asset_id,property_type,assets!inner(name,status,deleted_at))")
-        .is("deleted_at", null).eq("active", true).not("frequency", "is", null),
-      // งวดเงินให้กู้: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-      supabase.from("v_loan_schedule_status")
-        .select("id,loan_asset_id,loan_name,borrower_name,currency,installment_no,due_date,principal_due,interest_due,total_due,principal_remaining,interest_remaining,total_remaining,status")
-        .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL,DUE),due_date.lt.${start})`)
-        .neq("status", "WRITTEN_OFF").order("due_date"),
-      // งวดเบี้ยประกัน / ผลประโยชน์: ครบกำหนดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-      supabase.from("v_insurance_schedule_status")
-        .select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,remaining,status,insurer,policy_no,person_id,payer_person_id,cash_value_asset_id")
-        .or(`and(due_date.gte.${start},due_date.lte.${end}),and(status.in.(OVERDUE,PARTIAL),due_date.lt.${start})`)
-        .not("status", "in", "(CLOSED,HISTORY,SKIPPED)").order("due_date"),
-    ]),
-    // รายการ "รอแยกรายละเอียด" ทุกเดือน (แจ้งเตือน)
-    Promise.all([
-      supabase.from("v_card_balances").select("card_id,current_balance"),
-      supabase.from("ie_categories").select("id,kind,name,sort_order,active").is("deleted_at", null).order("sort_order").order("name"),
-      supabase.from("expense_items").select("expense_category").is("deleted_at", null).not("expense_category", "is", null),
-      supabase.from("income_transactions").select("income_subtype").is("deleted_at", null).not("income_subtype", "is", null),
-      // ค่าใช้จ่ายประจำทั่วไป: งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน
-      supabase.from("v_recurring_expense_tracking")
-        .select("template_id,name,expense_category,person_id,pay_via,pay_from_asset_id,pay_from_credit_card_id,cost_period,due_date,expected_amount,paid_amount,currency,status,dismissal_id,dismissal_reason")
-        .or(`cost_period.eq.${start},and(status.eq.OVERDUE,cost_period.lt.${start})`).order("due_date"),
-      supabase.from("recurring_expense_templates")
-        .select("id,name,expense_category,person_id,expected_amount,currency,frequency,due_day,pay_via,pay_from_asset_id,pay_from_credit_card_id,start_date,end_date,active,notes,persons(name)")
-        .is("deleted_at", null).order("name"),
-      // ค่าเช่าจากสัญญาเช่าที่ยังมีผล (ดูอย่างเดียวในแท็บตั้งค่า · แก้ที่หน้าทรัพย์สิน)
-      supabase.from("v_lease_status")
-        .select("id,property_asset_id,unit_label,tenant_name,rent_amount,rent_currency,payment_frequency,payment_due_day,start_date,end_date,lease_status")
-        .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]).order("end_date"),
-      // ความคุ้มครองของกรมธรรม์ที่มีผล → "เคลมใหม่" ในฟอร์มบันทึกเงินคืน (สร้างเคลมให้เอง · ตกลง 2 พ.ย. 2026)
-      supabase.from("insurance_coverages").select("id,coverage_type,currency,insurance_policies!inner(insurer,policy_no,status,deleted_at,persons!insurance_policies_person_id_fkey(name))")
-        .is("deleted_at", null).eq("insurance_policies.status", "ACTIVE").is("insurance_policies.deleted_at", null),
-    ]),
-    // บัญชีเงินฝากในพอร์ต (ค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ต) + จ่ายบัตรจากพอร์ตเดือนนี้
-    Promise.all([
-      loadPfCash(supabase),
-      supabase.from("investment_transactions").select("to_credit_card_id").eq("transaction_type", "PAYMENT").not("to_credit_card_id", "is", null)
-        .is("deleted_at", null).gte("transaction_date", start).lte("transaction_date", end),
-    ]),
-    // เดาหมวด / บัญชีจากรายการค่าใช้จ่ายที่เคยบันทึกเอง (ไม่รวมรายการจากหน้าอื่น / ก้อนรอแยก)
-    supabase.from("expense_items")
-      .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
-      .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
-      .is("insurance_schedule_line_id", null).is("property_utility_id", null)
-      .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500),
-    // บ้าน / ที่ดินที่ถืออยู่ (ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค เลือกทรัพย์สินได้ · ตกลง 30 ต.ค. 2026)
-    supabase.from("property_details").select("asset_id,assets!inner(name,status,deleted_at)").is("deleted_at", null),
-    // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี
-    supabase.rpc("bank_balances_at", { p_date: new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10) }),
-    // ยอดอัปเดตคงเหลือของแต่ละบัญชีในเดือนนี้ (เริ่มทันทีที่ได้รายชื่อบัญชี)
-    banksQ.then(async ({ data }) => {
-      const ids = ((data ?? []) as { asset_id: string }[]).map((b) => b.asset_id);
-      return ids.length ? await supabase.from("asset_valuations").select("id,asset_id,valuation_date,value")
-        .in("asset_id", ids).is("deleted_at", null).gte("valuation_date", start).lte("valuation_date", end) : { data: [] };
-    }),
+    pvQ.then((v) => (v.personId ? loadIePersonShares(v.personId, start, end) : { incShares: null, expShares: null })),
+    loadIeRef(),
+    loadIeMonth(start, end),
   ]);
+  const { banksRaw, cardsRaw, liabRaw, persons, fx, templates, claimsRaw, utilRows, cardBalRaw, rexpTplRaw, leaseRaw, covRaw, pfCash, propRows,
+    leaseProps, expCatAll, incSubAll, expHints } = ref;
+  const { incomes, expected, month, items, reimbStatus, reimbs, moves, costRows, loanRows, insRows, rexpRows, pfCardPays, openRaw, valuations,
+    moveAssets } = mon;
   const incShare = new Map((incShares ?? []).map((r) => [r.income_id as string, r]));
   const expShare = new Map((expShares ?? []).map((r) => [r.expense_item_id as string, r]));
-  // หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเองในแท็บ "ตั้งค่า")
-  const useCount = new Map<string, number>();
-  (catUseExp ?? []).forEach((r) => { const k = `E:${r.expense_category}`; useCount.set(k, (useCount.get(k) ?? 0) + 1); });
-  (catUseInc ?? []).forEach((r) => { const k = `I:${r.income_subtype}`; useCount.set(k, (useCount.get(k) ?? 0) + 1); });
-  const catsOf = (kind: string) => (catRows ?? []).filter((c) => c.kind === kind)
-    .map((c) => ({ id: c.id as string, name: c.name as string, active: !!c.active, used: useCount.get(`${kind === "EXPENSE" ? "E" : "I"}:${c.name}`) ?? 0 }));
-  const expCatAll = catsOf("EXPENSE"), incSubAll = catsOf("INCOME_OTHER");
+  // หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเองในแท็บ "ตั้งค่า") · จำนวนรายการที่ใช้แต่ละหมวดนับไว้ใน page-data.ts
   const expCats = expCatAll.filter((c) => c.active).map((c) => c.name);
   const incSubs = incSubAll.filter((c) => c.active).map((c) => c.name);
   const withCurrent = (list: string[], cur: string | null): [string, string][] =>
     [...(cur && !list.includes(cur) ? [cur] : []), ...list].map((c) => [c, c]);
-  const goLive = family?.go_live_date ?? "";
+  const goLive = ref.goLive;
   const minDate = goLive > start ? goLive : start;
   const maxDate = end < today ? end : today;
   const banks = (banksRaw as Bank[] | null) ?? [];
@@ -186,7 +89,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     ...cards.map((c) => [c.id, c.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string]),
     ...pfCash.map((h) => [h.id, `พอร์ต ${h.label}`] as [string, string])]);
   const personOpts: [string, string][] = (persons ?? []).map((p) => [p.id, p.name]);
-  const expHints = buildHints(hintRows ?? [], expCats);
   const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
   const claims: Claim[] = (claimsRaw ?? []).map((c) => {
     const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
@@ -278,17 +180,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     || [m.to_credit_card_id, m.to_liability_id].some((id) => id && pv.showLiability(id)));
   // ชื่อทรัพย์สินอื่นในรายการเงิน (เงินให้กู้ / พอร์ต / ทรัพย์สิน / มูลค่าเวนคืน)
   const otherIds = [...new Set(moveList.flatMap((m) => [m.from_asset_id, m.to_asset_id]).filter((x): x is string => !!x && !name.has(x)))];
-  // สัญญาเช่าที่ยังมีผล (รายบุคคล = ทรัพย์สินที่คนนั้นถือ) → ชื่อ / ประเภททรัพย์สินดึงพร้อมกับชื่อทรัพย์สินอื่นด้านบน
+  // สัญญาเช่าที่ยังมีผล (รายบุคคล = ทรัพย์สินที่คนนั้นถือ) · ชื่อ / ประเภททรัพย์สินถามไว้พร้อมชุดข้อมูลแล้ว (leaseProps)
   type Lease = { id: string; property_asset_id: string; unit_label: string | null; tenant_name: string; rent_amount: number; rent_currency: string;
     payment_frequency: string; payment_due_day: number | null; start_date: string; end_date: string; lease_status: string };
   const leases = ((leaseRaw as Lease[] | null) ?? []).filter((l) => pv.showAsset(l.property_asset_id));
-  const leaseIds = [...new Set(leases.map((l) => l.property_asset_id))];
-  const [{ data: otherAssets }, { data: leaseProps }] = await Promise.all([
-    otherIds.length ? supabase.from("assets").select("id,name,asset_type").in("id", otherIds)
-      : { data: [] as { id: string; name: string; asset_type: string }[] },
-    leaseIds.length ? supabase.from("property_details").select("asset_id,property_type,assets!inner(name)").in("asset_id", leaseIds)
-      : { data: [] as { asset_id: string; property_type: string; assets: unknown }[] },
-  ]);
+  // ชื่อทรัพย์สินอื่น: ถามทุกทรัพย์สินในรายการของเดือนไว้แล้ว (page-data.ts) · ใช้เฉพาะที่ไม่ใช่บัญชี / บัตร / หนี้ (เหมือนเดิม)
+  const otherSet = new Set(otherIds);
+  const otherAssets = ((moveAssets ?? []) as { id: string; name: string; asset_type: string }[]).filter((a) => otherSet.has(a.id));
   // บัตรตัดบัญชีอัตโนมัติ: งวดของเดือนนี้ที่ยังไม่มีรายการจ่ายบัตร → ถึงวันครบชำระแล้ว = "รอยืนยัน" · ยังไม่ถึง = "จะตัด"
   const lastDay = Number(end.slice(8, 10));
   const autopay = (cardsRaw ?? [])
@@ -312,14 +210,15 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     .sort((a, b) => a.name.localeCompare(b.name, "th"));
   // ชุดคำสั่งกลาง (แก้ไข / ลบ / แยกก้อน / แถวเงินเข้า–ออก) — ใช้ร่วมกับหน้ารายละเอียดบัญชี
   const kit = makeEntryKit({ ym, personId: pv.personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons: persons ?? [],
-    pfCash, incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets: (otherAssets ?? []) as { id: string; name: string; asset_type: string }[],
+    pfCash, incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets,
     tabLinks: true, properties });
   const { incSource, expSource, incEdit, expEdit, incSplit, expSplit } = kit;
   const moveRows = (withActions: boolean): MoveRow[] => kit.buildMoveRows(moveList as Move[], withActions);
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
   // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี → ยอดคงเหลือหลังแต่ละรายการ เมื่อกรองทีละบัญชี
   const statements: Record<string, { key: string; date: string; value: number; label: string }[]> = {};
-  (stmtRaw ?? []).forEach((v) => { (statements[v.asset_id as string] ??= []).push({ key: `v${v.id}`, date: v.valuation_date as string, value: Number(v.value), label: "อัปเดตยอดคงเหลือ" }); });
+  const bankSet = new Set(banks.map((b) => b.asset_id));
+  (valuations ?? []).filter((v) => bankSet.has(v.asset_id as string)).forEach((v) => { (statements[v.asset_id as string] ??= []).push({ key: `v${v.id}`, date: v.valuation_date as string, value: Number(v.value), label: "อัปเดตยอดคงเหลือ" }); });
   const openings = Object.fromEntries(((openRaw as { asset_id: string; calculated: number | null }[] | null) ?? [])
     .map((r) => [r.asset_id, r.calculated == null ? null : Number(r.calculated)]));
   // สรุปเงินเข้า–ออก (ทุกบัญชี · ไม่นับโอนระหว่างบัญชีตัวเอง) สำหรับแท็บภาพรวม
