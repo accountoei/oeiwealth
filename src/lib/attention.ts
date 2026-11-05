@@ -2,7 +2,7 @@ import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { cachedData } from "@/lib/data-cache";
-import { money, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { addDays, money, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { monthToClose } from "@/lib/closing";
 
 export type AttentionItem = { text: string; href: string; tone: "red" | "amber" | "slate" };
@@ -73,7 +73,9 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   });
   const atCost = (holds ?? []).filter((x) => x.valued_at_cost);
   if (atCost.length) attention.push({ text: `หลักทรัพย์ใช้ราคาทุน รอ Statement ${atCost.length} ตัว`, href: "/investments", tone: "slate" });
-  (holds ?? []).filter((x) => x.derived_status === "MATURITY_SOON").forEach((x) =>
+  // ครบกำหนดภายใน 60 วัน (เจ้าของ 5 พ.ย. 2026 · เดิม 30 วันตาม derived_status ของ View)
+  const maturityTo = addDays(today, 60);
+  (holds ?? []).filter((x) => x.maturity_date && x.maturity_date >= today && x.maturity_date <= maturityTo).forEach((x) =>
     attention.push({ text: `${x.name} ครบกำหนด ${thDate(x.maturity_date)}`, href: `/investments/${x.portfolio_asset_id}`, tone: "slate" }));
   (leases ?? []).forEach((l) => attention.push({ text: `สัญญาเช่า ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} หมด ${thDate(l.end_date)}`, href: `/property/${l.property_asset_id}`, tone: "slate" }));
 

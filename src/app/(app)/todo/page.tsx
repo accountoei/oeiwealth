@@ -42,7 +42,8 @@ export default async function TodoPage({ searchParams }: { searchParams: Promise
                 ))}
               </ul>
             )}
-            <p className="mt-3 text-xs text-slate-500">● แดง = ต้องทำก่อน (เช่น ปิดเดือน บัญชีติดลบ) · ● เหลือง = ควรตรวจ · ● เทา = แจ้งให้ทราบ</p>
+            <p className="mt-3 text-xs text-slate-500">
+              <span className="text-red-600">● แดง</span> = ต้องทำก่อน (เช่น ปิดเดือน บัญชีติดลบ) · <span className="text-amber-600">● ส้ม</span> = ควรตรวจ · <span className="text-slate-400">●</span> เทา = แจ้งให้ทราบ</p>
           </div>
         </TabPanel>
 
