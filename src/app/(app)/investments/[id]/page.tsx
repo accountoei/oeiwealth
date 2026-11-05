@@ -143,6 +143,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const transfers = (mvs as PfTransfer[] | null) ?? [];
   const transferById = new Map(transfers.map((m) => [m.id, m]));
   const invested = netInvested(id, a.currency, (capPre as CapitalPre[] | null) ?? [], transfers as unknown as CapitalMove[]);
+  // มียอดตั้งต้นก่อน Go-live แต่ยังไม่ได้ใส่เงินโอนก่อน Go-live → กำไร / ขาดทุนเทียบเงินลงทุนยังไม่ครบ (ไม่แสดง %)
+  const missingPre = txList.some((t) => t.transaction_type === "OPENING_BALANCE") && !invested.lines.some((l) => l.kind === "PRE");
   // เงินโอนที่ยังไม่ทราบยอด (รอยอด) รายบัญชี — ที่ทราบยอดแล้วนับในยอดบัญชีเงินฝากทันที
   const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
@@ -208,27 +210,21 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
+          <NetInvestedBox assetId={id} currency={a.currency} investedThb={invested.thb} investedCcy={invested.ccy}
+            valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
+            valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
+            incomeThb={incomeThb} missingPre={missingPre}
+            closed={a.status === "CLOSED"} lines={invested.lines} goLive={goLive} canWrite={canWrite} canDelete={canDelete} paths={paths}>
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (
               <div className="mt-1 text-xs text-slate-500">= {money(pv?.portfolio_value ?? null, a.currency, 0)}
                 {pv?.portfolio_fx_rate ? ` · 1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท` : ""}</div>
             )}
-            <div className={`mt-1 text-xs ${Number(pv?.in_transit ?? 0) !== 0 ? "text-amber-700" : "text-slate-500"}`}>
-              {Number(pv?.in_transit ?? 0) !== 0 ? `+ เงินโอนที่รอใส่ยอด ${money(pv?.in_transit ?? 0, a.currency, 0)}` : ""}</div>
-            <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
-              <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินฝากในพอร์ต</dt>
-                <dd className="text-right tabular-nums">{cashByCcy.size === 0 ? "-" : [...cashByCcy.entries()].map(([c, x]) => <div key={c}>{money(x.value, c, 0)}</div>)}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-slate-500">หลักทรัพย์</dt><dd className="tabular-nums">{money(secThb, "THB", 0)}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-slate-500">รายได้ลงทุนตั้งแต่ Go-live</dt><dd className="tabular-nums">{money(incomeThb, "THB", 0)}</dd></div>
-            </dl>
-            <p className="mt-2 text-xs text-slate-400">เงินฝากคำนวณจาก Statement ล่าสุด + รายการหลังจากนั้น · รายได้ก่อนหักภาษี</p>
-          </div>
-          <NetInvestedBox assetId={id} currency={a.currency} investedThb={invested.thb} investedCcy={invested.ccy}
-            valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
-            valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
-            closed={a.status === "CLOSED"} lines={invested.lines} goLive={family?.go_live_date ?? ""} canWrite={canWrite} canDelete={canDelete} paths={paths} />
+            {Number(pv?.in_transit ?? 0) !== 0 && (
+              <div className="mt-1 text-xs text-amber-700">+ เงินโอนที่รอใส่ยอด {money(pv?.in_transit ?? 0, a.currency, 0)}</div>
+            )}
+          </NetInvestedBox>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
           </div>

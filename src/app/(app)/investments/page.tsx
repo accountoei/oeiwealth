@@ -167,6 +167,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const share = (m: Map<string, number>, label: (k: string) => string, offset = 0) =>
     [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ key: k, name: label(k), value: v, color: SHARE_COLORS[(i + offset) % SHARE_COLORS.length] }));
 
+  const openCount = list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length;
+  const closedCount = list.length - openCount;
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -178,11 +180,10 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
 
       <TabPanel id="overview" className="space-y-6">
 
-      <section className={`grid gap-4 sm:grid-cols-2 ${allInv.length ? "lg:grid-cols-3 xl:grid-cols-5" : "xl:grid-cols-4"}`}>
-        {/* เรียงตามที่ตกลง 27 ต.ค. 2026: เงินฝากในพอร์ต · จำนวนพอร์ต · รายได้ · มูลค่าลงทุนรวม (ท้ายสุด) */}
-        <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)} />
-        <StatBox label="จำนวนพอร์ต" value={String(list.filter((p) => pfStatus.get(p.asset_id) !== "CLOSED").length)}
-          sub={list.some((p) => pfStatus.get(p.asset_id) === "CLOSED") ? `ปิดแล้ว ${list.filter((p) => pfStatus.get(p.asset_id) === "CLOSED").length} พอร์ต` : undefined} />
+      <section className={`grid gap-4 sm:grid-cols-2 ${allInv.length ? "xl:grid-cols-4" : "lg:grid-cols-3"}`}>
+        {/* 4 กล่องเหมือนหน้าอื่น (5 พ.ย. 2026): เงินฝากในพอร์ต + จำนวนพอร์ต · รายได้ · เงินลงทุนสุทธิ · มูลค่าลงทุนรวม (ท้ายสุด) */}
+        <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)}
+          sub={`พอร์ตที่เปิด ${openCount} พอร์ต${closedCount ? ` · ปิดแล้ว ${closedCount}` : ""}`} />
         <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
         {allInv.length > 0 && (
           <StatBox label="เงินลงทุนสุทธิ (พอร์ตที่เปิด)" value={money(invOpen, "THB", 0)}

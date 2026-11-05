@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
 import Flash from "@/components/Flash";
 import RowActions from "@/components/RowActions";
@@ -14,13 +14,16 @@ const signed = (v: number, ccy?: string) => signedMoney(v, ccy, 0);
 const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
 
 /**
- * กล่อง "เงินลงทุนสุทธิ" ของพอร์ต (ตกลง 2 พ.ย. 2026)
- * เงินโอนเข้าก่อน Go-live (กรอกที่นี่) + โอนไป − โอนกลับ หลัง Go-live (ปุ่มโอนเงิน) เทียบมูลค่าล่าสุด
+ * กล่องสรุปมูลค่าพอร์ต (รวมกล่องมูลค่าเป็นบาท + เงินลงทุนสุทธิ · ตกลง 5 พ.ย. 2026)
+ * หัวกล่อง (children) = มูลค่าเป็นบาทที่ใช้ในความมั่งคั่งสุทธิ · ต่อด้วยเงินลงทุนสุทธิ / กำไร / ขาดทุนรวม / รายได้ลงทุน
+ * เงินลงทุนสุทธิ = เงินโอนเข้าก่อน Go-live (กรอกที่นี่) + โอนไป − โอนกลับ หลัง Go-live (ปุ่มโอนเงิน) · เทียบมูลค่าล่าสุด (รวมเงินโอนรอใส่ยอด)
  * พอร์ตต่างประเทศ: บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน · พอร์ตปิดแล้ว = กำไร / ขาดทุนที่รับรู้แล้ว
+ * missingPre = พอร์ตมียอดตั้งต้นก่อน Go-live แต่ยังไม่ได้ใส่เงินโอนก่อน Go-live → ไม่แสดง % (ยอดยังไม่ครบ)
  */
-export default function NetInvestedBox({ assetId, currency, investedThb, investedCcy, valueThb, valueCcy, closed, lines, goLive, canWrite, canDelete, paths }: {
+export default function NetInvestedBox({ assetId, currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, missingPre, closed, lines, goLive, canWrite, canDelete, paths, children }: {
   assetId: string; currency: string; investedThb: number; investedCcy: number | null; valueThb: number | null; valueCcy: number | null;
-  closed: boolean; lines: CapitalLine[]; goLive: string; canWrite: boolean; canDelete: boolean; paths: string[];
+  incomeThb: number; missingPre: boolean;
+  closed: boolean; lines: CapitalLine[]; goLive: string; canWrite: boolean; canDelete: boolean; paths: string[]; children: ReactNode;
 }) {
   const [list, setList] = useState(false);
   const [add, setAdd] = useState(false);
@@ -28,24 +31,27 @@ export default function NetInvestedBox({ assetId, currency, investedThb, investe
   const thb = vsInvested(valueThb, investedThb);
   const ccy = fx ? vsInvested(valueCcy, investedCcy) : null;
   const plLabel = closed ? "กำไร / ขาดทุน (รับรู้แล้ว)" : "กำไร / ขาดทุนรวม";
+  const pct = (p: number | null) => (missingPre ? "" : pctTxt(p));
+  const tone = (v: number) => (missingPre ? "text-slate-500" : sign(v));
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-      <div className="text-xs text-slate-500">เงินลงทุนสุทธิ (เงินโอนเข้า − โอนกลับ)</div>
-      {lines.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">ยังไม่มีเงินโอน{canWrite ? " · ใส่เงินที่โอนไปก่อน Go-live เพื่อเทียบกับมูลค่าล่าสุด" : ""}</p>
-      ) : (
-        <dl className="mt-2 space-y-1.5 text-xs">
-          <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินลงทุนสุทธิ</dt>
-            <dd className="text-right tabular-nums"><div className="text-sm font-medium">{money(investedThb, "THB", 0)}</div>
-              {fx && <div className="text-slate-500">{investedCcy == null ? `${currency} ยังไม่ครบ` : money(investedCcy, currency, 0)}</div>}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-slate-500">มูลค่าล่าสุด</dt>
-            <dd className="text-right tabular-nums"><div>{money(valueThb ?? 0, "THB", 0)}</div>
-              {fx && <div className="text-slate-500">{money(valueCcy ?? 0, currency, 0)}</div>}</dd></div>
-          <div className="flex justify-between gap-3 border-t border-slate-100 pt-1.5"><dt className="text-slate-500">{plLabel}</dt>
+      {children}
+      <dl className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
+        <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินลงทุนสุทธิ<div className="text-slate-400">เงินโอนเข้า − โอนกลับ</div></dt>
+          <dd className="text-right tabular-nums">{lines.length === 0 ? <span className="text-slate-500">ยังไม่มีเงินโอน</span> : <>
+            <div className="text-sm font-medium">{money(investedThb, "THB", 0)}</div>
+            {fx && <div className="text-slate-500">{investedCcy == null ? `${currency} ยังไม่ครบ` : money(investedCcy, currency, 0)}</div>}</>}</dd></div>
+        {lines.length > 0 && (
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">{plLabel}</dt>
             <dd className="text-right tabular-nums">
-              {thb && <div className={`text-sm font-medium ${sign(thb.pl)}`}>{signed(thb.pl, "THB")}{pctTxt(thb.pct)}</div>}
-              {ccy && <div className={sign(ccy.pl)}>{signed(ccy.pl, currency)}{pctTxt(ccy.pct)}</div>}</dd></div>
-        </dl>
+              {thb && <div className={`text-sm font-medium ${tone(thb.pl)}`}>{signed(thb.pl, "THB")}{pct(thb.pct)}</div>}
+              {ccy && <div className={tone(ccy.pl)}>{signed(ccy.pl, currency)}{pct(ccy.pct)}</div>}</dd></div>
+        )}
+        <div className="flex justify-between gap-3"><dt className="text-slate-500">รายได้ลงทุนตั้งแต่ Go-live<div className="text-slate-400">ก่อนภาษี</div></dt>
+          <dd className="text-sm tabular-nums">{money(incomeThb, "THB", 0)}</dd></div>
+      </dl>
+      {missingPre && (
+        <p className="mt-2 text-xs text-amber-700">ยังไม่ได้ใส่เงินโอนก่อน Go-live · กำไร / ขาดทุนยังไม่ครบ{canWrite && goLive ? " (กด “+ เงินโอนก่อน Go-live”)" : ""}</p>
       )}
       {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน</p>}
       <div className="mt-3 flex flex-wrap gap-3 text-sm">
