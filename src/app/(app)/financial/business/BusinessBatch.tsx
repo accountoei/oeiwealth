@@ -7,8 +7,8 @@ import { money, qty, thDate, signedMoney, signedPct } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
   /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -37,10 +37,6 @@ export default function BusinessBatch({ rows, banks, today, defaultDate = today,
   );
 }
 
-function Result({ s }: { s: ActionState }) {
-  return <>{s.error && <span className="text-sm text-red-600">{s.error}</span>}<Flash on={s} as="span" className="text-sm text-emerald-700" /></>;
-}
-
 function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; banks: BizBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
@@ -60,7 +56,7 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
     .map((h) => ({ r, h, k: `${r.id}:${h.personId}` })));
   const payload = lines.map(({ r, h, k }) => ({ asset_id: r.id, person_id: h.personId, amount: vals[k], tax: tax[k] ?? "", bank_asset_id: bank[k] ?? "" }));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
-  const onSubmit = cf.guard(`บันทึกปันผล ${lines.length} รายการ วันที่ ${thDate(date)} ?\n${lines.map(({ r, h, k }) =>
+  const onSubmit = cf.guard(`บันทึกปันผล ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map(({ r, h, k }) =>
     `• ${r.name} · ${h.name} ${vals[k]}${tax[k]?.trim() ? ` (ภาษี ${tax[k]})` : ""} → ${bankName.get(bank[k]) ?? "ไม่ผ่านบัญชี"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   const fillDps = (r: BizRow, v: string) => {
     setDps({ ...dps, [r.id]: v });
@@ -72,14 +68,15 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className={`flex flex-wrap items-center justify-between gap-3 bg-[var(--page-bg)] py-1 ${STICKY_BAR}`}>
         <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">รับปันผล (แยกตามผู้ถือหุ้น) <InfoTip label="คำอธิบาย">กรอกเฉพาะผู้ถือหุ้นที่ได้รับ (ช่องว่าง = ไม่บันทึก) · รายได้ &ldquo;ปันผลกิจการ&rdquo; เป็นของคนนั้น 100% เข้าบัญชีที่เลือก · ผู้ถือหุ้นคนไหนผิด จะไม่บันทึกเลยทั้งชุด · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses</InfoTip></h2>
         {canWrite && (
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <label className="flex items-center gap-2">วันที่รับ
-              <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-            </label>
-            {lines.length > 0 && <button type="button" onClick={taxAll} className="text-blue-700 hover:underline">คิดภาษี 10% ทุกแถวที่กรอก</button>}
+          <div className="ml-auto text-sm">
+            <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+              count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); setDps({}); }} state={state}
+              date={date} onDate={setDate} minDate={minDate} maxDate={today}>
+              {lines.length > 0 && <button type="button" onClick={taxAll} className="text-blue-700 hover:underline">คิดภาษี 10% ทุกแถวที่กรอก</button>}
+            </BatchSave>
           </div>
         )}
       </div>
@@ -141,17 +138,6 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
           </tbody>
         </table>
       </div>
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || lines.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกปันผล ${lines.length} รายการ`}
-          </button>
-          {lines.length > 0 && !pending && <button type="button" onClick={() => { setVals({}); setTax({}); setDps({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          <Result s={state} />
-        </form>
-      )}
     </section>
   );
 }
@@ -165,23 +151,24 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
   const [state, action, pending] = useActionState<ActionState, FormData>(batchValues, {});
   useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim());
-  const onSubmit = cf.guard(`บันทึกมูลค่า ${chosen.length} กิจการ ณ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = cf.guard(`บันทึกมูลค่า ${chosen.length} กิจการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
 
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className={`flex flex-wrap items-center justify-between gap-3 bg-[var(--page-bg)] py-1 ${STICKY_BAR}`}>
         <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ</InfoTip></h2>
         {canWrite && (
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <label className="flex items-center gap-2">ณ วันที่
-              <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-            </label>
-            <label className="flex items-center gap-2">วิธีประเมิน
-              <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
-                {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </label>
+          <div className="ml-auto text-sm">
+            <BatchSave action={action} onSubmit={onSubmit} fields={{ date, method, rows: JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] }))) }}
+              count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
+              date={date} onDate={setDate} minDate={minDate} maxDate={today}>
+              <label className="flex items-center gap-2">วิธีประเมิน
+                <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
+                  {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+            </BatchSave>
           </div>
         )}
       </div>
@@ -212,18 +199,6 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
           </tbody>
         </table>
       </div>
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="method" value={method} />
-          <input type="hidden" name="rows" value={JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] })))} />
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกมูลค่า ${chosen.length} กิจการ`}
-          </button>
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          <Result s={state} />
-        </form>
-      )}
     </section>
   );
 }

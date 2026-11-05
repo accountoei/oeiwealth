@@ -7,8 +7,8 @@ import { money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchPayDebts, type ActionState } from "./actions";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
@@ -44,7 +44,7 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
     ...(r.kind === "LOAN" ? { principal: pr[r.key] ?? "", interest: int[r.key] ?? "" } : { amount: pr[r.key] ?? "" }) }));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
   const total = (r: DebtRow) => (pr[r.key]?.trim() ? n(pr[r.key]) : 0) + (r.kind === "LOAN" && int[r.key]?.trim() ? n(int[r.key]) : 0);
-  const onSubmit = cf.guard(`บันทึกจ่าย ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+  const onSubmit = cf.guard(`บันทึกจ่าย ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
     `• ${r.name} ${fmt(total(r))}${r.kind === "LOAN" && int[r.key]?.trim() ? ` (ดอกเบี้ย ${int[r.key]})` : ""} จาก ${bankName.get(bank[r.key] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`,
     { okLabel: "ยืนยันบันทึก" });
   const loans = rows.filter((r) => r.kind === "LOAN");
@@ -67,15 +67,14 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
   return (
     <>
     {cf.dialog}
-    <form action={action} onSubmit={onSubmit} className="space-y-3">
-      <input type="hidden" name="date" value={date} />
-      <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+    <div className="space-y-3">
       {canWrite && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-          {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
-          <label className="ml-auto flex shrink-0 items-center gap-2">วันที่จ่าย
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-           <InfoTip label="คำอธิบาย">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</InfoTip></label>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
+          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+            count={chosen.length} pending={pending} onClear={() => { setPr({}); setInt({}); }} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
         </div>
       )}
 
@@ -149,17 +148,7 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
         </table>
       </div>
 
-      {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึกจ่าย ${chosen.length} รายการ`}
-          </button>
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => { setPr({}); setInt({}); }} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </div>
-      )}
-    </form>
+    </div>
     </>
   );
 }

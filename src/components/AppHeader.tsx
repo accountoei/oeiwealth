@@ -1,6 +1,7 @@
 import SearchBox from "./SearchBox";
 import HeaderActions, { type TodoCount } from "./HeaderActions";
 import { HEADER_INFO_ID, HEADER_SLOT_ID, HeaderTitle, PendingBar } from "./HeaderBar";
+import { HeaderHeightVar } from "./BatchSave";
 
 /**
  * แถบบน (ตกลง 2 พ.ย. 2026): ชื่อเมนู (กว้างคงที่) · ช่องค้นหาชิดซ้าย เริ่มที่เดิมทุกหน้า · คน / เดือนของหน้า (HeaderFilters) · กระดิ่ง To-Do + ผู้ใช้ ขวาสุด
@@ -26,6 +27,7 @@ export default function AppHeader({ todo, user }: { todo: Promise<TodoCount | nu
         </div>
       </div>
       <PendingBar />
+      <HeaderHeightVar />
     </header>
   );
 }

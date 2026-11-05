@@ -8,8 +8,8 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
-import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
+import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 /** แถวจาก v_insurance_schedule_status */
 export type YLine = { id: string; policy_id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string;
@@ -63,7 +63,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   const payload = chosen.map((l) => ({ policy_id: l.policyId, line_id: l.id, label: label(l), amount: vals[l.id], pay: pay[l.id] ?? "", currency: l.currency }));
   const payName = new Map(pays.map((p) => [p.value, p.label]));
   const what = prem ? "จ่ายเบี้ย" : "รับผลประโยชน์";
-  const onSubmit = cf.guard(`บันทึก${what} ${chosen.length} รายการ วันที่ ${thDate(date)} ?\n${chosen.map((l) =>
+  const onSubmit = cf.guard(`บันทึก${what} ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((l) =>
     `• ${label(l)} ${vals[l.id]} ${prem ? "จาก" : "→"} ${payName.get(pay[l.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
   const statusText = (s: string) => s === "PAID" ? (prem ? "จ่ายแล้ว" : "รับแล้ว") : s === "PENDING" ? (prem ? "รอจ่าย" : "รอรับ") : INS_SCHED_STATUS[s]?.text ?? s;
   // ยอดรวมท้ายกล่อง = งวดที่ครบในปีที่เลือกเท่านั้น (งวดค้างจากปีก่อน / งวดปีหน้า แสดงในกล่องแต่ไม่นับรวม)
@@ -78,14 +78,15 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   return (
     <>
     {cf.dialog}
-    {/* ฟอร์มบันทึกครอบเฉพาะปุ่มบันทึกด้านล่าง ไม่ครอบตาราง: ในตารางมีปุ่ม "ยกเลิก" ที่เป็นฟอร์มของตัวเอง (ฟอร์มซ้อนฟอร์ม = กดไม่ได้ · 5 พ.ย. 2026) */}
+    {/* ฟอร์มบันทึกครอบเฉพาะแถบบันทึกด้านบน (BatchSave) ไม่ครอบตาราง: ในตารางมีปุ่ม "ยกเลิก" ที่เป็นฟอร์มของตัวเอง (ฟอร์มซ้อนฟอร์ม = กดไม่ได้ · 5 พ.ย. 2026) */}
     <div className="space-y-3">
       {canWrite && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-          {/* วันที่อยู่มุมขวา (แบบแท็บบันทึกรับของ Investments / ค่าเช่า · ตกลง 3 พ.ย. 2026) */}
-          <label className="ml-auto flex shrink-0 items-center gap-2">{prem ? "วันที่จ่าย" : "วันที่ได้รับ"}
-            <input type="date" value={date} min={minDate || undefined} max={today} onChange={(e) => e.target.value && setDate(e.target.value)} className={small} />
-           <InfoTip label="คำอธิบาย">วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</InfoTip></label>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
+          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+            count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -207,18 +208,6 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
           )}
         </table>
       </div>
-      {canWrite && (
-        <form action={action} onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
-          <input type="hidden" name="date" value={date} />
-          <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-          <button disabled={pending || chosen.length === 0} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-            {pending ? "กำลังบันทึก…" : `บันทึก${what} ${chosen.length} รายการ`}
-          </button>
-          {chosen.length > 0 && !pending && <button type="button" onClick={() => setVals({})} className="text-sm text-slate-500 underline hover:text-slate-800">ล้างช่องที่กรอก</button>}
-          {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-          <Flash on={state} as="span" className="text-sm text-emerald-700" />
-        </form>
-      )}
     </div>
     </>
   );
