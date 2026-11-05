@@ -119,7 +119,7 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
               <Cell v={r.unreal} fx={r.unrealFx} showFx={showFx && r.currency !== "THB"} sign={sign} />
               <Cell v={r.real} fx={r.realFx} showFx={showFx && r.currency !== "THB"} sign={sign} />
               <td className={`px-3 text-right tabular-nums ${cls(r.income)}`}>{r.income ? sign(r.income) : "-"}</td>
-              <td className="px-3 text-right tabular-nums text-slate-600">{r.fees ? `-${m(r.fees)}` : "-"}</td>
+              <td className={`px-3 text-right tabular-nums ${r.fees ? "text-red-700" : "text-slate-600"}`}>{r.fees ? `-${m(r.fees)}` : "-"}</td>
               <td className={`px-3 text-right font-medium tabular-nums ${cls(r.total)}`}>{sign(r.total)}</td>
             </tr>
           ))}
@@ -133,7 +133,7 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
               <Cell v={sum("unreal")} fx={sum("unrealFx")} showFx={showFx} sign={sign} />
               <Cell v={sum("real")} fx={sum("realFx")} showFx={showFx} sign={sign} />
               <td className={`px-3 text-right tabular-nums ${cls(sum("income"))}`}>{sign(sum("income"))}</td>
-              <td className="px-3 text-right tabular-nums">{sum("fees") ? `-${m(sum("fees"))}` : "-"}</td>
+              <td className={`px-3 text-right tabular-nums ${sum("fees") ? "text-red-700" : ""}`}>{sum("fees") ? `-${m(sum("fees"))}` : "-"}</td>
               <td className={`px-3 text-right tabular-nums ${cls(sum("total"))}`}>{sign(sum("total"))}</td>
             </tr>
             {hasFxLine && (

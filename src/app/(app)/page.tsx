@@ -357,8 +357,8 @@ async function LiquidityRow({ start, personId }: { start: string; personId: stri
           ดูจากความกว้างของแถวนี้เอง (@container/liq) ไม่ใช่ขนาดจอ */}
       <div className="@container/liq">
         <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-slate-600">
-          <span className="whitespace-nowrap">สภาพคล่องสูง <span className="font-semibold tabular-nums text-ink">{q}%</span></span>
-          <span className="hidden shrink-0 whitespace-nowrap text-slate-500 @min-[11rem]/liq:inline">ต่ำ <span className="tabular-nums">{slow}%</span></span>
+          <span className="whitespace-nowrap">สภาพคล่องสูง <span className={`font-semibold tabular-nums ${quick < 15 ? "text-red-700" : quick < 30 ? "text-amber-700" : "text-emerald-700"}`}>{q}%</span></span>
+          <span className="hidden shrink-0 whitespace-nowrap text-slate-500 @min-[11rem]/liq:inline">ต่ำ <span className="font-semibold tabular-nums text-ink">{slow}%</span></span>
         </div>
       </div>
     </div>
@@ -759,7 +759,7 @@ function BRow({ label, v, bold, signed, note }: { label: string; v: number; bold
     <tr className={bold ? "font-medium" : ""}>
       <td className="py-1 pr-2 xl:py-0.5">{label}
         {note && <div className="pl-3 text-xs font-normal text-slate-500">{note}</div>}</td>
-      <td className={`text-right align-top pt-1 xl:pt-0.5 tabular-nums ${bold ? "text-ink" : ""} ${!bold && v < 0 ? "text-red-700" : ""}`}>{signed && Math.round(v) > 0 ? "+" : ""}{baht(v)}</td>
+      <td className={`text-right align-top pt-1 xl:pt-0.5 tabular-nums ${v < 0 ? "text-red-700" : bold ? "text-ink" : ""}`}>{signed && Math.round(v) > 0 ? "+" : ""}{baht(v)}</td>
     </tr>
   );
 }

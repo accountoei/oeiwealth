@@ -113,7 +113,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
               {(vals ?? [])[0] && (vals ?? [])[0].valuation_date !== l.balance_date && ` (ยอด ${thDate((vals ?? [])[0].valuation_date)} หักเงินต้นที่จ่ายหลังจากนั้น)`}</div>
             {paid != null && paid > 0 && (
               <div className="mt-1 text-xs text-slate-500">จากวงเงิน {money(l.original_amount)} · ชำระแล้ว {money(paid)}
-                {Number(l.original_amount) > 0 && ` (${((paid * 100) / Number(l.original_amount)).toFixed(1)}%)`}</div>
+                {Number(l.original_amount) > 0 && <> (<span className="font-semibold">{((paid * 100) / Number(l.original_amount)).toFixed(1)}%</span>)</>}</div>
             )}
           </div>
           <div className="flex flex-1 flex-col">

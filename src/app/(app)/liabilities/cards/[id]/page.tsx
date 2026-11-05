@@ -122,7 +122,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
               ตาม Statement {money(c.outstanding_balance)} ณ {thDate(latest)}
               {Math.abs(current - Number(c.outstanding_balance)) > 0.005 && " + รูด − จ่าย หลังจากนั้น"}
             </div>
-            {c.credit_limit ? <div className="mt-1 text-xs text-slate-500">ใช้ไป {((current * 100) / Number(c.credit_limit)).toFixed(1)}% ของวงเงิน {money(c.credit_limit, undefined, 0)}</div> : null}
+            {c.credit_limit ? <div className="mt-1 text-xs text-slate-500">ใช้ไป <span className="font-semibold">{((current * 100) / Number(c.credit_limit)).toFixed(1)}%</span> ของวงเงิน {money(c.credit_limit, undefined, 0)}</div> : null}
           </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="CARD" entityType="CREDIT_CARD" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />

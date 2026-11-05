@@ -261,11 +261,11 @@ export default async function LoanDetailPage({ params, searchParams }: {
               <dl className="min-w-48 flex-1 divide-y divide-slate-100 text-sm">
                 <div className="flex items-center justify-between gap-3 py-2">
                   <dt className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />ชำระแล้ว</dt>
-                  <dd className="text-right tabular-nums"><b>{money(paidP, l.currency, 0)}</b> <span className="ml-2 text-xs text-slate-500">{paidPct.toFixed(1)}%</span></dd>
+                  <dd className="text-right tabular-nums"><b>{money(paidP, l.currency, 0)}</b> <span className="ml-2 text-xs font-semibold text-slate-500">{paidPct.toFixed(1)}%</span></dd>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2">
                   <dt className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" />{l.status === "WRITTEN_OFF" ? "ตัดหนี้สูญ" : "คงเหลือ"}</dt>
-                  <dd className="text-right tabular-nums"><b>{money(leftP, l.currency, 0)}</b> <span className="ml-2 text-xs text-slate-500">{(100 - paidPct).toFixed(1)}%</span></dd>
+                  <dd className="text-right tabular-nums"><b>{money(leftP, l.currency, 0)}</b> <span className="ml-2 text-xs font-semibold text-slate-500">{(100 - paidPct).toFixed(1)}%</span></dd>
                 </div>
                 {riskAmt != null && (
                   <div className="flex items-center justify-between gap-3 py-2 text-amber-800">

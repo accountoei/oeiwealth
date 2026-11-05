@@ -16,7 +16,7 @@ export default function FlowCard({ title, total, count, lines, href, empty, note
           {lines.map(([label, v]) => (
             <div key={label} className="flex justify-between gap-3">
               <dt className="text-slate-500">{label}</dt>
-              <dd className={`tabular-nums ${isZero(v) ? "text-slate-400" : "text-slate-700"}`}>{signedMoney(v)}</dd>
+              <dd className={`tabular-nums ${isZero(v) ? "text-slate-400" : v < 0 ? "text-red-700" : "text-slate-700"}`}>{signedMoney(v)}</dd>
             </div>
           ))}
         </dl>

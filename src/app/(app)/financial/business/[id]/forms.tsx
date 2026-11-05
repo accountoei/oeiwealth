@@ -215,7 +215,7 @@ export function ShareSaleForm({ assetId, currency, banks, holders, familyShares,
               <li>เงินขายสุทธิ {money(net, currency)}{perShare != null && <> · ราคาหุ้นตามการประเมิน {money(perShare, currency, 4)} → มูลค่าส่วนที่ขาย {money(book, currency)}</>}</li>
               {gain != null && <li className={`font-medium ${gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 {gain >= 0 ? "กำไร" : "ขาดทุน"}จากการขาย {money(Math.abs(gain), currency)} → ลงเป็น{gain >= 0 ? "รายได้" : "ค่าใช้จ่าย"}ของ {h?.name}</li>}
-              {costGain != null && <li className="text-slate-500">เทียบราคาทุน ({money(cps, currency, 4)}/หุ้น): {signed(costGain, currency)} (ดูเป็นข้อมูล)</li>}
+              {costGain != null && <li className="text-slate-500">เทียบราคาทุน ({money(cps, currency, 4)}/หุ้น): <span className={costGain < -0.005 ? "text-red-700" : costGain > 0.005 ? "text-emerald-700" : ""}>{signed(costGain, currency)}</span> (ดูเป็นข้อมูล)</li>}
               <li>{h?.name} เหลือ {qty((h?.shares ?? 0) - sold)} หุ้น{(h?.shares ?? 0) - sold <= 0 ? " (ขายหมด · หลุดจากรายชื่อเจ้าของ)" : ""}
                 {" · "}หุ้นที่ครอบครัวถือ {qty(familyShares)} → {qty(left)}</li>
               {left <= 0 && <li className="font-medium text-amber-700">ทุกคนขายหมด → ธุรกิจจะเปลี่ยนเป็น &ldquo;ขายหุ้นแล้ว&rdquo;</li>}

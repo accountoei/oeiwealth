@@ -148,7 +148,7 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
           const isOpen = open.has(l.key);
           const num = l.text
             ? <span className="text-xs text-slate-500">{l.text}</span>
-            : <span className={`tabular-nums ${l.bold ? "text-ink" : ""} ${!l.bold && l.v < 0 ? "text-red-700" : ""}`}>{l.signed && Math.round(l.v) > 0 ? "+" : ""}{baht(l.v)}</span>;
+            : <span className={`tabular-nums ${l.v < 0 ? "text-red-700" : l.bold ? "text-ink" : ""}`}>{l.signed && Math.round(l.v) > 0 ? "+" : ""}{baht(l.v)}</span>;
           const label = <span className="min-w-0 text-left">{l.label}{l.note && <span className="block pl-3 text-xs font-normal text-slate-500">{l.note}</span>}</span>;
           return (
             // บรรทัดตารางยอดตามหมวดเว้นห่างจาก "= ณ วันนี้" เล็กน้อย (เป็นตารางอ้างอิง ไม่ใช่บรรทัดที่บวกต่อ)
