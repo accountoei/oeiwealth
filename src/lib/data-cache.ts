@@ -6,6 +6,7 @@ import { todayBangkok } from "@/lib/format";
 
 /**
  * จำผลคำนวณที่หนักไว้ข้ามคำขอ (30 ต.ค. 2026 · ปรับ 1 พ.ย. 2026) — Dashboard + ผลตอบแทนพอร์ต + ตัวเลข To-Do ที่เมนูซ้าย
+ *   + ข้อมูลหน้า Income & Expenses (5 พ.ย. 2026 · income-expenses/page-data.ts · เดิมถามพร้อมกันราว 37 คำถามทุกครั้งที่เปลี่ยนเดือน)
  * Supabase แผนฟรี CPU เล็ก → ฟังก์ชัน Dashboard ใช้ 0.5–1 วินาที (บางครั้ง 5–7 วินาทีเมื่อชนกัน) ถ้าคำนวณใหม่ทุกคลิก
  *
  * - คีย์ = ผู้ใช้ + วันนี้ (เวลาไทย) + ป้ายข้อมูล + รุ่นที่ deploy + ชื่องาน + ค่าที่ส่ง
@@ -60,6 +61,28 @@ export async function cachedData<T>(key: (string | number | null)[], run: (supab
   const { token, version } = s;
   return unstable_cache(() => run(tokenClient(token)), ["fwv", s.userId, todayBangkok(), version, DEPLOY, ...key.map((k) => String(k ?? ""))],
     { tags: [DATA_TAG], revalidate: version ? ttl : Math.min(ttl, NO_VERSION_TTL) })();
+}
+
+/**
+ * จำผลของชุดคำถามหลายคำถาม (เช่น ข้อมูลหน้า Income & Expenses) · run คืน { value, complete }
+ *   complete = false (มีคำถามผิดพลาด เช่น Supabase ตอบไม่ทัน) → ไม่จำผลรอบนั้น · คืนผลที่ได้ไปใช้ตามเดิม แล้วถามใหม่ครั้งหน้า
+ */
+export async function cachedLoad<T>(key: (string | number | null)[], run: (supabase: SupabaseClient) => Promise<{ value: T; complete: boolean }>, ttl = CACHE_TTL): Promise<T> {
+  const box: { partial: boolean; value?: T } = { partial: false };
+  try {
+    return await cachedData(key, async (supabase) => {
+      const r = await run(supabase);
+      if (!r.complete) {
+        box.partial = true;
+        box.value = r.value;
+        throw new Error("incomplete result: not cached");
+      }
+      return r.value;
+    }, ttl);
+  } catch (e) {
+    if (box.partial) return box.value as T;
+    throw e;
+  }
 }
 
 /** RPC ที่จำผลไว้ (คืน data หรือ null เหมือนเดิม) — ถ้า error จะไม่จำ: คืน null แล้วคำนวณใหม่ครั้งหน้า */
