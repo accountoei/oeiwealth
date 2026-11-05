@@ -6,6 +6,7 @@ import { money, numOrZero, thDate } from "@/lib/format";
 import Modal from "@/components/Modal";
 import Flash from "@/components/Flash";
 import UndoButton from "@/components/UndoButton";
+import { useRowPanel } from "@/components/RowPanel";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-2 py-2 text-sm";
 
@@ -14,10 +15,11 @@ const input = "mt-1 block w-full rounded-md border border-slate-300 px-2 py-2 te
  *   วันที่ช่องเดียวใช้กับทั้งเงินต้นและดอกเบี้ย · กดบันทึกครั้งเดียว (updatePaymentPair)
  *   ลบ = ลบทั้งก้อน (UndoButton PAYMENT) · อยู่ข้างปุ่มบันทึก เหมือนหน้าต่างแก้ไขอื่น
  *   บันทึก / ลบสำเร็จ → หน้าต่างปิดเอง + รีเฟรชหน้า (Modal)
+ *   ไม่ใส่ button + อยู่ในแถวตาราง = กดที่แถวเพื่อเปิด (ตารางเงินเข้า–ออก · ตกลง 5 พ.ย. 2026)
  */
 export default function PairEdit({ button, buttonClass, principal, interest, group, paths, canDelete, confirmText, direction, currency }: {
-  /** ข้อความบนปุ่ม (เช่น "แก้ไข" หรือ "รับชำระ 5 ต.ค. · 20,000.00 ✎") */
-  button: string;
+  /** ข้อความบนปุ่ม (เช่น "แก้ไข" หรือ "รับชำระ 5 ต.ค. · 20,000.00 ✎") · ไม่ใส่ = กดที่แถว */
+  button?: string;
   /** หน้าตาของปุ่ม · ไม่ใส่ = ปุ่มขอบเทา */
   buttonClass?: string;
   /** เงินต้น (cash_movements ที่ไม่ใช่รายการที่ระบบสร้าง) */
@@ -35,16 +37,16 @@ export default function PairEdit({ button, buttonClass, principal, interest, gro
   currency?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const row = useRowPanel(!button);
+  const title = direction === "IN" ? "แก้ไขการรับชำระ" : "แก้ไขการจ่ายชำระ";
+  const form = <PairForm principal={principal} interest={interest} group={group} paths={paths} canDelete={canDelete}
+    confirmText={confirmText} direction={direction} currency={currency} />;
+  if (!button && !row.showButtons) return row.render(form, title);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className={buttonClass ?? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"}>{button}</button>
-      {open && (
-        <Modal title={direction === "IN" ? "แก้ไขการรับชำระ" : "แก้ไขการจ่ายชำระ"} onClose={() => setOpen(false)}>
-          <PairForm principal={principal} interest={interest} group={group} paths={paths} canDelete={canDelete}
-            confirmText={confirmText} direction={direction} currency={currency} />
-        </Modal>
-      )}
+        className={buttonClass ?? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"}>{button ?? "แก้ไข"}</button>
+      {open && <Modal title={title} onClose={() => setOpen(false)}>{form}</Modal>}
     </>
   );
 }

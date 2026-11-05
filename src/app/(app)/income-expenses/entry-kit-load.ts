@@ -30,6 +30,13 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
     expIds.length ? supabase.from("expense_items").select(EXP_SELECT).in("id", expIds) : none,
     loadPfCash(supabase),
   ]);
+  // รายได้ที่แถวอื่นอ้างถึง: ปันผล / ดอกเบี้ยในพอร์ตที่เข้าบัญชีนี้ (แก้รายการในพอร์ต) · ดอกเบี้ยเงินกู้ภายในของผู้ให้กู้ (แก้จากฝั่งผู้กู้)
+  const txIds = [...new Set(moves.filter((m) => m.source_entity_type === "INVESTMENT_TX" && m.source_entity_id).map((m) => m.source_entity_id as string))];
+  const ilIds = [...new Set((exps ?? []).map((e) => e.internal_loan_income_id as string | null).filter((x): x is string => !!x))];
+  const [{ data: txIncs }, { data: ilIncs }] = await Promise.all([
+    txIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("source_transaction_id", txIds).is("deleted_at", null) : none,
+    ilIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("id", ilIds) : none,
+  ]);
   const banks = (banksRaw as Bank[] | null) ?? [];
   const bankSet = new Set(banks.map((b) => b.asset_id));
   const otherIds = [...new Set(moves.flatMap((m) => [m.from_asset_id, m.to_asset_id]).filter((x): x is string => !!x && !bankSet.has(x)))];
@@ -42,7 +49,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   return {
     ...base, banks, cards, pfCash, liabs: (liabRaw as Liab[] | null) ?? [], persons: persons ?? [], incSubs, expCats,
     expHints: buildHints(hintRows ?? [], expCats), moves,
-    incById: new Map((incs ?? []).map((i) => [i.id as string, i])), expById: new Map((exps ?? []).map((i) => [i.id as string, i])),
+    incById: new Map([...(incs ?? []), ...(txIncs ?? []), ...(ilIncs ?? [])].map((i) => [i.id as string, i])), expById: new Map((exps ?? []).map((i) => [i.id as string, i])),
     otherAssets: (others ?? []) as { id: string; name: string; asset_type: string }[], tabLinks: false,
   };
 }
