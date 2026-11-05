@@ -1,4 +1,4 @@
-# 2026-11-05 · Family: ตัวกรองขึ้นแถบบน · Tax เปิดที่ทั้งครอบครัว · รวมกล่อง Donations / Documents (PR #TBD)
+# 2026-11-05 · Family: ตัวกรองขึ้นแถบบน · Tax เปิดที่ทั้งครอบครัว · รวมกล่อง Donations / Documents (PR #335)
 
 Branch `claude/family-header-filters`
 SQL (ไม่บังคับ · ข้อมูล): `supabase/migrations/20261105072000_donation_group_to_business.sql` — โค้ดใช้ได้ทั้งก่อนและหลังรัน SQL
