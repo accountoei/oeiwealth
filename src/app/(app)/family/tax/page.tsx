@@ -259,7 +259,7 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
         if (list.length === 0) return null;
         return (
           <section key={s.key} className="space-y-2">
-            <h2 className="text-lg font-semibold text-slate-900">{s.title}</h2>
+            <h2 className="flex items-center gap-1 text-lg font-semibold text-slate-900">{s.title}{s.note && <InfoTip label="คำอธิบาย">{s.note}</InfoTip>}</h2>
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-left text-xs text-slate-500">
@@ -286,7 +286,6 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
                 </tbody>
               </table>
             </div>
-            {s.note && <p className="text-xs text-slate-500">{s.note}</p>}
           </section>
         );
       })}

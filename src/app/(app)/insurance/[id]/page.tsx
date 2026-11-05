@@ -409,7 +409,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
 
       {(fups ?? []).length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived)</h2>
+          <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) <InfoTip label="คำอธิบาย">แนบเอกสาร (ใบมรณบัตร / หนังสือเรียกร้องสินไหม) ได้ที่ &ldquo;เอกสาร&rdquo; ท้ายหน้านี้</InfoTip></h2>
           <ul className="space-y-2 text-sm">
             {(fups ?? []).map((f) => (
               <li key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
@@ -422,7 +422,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               </li>
             ))}
           </ul>
-          <p className="text-xs text-slate-500">แนบเอกสาร (ใบมรณบัตร / หนังสือเรียกร้องสินไหม) ได้ที่ &ldquo;เอกสาร&rdquo; ท้ายหน้านี้</p>
         </section>
       )}
 
@@ -523,7 +522,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                     defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
                 </div> : undefined}>
                 <div className="space-y-0.5">
-                  <h2 className="font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : "เบี้ยและผลประโยชน์"}</h2>
+                  <h2 className="font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : "เบี้ยและผลประโยชน์"}{showIrr && <> <InfoTip label="คำอธิบาย">IRR = ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</InfoTip></>}</h2>
                   {premiums.length > 0 ? (
                     <p className="text-sm text-slate-600">เบี้ย {premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด
                       {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
@@ -561,7 +560,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-slate-500">ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</p>
                 </div>
               )}
               {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} />}

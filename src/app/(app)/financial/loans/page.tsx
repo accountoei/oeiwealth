@@ -4,7 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import { ADD_BTN, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
@@ -193,7 +193,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
       <TabPanel id="overview">
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">สรุปเงินต้นคงเหลือตามสถานะ <span className="text-xs font-normal text-slate-500">(THB)</span></h2>
+          <h2 className="mb-3 font-medium text-slate-900">สรุปเงินต้นคงเหลือตามสถานะ <span className="text-xs font-normal text-slate-500">(THB)</span> <InfoTip label="คำอธิบาย">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ในความมั่งคั่งสุทธิ
+            {riskTotal > 0.005 && " · ส่วนที่มีความเสี่ยงไม่ได้คืนยังนับในความมั่งคั่งสุทธิจนกว่าจะตัดหนี้สูญ"}</InfoTip></h2>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr><th className="px-3 py-2">สถานะ</th><th className="px-3 text-right">จำนวนสัญญา</th><th className="px-3 text-right">เงินต้นคงเหลือ</th><th className="px-3 text-right">สัดส่วน</th><th className="w-1/4 px-3"></th></tr>
@@ -219,13 +220,11 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
                 <td className="px-3"><div className="h-2.5 rounded-full bg-blue-600" /></td></tr>
             </tfoot>
           </table>
-          <p className="mt-2 text-xs text-slate-500">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ในความมั่งคั่งสุทธิ
-            {riskTotal > 0.005 && ` · ส่วนที่มีความเสี่ยงไม่ได้คืน ${money(riskTotal, undefined, 0)} ยังนับในความมั่งคั่งสุทธิจนกว่าจะตัดหนี้สูญ`}</p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="font-medium text-slate-900">รายการที่ต้องติดตาม</h2>
+            <h2 className="font-medium text-slate-900">รายการที่ต้องติดตาม <InfoTip label="คำอธิบาย">ยอดค้าง = งวดที่เลยกำหนด (หรือเงินต้นคงเหลือ ถ้าไม่มีงวดค้าง) · ล่าสุด = วันที่รับชำระครั้งล่าสุด</InfoTip></h2>
             {follow.length > 5 && (showAllFollow
               ? <Link href={keep({})} scroll={false} className="text-sm text-blue-700 hover:underline">แสดง 5 รายการแรก</Link>
               : <Link href={keep({ follow: "all" })} scroll={false} className="text-sm text-blue-700 hover:underline">ดูทั้งหมด ({follow.length}) →</Link>)}
@@ -250,7 +249,6 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
               </tbody>
             </table>
           )}
-          <p className="mt-2 text-xs text-slate-500">ยอดค้าง = งวดที่เลยกำหนด (หรือเงินต้นคงเหลือ ถ้าไม่มีงวดค้าง) · ล่าสุด = วันที่รับชำระครั้งล่าสุด</p>
         </div>
       </section>
 

@@ -1,4 +1,4 @@
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import UrlSelect from "@/components/UrlSelect";
 import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
@@ -147,9 +147,8 @@ export default async function DonationsPage({ searchParams }: { searchParams: Pr
 
       {canWrite && unlinked.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900">รายจ่ายหมวดบริจาคที่ยังไม่กรอกรายละเอียด</h2>
+          <h2 className="flex items-center gap-1 text-lg font-semibold text-slate-900">รายจ่ายหมวดบริจาคที่ยังไม่กรอกรายละเอียด<InfoTip label="คำอธิบาย">ยอดเงินเป็นรายจ่ายที่บันทึกไว้แล้ว · กรอกรายละเอียดที่นี่ไม่ตัดเงินซ้ำ</InfoTip></h2>
           <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
-            <p className="px-4 pt-3 text-xs text-slate-500">ยอดเงินเป็นรายจ่ายที่บันทึกไว้แล้ว · กรอกรายละเอียดที่นี่ไม่ตัดเงินซ้ำ</p>
             <table className="w-full text-sm">
               <thead className="bg-amber-50 text-left text-xs text-slate-500"><tr><th className="px-4 py-2">วันที่</th><th className="px-4">รายละเอียด</th><th className="px-4 text-right">จำนวน</th><th></th></tr></thead>
               <tbody className="divide-y divide-slate-100">

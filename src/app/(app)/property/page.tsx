@@ -483,7 +483,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
             pays={pays} defaultDate={defaultDate} today={today} ym={ym} canWrite={canWrite} />
           <LandTaxTable rows={taxPropRows} year={taxYear} years={taxYears} dataYears={taxDataYears}
             hrefOf={`/property?tab=expense&m=${ym}${sp.p ? `&p=${sp.p}` : ""}&ty=__Y__`} canWrite={canWrite} canDelete={canOrder}
-            note={`คำนวณจากข้อมูลภาษีของทรัพย์สินแต่ละรายการ · ใช้ตรวจกับใบแจ้งภาษีของเขต / อบต.${pv.personId ? ` · แสดงเต็มจำนวนของทรัพย์สินที่ ${pv.personName} ถือ` : ""} · สถานะการจ่ายดูที่ค่าใช้จ่ายประจำด้านบน`} />
+            info="คำนวณจากข้อมูลภาษีของทรัพย์สินแต่ละรายการ · ใช้ตรวจกับใบแจ้งภาษีของเขต / อบต. · สถานะการจ่ายดูที่ค่าใช้จ่ายประจำด้านบน"
+            note={pv.personId ? `แสดงเต็มจำนวนของทรัพย์สินที่ ${pv.personName} ถือ` : undefined} />
         </div>
       </TabPanel>
       <TabPanel id="update">
