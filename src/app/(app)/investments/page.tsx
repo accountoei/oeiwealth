@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, HOLDING_TYPE_LABEL, ITX_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok, addDays, signedMoney, signedPct } from "@/lib/format";
+import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -39,7 +39,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
   // ดึงข้อมูลพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอต่อกันหลายทอด (สมาชิก → ลำดับ → ข้อมูลพอร์ต → รายได้ → ผลตอบแทน → แท็บอัปเดตยอด / รับผลตอบแทน)
-  //   ชุดที่ต้องใช้ผลของอีกชุดเริ่มทันทีที่ชุดนั้นเสร็จ: รายการล่าสุด / แท็บรับผลตอบแทน ← สมาชิกที่เลือก · รายได้ลงทุน ← สมาชิก + วัน Go-live
+  //   ชุดที่ต้องใช้ผลของอีกชุดเริ่มทันทีที่ชุดนั้นเสร็จ: แท็บรับผลตอบแทน ← สมาชิกที่เลือก · รายได้ลงทุน ← สมาชิก + วัน Go-live
   //   ผลตอบแทน / แท็บอัปเดตยอด ← พอร์ตที่แสดง (สมาชิก + รายชื่อพอร์ต)
   const pvQ = loadPersonView(sp.p);
   const familyQ = supabase.from("families").select("go_live_date").maybeSingle().then((r) => r);
@@ -48,7 +48,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: txs }, { data: capPre }, { data: capMoves }], { data: income }, rets,
+  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: capPre }, { data: capMoves }], { data: income }, rets,
     [openPfs, updateData], dueData] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
@@ -57,9 +57,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       pfsQ,
       supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
       familyQ,
-      pvQ.then(async (v) => await supabase.from("investment_transactions")
-        .select("id,transaction_date,transaction_type,amount,currency,holding_id,portfolio_id,investment_holdings(name),investment_portfolios(asset_id)")
-        .is("deleted_at", null).order("transaction_date", { ascending: false }).order("created_at", { ascending: false }).limit(v.personId ? 60 : 10)),
       // เงินลงทุนสุทธิรายพอร์ต: เงินโอนก่อน Go-live + โอนไป / โอนกลับหลัง Go-live
       supabase.from("portfolio_capital_transfers").select("id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes").is("deleted_at", null),
       supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).in("movement_type", ["INVESTMENT_OUT", "INVESTMENT_IN"])
@@ -106,10 +103,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       realFx: sum("realized_fx_thb") * k, income: (sum("income_thb") - sum("fees_thb")) * k, total: sum("total_thb") * k,
       cost: rs.filter((x) => x.status === "ACTIVE").reduce((t, x) => t + Number(x.cost_thb ?? 0), 0) * k };
   });
-  const recent = (txs ?? []).filter((t) => {
-    const pa = (Array.isArray(t.investment_portfolios) ? t.investment_portfolios[0] : t.investment_portfolios) as { asset_id: string } | null;
-    return !pa || pv.showAsset(pa.asset_id);
-  }).slice(0, 10);
   const inst = new Map((pfs ?? []).map((p) => [p.asset_id, p.institution]));
   const holdings = ((hs as H[] | null) ?? []).filter((h) => h.status === "ACTIVE" && pv.showAsset(h.portfolio_asset_id))
     .map((h) => ({ ...h, current_value: h.current_value == null ? null : Number(h.current_value) * sh(h.portfolio_asset_id),
@@ -125,9 +118,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const byCcy = new Map<string, number>();
   holdings.forEach((h) => byCcy.set(h.currency, (byCcy.get(h.currency) ?? 0) + thb(h)));
   const allocTotal = [...byType.values()].reduce((s, v) => s + v, 0);
-  const soon = holdings.filter((h) => h.maturity_date && h.maturity_date >= todayBangkok() && h.maturity_date <= addDays(todayBangkok(), 60))
-    .sort((x, y) => (x.maturity_date! < y.maturity_date! ? -1 : 1));
-  const pfName = new Map(list.map((p) => [p.asset_id, p.name]));
   const pfType = new Map((pfs ?? []).map((p) => [p.asset_id, p.portfolio_type as string]));
   const pfStatus = new Map((pfs ?? []).map((p) => [p.asset_id, p.status as string]));
   // ตัวกรองประเภทพอร์ต
@@ -218,37 +208,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
               </div>) : null}
             toggle={canOrder && rows.length > 1 ? <SortToggle active={ordering} {...orderHrefs("/investments", { p: sp.p, t: tFilter })} /> : null} />}
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">รายการล่าสุด</h2>
-          {recent.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
-            <ul className="space-y-1 text-sm">
-              {recent.map((t) => {
-                const hn = (Array.isArray(t.investment_holdings) ? t.investment_holdings[0] : t.investment_holdings) as { name: string } | null;
-                const pa = (Array.isArray(t.investment_portfolios) ? t.investment_portfolios[0] : t.investment_portfolios) as { asset_id: string } | null;
-                return (
-                  <li key={t.id} className="flex justify-between gap-3">
-                    <span>{thDate(t.transaction_date)} · {ITX_LABEL[t.transaction_type] ?? t.transaction_type} {hn?.name ?? ""}
-                      <span className="text-xs text-slate-500"> · {pa ? pfName.get(pa.asset_id) : ""}</span></span>
-                    <span className="tabular-nums">{money(t.amount, t.currency)}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-2 font-medium text-slate-900">กำลังจะครบกำหนด (60 วัน)</h2>
-          {soon.length === 0 ? <p className="text-sm text-slate-500">ไม่มี</p> : (
-            <ul className="space-y-1 text-sm">
-              {soon.map((h) => (
-                <li key={h.id}><Link href={`/investments/${h.portfolio_asset_id}/holding/${h.id}`} className="hover:underline">{h.name}</Link>
-                  <span className="text-slate-500"> · ครบ {thDate(h.maturity_date)} · {money(h.current_value, h.currency, 0)}</span></li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
       </TabPanel>
 
       <TabPanel id="update">
