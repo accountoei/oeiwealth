@@ -233,7 +233,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             lines={SPEND_KEYS.filter((k) => k !== "FEE" || flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
           <FlowCard title={`รายการอื่นๆ ${mName.trim()}`} total={flowSum(flow, OTHER_KEYS)} count={flowCount(flow, OTHER_KEYS)} href={movesHref}
             empty="ไม่มีรายการลงทุน / เงินกู้ / ซื้อขายทรัพย์สิน"
-            note="ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง (ค่าธรรมเนียมโอนอยู่ในรายจ่าย) · เงินออกแสดงเป็นยอดติดลบ"
+            notes={["ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง", "เงินออกแสดงเป็นยอดติดลบ"]}
             lines={OTHER_KEYS.filter((k) => flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
         </section>
         <div className="grid gap-4 lg:grid-cols-2">
