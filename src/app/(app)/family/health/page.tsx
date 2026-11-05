@@ -45,7 +45,7 @@ async function loadFamily(supabase: Sb) {
   return { checkups, abn, cov };
 }
 
-/** ทั้งครอบครัว: ภาพรวม + ตาราง แถวละคน (ตกลง 5 พ.ย. 2026) */
+/** ทั้งครอบครัว: กล่องเดียว ตารางแถวละคน + แถวรวมท้ายตาราง (ตกลง 5 พ.ย. 2026) */
 function FamilyView({ list, fam, yearAgo }: { list: { id: string; name: string }[]; fam: Awaited<ReturnType<typeof loadFamily>>; yearAgo: string }) {
   const rows = list.map((p) => {
     const cs = fam.checkups.filter((c) => c.person_id === p.id);
@@ -69,29 +69,9 @@ function FamilyView({ list, fam, yearAgo }: { list: { id: string; name: string }
     <div className="space-y-6">
       {INFO}
       <HeaderFilters><PersonFilter persons={list} value="" shareNote={false} /></HeaderFilters>
-      <section className="grid items-start gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-medium text-slate-900">ภาพรวมทั้งครอบครัว</h2>
-          <dl className="mt-3 space-y-3 text-sm">
-            <div>
-              <dt className="text-xs text-slate-500">ตรวจแล้วในรอบ 12 เดือน</dt>
-              <dd className="text-lg font-semibold tabular-nums">{rows.length - due.length} <span className="text-sm font-normal text-slate-500">/ {rows.length} คน</span></dd>
-              <dd className={`text-xs ${due.length ? "text-amber-700" : "text-slate-500"}`}>
-                {due.length ? `เกิน 1 ปี / ยังไม่เคยตรวจ: ${due.map((r) => r.name).join(" · ")}` : "ทุกคนตรวจภายใน 1 ปี"}</dd>
-            </div>
-            <div className="border-t border-slate-100 pt-3">
-              <dt className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด (รวมทุกคน)</dt>
-              <dd className={`text-lg font-semibold tabular-nums ${abnTotal ? "text-red-700" : ""}`}>{abnTotal} <span className="text-sm font-normal text-slate-500">รายการ</span></dd>
-              <dd className="text-xs text-slate-500">{abnTotal ? `จาก ${rows.filter((r) => r.abn.length).length} คน` : "ไม่มีรายการผิดปกติ"}</dd>
-            </div>
-            <div className="border-t border-slate-100 pt-3">
-              <dt className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด (รวม)</dt>
-              <dd className="text-lg font-semibold tabular-nums">{money(costTotal, "THB", 0)}</dd>
-            </div>
-          </dl>
-        </div>
-        <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <h2 className="font-medium text-slate-900">สมาชิก</h2>
+      {/* กล่องเดียว: ตารางรายคน + แถวรวมทั้งครอบครัว (แทนกล่องภาพรวมที่ซ้ำกัน · ตกลง 5 พ.ย. 2026) */}
+      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-900">สุขภาพทั้งครอบครัว</h2>
           <p className="mb-2 text-xs text-slate-500">กดที่ชื่อเพื่อดูผลย้อนหลังและบันทึกผลตรวจของคนนั้น</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -112,9 +92,21 @@ function FamilyView({ list, fam, yearAgo }: { list: { id: string; name: string }
                   </tr>
                 ))}
               </tbody>
+              {rows.length > 1 && (
+                <tfoot className="border-t border-slate-200 text-sm font-medium">
+                  <tr className="align-top">
+                    <td className="whitespace-nowrap py-2 pr-3">รวมทั้งครอบครัว</td>
+                    <td className="whitespace-nowrap pr-3 pt-2">ตรวจแล้ว {rows.length - due.length} / {rows.length} คน
+                      <div className={`text-xs font-normal ${due.length ? "text-amber-700" : "text-slate-500"}`}>{due.length ? `เกิน 1 ปี / ยังไม่เคยตรวจ ${due.length} คน` : "ทุกคนตรวจภายใน 1 ปี"}</div></td>
+                    <td className="pr-3 pt-2">{abnTotal ? <span className="tabular-nums text-red-700">{abnTotal} รายการ</span> : <span className="font-normal text-slate-500">ไม่มีรายการผิดปกติ</span>}
+                      {abnTotal > 0 && <div className="text-xs font-normal text-slate-500">จาก {rows.filter((r) => r.abn.length).length} คน</div>}</td>
+                    <td className="pr-3 pt-2 text-right tabular-nums">{money(costTotal, "THB", 0)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
-        </div>
       </section>
     </div>
   );
@@ -190,46 +182,35 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       {INFO}
       <HeaderFilters><PersonFilter persons={list} value={pid} shareNote={false} /></HeaderFilters>
 
-      {/* ภาพรวม (รวม 4 กล่องเล็กเดิม) คู่กับผลย้อนหลัง · ผลรายครั้งรวมเข้าตารางผลย้อนหลัง (ตกลง 5 พ.ย. 2026) */}
-      <section className="grid items-start gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-medium text-slate-900">ภาพรวม</h2>
-          <dl className="mt-3 space-y-3 text-sm">
-            <div>
-              <dt className="text-xs text-slate-500">ตรวจล่าสุด</dt>
-              <dd className="text-lg font-semibold">{last ? thDate(last.checkup_date) : "-"}</dd>
-              <dd className={`text-xs ${!last || last.checkup_date < yearAgo ? "text-amber-700" : "text-slate-500"}`}>
-                {!last ? "ยังไม่มีผลตรวจ" : last.checkup_date < yearAgo ? "เกิน 1 ปีแล้ว ควรตรวจประจำปี" : last.hospital || "ภายใน 1 ปี"}</dd>
-            </div>
-            <div className="border-t border-slate-100 pt-3">
-              <dt className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด</dt>
-              <dd className={`text-lg font-semibold tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length} <span className="text-sm font-normal text-slate-500">รายการ</span></dd>
-              <dd className="text-xs text-slate-500">{lastAbn.length ? lastAbn.map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ") : last ? "ปกติทั้งหมด" : "-"}</dd>
-            </div>
-            <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
-              <div>
-                <dt className="text-xs text-slate-500">จำนวนครั้งที่บันทึก</dt>
-                <dd className="text-lg font-semibold tabular-nums">{recent.length} <span className="text-sm font-normal text-slate-500">ครั้ง</span></dd>
-                <dd className="text-xs text-slate-500">{metrics.length} รายการตรวจ</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด</dt>
-                <dd className="text-lg font-semibold tabular-nums">{money(costYear, "THB", 0)}</dd>
-                <dd className="text-xs text-slate-500">ตามที่บันทึกในแต่ละครั้ง</dd>
-              </div>
-            </div>
-          </dl>
-        </div>
-
-        <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+      {/* กล่องเดียว: สรุปเป็นบรรทัดใต้ชื่อกล่อง + ตารางผลย้อนหลังเต็มความกว้าง (ตกลง 5 พ.ย. 2026) */}
+      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-baseline gap-3">
-              <h2 className="font-medium text-slate-900">ผลย้อนหลัง</h2>
+              <h2 className="font-medium text-slate-900">ผลตรวจสุขภาพ</h2>
               {canDelete && metrics.length > 1 && <SortToggle active={ordering} {...orderHrefs("/family/health", { p: pid })} />}
             </div>
             {canWrite && <ActionBar className="shrink-0"><CheckupForm personId={pid} today={today} /></ActionBar>}
           </div>
-          {recent.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีผลตรวจ</p> : (
+          {last && (
+            <dl className="mb-4 mt-2 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+              <div>
+                <dt className="text-xs text-slate-500">ตรวจล่าสุด</dt>
+                <dd className="font-medium">{thDate(last.checkup_date)}
+                  <span className={`ml-2 text-xs font-normal ${last.checkup_date < yearAgo ? "text-amber-700" : "text-slate-500"}`}>
+                    {last.checkup_date < yearAgo ? "เกิน 1 ปีแล้ว ควรตรวจประจำปี" : last.hospital || "ภายใน 1 ปี"}</span></dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด</dt>
+                <dd className={`font-medium tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length ? `${lastAbn.length} รายการ` : "ปกติทั้งหมด"}
+                  {lastAbn.length > 0 && <span className="ml-2 text-xs font-normal text-slate-500">{lastAbn.map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ")}</span>}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด</dt>
+                <dd className="font-medium tabular-nums">{money(costYear, "THB", 0)}</dd>
+              </div>
+            </dl>
+          )}
+          {recent.length === 0 ? <p className="mt-3 text-sm text-slate-500">ยังไม่มีผลตรวจ</p> : (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -300,7 +281,6 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
               )}
             </>
           )}
-        </div>
       </section>
 
       {(covs.length > 0 || recentClaims.length > 0) && (
