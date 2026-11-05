@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, thDate, thMonth, todayBangkok, vacancyWarning,
+  INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
@@ -588,52 +588,13 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               minPrice={(targetRow as TargetPrice | null)?.min_price != null ? Number((targetRow as TargetPrice).min_price) : null}
               history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
           </div>
-          {/* ประกันของทรัพย์สินนี้ (ตกลง 3 พ.ย. 2026): กรมธรรม์ละบรรทัด กดไปหน้ากรมธรรม์ · ยังไม่มี = ปุ่มเพิ่ม (เลือกประเภท / ทรัพย์สินไว้ให้) */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-medium text-slate-900">ประกันของทรัพย์สินนี้</h2>
-              {canWrite && a.status === "ACTIVE" && insPols.length > 0 && <Link href={newInsHref} className="text-xs text-blue-700 hover:underline">+ เพิ่ม</Link>}
-            </div>
-            {insPols.length === 0 ? (
-              <>
-                <p className="mt-1 text-sm text-slate-500">ยังไม่มีประกัน</p>
-                {canWrite && a.status === "ACTIVE" && <Link href={newInsHref}
-                  className="mt-3 inline-block rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">+ เพิ่มประกันทรัพย์สินนี้</Link>}
-              </>
-            ) : (
-              <ul className="mt-1 divide-y divide-slate-100 text-sm">
-                {insPols.map((x) => {
-                  const mine = insDue.filter((d) => d.policy_id === x.id);
-                  const late = mine.filter((d) => d.status === "OVERDUE").length;
-                  const next = mine.find((d) => d.status !== "OVERDUE");
-                  return (
-                    <li key={x.id} className={`py-2 ${x.status !== "ACTIVE" ? "opacity-60" : ""}`}>
-                      <Link href={`/insurance/${x.id}`} className="font-medium text-slate-900 hover:underline">{x.insurer}{x.policy_no && ` · ${x.policy_no}`}</Link>
-                      <div className="text-xs text-slate-500">
-                        {[x.insured_amount != null ? `ทุน ${money(x.insured_amount, x.insured_amount_currency ?? undefined, 0)}` : null,
-                          x.premium != null ? `เบี้ย ${money(x.premium, x.premium_currency ?? undefined, 0)}/ปี` : null,
-                          x.end_date ? `ถึง ${thDate(x.end_date)}` : null].filter(Boolean).join(" · ")}
-                      </div>
-                      <div className="text-xs">
-                        {(x.status !== "ACTIVE" ? [<span key="s" className="text-slate-500">{INS_STATUS_LABEL[x.status] ?? x.status}</span>] : [
-                          x.derived_status === "EXPIRED" && <span key="e" className="text-red-600">เลยวันสิ้นสุด</span>,
-                          x.derived_status === "EXPIRING_SOON" && <span key="e" className="text-amber-700">ใกล้ครบ</span>,
-                          late > 0 && <span key="l" className="text-red-600">เบี้ยเลยกำหนด {late} งวด</span>,
-                          next ? <span key="n" className="text-slate-500">เบี้ยงวดถัดไป {thDate(next.due_date)} {money(next.remaining, next.currency !== "THB" ? next.currency : undefined)}</span>
-                            : late === 0 && <span key="n" className="text-slate-500">ไม่มีเบี้ยค้าง</span>,
-                        ]).filter(Boolean).map((n, i) => <span key={i}>{i > 0 && " · "}{n}</span>)}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
           <div className="flex flex-1 flex-col">
             <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        {/* ขวา: รายละเอียด + ประกันของทรัพย์สินนี้ (ย้ายมาใต้รายละเอียด · ตกลง 5 พ.ย. 2026) */}
+        <div className="flex flex-col gap-4 md:col-span-2">
+        <div className="flex-1 rounded-xl border border-slate-200 bg-white p-5">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={<>
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
@@ -704,6 +665,54 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                 {canDelete && hasHistory && <p className="text-xs text-slate-500">มีประวัติแล้ว (ซื้อ / ขาย หรือมูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ · ถ้าไม่ได้ถือแล้ว ให้เปลี่ยนสถานะเป็น ขายแล้ว / ยกให้แล้ว / สูญหาย</p>}
               </div>
             } />
+        </div>
+        {/* ประกันของทรัพย์สินนี้ (ตกลง 3 พ.ย. 2026): กรมธรรม์ละแถว กดชื่อไปหน้ากรมธรรม์ · ยังไม่มี = ปุ่มเพิ่ม (เลือกประเภท / ทรัพย์สินไว้ให้) */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-medium text-slate-900">ประกันของทรัพย์สินนี้{insPols.length > 0 && ` (${insPols.length})`}</h2>
+            {canWrite && a.status === "ACTIVE" && insPols.length > 0 && <Link href={newInsHref} className={SMALL_BTN}>+ เพิ่มประกัน</Link>}
+          </div>
+          {insPols.length === 0 ? (
+            <>
+              <p className="mt-1 text-sm text-slate-500">ยังไม่มีประกัน</p>
+              {canWrite && a.status === "ACTIVE" && <Link href={newInsHref} className={`mt-3 inline-block ${SMALL_BTN}`}>+ เพิ่มประกันทรัพย์สินนี้</Link>}
+            </>
+          ) : (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-slate-500">
+                  <tr><th className="py-1.5">กรมธรรม์</th><th className="px-3 text-right">ทุนประกัน</th><th className="px-3 text-right">เบี้ยต่อปี</th>
+                    <th className="px-3">สิ้นสุด</th><th className="pl-3">สถานะ / เบี้ย</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {insPols.map((x) => {
+                    const mine = insDue.filter((d) => d.policy_id === x.id);
+                    const late = mine.filter((d) => d.status === "OVERDUE").length;
+                    const next = mine.find((d) => d.status !== "OVERDUE");
+                    return (
+                      <tr key={x.id} className={`align-top ${x.status !== "ACTIVE" ? "opacity-60" : ""}`}>
+                        <td className="py-2"><Link href={`/insurance/${x.id}`} className="font-medium text-slate-900 hover:underline">{x.insurer}</Link>
+                          {x.policy_no && <div className="text-xs text-slate-500">{x.policy_no}</div>}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{x.insured_amount != null ? money(x.insured_amount, x.insured_amount_currency ?? undefined, 0) : "-"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{x.premium != null ? money(x.premium, x.premium_currency ?? undefined, 0) : "-"}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{x.end_date ? thDate(x.end_date) : "-"}</td>
+                        <td className="py-2 pl-3 text-xs">
+                          {(x.status !== "ACTIVE" ? [<span key="s" className="text-slate-500">{INS_STATUS_LABEL[x.status] ?? x.status}</span>] : [
+                            x.derived_status === "EXPIRED" && <span key="e" className="text-red-600">เลยวันสิ้นสุด</span>,
+                            x.derived_status === "EXPIRING_SOON" && <span key="e" className="text-amber-700">ใกล้ครบ</span>,
+                            late > 0 && <span key="l" className="text-red-600">เบี้ยเลยกำหนด {late} งวด</span>,
+                            next ? <span key="n" className="text-slate-500">เบี้ยงวดถัดไป {thDate(next.due_date)} {money(next.remaining, next.currency !== "THB" ? next.currency : undefined)}</span>
+                              : late === 0 && <span key="n" className="text-slate-500">ไม่มีเบี้ยค้าง</span>,
+                          ]).filter(Boolean).map((n, i) => <div key={i}>{n}</div>)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
         </div>
       </section>
 
