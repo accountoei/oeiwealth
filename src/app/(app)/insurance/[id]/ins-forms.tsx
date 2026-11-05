@@ -5,7 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addCashValue, addCoverage, payPremium, receiveBenefit, saveCashValueTable, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { parseCashValueText, type CvLine } from "@/lib/insurance-schedule";
-import { COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
+import { SMALL_BTN, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
@@ -61,7 +61,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
         <AssetValuationForm assetId={cashValue.assetId} currency={cashValue.currency} today={today} minDate={cashValue.minDate} paths={cashValue.paths}
           defaultValue={sug?.value ?? cashValue.current ?? undefined} defaultNotes={sug ? `ตามตารางในสัญญา ปีที่ ${sug.year}` : undefined}
           methods={[["STATEMENT", "ตามหนังสือแจ้ง / ตารางในสัญญา"], ["USER_ESTIMATE", "ประมาณเอง"]]} />
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500">ข้าม / ปิด</button>
+        <button type="button" onClick={() => setOpen(false)} className={SMALL_BTN}>ข้าม</button>
       </div>
     ));
   }

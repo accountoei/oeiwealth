@@ -82,7 +82,7 @@ function InventoryAddBody({ assetId, rooms, roomsWithItems, pays, today, minDate
                 <td className="py-1 pr-1"><input value={r.serial_no} onChange={(e) => set(i, "serial_no", e.target.value)} data-plain className={cell} /></td>
                 <td className="py-1 pr-1"><input value={r.value} onChange={(e) => set(i, "value", e.target.value)} inputMode="decimal" className={`${cell} text-right`} /></td>
                 <td className="py-1 text-center">{rows.length > 1 && (
-                  <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-600" aria-label="ลบแถว">×</button>)}</td>
+                  <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} className={SMALL_DEL_BTN}>ลบ</button>)}</td>
               </tr>
             ))}
           </tbody>
@@ -240,7 +240,7 @@ function HandoverBody({ assetId, leaseId, items, canWrite, currency }: {
                       <td className="py-1 pr-1"><input value={r.deduction} readOnly={ro} onChange={(e) => set(i, "deduction", e.target.value)} inputMode="decimal" className={`${cell} text-right`} /></td>
                       <td className="py-1 text-center">{canWrite && (
                         <button type="button" onClick={() => { if (r.id) setRemoved([...removed, r.id]); setRows(rows.filter((_, j) => j !== i)); }}
-                          className="text-slate-400 hover:text-red-600" aria-label="ลบแถว">×</button>)}</td>
+                          className={SMALL_DEL_BTN}>ลบ</button>)}</td>
                     </tr>
                   );
                 })}

@@ -597,7 +597,7 @@ export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate,
       {rate && <p className="text-xs text-slate-700">{rate}</p>}
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
+        <button type="button" data-close onClick={() => setOpen(false)} className={SMALL_BTN}>ปิด</button>
         <Msg s={state} />
       </div>
     </form>

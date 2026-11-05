@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { demolishComponents, payForAsset, payPropertyLines, sellAsset, undoComponentEvent, type TradeState } from "@/lib/asset-trade";
-import { SMALL_DEL_BTN, money, numOrZero } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
@@ -44,13 +44,13 @@ function SaleLines({ currency, banks, cards = [], demolish = false }: { currency
             </select>
             <input value={r.amount} onChange={(e) => setR(r.key, { amount: e.target.value })} inputMode="decimal" aria-label="จำนวนเงินที่รับ"
               placeholder="จำนวน" className={`${cellCls} text-right`} />
-            <button type="button" onClick={() => setRec((rs) => rs.filter((x) => x.key !== r.key))} className="text-xs text-red-600 hover:underline">ลบ</button>
+            <button type="button" onClick={() => setRec((rs) => rs.filter((x) => x.key !== r.key))} className={SMALL_DEL_BTN}>ลบ</button>
             <input value={r.note} onChange={(e) => setR(r.key, { note: e.target.value })} aria-label="หมายเหตุของเงินที่รับ"
               placeholder="หมายเหตุ เช่น มัดจำ / ส่วนที่เหลือ" data-plain className={`col-span-2 ${cellCls}`} />
           </div>
         ))}
         <button type="button" onClick={() => setRec((rs) => [...rs, { key: key(), bank: banks[0]?.asset_id ?? "", amount: "", note: "" }])}
-          className="text-sm text-blue-700 hover:underline">+ {rec.length ? "รับเงินอีกบัญชี" : demolish ? "ขายเศษวัสดุได้" : "เงินที่ได้รับ"}</button>
+          className={`${SMALL_BTN} self-start`}>+ {rec.length ? "รับเงินอีกบัญชี" : demolish ? "ขายเศษวัสดุได้" : "เงินที่ได้รับ"}</button>
         {banks.length === 0 && <p className="text-xs text-amber-700">ไม่มีบัญชีสกุล {currency} ที่ใช้งานอยู่</p>}
       </div>
       <div className="space-y-2">
@@ -62,7 +62,7 @@ function SaleLines({ currency, banks, cards = [], demolish = false }: { currency
               placeholder="รายการ เช่น ค่าโอน / นายหน้า" data-plain className={cellCls} />
             <input value={c.amount} onChange={(e) => setC(c.key, { amount: e.target.value })} inputMode="decimal" aria-label="จำนวนค่าใช้จ่าย"
               placeholder="จำนวน" className={`${cellCls} text-right`} />
-            <button type="button" onClick={() => setCost((cs) => cs.filter((x) => x.key !== c.key))} className="text-xs text-red-600 hover:underline">ลบ</button>
+            <button type="button" onClick={() => setCost((cs) => cs.filter((x) => x.key !== c.key))} className={SMALL_DEL_BTN}>ลบ</button>
             <select value={c.pay} onChange={(e) => setC(c.key, { pay: e.target.value })} aria-label="จ่ายอย่างไร" className={`col-span-2 ${cellCls}`}>
               {(!demolish || rec.length > 0) && <option value="DEDUCT">หักจากเงินที่ได้รับ</option>}
               <optgroup label="จ่ายจากบัญชี">{banks.map((b) => <option key={b.asset_id} value={`a:${b.asset_id}`}>จ่ายจาก {b.name}</option>)}</optgroup>
@@ -72,7 +72,7 @@ function SaleLines({ currency, banks, cards = [], demolish = false }: { currency
         ))}
         <button type="button" onClick={() => setCost((cs) => [...cs, { key: key(), label: "", amount: "",
           pay: !demolish || rec.length > 0 ? "DEDUCT" : banks[0] ? `a:${banks[0].asset_id}` : "DEDUCT" }])}
-          className="text-sm text-blue-700 hover:underline">+ ค่าใช้จ่าย</button>
+          className={`${SMALL_BTN} self-start`}>+ ค่าใช้จ่าย</button>
       </div>
       <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm md:col-span-2">
         <span>เงินที่ได้รับรวม <b className="tabular-nums">{money(received, currency, 2)}</b></span>
@@ -299,7 +299,7 @@ export function PayLines({ currency, banks, cards = [], persons = [], multi = tr
               </td>
               {multi && <td className="py-1 align-top">
                 {rows.length > 1 && <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
-                  className="px-1 py-1.5 text-slate-400 hover:text-red-600" title="ลบบรรทัดนี้" aria-label="ลบบรรทัดนี้">✕</button>}
+                  className={`${SMALL_DEL_BTN} mt-1`} title="ลบบรรทัดนี้">ลบ</button>}
               </td>}
             </tr>
           ))}
@@ -307,7 +307,7 @@ export function PayLines({ currency, banks, cards = [], persons = [], multi = tr
         {multi && <tfoot><tr>
           <td colSpan={2} className="pt-1">
             <button type="button" onClick={() => { const via = rows[rows.length - 1]?.via ?? firstVia; setRows((rs) => [...rs, { key: `k${++seq.current}`, via, id: pickId(via), amount: "" }]); }}
-              className="text-xs text-blue-700 hover:underline">+ เพิ่มบรรทัด</button>
+              className={SMALL_BTN}>+ เพิ่มบรรทัด</button>
           </td>
           <td className="pr-2 pt-1 text-right text-xs text-slate-600">{rows.length > 1 && <>รวม <span className="font-medium tabular-nums text-slate-900">{money(sum)}</span></>}</td>
           <td />
@@ -451,7 +451,7 @@ export function UndoComponentEvent({ eventId, paths }: { eventId: string; paths:
       {ask ? <>
         <button disabled={pending} className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-50">
           {pending ? "กำลังยกเลิก…" : "ยืนยันยกเลิก"}</button>
-        <button type="button" onClick={() => setAsk(false)} className="text-xs text-slate-500">ไม่ใช่</button>
+        <button type="button" onClick={() => setAsk(false)} className={SMALL_BTN}>ไม่ใช่</button>
       </> : <button type="button" onClick={() => setAsk(true)} className={SMALL_DEL_BTN}>ยกเลิกรายการนี้</button>}
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>

@@ -15,6 +15,8 @@ import BankOptions from "@/components/BankOptions";
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
+/** ตอบ "ไม่" ในคำถามต่อท้ายหน้าต่าง — ขนาดเดียวกับปุ่มคู่กัน */
+const OUT_BTN = "rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50";
 type Bank = { asset_id: string; name: string; currency: string };
 
 function Msg({ s }: { s: ActionState }) {
@@ -93,11 +95,11 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
           <p className="font-medium text-slate-900">รับเงินต้นครบแล้ว (คงเหลือ 0) — เปลี่ยนสถานะเป็น &ldquo;ปิดแล้ว&rdquo; เลยไหม?</p>
           <div className="flex flex-wrap gap-2">
             <button disabled={closing} className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700 disabled:opacity-50">{closing ? "กำลังปิด…" : "ปิดสัญญา"}</button>
-            <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="px-2 text-slate-500 underline">ยังไม่ปิด</button>
+            <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className={OUT_BTN}>ยังไม่ปิด</button>
           </div>
           {closeState.error && <p className="text-red-600">{closeState.error}</p>}
         </>}
-        {closeState.ok && <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="text-slate-500 underline">ปิดหน้าต่าง</button>}
+        {closeState.ok && <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className={OUT_BTN}>ปิดหน้าต่าง</button>}
       </form>
     ));
   }
@@ -112,7 +114,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
         <div className="flex flex-wrap gap-2">
           <Link href={href("end")} onClick={() => { setDismissed(true); setOpen(false); }} className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700">{more ? "ลดค่างวด" : "เพิ่มค่างวด"} (จบวันเดิม)</Link>
           <Link href={href("payment")} onClick={() => { setDismissed(true); setOpen(false); }} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-50">{more ? "จบเร็วขึ้น" : "ขยายงวด"} (ค่างวดเดิม)</Link>
-          <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="px-2 text-slate-500 underline">ไม่ต้อง (ตารางเดิม)</button>
+          <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className={OUT_BTN}>ไม่ต้อง (ตารางเดิม)</button>
         </div>
         <p className="text-xs text-slate-500">{more ? "ไม่ปรับก็ได้ — ส่วนที่เกินจะหักงวดถัดไปตามลำดับ" : "ไม่ปรับก็ได้ — ส่วนที่ขาดเป็นยอดค้างของงวดนี้ (เลยกำหนดแล้วขึ้น \"เลยกำหนด\")"} · ปรับตาราง = ดอกเบี้ยงวดที่เหลือคิดใหม่ตามยอดคงเหลือ</p>
       </div>
@@ -174,7 +176,7 @@ export function DisburseForm({ assetId, currency, banks, today, minDate, hasOpen
         <div className="flex flex-wrap gap-2">
           <Link href={`/financial/loans/${assetId}?restructure=disburse`} onClick={() => { setDismissed(true); setOpen(false); }}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700">คำนวณงวดที่เหลือใหม่</Link>
-          <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className="px-2 text-slate-500 underline">ไว้ทีหลัง</button>
+          <button type="button" onClick={() => { setDismissed(true); setOpen(false); }} className={OUT_BTN}>ไว้ทีหลัง</button>
         </div>
         <p className="text-xs text-slate-500">ไม่ปรับก็ได้ — งวดเดิมไม่เปลี่ยน · ยอดที่ให้กู้เพิ่มยังไม่มีในตาราง</p>
       </div>

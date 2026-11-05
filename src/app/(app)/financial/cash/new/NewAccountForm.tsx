@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { createBankAccount, type ActionState } from "../actions";
-import { ACCOUNT_TYPE_LABEL, thDate } from "@/lib/format";
+import { SMALL_BTN, ACCOUNT_TYPE_LABEL, thDate } from "@/lib/format";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import BankSelect from "@/components/BankSelect";
 
@@ -90,7 +90,7 @@ export default function NewAccountForm(props: {
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-medium text-slate-900">ยอดคงเหลือแรก</h2>
         {!isSetup && isAdmin && !late && (
-          <button type="button" onClick={() => setLate(true)} className="text-left text-xs text-slate-400 underline hover:text-slate-600">เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
+          <button type="button" onClick={() => setLate(true)} className={`${SMALL_BTN} self-start justify-self-start`}>เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
         )}
         {canOpening && (isSetup || late) && (
           <label className="flex items-start gap-2 text-sm">

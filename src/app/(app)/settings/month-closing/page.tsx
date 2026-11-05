@@ -3,7 +3,6 @@ import { PageInfo } from "@/components/HeaderBar";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { addDays, money, monthRange, thDate, thMonth, todayBangkok, signedMoney, plusMoney, minusMoney } from "@/lib/format";
-import { TabActions } from "@/components/TabActions";
 import { FinalizeForm, ReopenForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
 import { StatBox } from "@/components/Boxes";
@@ -211,7 +210,10 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   const elsewhere = ym !== defaultYm;          // เปิดดูเดือนอื่น (จากตารางเดือนที่ปิดแล้ว)
   const status = isFinal ? "final" : loadFailed ? "error" : !ended ? "open" : blocked.length ? "blocked" : "ready";
   const TONE = { final: "border-emerald-200 bg-emerald-50 text-emerald-900", error: "border-red-200 bg-red-50 text-red-800",
-    open: "border-slate-200 bg-white text-slate-700", blocked: "border-red-200 bg-red-50 text-red-800", ready: "border-blue-200 bg-blue-50 text-blue-900" };
+    open: "border-slate-200 bg-white text-slate-700", blocked: "border-red-200 bg-red-50 text-red-800", ready: "border-emerald-200 bg-emerald-50 text-emerald-900" };
+  // ปิดครบทุกเดือนที่สิ้นเดือนแล้ว (เดือนที่ต้องปิดถัดไปยังไม่สิ้นเดือน) → สีเขียว (ตกลง 5 พ.ย. 2026)
+  const allClosed = status === "open" && !elsewhere && !!latest;
+  const tone = allClosed ? TONE.ready : TONE[status];
   const cardTable = cardRows.length > 0 && (
     <div className="mt-3 rounded-lg border border-slate-200">
       <p className="px-3 pt-2 text-xs text-slate-500">
@@ -253,30 +255,20 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
   return (
     <div className="space-y-4">
       <PageInfo>ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</PageInfo>
-      {/* ปุ่มปิดเดือนอยู่แถวแท็บ (ขึ้นเสมอ · ถ้ายังปิดไม่ได้ กดแล้วบอกเหตุผล ไม่มีปุ่มยืนยัน)
-          ปุ่มอัปเดตยอด → ใช้ลิงก์ "ไปแก้" ในแถว Bank Accounts ของ Checklist · ยกเลิกการปิดเดือน → กล่องเดือนที่ปิดแล้ว (ตกลง 4 พ.ย. 2026) */}
-      {!isFinal && canClose && (
-        <TabActions>
-          <ActionBar>
-            <FinalizeForm month={start} warnings={warnings} label={`ปิดเดือน ${thMonth(start)}`} blockers={closeBlockers}
-              summary={<>จะบันทึกความมั่งคั่งสุทธิ <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
-                {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}</>} />
-          </ActionBar>
-        </TabActions>
-      )}
 
       {/* ---------------------------------------------------------- สถานะเดือนนี้ (บนสุด) */}
-      <section className={`flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-xl border px-5 py-3 text-sm ${TONE[status]}`}>
+      <section className={`flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-xl border px-5 py-3 text-sm ${tone}`}>
         <div className="min-w-[min(100%,18rem)] flex-1">
           <p>
             <b className="font-semibold">{thMonth(start)}</b>
             {" · "}
             {status === "final" ? <>ปิดแล้ว · FINAL เวอร์ชัน {snap?.version} · ปิดเมื่อ {snap?.finalized_at ? new Date(snap.finalized_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "-"}</>
               : status === "error" ? "โหลดข้อมูลตรวจความพร้อมไม่สำเร็จ — ลองรีเฟรชหน้า"
+              : allClosed ? <>ปิดครบถึง {thMonth(latest!.snapshot_month)} แล้ว · {thMonth(start)} ปิดได้ตั้งแต่ {thDate(addDays(end, 1))}</>
               : status === "open" ? <>ยังไม่สิ้นเดือน · ปิดเดือนได้ตั้งแต่ {thDate(addDays(end, 1))} · ตัวเลขด้านล่างเป็นยอด ณ วันนี้</>
               : status === "blocked" ? <>ยังปิดไม่ได้: {blocked.map((c) => CAT[c.category] ?? c.category).join(" · ")} เป็น BLOCKED (ดู Checklist)</>
               : !canClose ? "พร้อมปิดเดือน · ผู้ดูแลระบบ / ผู้แก้ไข เป็นผู้ปิดเดือน"
-              : <>พร้อมปิดเดือน{warnings > 0 ? ` (มีคำเตือน ${warnings} รายการ · ปิดได้)` : ""} — กดปุ่ม &ldquo;ปิดเดือน {thMonth(start)}&rdquo; มุมขวาบน</>}
+              : <>พร้อมปิดเดือน{warnings > 0 ? ` · มีคำเตือน ${warnings} รายการ (ปิดได้)` : ""}</>}
           </p>
           {isFinal && snap?.closing_warnings && snap.closing_warnings.length > 0 && (
             <details className="mt-1 text-xs">
@@ -290,6 +282,15 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
         {elsewhere && (
           <Link href="/settings/month-closing" scroll={false} className="text-sm font-medium underline">
             ← กลับไปเดือนที่ต้องปิด ({thMonth(`${defaultYm}-01`)})</Link>
+        )}
+        {/* ปุ่มปิดเดือน ขวาสุดของบรรทัดสถานะ (ขึ้นเสมอ · ถ้ายังปิดไม่ได้ กดแล้วบอกเหตุผล ไม่มีปุ่มยืนยัน · ตกลง 5 พ.ย. 2026)
+            ปุ่มอัปเดตยอด → ใช้ลิงก์ "ไปแก้" ในแถว Bank Accounts ของ Checklist · ยกเลิกการปิดเดือน → กล่องเดือนที่ปิดแล้ว */}
+        {!isFinal && canClose && (
+          <ActionBar className="shrink-0">
+            <FinalizeForm month={start} warnings={warnings} label={`ปิดเดือน ${thMonth(start)}`} blockers={closeBlockers}
+              summary={<>จะบันทึกความมั่งคั่งสุทธิ <b>{money(p?.net_worth, "THB", 0)}</b> ณ {thDate(p?.as_of)}
+                {warnings > 0 && <span className="text-amber-700"> · มีคำเตือน {warnings} รายการ (ปิดได้)</span>}</>} />
+          </ActionBar>
         )}
       </section>
 
