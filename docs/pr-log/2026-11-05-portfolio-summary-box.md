@@ -1,4 +1,4 @@
-# Investments: รวมกล่องสรุปหน้าพอร์ต · หน้าแรกเหลือ 4 กล่อง
+# #327 · Investments: รวมกล่องสรุปหน้าพอร์ต · หน้าแรกเหลือ 4 กล่อง
 
 - วันที่: 5 พ.ย. 2026 · branch `feat/portfolio-summary-box`
 - SQL: ไม่มี SQL · ไม่มี Edge Function
