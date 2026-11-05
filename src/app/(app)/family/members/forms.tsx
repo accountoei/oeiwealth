@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { useActionSlot } from "@/components/ActionBar";
 import { addPerson, updateFamily, type ActionState } from "./actions";
-import { SMALL_DEL_BTN, SMALL_BTN, familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
+import { ROW_BTN, SMALL_DEL_BTN, SMALL_BTN, familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
 import { resizePhoto } from "./[id]/details-form";
 import Flash from "@/components/Flash";
 
@@ -97,7 +97,7 @@ export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
 export function AddPersonForm() {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState(addPerson, {});
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>+ เพิ่มสมาชิก</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>+ เพิ่มสมาชิก</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3">

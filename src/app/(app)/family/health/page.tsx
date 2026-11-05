@@ -3,16 +3,16 @@ import { PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import { requireAppUser } from "@/lib/auth";
 import Link from "next/link";
-import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
+import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, SMALL_BTN, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import CheckupForm from "./CheckupForm";
-import PersonPicker from "./PersonPicker";
+import PersonFilter from "@/components/PersonFilter";
+import { redirect } from "next/navigation";
 import { METRIC_LABEL } from "./metrics";
 import { SortToggle } from "@/components/SortControls";
 import { moveHealthMetric } from "@/lib/sort-actions";
 import { orderHrefs } from "@/lib/sort";
 import { ActionBar } from "@/components/ActionBar";
-import { StatBox } from "@/components/Boxes";
 
 const arrow = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
@@ -24,21 +24,125 @@ const CSTATUS = Object.fromEntries(CLAIM_STATUS);
 const HEALTH_COV = ["IPD_ANNUAL", "IPD_PER_ADMIT", "ROOM_PER_DAY", "OPD_PER_VISIT", "OPD_ANNUAL", "HOSPITAL_CASH_PER_DAY", "CRITICAL_ILLNESS"];
 const fmt = (r: Res) => (r.value_numeric != null ? Number(r.value_numeric).toLocaleString("th-TH", { maximumFractionDigits: 2 }) : r.value_text ?? "-");
 
+const PATHS = ["/family/health"];
+const INFO = <PageInfo>ผลตรวจสุขภาพประจำปีของสมาชิก · ข้อมูลอ่อนไหว ผู้ใช้ทุกคนในระบบเห็นได้ตามสิทธิ์</PageInfo>;
+type Sb = Awaited<ReturnType<typeof createClient>>;
+
+/** ข้อมูลมุมมองทั้งครอบครัว: ผลตรวจทุกคน (ไม่ดึงผลรายการ ยกเว้นรายการผิดปกติ) + สิทธิ์ประกันสุขภาพ — 2 รอบ ทำพร้อมรายชื่อ */
+async function loadFamily(supabase: Sb) {
+  const [checkups, abn, cov] = await Promise.all([
+    supabase.from("health_checkups").select("id,person_id,checkup_date,hospital,cost").is("deleted_at", null)
+      .order("checkup_date", { ascending: false }).then((r) => r.data ?? []),
+    supabase.from("health_results").select("checkup_id,metric").not("abnormal_flag", "is", null).is("deleted_at", null).then((r) => r.data ?? []),
+    (async () => {
+      const { data: pols } = await supabase.from("insurance_policies").select("id,person_id").eq("status", "ACTIVE").is("deleted_at", null).not("person_id", "is", null);
+      const owner = new Map((pols ?? []).map((x) => [x.id as string, x.person_id as string]));
+      if (!owner.size) return [];
+      const { data: covs } = await supabase.from("insurance_coverages").select("policy_id,coverage_type,limit_amount,currency")
+        .in("policy_id", [...owner.keys()]).in("coverage_type", HEALTH_COV).is("deleted_at", null);
+      return (covs ?? []).map((c) => ({ ...c, person_id: owner.get(c.policy_id) ?? "" }));
+    })(),
+  ]);
+  return { checkups, abn, cov };
+}
+
+/** ทั้งครอบครัว: ภาพรวม + ตาราง แถวละคน (ตกลง 5 พ.ย. 2026) */
+function FamilyView({ list, fam, yearAgo }: { list: { id: string; name: string }[]; fam: Awaited<ReturnType<typeof loadFamily>>; yearAgo: string }) {
+  const rows = list.map((p) => {
+    const cs = fam.checkups.filter((c) => c.person_id === p.id);
+    const last = cs[0];
+    const abn = last ? fam.abn.filter((r) => r.checkup_id === last.id) : [];
+    const cost = cs.filter((c) => c.checkup_date > yearAgo).reduce((t, c) => t + Number(c.cost ?? 0), 0);
+    // สิทธิ์หลัก 2 อย่างแรกตามลำดับ HEALTH_COV · หลายกรมธรรม์รวมวงเงินกัน (สกุลเดียวกับรายการแรก)
+    const cov = HEALTH_COV.flatMap((t) => {
+      const xs = fam.cov.filter((c) => c.person_id === p.id && c.coverage_type === t);
+      if (!xs.length) return [];
+      const cur = xs[0].currency ?? "THB";
+      const sum = xs.filter((c) => (c.currency ?? "THB") === cur).reduce((a, c) => a + Number(c.limit_amount ?? 0), 0);
+      return [`${COVERAGE_LABEL[t]?.[0] ?? t}${COVERAGE_LABEL[t]?.[1] ? ` ${COVERAGE_LABEL[t][1]}` : ""} ${money(sum, cur, 0)}`];
+    }).slice(0, 2);
+    return { ...p, last, abn, cost, cov, due: !last || last.checkup_date < yearAgo };
+  });
+  const due = rows.filter((r) => r.due);
+  const abnTotal = rows.reduce((t, r) => t + r.abn.length, 0);
+  const costTotal = rows.reduce((t, r) => t + r.cost, 0);
+  return (
+    <div className="space-y-6">
+      {INFO}
+      <TabActions><PersonFilter persons={list} value="" shareNote={false} /></TabActions>
+      <section className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-900">ภาพรวมทั้งครอบครัว</h2>
+          <dl className="mt-3 space-y-3 text-sm">
+            <div>
+              <dt className="text-xs text-slate-500">ตรวจแล้วในรอบ 12 เดือน</dt>
+              <dd className="text-lg font-semibold tabular-nums">{rows.length - due.length} <span className="text-sm font-normal text-slate-500">/ {rows.length} คน</span></dd>
+              <dd className={`text-xs ${due.length ? "text-amber-700" : "text-slate-500"}`}>
+                {due.length ? `เกิน 1 ปี / ยังไม่เคยตรวจ: ${due.map((r) => r.name).join(" · ")}` : "ทุกคนตรวจภายใน 1 ปี"}</dd>
+            </div>
+            <div className="border-t border-slate-100 pt-3">
+              <dt className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด (รวมทุกคน)</dt>
+              <dd className={`text-lg font-semibold tabular-nums ${abnTotal ? "text-red-700" : ""}`}>{abnTotal} <span className="text-sm font-normal text-slate-500">รายการ</span></dd>
+              <dd className="text-xs text-slate-500">{abnTotal ? `จาก ${rows.filter((r) => r.abn.length).length} คน` : "ไม่มีรายการผิดปกติ"}</dd>
+            </div>
+            <div className="border-t border-slate-100 pt-3">
+              <dt className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด (รวม)</dt>
+              <dd className="text-lg font-semibold tabular-nums">{money(costTotal, "THB", 0)}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <h2 className="font-medium text-slate-900">สมาชิก</h2>
+          <p className="mb-2 text-xs text-slate-500">กดที่ชื่อเพื่อดูผลย้อนหลังและบันทึกผลตรวจของคนนั้น</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr><th className="py-1 pr-3">สมาชิก</th><th className="pr-3">ตรวจล่าสุด</th><th className="pr-3">ผิดปกติครั้งล่าสุด</th><th className="pr-3 text-right">ค่าตรวจ 12 เดือน</th><th>สิทธิ์ประกันสุขภาพ</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r) => (
+                  <tr key={r.id} className="align-top">
+                    <td className="whitespace-nowrap py-2 pr-3"><Link href={`/family/health?p=${r.id}`} scroll={false} className="font-medium text-blue-700 hover:underline">{r.name}</Link></td>
+                    <td className="whitespace-nowrap pr-3">{r.last ? thDate(r.last.checkup_date) : <span className="text-amber-700">ยังไม่เคยตรวจ</span>}
+                      {r.last && <div className={`text-xs ${r.due ? "text-amber-700" : "text-slate-500"}`}>{r.due ? "เกิน 1 ปีแล้ว" : r.last.hospital || "ภายใน 1 ปี"}</div>}</td>
+                    <td className="pr-3">{!r.last ? "-" : r.abn.length === 0 ? <span className="text-slate-500">ปกติทั้งหมด</span> : (
+                      <><span className="font-medium tabular-nums text-red-700">{r.abn.length} รายการ</span>
+                        <div className="text-xs text-slate-500">{r.abn.slice(0, 3).map((x) => METRIC_LABEL[x.metric] ?? x.metric).join(" · ")}{r.abn.length > 3 ? " …" : ""}</div></>)}</td>
+                    <td className="pr-3 text-right tabular-nums">{r.cost ? money(r.cost, "THB", 0) : "-"}</td>
+                    <td className="text-xs">{r.cov.length ? r.cov.map((c) => <div key={c}>{c}</div>) : <span className="text-slate-500">-</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default async function HealthPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const { data: persons } = await supabase.from("persons").select("id,name").is("deleted_at", null).neq("status", "DECEASED").order("sort_order").order("created_at");
-  const list = persons ?? [];
-  const pid = list.some((p) => p.id === sp.p) ? (sp.p as string) : me.person_id && list.some((p) => p.id === me.person_id) ? me.person_id : list[0]?.id;
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
-  const ordering = canDelete && sp.order === "1";
-  if (!pid) return <p className="text-sm text-slate-500">ยังไม่มีสมาชิกครอบครัว</p>;
+  const today = todayBangkok();
+  const year = today.slice(0, 4);
+  const yearAgo = `${Number(year) - 1}${today.slice(4)}`;
+  // ไม่เลือกคน = ทั้งครอบครัว (ตกลง 5 พ.ย. 2026) · เลือกคน = เริ่มดึงข้อมูลของคนนั้นพร้อมรายชื่อ (ไม่ต้องรอรายชื่อก่อน)
+  const pid = sp.p ?? "";
+  const personsP = supabase.from("persons").select("id,name").is("deleted_at", null).neq("status", "DECEASED").order("sort_order").order("created_at").then((r) => r.data ?? []);
 
-  const year = todayBangkok().slice(0, 4);
+  if (!pid) {
+    const [list, fam] = await Promise.all([personsP, loadFamily(supabase)]);
+    return <FamilyView list={list} fam={fam} yearAgo={yearAgo} />;
+  }
+
+  const ordering = canDelete && sp.order === "1";
   // ผลตรวจ + สิทธิ์ประกันสุขภาพของคนนี้ (อ่านอย่างเดียว · ตกลง 2 พ.ย. 2026) — ดึงพร้อมกัน ส่วนที่ต้องใช้ผลก่อนหน้าต่อกันในรอบเดียว
-  const [{ checkups, resultsRaw }, { pols, covs, claims }] = await Promise.all([
+  const [list, { checkups, resultsRaw }, { pols, covs, claims }] = await Promise.all([
+    personsP,
     (async () => {
       const { data: checkups } = await supabase.from("health_checkups").select("*").eq("person_id", pid).is("deleted_at", null).order("checkup_date", { ascending: false });
       const ids = (checkups ?? []).map((c) => c.id);
@@ -57,6 +161,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       return { pols: pols ?? [], covs: covs ?? [], claims: claims ?? [] };
     })(),
   ]);
+  if (!list.some((p) => p.id === pid)) redirect("/family/health");   // ลิงก์เก่า / คนที่ถูกลบ → ทั้งครอบครัว
   const polName = new Map(pols.map((x) => [x.id, `${x.insurer}${x.policy_no ? ` · ${x.policy_no}` : ""}`]));
   const live = (c: { status: string }) => !["REJECTED", "CANCELLED"].includes(c.status);
   const usedOf = (covId: string) => claims.filter((c) => c.coverage_id === covId && live(c) && (c.claim_date ?? c.incident_date ?? "").startsWith(year))
@@ -64,38 +169,139 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const recentClaims = claims.slice(0, 5);
   // ลำดับรายการผลตรวจ (ตั้งได้ต่อสมาชิก) — ใช้ทั้งตารางผลย้อนหลังและผลแต่ละครั้ง
   const results = ((resultsRaw as Res[] | null) ?? []).sort((a, b) => (a.sort_order ?? 1e9) - (b.sort_order ?? 1e9));
-  const recent = (checkups ?? []).slice(0, 6);
+  const recent = checkups ?? [];   // ทุกครั้ง (เลื่อนซ้าย–ขวาได้) · แทนกล่องผลรายครั้งเดิม (ตกลง 5 พ.ย. 2026)
   const metrics = [...new Set(results.map((r) => r.metric))];
   const cellOf = (m: string, c: string) => results.find((r) => r.metric === m && r.checkup_id === c);
-  const paths = ["/family/health"];
   const last = (checkups ?? [])[0];
   const lastAbn = last ? results.filter((r) => r.checkup_id === last.id && r.abnormal_flag) : [];
-  const yearAgo = `${Number(todayBangkok().slice(0, 4)) - 1}${todayBangkok().slice(4)}`;
   const costYear = (checkups ?? []).filter((c) => c.checkup_date > yearAgo).reduce((t, c) => t + Number(c.cost ?? 0), 0);
+
+  // ค่าปกติ / หน่วย ของแต่ละรายการ = จากผลครั้งล่าสุดที่มีรายการนั้น
+  const refOf = (m: string) => {
+    for (const c of recent) {
+      const r = cellOf(m, c.id);
+      if (r) return [r.reference_text ?? (r.reference_min != null || r.reference_max != null ? `${r.reference_min ?? ""}–${r.reference_max ?? ""}` : ""), r.unit].filter(Boolean).join(" ");
+    }
+    return "";
+  };
+  const noted = recent.filter((c) => c.package_name || c.cost != null || c.notes);
 
   return (
     <div className="space-y-6">
-      <PageInfo>ผลตรวจสุขภาพประจำปีของสมาชิก · ข้อมูลอ่อนไหว ผู้ใช้ทุกคนในระบบเห็นได้ตามสิทธิ์</PageInfo>
-      {/* ตัวเลือกคนอยู่แถวแท็บ ขวาสุดต่อจากปุ่ม (ตกลง 30 ต.ค. 2026) */}
-      <TabActions>
-        {canWrite && <ActionBar><CheckupForm personId={pid} today={todayBangkok()} /></ActionBar>}
-        <PersonPicker persons={list} value={pid} />
-      </TabActions>
+      {INFO}
+      <TabActions><PersonFilter persons={list} value={pid} shareNote={false} /></TabActions>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">ตรวจล่าสุด</div>
-          <div className="mt-1 text-xl font-semibold">{last ? thDate(last.checkup_date) : "-"}</div>
-          <div className={`mt-1 text-xs ${last && last.checkup_date < yearAgo ? "text-amber-700" : "text-slate-500"}`}>
-            {!last ? "ยังไม่มีผลตรวจ" : last.checkup_date < yearAgo ? "เกิน 1 ปีแล้ว ควรตรวจประจำปี" : last.hospital || "ภายใน 1 ปี"}</div>
+      {/* ภาพรวม (รวม 4 กล่องเล็กเดิม) คู่กับผลย้อนหลัง · ผลรายครั้งรวมเข้าตารางผลย้อนหลัง (ตกลง 5 พ.ย. 2026) */}
+      <section className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-900">ภาพรวม</h2>
+          <dl className="mt-3 space-y-3 text-sm">
+            <div>
+              <dt className="text-xs text-slate-500">ตรวจล่าสุด</dt>
+              <dd className="text-lg font-semibold">{last ? thDate(last.checkup_date) : "-"}</dd>
+              <dd className={`text-xs ${!last || last.checkup_date < yearAgo ? "text-amber-700" : "text-slate-500"}`}>
+                {!last ? "ยังไม่มีผลตรวจ" : last.checkup_date < yearAgo ? "เกิน 1 ปีแล้ว ควรตรวจประจำปี" : last.hospital || "ภายใน 1 ปี"}</dd>
+            </div>
+            <div className="border-t border-slate-100 pt-3">
+              <dt className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด</dt>
+              <dd className={`text-lg font-semibold tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length} <span className="text-sm font-normal text-slate-500">รายการ</span></dd>
+              <dd className="text-xs text-slate-500">{lastAbn.length ? lastAbn.map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ") : last ? "ปกติทั้งหมด" : "-"}</dd>
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+              <div>
+                <dt className="text-xs text-slate-500">จำนวนครั้งที่บันทึก</dt>
+                <dd className="text-lg font-semibold tabular-nums">{recent.length} <span className="text-sm font-normal text-slate-500">ครั้ง</span></dd>
+                <dd className="text-xs text-slate-500">{metrics.length} รายการตรวจ</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">ค่าตรวจ 12 เดือนล่าสุด</dt>
+                <dd className="text-lg font-semibold tabular-nums">{money(costYear, "THB", 0)}</dd>
+                <dd className="text-xs text-slate-500">ตามที่บันทึกในแต่ละครั้ง</dd>
+              </div>
+            </div>
+          </dl>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">ผิดปกติในครั้งล่าสุด</div>
-          <div className={`mt-1 text-xl font-semibold tabular-nums ${lastAbn.length ? "text-red-700" : ""}`}>{lastAbn.length} <span className="text-sm font-normal text-slate-500">รายการ</span></div>
-          <div className="mt-1 truncate text-xs text-slate-500">{lastAbn.length ? lastAbn.slice(0, 3).map((r) => METRIC_LABEL[r.metric] ?? r.metric).join(" · ") : "ปกติทั้งหมด"}</div>
+
+        <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-baseline gap-3">
+              <h2 className="font-medium text-slate-900">ผลย้อนหลัง</h2>
+              {canDelete && metrics.length > 1 && <SortToggle active={ordering} {...orderHrefs("/family/health", { p: pid })} />}
+            </div>
+            {canWrite && <ActionBar className="shrink-0"><CheckupForm personId={pid} today={today} /></ActionBar>}
+          </div>
+          {recent.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีผลตรวจ</p> : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-slate-500">
+                    <tr className="align-bottom">
+                      <th className="sticky left-0 z-10 bg-white py-1 pr-2">รายการ</th>
+                      <th className="whitespace-nowrap px-2">ค่าปกติ</th>
+                      {recent.map((c) => (
+                        <th key={c.id} className="whitespace-nowrap px-2 text-right font-normal">
+                          <div className="font-medium text-slate-700">{thDate(c.checkup_date)}</div>
+                          {c.hospital && <div className="max-w-[9rem] truncate" title={c.hospital}>{c.hospital}</div>}
+                          {canWrite && <div className="mt-1"><RowActions table="health_checkups" id={c.id} paths={PATHS} canDelete={canDelete} button="แก้ไข" buttonClass={SMALL_BTN}
+                            deleteEffect="ผลรายการตรวจของครั้งนี้จะไม่แสดงอีก (ไม่มีเงินเข้า–ออกบัญชีเกี่ยวข้อง)" fields={[
+                            { name: "checkup_date", label: "วันที่", type: "date", value: c.checkup_date }, { name: "hospital", label: "โรงพยาบาล", value: c.hospital },
+                            { name: "package_name", label: "แพ็กเกจ", value: c.package_name }, { name: "cost", label: "ค่าใช้จ่าย", type: "number", value: c.cost },
+                            { name: "notes", label: "หมายเหตุ / คำแนะนำแพทย์", value: c.notes, wide: true }]} /></div>}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {metrics.length === 0 && <tr><td colSpan={recent.length + 2} className="py-3 text-center text-slate-500">ยังไม่มีผลรายการตรวจ</td></tr>}
+                    {metrics.map((m, i) => (
+                      <tr key={m}>
+                        <td className="sticky left-0 z-10 whitespace-nowrap bg-white py-1.5 pr-2">
+                    {ordering && (
+                      <span className="mr-2 inline-flex gap-1 align-middle">
+                        {[[metrics[i - 1], "↑", "เลื่อนขึ้น"], [metrics[i + 1], "↓", "เลื่อนลง"]].map(([other, label, aria]) => (
+                          <form key={label} action={moveHealthMetric}>
+                            <input type="hidden" name="person_id" value={pid} /><input type="hidden" name="metric" value={m} />
+                            <input type="hidden" name="other" value={other ?? ""} /><input type="hidden" name="paths" value="/family/health" />
+                            <button className={arrow} disabled={!other} aria-label={aria}>{label}</button>
+                          </form>
+                        ))}
+                      </span>
+                    )}
+                          {METRIC_LABEL[m] ?? m}</td>
+                        <td className="whitespace-nowrap px-2 text-xs text-slate-500">{refOf(m)}</td>
+                        {recent.map((c) => {
+                          const r = cellOf(m, c.id);
+                          const cls = `tabular-nums ${r?.abnormal_flag ? FLAG[r.abnormal_flag]?.cls : ""}`;
+                          const text = r ? `${fmt(r)}${r.abnormal_flag ? " ●" : ""}` : "";
+                          return (
+                            <td key={c.id} className="whitespace-nowrap px-2 text-right">
+                              {r && canWrite ? <RowActions table="health_results" id={r.id} paths={PATHS} canDelete={canDelete} button={text}
+                                buttonClass={`${cls} underline decoration-dotted underline-offset-2 hover:text-blue-700`} fields={[
+                                { name: "value_numeric", label: "ผล", type: "number", value: r.value_numeric }, { name: "unit", label: "หน่วย", value: r.unit, width: "w-20" },
+                                { name: "reference_min", label: "ต่ำสุด", type: "number", value: r.reference_min, width: "w-20" },
+                                { name: "reference_max", label: "สูงสุด", type: "number", value: r.reference_max, width: "w-20" },
+                                { name: "abnormal_flag", label: "ผิดปกติ", type: "select", value: r.abnormal_flag ?? "", options: [["", "ปกติ"], ["H", "สูง"], ["L", "ต่ำ"], ["ABNORMAL", "ผิดปกติ"]] }]} />
+                                : <span className={cls}>{text}</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">● = ผิดปกติตามใบผล (สีแดง = สูง / ผิดปกติ · สีฟ้า = ต่ำ){canWrite && " · กดที่ตัวเลขเพื่อแก้ผลรายการนั้น · ปุ่มแก้ไขใต้วันที่ = แก้ / ลบผลตรวจครั้งนั้น"}</p>
+              {noted.length > 0 && (
+                <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-xs text-slate-600">
+                  {noted.map((c) => (
+                    <li key={c.id}><span className="font-medium text-slate-700">{thDate(c.checkup_date)}</span>
+                      {" · "}{[c.package_name, c.cost != null ? `ค่าใช้จ่าย ${money(c.cost, c.currency ?? "THB", 0)}` : null, c.notes].filter(Boolean).join(" · ")}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </div>
-        <StatBox label="จำนวนครั้งที่บันทึก" value={(checkups ?? []).length} unit="ครั้ง" sub={<>{metrics.length} รายการตรวจ</>} />
-        <StatBox label="ค่าตรวจ 12 เดือนล่าสุด" value={money(costYear, "THB", 0)} sub="ตามที่บันทึกในแต่ละครั้ง" />
       </section>
 
       {(covs.length > 0 || recentClaims.length > 0) && (
@@ -145,81 +351,6 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
-      {metrics.length > 0 && (
-        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="font-medium text-slate-900">ผลย้อนหลัง</h2>
-            {canDelete && metrics.length > 1 && <SortToggle active={ordering} {...orderHrefs("/family/health", { p: pid })} />}
-          </div>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-slate-500">
-              <tr><th className="py-1">รายการ</th>{recent.map((c) => <th key={c.id} className="px-2 text-right">{thDate(c.checkup_date)}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {metrics.map((m, i) => (
-                <tr key={m}>
-                  <td className="py-1.5">
-                    {ordering && (
-                      <span className="mr-2 inline-flex gap-1 align-middle">
-                        {[[metrics[i - 1], "↑", "เลื่อนขึ้น"], [metrics[i + 1], "↓", "เลื่อนลง"]].map(([other, label, aria]) => (
-                          <form key={label} action={moveHealthMetric}>
-                            <input type="hidden" name="person_id" value={pid} /><input type="hidden" name="metric" value={m} />
-                            <input type="hidden" name="other" value={other ?? ""} /><input type="hidden" name="paths" value="/family/health" />
-                            <button className={arrow} disabled={!other} aria-label={aria}>{label}</button>
-                          </form>
-                        ))}
-                      </span>
-                    )}
-                    {METRIC_LABEL[m] ?? m}</td>
-                  {recent.map((c) => {
-                    const r = cellOf(m, c.id);
-                    return <td key={c.id} className={`px-2 text-right tabular-nums ${r?.abnormal_flag ? FLAG[r.abnormal_flag]?.cls : ""}`}>{r ? fmt(r) : ""}{r?.abnormal_flag && " ●"}</td>;
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="mt-2 text-xs text-slate-500">● = ผิดปกติตามใบผล (สีแดง = สูง / ผิดปกติ · สีฟ้า = ต่ำ)</p>
-        </section>
-      )}
-
-      <section className="space-y-4">
-        {(checkups ?? []).length === 0 && <p className="text-sm text-slate-500">ยังไม่มีผลตรวจ</p>}
-        {(checkups ?? []).map((c) => (
-          <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="font-medium">{thDate(c.checkup_date)}{c.hospital && ` · ${c.hospital}`}</div>
-                <div className="text-xs text-slate-500">{[c.package_name, c.cost != null ? `ค่าใช้จ่าย ${money(c.cost, c.currency ?? "THB", 0)}` : null].filter(Boolean).join(" · ")}</div>
-                {c.notes && <div className="mt-1 text-sm text-slate-600">{c.notes}</div>}
-              </div>
-              {canWrite && <RowActions table="health_checkups" id={c.id} paths={paths} canDelete={canDelete} fields={[
-                { name: "checkup_date", label: "วันที่", type: "date", value: c.checkup_date }, { name: "hospital", label: "โรงพยาบาล", value: c.hospital },
-                { name: "package_name", label: "แพ็กเกจ", value: c.package_name }, { name: "cost", label: "ค่าใช้จ่าย", type: "number", value: c.cost },
-                { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}
-            </div>
-            <table className="mt-3 w-full text-sm">
-              <tbody className="divide-y divide-slate-100">
-                {results.filter((r) => r.checkup_id === c.id).map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-1.5">{METRIC_LABEL[r.metric] ?? r.metric}</td>
-                    <td className={`text-right tabular-nums ${r.abnormal_flag ? FLAG[r.abnormal_flag]?.cls : ""}`}>{fmt(r)} <span className="text-xs text-slate-500">{r.unit}</span></td>
-                    <td className="pl-4 text-xs text-slate-500">
-                      {r.reference_text ?? (r.reference_min != null || r.reference_max != null ? `ปกติ ${r.reference_min ?? ""}–${r.reference_max ?? ""}` : "")}
-                      {r.abnormal_flag && <span className={`ml-2 ${FLAG[r.abnormal_flag]?.cls}`}>{FLAG[r.abnormal_flag]?.text}</span>}
-                    </td>
-                    <td className="pl-2 text-right">{canWrite && <RowActions table="health_results" id={r.id} paths={paths} canDelete={canDelete} fields={[
-                      { name: "value_numeric", label: "ผล", type: "number", value: r.value_numeric }, { name: "unit", label: "หน่วย", value: r.unit, width: "w-20" },
-                      { name: "reference_min", label: "ต่ำสุด", type: "number", value: r.reference_min, width: "w-20" },
-                      { name: "reference_max", label: "สูงสุด", type: "number", value: r.reference_max, width: "w-20" },
-                      { name: "abnormal_flag", label: "ผิดปกติ", type: "select", value: r.abnormal_flag ?? "", options: [["", "ปกติ"], ["H", "สูง"], ["L", "ต่ำ"], ["ABNORMAL", "ผิดปกติ"]] }]} />}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </section>
     </div>
   );
 }

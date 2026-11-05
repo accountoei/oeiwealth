@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addMembership, addPoints, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { ROW_BTN } from "@/lib/format";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type P = { id: string; name: string };
@@ -12,7 +13,7 @@ function Shell({ label, title, action, pending, state, children }: {
   label: string; title: string; action: (f: FormData) => void; pending: boolean; state: ActionState; children: React.ReactNode;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>{label}</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3">
@@ -20,7 +21,6 @@ function Shell({ label, title, action, pending, state, children }: {
       {children}
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
-        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         <Flash on={state} as="span" className="text-sm text-emerald-700" />
       </div>

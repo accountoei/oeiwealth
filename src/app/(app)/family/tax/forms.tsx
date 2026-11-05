@@ -193,6 +193,7 @@ export function TaxFilters({ persons, years, p, y }: { persons: { id: string; na
     <div className="flex items-center gap-2">
       {persons.length > 1 && (
         <select aria-label="ผู้เสียภาษี" value={p} onChange={(e) => go("p", e.target.value)} className={cls}>
+          <option value="all">ทั้งครอบครัว</option>
           {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       )}

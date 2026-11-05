@@ -1,6 +1,5 @@
 import Form from "next/form";
 import { PageInfo } from "@/components/HeaderBar";
-import { TabActions } from "@/components/TabActions";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -111,25 +110,32 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-6">
       <PageInfo>สมาชิกครอบครัว · ลำดับในหน้านี้ใช้เรียงรายชื่อทุกหน้าและตัวกรองสมาชิก</PageInfo>
-      {me.role !== "VIEWER" && <TabActions><ActionBar><AddPersonForm /></ActionBar></TabActions>}
 
       <section className="grid gap-4 sm:grid-cols-2">
+        {/* กล่องครอบครัว: ปุ่มแก้ไข + เพิ่มสมาชิก มุมขวาบน · รูปใหญ่ทางซ้าย ชื่อ / อายุ / หัวหน้าครอบครัว ทางขวา (ตกลง 5 พ.ย. 2026) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว
-            {isAdmin && <ActionBar><FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null} photo={family?.photo ?? null}
-              candidates={active.map((p) => ({ id: p.id, name: p.name }))} /></ActionBar>}
+          <div className="flex items-start justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว
+            {me.role !== "VIEWER" && (
+              <ActionBar className="shrink-0">
+                {isAdmin && <FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null} photo={family?.photo ?? null}
+                  candidates={active.map((p) => ({ id: p.id, name: p.name }))} />}
+                <AddPersonForm />
+              </ActionBar>
+            )}
           </div>
-          <div className="mt-1 flex min-w-0 items-center gap-2.5">
+          <div className="mt-2 flex min-w-0 items-center gap-4">
             {family?.photo
               // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={family.photo} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
-              : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{familyInitials(family?.name ?? "")}</span>}
-            <span className="truncate text-xl font-semibold">{family?.name || "-"}</span>
+              ? <img src={family.photo} alt="" className="h-24 w-24 shrink-0 rounded-2xl object-cover" />
+              : <span className="grid h-24 w-24 shrink-0 place-items-center rounded-2xl bg-blue-600 text-3xl font-bold text-white">{familyInitials(family?.name ?? "")}</span>}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-2xl font-semibold">{family?.name || "-"}</div>
+              {ages.length > 0 && <div className="text-xs text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
+              <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">หัวหน้าครอบครัว</div>
+              <div className="truncate text-lg font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">★ {head.name}</Link> : "-"}</div>
+              <div className="text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
+            </div>
           </div>
-          {ages.length > 0 && <div className="text-xs text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
-          <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">หัวหน้าครอบครัว</div>
-          <div className="mt-1 truncate text-lg font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">★ {head.name}</Link> : "-"}</div>
-          <div className="text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex justify-between gap-2 text-xs text-slate-500">สมาชิก (ตามความสัมพันธ์)<span className="text-sm font-semibold text-slate-900">รวม {active.length} คน</span></div>
