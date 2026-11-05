@@ -658,7 +658,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             </Fragment>])) : {}}>
           <SubPanel id="income">
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ</h2>
+            <h2 className="font-medium text-slate-900">ตั้งค่ารายได้ประจำ{canWrite && templateList.length > 0 && <> <InfoTip label="คำอธิบาย">กดที่แถวเพื่อแก้ไข / ลบ</InfoTip></>}</h2>
             {templateList.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มี</p> : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[40rem] text-sm">
@@ -692,7 +692,6 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
                 </table>
               </div>
             )}
-            {canWrite && templateList.length > 0 && <p className="text-xs text-slate-500">กดที่แถวเพื่อแก้ไข / ลบ</p>}
           </section>
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">

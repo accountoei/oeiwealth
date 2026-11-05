@@ -161,14 +161,13 @@ export default async function MemberPage({ params }: { params: Promise<{ id: str
             </dl>
           </div>
           <div className="border-t border-slate-100 pt-4">
-            <h2 className="mb-3 font-medium text-slate-900">ครอบครัว</h2>
+            <h2 className="mb-3 font-medium text-slate-900">ครอบครัว <InfoTip label="คำอธิบาย">ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{headLabel ? ` (${headLabel})` : ""}</InfoTip></h2>
             <dl className="text-sm grid gap-3 sm:grid-cols-4">
               <Item dash label="พ่อ"><PLink pid={p.father_id} /></Item>
               <Item dash label="แม่"><PLink pid={p.mother_id} /></Item>
               <Item dash label="คู่สมรส"><PLink pid={p.spouse_id} /></Item>
               <Item dash label="ลูก">{children.length > 0 && children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<PLink pid={c.id} /></span>)}</Item>
             </dl>
-            <p className="mt-2 text-xs text-slate-500">ความสัมพันธ์คำนวณเทียบกับหัวหน้าครอบครัว{headLabel ? ` (${headLabel})` : ""}</p>
           </div>
           <div className="border-t border-slate-100 pt-4">
             <h2 className="mb-3 font-medium text-slate-900">เอกสารประจำตัว <InfoTip label="คำอธิบาย">แนบสำเนาที่กล่อง &ldquo;เอกสารส่วนตัว&rdquo; โดยเลือกประเภท บัตรประชาชน / ทะเบียนบ้าน / หนังสือเดินทาง — ลิงก์จะขึ้นข้างเลขให้เอง</InfoTip></h2>

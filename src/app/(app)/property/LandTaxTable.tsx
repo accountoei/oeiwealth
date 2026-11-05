@@ -9,6 +9,7 @@ import { useOnMainTab } from "../income-expenses/tabs";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./[id]/LandTax";
 import { copyTaxYearAll, type ActionState } from "./actions";
 import Flash from "@/components/Flash";
+import { InfoTip } from "@/components/HeaderBar";
 
 export type TaxLineRow = TaxLine & { total_value: number; taxable_value: number; tax_amount: number };
 export type TaxPropRow = {
@@ -21,8 +22,9 @@ const small = "ml-2 rounded-md border border-slate-300 px-2 py-1 text-sm";
 const sumOf = (ls: TaxLineRow[], k: "total_value" | "exemption" | "taxable_value" | "tax_amount") => ls.reduce((t, l) => t + Number(l[k] ?? 0), 0);
 
 /** ตารางภาษีที่ดินทุกทรัพย์สิน (ปีที่เลือก) + ตัวกรอง + แก้ไขรายทรัพย์สิน + คัดลอกจากปีก่อนทั้งหมด */
-export default function LandTaxTable({ rows, year, years, dataYears, hrefOf, canWrite, canDelete, note }: {
+export default function LandTaxTable({ rows, year, years, dataYears, hrefOf, canWrite, canDelete, note, info }: {
   rows: TaxPropRow[]; year: number; years: number[]; dataYears: number[]; hrefOf: string; canWrite: boolean; canDelete: boolean; note?: string;
+  /** คำอธิบาย → ⓘ ข้างชื่อกล่อง */ info?: string;
 }) {
   const [type, setType] = useState("");
   const [usage, setUsage] = useState("");
@@ -42,7 +44,7 @@ export default function LandTaxTable({ rows, year, years, dataYears, hrefOf, can
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4">
         <div>
-          <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง ปี {year + 543}</h2>
+          <h2 className="font-medium text-slate-900">ภาษีที่ดินและสิ่งปลูกสร้าง ปี {year + 543}{info && <> <InfoTip label="คำอธิบาย">{info}</InfoTip></>}</h2>
           {note && <p className="text-xs text-slate-500">{note}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
