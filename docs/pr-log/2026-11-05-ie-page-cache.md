@@ -1,4 +1,4 @@
-# หน้า Income & Expenses เร็วขึ้น: จำข้อมูลไว้จนกว่าจะบันทึก (ไม่ต้องรัน SQL)
+# #322 · หน้า Income & Expenses เร็วขึ้น: จำข้อมูลไว้จนกว่าจะบันทึก (ไม่ต้องรัน SQL)
 
 - วันที่: 5 พ.ย. 2026 · branch `perf/ie-page-cache`
 - SQL: ไม่มี SQL · ไม่มี Edge Function ที่ต้อง deploy
