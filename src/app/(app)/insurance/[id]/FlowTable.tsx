@@ -53,7 +53,7 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
     <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] ${kind === "PREMIUM" || kind === "PAY" ? "bg-slate-100 text-slate-700" : "bg-emerald-50 text-emerald-700"}`}>{text}</span>
   );
   const netCell = (r: FlowRow) => (
-    <td className={`py-2 text-right tabular-nums ${r.net == null ? "" : r.projected ? "text-slate-400" : r.net >= -0.005 ? "text-emerald-700" : "text-slate-700"}`}>
+    <td className={`py-2 text-right tabular-nums ${r.net == null ? "" : r.projected ? "text-slate-400" : r.net >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>
       {r.net == null ? "" : signedMoney(r.net)}
     </td>
   );

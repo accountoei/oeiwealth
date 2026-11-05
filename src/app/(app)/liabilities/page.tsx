@@ -205,7 +205,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">บัตรเครดิต ({openCards.length} ใบ)</div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(cardTotal, "THB")}</div>
-          {cardLimit > 0 && <div className="text-xs text-slate-500">ใช้ไป {((cardTotal * 100) / cardLimit).toFixed(1)}% ของวงเงิน {money(cardLimit, undefined, 0)}</div>}
+          {cardLimit > 0 && <div className="text-xs text-slate-500">ใช้ไป <span className="font-semibold">{((cardTotal * 100) / cardLimit).toFixed(1)}%</span> ของวงเงิน {money(cardLimit, undefined, 0)}</div>}
         </div>
         <StatBox label={<>เงินประกันการเช่า ({depRows.length} สัญญา)</>} value={money(depTotal, "THB")} valueClass="text-red-700" sub="ต้องคืนผู้เช่าเมื่อหมดสัญญา" />
       </section>

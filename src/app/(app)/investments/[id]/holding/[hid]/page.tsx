@@ -150,7 +150,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           <div className="mt-1 text-2xl font-semibold tabular-nums">{money(h.current_value)}</div>
           <div className={`mt-1 text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>{h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}</div>
           {(() => { const g = cost && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null; return g == null ? null : (
-            <div className={`mt-1 text-xs ${g >= 0 ? "text-emerald-700" : "text-red-700"}`}>กำไร / ขาดทุนยังไม่รับรู้ {money(g)} ({signedPct((g / (cost as number)) * 100)})</div>); })()}
+            <div className={`mt-1 text-xs ${g >= 0 ? "text-emerald-700" : "text-red-700"}`}>กำไร / ขาดทุนยังไม่รับรู้ {money(g)} (<span className="font-semibold">{signedPct((g / (cost as number)) * 100)}</span>)</div>); })()}
           <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
             {lump ? <div className="flex justify-between gap-3"><dt className="text-slate-500">วิธีนับ</dt><dd>มูลค่าก้อนเดียว</dd></div> : <>
               <div className="flex justify-between gap-3"><dt className="text-slate-500">จำนวนที่ถือ</dt><dd className="tabular-nums">{qty(h.quantity)}</dd></div>

@@ -196,7 +196,7 @@ export default async function TaxPage({ searchParams }: { searchParams: Promise<
           <div className="space-y-4">
             <StatBox label={calc.result < 0 ? "ประมาณการขอคืนภาษี" : "ประมาณการชำระภาษีเพิ่ม"} value={money(Math.abs(calc.result))} unit="บาท"
               valueClass={calc.result < 0 ? "text-emerald-700" : undefined}
-              sub={`ภาษีทั้งปี ${money(calc.tax)} บาท · เงินได้สุทธิ ${money(calc.taxable)} บาท${calc.assessable ? ` · อัตราเฉลี่ย ${(calc.tax / calc.assessable * 100).toFixed(2)}% ของเงินได้` : ""}`} />
+              sub={<>ภาษีทั้งปี {money(calc.tax)} บาท · เงินได้สุทธิ {money(calc.taxable)} บาท{calc.assessable ? <> · อัตราเฉลี่ย <span className="font-semibold">{(calc.tax / calc.assessable * 100).toFixed(2)}%</span> ของเงินได้</> : null}</>} />
             {calc.brackets.length > 0 && (
               <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                 <table className="w-full text-sm">

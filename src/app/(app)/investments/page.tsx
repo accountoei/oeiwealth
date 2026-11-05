@@ -188,8 +188,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           <StatBox label="เงินลงทุนสุทธิ (พอร์ตที่เปิด)" value={money(invOpen, "THB", 0)}
             sub={<>
               {invOpenPl && <div className={invOpenPl.pl >= 0 ? "text-emerald-700" : "text-red-700"}>
-                กำไร / ขาดทุน {signedMoney(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && ` (${signedPct(invOpenPl.pct)})`}</div>}
-              {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว {signedMoney(closedPl, "THB", 0)}</div>}
+                กำไร / ขาดทุน {signedMoney(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && <> (<span className="font-semibold">{signedPct(invOpenPl.pct)}</span>)</>}</div>}
+              {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว <span className={closedPl < -0.005 ? "text-red-700" : closedPl > 0.005 ? "text-emerald-700" : ""}>{signedMoney(closedPl, "THB", 0)}</span></div>}
             </>} />
         )}
         <StatBox label={pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} value={money(total, "THB", 0)} />

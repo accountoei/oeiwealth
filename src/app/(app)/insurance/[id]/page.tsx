@@ -542,7 +542,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                   <div><dt className="text-xs text-slate-500">จ่ายเบี้ยแล้ว</dt><dd className="tabular-nums">{money(premPaid, ccy)}</dd></div>
                   <div><dt className="text-xs text-slate-500">รับผลประโยชน์แล้ว</dt><dd className="tabular-nums">{money(benReceived, ccy)}</dd></div>
                   <div><dt className="text-xs text-slate-500">สุทธิถึงวันนี้</dt>
-                    <dd className={`tabular-nums ${benReceived - premPaid >= -0.005 ? "text-emerald-700" : ""}`}>{signedMoney(benReceived - premPaid, ccy)}</dd></div>
+                    <dd className={`tabular-nums ${benReceived - premPaid >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>{signedMoney(benReceived - premPaid, ccy)}</dd></div>
                   <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
                     <dd>{flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="text-xs text-slate-500"> (คาดการณ์)</span>}</span>
                       : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>

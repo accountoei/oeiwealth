@@ -217,7 +217,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
                       {Number(x.fee) > 0 && <div className="text-xs text-slate-500">ค่าใช้จ่าย {money(x.fee)}</div>}</td>
                     <td className="whitespace-nowrap pl-4 text-right tabular-nums">{x.kind === "SELL" && x.gain != null ? (
                       <><span className={Number(x.gain) >= 0 ? "text-emerald-700" : "text-red-700"}>{signedMoney(x.gain)}</span>
-                        {x.cost_basis != null && <div className="text-xs text-slate-500">เทียบทุน {(() => { const g = Number(x.price) - Number(x.fee) - Number(x.cost_basis); return signedMoney(g); })()}</div>}</>
+                        {x.cost_basis != null && <div className="text-xs text-slate-500">เทียบทุน {(() => { const g = Number(x.price) - Number(x.fee) - Number(x.cost_basis); return <span className={g < -0.005 ? "text-red-700" : g > 0.005 ? "text-emerald-700" : ""}>{signedMoney(g)}</span>; })()}</div>}</>
                     ) : "-"}</td>
                     <td className="pl-4 text-xs text-slate-500">{x.bank_asset_id ? bankName.get(x.bank_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                     <td className="pl-2 text-right">{canDelete && i === 0 && (

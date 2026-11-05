@@ -44,11 +44,11 @@ export default function MarketBox({ assetId, currency, today, propertyType, area
               ? (ok ? "สูงกว่าราคาขายขั้นต่ำ → ขายตอนนี้คุ้ม" : "ต่ำกว่าราคาขายขั้นต่ำ → ยังไม่คุ้ม") : "ส่วนต่างจากมูลค่าในความมั่งคั่งสุทธิ"}</dt>
               <dd className={`tabular-nums ${minPrice != null ? "font-medium " : ""}${ok ? "text-emerald-700" : "text-red-600"}`}>{diffText(mk - base, base)}</dd></div>); })()}
           {Number(last.selling_cost) > 0 && (
-            <div className="flex justify-between gap-2"><dt className="text-slate-500">ค่าใช้จ่ายขายโดยประมาณ</dt><dd className="tabular-nums">{minusMoney(last.selling_cost)}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="text-slate-500">ค่าใช้จ่ายขายโดยประมาณ</dt><dd className="tabular-nums text-red-700">{minusMoney(last.selling_cost)}</dd></div>
           )}
           <div className="flex justify-between gap-2"><dt className="text-slate-500">ถ้าขายได้สุทธิ (ก่อนปิดหนี้)</dt><dd className="tabular-nums font-medium">{money(last.net_before_debt)}</dd></div>
           {debt != null && (<>
-            <div className="flex justify-between gap-2"><dt className="text-slate-500">หนี้ที่ผูกกับทรัพย์สินนี้</dt><dd className="tabular-nums">{minusMoney(debt)}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="text-slate-500">หนี้ที่ผูกกับทรัพย์สินนี้</dt><dd className="tabular-nums text-red-700">{minusMoney(debt)}</dd></div>
             <div className="flex justify-between gap-2"><dt className="text-slate-500">สุทธิหลังปิดหนี้</dt><dd className="tabular-nums font-medium">{money(Number(last.net_before_debt) - debt)}</dd></div>
           </>)}
         </dl>

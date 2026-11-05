@@ -147,7 +147,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const minDate = family?.system_status === "SETUP" ? "" : family?.go_live_date ?? "";
   const months = monthOptions(family?.go_live_date, today, 0, ym);
   const Delta = ({ v, good = "up" }: { v: number | null; good?: "up" | "down" }) => v == null ? <span className="text-slate-400">ไม่มีข้อมูลเดือนก่อน</span> : (
-    <span className={(v >= 0) === (good === "up") ? "text-emerald-700" : "text-red-700"}>{v >= 0 ? "▲" : "▼"} {Math.abs(v).toFixed(1)}% จากเดือนก่อน</span>
+    <span className={(v >= 0) === (good === "up") ? "text-emerald-700" : "text-red-700"}>{v >= 0 ? "▲" : "▼"} <span className="font-semibold">{Math.abs(v).toFixed(1)}%</span> จากเดือนก่อน</span>
   );
   const movesHref = `/income-expenses?tab=moves&m=${ym}${pv.personId ? `&p=${pv.personId}` : ""}`;
   const mName = ym === today.slice(0, 7) ? "เดือนนี้" : ` ${thMonth(start)}`;
@@ -233,7 +233,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             lines={SPEND_KEYS.filter((k) => k !== "FEE" || flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
           <FlowCard title={`รายการอื่นๆ ${mName.trim()}`} total={flowSum(flow, OTHER_KEYS)} count={flowCount(flow, OTHER_KEYS)} href={movesHref}
             empty="ไม่มีรายการลงทุน / เงินกู้ / ซื้อขายทรัพย์สิน"
-            notes={["ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง", "เงินออกแสดงเป็นยอดติดลบ"]}
+            notes={["ไม่นับเงินโอนระหว่างบัญชีของครอบครัวเอง"]}
             lines={OTHER_KEYS.filter((k) => flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
         </section>
         <div className="grid gap-4 lg:grid-cols-2">
