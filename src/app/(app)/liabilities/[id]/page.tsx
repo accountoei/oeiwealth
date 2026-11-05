@@ -103,9 +103,9 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        {/* ซ้าย: ยอดคงค้าง + เอกสาร */}
-        <div className="flex flex-col gap-4">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* ซ้าย: ยอดคงค้าง */}
+        <div className="flex flex-col gap-4 [&>:last-child]:flex-1">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดคงค้างล่าสุด</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(l.outstanding_amount, l.currency)}</div>
@@ -116,14 +116,11 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                 {Number(l.original_amount) > 0 && <> (<span className="font-semibold">{((paid * 100) / Number(l.original_amount)).toFixed(1)}%</span>)</>}</div>
             )}
           </div>
-          <div className="flex flex-1 flex-col">
-            <EntityDocuments category="LIABILITY" entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
-          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={
-              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <Item label="ประเภท">{LIABILITY_TYPE_LABEL[l.liability_type] ?? l.liability_type}</Item>
                 <Item label="ผู้ให้กู้">{l.lender || "-"}
                   {l.lender_business_id && <span className="block text-xs text-slate-500">กิจการของครอบครัว · <Link href={`/financial/business/${l.lender_business_id}`} className="text-blue-700 hover:underline">ดูกิจการ</Link> · ฝั่งกิจการไม่ตั้งลูกหนี้แยก (อยู่ในมูลค่ากิจการแล้ว)</span>}</Item>
@@ -152,6 +149,10 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                 </div>
               </div>
             } />
+        </div>
+        {/* ขวา: เอกสาร (เรียง มูลค่า | รายละเอียด | เอกสาร · ตกลง 5 พ.ย. 2026) */}
+        <div className="flex flex-col md:col-span-2 lg:col-span-1">
+          <EntityDocuments category="LIABILITY" entityType="LIABILITY" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
         </div>
       </section>
 

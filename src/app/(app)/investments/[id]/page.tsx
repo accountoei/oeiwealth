@@ -207,9 +207,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        {/* ซ้าย: มูลค่า + เอกสาร */}
-        <div className="flex flex-col gap-4">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* ซ้าย: มูลค่า */}
+        <div className="flex flex-col gap-4 [&>:last-child]:flex-1">
           <NetInvestedBox assetId={id} currency={a.currency} investedThb={invested.thb} investedCcy={invested.ccy}
             valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
             valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
@@ -225,14 +225,11 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
               <div className="mt-1 text-xs text-amber-700">+ เงินโอนที่รอใส่ยอด {money(pv?.in_transit ?? 0, a.currency, 0)}</div>
             )}
           </NetInvestedBox>
-          <div className="flex flex-1 flex-col">
-            <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
-          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
           <EditToggle title="รายละเอียด" canEdit={canDelete}
             view={
-              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <Item label="สถาบัน">{pf.institution || "-"}</Item>
                 <Item label="ประเภท">{PORTFOLIO_TYPE_LABEL[pf.portfolio_type] ?? pf.portfolio_type}</Item>
                 <Item label="สกุลพอร์ต">{a.currency}</Item>
@@ -261,6 +258,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 </div>
               </div>
             } />
+        </div>
+        {/* ขวา: เอกสาร (เรียง มูลค่า | รายละเอียด | เอกสาร · ตกลง 5 พ.ย. 2026) */}
+        <div className="flex flex-col md:col-span-2 lg:col-span-1">
+          <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths} fill />
         </div>
       </section>
 

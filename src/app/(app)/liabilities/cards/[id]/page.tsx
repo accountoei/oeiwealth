@@ -112,9 +112,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        {/* ซ้าย: ยอดค้าง + เอกสาร */}
-        <div className="flex flex-col gap-4">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* ซ้าย: ยอดค้าง */}
+        <div className="flex flex-col gap-4 [&>:last-child]:flex-1">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดค้างปัจจุบัน</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums text-red-700">{money(current, c.currency)}</div>
@@ -124,14 +124,11 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
             </div>
             {c.credit_limit ? <div className="mt-1 text-xs text-slate-500">ใช้ไป <span className="font-semibold">{((current * 100) / Number(c.credit_limit)).toFixed(1)}%</span> ของวงเงิน {money(c.credit_limit, undefined, 0)}</div> : null}
           </div>
-          <div className="flex flex-1 flex-col">
-            <EntityDocuments category="CARD" entityType="CREDIT_CARD" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
-          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={
-              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <Item label="ผู้ออกบัตร / ชื่อบัตร">{c.issuer}{c.card_name && <span className="block text-xs text-slate-500">{c.card_name}</span>}</Item>
                 <Item label="เลขท้าย">{c.card_last4 ? `•••• ${c.card_last4}` : "-"}</Item>
                 <Item label="ผู้ถือบัตร">{holder}</Item>
@@ -164,6 +161,10 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                 )}
               </div>
             } />
+        </div>
+        {/* ขวา: เอกสาร (เรียง มูลค่า | รายละเอียด | เอกสาร · ตกลง 5 พ.ย. 2026) */}
+        <div className="flex flex-col md:col-span-2 lg:col-span-1">
+          <EntityDocuments category="CARD" entityType="CREDIT_CARD" entityId={id} module="FINANCIAL" role={me.role} paths={paths} fill />
         </div>
       </section>
 

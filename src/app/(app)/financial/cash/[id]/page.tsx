@@ -224,9 +224,9 @@ export default async function AccountDetailPage({ params, searchParams }: {
         )}
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        {/* ซ้าย: ยอดคงเหลือ + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
-        <div className="flex flex-col gap-4">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* ซ้าย: ยอดคงเหลือ (กล่องสุดท้ายยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
+        <div className="flex flex-col gap-4 [&>:last-child]:flex-1">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดคงเหลือล่าสุด</div>
             <div className={`mt-1 text-2xl font-semibold tabular-nums ${neg(balNow)}`}>{balNow == null ? "-" : money(balNow, acc.currency)}</div>
@@ -236,11 +236,8 @@ export default async function AccountDetailPage({ params, searchParams }: {
               <span className={`tabular-nums ${neg(balPrev)}`}>{balPrev == null ? "-" : money(balPrev, acc.currency)}</span>
             </div>
           </div>
-          <div className="flex flex-1 flex-col">
-            <EntityDocuments category="BANK" entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} title="เอกสาร / Statement" fill />
-          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-3 flex items-start justify-between gap-3">
             <h2 className="font-medium text-slate-900">รายละเอียด</h2>
             {canWrite && (
@@ -268,7 +265,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
               </EditButton>
             )}
           </div>
-          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             <Item label="ธนาคาร">{bankLabel(acc.bank_name)}</Item>
             <Item label="ประเภทบัญชี">{ACCOUNT_TYPE_LABEL[acc.account_type] ?? acc.account_type}</Item>
             <Item label="เลขบัญชี" dash>{acc.account_no_masked}</Item>
@@ -292,6 +289,10 @@ export default async function AccountDetailPage({ params, searchParams }: {
             </Item>
             {acc.notes && <Item label="หมายเหตุ" wide><span className="whitespace-pre-line">{acc.notes}</span></Item>}
           </dl>
+        </div>
+        {/* ขวา: เอกสาร (เรียง มูลค่า | รายละเอียด | เอกสาร · ตกลง 5 พ.ย. 2026) */}
+        <div className="flex flex-col md:col-span-2 lg:col-span-1">
+          <EntityDocuments category="BANK" entityType="ASSET" entityId={id} module="FINANCIAL" role={me.role} paths={paths} title="เอกสาร / Statement" fill />
         </div>
       </section>
 

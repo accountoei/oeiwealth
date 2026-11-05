@@ -49,7 +49,7 @@ export function DetailItem({ label, children, wide, num, dash }: {
 }) {
   const empty = children == null || children === "" || children === false;
   return (
-    <div className={[wide ? "sm:col-span-2 lg:col-span-3" : "", num ? "num-item tabular-nums" : ""].filter(Boolean).join(" ") || undefined}>
+    <div className={[wide ? "col-span-full" : "", num ? "num-item tabular-nums" : ""].filter(Boolean).join(" ") || undefined}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-0.5 whitespace-pre-line text-slate-800">{empty && dash ? <span className="text-slate-400">-</span> : children}</dd>
     </div>

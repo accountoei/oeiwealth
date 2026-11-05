@@ -226,9 +226,9 @@ export default async function PortfolioCashPage({ params, searchParams }: {
         )}
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        {/* ซ้าย: ยอดคงเหลือ + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
-        <div className="flex flex-col gap-4">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* ซ้าย: ยอดคงเหลือ (กล่องสุดท้ายยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
+        <div className="flex flex-col gap-4 [&>:last-child]:flex-1">
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">ยอดคงเหลือล่าสุด</div>
             <div className={`mt-1 text-2xl font-semibold tabular-nums ${neg(now.balance)}`}>{money(now.balance, ccy)}</div>
@@ -240,12 +240,8 @@ export default async function PortfolioCashPage({ params, searchParams }: {
               <span className={`tabular-nums ${neg(prev.balance)}`}>{money(prev.balance, ccy)}</span>
             </div>
           </div>
-          <div className="flex flex-1 flex-col">
-            <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths}
-              title="เอกสารของพอร์ต / Statement" fill />
-          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-3 flex items-start justify-between gap-3">
             <h2 className="font-medium text-slate-900">รายละเอียด</h2>
             {canWrite && (
@@ -259,7 +255,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
               </EditButton>
             )}
           </div>
-          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             <Item label="ชื่อบัญชี">{h.name}</Item>
             <Item label="พอร์ต"><Link href={`/investments/${id}`} className="text-blue-700 hover:underline">{a.name}</Link></Item>
             <Item label="สถาบัน" dash>{pf.institution}</Item>
@@ -269,6 +265,11 @@ export default async function PortfolioCashPage({ params, searchParams }: {
             <Item label="บัญชีหลักของสกุล">{h.is_default_cash ? "★ ใช่ — รายการที่ไม่ได้เลือกบัญชีเข้าบัญชีนี้" : "ไม่ใช่"}</Item>
             <Item label="สถานะ">{h.status === "ACTIVE" ? <span className="text-emerald-700">ใช้งาน</span> : <span className="text-slate-500">ปิดแล้ว</span>}</Item>
           </dl>
+        </div>
+        {/* ขวา: เอกสาร (เรียง มูลค่า | รายละเอียด | เอกสาร · ตกลง 5 พ.ย. 2026) */}
+        <div className="flex flex-col md:col-span-2 lg:col-span-1">
+          <EntityDocuments category="INVESTMENT" entityType="ASSET" entityId={id} module="INVESTMENT" role={me.role} paths={paths}
+            title="เอกสารของพอร์ต / Statement" fill />
         </div>
       </section>
 
