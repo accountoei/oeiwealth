@@ -177,13 +177,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-slate-500">
             {/* จุดทึบ = ยอดที่ล็อกแล้ว (ยอดตั้งต้น / เดือนที่ปิดแล้ว) · จุดกลวง = ยอดสิ้นเดือนอัตโนมัติ (คำนวณใหม่ทุกคืนจนกว่าจะปิดเดือน) และวันนี้ (ตกลง 2 พ.ย. 2026) */}
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />ยอดตั้งต้น / ปิดเดือนแล้ว</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-blue-600 bg-white" />ยังไม่ปิด (อาจเปลี่ยน)</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-blue-600 bg-white" />ยังไม่ปิดงวด (ข้อมูลอาจเปลี่ยนแปลงได้)</span>
           </p>
         </div>
 
         <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
           {/* ------------------------------------------------ เปลี่ยนเพราะอะไร + รายได้ / ค่าใช้จ่าย (กด → pop up) */}
-          <PopupBox
+          <PopupBox className="flex flex-col"
             title={<>ความมั่งคั่งสุทธิเปลี่ยนเพราะอะไร<span className="block text-xs font-normal text-slate-500">{thMonth(start)} · {personName || "ทั้งครอบครัว"}</span></>}
             info={<>&ldquo;เงินคงเหลือสุทธิ&rdquo; = รายได้สุทธิ + รายได้ลงทุน − ค่าใช้จ่ายสุทธิ (เป็นยอดย่อย ไม่บวกซ้ำ) ·
               &ldquo;มูลค่าเปลี่ยน / อื่น ๆ&rdquo; = ประเมินใหม่ (อสังหาฯ / ธุรกิจ / ทอง) · อัตราแลกเปลี่ยนนอกพอร์ต · ยอดหนี้ · รายการที่ไม่ได้บันทึก
@@ -397,14 +397,15 @@ async function NwPeriods({ start, personId, current, asOf, base, isCurrent }: {
   if (base && base.date < asOf) list.push({ label: isCurrent ? "เดือนนี้" : "ในเดือนที่เลือก", date: base.date, v: Number(base.net_worth), from: base.label });
   if (ye && ye.date < asOf) list.push({ label: "ตั้งแต่ต้นปี", date: ye.date, v: Number(ye.net_worth), from: `สิ้นปี ${thDate(ye.date)}` });
   list.push({ label: "ตั้งแต่ Go-live", date: h.opening.date, v: Number(h.opening.net_worth), from: "ยอดตั้งต้น" });
-  const periods = list.filter((x, i) => list.findIndex((y) => y.date === x.date) === i);
+  // ซ้ายไปขวา = ช่วงยาว → สั้น: ตั้งแต่ Go-live ชิดซ้าย · เดือนนี้ชิดขวา (เหมือนแถวข้อมูลของอีก 2 การ์ด · 5 พ.ย. 2026)
+  const periods = list.filter((x, i) => list.findIndex((y) => y.date === x.date) === i).reverse();
   return (
-    <div className={`${INSIGHT} flex flex-wrap gap-x-6 gap-y-1`}>
-      {periods.map((x) => {
+    <div className={`${INSIGHT} flex flex-wrap justify-between gap-x-6 gap-y-1`}>
+      {periods.map((x, i) => {
         const diff = Math.round(Number(current) - x.v);
         const pct = x.v ? (diff / Math.abs(x.v)) * 100 : null;
         return (
-          <div key={x.label} className="leading-4" title={`${diff === 0 ? "ไม่เปลี่ยนแปลง" : `${diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} ${baht(Math.abs(diff))} บาท`} จาก${x.from}`}>
+          <div key={x.label} className={`leading-4 ${i > 0 && i === periods.length - 1 ? "text-right" : ""}`} title={`${diff === 0 ? "ไม่เปลี่ยนแปลง" : `${diff > 0 ? "เพิ่มขึ้น" : "ลดลง"} ${baht(Math.abs(diff))} บาท`} จาก${x.from}`}>
             <div className="text-[11px] text-slate-500">{x.label}</div>
             <div className={`inline-flex items-center gap-1 text-xs font-semibold tabular-nums ${diff === 0 ? "text-slate-600" : diff > 0 ? "text-emerald-700" : "text-red-700"}`}>
               {diff !== 0 && <Arrow up={diff > 0} />}
@@ -616,7 +617,9 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
   const b = await changeBridge(start, isCurrent, personId);
   if (!b) return <p className="text-sm text-slate-500">ยังไม่มียอดงวดก่อนให้เทียบ</p>;
   return (
-    <table className="w-full text-sm">
+    // บรรทัดสรุป "= ณ วันนี้" แยกจากตาราง: เว้นระยะด้านบน ไม่มีเส้น · กล่องสูงกว่าเนื้อหา → อยู่ล่างสุด (แบบ "รวมครอบครัว" · 5 พ.ย. 2026)
+    <div className="flex flex-1 flex-col text-sm">
+    <table className="w-full">
       <tbody className="divide-y divide-slate-100">
         <BRow label={b.prevLabel} v={b.prev} bold />
         <BRow label="+ รายได้สุทธิ (หลังภาษี)" v={b.income} />
@@ -632,9 +635,13 @@ async function ChangeBody({ start, isCurrent, personId }: { start: string; isCur
         <BRow label={b.person ? "± กำไร / ขาดทุนเงินลงทุน (ตามสัดส่วนถือ)" : "± กำไร / ขาดทุนเงินลงทุน"} v={b.gain} signed
           note={b.fx ? <>ในนั้นจาก FX {b.fx > 0 ? "+" : ""}{baht(b.fx)}</> : null} />
         <BRow label="± มูลค่าเปลี่ยน / อื่น ๆ" v={b.other} signed />
-        <BRow label={b.endLabel} v={b.cur} bold />
       </tbody>
     </table>
+    <div className="mt-auto flex items-baseline justify-between gap-2 pt-2 font-medium">
+      <span>{b.endLabel}</span>
+      <span className={`tabular-nums ${b.cur < 0 ? "text-red-700" : "text-ink"}`}>{baht(b.cur)}</span>
+    </div>
+    </div>
   );
 }
 
@@ -678,7 +685,7 @@ async function PersonsBody({ start, ym, personId }: { start: string; ym: string;
           );
         })}
       </ul>
-      <div className={`${PROW} mt-auto border-t border-slate-200 pt-2`}>
+      <div className={`${PROW} mt-auto pt-2`}>
         <span className="font-medium">รวมครอบครัว</span><span className="text-right tabular-nums text-slate-700">{baht(total)}</span><span className="text-right font-semibold tabular-nums text-slate-900">100.0%</span>
       </div>
     </div>
