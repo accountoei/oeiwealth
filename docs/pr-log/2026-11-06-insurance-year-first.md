@@ -1,4 +1,4 @@
-# 2026-11-06 · insurance-year-first
+# #355 · 2026-11-06 · insurance-year-first
 
 ## What changed
 - Insurance → "บันทึกรับผลประโยชน์" and "จ่ายชำระเบี้ยประกัน": the top bar no longer shows the title "ผลประโยชน์ ปี …" / "เบี้ยประกัน ปี …". The year dropdown is now the first box, then the insurer filter, then "ใส่ยอดทุกแถว".
