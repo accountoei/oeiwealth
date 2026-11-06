@@ -14,8 +14,13 @@ import { buildHints } from "@/lib/category-hints";
 import { DetailItem as Item } from "@/components/Boxes";
 import { loadPfCash } from "@/lib/pf-cash";
 import { InfoTip } from "@/components/HeaderBar";
+import { PART_LABEL, partRank } from "@/lib/insurance-booklet";
 
-type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean };
+type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean;
+  /** เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน: ยอดแยกทีละส่วน (ชีวิต 1,402.00 + สุขภาพ 730.00) · href = หน้ากรมธรรม์หลัก */ sub?: string; href?: string };
+type PremPol = { insurance_type: string; insurer: string; policy_no: string | null };
+type PremLine = { policy_id: string; pol: PremPol | PremPol[] | null };
+const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
 
 export default async function CardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -35,7 +40,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   const statements = hist ?? [];
   const from = statements[1]?.statement_date ?? c.balance_date ?? "1900-01-01";
   const [{ data: exps }, { data: pays }, { data: reimbs }, { data: incs }, { data: pfPays }, pfAll, { data: buys }] = await Promise.all([
-    supabase.from("expense_items").select("id,date,description,amount,pending_split").eq("paid_from_credit_card_id", id)
+    supabase.from("expense_items").select("id,date,description,amount,pending_split,payment_group_id,ins_line:insurance_schedule_lines(policy_id,pol:insurance_policies(insurance_type,insurer,policy_no))").eq("paid_from_credit_card_id", id)
       .is("deleted_at", null).gt("date", from),
     supabase.from("cash_movements").select("id,movement_date,amount,description").eq("to_credit_card_id", id).eq("movement_type", "CARD_PAYMENT")
       .is("deleted_at", null).gt("movement_date", from),
@@ -64,9 +69,31 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
     .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
     .order("date", { ascending: false }).limit(1500);
   const expHints = buildHints(hintRows ?? [], expCats);
+  // เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน (payment_group_id เดียวกัน · วันเดียวกัน) → แถวเดียว ให้ตรงกับ Statement บัตร (ตกลง 6 พ.ย. 2026)
+  const expLines: Line[] = [];
+  const byPayGroup = new Map<string, { line: Line; parts: { type: string; amount: number }[] }>();
+  (exps ?? []).forEach((e) => {
+    const l = one(e.ins_line as unknown as PremLine | PremLine[] | null);
+    const pol = one(l?.pol ?? null);
+    const g = e.payment_group_id ? `${e.payment_group_id}|${e.date}` : null;
+    const hit = g ? byPayGroup.get(g) : undefined;
+    if (hit) {
+      hit.line.amount += Number(e.amount);
+      hit.parts.push({ type: pol?.insurance_type ?? "", amount: Number(e.amount) });
+      if (pol && partRank(pol.insurance_type) < partRank(hit.parts[0].type)) hit.line.href = `/insurance/${l?.policy_id}?tab=flow`;
+      hit.line.text = pol ? `เบี้ยประกัน ${pol.insurer}${pol.policy_no ? ` ${pol.policy_no}` : ""} · ทั้งเล่ม` : hit.line.text;
+      hit.line.table = "";
+      hit.line.sub = [...hit.parts].sort((x, y) => partRank(x.type) - partRank(y.type))
+        .map((x, i) => `${PART_LABEL[x.type] ?? `ส่วนที่ ${i + 1}`} ${money(x.amount)}`).join(" + ");
+      return;
+    }
+    const line: Line = { key: `e${e.id}`, id: e.id as string, table: "expense_items", date: e.date as string, kind: "รูดบัตร", text: e.description as string,
+      amount: Number(e.amount), pending: !!e.pending_split, href: l?.policy_id ? `/insurance/${l.policy_id}?tab=flow` : undefined };
+    expLines.push(line);
+    if (g) byPayGroup.set(g, { line, parts: [{ type: pol?.insurance_type ?? "", amount: Number(e.amount) }] });
+  });
   const lines: Line[] = [
-    ...(exps ?? []).map((e) => ({ key: `e${e.id}`, id: e.id as string, table: "expense_items" as const, date: e.date as string, kind: "รูดบัตร", text: e.description as string,
-      amount: Number(e.amount), pending: !!e.pending_split })),
+    ...expLines,
     ...(buys ?? []).map((m) => ({ key: `b${m.id}`, id: m.id as string, table: "" as const, date: m.movement_date as string, kind: "ซื้อทรัพย์สิน",
       text: [(Array.isArray(m.assets) ? m.assets[0]?.name : (m.assets as { name: string } | null)?.name), m.description as string | null].filter(Boolean).join(" · "),
       amount: Number(m.amount), pending: false })),
@@ -182,7 +209,9 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
                 <tr key={r.key} className={latest && r.date <= latest ? "text-slate-500" : ""}>
                   <td className="py-1.5">{thDate(r.date)}</td>
                   <td>{r.kind}</td>
-                  <td>{r.text}{r.pending && <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs text-amber-800">รอแยกรายละเอียด</span>}</td>
+                  <td>{r.sub && r.href ? <Link href={r.href} className="hover:underline">{r.text}</Link> : r.text}
+                    {r.pending && <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs text-amber-800">รอแยกรายละเอียด</span>}
+                    {r.sub && <div className="text-xs text-slate-500">{r.sub}</div>}</td>
                   <td className={`text-right tabular-nums ${r.amount < 0 ? "text-emerald-700" : ""}`}>{signedMoney(r.amount)}</td>
                   <td className="pl-2 text-right">
                     {/* ก้อนรอแยก: กดที่แถวเพื่อแยกรายการ / ลงเป็นการจ่ายบัตรจากบัญชี */}

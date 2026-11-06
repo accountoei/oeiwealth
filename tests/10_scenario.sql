@@ -5053,4 +5053,76 @@ SELECT t.ok(has_function_privilege('authenticated', 'public.set_lease_deposit(uu
         AND NOT has_function_privilege('anon', 'private.tg_lease_deposit_guard()', 'EXECUTE')
         AND NOT has_function_privilege('anon', 'private.tg_deposit_movement_lock()', 'EXECUTE'),
             'แก้เงินประกัน: anon เรียกไม่ได้');
+\echo '== 13zz-booklet. กรมธรรม์เล่มเดียวกัน: จ่ายเบี้ยชีวิต + สัญญาเพิ่มเติมพร้อมกัน → ผูกเป็นชุด (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE tbk(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tbk TO authenticated;
+INSERT INTO tbk SELECT 'life', public.create_insurance_policy(jsonb_build_object('insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'),
+  'insurer', 'ประกันทดสอบเล่ม', 'policy_no', 'BK-001', 'currency', 'THB', 'premium', 1400));
+INSERT INTO tbk SELECT 'rider', public.create_insurance_policy(jsonb_build_object('insurance_type', 'HEALTH', 'person_id', t.p('คุณแม่'),
+  'insurer', 'ประกันทดสอบเล่ม ', 'policy_no', 'bk-001', 'currency', 'THB', 'premium', 700));
+INSERT INTO tbk SELECT 'other', public.create_insurance_policy(jsonb_build_object('insurance_type', 'HEALTH', 'person_id', t.p('คุณแม่'),
+  'insurer', 'ประกันทดสอบเล่ม', 'policy_no', 'BK-002', 'currency', 'THB', 'premium', 500));
+SELECT public.set_insurance_schedule(id, 'PREMIUM', jsonb_build_array(
+  jsonb_build_object('due_date', current_date - 3, 'amount', CASE k WHEN 'life' THEN 1400 WHEN 'rider' THEN 700 ELSE 500 END),
+  jsonb_build_object('due_date', current_date - 2, 'amount', CASE k WHEN 'life' THEN 1400 WHEN 'rider' THEN 700 ELSE 500 END)))
+  FROM tbk ORDER BY k;
+CREATE OR REPLACE FUNCTION pg_temp.bl(p_k text, p_no int) RETURNS uuid LANGUAGE sql AS $f$
+  SELECT id FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM tbk WHERE k = p_k) AND kind = 'PREMIUM'
+     AND installment_no = p_no AND deleted_at IS NULL $f$;
+CREATE OR REPLACE FUNCTION pg_temp.brow(p_k text, p_no int, p_amount numeric, p_group text, p_bank uuid, p_card uuid) RETURNS jsonb LANGUAGE sql AS $f$
+  SELECT jsonb_build_object('policy_id', (SELECT id FROM tbk WHERE k = p_k), 'label', p_k || ' งวด ' || p_no, 'date', current_date,
+    'description', 'เบี้ย ' || p_k, 'amount', p_amount, 'currency', 'THB', 'group', p_group,
+    'paid_from_asset_id', p_bank, 'paid_from_credit_card_id', p_card, 'insurance_schedule_line_id', pg_temp.bl(p_k, p_no)) $f$;
+-- เล่มเดียวกัน บัญชีเดียวกัน → ชุดเดียว · กรมธรรม์อื่นที่ไม่ใส่ group ไม่ถูกผูก
+SELECT t.ok(public.batch_pay_insurance_premiums(jsonb_build_array(
+  pg_temp.brow('life', 1, 1400, 'ประกันทดสอบเล่ม|BK-001', t.a('KBank ออมทรัพย์'), NULL),
+  pg_temp.brow('rider', 1, 700, 'ประกันทดสอบเล่ม|BK-001', t.a('KBank ออมทรัพย์'), NULL),
+  pg_temp.brow('other', 1, 500, NULL, t.a('KBank ออมทรัพย์'), NULL))) = 3, 'เล่มเดียวกัน: จ่าย 3 งวดในครั้งเดียว');
+SELECT (SELECT payment_group_id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('life', 1) AND deleted_at IS NULL) AS bk_g \gset
+SELECT t.ok(:'bk_g' <> ''
+        AND (SELECT count(*) = 2 AND bool_and(payment_group_id = :'bk_g') FROM public.expense_items
+              WHERE insurance_schedule_line_id IN (pg_temp.bl('life', 1), pg_temp.bl('rider', 1)) AND deleted_at IS NULL)
+        AND (SELECT payment_group_id IS NULL FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('other', 1) AND deleted_at IS NULL),
+            'เล่มเดียวกัน: ชีวิต + สัญญาเพิ่มเติมได้ชุดเดียวกัน · กรมธรรม์อื่นไม่ถูกผูก');
+SELECT t.ok((SELECT count(*) = 2 AND sum(amount) = 2100 AND bool_and(from_asset_id = t.a('KBank ออมทรัพย์'))
+               FROM public.cash_movements WHERE movement_group_id = :'bk_g' AND deleted_at IS NULL AND is_derived AND source_entity_type = 'EXPENSE'),
+            'เล่มเดียวกัน: เงินออกจากบัญชี 2 รายการผูกชุดเดียว รวม 2,100 (หน้าบัญชีแสดงแถวเดียว)');
+SELECT t.ok((SELECT count(*) = 2 FROM public.v_insurance_schedule_status
+              WHERE id IN (pg_temp.bl('life', 1), pg_temp.bl('rider', 1)) AND status = 'PAID'),
+            'เล่มเดียวกัน: งวดเบี้ยของแต่ละรายการชำระแล้วแยกกัน');
+-- คนละบัญชี / บัตร → ไม่ผูก (ไม่ error)
+SELECT t.ok(public.batch_pay_insurance_premiums(jsonb_build_array(
+  pg_temp.brow('life', 2, 1400, 'ประกันทดสอบเล่ม|BK-001', t.a('KBank ออมทรัพย์'), NULL),
+  pg_temp.brow('rider', 2, 700, 'ประกันทดสอบเล่ม|BK-001', NULL, (SELECT id FROM public.credit_cards WHERE card_last4 = '7788')))) = 2,
+            'เล่มเดียวกัน: จ่ายคนละบัญชี / บัตร → บันทึกได้');
+SELECT t.ok((SELECT count(*) = 2 AND bool_and(payment_group_id IS NULL) FROM public.expense_items
+              WHERE insurance_schedule_line_id IN (pg_temp.bl('life', 2), pg_temp.bl('rider', 2)) AND deleted_at IS NULL),
+            'เล่มเดียวกัน: จ่ายคนละบัญชี / บัตร → ไม่ผูกชุด (ไม่ error)');
+-- ผูกตรง: คนละเล่ม / ไม่ใช่เบี้ย → ไม่ได้
+SELECT t.fails($$SELECT private.link_premium_payments(ARRAY[
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('life', 1) AND deleted_at IS NULL),
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('other', 1) AND deleted_at IS NULL)])$$,
+  'เล่มเดียวกัน', 'ผูกชุด: เบี้ยคนละเล่มผูกไม่ได้');
+SELECT t.fails($$SELECT private.link_premium_payments(ARRAY[
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('life', 1) AND deleted_at IS NULL),
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id IS NULL AND deleted_at IS NULL LIMIT 1)])$$,
+  'เฉพาะการจ่ายเบี้ยประกัน', 'ผูกชุด: ค่าใช้จ่ายอื่นผูกกับเบี้ยไม่ได้');
+SELECT t.ok(private.link_premium_payments(ARRAY[
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('life', 1) AND deleted_at IS NULL)]) IS NULL,
+            'ผูกชุด: รายการเดียว = ไม่ต้องผูก');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT private.link_premium_payments(ARRAY[
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('life', 1) AND deleted_at IS NULL),
+  (SELECT id FROM public.expense_items WHERE insurance_schedule_line_id = pg_temp.bl('rider', 1) AND deleted_at IS NULL)])$$,
+  'PERMISSION_DENIED', 'ผูกชุด: VIEWER ทำไม่ได้');
+SELECT t.ok(has_function_privilege('authenticated', 'private.link_premium_payments(uuid[])', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'private.link_premium_payments(uuid[])', 'EXECUTE')
+        AND (SELECT prosecdef FROM pg_proc WHERE oid = 'private.link_premium_payments(uuid[])'::regprocedure)
+        AND (SELECT proconfig @> ARRAY['search_path=""'] FROM pg_proc WHERE oid = 'private.link_premium_payments(uuid[])'::regprocedure),
+            'ผูกชุด: anon เรียกไม่ได้ · SECURITY DEFINER + search_path ว่าง');
+RESET ROLE;
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'

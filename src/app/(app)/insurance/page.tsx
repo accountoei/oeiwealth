@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
@@ -20,6 +21,7 @@ import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
 import UndoButton from "@/components/UndoButton";
+import { bookletCount, bookletGroups, bookletOrder, bookletRole, partLabel } from "@/lib/insurance-booklet";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -176,9 +178,14 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     const ls = lineList.filter((l) => l.kind === kind && mine.has(l.policy_id) && inBox(l));
     const lumps = prem ? [] : (yearLumps ?? []).filter((b) => mine.has(b.policy_id));
     const ids = new Set([...ls.map((l) => l.policy_id), ...lumps.map((b) => b.policy_id)]);
-    return mineRows.filter((r) => ids.has(r.id)).map((r) => {
+    // จ่ายเบี้ย: กรมธรรม์เล่มเดียวกัน (ชีวิต + สัญญาเพิ่มเติม) อยู่ติดกัน + แถวรวมทั้งเล่ม (ตกลง 6 พ.ย. 2026)
+    const inBoxPols = mineRows.filter((r) => ids.has(r.id));
+    const groups = prem ? bookletGroups(inBoxPols) : new Map<string, typeof inBoxPols>();
+    return (prem ? bookletOrder(inBoxPols) : inBoxPols).map((r) => {
       const who = prem ? (r.payer_person_id ?? r.person_id) : r.person_id;
+      const role = bookletRole(r, groups);
       return { id: r.id, name: policyName.get(r.id) ?? "-", person: who ? pname.get(who) ?? null : null, active: r.status === "ACTIVE",
+        booklet: role ? { key: role.key, part: partLabel(r, role.main), rider: !role.isMain, last: role.parts.at(-1)?.id === r.id, size: role.parts.length } : undefined,
         pay: prem ? payDefaultValue(r) : "",
         lines: ls.filter((l) => l.policy_id === r.id).map((l) => ({ id: l.id, no: l.installment_no, due: l.due_date, amount: Number(l.amount),
           paid: insCountedPaid(l), remaining: l.status === "CLOSED" ? 0 : Number(l.remaining), currency: l.currency, status: l.status,
@@ -257,6 +264,26 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       return { value: v, label: v || "ทั้งหมด", href: `/insurance${q.size ? `?${q.toString()}` : ""}` };
     })} />
   );
+  // ภาพรวม: สัญญาเพิ่มเติม (บริษัท + เลขกรมธรรม์เดียวกัน) อยู่ใต้รายการหลัก + บรรทัดรวมทั้งเล่ม (ตกลง 6 พ.ย. 2026) · โหมดจัดลำดับ = ลำดับเดิม
+  const listGroups = bookletGroups(listRows);
+  const shownRows = ordering ? listRows : bookletOrder(listRows);
+  const bookTotalRow = (parts: typeof listRows) => {
+    const live = parts.filter((x) => x.status === "ACTIVE" && (x.premium_currency ?? "THB") === "THB");
+    const prem = live.reduce((t, x) => t + Number(x.premium ?? 0), 0);
+    const nexts = live.map((x) => nextPremium.get(x.id)).filter((x): x is { due_date: string; remaining: number } => !!x);
+    const due = nexts[0]?.due_date;
+    const sameDue = nexts.filter((x) => x.due_date === due);
+    return (
+      <tr className="bg-slate-50/70 text-xs">
+        <td className="py-2 pl-8 pr-4 font-medium text-slate-700">รวมทั้งเล่ม<span className="font-normal text-slate-500"> · {parts.length} ส่วน</span></td>
+        <td className="px-4" />
+        <td className="px-4 text-right font-medium tabular-nums">{prem > 0 && <>เบี้ย {money(prem, undefined, 0)}/ปี</>}</td>
+        <td className="px-4" />
+        <td className="px-4">{due && <>{thDate(due)}<div className="font-medium tabular-nums text-slate-700">{money(sameDue.reduce((t, x) => t + x.remaining, 0))}</div></>}</td>
+        <td className="px-4" /><td className="px-4" />
+      </tr>
+    );
+  };
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -287,7 +314,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
 
       <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatBox label="กรมธรรม์ที่มีผล" value={act.length} unit="ฉบับ" sub={<>ทั้งหมด {mineRows.length} ฉบับ</>} />
+        <StatBox label="กรมธรรม์ที่มีผล" value={bookletCount(act)} unit="ฉบับ"
+          sub={<>ทั้งหมด {bookletCount(mineRows)} ฉบับ{bookletCount(mineRows) < mineRows.length && " · สัญญาเพิ่มเติมนับรวมในเล่ม"}</>} />
         <StatBox label="ทุนประกันรวม (THB)" value={money(insuredTotal, "THB", 0)} />
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เบี้ยรวมต่อปี (THB)</div>
@@ -323,7 +351,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
             const cvSum = listRows.reduce((t, r) => t + cvOf(r), 0);
             return (
               <span className="ml-auto text-right text-sm text-slate-700">
-                รวม{tFilter || iFilter || sFilter !== "ACTIVE" ? "ตามตัวกรอง" : ""} {listRows.length} ฉบับ
+                รวม{tFilter || iFilter || sFilter !== "ACTIVE" ? "ตามตัวกรอง" : ""} {bookletCount(listRows)} ฉบับ
                 {prem > 0 && <> · เบี้ย <b className="tabular-nums">{money(prem, undefined, 0)}</b>/ปี</>}
                 {cvSum > 0 && <> · มูลค่าเวนคืน <b className="tabular-nums">{money(cvSum, undefined, 0)}</b></>}
               </span>
@@ -340,15 +368,21 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           <tbody className="divide-y divide-slate-100">
             {listRows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">
               {rows.length > 0 ? "ไม่มีกรมธรรม์ตามตัวกรอง" : pv.personId ? `ไม่มีกรมธรรม์ของ ${pv.personName}` : "ยังไม่มีกรมธรรม์"}</td></tr>}
-            {listRows.map((r, i) => {
+            {shownRows.map((r, i) => {
               const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
               const nb = nextBenefit(r.id);
+              const role = ordering ? null : bookletRole(r, listGroups);
+              const rider = !!role && !role.isMain;
               return (
-                <tr key={r.id} className={r.status !== "ACTIVE" ? "opacity-50" : ""}>
-                  <td className="px-4 py-3">
+                <Fragment key={r.id}>
+                <tr className={`${r.status !== "ACTIVE" ? "opacity-50" : ""} ${role ? "bg-slate-50/40" : ""}`}>
+                  <td className={`py-3 pr-4 ${rider ? "pl-8" : "pl-4"}`}>
                     {ordering && <span className="mr-2 align-middle"><MoveButtons table="insurance_policies" id={r.id} paths={paths} {...neighbors(listRows, i, (x) => x.id)} /></span>}
-                    <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.insurer}{r.policy_no && ` · ${r.policy_no}`}</Link>
-                    <div className="text-xs text-slate-500">{TYPE[r.insurance_type] ?? r.insurance_type}
+                    {rider
+                      ? <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">↳ สัญญาเพิ่มเติม · {partLabel(r, role.main)}</Link>
+                      : <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.insurer}{r.policy_no && ` · ${r.policy_no}`}</Link>}
+                    <div className="text-xs text-slate-500">{rider ? "เล่มเดียวกัน" : TYPE[r.insurance_type] ?? r.insurance_type}
+                      {role?.isMain && ` (สัญญาหลัก)`}
                       {(r.start_date || r.end_date) && ` · ${r.start_date ? `${thDate(r.start_date)} – ` : "ถึง "}${thDate(r.end_date)}`}</div>
                   </td>
                   <td className="px-4">{r.person_id ? pname.get(r.person_id) : "-"}
@@ -374,6 +408,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
                     {r.derived_status === "EXPIRING_SOON" && <div className="text-amber-700">ใกล้ครบ</div>}
                     {r.derived_status === "EXPIRED" && r.status === "ACTIVE" && <div className="text-red-600">เลยวันสิ้นสุด</div>}</td>
                 </tr>
+                {role && role.parts.at(-1)?.id === r.id && bookTotalRow(role.parts)}
+                </Fragment>
               );
             })}
           </tbody>
