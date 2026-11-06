@@ -225,13 +225,15 @@ export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<
 }
 
 // ---------------------------------------------------------------- แท็บบันทึกทั้งชุด (ตกลง 27 ต.ค. 2026) · ผิดแถวเดียว = ไม่บันทึกเลย
-type BatchLine = { policy_id: string; line_id: string; label: string; amount: string; pay: string; currency: string };
+/** group = กุญแจเล่มกรมธรรม์ (บริษัท + เลขกรมธรรม์) · แถวของเล่มเดียวกันที่จ่ายจากบัญชี / บัตรเดียวกัน → ฐานข้อมูลผูกเป็นชุดเดียว */
+type BatchLine = { policy_id: string; line_id: string; label: string; amount: string; pay: string; currency: string; group?: string | null };
 
 function refreshBatch(rows: { policy_id: string }[]) {
   revalidatePath("/insurance");
   new Set(rows.map((r) => r.policy_id)).forEach((id) => revalidatePath(`/insurance/${id}`));
   revalidatePath("/income-expenses");
   revalidatePath("/financial/cash", "layout");
+  revalidatePath("/liabilities", "layout");
   revalidatePath("/");
 }
 
@@ -247,7 +249,7 @@ export async function batchPremiums(_: ActionState, form: FormData): Promise<Act
   const clean = rows.map((r) => ({
     policy_id: r.policy_id, label: r.label, date, description: r.label, amount: amountOrNull(r.amount), currency: r.currency,
     paid_from_asset_id: bankId(parseEndpoint(r.pay)), paid_from_credit_card_id: cardId(parseEndpoint(r.pay)), insurance_schedule_line_id: r.line_id,
-    related_asset_id: assets.get(r.policy_id) ?? null,
+    related_asset_id: assets.get(r.policy_id) ?? null, group: str(r.group ?? null),
   }));
   if (!clean.every((r) => isPositive(r.amount))) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0 ทุกแถวที่กรอก" };
   const { data, error } = await supabase.rpc("batch_pay_insurance_premiums", { p_rows: clean });
@@ -255,6 +257,53 @@ export async function batchPremiums(_: ActionState, form: FormData): Promise<Act
   refreshBatch(rows);
   refreshAssets(assets.values());
   return { ok: `บันทึกจ่ายเบี้ยแล้ว ${data} งวด` };
+}
+
+/**
+ * หน้ากรมธรรม์หลัก: จ่ายเบี้ยทั้งเล่มของงวดเดียวกัน (ชีวิต + สัญญาเพิ่มเติม) ในครั้งเดียว (ตกลง 6 พ.ย. 2026)
+ *   บัญชี / บัตร = คำสั่งเดียว (ผิดส่วนเดียว = ไม่บันทึกเลย) + ผูกเป็นชุด → หน้าบัญชี / บัตรแสดงยอดรวมแถวเดียว
+ *   เงินสด = บันทึกทีละส่วน (ไม่มีเงินออกจากบัญชีให้ผูก)
+ */
+export async function payBooklet(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<{ policy_id: string; line_id: string; label: string; amount: string; currency: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่จ่าย" };
+  const parts = rows.map((r) => ({ ...r, num: amountOrNull(r.amount) })).filter((r) => plainNumber(r.amount) !== "");
+  if (!parts.length) return { error: "กรุณาใส่ยอดอย่างน้อย 1 ส่วน" };
+  if (!parts.every((r) => isPositive(r.num))) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0" };
+  const pay = endpointFromForm(form);
+  if (pay.kind !== "cash" && !pay.id) return { error: "กรุณาเลือกบัญชี / บัตรที่จ่าย" };
+  const notes = str(form.get("notes"));
+  const assets = await insuredAssets(supabase, [...new Set(parts.map((r) => r.policy_id))]);
+  const total = parts.reduce((t, r) => t + Number(r.num), 0);
+  const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (pay.kind === "cash") {
+    const done: string[] = [];
+    for (const r of parts) {
+      const { error } = await supabase.rpc("add_expense", { p: {
+        date, description: r.label, amount: r.num, currency: r.currency, expense_category: "ประกัน", related_asset_id: assets.get(r.policy_id) ?? null,
+        person_id: str(form.get("person_id")), insurance_schedule_line_id: r.line_id, notes,
+      } });
+      if (error) {
+        refreshBatch(parts); refreshAssets(assets.values());
+        return { error: `${done.length ? `บันทึกแล้ว ${done.join(" · ")} · ` : ""}${r.label} ยังไม่ได้บันทึก: ${friendlyError(error.message)}` };
+      }
+      done.push(r.label);
+      await supabase.rpc("sync_insurance_cash_value", { p_policy_id: r.policy_id });
+    }
+  } else {
+    const { error } = await supabase.rpc("batch_pay_insurance_premiums", { p_rows: parts.map((r) => ({
+      policy_id: r.policy_id, label: r.label, date, description: r.label, amount: r.num, currency: r.currency,
+      ...(pay.kind === "bank" ? { paid_from_asset_id: pay.id } : { paid_from_credit_card_id: pay.id }),
+      insurance_schedule_line_id: r.line_id, related_asset_id: assets.get(r.policy_id) ?? null, notes, group: str(form.get("group")),
+    })) });
+    if (error) return { error: notSaved("ทั้งเล่ม", friendlyError(error.message)) };
+  }
+  refreshBatch(parts);
+  refreshAssets(assets.values());
+  return { ok: `บันทึกจ่ายเบี้ยแล้ว ${parts.length} ส่วน · รวม ${fmt(total)}` };
 }
 
 /** แท็บ "บันทึกรับผลประโยชน์": หลายงวด หลายกรมธรรม์ → ถอนจากมูลค่าเวนคืนก่อน ส่วนเกินเป็นรายได้ */

@@ -6,6 +6,7 @@ import { INCOME_TYPE_LABEL, MOVE_LABEL, money, thDate } from "@/lib/format";
 import { assetIncomeFields, businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
 import { stripPending } from "@/lib/ledger";
+import { PART_LABEL as INS_PART_LABEL, partRank } from "@/lib/insurance-booklet";
 import type { ExpHint } from "@/lib/category-hints";
 import { EntryEditor, type Bank, type Card, type Liab } from "./forms";
 import SplitForm from "./SplitForm";
@@ -26,7 +27,7 @@ import type { PfCash } from "@/lib/pf-cash";
 
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
 export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
-export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id),internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)";
+export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)";
 export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -50,13 +51,18 @@ const NAME_LINK = "cursor-pointer underline decoration-slate-300 underline-offse
 export const SPLIT_BTN = "rounded-md border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100";
 const ASSET_PREFIX: Record<string, string> = { LOAN_RECEIVABLE: "เงินให้กู้", INVESTMENT_PORTFOLIO: "พอร์ต", INSURANCE_CASH_VALUE: "มูลค่าเวนคืน" };
 
-/** รับชำระเงินให้กู้ครั้งเดียว (เงินต้น + ดอกเบี้ย) เข้าบัญชีเดียวกัน → รวมเป็น 1 แถว ให้ตรงกับ Statement */
-export function mergeGroups(moves: Move[]): Move[] {
+/**
+ * รับชำระเงินให้กู้ครั้งเดียว (เงินต้น + ดอกเบี้ย) เข้าบัญชีเดียวกัน → รวมเป็น 1 แถว ให้ตรงกับ Statement
+ *   outOk = เงินออกที่รวมได้ (เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน · ตกลง 6 พ.ย. 2026): บัญชีเดียวกัน วันเดียวกัน สกุลเดียวกัน
+ */
+export function mergeGroups(moves: Move[], outOk: (m: Move) => boolean = () => false): Move[] {
   const out: Move[] = []; const byGroup = new Map<string, Move>();
   moves.forEach((m) => {
     const g = m.movement_group_id;
     const merged = g ? byGroup.get(g) : undefined;
-    if (merged && merged.to_asset_id && merged.to_asset_id === m.to_asset_id) {
+    const sameOut = !!merged && !merged.to_asset_id && !m.to_asset_id && !!merged.from_asset_id && merged.from_asset_id === m.from_asset_id
+      && merged.movement_date === m.movement_date && merged.currency === m.currency && outOk(merged) && outOk(m);
+    if (merged && ((merged.to_asset_id && merged.to_asset_id === m.to_asset_id) || sameOut)) {
       merged.parts = [...(merged.parts ?? [{ ...merged }]), m];       // เก็บสำเนาส่วนแรกก่อนรวมยอด
       merged.amount = Number(merged.amount) + Number(m.amount);
       merged.base_amount = Number(merged.base_amount ?? 0) + Number(m.base_amount ?? 0);
@@ -334,12 +340,29 @@ export function makeEntryKit(c: KitCtx) {
   };
 
   /** แถวของตารางเงินเข้า–ออก · withActions = กดที่แถวเพื่อแก้ไข / แยกก้อน */
-  const buildMoveRows = (list: Move[], withActions: boolean): MoveRow[] => mergeGroups(list).map((m) => {
+  // เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน (ค่าใช้จ่ายมี payment_group_id ตรงกับชุดของเงินออก) → รวมเป็นแถวเดียว
+  const premOf = (m: Move) => (m.is_derived && m.source_entity_type === "EXPENSE" && m.source_entity_id ? c.expById.get(m.source_entity_id) : undefined);
+  const premPart = (m: Move) => { const e = premOf(m); return !!e && !!e.insurance_schedule_line_id && !!e.payment_group_id && e.payment_group_id === m.movement_group_id; };
+  const buildMoveRows = (list: Move[], withActions: boolean): MoveRow[] => mergeGroups(list, premPart).map((m) => {
     let detail: ReactNode = m.description;
     let link: { href: string; label: string; tab?: string } | null = null;
     let type = MOVE_LABEL[m.movement_type] ?? m.movement_type;
     let pending = false;
-    if (m.parts) {
+    let breakdown: ReactNode = null;
+    const premSet = !!m.parts && m.parts.every(premPart);
+    if (m.parts && premSet) {
+      // ทั้งเล่ม: ชื่อกรมธรรม์ + ยอดแยกทีละส่วน (ชีวิต 1,402.00 + สุขภาพ 730.00) · แก้ทีละส่วนที่หน้ากรมธรรม์
+      type PremLine = { policy_id: string; installment_no: number; pol: { insurance_type: string; insurer: string; policy_no: string | null } | null };
+      const lineOf = (x: Move) => one(premOf(x)?.ins_line as PremLine | PremLine[] | null);
+      const typeOf = (l: PremLine | null) => one(l?.pol ?? null)?.insurance_type ?? "";
+      // รายการหลักก่อน (ชีวิต → อุบัติเหตุ → สุขภาพ → ทรัพย์สิน) ตามลำดับในเล่ม
+      const ps = m.parts.map((x) => ({ x, l: lineOf(x) })).sort((a, b) => partRank(typeOf(a.l)) - partRank(typeOf(b.l)));
+      const mainLine = ps.find((q) => q.l)?.l ?? null;
+      const pol = one(mainLine?.pol ?? null);
+      detail = pol ? `เบี้ยประกัน ${pol.insurer.trim()}${pol.policy_no ? ` ${pol.policy_no}` : ""} · ทั้งเล่ม` : m.description;
+      breakdown = <div className="text-xs text-slate-500">{ps.map(({ x, l }, i) => `${INS_PART_LABEL[typeOf(l)] ?? `ส่วนที่ ${i + 1}`} ${money(x.amount)}`).join(" + ")}</div>;
+      link = mainLine ? { href: `/insurance/${mainLine.policy_id}?tab=flow`, label: "กรมธรรม์ (แก้ทีละส่วน)" } : null;
+    } else if (m.parts) {
       type = "รับชำระเงินให้กู้";
       detail = m.parts.map((x) => `${x.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? "เงินต้น" : x.movement_type === "INCOME" ? "ดอกเบี้ย" : MOVE_LABEL[x.movement_type] ?? x.movement_type} ${money(x.amount)}`).join(" + ");
       const loan = m.parts.find((x) => x.from_asset_id)?.from_asset_id;
@@ -374,7 +397,7 @@ export function makeEntryKit(c: KitCtx) {
     const txInc = m.is_derived && m.source_entity_type === "INVESTMENT_TX" && m.source_entity_id ? incByTx.get(m.source_entity_id) : undefined;
     return {
       key: m.id, date: m.movement_date, type, typeCls: m.movement_type === "REIMBURSEMENT_IN" ? "text-sky-700" : undefined,
-      kind: m.movement_type, merged: !!m.parts, fee: Number(m.fee ?? 0),
+      kind: m.movement_type, merged: !!m.parts && !premSet, fee: Number(m.fee ?? 0),
       metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
         expenseCategory: exp?.expense_category ?? null, pending: !!(inc?.pending_split || exp?.pending_split) },
       fromLabel: placeOf(m.from_asset_id),
@@ -391,10 +414,11 @@ export function makeEntryKit(c: KitCtx) {
       // แยกก้อนได้ที่นี่ (กดที่แถว) → ป้ายไม่ต้องเป็นลิงก์
       pendingHref: withActions && canDelete || !c.tabLinks ? undefined
         : inc?.pending_split ? `${tabLink("income", "")?.href}&it=split` : exp?.pending_split ? `${tabLink("expense", "")?.href}&et=split` : undefined,
-      detail: <>{srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type)}
+      detail: <>{srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type)}{breakdown}
         {canWrite && (inc || exp) && fromCloseout((inc ?? exp)!.id) && CLOSEOUT_NOTE}
         {canWrite && DEPOSIT_MOVES.includes(m.movement_type) && DEPOSIT_NOTE}</>,
-      actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? moveEdit(m)
+      actions: premSet ? null
+        : withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? moveEdit(m)
         // รับชำระเงินให้กู้ (เงินต้น + ดอกเบี้ย) → กดที่แถว: หน้าต่างเดียวแก้ทั้งคู่ (เหมือนหน้า Loans)
         : withActions && m.parts ? pairEdit(m)
         // เงินเข้าบัญชีจากปันผล / ดอกเบี้ย / คูปองในพอร์ต → แก้รายการในพอร์ต

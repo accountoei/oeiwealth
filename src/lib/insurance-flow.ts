@@ -18,8 +18,10 @@ export function xirr(flows: Cash[]): number | null {
   const ts = fs.map((f) => ({ t: (Date.parse(f.date) - t0) / 86_400_000 / 365, a: f.amount }));
   const npv = (r: number) => ts.reduce((s, x) => s + x.a / Math.pow(1 + r, x.t), 0);
   // หาช่วงที่ NPV เปลี่ยนเครื่องหมาย แล้วแบ่งครึ่ง (ไม่แกว่งแบบ Newton)
+  //   ระยะยาวมาก (เช่น 76 ปี) ที่ −99.99% ตัวหารเล็กจนตัวเลขล้น → ขยับขอบล่างขึ้นจนคำนวณได้
   let lo = -0.9999, hi = 1;
   let flo = npv(lo), fhi = npv(hi);
+  for (const c of [-0.999, -0.99, -0.9, -0.5]) { if (Number.isFinite(flo)) break; lo = c; flo = npv(lo); }
   while (flo * fhi > 0 && hi < 1e4) { hi *= 4; fhi = npv(hi); }
   if (!Number.isFinite(flo) || !Number.isFinite(fhi) || flo * fhi > 0) return null;
   for (let i = 0; i < 300 && hi - lo > 1e-12; i++) {

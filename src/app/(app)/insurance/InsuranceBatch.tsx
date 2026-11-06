@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SMALL_BTN, BENEFIT_TYPE_LABEL, INS_OPEN, INS_SCHED_STATUS, money, thDate } from "@/lib/format";
+import { SMALL_BTN, BENEFIT_TYPE_LABEL, INS_OPEN, INS_SCHED_STATUS, money, numOrZero, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
@@ -23,7 +23,9 @@ export type BoxLine = {
 };
 export type BoxPolicy = { id: string; name: string; person: string | null; active: boolean; lines: BoxLine[];
   /** จ่ายเบี้ยจาก (ค่าตั้งต้นของกรมธรรม์ "a:" / "c:" · ว่าง = บัญชีแรกของสกุล) */ pay?: string;
-  /** รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือก */ lumps: Recorded[] };
+  /** รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือก */ lumps: Recorded[];
+  /** กรมธรรม์เล่มเดียวกัน (บริษัท + เลขกรมธรรม์ · ตกลง 6 พ.ย. 2026): key = กุญแจเล่ม · part = ชีวิต / สุขภาพ · last = ส่วนสุดท้ายในกล่อง (ต่อด้วยแถวรวมทั้งเล่ม) */
+  booklet?: { key: string; part: string; rider: boolean; last: boolean; size: number } };
 export type PayOpt = { value: string; label: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -44,7 +46,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   const prem = kind === "PREMIUM";
   const router = useRouter();
   const cf = useConfirmSubmit();
-  const lines = policies.flatMap((p) => p.lines.map((l) => ({ ...l, policyId: p.id, policy: p.name, active: p.active })));
+  const lines = policies.flatMap((p) => p.lines.map((l) => ({ ...l, policyId: p.id, policy: p.name, active: p.active, part: p.booklet?.part, group: p.booklet?.key })));
   const payOf = new Map(policies.map((p) => [p.id, p.pay ?? ""]));
   // ค่าตั้งต้นของกรมธรรม์ก่อน (ถ้ายังใช้ได้และสกุลตรง · ตกลง 3 พ.ย. 2026) ไม่งั้นบัญชีแรกของสกุล
   const firstPay = (ccy: string, def = "") => (def && pays.some((p) => p.value === def && p.currency === ccy) ? def : pays.find((p) => p.currency === ccy)?.value ?? "");
@@ -61,8 +63,10 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   const canInput = (l: (typeof lines)[number]) => canWrite && (due(l) || (all && open(l)));
   const later = lines.filter((l) => open(l) && !due(l)).length;
   const chosen = lines.filter((l) => canInput(l) && (vals[l.id] ?? "").trim() !== "");
-  const label = (l: (typeof lines)[number]) => `${l.policy} งวดที่ ${l.no}`;
-  const payload = chosen.map((l) => ({ policy_id: l.policyId, line_id: l.id, label: label(l), amount: vals[l.id], pay: pay[l.id] ?? "", currency: l.currency }));
+  const label = (l: (typeof lines)[number]) => `${l.policy}${l.part ? ` · ${l.part}` : ""} งวดที่ ${l.no}`;
+  // เล่มเดียวกัน + บัญชี / บัตรเดียวกัน → ฐานข้อมูลผูกเป็นชุด (หน้าบัญชี / บัตรแสดงยอดรวมแถวเดียว)
+  const payload = chosen.map((l) => ({ policy_id: l.policyId, line_id: l.id, label: label(l), amount: vals[l.id], pay: pay[l.id] ?? "", currency: l.currency,
+    group: l.group ?? null }));
   const payName = new Map(pays.map((p) => [p.value, p.label]));
   const what = prem ? "จ่ายเบี้ย" : "รับผลประโยชน์";
   const onSubmit = cf.guard(`บันทึก${what} ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((l) =>
@@ -125,7 +129,8 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
             const head = (
               <td rowSpan={Math.max(shown.length + (fold ? 1 : 0), 1)} className="px-3 py-2 align-top">
                 <Link href={`/insurance/${p.id}`} className="font-medium text-slate-900 hover:underline">{p.name}</Link>
-                {p.person && <div className="text-xs text-slate-500">{p.person}</div>}
+                {p.booklet && <div className="mt-0.5 text-xs"><span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{p.booklet.rider ? "สัญญาเพิ่มเติม" : "สัญญาหลัก"} · {p.booklet.part}</span></div>}
+                {p.person && !p.booklet?.rider && <div className="text-xs text-slate-500">{p.person}</div>}
                 {yl.length > 1 && <div className="text-xs text-slate-500">{yl.length} งวดในปี · รวม {money(yl.reduce((t, l) => t + l.amount, 0), cur(yl[0].currency))}</div>}
                 {p.lines.length > 4 && done.length > 1 && (expand[p.id] || !canWrite) && (
                   <button type="button" onClick={() => setExpand({ ...expand, [p.id]: !expand[p.id] })} className={`${SMALL_BTN} mt-1`}>
@@ -135,8 +140,15 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
                 <RecordedLines items={p.lumps} />
               </td>
             );
+            // แถวรวมทั้งเล่ม (ต่อจากส่วนสุดท้ายของเล่มในกล่อง): ยอดงวด · จ่ายแล้ว · คงเหลือ · ยอดที่กรอก → เทียบกับใบเสร็จ
+            const bk = p.booklet;
+            const bookLines = bk?.last && bk.size > 1 ? policies.filter((x) => x.booklet?.key === bk.key).flatMap((x) => x.lines) : [];
+            const bc = cur(bookLines[0]?.currency ?? "THB");
+            const bSum = (f: (l: BoxLine) => number) => bookLines.reduce((t, l) => t + f(l), 0);
+            const entered = bookLines.reduce((t, l) => t + numOrZero(vals[l.id]), 0);
             return (
-              <tbody key={p.id} className="divide-y divide-slate-100 border-t border-slate-200">
+              <Fragment key={p.id}>
+              <tbody className={`divide-y divide-slate-100 border-t ${bk?.rider ? "border-slate-100" : "border-slate-200"}`}>
                 {p.lines.length === 0 && <tr>{head}<td colSpan={cols - 1} className="px-3 py-2 text-xs text-slate-400">ไม่มีงวดในปีนี้ · รับเงินก้อน</td></tr>}
                 {fold && (
                   <tr className="align-top text-slate-500">
@@ -151,7 +163,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
                   </tr>
                 )}
                 {shown.map((l, i) => {
-                  const x = { ...l, policyId: p.id, policy: p.name, active: p.active };
+                  const x = { ...l, policyId: p.id, policy: p.name, active: p.active, part: p.booklet?.part, group: p.booklet?.key };
                   const v = vals[l.id] ?? "";
                   const st = INS_SCHED_STATUS[l.status];
                   return (
@@ -188,6 +200,18 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
                   );
                 })}
               </tbody>
+              {bookLines.length > 0 && (
+                <tbody className="border-t border-slate-100 bg-slate-50/70 text-sm font-medium">
+                  <tr>
+                    <td colSpan={2} className="px-3 py-2">รวมทั้งเล่ม<div className="text-xs font-normal text-slate-500">{p.name} · {policies.filter((x) => x.booklet?.key === bk?.key).map((x) => x.booklet?.part).join(" + ")}</div></td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(bSum((l) => l.amount), bc)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(bSum((l) => l.paid), bc)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(bSum((l) => l.remaining), bc)}</td>
+                    {canWrite && <><td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{entered > 0 ? money(entered, bc) : <span className="font-normal text-slate-300">-</span>}</td><td /></>}
+                  </tr>
+                </tbody>
+              )}
+              </Fragment>
             );
           })}
           {thb.length > 0 && (

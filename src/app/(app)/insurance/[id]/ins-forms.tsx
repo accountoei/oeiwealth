@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { addCashValue, addCoverage, payPremium, receiveBenefit, saveCashValueTable, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
+import { addCashValue, addCoverage, payBooklet, payPremium, receiveBenefit, saveCashValueTable, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { parseCashValueText, type CvLine } from "@/lib/insurance-schedule";
-import { SMALL_BTN, COVERAGE_LABEL, ROW_BTN, money, thDate } from "@/lib/format";
+import { SMALL_BTN, COVERAGE_LABEL, ROW_BTN, money, numOrZero, thDate } from "@/lib/format";
+import { useRowPanel } from "@/components/RowPanel";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
@@ -312,5 +313,107 @@ export function SyncCashValueButton({ policyId }: { policyId: string }) {
       <button disabled={pending} className={sbtn}>{pending ? "กำลังลง…" : "ลงมูลค่าตามตาราง"}</button>
       <Msg s={state} />
     </form>
+  );
+}
+
+/** ส่วนของเล่มที่จ่ายในงวดเดียวกัน (ชีวิต / สัญญาเพิ่มเติม) */
+export type BookletPart = { policyId: string; lineId: string; part: string; label: string; amount: number; currency: string };
+
+/**
+ * จ่ายเบี้ยทั้งเล่มของงวดเดียวกัน (หน้ากรมธรรม์หลัก · ตกลง 6 พ.ย. 2026)
+ *   ยอดแยกทีละส่วน (ภาษี / IRR แยกถูก) · จ่ายจากบัญชี / บัตรเดียวกัน → ผูกเป็นชุด หน้าบัญชี / บัตรแสดงยอดรวมแถวเดียว
+ */
+export function BookletPayForm({ parts, group, banks, cards, persons, defaultPerson, defaultPay = "", today }: {
+  parts: BookletPart[]; group: string; banks: Bank[]; cards: Card[]; persons: Person[]; defaultPerson?: string | null; defaultPay?: string; today: string;
+}) {
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "md" });
+  const currency = parts[0]?.currency ?? "THB";
+  const defBank = defaultPay.startsWith("a:") && banks.some((b) => b.asset_id === defaultPay.slice(2) && b.currency === currency) ? defaultPay.slice(2) : undefined;
+  const defCard = defaultPay.startsWith("c:") && cards.some((c) => c.id === defaultPay.slice(2) && c.currency === currency) ? defaultPay.slice(2) : undefined;
+  const [via, setVia] = useState(defCard ? "card" : defBank || banks.length ? "bank" : cards.length ? "card" : "cash");
+  const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(parts.map((x) => [x.lineId, x.amount > 0 ? x.amount.toFixed(2) : ""])));
+  const [state, action, pending] = useActionState<ActionState, FormData>(payBooklet, {});
+  if (state.ok) return <Flash on={state} className="text-xs text-emerald-700" />;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>บันทึกจ่าย</button>;
+  if (!open) return trigger;
+  const total = parts.reduce((t, x) => t + numOrZero(vals[x.lineId]), 0);
+  const rows = parts.map((x) => ({ policy_id: x.policyId, line_id: x.lineId, label: x.label, amount: vals[x.lineId] ?? "", currency: x.currency }));
+  return present(trigger, (
+    <form action={action} className="space-y-4 text-left">
+      <input type="hidden" name="rows" value={JSON.stringify(rows)} />
+      <input type="hidden" name="group" value={group} />
+      <div>
+        <h3 className="font-medium text-slate-900">จ่ายเบี้ยทั้งเล่ม</h3>
+        <p className="text-xs text-slate-500">ระบบบันทึกแยกทีละส่วน (ภาษี / IRR คิดแยกถูก) · จ่ายจากบัญชี / บัตรเดียวกัน หน้าบัญชีและบัตรแสดงยอดรวมแถวเดียว · ช่องว่าง = ไม่จ่ายส่วนนั้น</p>
+      </div>
+      <table className="w-full text-sm">
+        <tbody className="divide-y divide-slate-100">
+          {parts.map((x) => (
+            <tr key={x.lineId}>
+              <td className="py-1.5">{x.part}<div className="text-xs text-slate-500">{x.label}</div></td>
+              <td className="py-1.5 text-right">
+                <input inputMode="decimal" value={vals[x.lineId] ?? ""} aria-label={`ยอด ${x.part}`}
+                  onChange={(e) => setVals({ ...vals, [x.lineId]: e.target.value })} className={`w-36 text-right ${small}`} />
+              </td>
+            </tr>
+          ))}
+          <tr className="font-medium"><td className="py-1.5">รวมจ่าย</td><td className="py-1.5 pr-2 text-right tabular-nums">{money(total, currency)}</td></tr>
+        </tbody>
+      </table>
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="text-sm">วันที่จ่าย<input name="date" type="date" required defaultValue={today} max={today} className={input} /></label>
+        <label className="text-sm">จ่ายจาก
+          <select name="pay_via" value={via} onChange={(e) => setVia(e.target.value)} className={input}>
+            <option value="bank">บัญชีธนาคาร</option><option value="card">บัตรเครดิต</option><option value="cash">เงินสด</option>
+          </select>
+        </label>
+        {via === "bank" && <label className="text-sm">บัญชี<select name="bank_asset_id" required defaultValue={defBank} className={input}>
+          <BankOptions banks={banks.filter((b) => b.currency === currency)} /></select></label>}
+        {via === "card" && <label className="text-sm">บัตร<select name="card_id" required defaultValue={defCard} className={input}>
+          {cards.filter((c) => c.currency === currency).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>}
+        {via === "cash" && <label className="text-sm">ผู้จ่าย<select name="person_id" required defaultValue={defaultPerson ?? undefined} className={input}>
+          {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+        <label className="text-sm md:col-span-3">หมายเหตุ<input name="notes" className={input} /></label>
+      </div>
+      {via === "cash" && <p className="text-xs text-slate-500">เงินสด: บันทึกทีละส่วน (ไม่มีเงินออกจากบัญชีให้รวมแถว)</p>}
+      <div className="flex flex-wrap items-center gap-3">
+        <button disabled={pending || total <= 0} className={btn}>{pending ? "กำลังบันทึก…" : `บันทึกจ่าย ${money(total, currency)}`}</button>
+        <BalanceGuard />
+        <Msg s={state} />
+      </div>
+    </form>
+  ));
+}
+
+/**
+ * แถว "เสียชีวิต · ตามทุนประกัน" (ยังไม่ได้ใส่ความคุ้มครองชนิดนี้ · ตกลง 6 พ.ย. 2026)
+ *   ใช้ทุนประกันของกรมธรรม์ (ไม่คัดลอกไปเก็บ) · กดที่แถว → บันทึกเป็นรายการจริง เมื่อเล่มนั้นจ่ายไม่เท่าทุนประกัน
+ */
+export function SumCoverageRow({ policyId, type, amount, currency, canWrite, children }: {
+  policyId: string; type: string; amount: number; currency: string; canWrite: boolean; children: ReactNode;
+}) {
+  const row = useRowPanel(canWrite);
+  const [state, action, pending] = useActionState<ActionState, FormData>(addCoverage, {});
+  const { setOpen } = row;
+  useEffect(() => { if (state.ok) setOpen(false); }, [state, setOpen]);
+  const [label, unit] = COVERAGE_LABEL[type] ?? [type, ""];
+  return (
+    <tr className="text-slate-600">
+      {children}
+      <td className="pl-2 text-right">{row.render(
+        <form action={action} className="space-y-3 text-left">
+          <input type="hidden" name="policy_id" value={policyId} />
+          <input type="hidden" name="coverage_type" value={type} />
+          <input type="hidden" name="currency" value={currency} />
+          <p className="text-sm text-slate-600">ตอนนี้ใช้ทุนประกัน {money(amount, currency)} · บันทึกเป็นรายการของเล่มนี้เมื่อวงเงินจริงไม่เท่าทุนประกัน (แก้ทุนประกันภายหลัง รายการนี้ไม่เปลี่ยนตาม)</p>
+          <label className="block text-sm">{label}{unit && ` (${unit})`} ({currency})
+            <input name="limit_amount" required inputMode="decimal" defaultValue={amount.toFixed(2)} className={input} /></label>
+          <label className="block text-sm">หมายเหตุ<input name="notes" className={input} /></label>
+          <div className="flex flex-wrap items-center gap-3">
+            <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+            <Msg s={state} />
+          </div>
+        </form>, `${label} · บันทึกเป็นรายการของเล่มนี้`, "sm")}</td>
+    </tr>
   );
 }

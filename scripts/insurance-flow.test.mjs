@@ -24,6 +24,13 @@ assert.equal(xirr([{ date: "2021-01-01", amount: 1000 }]), null);
 assert.equal(xirr([]), null);
 // ลำดับรายการไม่มีผล
 near(xirr([{ date: "2022-01-01", amount: 1100 }, { date: "2021-01-01", amount: -1000 }]), 0.1);
+// ระยะยาวมาก (เบี้ย 20 ปี · ครบสัญญาอีก 76 ปี) ต้องคำนวณได้ ไม่ใช่ "–"
+{
+  const long = [...Array.from({ length: 20 }, (_, i) => ({ date: `${2017 + i}-07-20`, amount: -1000 })), { date: "2093-07-20", amount: 100000 }];
+  const r = xirr(long);
+  assert.ok(r !== null && r > 0 && r < 0.1, `long horizon IRR = ${r}`);
+  assert.ok(Math.abs(npv(long, r)) < 1e-4, "NPV ≈ 0 ที่ IRR ระยะยาว");
+}
 
 // ตัวอย่างที่ตอบเจ้าของ: เบี้ยปีละ 100,000 × 10 ปี · เงินคืน 20,000 ทุก 2 ปี (ปี 2–10) · ครบสัญญาปี 15 ได้ 1,050,000 → คุ้มทุนปีที่ 15 (+150,000)
 const L = (id, kind, no, due, amount, status = "PENDING", paid = 0) => ({ id, kind, installment_no: no, due_date: due, amount, paid_amount: paid, status, currency: "THB" });

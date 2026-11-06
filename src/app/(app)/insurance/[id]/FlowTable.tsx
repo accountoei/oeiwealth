@@ -5,7 +5,10 @@ import { money, signedMoney, thDate } from "@/lib/format";
 import { InfoTip } from "@/components/HeaderBar";
 
 /** เงินจริงของงวด (จ่ายเบี้ย / รับผลประโยชน์) แสดงแทรกใต้งวดนั้น */
-export type FlowSub = { key: string; kind: "PAY" | "RECV"; date: string; text: string; detail?: string | null; amount: number; actions?: ReactNode };
+export type FlowSub = { key: string; kind: "PAY" | "RECV"; date: string; text: string; detail?: string | null; amount: number; actions?: ReactNode;
+  /** เล่มที่มีสัญญาเพิ่มเติม: คอลัมน์ของส่วนที่จ่าย (key ของ FlowPart) */ part?: string };
+/** เล่มที่มีสัญญาเพิ่มเติม (ตกลง 6 พ.ย. 2026): คอลัมน์เบี้ยต่อส่วน (ชีวิต · สุขภาพ / สัญญาเพิ่มเติม) แล้วตามด้วย "รวมจ่าย" */
+export type FlowPart = { key: string; label: string };
 
 /** แถวในตาราง: งวดเบี้ย / งวดผลประโยชน์ / รับเงินก้อนไม่ผูกงวด (lump) */
 export type FlowRow = {
@@ -21,19 +24,34 @@ export type FlowRow = {
   lump?: { text: string; detail?: string | null };
   actions?: ReactNode;
   cash?: FlowSub[];
+  /** เล่มที่มีสัญญาเพิ่มเติม: ยอดเบี้ยของแต่ละส่วน (กดเพื่อแก้งวดของส่วนนั้น) · amount = รวมจ่าย */
+  split?: Record<string, ReactNode>;
 };
 
 /**
  * ตารางเบี้ยและผลประโยชน์ของกรมธรรม์ (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย)
  *   ตัวกรอง ทั้งหมด / เบี้ย / ผลประโยชน์ · สุทธิสะสมแสดงเฉพาะ "ทั้งหมด" · เปิดแท็บแล้วเลื่อนไปงวดแรกที่ค้าง
  */
-export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]; showNet: boolean; currency: string }) {
+export default function FlowTable({ rows, showNet, currency, parts }: { rows: FlowRow[]; showNet: boolean; currency: string; parts?: FlowPart[] }) {
   const nPrem = rows.filter((r) => r.kind === "PREMIUM").length;
   const nBen = rows.length - nPrem;
   const [f, setF] = useState<"all" | "PREMIUM" | "BENEFIT">("all");
   const shown = f === "all" ? rows : rows.filter((r) => r.kind === f);
   const net = showNet && f === "all";
-  const cols = net ? 8 : 7;
+  const nParts = parts?.length ?? 0;
+  const cols = (net ? 8 : 7) + nParts;
+  // คอลัมน์เบี้ย: ปกติ = "จ่ายเบี้ย" ช่องเดียว · เล่มที่มีสัญญาเพิ่มเติม = ทีละส่วน + "รวมจ่าย"
+  const premCells = (r: FlowRow) => parts
+    ? <>{parts.map((p) => <td key={p.key} className="py-2 text-right tabular-nums">{r.kind === "PREMIUM" ? r.split?.[p.key] ?? "" : ""}</td>)}
+        <td className="py-2 text-right font-medium tabular-nums">{r.kind === "PREMIUM" ? money(r.amount) : ""}</td></>
+    : <td className="py-2 text-right tabular-nums">{r.kind === "PREMIUM" ? money(r.amount) : ""}</td>;
+  const blankPrem = parts ? <>{parts.map((p) => <td key={p.key} />)}<td /></> : <td />;
+  const subPrem = (c: FlowSub) => {
+    const v = c.kind === "PAY" ? money(c.amount) : "";
+    if (!parts) return <td className="py-1.5 text-right text-sm tabular-nums text-slate-700">{v}</td>;
+    const col = parts.some((p) => p.key === c.part) ? c.part : parts[0].key;
+    return <>{parts.map((p) => <td key={p.key} className="py-1.5 text-right text-sm tabular-nums text-slate-700">{p.key === col ? v : ""}</td>)}<td /></>;
+  };
   const box = useRef<HTMLDivElement>(null);
   // แท็บซ่อนอยู่ตอนโหลด (ขนาด 0) → รอจนแสดงจริงแล้วค่อยเลื่อนครั้งเดียว
   useEffect(() => {
@@ -68,17 +86,21 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
         </div>
       )}
       <div ref={box} className="max-h-[40rem] overflow-auto">
-        <table className="w-full min-w-[60rem] table-fixed text-sm [&_.text-right]:whitespace-nowrap [&_.text-right]:pl-2">
+        {/* ช่องรายการกว้างคงที่ (หมายเหตุขึ้นบรรทัดใหม่ · ตกลง 6 พ.ย. 2026) · ช่องสถานะรับพื้นที่ที่เหลือ */}
+        <table className={`w-full ${parts ? "min-w-[61rem]" : "min-w-[50rem]"} table-fixed text-sm [&_.text-right]:whitespace-nowrap [&_.text-right]:pl-2`}>
           <colgroup>
-            <col className="w-24" /><col className="w-32" /><col />
-            <col className="w-32" /><col className="w-32" />{net && <col className="w-36" />}
-            <col className="w-40" /><col className="w-28" />
+            <col className="w-16" /><col className="w-28" /><col className="w-32" />
+            {parts?.map((p) => <col key={p.key} className="w-24" />)}
+            <col className="w-24" /><col className="w-28" />{net && <col className="w-28" />}
+            <col /><col className="w-24" />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-white text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100">
               <th className="py-1.5"> <InfoTip label="คำอธิบาย">แถวสีเทาอ่อน = เบี้ยที่จ่ายจริง · แถวสีเขียว = เงินที่รับจริง{net && " · สุทธิสะสมตัวจาง = คาดการณ์ตามตาราง (งวดที่ยังไม่ถึง)"} ·
         แก้ / ลบการจ่ายที่แถวนั้น (ลบแล้วงวดกลับเป็น &ldquo;รอ&rdquo;) · ยกเลิกการรับได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน</InfoTip></th><th>ครบกำหนด / วันที่</th><th>รายการ</th>
-              <th className="text-right">จ่ายเบี้ย</th><th className="text-right">รับผลประโยชน์</th>
+              {parts ? <>{parts.map((p) => <th key={p.key} className="text-right" title={`เบี้ย${p.label}`}>{p.label}</th>)}<th className="text-right" title="เบี้ยรวมทั้งเล่มของงวดนั้น">รวมจ่าย</th></>
+                : <th className="text-right">จ่ายเบี้ย</th>}
+              <th className="text-right">รับผลประโยชน์</th>
               {net && <th className="text-right" title="ผลประโยชน์ − เบี้ย นับรวมตั้งแต่งวดแรกถึงแถวนั้น · ตัวจาง = คาดการณ์ตามตาราง">สุทธิสะสม</th>}
               <th className="pl-4">สถานะ</th><th></th>
             </tr>
@@ -90,7 +112,7 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
                 <td className="py-2">{tag("RECV", "รับเงินก้อน")}</td>
                 <td className="whitespace-nowrap py-2">{thDate(r.date)}</td>
                 <td className="py-2">{r.lump.text}{r.lump.detail && <div className="text-xs text-slate-500">{r.lump.detail}</div>}</td>
-                <td />
+                {blankPrem}
                 <td className="py-2 text-right tabular-nums text-emerald-700">{money(r.amount, currency)}</td>
                 {net && netCell(r)}
                 <td className="py-2 pl-4">{r.breakEven && <span className="whitespace-nowrap rounded bg-emerald-600 px-1.5 py-0.5 text-xs text-white">คุ้มทุน</span>}</td>
@@ -102,7 +124,7 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
                   <td className="py-2">{tag(r.kind, r.kind === "PREMIUM" ? "เบี้ย" : "ผลประโยชน์")}</td>
                   <td className="whitespace-nowrap py-2">{thDate(r.date)}</td>
                   <td className="py-2">{r.label}{r.notes && <div className="text-xs text-slate-400">{r.notes}</div>}</td>
-                  <td className="py-2 text-right tabular-nums">{r.kind === "PREMIUM" ? money(r.amount) : ""}</td>
+                  {premCells(r)}
                   <td className="py-2 text-right tabular-nums">{r.kind === "BENEFIT" ? money(r.amount) : ""}</td>
                   {net && netCell(r)}
                   <td className="py-2 pl-4">
@@ -119,7 +141,7 @@ export default function FlowTable({ rows, showNet, currency }: { rows: FlowRow[]
                     <td className="py-1.5 pl-3">{tag(c.kind, c.kind === "PAY" ? "จ่าย" : "รับ")}</td>
                     <td className="whitespace-nowrap py-1.5 text-sm text-slate-700">{thDate(c.date)}</td>
                     <td className="py-1.5 text-slate-600">{c.text}{c.detail && <div className="text-slate-400">{c.detail}</div>}</td>
-                    <td className="py-1.5 text-right text-sm tabular-nums text-slate-700">{c.kind === "PAY" ? money(c.amount) : ""}</td>
+                    {subPrem(c)}
                     <td className="py-1.5 text-right text-sm tabular-nums text-emerald-700">{c.kind === "RECV" ? money(c.amount) : ""}</td>
                     {net && <td />}
                     <td />

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -7,9 +8,10 @@ import {
   signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
 import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
-import FlowTable, { type FlowRow } from "./FlowTable";
+import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { AddCashValueForm, BenefitForm, CashValueTableEditor, CoverageForm, PayPremiumForm, PolicyInfoForm, SyncCashValueButton } from "./ins-forms";
+import { AddCashValueForm, BenefitForm, BookletPayForm, CashValueTableEditor, CoverageForm, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
+import { PART_LABEL, bookletGroups, bookletKey, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
 import InsScheduleEditor from "./InsScheduleEditor";
 import EditToggle from "@/components/EditToggle";
 import BeneficiaryEditor from "../Beneficiaries";
@@ -32,6 +34,14 @@ const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
 type Line = { id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string; benefit_type: string | null;
   notes: string | null; paid_amount: number; remaining: number; status: string; skipped: boolean };
+/** งวดของส่วนใดส่วนหนึ่งในเล่ม (กรมธรรม์หลัก / สัญญาเพิ่มเติม) */
+type SLine = Line & { policy_id: string };
+type BookPol = BookletPolicy & { insured_amount: number | null; insured_amount_currency: string | null; premium: number | null; premium_currency: string | null; status: string };
+const LINE_COLS = "id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status,skipped";
+const PAY_COLS = "id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes";
+const RECV_COLS = "id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes,created_at";
+/** ยอดในเซลล์ที่กดเพื่อแก้รายการของเซลล์นั้น */
+const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
 
 const BOX = "space-y-3 rounded-xl border border-slate-200 bg-white p-5";
 
@@ -43,7 +53,29 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const { data: p } = await supabase.from("v_insurance_status").select("*").eq("id", id).maybeSingle();
   if (!p) notFound();
   const cvId: string | null = p.cash_value_asset_id;
-  const [{ data: bens }, { data: claims }, { data: persons }, { data: family }, { data: cvAsset }, { data: cvVals }, { data: owners }, { data: insured }] = await Promise.all([
+  // กรมธรรม์เล่มเดียวกัน (บริษัท + เลขกรมธรรม์ · ตกลง 6 พ.ย. 2026): หน้ารายการหลักโหลดงวด / การจ่าย / ความคุ้มครองของสัญญาเพิ่มเติมด้วย
+  const bookQ = (async () => {
+    if (!bookletKey(p)) return null;
+    const { data: all } = await supabase.from("v_insurance_status")
+      .select("id,insurance_type,insurer,policy_no,insured_amount,insured_amount_currency,premium,premium_currency,status")
+      .not("policy_no", "is", null).order("created_at");
+    const role = bookletRole(p as BookPol, bookletGroups((all ?? []) as BookPol[]));
+    if (!role) return null;
+    const ids = role.parts.filter((x) => x.id !== id).map((x) => x.id);
+    if (!role.isMain) return { role, lines: [] as SLine[], covs: [], receipts: [], pays: [] };
+    const [{ data: ls }, { data: cv }, { data: rc }] = await Promise.all([
+      supabase.from("v_insurance_schedule_status").select(`policy_id,${LINE_COLS}`).in("policy_id", ids).order("due_date").order("installment_no"),
+      supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes").in("policy_id", ids).is("deleted_at", null).order("created_at"),
+      supabase.from("insurance_benefit_receipts").select(`policy_id,${RECV_COLS}`).in("policy_id", ids).is("undone_at", null).is("deleted_at", null)
+        .order("receipt_date", { ascending: false }).order("created_at", { ascending: false }),
+    ]);
+    const premIds = ((ls ?? []) as SLine[]).filter((x) => x.kind === "PREMIUM").map((x) => x.id);
+    const { data: pays } = premIds.length
+      ? await supabase.from("expense_items").select(PAY_COLS).in("insurance_schedule_line_id", premIds).is("deleted_at", null).order("date", { ascending: false })
+      : { data: [] };
+    return { role, lines: (ls ?? []) as SLine[], covs: cv ?? [], receipts: rc ?? [], pays: pays ?? [] };
+  })();
+  const [{ data: bens }, { data: claims }, { data: persons }, { data: family }, { data: cvAsset }, { data: cvVals }, { data: owners }, { data: insured }, bookRes] = await Promise.all([
     supabase.from("insurance_beneficiaries").select("id,person_id,beneficiary_name,percentage,persons(name)").eq("policy_id", id).is("deleted_at", null),
     supabase.from("insurance_claims").select("*").eq("policy_id", id).is("deleted_at", null).order("claim_date", { ascending: false }),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
@@ -52,9 +84,10 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     cvId ? supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", cvId).is("deleted_at", null).order("valuation_date", { ascending: false }) : Promise.resolve({ data: null }),
     cvId ? supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId) : Promise.resolve({ data: null }),
     p.asset_id ? supabase.from("assets").select("name,asset_group").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
+    bookQ,
   ]);
   const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
-    supabase.from("v_insurance_schedule_status").select("id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status,skipped")
+    supabase.from("v_insurance_schedule_status").select(LINE_COLS)
       .eq("policy_id", id).order("due_date").order("installment_no"),
     supabase.from("insurance_coverages").select("id,coverage_type,limit_amount,currency,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
     supabase.from("insurance_followups").select("id,person_id,role,action,status,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
@@ -84,11 +117,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const policyActive = p.status === "ACTIVE";
   // ประวัติจ่ายเบี้ย (แก้ / ลบ ที่หน้านี้)
   const { data: premPays } = premiums.length
-    ? await supabase.from("expense_items").select("id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes")
+    ? await supabase.from("expense_items").select(PAY_COLS)
         .in("insurance_schedule_line_id", premiums.map((x) => x.id)).is("deleted_at", null).order("date", { ascending: false })
     : { data: [] };
   const { data: receipts } = await supabase.from("insurance_benefit_receipts")
-    .select("id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes,created_at")
+    .select(RECV_COLS)
     .eq("policy_id", id).is("undone_at", null).is("deleted_at", null).order("receipt_date", { ascending: false }).order("created_at", { ascending: false });
   const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
@@ -194,84 +227,218 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const askTab = sp.tab === "premium" || sp.tab === "benefit" ? "flow" : sp.tab;
   const tab = TABS.some(([k]) => k === askTab) ? (askTab as string) : "coverage";
   // แท็บ "เบี้ยและผลประโยชน์" (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย): ตารางเดียว · เงินจริงแทรกใต้งวด · สุทธิสะสม + จุดคุ้มทุน · IRR 3 ตัว
-  const lumps = (receipts ?? []).filter((r) => !r.line_id);
-  const flow = runningNet(lines, lumps.map((r) => ({ key: r.id as string, date: r.receipt_date as string, amount: Number(r.amount) })), policyActive);
+  //   เล่มที่มีสัญญาเพิ่มเติม (หน้ารายการหลัก · ตกลง 6 พ.ย. 2026): เบี้ยแยกคอลัมน์ ชีวิต · สุขภาพ · รวมจ่าย · งวดวันเดียวกันรวมแถวเดียว
+  //   สุทธิสะสม / คุ้มทุน คิดทั้งเล่ม · IRR ของรายการหลักเหมือนเดิม + ทั้งเล่ม
+  const bookParts = (bookRes?.role.parts ?? []) as BookPol[];
+  const book = bookRes?.role.isMain ? bookRes : null;
+  const mainId = bookRes?.role.main.id ?? id;
+  const others = book ? bookParts.filter((x) => x.id !== id) : [];
+  const polOf = new Map(bookParts.map((x) => [x.id, x]));
+  const typeLabel = (pid: string) => PART_LABEL[(pid === id ? p.insurance_type : polOf.get(pid)?.insurance_type) ?? ""] ?? "สัญญาเพิ่มเติม";
+  /** ชื่อส่วนในเล่ม · สัญญาเพิ่มเติมประเภทเดียวกับรายการหลัก = "สัญญาเพิ่มเติม" */
+  const partName = (pid: string) => (pid !== mainId && typeLabel(pid) === typeLabel(mainId) ? "สัญญาเพิ่มเติม" : typeLabel(pid));
+  const manyRiders = others.length > 1;
+  const partKey = (pid: string) => (pid === id ? "main" : manyRiders ? "riders" : pid);
+  const flowParts: FlowPart[] | undefined = book ? [{ key: "main", label: partName(id) },
+    manyRiders ? { key: "riders", label: "สัญญาเพิ่มเติม" } : { key: others[0].id, label: partName(others[0].id) }] : undefined;
+  const partOrder = (pid: string) => bookParts.findIndex((x) => x.id === pid);
+  const linePaths = (pid: string) => (pid === id ? paths : [`/insurance/${pid}`, ...paths]);
+  const payPathsOf = (pid: string) => (pid === id ? payPaths : [`/insurance/${pid}`, ...payPaths]);
+  /** ข้อความงวดที่บันทึกเป็นค่าใช้จ่าย · เล่มที่มีสัญญาเพิ่มเติม = ระบุส่วน (ชีวิต / สุขภาพ) */
+  const payLabel = (pid: string, no: number) => `${policyLabel}${bookRes ? ` · ${partName(pid)}` : ""} งวดที่ ${no}`;
+  const allLines: SLine[] = [...lines.map((x) => ({ ...x, policy_id: id })), ...(book?.lines ?? [])];
+  const allReceipts = [...(receipts ?? []).map((r) => ({ ...r, policy_id: id })), ...(book?.receipts ?? [])];
+  const allPays = [...(premPays ?? []), ...(book?.pays ?? [])];
+  const lumps = allReceipts.filter((r) => !r.line_id);
+  const flow = runningNet(allLines, lumps.map((r) => ({ key: r.id as string, date: r.receipt_date as string, amount: Number(r.amount) })), policyActive);
   const netOf = new Map(flow.rows.map((r) => [r.key, r]));
   const flowPos = new Map(flow.rows.map((r, i) => [r.key, i]));
-  const showNet = !isProp && (benefits.length > 0 || lumps.length > 0);
-  const schedPrem = premiums.reduce((s2, x) => s2 + Number(x.amount), 0);
-  const schedBen = benefits.reduce((s2, x) => s2 + Number(x.amount), 0);
+  const allBenefits = allLines.filter((x) => x.kind === "BENEFIT");
+  const allPremiums = allLines.filter((x) => x.kind === "PREMIUM");
+  const showNet = !isProp && (allBenefits.length > 0 || lumps.length > 0);
+  const schedPrem = allPremiums.reduce((s2, x) => s2 + Number(x.amount), 0);
+  const schedBen = allBenefits.reduce((s2, x) => s2 + Number(x.amount), 0);
+  // จ่าย / รับแล้วของตาราง (ทั้งเล่ม เมื่อมีสัญญาเพิ่มเติม)
+  const flowPremPaid = allPremiums.reduce((s2, x) => s2 + insCountedPaid(x), 0);
+  const flowBenReceived = allBenefits.reduce((s2, x) => s2 + insCountedPaid(x), 0)
+    + lumps.filter((r) => r.currency === ccy).reduce((s2, r) => s2 + Number(r.amount), 0);
   const flowCcy = lines[0]?.currency ?? ccy;
-  const flowCash: FlowCash[] = [
-    ...(premPays ?? []).map((e) => ({ kind: "PREMIUM" as const, line_id: e.insurance_schedule_line_id as string | null, date: e.date as string, amount: Number(e.amount), currency: e.currency as string })),
-    ...(receipts ?? []).map((r) => ({ kind: "BENEFIT" as const, line_id: r.line_id as string | null, date: r.receipt_date as string, amount: Number(r.amount), currency: r.currency as string })),
+  type CashSrc = { line_id: string | null; receipt_date: string; amount: number; currency: string };
+  const cashOf = (pays: typeof allPays, recs: CashSrc[]): FlowCash[] => [
+    ...pays.map((e) => ({ kind: "PREMIUM" as const, line_id: e.insurance_schedule_line_id as string | null, date: e.date as string, amount: Number(e.amount), currency: e.currency as string })),
+    ...recs.map((r) => ({ kind: "BENEFIT" as const, line_id: r.line_id as string | null, date: r.receipt_date as string, amount: Number(r.amount), currency: r.currency as string })),
   ];
-  const mixedCcy = lines.some((x) => x.currency !== flowCcy) || flowCash.some((c) => c.currency !== flowCcy);
+  const flowCash = cashOf(premPays ?? [], receipts ?? []);
+  const bookCash = cashOf(allPays, allReceipts);
+  const mixedOf = (ls: { currency: string }[], cs: FlowCash[]) => ls.some((x) => x.currency !== flowCcy) || cs.some((c) => c.currency !== flowCcy);
+  const mixedCcy = mixedOf(lines, flowCash);
+  const bookMixed = mixedOf(allLines, bookCash);
   const cvFlow = cvAsset && cvAsset.current_value != null && cvAsset.currency === flowCcy ? Number(cvAsset.current_value) : null;
   const showIrr = !isProp && premiums.length > 0 && (showNet || cvFlow != null);
   const irrWhy = mixedCcy ? "หลายสกุลเงิน คำนวณไม่ได้" : null;
-  const irrBoxes: { label: string; value: number | null; sub: string; why: string }[] = [
-    { label: "ตามสัญญา", value: mixedCcy ? null : xirr(contractFlows(lines)), sub: "ทุกงวดในตาราง ตามวันครบกำหนด",
+  /** IRR ทั้งเล่ม (ชีวิต + สัญญาเพิ่มเติม) · undefined = ไม่ใช่เล่มที่มีสัญญาเพิ่มเติม */
+  const bookIrr = (f: () => number | null) => (book ? (bookMixed ? null : f()) : undefined);
+  const irrBoxes: { label: string; value: number | null; book?: number | null; sub: string; why: string }[] = [
+    { label: "ตามสัญญา", value: mixedCcy ? null : xirr(contractFlows(lines)), book: bookIrr(() => xirr(contractFlows(allLines))), sub: "ทุกงวดในตาราง ตามวันครบกำหนด",
       why: irrWhy ?? (benefits.length === 0 ? "ยังไม่มีตารางผลประโยชน์" : "คำนวณไม่ได้") },
     { label: policyActive ? "คาดการณ์" : "จริง", value: mixedCcy ? null : xirr(projectedFlows(lines, flowCash, today, policyActive)),
+      book: bookIrr(() => xirr(projectedFlows(allLines, bookCash, today, policyActive))),
       sub: policyActive ? "จ่าย / รับจริง + งวดที่เหลือตามตาราง" : "จากเงินที่จ่าย / รับจริง (กรมธรรม์จบแล้ว)",
       why: irrWhy ?? "ยังไม่มีเงินรับ ทั้งที่รับแล้วและในตาราง" },
     ...(policyActive && cvFlow != null ? [{ label: "ถ้าเวนคืนวันนี้", value: mixedCcy ? null : xirr(surrenderFlows(lines, flowCash, today, cvFlow)),
+      book: bookIrr(() => xirr(surrenderFlows(allLines, bookCash, today, cvFlow))),
       sub: `เงินจริงถึงวันนี้ + มูลค่าเวนคืน ${money(cvFlow, undefined, 0)} (${thDate(cvAsset?.current_value_date)})`, why: irrWhy ?? "ยังไม่ได้จ่ายเบี้ย" }] : []),
   ];
-  // เงินจริงแทรกใต้งวด (เก่า → ใหม่) · ยกเลิกการรับ: รายการล่าสุด หรือรายการที่ไม่ได้ปิดกรมธรรม์
-  const payBy = new Map<string, NonNullable<typeof premPays>>();
-  [...(premPays ?? [])].reverse().forEach((e) => { const k = e.insurance_schedule_line_id as string; payBy.set(k, [...(payBy.get(k) ?? []), e]); });
-  const recvBy = new Map<string, NonNullable<typeof receipts>>();
-  [...(receipts ?? [])].reverse().forEach((r) => { if (r.line_id) recvBy.set(r.line_id, [...(recvBy.get(r.line_id) ?? []), r]); });
-  const recvIdx = new Map((receipts ?? []).map((r, i) => [r.id as string, i]));
-  type Receipt = NonNullable<typeof receipts>[number];
-  const undo = (r: Receipt) => canDelete && (recvIdx.get(r.id) === 0 || !r.outcome) ? <UndoButton kind="BENEFIT" id={r.id} paths={paths}
+  // เงินจริงแทรกใต้งวด (เก่า → ใหม่) · ยกเลิกการรับ: รายการล่าสุดของกรมธรรม์นั้น หรือรายการที่ไม่ได้ปิดกรมธรรม์
+  const payBy = new Map<string, typeof allPays>();
+  [...allPays].reverse().forEach((e) => { const k = e.insurance_schedule_line_id as string; payBy.set(k, [...(payBy.get(k) ?? []), e]); });
+  const recvBy = new Map<string, typeof allReceipts>();
+  [...allReceipts].reverse().forEach((r) => { if (r.line_id) recvBy.set(r.line_id, [...(recvBy.get(r.line_id) ?? []), r]); });
+  const latestRecv = new Map<string, string>();
+  allReceipts.forEach((r) => { if (!latestRecv.has(r.policy_id)) latestRecv.set(r.policy_id, r.id as string); });   // ใหม่ → เก่า ต่อกรมธรรม์
+  type Receipt = (typeof allReceipts)[number];
+  const undo = (r: Receipt) => canDelete && (latestRecv.get(r.policy_id) === r.id || !r.outcome) ? <UndoButton kind="BENEFIT" id={r.id} paths={linePaths(r.policy_id)}
     confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} /> : null;
   const recvDetail = (r: Receipt) => [Number(r.cash_value_part) > 0 ? `จากมูลค่าเวนคืน ${money(r.cash_value_part)}` : null,
     Number(r.income_part) > 0 ? `รายได้ ${money(r.income_part)}` : null, r.notes].filter(Boolean).join(" · ") || null;
   const recvText = (r: Receipt, first: string) => [r.outcome ? OUTCOME[r.outcome] ?? r.outcome : first, r.bank_asset_id ? `เข้า ${bankName.get(r.bank_asset_id) ?? "บัญชี"}` : null].filter(Boolean).join(" · ");
-  const firstOpen = lines.find((x) => INS_OPEN.includes(x.status))?.id;
+  const firstOpen = [...allLines].sort((a, b) => (flowPos.get(a.id) ?? 0) - (flowPos.get(b.id) ?? 0)).find((x) => INS_OPEN.includes(x.status))?.id;
   const lineFields = (x: Line, ben: boolean) => [
     { name: "due_date", label: "ครบกำหนด", type: "date" as const, value: x.due_date },
     { name: "amount", label: "ยอด", type: "number" as const, value: x.amount },
     ...(Number(x.paid_amount) === 0 ? [{ name: "skipped", label: ben ? "ได้รับจริงไหม" : "จ่ายจริงไหม", type: "select" as const, value: x.skipped ? "true" : "false",
       options: [["false", ben ? "ได้รับ / รอรับ" : "จ่าย / รอจ่าย"], ["true", ben ? "ไม่ได้รับ" : "ไม่ได้จ่าย"]] as [string, string][] }] : []),
     { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }];
-  const flowRows: FlowRow[] = [
-    ...lines.map((x): FlowRow => {
-      const ben = x.kind === "BENEFIT";
-      const st = INS_SCHED_STATUS[x.status];
-      const n = netOf.get(x.id);
-      const paidAmt = Number(x.paid_amount);
-      return {
-        key: x.id, kind: ben ? "BENEFIT" : "PREMIUM", date: x.due_date, notes: x.notes, amount: Number(x.amount),
-        label: ben ? `${BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]} งวดที่ ${x.installment_no}` : `เบี้ยงวดที่ ${x.installment_no}`,
-        statusText: ben && x.status === "PAID" ? "รับแล้ว" : ben && x.status === "SKIPPED" ? "ไม่ได้รับ" : st?.text ?? x.status, statusCls: st?.cls,
-        progress: x.status === "PARTIAL" || (x.status === "CLOSED" && paidAmt > 0)
-          ? `${ben ? "รับ" : "จ่าย"}แล้ว ${money(paidAmt)}${x.status === "PARTIAL" ? ` · ค้าง ${money(x.remaining)}` : ""}` : null,
-        muted: ["PAID", "CLOSED", "SKIPPED", "HISTORY"].includes(x.status), next: x.id === firstOpen,
-        net: showNet ? n?.net ?? null : null, projected: n?.projected, breakEven: showNet && flow.breakEven?.key === x.id,
-        actions: <>
-          {canWrite && INS_OPEN.includes(x.status) && (ben
-            ? <BenefitForm policyId={id} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks ?? []} persons={persons ?? []}
-                hasCashValue={!!cvAsset} cashValue={cvAsset?.current_value} today={today} small canClose={canDelete} />
-            : <PayPremiumForm policyId={id} lineId={x.id} amount={Number(x.remaining)} label={`${policyLabel} งวดที่ ${x.installment_no}`} currency={x.currency}
-                banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId} defaultPay={payDefault} today={today} cashValue={cvCtx} />)}
-          {canWrite && x.status !== "PAID" && <div className="mt-1"><RowActions table="insurance_schedule_lines" id={x.id} paths={paths} canDelete={canDelete} fields={lineFields(x, ben)} /></div>}
-        </>,
-        cash: ben
-          ? (recvBy.get(x.id) ?? []).map((r) => ({ key: r.id, kind: "RECV" as const, date: r.receipt_date, text: recvText(r, "รับ"), detail: recvDetail(r), amount: Number(r.amount), actions: undo(r) }))
-          : (payBy.get(x.id) ?? []).map((e) => ({ key: e.id, kind: "PAY" as const, date: e.date, amount: Number(e.amount), detail: e.notes,
-              text: `จ่ายจาก ${e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}`,
-              actions: canWrite ? <RowActions table="expense_items" id={e.id} paths={payPaths} canDelete={canDelete} fields={premiumPaymentFields(e)} /> : null })),
-      };
-    }),
-    ...lumps.map((r): FlowRow => ({ key: r.id, kind: "BENEFIT", date: r.receipt_date, label: "", amount: Number(r.amount),
-      lump: { text: recvText(r, "รับเงินก้อน"), detail: recvDetail(r) },
-      net: showNet ? netOf.get(r.id)?.net ?? null : null, breakEven: flow.breakEven?.key === r.id, actions: undo(r) })),
-  ].sort((a, b) => (flowPos.get(a.key) ?? 0) - (flowPos.get(b.key) ?? 0));
+  const payFrom = (e: (typeof allPays)[number]) =>
+    `จ่ายจาก ${e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}`;
+  const payRows = (x: SLine, prefix = ""): FlowSub[] => (payBy.get(x.id) ?? []).map((e) => ({ key: e.id, kind: "PAY" as const, date: e.date, amount: Number(e.amount),
+    detail: e.notes, part: partKey(x.policy_id), text: `${prefix}${payFrom(e)}`,
+    actions: canWrite ? <RowActions table="expense_items" id={e.id} paths={payPathsOf(x.policy_id)} canDelete={canDelete} fields={premiumPaymentFields(e)} /> : null }));
+  const payForm = (x: SLine) => (
+    <PayPremiumForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} label={payLabel(x.policy_id, x.installment_no)} currency={x.currency}
+      banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId} defaultPay={payDefault} today={today} cashValue={x.policy_id === id ? cvCtx : null} />
+  );
+  // งวดเดียว (ทุกงวดของกรมธรรม์ปกติ · งวดผลประโยชน์ของเล่ม) · ส่วนของสัญญาเพิ่มเติม = ชื่อส่วนนำหน้า
+  const lineRow = (x: SLine): FlowRow => {
+    const ben = x.kind === "BENEFIT";
+    const pid = x.policy_id;
+    const st = INS_SCHED_STATUS[x.status];
+    const n = netOf.get(x.id);
+    const paidAmt = Number(x.paid_amount);
+    return {
+      key: x.id, kind: ben ? "BENEFIT" : "PREMIUM", date: x.due_date, notes: x.notes, amount: Number(x.amount),
+      label: `${pid === id ? "" : `${partName(pid)} · `}${ben ? `${BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"]} งวดที่ ${x.installment_no}` : `เบี้ยงวดที่ ${x.installment_no}`}`,
+      statusText: ben && x.status === "PAID" ? "รับแล้ว" : ben && x.status === "SKIPPED" ? "ไม่ได้รับ" : st?.text ?? x.status, statusCls: st?.cls,
+      progress: x.status === "PARTIAL" || (x.status === "CLOSED" && paidAmt > 0)
+        ? `${ben ? "รับ" : "จ่าย"}แล้ว ${money(paidAmt)}${x.status === "PARTIAL" ? ` · ค้าง ${money(x.remaining)}` : ""}` : null,
+      muted: ["PAID", "CLOSED", "SKIPPED", "HISTORY"].includes(x.status), next: x.id === firstOpen,
+      net: showNet ? n?.net ?? null : null, projected: n?.projected, breakEven: showNet && flow.breakEven?.key === x.id,
+      actions: <>
+        {canWrite && INS_OPEN.includes(x.status) && (ben
+          ? <BenefitForm policyId={pid} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks ?? []} persons={persons ?? []}
+              hasCashValue={pid === id && !!cvAsset} cashValue={pid === id ? cvAsset?.current_value : null} today={today} small canClose={canDelete} />
+          : payForm(x))}
+        {canWrite && x.status !== "PAID" && <div className="mt-1"><RowActions table="insurance_schedule_lines" id={x.id} paths={linePaths(pid)} canDelete={canDelete} fields={lineFields(x, ben)} /></div>}
+      </>,
+      cash: ben
+        ? (recvBy.get(x.id) ?? []).map((r) => ({ key: r.id, kind: "RECV" as const, date: r.receipt_date, text: recvText(r, "รับ"), detail: recvDetail(r), amount: Number(r.amount), actions: undo(r) }))
+        : payRows(x),
+    };
+  };
+  // เล่มที่มีสัญญาเพิ่มเติม: งวดเบี้ยที่ครบวันเดียวกันรวมแถวเดียว · กดยอดของส่วนไหน = แก้งวดของส่วนนั้น · ค้าง ≥ 2 ส่วน = จ่ายทั้งเล่มในครั้งเดียว
+  const OPEN_ST = ["PENDING", "OVERDUE", "PARTIAL"];
+  const amtNode = (x: SLine) => canWrite && x.status !== "PAID"
+    ? <RowActions table="insurance_schedule_lines" id={x.id} paths={linePaths(x.policy_id)} canDelete={canDelete} fields={lineFields(x, false)} button={money(x.amount)} buttonClass={AMT} />
+    : <span className="tabular-nums">{money(x.amount)}</span>;
+  const mergedRow = (due: string, xs: SLine[]): FlowRow => {
+    xs.sort((a, b) => partOrder(a.policy_id) - partOrder(b.policy_id) || a.installment_no - b.installment_no);
+    const last = xs.reduce((a, b) => ((flowPos.get(b.id) ?? 0) > (flowPos.get(a.id) ?? 0) ? b : a));
+    const n = netOf.get(last.id);
+    const sts = [...new Set(xs.map((x) => x.status))];
+    const anyOpen = xs.some((x) => OPEN_ST.includes(x.status));
+    const status = sts.length === 1 ? sts[0] : sts.includes("OVERDUE") ? "OVERDUE"
+      : anyOpen && xs.some((x) => Number(x.paid_amount) > 0) ? "PARTIAL" : anyOpen ? "PENDING" : sts.includes("PAID") ? "PAID" : sts[0];
+    const st = INS_SCHED_STATUS[status];
+    const paidAmt = xs.reduce((t, x) => t + Number(x.paid_amount), 0);
+    const left = xs.filter((x) => OPEN_ST.includes(x.status)).reduce((t, x) => t + Number(x.remaining), 0);
+    const mainLine = xs.find((x) => x.policy_id === id);
+    const open = xs.filter((x) => OPEN_ST.includes(x.status) && Number(x.remaining) > 0.005);
+    const split: Record<string, ReactNode> = {};
+    (flowParts ?? []).forEach((fp) => {
+      const mine = xs.filter((x) => partKey(x.policy_id) === fp.key);
+      if (!mine.length) return;
+      split[fp.key] = fp.key === "riders"
+        ? <>{money(mine.reduce((t, x) => t + Number(x.amount), 0))}
+            {mine.map((x) => <div key={x.id} className="text-[11px] text-slate-500">{typeLabel(x.policy_id)} {amtNode(x)}</div>)}</>
+        : <>{mine.map((x) => <div key={x.id}>{amtNode(x)}</div>)}</>;
+    });
+    return {
+      key: `d${due}`, kind: "PREMIUM", date: due, amount: xs.reduce((t, x) => t + Number(x.amount), 0), split,
+      label: mainLine ? `เบี้ยงวดที่ ${mainLine.installment_no}` : `${partName(xs[0].policy_id)} งวดที่ ${xs[0].installment_no}`,
+      notes: xs.filter((x) => x.notes).map((x) => (xs.length > 1 ? `${partName(x.policy_id)}: ${x.notes}` : x.notes)).join(" · ") || null,
+      statusText: st?.text ?? status, statusCls: st?.cls,
+      progress: status === "PARTIAL" || (status === "CLOSED" && paidAmt > 0) ? `จ่ายแล้ว ${money(paidAmt)}${status === "PARTIAL" ? ` · ค้าง ${money(left)}` : ""}` : null,
+      muted: xs.every((x) => ["PAID", "CLOSED", "SKIPPED", "HISTORY"].includes(x.status)), next: xs.some((x) => x.id === firstOpen),
+      net: showNet ? n?.net ?? null : null, projected: n?.projected, breakEven: showNet && xs.some((x) => flow.breakEven?.key === x.id),
+      actions: canWrite && open.length > 0 ? (open.length > 1
+        ? <BookletPayForm group={book?.role.key ?? ""} banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId} defaultPay={payDefault} today={today}
+            parts={open.map((x) => ({ policyId: x.policy_id, lineId: x.id, part: partName(x.policy_id), label: payLabel(x.policy_id, x.installment_no),
+              amount: Number(x.remaining), currency: x.currency }))} />
+        : payForm(open[0])) : null,
+      cash: xs.flatMap((x) => payRows(x, manyRiders && x.policy_id !== id ? `${typeLabel(x.policy_id)} · ` : "")).sort((a, b) => a.date.localeCompare(b.date)),
+    };
+  };
+  const byDue = new Map<string, SLine[]>();
+  allPremiums.forEach((x) => byDue.set(x.due_date, [...(byDue.get(x.due_date) ?? []), x]));
+  const lumpRow = (r: Receipt): FlowRow => ({ key: r.id, kind: "BENEFIT", date: r.receipt_date, label: "", amount: Number(r.amount),
+    lump: { text: `${r.policy_id === id ? "" : `${partName(r.policy_id)} · `}${recvText(r, "รับเงินก้อน")}`, detail: recvDetail(r) },
+    net: showNet ? netOf.get(r.id)?.net ?? null : null, breakEven: flow.breakEven?.key === r.id, actions: undo(r) });
+  const pos = (k: string) => flowPos.get(k) ?? 0;
+  const flowRows: FlowRow[] = ([
+    ...(book
+      ? [...byDue].map(([due, xs]): [number, FlowRow] => [Math.min(...xs.map((x) => pos(x.id))), mergedRow(due, xs)])
+      : allPremiums.map((x): [number, FlowRow] => [pos(x.id), lineRow(x)])),
+    ...allBenefits.map((x): [number, FlowRow] => [pos(x.id), lineRow(x)]),
+    ...lumps.map((r): [number, FlowRow] => [pos(r.id), lumpRow(r)]),
+  ] as [number, FlowRow][]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
 
+
+  // ความคุ้มครอง: ชีวิต / อุบัติเหตุที่ยังไม่ได้ใส่ชนิด "เสียชีวิต" → แถว "ตามทุนประกัน" (ไม่คัดลอกยอดไปเก็บ · ตกลง 6 พ.ย. 2026)
+  //   กดแถวนั้น = บันทึกเป็นรายการจริงของเล่ม · รายการจริงที่ยอดไม่เท่าทุนประกัน → แสดงทุนประกันตัวเล็กไว้เทียบ
+  type Cov = { id: string; coverage_type: string; limit_amount: number; currency: string; notes: string | null };
+  const covTable = (pid: string, type: string, sum: number, sumCcy: string, list: Cov[]) => {
+    const k = type === "LIFE" ? "LIFE" : type === "ACCIDENT" ? "ACCIDENT_DEATH" : null;
+    const virtual = !!k && sum > 0 && !list.some((c) => c.coverage_type === k);
+    if (!virtual && list.length === 0) return null;
+    return (
+      // คอลัมน์กว้างเท่ากันทุกส่วนของเล่ม (สัญญาหลัก / สัญญาเพิ่มเติม) → ตัวเลขตรงกันเป็นแนวเดียว
+      <table className="w-full text-sm md:table-fixed">
+        <colgroup><col className="md:w-48" /><col className="md:w-64" /><col /><col className="md:w-28" /></colgroup>
+        <tbody className="divide-y divide-slate-100">
+          {virtual && k && (
+            <SumCoverageRow policyId={pid} type={k} amount={sum} currency={sumCcy} canWrite={canWrite}>
+              <td className="py-1.5">{COVERAGE_LABEL[k][0]}</td>
+              <td className="text-right tabular-nums">{money(sum, sumCcy)}</td>
+              <td className="pl-4 text-xs text-slate-500">ตามทุนประกัน{canWrite && " · ถ้าเล่มนี้จ่ายไม่เท่าทุนประกัน กดที่แถวเพื่อบันทึกยอดจริง"}</td>
+            </SumCoverageRow>
+          )}
+          {list.map((c) => (
+            <tr key={c.id}>
+              <td className="py-1.5">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}</td>
+              <td className="text-right tabular-nums">{money(c.limit_amount, c.currency)}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}
+                {c.coverage_type === k && sum > 0 && Math.abs(Number(c.limit_amount) - sum) > 0.005 && <span className="block text-xs text-slate-500">ทุนประกัน {money(sum, sumCcy)}</span>}</td>
+              <td className="pl-4 text-xs text-slate-500">{c.notes}</td>
+              <td className="pl-2 text-right">{canWrite && <RowActions table="insurance_coverages" id={c.id} paths={linePaths(pid)} canDelete={canDelete} fields={[
+                { name: "limit_amount", label: "วงเงิน", type: "number", value: c.limit_amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+  // ในเล่มนี้: ทุกส่วนของเล่ม (ทุน · เบี้ย / ปี) · กดชื่อไปหน้าของส่วนนั้น
+  const bookPremTotal = bookParts.filter((x) => x.status === "ACTIVE" && (x.premium_currency ?? "THB") === (p.premium_currency ?? "THB"))
+    .reduce((t, x) => t + Number(x.premium ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -282,7 +449,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             <h1 className="text-2xl font-semibold text-slate-900">{p.insurer}{p.policy_no && ` · ${p.policy_no}`}</h1>
             <p className="text-sm text-slate-500">{TYPE[p.insurance_type] ?? p.insurance_type}
               {p.person_id && ` · ผู้เอาประกัน ${allName.get(p.person_id) ?? ""}`}
-              {insured && <> · คุ้มครอง <Link href={insuredHref} className="hover:underline">{insured.name}</Link></>}</p>
+              {insured && <> · คุ้มครอง <Link href={insuredHref} className="hover:underline">{insured.name}</Link></>}
+              {bookRes && !bookRes.role.isMain && <> · สัญญาเพิ่มเติมของเล่ม <Link href={`/insurance/${mainId}`} className="text-blue-700 hover:underline">ดูทั้งเล่ม ({partName(mainId)} · สัญญาหลัก)</Link></>}
+              {others.length > 0 && <> · มีสัญญาเพิ่มเติม {others.map((o, i) => <span key={o.id}>{i > 0 && ", "}<Link href={`/insurance/${o.id}`} className="text-blue-700 hover:underline">{typeLabel(o.id)}</Link></span>)}</>}</p>
           </div>
           {canWrite && policyActive && !isProp && (
             <ActionBar>
@@ -350,7 +519,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               </div>
             )}
             <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">
-              เบี้ย {money(p.premium, p.premium_currency ?? undefined, 0)} / ปี{premNext && <> · งวดถัดไป {thDate(premNext.due_date)}</>}
+              เบี้ย {money(p.premium, p.premium_currency ?? undefined, 0)} / ปี{bookRes && <> · ทั้งเล่ม {money(bookPremTotal, undefined, 0)} / ปี</>}{premNext && <> · งวดถัดไป {thDate(premNext.due_date)}</>}
               {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
             </div>
           </div>
@@ -374,6 +543,18 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 <Item label="ระยะเวลา">{thDate(p.start_date)} – {thDate(p.end_date)}</Item>
                 <Item label="ทุนประกัน" num>{money(p.insured_amount, p.insured_amount_currency ?? undefined, 0)}</Item>
                 <Item label="เบี้ยต่อปี" num>{money(p.premium, p.premium_currency ?? undefined, 0)}</Item>
+                {bookRes && (
+                  <Item label="ในเล่มนี้ (บริษัท + เลขกรมธรรม์เดียวกัน)" wide>
+                    {bookParts.map((x) => (
+                      <div key={x.id}>
+                        {x.id === id ? <b>{partName(x.id)}</b> : <Link href={`/insurance/${x.id}`} className="text-blue-700 hover:underline">{partName(x.id)}</Link>}
+                        <span className="text-slate-500"> · {x.id === mainId ? "สัญญาหลัก" : "สัญญาเพิ่มเติม"}{x.id === id && " (หน้านี้)"} · ทุน {money(x.insured_amount, x.insured_amount_currency ?? undefined, 0)}
+                          {" "}· เบี้ย {money(x.premium, x.premium_currency ?? undefined, 0)} / ปี{x.status !== "ACTIVE" && " · ไม่มีผลแล้ว"}</span>
+                      </div>
+                    ))}
+                    <div className="mt-1 font-medium">รวมเบี้ยทั้งเล่ม <span className="tabular-nums">{money(bookPremTotal, p.premium_currency ?? undefined, 0)}</span> / ปี</div>
+                  </Item>
+                )}
                 <Item label="ผู้รับผลประโยชน์">
                   {(bens ?? []).length === 0 ? "-" : (bens ?? []).map((b) => <div key={b.id}>{benName(b)} · {Number(b.percentage)}%</div>)}
                   {benTotal > 0 && benTotal < 100 && <div className="text-xs text-amber-700">รวม {benTotal}% (ยังไม่ครบ 100%)</div>}
@@ -434,21 +615,20 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
                 {canWrite && <CoverageForm policyId={id} currency={ccy} />}
               </div>
-              {(covs ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p> : (
-                <table className="w-full text-sm">
-                  <tbody className="divide-y divide-slate-100">
-                    {(covs ?? []).map((c) => (
-                      <tr key={c.id}>
-                        <td className="py-1.5">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}</td>
-                        <td className="text-right tabular-nums">{money(c.limit_amount, c.currency)}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}</td>
-                        <td className="pl-4 text-xs text-slate-500">{c.notes}</td>
-                        <td className="pl-2 text-right">{canWrite && <RowActions table="insurance_coverages" id={c.id} paths={paths} canDelete={canDelete} fields={[
-                          { name: "limit_amount", label: "วงเงิน", type: "number", value: c.limit_amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              {book && <h3 className="text-sm font-medium text-slate-800">สัญญาหลัก · {partName(id)}</h3>}
+              {covTable(id, p.insurance_type, Number(p.insured_amount ?? 0), p.insured_amount_currency ?? ccy, covs ?? [])
+                ?? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p>}
+              {others.map((o) => (
+                <div key={o.id} className="space-y-2 border-t border-slate-100 pt-3">
+                  <h3 className="text-sm font-medium text-slate-800">
+                    <Link href={`/insurance/${o.id}`} className="text-blue-700 hover:underline">สัญญาเพิ่มเติม · {typeLabel(o.id)}</Link>
+                    <span className="ml-2 text-xs font-normal text-slate-500">ทุน {money(o.insured_amount, o.insured_amount_currency ?? undefined, 0)} · เบี้ย {money(o.premium, o.premium_currency ?? undefined, 0)} / ปี
+                      {canWrite && " · เพิ่มความคุ้มครองที่หน้าสัญญาเพิ่มเติม"}</span>
+                  </h3>
+                  {covTable(o.id, o.insurance_type, Number(o.insured_amount ?? 0), o.insured_amount_currency ?? ccy, (book?.covs ?? []).filter((c) => c.policy_id === o.id))
+                    ?? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง</p>}
+                </div>
+              ))}
             </section>
             <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -529,6 +709,16 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                       {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
                       {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
                   ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
+                  {others.map((o) => {
+                    const xs = allPremiums.filter((x) => x.policy_id === o.id);
+                    return (
+                      <p key={o.id} className="text-sm text-slate-600">
+                        <Link href={`/insurance/${o.id}?tab=flow`} className="text-blue-700 hover:underline">สัญญาเพิ่มเติม · {typeLabel(o.id)}</Link>
+                        {xs.length > 0 ? <> · เบี้ย {xs.length} งวด · จ่ายถึงปี {lastYear(xs)} ({thDate(lastDue(xs))}) · เหลือ {leftCount(xs)} งวด</> : " · ยังไม่ได้ตั้งตารางเบี้ย"}
+                        <span className="text-xs text-slate-500"> · แก้ตารางเบี้ยที่หน้าสัญญาเพิ่มเติม</span>
+                      </p>
+                    );
+                  })}
                   {!isProp && (benefits.length > 0
                     ? <p className="text-sm text-slate-600">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</p>
                     : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กดปุ่ม &ldquo;รับเงินก้อน&rdquo; ด้านบน</p>)}
@@ -537,15 +727,17 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               </ActionBar>
               {showNet && (
                 <dl className="grid gap-x-6 gap-y-2 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <div><dt className="text-xs text-slate-500">จ่ายเบี้ยแล้ว</dt><dd className="tabular-nums">{money(premPaid, ccy)}</dd></div>
-                  <div><dt className="text-xs text-slate-500">รับผลประโยชน์แล้ว</dt><dd className="tabular-nums">{money(benReceived, ccy)}</dd></div>
+                  <div><dt className="text-xs text-slate-500">จ่ายเบี้ยแล้ว{book && " (ทั้งเล่ม)"}</dt><dd className="tabular-nums">{money(flowPremPaid, ccy)}</dd>
+                    {book && <dd className="text-xs text-slate-500">{bookParts.map((x) => `${partName(x.id)} ${money(allPremiums.filter((l) => l.policy_id === x.id).reduce((t, l) => t + insCountedPaid(l), 0), undefined, 0)}`).join(" · ")}</dd>}</div>
+                  <div><dt className="text-xs text-slate-500">รับผลประโยชน์แล้ว</dt><dd className="tabular-nums">{money(flowBenReceived, ccy)}</dd></div>
                   <div><dt className="text-xs text-slate-500">สุทธิถึงวันนี้</dt>
-                    <dd className={`tabular-nums ${benReceived - premPaid >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>{signedMoney(benReceived - premPaid, ccy)}</dd></div>
+                    <dd className={`tabular-nums ${flowBenReceived - flowPremPaid >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>{signedMoney(flowBenReceived - flowPremPaid, ccy)}</dd></div>
                   <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
                     <dd>{flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="text-xs text-slate-500"> (คาดการณ์)</span>}</span>
                       : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>
-                  <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
-                    {!flow.breakEven && benefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
+                  <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด{book && " (ทั้งเล่ม)"}: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
+                    {book && " · สุทธิสะสมและจุดคุ้มทุนคิดจากเบี้ยรวมทั้งเล่ม"}
+                    {!flow.breakEven && allBenefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
                 </dl>
               )}
               {showIrr && (
@@ -555,14 +747,19 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                       <div key={b.label} className="rounded-lg border border-slate-200 px-3 py-2">
                         <div className="text-xs text-slate-500">IRR {b.label}</div>
                         <div className={`text-lg font-semibold tabular-nums ${b.value == null ? "text-slate-400" : b.value < 0 ? "text-red-600" : "text-slate-900"}`}>
+                          {b.book !== undefined && <span className="mr-1 text-xs font-normal text-slate-500">{partName(id)}</span>}
                           {b.value == null ? "–" : `${signedPct(b.value * 100)} / ปี`}</div>
+                        {b.book !== undefined && (
+                          <div className={`tabular-nums ${b.book == null ? "text-slate-400" : b.book < 0 ? "text-red-600" : "text-slate-900"}`}>
+                            <span className="mr-1 text-xs text-slate-500">ทั้งเล่ม</span>{b.book == null ? "–" : `${signedPct(b.book * 100)} / ปี`}</div>
+                        )}
                         <div className="text-xs text-slate-500">{b.value == null ? b.why : b.sub}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} />}
+              {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} parts={flowParts} />}
             </section>
           </TabPanel>
         </div>
