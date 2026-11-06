@@ -30,6 +30,7 @@ const DERIVED: Record<string, { text: string; cls: string }> = {
   DEPOSIT_REFUND_OVERDUE: { text: "เลยกำหนดคืนเงินประกัน", cls: "text-red-600" },
   DUE_SOON: { text: "ใกล้ครบกำหนดคืน", cls: "text-amber-700" },
   HELD: { text: "ถือไว้", cls: "text-slate-500" },
+  REFUND_PENDING: { text: "รอคืนเงินประกัน (ภายใน 30 วัน)", cls: "text-amber-700" },
 };
 const CARD_STATUS: Record<string, string> = { ACTIVE: "", SUSPENDED: "ระงับชั่วคราว", CLOSED: "ยกเลิกแล้ว" };
 const TABS = [["overview", "ภาพรวม"], ["pay", "จ่ายชำระเงินกู้/บัตรเครดิต"]] as const;

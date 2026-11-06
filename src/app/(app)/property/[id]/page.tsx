@@ -9,7 +9,7 @@ import {
 } from "@/lib/format";
 import {
   EditPropertyForm, EditTerminationForm, LeaseEditForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
-  TerminateLeaseForm, UtilityForm,
+  UtilityForm,
 } from "./forms";
 import CloseLeaseForm from "./CloseLeaseForm";
 import RowActions from "@/components/RowActions";
@@ -50,6 +50,7 @@ const METHOD_LABEL: Record<string, string> = {
 const DEPOSIT_LABEL: Record<string, { text: string; cls: string }> = {
   HELD: { text: "ถือไว้ (เป็นหนี้)", cls: "text-slate-700" },
   DUE_SOON: { text: "ใกล้ครบกำหนดคืน", cls: "text-amber-700" },
+  REFUND_PENDING: { text: "รอคืนเงินประกัน", cls: "text-amber-700" },
   DEPOSIT_REFUND_OVERDUE: { text: "เลยกำหนดคืนแล้ว", cls: "text-red-600" },
   SETTLED: { text: "ปิดแล้ว", cls: "text-slate-500" },
 };
@@ -63,7 +64,7 @@ type Lease = { id: string; unit_label: string | null; tenant_name: string; contr
   payment_due_day: number | null; security_deposit: number | null; deposit_currency: string | null;
   deposit_received_date: string | null; deposit_settled_date: string | null; deposit_settlement_type: string | null;
   deposit_refunded_amount: number | null; deposit_carried_amount: number | null; status: string; notes: string | null;
-  lease_status: string; deposit_status: string; deposit_due_date: string };
+  lease_status: string; deposit_status: string; deposit_due_date: string; deposit_refund_by: string };
 type Util = { id: string; utility_type: string; unit_label: string | null; provider: string | null; account_no: string | null; meter_no: string | null;
   notes: string | null; deleted_at: string | null; expected_amount: number | null; currency: string; frequency: string | null;
   due_day: number | null; due_month: number | null; active: boolean; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null };
@@ -212,7 +213,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
     supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,prorate_basis,rent_timing,grace_days,late_fee_per_day,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
     // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
-    supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
+    supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount,kind")
       .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
     // จ่ายเพิ่ม (ซื้อ / ต่อเติม) → ราคาที่ได้มา · ผูกส่วนประกอบ → แสดงใต้ต้นทุนของแถวนั้น
     supabase.from("cash_movements").select("amount,currency,movement_date,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
@@ -230,7 +231,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("lease_handover_items").select("id,lease_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
-    supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,property_leases!inner(property_id)")
+    supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null),
   ]);
   type PayRow = { amount: number; currency: string; movement_date: string; metadata: { component_id?: string; add_value?: boolean | string } | null };
@@ -265,7 +266,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
   const charges = (chargeRows ?? []) as { id: string; lease_id: string; cost_period: string; description: string; amount: number; currency: string;
-    notes: string | null; paid_date: string | null; paid_amount: number | null }[];
+    notes: string | null; paid_date: string | null; paid_amount: number | null; kind: string }[];
   // สัญญาที่ "เราจ่ายแล้วเรียกเก็บ" ค่าน้ำไฟ → ติ๊กเรียกเก็บผู้เช่าให้ตอนบันทึกจ่าย
   const rebillLeases = liveLeases.filter((l) => leaseExtra.get(l.id)?.utilities_billing === "REBILL")
     .map((l) => ({ id: l.id, unit: l.unit_label?.trim().toLowerCase() ?? "", label: [l.unit_label, l.tenant_name].filter(Boolean).join(" · ") }));
@@ -422,7 +423,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
   // ผู้เช่าออก (ตกลง 6 พ.ย. 2026) · ต่อสัญญาได้เมื่อยังไม่มีสัญญาถัดไปของห้องเดียวกัน (หรือทั้งหลัง)
   type Closeout = { lease_id: string; move_out_date: string; settled_date: string; deposit_refund: number; advance_refund: number; net_transfer: number;
-    unpaid_rent: number; utilities: number; damage: number; forfeit: number; income_ids: string[] };
+    unpaid_rent: number; utilities: number; damage: number; forfeit: number; income_ids: string[];
+    shortfall: number; tenant_paid: number; owed_pending: number };
   const closeOf = new Map(((closeRows ?? []) as unknown as Closeout[]).map((c) => [c.lease_id, c]));
   // รายได้ที่สร้างตอนผู้เช่าออก → แก้ / ลบทีละรายการไม่ได้ (ยกเลิกทั้งชุดที่การ์ดสัญญา)
   const closeIncome = new Set([...closeOf.values()].flatMap((c) => c.income_ids ?? []));
@@ -432,6 +434,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     && (!roomKey(o.unit_label) || !roomKey(l.unit_label) || roomKey(o.unit_label) === roomKey(l.unit_label)));
   const closeoutText = (l: Lease, co: Closeout) => {
     const ded = Number(co.unpaid_rent) + Number(co.utilities) + Number(co.damage) + Number(co.forfeit);
+    // หักเกินเงินประกัน (ตกลง 6 พ.ย. 2026): ผู้เช่าจ่ายเพิ่ม (รับแล้ว) / ค่าเสียหายค้างรับ
+    if (Number(co.shortfall) > 0) {
+      return `ผู้เช่าออก ${thDate(co.move_out_date)} · หักเกินเงินประกัน ${money(co.shortfall)}`
+        + (Number(co.advance_refund) > 0 ? ` (หักกับค่าเช่าล่วงหน้า ${money(Math.min(Number(co.advance_refund), Number(co.shortfall)))})` : "")
+        + (Number(co.net_transfer) > 0 ? ` · โอนคืน ${money(co.net_transfer, l.rent_currency)}` : "")
+        + (Number(co.tenant_paid) > 0 ? ` · ผู้เช่าจ่ายเพิ่ม ${money(co.tenant_paid, l.rent_currency)}` : "")
+        + (Number(co.owed_pending) > 0 ? ` · ค่าเสียหายค้างรับ ${money(co.owed_pending, l.rent_currency)}` : "")
+        + ` · เมื่อ ${thDate(co.settled_date)}`;
+    }
     return `ผู้เช่าออก ${thDate(co.move_out_date)} · โอนคืน ${money(co.net_transfer, l.rent_currency)}`
       + (Number(co.advance_refund) > 0 ? ` (เงินประกัน ${money(co.deposit_refund)} + ค่าเช่าล่วงหน้า ${money(co.advance_refund)})` : "")
       + (ded > 0 ? ` · หักจากเงินประกัน ${money(ded)}` : "") + ` · เมื่อ ${thDate(co.settled_date)}`;
@@ -462,9 +473,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <CloseLeaseForm assetId={id} leaseId={l.id} tenant={[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
             startDate={l.start_date} endDate={l.end_date} terminated={l.terminated_date} today={today} currency={l.rent_currency}
             banks={bankList} defaultBank={rentTo.get(l.id) ?? null} damage={Math.min(hd.amount, dep)} damageReason={hd.reason} />
-        )}
-        {canWrite && l.status === "ACTIVE" && l.end_date > today && (
-          <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
         )}
         {me.role === "ADMIN" && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED" && (
           <EditTerminationForm assetId={id} leaseId={l.id} terminated={l.terminated_date} startDate={l.start_date} endDate={l.end_date} />
@@ -525,7 +533,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <div className="mt-1">
             เงินประกัน {money(dep, l.deposit_currency ?? undefined)}
             {l.deposit_carried_amount && <span className="text-slate-500"> (ยกมา {money(l.deposit_carried_amount)})</span>}
-            {" · "}<span className={ds?.cls}>{ds?.text ?? l.deposit_status}</span>
+            {" · "}<span className={ds?.cls}>{ds?.text ?? l.deposit_status}
+              {(l.deposit_status === "REFUND_PENDING" || l.deposit_status === "DEPOSIT_REFUND_OVERDUE") && ` (ภายใน ${thDate(l.deposit_refund_by)})`}</span>
             {l.deposit_received_date && l.deposit_received_date < goLive && l.deposit_status !== "SETTLED" &&
               <span className="text-xs text-slate-500"> · รับก่อน Go-live = อยู่ในยอดตั้งต้น</span>}
             {l.deposit_settlement_type === "REFUNDED" &&
@@ -937,7 +946,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
       {charges.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">ค่าน้ำไฟเรียกเก็บผู้เช่า (รอรับ) <InfoTip label="คำอธิบาย">เราจ่ายไปแล้ว รอผู้เช่าจ่ายคืน · รับคืนแล้วนับเป็นรายได้ของ Property · ไม่เรียกเก็บแล้ว = กดที่แถวแล้วลบ</InfoTip></h2>
+          <h2 className="mb-3 font-medium text-slate-900">{charges.some((c) => c.kind === "DAMAGE") ? "เรียกเก็บผู้เช่า (รอรับ)" : "ค่าน้ำไฟเรียกเก็บผู้เช่า (รอรับ)"} <InfoTip label="คำอธิบาย">ค่าน้ำไฟ: เราจ่ายไปแล้ว รอผู้เช่าจ่ายคืน · ไม่เรียกเก็บแล้ว = กดที่แถวแล้วลบ
+            · ค่าเสียหายส่วนที่เกินเงินประกัน: มาจากการบันทึกผู้เช่าออก (แก้ / ลบที่ &ldquo;ยกเลิกผู้เช่าออก&rdquo;) · รับแล้วนับเป็นรายได้ของ Property</InfoTip></h2>
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr><th className="py-1">งวด</th><th>รายการ</th><th>สัญญา</th><th className="text-right">จ่ายไป</th><th className="text-right">เรียกเก็บ</th><th></th></tr>
@@ -955,7 +965,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     <div className="flex flex-wrap items-start justify-end gap-3">
                       {canWrite && <ReceiveChargeForm assetId={id} chargeId={c.id} amount={Number(c.amount)} currency={c.currency} banks={bankList}
                         today={today} defaultBank={rentTo.get(c.lease_id) ?? lastRentBank.get(c.lease_id)} />}
-                      {canWrite && <RowActions table="lease_utility_charges" id={c.id} paths={paths} canDelete={canDelete} deleteEffect=""
+                      {canWrite && c.kind !== "DAMAGE" && <RowActions table="lease_utility_charges" id={c.id} paths={paths} canDelete={canDelete} deleteEffect=""
                         fields={[{ name: "amount", label: "ยอดเรียกเก็บ", type: "number", value: c.amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
                     </div>
                   </td>

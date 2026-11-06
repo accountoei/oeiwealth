@@ -293,13 +293,20 @@ export function HandoverAnnex({ d }: { d: LeaseData }) {
 export type CloseoutData = {
   moveOut: string; settled: string; deposit: number; unpaid: number; utilities: number; damage: number; damageReason: string | null;
   forfeit: number; forfeitReason: string | null; depositRefund: number; advanceRefund: number; net: number;
+  /** หักเกินเงินประกัน (6 พ.ย. 2026): ยอดที่เกิน · ผู้เช่าจ่ายเพิ่มแล้ว · ค่าเสียหายค้างรับ */ shortfall: number; tenantPaid: number; owedPending: number;
   rent: { period: string; from: string | null; to: string | null; expected: number; received: number; unpaid: number; over: number }[];
   charges: { description: string; amount: number }[];
 };
 
-/** ใบสรุปผู้เช่าออก / คืนเงินประกัน (ตกลง 6 พ.ย. 2026): เงินประกัน − หักค้าง / ค่าเสียหาย / ริบ + คืนค่าเช่าล่วงหน้า = ยอดคืนผู้เช่า */
+/**
+ * ใบสรุปผู้เช่าออก / คืนเงินประกัน (ตกลง 6 พ.ย. 2026): เงินประกัน − หักค้าง / ค่าเสียหาย / ริบ + คืนค่าเช่าล่วงหน้า = ยอดคืนผู้เช่า
+ *   หักเกินเงินประกัน: ส่วนที่เกินหักกับค่าเช่าล่วงหน้าก่อน · ที่เหลือ = ผู้เช่าต้องชำระเพิ่ม (ชำระแล้ว / ตกลงชำระภายหลัง)
+ */
 export function CloseoutSummary({ d, c }: { d: LeaseData; c: CloseoutData }) {
   const early = c.moveOut < d.endDate;
+  const short = c.shortfall > 0;
+  const netted = Math.min(c.advanceRefund, c.shortfall);
+  const owe = Math.round((c.shortfall - netted) * 100) / 100;
   const range = (x: { from: string | null; to: string | null; period: string }) =>
     x.from && x.to ? `รอบ ${thDate(x.from)} – ${thDate(x.to)}` : `งวด ${thDate(x.period)}`;
   const cell = "py-1 align-top";
@@ -329,14 +336,27 @@ export function CloseoutSummary({ d, c }: { d: LeaseData; c: CloseoutData }) {
           <tr><td className={cell}>หัก ค่าเสียหาย{c.damageReason ? `: ${c.damageReason}` : ""}</td>{amt(c.damage, true)}</tr>
           {c.forfeit > 0 && <tr><td className={cell}>หัก ริบเงินประกัน{c.forfeitReason ? `: ${c.forfeitReason}` : ""}</td>{amt(c.forfeit, true)}</tr>}
           <tr className="border-t border-slate-300 font-medium"><td className={cell}>คงเหลือเงินประกันที่คืนผู้เช่า</td>{amt(c.depositRefund)}</tr>
-          <tr><td className={cell}>บวก ค่าเช่าที่ผู้เช่าชำระล่วงหน้าเกินวันที่เช่าจริง
+          {short && <tr><td className={cell}>ยอดหักที่เกินเงินประกัน</td>{amt(c.shortfall, true)}</tr>}
+          <tr><td className={cell}>{short ? "หัก" : "บวก"} ค่าเช่าที่ผู้เช่าชำระล่วงหน้าเกินวันที่เช่าจริง{short && " (หักกลบกับยอดที่เกิน)"}
             {overRows.map((x) => <div key={x.period} className="pl-4 text-slate-600">{range(x)} · ชำระแล้ว {money(x.received)} · ค่าเช่าถึงวันส่งคืน {money(x.expected)}</div>)}
-          </td>{amt(c.advanceRefund)}</tr>
-          <tr className="border-y border-slate-400 font-semibold"><td className={cell}>รวมเงินที่ผู้ให้เช่าคืนแก่ผู้เช่า</td>{amt(c.net)}</tr>
+          </td>{amt(short ? netted : c.advanceRefund)}</tr>
+          {owe > 0
+            ? <tr className="border-y border-slate-400 font-semibold"><td className={cell}>ผู้เช่าต้องชำระเพิ่มแก่ผู้ให้เช่า</td>{amt(owe)}</tr>
+            : <tr className="border-y border-slate-400 font-semibold"><td className={cell}>รวมเงินที่ผู้ให้เช่าคืนแก่ผู้เช่า</td>{amt(c.net)}</tr>}
         </tbody>
       </table>
-      <p className="mt-2">เป็นเงิน {amountOf(c.net, d.currency)} ผู้ให้เช่าชำระคืนเมื่อวันที่ {thDateLong(c.settled)} โดย ☐ โอนเข้าบัญชีผู้เช่า {blank("10rem")} ☐ เงินสด</p>
-      <p className="mt-2 indent-8">ผู้เช่าได้รับเงินจำนวนดังกล่าวครบถ้วนแล้ว และทั้งสองฝ่ายไม่มีข้อเรียกร้องใด ๆ ต่อกันอีกเกี่ยวกับสัญญาเช่าฉบับนี้</p>
+      {owe > 0 ? <>
+        {c.tenantPaid > 0 && (
+          <p className="mt-2">เป็นเงิน {amountOf(c.tenantPaid, d.currency)} ผู้เช่าชำระแก่ผู้ให้เช่าแล้วเมื่อวันที่ {thDateLong(c.settled)} โดย ☐ โอนเข้าบัญชีผู้ให้เช่า ☐ เงินสด</p>
+        )}
+        {c.owedPending > 0 && (
+          <p className="mt-2">ผู้เช่าตกลงชำระค่าเสียหายส่วนที่เกินเงินประกัน เป็นเงิน {amountOf(c.owedPending, d.currency)} ให้แก่ผู้ให้เช่าภายในวันที่ {blank("10rem")}</p>
+        )}
+        <p className="mt-2 indent-8">{c.owedPending > 0 ? "เมื่อผู้เช่าชำระยอดดังกล่าวครบถ้วนแล้ว" : "ผู้ให้เช่าได้รับเงินจำนวนดังกล่าวครบถ้วนแล้ว และ"}ทั้งสองฝ่ายไม่มีข้อเรียกร้องใด ๆ ต่อกันอีกเกี่ยวกับสัญญาเช่าฉบับนี้</p>
+      </> : <>
+        <p className="mt-2">เป็นเงิน {amountOf(c.net, d.currency)} ผู้ให้เช่าชำระคืนเมื่อวันที่ {thDateLong(c.settled)} โดย ☐ โอนเข้าบัญชีผู้เช่า {blank("10rem")} ☐ เงินสด</p>
+        <p className="mt-2 indent-8">ผู้เช่าได้รับเงินจำนวนดังกล่าวครบถ้วนแล้ว และทั้งสองฝ่ายไม่มีข้อเรียกร้องใด ๆ ต่อกันอีกเกี่ยวกับสัญญาเช่าฉบับนี้</p>
+      </>}
       <div className="mt-10 grid grid-cols-2 gap-6 break-inside-avoid">
         <Sign role="ผู้ให้เช่า" name={d.lessors.map((x) => x.name).join(" และ ") || undefined} />
         <Sign role="ผู้เช่า" name={tenantSign(d)} />
