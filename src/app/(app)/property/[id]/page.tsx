@@ -620,52 +620,45 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       </div>
 
       <section className="grid gap-4 md:grid-cols-3">
-        {/* ซ้าย: มูลค่า + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
-        <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">มูลค่าล่าสุด</div>
-            <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
-            <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
-              ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}
-            </div>
-            {/* ราคาที่ได้มา · ค่าใช้จ่าย · มูลค่าล่าสุดเทียบราคาที่ได้มา (บวก = เขียว · ลบ = แดง · ตกลง 29 ต.ค. 2026) */}
-            {acqAll != null && (
-              <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(acqAll)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
-            )}
-            <div className="mt-0.5 text-xs text-slate-500"><a href="#expenses" className="hover:underline">ค่าใช้จ่าย {money(spentSum)} บาท</a>
-              {spentLast && ` (ล่าสุด ${thDate(spentLast)})`}</div>
-            {acqAll != null && acqAll > 0 && a.current_value != null && (() => {
-              const d = Number(a.current_value) - acqAll;
-              return <div className={`mt-0.5 text-xs font-medium ${d >= 0 ? "text-emerald-700" : "text-red-600"}`}>
-                มูลค่าล่าสุด{d >= 0 ? "สูงกว่า" : "ต่ำกว่า"}ราคาที่ได้มา {diffText(d, acqAll)}</div>;
-            })()}
-            {/* ปุ่มเดียว "ปรับมูลค่า / ประวัติ": อัปเดตมูลค่า + ประวัติตารางเดียว (เงินจ่าย / รับ · มูลค่าเปลี่ยน · ตกลง 29 ต.ค. 2026) */}
-            <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
-              paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="ปรับมูลค่า / ประวัติ" flow={Object.fromEntries(compLabel)}
-              deletableValuation={deletableVal}
-              paymentEditor={(m) => (
-                <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value} components={compOpts} />)}
-              valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value), detail: partText(v.id) || null }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
-              valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
-              valuationForm={canWrite && a.status === "ACTIVE" ? <ValuePartsForm key={partsKey} assetId={id} currency={a.currency} today={today} minDate={goLive} deeds={deedOptsCost} latest={latestParts}
-                acqTotal={acqAll} currentValue={a.current_value != null ? Number(a.current_value) : null} /> : undefined} />
-            {/* ราคาขายขั้นต่ำที่คุ้ม (เทียบมูลค่าล่าสุด) ก่อนราคาตลาด (เทียบราคาขายขั้นต่ำ) · ตกลง 29 ต.ค. 2026 */}
-            <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null} nwValue={Number(a.current_value ?? 0)}
-              lastCpi={cpiLast ? { year: Number(cpiLast.year), pct: cpiLast.inflation_pct != null ? Number(cpiLast.inflation_pct) : null } : null}
-              unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)}
-              lots={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />} />
-            <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
-              areaSqWa={pd.land_area_sq_wa != null ? Number(pd.land_area_sq_wa) : null} nwValue={Number(a.current_value ?? 0)}
-              minPrice={(targetRow as TargetPrice | null)?.min_price != null ? Number((targetRow as TargetPrice).min_price) : null}
-              history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
+        {/* 2 แถว (ตกลง 6 พ.ย. 2026): มูลค่า | รายละเอียด · เอกสาร | ประกันของทรัพย์สินนี้ — กล่องในแถวเดียวกันสูงเท่ากัน ขอบบน / รอยต่อ / ขอบล่างตรงกัน */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
+          <div className="text-xs text-slate-500">มูลค่าล่าสุด</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
+          <div className={`mt-1 text-xs ${stale ? "text-amber-700" : "text-slate-500"}`}>
+            ณ {thDate(a.current_value_date)}{stale && " · เกิน 90 วัน ควรประเมินใหม่"}
           </div>
-          <div className="flex flex-1 flex-col">
-            <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
-          </div>
+          {/* ราคาที่ได้มา · ค่าใช้จ่าย · มูลค่าล่าสุดเทียบราคาที่ได้มา (บวก = เขียว · ลบ = แดง · ตกลง 29 ต.ค. 2026) */}
+          {acqAll != null && (
+            <div className="mt-1 text-xs text-slate-500">ราคาที่ได้มา {money(acqAll)}{a.acquisition_date && ` (${thDate(a.acquisition_date)})`}</div>
+          )}
+          <div className="mt-0.5 text-xs text-slate-500"><a href="#expenses" className="hover:underline">ค่าใช้จ่าย {money(spentSum)} บาท</a>
+            {spentLast && ` (ล่าสุด ${thDate(spentLast)})`}</div>
+          {acqAll != null && acqAll > 0 && a.current_value != null && (() => {
+            const d = Number(a.current_value) - acqAll;
+            return <div className={`mt-0.5 text-xs font-medium ${d >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+              มูลค่าล่าสุด{d >= 0 ? "สูงกว่า" : "ต่ำกว่า"}ราคาที่ได้มา {diffText(d, acqAll)}</div>;
+          })()}
+          {/* ปุ่มเดียว "ปรับมูลค่า / ประวัติ": อัปเดตมูลค่า + ประวัติตารางเดียว (เงินจ่าย / รับ · มูลค่าเปลี่ยน · ตกลง 29 ต.ค. 2026) */}
+          <AssetTradeHistory assetId={id} currency={a.currency} status={a.status} cost={a.acquisition_cost != null ? Number(a.acquisition_cost) : null}
+            paths={paths} canWrite={canWrite} canDelete={canDelete} singleLabel="ปรับมูลค่า / ประวัติ" flow={Object.fromEntries(compLabel)}
+            deletableValuation={deletableVal}
+            paymentEditor={(m) => (
+              <PropertyPaymentForm assetId={id} currency={a.currency} paths={paths} m={m} addedValue={m.add_value} components={compOpts} />)}
+            valuations={(vals ?? []).map((v) => ({ ...v, value: Number(v.value), detail: partText(v.id) || null }))} sourceLabel={SOURCE_LABEL} methodLabel={METHOD_LABEL}
+            valuationHint="แนะนำประเมินใหม่อย่างน้อยทุก 90 วัน (หรือเมื่อมีการประเมินจากธนาคาร)"
+            valuationForm={canWrite && a.status === "ACTIVE" ? <ValuePartsForm key={partsKey} assetId={id} currency={a.currency} today={today} minDate={goLive} deeds={deedOptsCost} latest={latestParts}
+              acqTotal={acqAll} currentValue={a.current_value != null ? Number(a.current_value) : null} /> : undefined} />
+          {/* ราคาขายขั้นต่ำที่คุ้ม (เทียบมูลค่าล่าสุด) ก่อนราคาตลาด (เทียบราคาขายขั้นต่ำ) · ตกลง 29 ต.ค. 2026 */}
+          <TargetBox currency={a.currency} target={(targetRow as TargetPrice | null) ?? null} nwValue={Number(a.current_value ?? 0)}
+            lastCpi={cpiLast ? { year: Number(cpiLast.year), pct: cpiLast.inflation_pct != null ? Number(cpiLast.inflation_pct) : null } : null}
+            unit={targetUnit(((marketRows ?? []) as MarketValuation[])[0], pd.land_area_sq_wa)}
+            lots={<CostLotsSection assetId={id} currency={a.currency} today={today} lots={lots} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />} />
+          <MarketBox assetId={id} currency={a.currency} today={today} propertyType={pd.property_type}
+            areaSqWa={pd.land_area_sq_wa != null ? Number(pd.land_area_sq_wa) : null} nwValue={Number(a.current_value ?? 0)}
+            minPrice={(targetRow as TargetPrice | null)?.min_price != null ? Number((targetRow as TargetPrice).min_price) : null}
+            history={(marketRows ?? []) as MarketValuation[]} debt={debt} canWrite={canWrite && a.status === "ACTIVE"} canDelete={canDelete} paths={paths} />
         </div>
-        {/* ขวา: รายละเอียด + ประกันของทรัพย์สินนี้ (ย้ายมาใต้รายละเอียด · ตกลง 5 พ.ย. 2026) */}
-        <div className="flex flex-col gap-4 md:col-span-2">
-        <div className="flex-1 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={<>
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
@@ -737,8 +730,11 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               </div>
             } />
         </div>
+        <div className="flex flex-col">
+          <EntityDocuments category="PROPERTY" entityType="ASSET" entityId={id} module="PROPERTY" role={me.role} paths={paths} fill />
+        </div>
         {/* ประกันของทรัพย์สินนี้ (ตกลง 3 พ.ย. 2026): กรมธรรม์ละแถว กดชื่อไปหน้ากรมธรรม์ · ยังไม่มี = ปุ่มเพิ่ม (เลือกประเภท / ทรัพย์สินไว้ให้) */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-medium text-slate-900">ประกันของทรัพย์สินนี้{insPols.length > 0 && ` (${insPols.length})`}</h2>
             {canWrite && a.status === "ACTIVE" && insPols.length > 0 && <Link href={newInsHref} className={SMALL_BTN}>+ เพิ่มประกัน</Link>}
@@ -783,7 +779,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               </table>
             </div>
           )}
-        </div>
         </div>
       </section>
 
