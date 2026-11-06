@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, marketDefaultUnit, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning, signedMoney, plusMoney, minusMoney } from "@/lib/format";
+import { cycleNote } from "@/lib/lease";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
@@ -99,7 +100,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       supabase.from("families").select("go_live_date").maybeSingle(),
       loadSortMap("assets"),
       // งวดเดือนนี้ + งวดก่อนที่ยังค้าง (ยกมา) + งวดก่อนที่รับ / จ่ายในเดือนนี้ (ยังเห็นหลังบันทึก) · ตกลง 5 พ.ย. 2026
-      withCarried("v_lease_rent_tracking", "lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status",
+      withCarried("v_lease_rent_tracking", "lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status,cycle_start,cycle_end",
         "lease_id", "income_period", supabase.from("income_transactions").select("lease_id,income_period").eq("income_type", "RENT").not("lease_id", "is", null)
           .lt("income_period", start).gte("date", start).lte("date", end).is("deleted_at", null)),
       withCarried("v_property_cost_tracking", "utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status",
@@ -119,7 +120,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const none = Promise.resolve({ data: [] as never[] });
   const props = bySort(allProps.filter((p) => pv.showAsset(p.asset_id)), (p) => p.asset_id, sortMap);
   const shown = new Set(props.map((p) => p.asset_id));
-  type RT = { lease_id: string; property_asset_id: string; name: string; income_period: string; due_date: string | null; expected_amount: number; received_amount: number | null; currency: string; status: string };
+  type RT = { lease_id: string; property_asset_id: string; name: string; income_period: string; due_date: string | null; expected_amount: number; received_amount: number | null; currency: string; status: string;
+    cycle_start: string | null; cycle_end: string | null };
   const leaseIds = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.lease_id))];
   const rentPeriods = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.income_period))];
   const utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
@@ -312,6 +314,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       tenant: l ? who(l) : r.name.startsWith(`${property} · `) ? r.name.slice(property.length + 3) : r.name,
       period: r.income_period, due: r.due_date, expected: Number(r.expected_amount), received: Number(r.received_amount ?? 0),
       currency: r.currency, status: r.status, bank: bankFor(r.lease_id, r.currency),
+      cycle: cycleNote(r.cycle_start, r.cycle_end, Number(r.expected_amount), l ? Number(l.rent_amount) : undefined) ?? undefined,
     };
   });
   const withRow = new Set(rentRows.map((r) => r.leaseId));

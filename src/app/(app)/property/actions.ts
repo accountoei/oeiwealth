@@ -46,16 +46,17 @@ function leaseDetailFromForm(form: FormData) {
 }
 
 /**
- * ช่องที่ create_lease ไม่รับ — ตั้งหลังสร้างสัญญา: บัญชีรับค่าเช่า · วิธีคิดค่าน้ำไฟ · จำนวนเดือนเงินประกัน · รายละเอียดพิมพ์สัญญา
+ * ช่องที่ create_lease ไม่รับ — ตั้งหลังสร้างสัญญา: บัญชีรับค่าเช่า · วิธีคิดค่าน้ำไฟ · วิธีคิดค่าเช่าวันเศษ · จำนวนเดือนเงินประกัน · รายละเอียดพิมพ์สัญญา
  *   เลขผู้เช่า (เข้ารหัส · ADMIN / EDITOR): พิมพ์ใหม่ = ตั้ง · ติ๊กล้าง = ล้าง · ต่อสัญญาแล้วเว้นว่าง = ใช้เลขของสัญญาเดิม
  */
 async function saveLeaseExtras(supabase: Awaited<ReturnType<typeof createClient>>, leaseIds: string[], form: FormData) {
   if (!leaseIds.length) return null;
   const to = str(form.get("lease_rent_to_asset_id"));
   const billing = str(form.get("lease_utilities_billing"));
+  const basis = str(form.get("lease_prorate_basis"));
   const months = form.has("lease_deposit_months") ? num(form.get("lease_deposit_months")) : undefined;
   const detail = leaseDetailFromForm(form);
-  const patch = { ...(to ? { rent_to_asset_id: to } : {}), ...(billing ? { utilities_billing: billing } : {}),
+  const patch = { ...(to ? { rent_to_asset_id: to } : {}), ...(billing ? { utilities_billing: billing } : {}), ...(basis ? { prorate_basis: basis } : {}),
     ...(months !== undefined ? { deposit_months: months } : {}), ...(detail ?? {}) };
   if (Object.keys(patch).length) {
     const { error } = await supabase.from("property_leases").update(patch).in("id", leaseIds);

@@ -17,6 +17,7 @@ export type RentRow = {
   /** รายละเอียดสัญญา (แถวแรกของสัญญา · เดิมอยู่ตาราง "สัญญาเช่าที่มีผล") */
   lease?: { id: string; term: string; freq: string; badge?: { text: string; cls: string } };
   /** สัญญาที่ไม่มีงวดเดือนนี้ (status NONE) → งวดถัดไป / เริ่มสัญญา */ note?: string;
+  /** งวดไม่เต็มรอบ (คิดตามจำนวนวัน) → ช่วงวันของงวด */ cycle?: string;
 };
 /** รายได้ที่รับในเดือนนี้ที่ไม่อยู่ในแถวงวดค่าเช่า (เดิมอยู่ตาราง "รายได้จากทรัพย์สินที่บันทึกแล้ว") · amount = ยอดบาท กดแก้ได้ */
 export type OtherIncome = { key: string; assetId: string; property: string; date: string; label: string; amount: ReactNode };
@@ -149,8 +150,10 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
                     <div className="text-xs"><RentStatus r={r} today={today} /></div></td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{money(r.expected, r.currency)}
                     {r.lease?.freq && <span className="text-xs text-slate-400">{r.lease.freq}</span>}
+                    {r.cycle && <div className="text-xs text-slate-500">{r.cycle}</div>}
                     {r.edits?.length ? <RecordedLines items={r.edits} />
-                      : r.received > 0 && <div className="text-xs text-emerald-700">รับแล้ว {money(r.received, r.currency)}</div>}</td>
+                      : r.received > 0 && <div className="text-xs text-emerald-700">รับแล้ว {money(r.received, r.currency)}</div>}
+                    {r.status === "RECEIVED" && r.received - r.expected > 0.005 && <div className="text-xs text-amber-700">รับเกิน {money(r.received - r.expected, r.currency)}</div>}</td>
                   {canWrite && (!open ? <td colSpan={4} /> : <>
                     <td className="px-2 text-right">
                       <input inputMode="decimal" value={v} aria-label={`ยอดก่อนภาษี ${r.property}`} placeholder={r.currency}

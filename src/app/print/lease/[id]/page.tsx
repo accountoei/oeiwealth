@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import PrintShell, { type PrintSection } from "../../loan/[id]/print-shell";
-import { HandoverAnnex, LeaseContract, RentAnnex, rentLines, termMonths, TITLE, type LeaseData } from "./contract";
+import { HandoverAnnex, LeaseContract, RentAnnex, termMonths, TITLE, type LeaseData } from "./contract";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
 
 export const metadata = { title: "พิมพ์สัญญาเช่า" };
@@ -20,13 +20,13 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
   const supabase = await createClient();
   const canReveal = me.role === "ADMIN" || me.role === "EDITOR";
   const { data: l } = await supabase.from("property_leases")
-    .select(`id,property_id,unit_label,tenant_name,contract_no,start_date,end_date,rent_amount,rent_currency,payment_frequency,payment_due_day,security_deposit,utilities_billing,rent_to_asset_id,${LEASE_DETAIL_FIELDS}`)
+    .select(`id,property_id,unit_label,tenant_name,contract_no,start_date,end_date,rent_amount,rent_currency,payment_frequency,payment_due_day,prorate_basis,security_deposit,utilities_billing,rent_to_asset_id,${LEASE_DETAIL_FIELDS}`)
     .eq("id", id).is("deleted_at", null).maybeSingle();
   if (!l) notFound();
   const { data: pd } = await supabase.from("property_details").select("id,asset_id,property_type,address,land_area_sq_wa,house_no,unit_no,floor_no,building_name,assets!inner(name)")
     .eq("id", l.property_id).maybeSingle();
   if (!pd) notFound();
-  const [{ data: deeds }, { data: owners }, { data: people }, { data: banks }, { data: biz }, { data: tenantId }, { data: hand }] = await Promise.all([
+  const [{ data: deeds }, { data: owners }, { data: people }, { data: banks }, { data: biz }, { data: tenantId }, { data: hand }, { data: sched }] = await Promise.all([
     supabase.from("property_deeds").select("component_type,title_type,title_deed_no,land_no,deed_book,deed_page,land_area_sq_wa,building_area_sqm,sort_order")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order"),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,end_date").eq("asset_id", pd.asset_id),
@@ -38,6 +38,8 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
     canReveal && l.tenant_id_last4 ? supabase.rpc("reveal_lease_tenant_id", { p_lease_id: l.id }) : Promise.resolve({ data: null }),
     supabase.from("lease_handover_items").select("item_type,name,qty,brand,serial_no,in_condition,in_reading")
       .eq("lease_id", l.id).is("deleted_at", null).order("sort_order").order("created_at"),
+    // ตารางค่าเช่าทั้งสัญญาจากฐานข้อมูล (สูตรเดียวกับหน้ารับค่าเช่า) · คิดถึงวันสิ้นสุดสัญญาเดิมแม้เลิกก่อนกำหนด
+    supabase.rpc("lease_rent_schedule", { p_lease_id: l.id, p_end: l.end_date }),
   ]);
   const bank = (banks ?? []).find((b) => b.asset_id === l.rent_to_asset_id);
   const accountNo = bank && canReveal
@@ -75,11 +77,12 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
       areaSqWa: x.land_area_sq_wa == null ? null : Number(x.land_area_sq_wa) })),
     buildingSqm: sqm > 0 ? sqm : null, landSqWa: pd.land_area_sq_wa == null ? null : Number(pd.land_area_sq_wa),
     contractNo: l.contract_no, startDate: l.start_date, endDate: l.end_date, currency: l.rent_currency,
-    tenant: l.tenant_name, lessors, rent, frequency: l.payment_frequency, dueDay: l.payment_due_day,
+    tenant: l.tenant_name, lessors, rent, frequency: l.payment_frequency, dueDay: l.payment_due_day, prorate: l.prorate_basis,
     deposit: l.security_deposit == null || Number(l.security_deposit) <= 0 ? null : Number(l.security_deposit),
     utilities: l.utilities_billing,
     bank: bank ? { name: bank.bank_name, accountName: bank.account_name, accountNo } : null,
-    lines: rentLines(l.start_date, l.end_date, l.payment_frequency, l.payment_due_day, rent),
+    lines: ((sched ?? []) as { no: number; due_date: string; cycle_start: string; cycle_end: string; expected_amount: number }[])
+      .map((x) => ({ no: x.no, due: x.due_date, from: x.cycle_start, to: x.cycle_end, amount: Number(x.expected_amount) })),
   };
 
   const warn: string[] = [];
