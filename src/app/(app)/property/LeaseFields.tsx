@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FREQ_LABEL, UTILITIES_BILLING_LABEL, money, thDate } from "@/lib/format";
-import { nextDay, termEnd, termMonths } from "@/lib/lease";
+import { FREQ_LABEL, PRORATE_BASIS_LABEL, UTILITIES_BILLING_LABEL, money, thDate } from "@/lib/format";
+import { firstRentCycle, nextDay, termEnd, termMonths } from "@/lib/lease";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "./LeaseContractFields";
 import BankOptions from "@/components/BankOptions";
@@ -16,7 +16,7 @@ export type CarryOption = { id: string; label: string; deposit: number; currency
 export type LeasePrefill = Partial<LeaseDetail> & {
   id: string; label: string; unit_label: string | null; tenant_name: string; start_date: string; end_date: string;
   terminated_date: string | null; rent_amount: number; rent_currency: string; payment_frequency: string; payment_due_day: number | null;
-  rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null;
+  rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null; prorate_basis: string | null;
 };
 export const DEPOSIT_MONTHS_DEFAULT = 2;
 const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
@@ -25,6 +25,8 @@ const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
  * ช่องกรอกสัญญาเช่า (ชื่อ input ขึ้นต้นด้วย lease_)
  *   อายุสัญญา (ปี / เดือน) ↔ วันสิ้นสุด คำนวณให้กันทั้งสองทาง · เงินประกัน = ค่าเช่า × จำนวนเดือน (แก้ยอดเองได้)
  *   ต่อสัญญา: เลือกสัญญาเดิม → ดึงผู้เช่า ค่าเช่า บัญชี รายละเอียดสัญญามาให้ · เริ่มวันถัดจากสัญญาเดิม อายุเท่าเดิม
+ *     ยกเงินประกันได้เฉพาะตอนต่อสัญญา และยกจากฉบับที่เลือกเท่านั้น (สัญญาใหม่กรอกเอง = ไม่ยก · ตกลง 6 พ.ย. 2026)
+ *   งวดแรก: แสดงตัวอย่างตามวันเริ่ม / วันจ่าย / วิธีคิดวันเศษ (สูตรจริง = private.lease_cycles)
  *   detail = ส่วนรายละเอียดสำหรับพิมพ์สัญญา (ไม่ส่ง = ไม่แสดง เช่นฟอร์มเพิ่มทรัพย์สินใหม่ → กรอกทีหลังที่ปุ่ม "รายละเอียดสัญญา")
  */
 export default function LeaseFields({ banks, goLive, currency = "THB", carryOptions = [], defaultStart, renewals = [], detail }: {
@@ -63,10 +65,14 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
   const [depMonths, setDepMonths] = useState(String(p?.deposit_months ?? DEPOSIT_MONTHS_DEFAULT));
   const [deposit, setDeposit] = useState<string | null>(null);   // null = คำนวณจากค่าเช่า × เดือน
   const [recvDate, setRecvDate] = useState("");
-  const carryFromPrev = p && carryOptions.some((c) => c.id === p.id);
-  const [carry, setCarry] = useState(carryOptions.length > 0);
-  const [carryId, setCarryId] = useState(carryFromPrev ? p!.id : (carryOptions[0]?.id ?? ""));
-  const carried = carry ? carryOptions.find((c) => c.id === carryId) : undefined;
+  const carryFrom = p ? carryOptions.find((c) => c.id === p.id) : undefined;
+  const [carry, setCarry] = useState(!!carryFrom);
+  const carried = carry ? carryFrom : undefined;
+  const [freq, setFreq] = useState(p?.payment_frequency ?? "MONTHLY");
+  const [dueDay, setDueDay] = useState(p?.payment_due_day ? String(p.payment_due_day) : "");
+  const [basis, setBasis] = useState(p?.prorate_basis ?? "ACTUAL");
+  const step = freq === "MONTHLY" ? 1 : freq === "QUARTERLY" ? 3 : freq === "YEARLY" ? 12 : 0;
+  const first = step && start && num(rent) > 0 ? firstRentCycle(start, num(dueDay) || null, num(rent), basis, step) : null;
   const effRecv = carried ? start : (recvDate || start);
   const beforeGoLive = !!effRecv && effRecv < goLive;
   const autoDeposit = num(rent) * num(depMonths);
@@ -116,11 +122,27 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
         <CurrencySelect name="lease_rent_currency" defaultValue={p?.rent_currency ?? currency} className={input} />
       </label>
       <label className={label}>งวดการจ่าย
-        <select name="lease_payment_frequency" defaultValue={p?.payment_frequency ?? "MONTHLY"} className={input}>
+        <select name="lease_payment_frequency" value={freq} onChange={(e) => setFreq(e.target.value)} className={input}>
           {Object.entries(FREQ_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
-      <label className={label}>ครบกำหนดจ่ายทุกวันที่<input name="lease_payment_due_day" type="number" min={1} max={31} defaultValue={p?.payment_due_day ?? ""} className={input} /></label>
+      <label className={label}>ครบกำหนดจ่ายทุกวันที่
+        <input name="lease_payment_due_day" type="number" min={1} max={31} value={dueDay} onChange={(e) => setDueDay(e.target.value)}
+          placeholder={start ? `ว่าง = วันที่ ${Number(start.slice(8, 10))} (ตรงวันเริ่มสัญญา)` : "ว่าง = วันเดียวกับวันเริ่มสัญญา"} className={input} />
+      </label>
+      <label className={label}>คิดค่าเช่าวันเศษ
+        <select name="lease_prorate_basis" value={basis} onChange={(e) => setBasis(e.target.value)} className={input}>
+          {Object.entries(PRORATE_BASIS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <span className="mt-1 block text-xs text-slate-500">ใช้กับงวดแรก / งวดสุดท้ายที่ไม่เต็มรอบ (เข้าอยู่ไม่ตรงวันจ่าย · ออกก่อนครบรอบ)</span>
+      </label>
+      {first && (
+        <p className="md:col-span-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-slate-700">
+          งวดแรก {thDate(first.from)} – {thDate(first.to)}
+          {first.full ? ` = ${money(first.amount)} (เต็มรอบ)` : ` (${first.days} วัน) = ${money(first.amount)} คิดตามจำนวนวัน`}
+          {" "}ครบกำหนด {thDate(first.due)} (ภายใน 5 วันนับจากวันเริ่มสัญญา) · งวดต่อไปเต็มรอบ จ่ายล่วงหน้าทุกวันที่ {num(dueDay) || Number(start.slice(8, 10))}
+        </p>
+      )}
       <label className={label}>บัญชีรับค่าเช่า (ค่าตั้งต้นตอนบันทึกรับ · ใช้ในสัญญาที่พิมพ์)
         <select name="lease_rent_to_asset_id" defaultValue={p?.rent_to_asset_id ?? ""} className={input}>
           <option value="">— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —</option>
@@ -139,19 +161,13 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
 
       <div className="md:col-span-2 space-y-3 rounded-lg bg-slate-50 p-4">
         <div className="text-sm font-medium text-slate-800">เงินประกัน (นับเป็นหนี้สินจนกว่าจะคืน)</div>
-        {carryOptions.length > 0 && (
+        {carryFrom && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="lease_carry" checked={carry} onChange={(e) => setCarry(e.target.checked)} className="mt-1" />
-            <span>ต่อสัญญา: ยกเงินประกันจากสัญญาเดิมมาใช้ต่อ (สัญญาเดิมจะปิดเงินประกันในวันเริ่มสัญญาใหม่)</span>
+            <span>ต่อสัญญา: ยกเงินประกัน {money(carryFrom.deposit, carryFrom.currency)} จากสัญญาเดิมมาใช้ต่อ (สัญญาเดิมจะปิดเงินประกันในวันเริ่มสัญญาใหม่)</span>
           </label>
         )}
-        {carry && carryOptions.length > 0 && (
-          <label className={label}>ยกมาจากสัญญา
-            <select name="lease_carried_from_lease_id" value={carryId} onChange={(e) => setCarryId(e.target.value)} className={input}>
-              {carryOptions.map((c) => <option key={c.id} value={c.id}>{c.label} · {money(c.deposit, c.currency)}</option>)}
-            </select>
-          </label>
-        )}
+        {carried && <input type="hidden" name="lease_carried_from_lease_id" value={carried.id} />}
         <div className="grid gap-4 md:grid-cols-3">
           <label className={label}>จำนวนเดือนที่วางประกัน
             <input name="lease_deposit_months" inputMode="decimal" data-money="off" value={depMonths}

@@ -1,4 +1,4 @@
-import { bahtText, INVENTORY_METER_TYPES, INVENTORY_TYPE_LABEL, landText, money, thDateLong, UTILITIES_BILLING_LABEL } from "@/lib/format";
+import { bahtText, INVENTORY_METER_TYPES, INVENTORY_TYPE_LABEL, landText, money, thDate, thDateLong, UTILITIES_BILLING_LABEL } from "@/lib/format";
 import { termMonths, termText } from "@/lib/lease";
 
 export { termMonths };
@@ -22,10 +22,10 @@ export type LeaseData = {
   noticeDays: number | null; lateFee: number | null; witnesses: [string | null, string | null];
   /** รายการส่งมอบของสัญญา (ว่าง = ตารางเปล่าให้เขียนเอง) */
   handover: { type: string; name: string; qty: number; brand: string | null; serial: string | null; condition: string | null; reading: number | null }[];
-  rent: number; frequency: string; dueDay: number | null;
+  rent: number; frequency: string; dueDay: number | null; /** คิดค่าเช่าวันเศษ ACTUAL / DAYS30 */ prorate: string;
   deposit: number | null; utilities: string | null;
   bank: { name: string; accountName: string | null; accountNo: string | null } | null;
-  /** งวดค่าเช่าตลอดสัญญา (ไม่มี = ความถี่ "อื่น ๆ") */ lines: { no: number; due: string; amount: number }[];
+  /** งวดค่าเช่าตลอดสัญญา จาก lease_rent_schedule (ไม่มี = ความถี่ "อื่น ๆ") */ lines: { no: number; due: string; from: string; to: string; amount: number }[];
 };
 
 export const TITLE: Record<LeaseData["propertyType"], string> = {
@@ -40,21 +40,20 @@ const oneLine = (v: string) => v.replace(/\s*\n\s*/g, " ");
 /** อากรแสตมป์สัญญาเช่าอสังหาริมทรัพย์: 1 บาท ต่อค่าเช่าทุก 1,000 บาท หรือเศษ ตลอดอายุสัญญา */
 export const leaseStampDuty = (totalRent: number) => Math.ceil(totalRent / 1000);
 
-/** งวดค่าเช่า: เริ่มที่วันเริ่มสัญญา ทุก 1 / 3 / 12 เดือน จนถึงวันสิ้นสุด · ครบกำหนด = วันที่ที่ตั้งไว้ของเดือนนั้น (ไม่ตั้ง = วันเริ่มของงวด) */
-export function rentLines(start: string, end: string, frequency: string, dueDay: number | null, rent: number) {
-  const step = frequency === "MONTHLY" ? 1 : frequency === "QUARTERLY" ? 3 : frequency === "YEARLY" ? 12 : 0;
-  if (!step) return [];
-  const out: { no: number; due: string; amount: number }[] = [];
-  const y0 = Number(start.slice(0, 4)), m0 = Number(start.slice(5, 7)) - 1, d0 = Number(start.slice(8, 10));
-  for (let i = 0; i < 600; i++) {
-    const mm = m0 + i * step, y = y0 + Math.floor(mm / 12), m = mm % 12;
-    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const periodStart = `${y}-${String(m + 1).padStart(2, "0")}-${String(Math.min(d0, last)).padStart(2, "0")}`;
-    if (periodStart >= end) break;
-    const day = Math.min(dueDay ?? d0, last);
-    out.push({ no: i + 1, due: `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`, amount: rent });
-  }
-  return out;
+/**
+ * ข้อความกำหนดชำระ (ตกลง 6 พ.ย. 2026): รอบนับจากวันจ่าย · งวดแรกชำระภายใน 5 วันนับแต่วันเริ่มสัญญา
+ *   งวดแรกไม่เต็มรอบ (เข้าอยู่ไม่ตรงวันจ่าย) → ระบุช่วงวันและยอด · สิ้นสุด / เลิกสัญญากลางรอบ → คิดตามวัน + คืนส่วนที่ชำระล่วงหน้าเกิน
+ */
+function rentTerms(d: LeaseData) {
+  const day = d.dueDay ?? Number(d.startDate.slice(8, 10));
+  const f = d.lines[0];
+  const partFirst = f && Math.abs(f.amount - d.rent) >= 0.005;
+  const div = d.prorate === "DAYS30" ? "30" : "จำนวนวันจริงของรอบนั้น";
+  return ` ชำระล่วงหน้าทุกวันที่ ${day} ของ${d.frequency === "YEARLY" ? "เดือนที่ครบรอบปีการเช่า" : "เดือนที่ครบกำหนดแต่ละงวด"}`
+    + (partFirst ? ` เว้นแต่งวดแรกตั้งแต่วันที่ ${thDateLong(f.from)} ถึงวันที่ ${thDateLong(f.to)} คิดตามจำนวนวันเป็นเงิน ${plain(f.amount, d.currency)}` : "")
+    + ` โดยงวดแรกชำระภายใน 5 วันนับแต่วันเริ่มสัญญา ตามตารางค่าเช่าแนบท้ายสัญญา`
+    + ` หากสัญญาสิ้นสุดหรือเลิกกันระหว่างรอบ ค่าเช่ารอบนั้นคิดตามจำนวนวันที่เช่าจริง (ค่าเช่าต่องวด ÷ ${div} × จำนวนวัน)`
+    + ` และผู้ให้เช่าจะคืนค่าเช่าที่ผู้เช่าชำระล่วงหน้าเกินให้`;
 }
 
 /** ชื่อใต้ลายเซ็นผู้เช่า: นิติบุคคล = ชื่อบริษัท โดย ผู้มีอำนาจลงนาม */
@@ -145,7 +144,7 @@ export function LeaseContract({ d, place, signDate }: { d: LeaseData; place: str
     <><b>ทรัพย์สินที่เช่า</b> ผู้ให้เช่าตกลงให้เช่าและผู้เช่าตกลงเช่า {premisesText(d)} {PURPOSE[d.propertyType]}</>,
     <><b>ระยะเวลาการเช่า</b> มีกำหนด {termText(months)} เริ่มตั้งแต่วันที่ {thDateLong(d.startDate)} ถึงวันที่ {thDateLong(d.endDate)}</>,
     <><b>ค่าเช่า</b> ผู้เช่าตกลงชำระค่าเช่า{per ? ` ${per} ${amountOf(d.rent, d.currency)}` : ` ${amountOf(d.rent, d.currency)} ตามกำหนด ${blank("8rem")}`}
-      {per ? ` ชำระล่วงหน้าภายในวันที่ ${d.dueDay ?? Number(d.startDate.slice(8, 10))} ของ${d.frequency === "YEARLY" ? "เดือนที่ครบรอบปีการเช่า" : "เดือนที่ครบกำหนดแต่ละงวด"} ตามตารางค่าเช่าแนบท้ายสัญญา` : ""}
+      {per ? rentTerms(d) : ""}
       {" "}โดยโอนเข้าบัญชีธนาคาร {d.bank?.name || blank("8rem")}{d.bank?.accountName ? ` ชื่อบัญชี ${d.bank.accountName}` : ""} เลขที่บัญชี {d.bank?.accountNo || blank("8rem")}
       {" "}หรือตามที่ผู้ให้เช่าแจ้งเป็นหนังสือ หากผู้เช่าเป็นนิติบุคคลที่มีหน้าที่หักภาษี ณ ที่จ่าย ให้หักได้ตามกฎหมายและส่งหนังสือรับรองการหักภาษีให้ผู้ให้เช่า</>,
     d.deposit ? <><b>เงินประกัน</b> ในวันทำสัญญานี้ ผู้เช่าได้วางเงินประกันการปฏิบัติตามสัญญาไว้แก่ผู้ให้เช่าเป็นจำนวน {amountOf(d.deposit, d.currency)}
@@ -206,16 +205,16 @@ export function RentAnnex({ d }: { d: LeaseData }) {
       <h2 className="text-center text-base font-semibold">ตารางค่าเช่า</h2>
       <p className="text-center">แนบท้าย{TITLE[d.propertyType]}{d.contractNo ? ` เลขที่ ${d.contractNo}` : ""} · {d.propertyName}{d.unit ? ` (${d.unit})` : ""} · ผู้เช่า {d.tenant}</p>
       <table className="mt-3 w-full border-collapse">
-        <thead><tr className="border-y border-slate-400 text-left"><th className="py-1">งวดที่</th><th>ครบกำหนดชำระ</th><th className="text-right">ค่าเช่า</th><th className="w-40 pl-6">วันที่ชำระ / ลงชื่อผู้รับ</th></tr></thead>
+        <thead><tr className="border-y border-slate-400 text-left"><th className="py-1">งวดที่</th><th>รอบค่าเช่า</th><th>ครบกำหนดชำระ</th><th className="text-right">ค่าเช่า</th><th className="w-40 pl-6">วันที่ชำระ / ลงชื่อผู้รับ</th></tr></thead>
         <tbody>
           {d.lines.map((x) => (
             <tr key={x.no} className="break-inside-avoid border-b border-slate-200">
-              <td className="py-0.5">{x.no}</td><td>{thDateLong(x.due)}</td><td className="text-right tabular-nums">{money(x.amount)}</td><td />
+              <td className="py-0.5">{x.no}</td><td>{thDate(x.from)} – {thDate(x.to)}</td><td>{thDateLong(x.due)}</td><td className="text-right tabular-nums">{money(x.amount)}</td><td />
             </tr>
           ))}
         </tbody>
         <tfoot><tr className="border-y border-slate-400 font-semibold">
-          <td className="py-1" colSpan={2}>รวม {d.lines.length} งวด</td><td className="text-right tabular-nums">{plain(total, d.currency)}</td><td /></tr></tfoot>
+          <td className="py-1" colSpan={3}>รวม {d.lines.length} งวด</td><td className="text-right tabular-nums">{plain(total, d.currency)}</td><td /></tr></tfoot>
       </table>
       <div className="mt-8 grid grid-cols-2 gap-6 break-inside-avoid">
         <Sign role="ผู้ให้เช่า" name={d.lessors.map((x) => x.name).join(" และ ") || undefined} />

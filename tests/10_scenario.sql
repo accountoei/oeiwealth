@@ -4566,4 +4566,67 @@ SET ROLE service_role; SELECT t.login(NULL);
 SELECT public.server_refresh_month_auto() AS dv_auto;
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.ok(public.data_version() <> :'dv2', 'ป้ายข้อมูล: งานยอดสิ้นเดือนอัตโนมัติเสร็จ ป้ายเปลี่ยน');
+
+\echo '== 17. ค่าเช่าตามรอบวันจ่าย + วันเศษ + สัญญาทับกัน (6 พ.ย. 2026)'
+-- วันจ่ายตรงวันเริ่ม → ทุกงวดเต็ม · งวดแรกครบกำหนด 5 วันหลังวันเริ่ม
+SELECT t.ok((SELECT count(*) = 12 AND bool_and(expected_amount = 8000) FROM private.lease_cycles('2026-10-16', '2027-10-15', 16, 1, 8000, 'ACTUAL'))
+        AND (SELECT due_date = '2026-10-21' AND cycle_start = '2026-10-16' AND cycle_end = '2026-11-15'
+               FROM private.lease_cycles('2026-10-16', '2027-10-15', 16, 1, 8000, 'ACTUAL') WHERE income_period = '2026-10-01')
+        AND (SELECT due_date = '2026-11-16' FROM private.lease_cycles('2026-10-16', '2027-10-15', 16, 1, 8000, 'ACTUAL') WHERE income_period = '2026-11-01'),
+            'รอบค่าเช่า: เริ่ม 16 ต.ค. จ่ายทุกวันที่ 16 → 12 งวดเต็ม · งวดแรกครบกำหนด 21 ต.ค. · งวดต่อไปวันที่ 16');
+-- วันจ่ายไม่ตรง → งวดแรกถึงก่อนวันจ่ายเดือนถัดไป คิดตามวัน
+SELECT t.ok((SELECT expected_amount = 5161.29 AND cycle_end = '2026-11-04' AND due_date = '2026-10-21'
+               FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 8000, 'ACTUAL') WHERE income_period = '2026-10-01')
+        AND (SELECT expected_amount = 8000 AND due_date = '2026-11-05' AND cycle_start = '2026-11-05'
+               FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 8000, 'ACTUAL') WHERE income_period = '2026-11-01')
+        AND (SELECT sum(expected_amount) = 96000 FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 8000, 'ACTUAL')),
+            'รอบค่าเช่า: เริ่ม 16 ต.ค. จ่ายทุกวันที่ 5 → งวดแรก 16 ต.ค.–4 พ.ย. = 8,000 × 20/31 · รวมทั้งสัญญาเท่า 12 เดือน');
+SELECT t.ok((SELECT expected_amount = 9032.26 AND cycle_start = '2026-09-01' AND cycle_end = '2026-10-04'
+               FROM private.lease_cycles('2026-09-01', '2027-08-31', 5, 1, 8000, 'ACTUAL') WHERE income_period = '2026-09-01')
+        AND (SELECT expected_amount = 6967.74 AND cycle_end = '2027-08-31'
+               FROM private.lease_cycles('2026-09-01', '2027-08-31', 5, 1, 8000, 'ACTUAL') WHERE income_period = '2027-08-01')
+        AND (SELECT count(*) = 12 AND sum(expected_amount) = 96000 FROM private.lease_cycles('2026-09-01', '2027-08-31', 5, 1, 8000, 'ACTUAL')),
+            'รอบค่าเช่า: เริ่ม 1 ก.ย. จ่ายวันที่ 5 → งวดแรก 1 รอบ + 4 วัน · งวดสุดท้าย 5–31 ส.ค. · 1 งวดต่อเดือน');
+SELECT t.ok((SELECT expected_amount = 2838.71 AND cycle_end = '2026-10-15'
+               FROM private.lease_cycles('2025-02-01', '2026-10-15', 5, 1, 8000, 'ACTUAL') WHERE income_period = '2026-10-01'),
+            'รอบค่าเช่า: เลิกสัญญา 15 ต.ค. กลางรอบ 5 ต.ค.–4 พ.ย. → คิด 11 วัน จาก 31');
+SELECT t.ok((SELECT expected_amount = 5333.33 FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 8000, 'DAYS30') WHERE income_period = '2026-10-01')
+        AND (SELECT expected_amount = 8000 FROM private.lease_cycles('2026-10-05', '2026-11-03', 5, 1, 8000, 'DAYS30')),
+            'วันเศษหาร 30: 20 วัน = 5,333.33 · อยู่ 30 วันในรอบ 31 วัน = ไม่เกินค่าเช่าเต็มรอบ');
+SELECT t.ok((SELECT count(*) = 2 AND bool_and(expected_amount = 8000) FROM private.lease_cycles('2026-01-31', '2026-03-30', 31, 1, 8000, 'ACTUAL'))
+        AND (SELECT cycle_end = '2026-02-27' FROM private.lease_cycles('2026-01-31', '2026-03-30', 31, 1, 8000, 'ACTUAL') WHERE income_period = '2026-01-01'),
+            'วันจ่ายที่ 31 ในเดือนสั้น → วันสุดท้ายของเดือน (28 ก.พ.)');
+SELECT t.ok((SELECT count(*) = 4 AND bool_and(expected_amount = 30000) FROM private.lease_cycles('2026-01-01', '2026-12-31', 1, 3, 30000, 'ACTUAL')),
+            'สัญญารายไตรมาส: 4 งวดเต็ม');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT id AS lease_a FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ก' AND start_date = '2026-01-01' \gset
+SELECT t.ok((SELECT count(*) = 12 AND sum(expected_amount) = 300000 AND min(no) = 1 FROM public.lease_rent_schedule(:'lease_a'))
+        AND (SELECT expected_amount = 28225.81 AND due_date = '2026-01-06' FROM public.lease_rent_schedule(:'lease_a') WHERE no = 1)
+        AND (SELECT count(*) = 3 FROM public.lease_rent_schedule(:'lease_a', '2026-03-10')),
+            'ตารางค่าเช่าทั้งสัญญา: 12 งวด รวม 300,000 · งวดแรก 1 ม.ค.–4 ก.พ. · คิดถึงวันออก 10 มี.ค. = 3 งวด');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_lease_rent_tracking r
+                          JOIN public.lease_rent_schedule(:'lease_a') s ON s.income_period = r.income_period
+                         WHERE r.lease_id = :'lease_a' AND (r.expected_amount <> s.expected_amount OR r.cycle_start <> s.cycle_start))
+        AND EXISTS (SELECT 1 FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_a' AND cycle_end IS NOT NULL),
+            'v_lease_rent_tracking ใช้ยอด / ช่วงวันเดียวกับตารางค่าเช่าในสัญญา');
+SELECT t.ok(has_function_privilege('authenticated', 'public.lease_rent_schedule(uuid, date)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.lease_rent_schedule(uuid, date)', 'EXECUTE'), 'ตารางค่าเช่า: anon เรียกไม่ได้');
+SELECT t.fails($$UPDATE public.property_leases SET prorate_basis = 'DAYS31' WHERE tenant_name = 'ผู้เช่า ก'$$, 'pl_prorate_basis_ck', 'วิธีคิดวันเศษ: ACTUAL / DAYS30 เท่านั้น');
+SELECT property_id AS prop_a FROM public.property_leases WHERE id = :'lease_a' \gset
+SELECT t.fails($$INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
+                 VALUES ('$$ || :'prop_a' || $$', 'ชั้น 2', 'ผู้เช่าใหม่', '2027-06-01', '2028-05-31', 9000)$$,
+               'ทับกับสัญญา', 'สัญญาทับ: ห้องเดียวกัน ช่วงวันทับ → บันทึกไม่ได้');
+SELECT t.fails($$INSERT INTO public.property_leases(property_id, tenant_name, start_date, end_date, rent_amount)
+                 VALUES ('$$ || :'prop_a' || $$', 'เช่าทั้งหลัง', '2027-06-01', '2028-05-31', 9000)$$,
+               'ทับกับสัญญา', 'สัญญาทับ: ไม่ระบุห้อง (ทั้งหลัง) ทับกับสัญญาห้องอื่น → บันทึกไม่ได้');
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
+  VALUES (:'prop_a', 'ชั้น 3', 'ผู้เช่า ค', '2027-03-01', '2028-02-29', 7000);
+SELECT t.ok((SELECT count(*) = 1 FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ค'), 'สัญญาทับ: คนละห้อง → บันทึกได้');
+UPDATE public.property_leases SET status = 'TERMINATED', terminated_date = '2027-09-15' WHERE tenant_name = 'ผู้เช่า ค';
+SELECT t.ok((SELECT terminated_date = '2027-09-15' FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ค'), 'สัญญาทับ: เลิกสัญญา (ย่นวัน) ไม่ถูกตรวจซ้ำ');
+SELECT t.fails($$UPDATE public.property_leases SET unit_label = ' ชั้น 2 ' WHERE tenant_name = 'ผู้เช่า ค'$$,
+               'ทับกับสัญญา', 'สัญญาทับ: เปลี่ยนเป็นห้องที่มีสัญญาอยู่แล้ว (ไม่สนช่องว่าง) → บันทึกไม่ได้');
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
+  VALUES (:'prop_a', 'ชั้น 3', 'ผู้เช่า ง', '2027-09-16', '2028-09-15', 7500);
+SELECT t.ok((SELECT count(*) = 1 FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ง'), 'สัญญาทับ: ห้องเดิมเริ่มวันถัดจากวันเลิกสัญญาเดิม → บันทึกได้');
 \echo 'ALL SCENARIO TESTS PASSED'

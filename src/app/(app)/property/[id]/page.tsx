@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, PRORATE_BASIS_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
   INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
@@ -35,6 +35,7 @@ import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
+import CycleNote from "../CycleNote";
 import { CopyRoomButton, DisposeButton, HandoverButton, InventoryAddButton, UndoDisposalButton, type HandoverItem } from "../Inventory";
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 import type { LeasePrefill } from "../LeaseFields";
@@ -69,7 +70,7 @@ type Cost = { utility_id: string; utility_type: string; provider: string | null;
   expected_amount: number; paid_amount: number; gap: number; currency: string; status: string; last_paid_date: string | null;
   dismissal_id: string | null; dismissal_reason: string | null };
 type Rent = { lease_id: string; name: string; income_period: string; due_date: string; expected_amount: number;
-  received_amount: number; currency: string; status: string };
+  received_amount: number; currency: string; status: string; cycle_start: string | null; cycle_end: string | null };
 
 export default async function PropertyDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ ty?: string }>;
@@ -136,6 +137,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const goLive = family?.go_live_date ?? "";
   const leases = (leaseRows as Lease[] | null) ?? [];
   const rents = (rentRows as Rent[] | null) ?? [];
+  const rentOf = new Map(leases.map((l) => [l.id, Number(l.rent_amount)]));
   const bankList = banks ?? [];
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
@@ -206,7 +208,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
     supabase.rpc("asset_has_history", { p_asset_id: id }),
     // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
-    supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
+    supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,prorate_basis,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
     // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
     supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
       .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
@@ -253,7 +255,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const eventVals = new Set(((eventRows ?? []) as { valuation_id: string | null }[]).map((e) => e.valuation_id).filter(Boolean));
   const v0 = vals?.[0];
   const deletableVal = v0 && (vals?.length ?? 0) > 1 && !v0.source_movement_id && v0.notes !== "ราคาขาย" && !eventVals.has(v0.id) ? v0.id as string : null;
-  type LeaseExtra = LeaseDetail & { id: string; rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null };
+  type LeaseExtra = LeaseDetail & { id: string; rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null; prorate_basis: string };
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
   const charges = (chargeRows ?? []) as { id: string; lease_id: string; cost_period: string; description: string; amount: number; currency: string;
@@ -378,7 +380,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     return { ...(x ?? {}), id: l.id, label: `${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} · ${thDate(l.start_date)} – ${thDate(l.terminated_date ?? l.end_date)}`,
       unit_label: l.unit_label, tenant_name: l.tenant_name, start_date: l.start_date, end_date: l.end_date, terminated_date: l.terminated_date,
       rent_amount: Number(l.rent_amount), rent_currency: l.rent_currency, payment_frequency: l.payment_frequency, payment_due_day: l.payment_due_day,
-      rent_to_asset_id: x?.rent_to_asset_id ?? null, utilities_billing: x?.utilities_billing ?? null, deposit_months: x?.deposit_months ?? null };
+      rent_to_asset_id: x?.rent_to_asset_id ?? null, utilities_billing: x?.utilities_billing ?? null, deposit_months: x?.deposit_months ?? null,
+      prorate_basis: x?.prorate_basis ?? null };
   });
 
   // ของในทรัพย์สิน: หลายห้อง (ชื่อห้องจากสัญญา + ที่ตั้งไว้ในของ) → มีช่องห้อง · ห้องว่าง = ส่วนกลาง / ทั้งหลัง
@@ -442,6 +445,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             { name: "end_date", label: "สิ้นสุด", type: "date", value: l.end_date },
             { name: "rent_amount", label: "ค่าเช่า", type: "number", value: l.rent_amount },
             { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
+            { name: "prorate_basis", label: "คิดค่าเช่าวันเศษ", type: "select", value: leaseExtra.get(l.id)?.prorate_basis ?? "ACTUAL",
+              options: Object.entries(PRORATE_BASIS_LABEL) as [string, string][] },
             { name: "rent_to_asset_id", label: "บัญชีรับค่าเช่า", type: "select", value: rentTo.get(l.id) ?? "",
               options: [["", "— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —"], ...bankList.filter((b) => b.currency === l.rent_currency).map((b) => [b.asset_id, b.name] as [string, string])] },
             { name: "utilities_billing", label: "ค่าน้ำ / ค่าไฟ", type: "select", value: leaseExtra.get(l.id)?.utilities_billing ?? "",
@@ -477,6 +482,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {l.terminated_date && <span className="text-red-600"> · เลิก {thDate(l.terminated_date)}</span>}
           {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
           {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
+          {leaseExtra.get(l.id)?.prorate_basis === "DAYS30" && " · วันเศษหาร 30"}
           {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}
           {leaseExtra.get(l.id)?.utilities_billing && <span className="text-xs text-slate-500"> · ค่าน้ำไฟ: {UTILITIES_BILLING_LABEL[leaseExtra.get(l.id)!.utilities_billing!]}</span>}
         </div>
@@ -821,9 +827,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             <tbody className="divide-y divide-slate-100">
               {rents.map((r) => {
                 const got = paidByPeriod.get(rentKey(r.lease_id, r.income_period)) ?? [];
+                const over = Number(r.received_amount) - Number(r.expected_amount);
                 return (
                 <tr key={`${r.lease_id}-${r.income_period}`} className="align-top">
-                  <td className="py-1.5">{thMonth(r.income_period)}</td>
+                  <td className="py-1.5">{thMonth(r.income_period)}<CycleNote start={r.cycle_start} end={r.cycle_end} expected={r.expected_amount} rent={rentOf.get(r.lease_id)} /></td>
                   <td className="text-xs text-slate-600">{r.name.split(" · ").slice(1).join(" · ")}<div className="text-slate-400">ครบ {thDate(r.due_date)}</div></td>
                   <td className="text-right tabular-nums">{money(r.expected_amount)}</td>
                   <td className="text-right tabular-nums">
@@ -836,6 +843,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                         {x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}
                       </div>
                     ))}
+                    {r.status === "RECEIVED" && over > 0.005 && <div className="text-xs text-amber-700">รับเกิน {money(over)}</div>}
                   </td>
                   <td className={`pl-4 ${RENT_STATUS[r.status]?.cls ?? ""}`}>{RENT_STATUS[r.status]?.text ?? r.status}</td>
                   <td className="text-right">

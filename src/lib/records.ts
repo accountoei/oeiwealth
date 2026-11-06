@@ -22,7 +22,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   recurring_income_templates: { name: "str", expected_amount: "num", due_day: "num", end_date: "date", notes: "str" },
   recurring_expense_templates: { name: "str", expense_category: "str", person_id: "str", expected_amount: "num", due_day: "num", end_date: "date", notes: "str" },
   property_leases: { tenant_name: "str", unit_label: "str", contract_no: "str", end_date: "date", rent_amount: "num", payment_due_day: "num", notes: "str",
-    rent_to_asset_id: "str", utilities_billing: "str" },
+    rent_to_asset_id: "str", utilities_billing: "str", prorate_basis: "str" },
   lease_utility_charges: { amount: "num", notes: "str" },
   property_inventory_items: { unit_label: "str", item_type: "str", name: "str", qty: "num", brand: "str", serial_no: "str", value: "num", notes: "str" },
   property_utilities: { provider: "str", account_no: "str", meter_no: "str", notes: "str", unit_label: "str",

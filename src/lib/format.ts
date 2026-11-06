@@ -199,6 +199,10 @@ export const UTILITIES_BILLING_LABEL: Record<string, string> = {
   TENANT_PAYS: "ผู้เช่าจ่ายเอง", INCLUDED: "รวมในค่าเช่า", REBILL: "เราจ่ายแล้วเรียกเก็บ",
 };
 export const REBILL_SUBTYPE = "ค่าน้ำไฟเรียกเก็บจากผู้เช่า";
+/** คิดค่าเช่าวันเศษ (งวดแรก / งวดสุดท้ายที่ไม่เต็มรอบ · ตกลง 6 พ.ย. 2026) */
+export const PRORATE_BASIS_LABEL: Record<string, string> = {
+  ACTUAL: "ตามจำนวนวันจริงของรอบ (28–31 วัน)", DAYS30: "หาร 30 วันทุกรอบ",
+};
 /** ราคาตลาด Property (อ้างอิง · ไม่นับเข้า Net Worth · ตกลง 28 ต.ค. 2026) */
 export const MARKET_METHOD_LABEL: Record<string, string> = {
   OWNER_ESTIMATE: "เจ้าของประเมินเอง", BROKER: "นายหน้าประเมิน", APPRAISER: "ผู้ประเมินอิสระ / ธนาคาร",
