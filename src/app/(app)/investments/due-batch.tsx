@@ -114,7 +114,9 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
       received: add((r) => r.item ? Number(r.item.received?.amount ?? 0) : r.cash!.received),
       gross: typed.reduce((t, r) => t + n(vals[r.key]), 0), tax: typed.reduce((t, r) => t + ((tax[r.key] ?? "").trim() ? n(tax[r.key]) || 0 : 0), 0),
       net: typed.reduce((t, r) => t + (net(r.key) || 0), 0), typed: typed.length };
-  });
+  })
+    // สกุลที่ยอดเป็น 0 ทั้งหมดและยังไม่ได้กรอก → ไม่แสดงแถวรวม (ตกลง 6 พ.ย. 2026)
+    .filter((t) => t.typed > 0 || Math.abs(t.expected) >= 0.005 || Math.abs(t.received) >= 0.005);
   // ค้างรับ (เลยกำหนด ณ วันนี้) ทุกพอร์ต → บรรทัดสีแดงใต้ตาราง
   const lateRows = rows.filter((r) => r.item && !r.item.received && r.item.due < today);
   const lateAmt = [...new Set(lateRows.map((r) => r.currency))].sort(ccyOrder)

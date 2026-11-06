@@ -71,6 +71,8 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   const borrowers = [...new Set(all.map((r) => r.borrower).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
   const shown = who ? base.filter((r) => r.borrower === who) : base;
   const thbShown = shown.filter((r) => r.currency === "THB");
+  // แถวรวม: ไม่แสดงเมื่อยอดถึงกำหนดและยอดที่กรอกเป็น 0 ทั้งคู่ (ตกลง 6 พ.ย. 2026)
+  const thbDue = r2(thbShown.reduce((t, r) => t + r.dueP + r.dueI, 0)), thbTyped = r2(thbShown.reduce((t, r) => t + n(tot[r.id]), 0));
   const has = (r: LoanRow) => (pr[r.id] ?? "").trim() !== "" || (int[r.id] ?? "").trim() !== "";
   const chosen = base.filter(has);
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
@@ -206,11 +208,11 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
             {shown.map(row)}
           </tbody>
           {/* แถวรวม (THB) แทนการ์ดสรุปด้านบน (ตกลง 6 พ.ย. 2026) */}
-          {thbShown.length > 0 && (
+          {thbShown.length > 0 && (thbDue !== 0 || thbTyped !== 0) && (
             <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
               <tr><td colSpan={2} className="px-3 py-2">รวม (THB){thbShown.length < shown.length && <div className="text-xs font-normal text-slate-500">ไม่รวมสัญญาสกุลเงินอื่น</div>}</td>
-                <td className="px-3 text-right tabular-nums">{money(r2(thbShown.reduce((t, r) => t + r.dueP + r.dueI, 0)))}</td>
-                {canWrite && <><td className="px-3 text-right tabular-nums">{money(r2(thbShown.reduce((t, r) => t + n(tot[r.id]), 0)))}</td><td /></>}</tr>
+                <td className="px-3 text-right tabular-nums">{money(thbDue)}</td>
+                {canWrite && <><td className="px-3 text-right tabular-nums">{money(thbTyped)}</td><td /></>}</tr>
             </tfoot>
           )}
         </table>
