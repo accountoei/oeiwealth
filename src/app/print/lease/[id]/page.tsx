@@ -20,7 +20,7 @@ export default async function PrintLeasePage({ params, searchParams }: { params:
   const supabase = await createClient();
   const canReveal = me.role === "ADMIN" || me.role === "EDITOR";
   const { data: l } = await supabase.from("property_leases")
-    .select(`id,property_id,unit_label,tenant_name,contract_no,start_date,end_date,rent_amount,rent_currency,payment_frequency,payment_due_day,prorate_basis,security_deposit,utilities_billing,rent_to_asset_id,${LEASE_DETAIL_FIELDS}`)
+    .select(`id,property_id,unit_label,tenant_name,contract_no,start_date,end_date,rent_amount,rent_currency,payment_frequency,payment_due_day,prorate_basis,rent_timing,grace_days,late_fee_per_day,security_deposit,utilities_billing,rent_to_asset_id,${LEASE_DETAIL_FIELDS}`)
     .eq("id", id).is("deleted_at", null).maybeSingle();
   if (!l) notFound();
   const { data: pd } = await supabase.from("property_details").select("id,asset_id,property_type,address,land_area_sq_wa,house_no,unit_no,floor_no,building_name,assets!inner(name)")
@@ -80,6 +80,8 @@ export default async function PrintLeasePage({ params, searchParams }: { params:
     buildingSqm: sqm > 0 ? sqm : null, landSqWa: pd.land_area_sq_wa == null ? null : Number(pd.land_area_sq_wa),
     contractNo: l.contract_no, startDate: l.start_date, endDate: l.end_date, currency: l.rent_currency,
     tenant: l.tenant_name, lessors, rent, frequency: l.payment_frequency, dueDay: l.payment_due_day, prorate: l.prorate_basis,
+    timing: l.rent_timing ?? "ADVANCE", graceDays: Number(l.grace_days ?? 0),
+    rentLateFee: l.late_fee_per_day == null ? null : Number(l.late_fee_per_day),
     deposit: l.security_deposit == null || Number(l.security_deposit) <= 0 ? null : Number(l.security_deposit),
     utilities: l.utilities_billing,
     bank: bank ? { name: bank.bank_name, accountName: bank.account_name, accountNo } : null,
@@ -90,7 +92,7 @@ export default async function PrintLeasePage({ params, searchParams }: { params:
   const warn: string[] = [];
   if (lessors.length === 0) warn.push("ยังไม่ได้ระบุเจ้าของทรัพย์สิน — ช่องผู้ให้เช่าจะเว้นว่าง");
   if (lessors.some((x) => !x.address)) warn.push("สมาชิกบางคนยังไม่มีที่อยู่ในหน้า Family — ช่องที่อยู่จะเว้นเส้นให้เขียนเอง");
-  if (!l.tenant_address || !l.tenant_id_last4) warn.push("ยังไม่ได้กรอกเลขบัตร / ที่อยู่ผู้เช่า — กด \"รายละเอียดสัญญา\" ที่การ์ดสัญญาในหน้าทรัพย์สิน (ว่าง = เว้นเส้นให้เขียนเอง)");
+  if (!l.tenant_address || !l.tenant_id_last4) warn.push("ยังไม่ได้กรอกเลขบัตร / ที่อยู่ผู้เช่า — กด \"แก้ไขสัญญา\" ที่การ์ดสัญญาในหน้าทรัพย์สิน (ว่าง = เว้นเส้นให้เขียนเอง)");
   if (l.tenant_id_last4 && !tenantId) warn.push("เลขบัตร / ทะเบียนผู้เช่าแสดงเต็มเฉพาะ ADMIN / EDITOR — สิทธิ์ของคุณเห็น 4 ตัวท้าย");
   if (l.contract_place_type === "LESSOR" && !place) warn.push("ผู้ให้เช่าที่เลือกเป็นสถานที่ทำสัญญายังไม่มีที่อยู่ในหน้า Family — ช่อง \"ทำที่\" จะเว้นเส้น");
   if (termMonths(l.start_date, l.end_date) > 36) warn.push("สัญญาเกิน 3 ปี ต้องจดทะเบียนการเช่าที่สำนักงานที่ดิน (ไม่จดทะเบียน ฟ้องบังคับได้เพียง 3 ปี)");

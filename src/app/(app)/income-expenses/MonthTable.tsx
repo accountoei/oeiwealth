@@ -23,6 +23,8 @@ export type MonthRow = {
   pay?: string;
   /** เลยกำหนด → ตัวแดงใต้วันที่ */
   late?: boolean;
+  /** ค่าเช่าที่เลยวันครบกำหนดแต่ยังอยู่ในวันผ่อนผัน → ตัวส้ม "ครบกำหนด" ใต้วันที่ */
+  inGrace?: boolean;
   item: ReactNode; account: ReactNode;
   /** ช่องสถานะ: ปุ่มคำสั่ง หรือป้ายสถานะ */
   action: ReactNode;
@@ -166,7 +168,8 @@ export default function MonthTable({ kind, rows, empty, banks = [], cards = [], 
               {shown.map((r) => (
                 <tr key={r.key} data-row={r.key} className={`align-top ${r.status === "DISMISSED" ? "text-slate-400" : ""}`}>
                   <td className="whitespace-nowrap py-2 pr-2">{r.date ? `${r.date.slice(8, 10)}/${r.date.slice(5, 7)}/${Number(r.date.slice(0, 4)) + 543}` : ""}
-                    {r.late && <div className="text-xs font-medium text-red-600">เลยกำหนด</div>}</td>
+                    {r.late && <div className="text-xs font-medium text-red-600">เลยกำหนด</div>}
+                    {r.inGrace && <div className="text-xs font-medium text-amber-700">ครบกำหนด</div>}</td>
                   <td className="px-2 py-2">{r.item}</td>
                   <td className="px-2 py-2 text-xs text-slate-600">{r.account}</td>
                   <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-slate-600">{r.expected != null ? money(r.expected, r.currency) : ""}</td>

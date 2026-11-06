@@ -4735,4 +4735,61 @@ SELECT t.ok((:'co_y'::jsonb ->> 'net_transfer')::numeric = 2500
         AND (SELECT deposit_settlement_type IS NULL AND terminated_date = '2026-09-15' FROM public.property_leases WHERE id = :'lease_y')
         AND (SELECT deposit_held = 0 AND advance_refund = 2500 FROM public.lease_closeouts WHERE lease_id = :'lease_y' AND deleted_at IS NULL),
             'ผู้เช่าออก (ไม่มีเงินประกัน): ออก 15 ก.ย. → คืนค่าเช่าล่วงหน้า 2,500 (15 จาก 30 วัน)');
+\echo '== 19. ผ่อนผันค่าเช่า + ค่าปรับล่าช้า + ชำระหลังสิ้นรอบ (6 พ.ย. 2026)'
+-- ชำระหลังสิ้นรอบ: ยอดเหมือนเดิม · ครบกำหนดวันถัดจากวันสุดท้ายของงวด
+SELECT t.ok((SELECT due_date = '2026-11-05' AND expected_amount = 5806.45 AND cycle_end = '2026-11-04'
+               FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL', 'ARREARS') WHERE income_period = '2026-10-01')
+        AND (SELECT due_date = '2026-12-05' FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL', 'ARREARS') WHERE income_period = '2026-11-01')
+        AND (SELECT due_date = '2027-10-16' AND expected_amount = 3193.55
+               FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL', 'ARREARS') WHERE income_period = '2027-10-01')
+        AND (SELECT count(*) = 13 AND sum(expected_amount) = 108000 FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL', 'ARREARS')),
+            'ชำระหลังสิ้นรอบ: รอบ 16 ต.ค.–4 พ.ย. ครบกำหนด 5 พ.ย. · งวดสุดท้าย 5–15 ต.ค. ครบกำหนด 16 ต.ค. · รวมเท่า 12 เดือน');
+SELECT t.ok(NOT EXISTS (SELECT * FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL')
+                         EXCEPT SELECT * FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL', 'ADVANCE'))
+        AND (SELECT due_date = '2026-10-21' FROM private.lease_cycles('2026-10-16', '2027-10-15', 5, 1, 9000, 'ACTUAL') WHERE income_period = '2026-10-01'),
+            'ฉบับ 6 ช่องเดิม = จ่ายล่วงหน้า (งวดแรกภายใน 5 วัน)');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$UPDATE public.property_leases SET rent_timing = 'LATER' WHERE id = '$$ || :'lease_a' || $$'$$, 'pl_rent_timing_ck', 'วิธีชำระ: ADVANCE / ARREARS เท่านั้น');
+SELECT t.fails($$UPDATE public.property_leases SET grace_days = 91 WHERE id = '$$ || :'lease_a' || $$'$$, 'pl_grace_days_ck', 'ผ่อนผัน: 0–90 วัน');
+SELECT t.fails($$UPDATE public.property_leases SET late_fee_per_day = -1 WHERE id = '$$ || :'lease_a' || $$'$$, 'pl_late_fee_ck', 'ค่าปรับ: ไม่ติดลบ');
+SELECT t.ok((SELECT rent_timing = 'ADVANCE' AND grace_days = 15 AND late_fee_per_day IS NULL FROM public.property_leases WHERE id = :'lease_a'),
+            'สัญญาเดิม: จ่ายล่วงหน้า · ผ่อนผัน 15 วัน · ไม่มีค่าปรับ');
+-- ครบกำหนด 15 วันก่อน (ยังอยู่ในช่วงผ่อนผัน) · ครบกำหนด 25 วันก่อน (เกิน 10 วัน × 100)
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount, payment_due_day, late_fee_per_day)
+  VALUES (:'prop_a', 'ชั้น 7', 'ผู้เช่า ผ่อนผัน', current_date - 20, current_date + 340, 6000, extract(day FROM current_date - 20)::int, 100),
+         (:'prop_a', 'ชั้น 8', 'ผู้เช่า ล่าช้า', current_date - 30, current_date + 330, 6000, extract(day FROM current_date - 30)::int, 100);
+SELECT id AS lease_g FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ผ่อนผัน' \gset
+SELECT id AS lease_h FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ล่าช้า' \gset
+SELECT t.ok((SELECT status = 'OVERDUE' AND in_grace AND days_past_due = 15 AND late_fee IS NULL
+               FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_g' AND income_period = date_trunc('month', current_date - 20)::date)
+        AND (SELECT status = 'OVERDUE' AND NOT in_grace AND days_past_due = 25 AND late_fee = 1000 AND grace_days = 15 AND late_fee_per_day = 100
+               FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_h' AND income_period = date_trunc('month', current_date - 30)::date),
+            'ผ่อนผัน 15 วัน: เลยกำหนด 15 วัน = ครบกำหนด (ไม่ปรับ) · 25 วัน = ล่าช้า ค่าปรับ (25 − 15) × 100 = 1,000');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.v_expected_income WHERE source_type = 'RECURRING'
+                          AND (grace_days IS NOT NULL OR in_grace OR late_fee IS NOT NULL OR rent_timing IS NOT NULL)),
+            'รายได้ประจำ (ไม่ใช่ค่าเช่า): ไม่มีผ่อนผัน / ค่าปรับ');
+SELECT t.fails($$SELECT public.batch_record_rent(jsonb_build_array(jsonb_build_object('lease_id', '$$ || :'lease_h' || $$', 'income_period', date_trunc('month', current_date - 30)::date,
+                 'date', current_date, 'amount', 6000, 'late_fee', -5)))$$, 'ไม่ติดลบ', 'รับค่าเช่า: ค่าปรับติดลบไม่ได้');
+SELECT public.batch_record_rent(jsonb_build_array(jsonb_build_object('lease_id', :'lease_h', 'income_period', date_trunc('month', current_date - 30)::date,
+  'date', current_date, 'amount', 6000, 'late_fee', 1000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')))) AS rent_h \gset
+SELECT t.ok(:'rent_h'::int = 1
+        AND (SELECT count(*) = 1 FROM public.income_transactions WHERE lease_id = :'lease_h' AND income_type = 'RENT' AND amount = 6000 AND deleted_at IS NULL)
+        AND (SELECT count(*) = 1 FROM public.income_transactions WHERE lease_id = :'lease_h' AND income_type = 'OTHER' AND income_subtype = 'ค่าปรับชำระค่าเช่าล่าช้า'
+               AND amount = 1000 AND date = current_date AND received_to_asset_id = t.a('KBank ออมทรัพย์') AND deleted_at IS NULL)
+        AND (SELECT status = 'RECEIVED' AND received_amount = 6000 AND late_fee IS NULL AND NOT in_grace
+               FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_h' AND income_period = date_trunc('month', current_date - 30)::date),
+            'รับค่าเช่า + ค่าปรับ: ค่าเช่า 6,000 + รายได้อื่น "ค่าปรับชำระค่าเช่าล่าช้า" 1,000 เข้าบัญชีเดียวกัน · งวดนั้นได้รับแล้ว (ค่าปรับไม่นับเป็นค่าเช่า)');
+-- ชำระหลังสิ้นรอบ: งวดแรกครบกำหนดวันจ่ายรอบถัดไป (ยังไม่เลยกำหนด)
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount, payment_due_day, rent_timing)
+  VALUES (:'prop_a', 'ชั้น 9', 'ผู้เช่า หลังสิ้นรอบ', current_date - 20, current_date + 340, 6000, extract(day FROM current_date - 20)::int, 'ARREARS');
+SELECT id AS lease_i FROM public.property_leases WHERE tenant_name = 'ผู้เช่า หลังสิ้นรอบ' \gset
+SELECT t.ok((SELECT status = 'PENDING' AND due_date = cycle_end + 1 AND due_date > current_date AND rent_timing = 'ARREARS'
+               FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_i' AND income_period = date_trunc('month', current_date - 20)::date)
+        AND NOT EXISTS (SELECT 1 FROM public.lease_rent_schedule(:'lease_i') WHERE due_date <> cycle_end + 1),
+            'ชำระหลังสิ้นรอบ: งวดแรกยังไม่ถึงกำหนด (รอรับ) · ตารางค่าเช่าในสัญญาครบกำหนดวันถัดจากสิ้นรอบทุกงวด');
+UPDATE public.property_leases SET rent_timing = 'ADVANCE', grace_days = 0, late_fee_per_day = 50 WHERE id = :'lease_i';
+SELECT t.ok((SELECT rent_timing = 'ADVANCE' AND grace_days = 0 AND late_fee_per_day = 50 FROM public.property_leases WHERE id = :'lease_i')
+        AND (SELECT status = 'OVERDUE' AND NOT in_grace AND late_fee = 750
+               FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_i' AND income_period = date_trunc('month', current_date - 20)::date),
+            'EDITOR แก้วิธีชำระ / ผ่อนผัน / ค่าปรับได้ · จ่ายล่วงหน้า ไม่ผ่อนผัน → เลยกำหนด 15 วัน × 50 = 750');
 \echo 'ALL SCENARIO TESTS PASSED'

@@ -26,7 +26,7 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   const [{ data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }, { data: pendH }, { data: pendG }] = await Promise.all([
     isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
     supabase.from("v_fx_status").select("currency,latest_rate_date,is_stale"),
-    supabase.from("v_expected_income").select("name,income_period,status").eq("status", "OVERDUE"),
+    supabase.from("v_expected_income").select("name,income_period,status,source_type,in_grace").eq("status", "OVERDUE"),
     supabase.from("v_liabilities_all").select("name,liability_source,derived_status").not("derived_status", "is", null),
     supabase.from("v_holdings_active").select("name,portfolio_asset_id,status,derived_status,valued_at_cost,maturity_date").eq("status", "ACTIVE"),
     supabase.from("v_lease_status").select("tenant_name,unit_label,end_date,property_asset_id,lease_status").eq("lease_status", "EXPIRING_SOON"),
@@ -66,7 +66,14 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   if ((fups ?? []).length) attention.push({ text: `กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
   const premOver = (insOverdue ?? []).filter((x) => x.kind === "PREMIUM").length;
   if (premOver) attention.push({ text: `เบี้ยประกันเลยกำหนด ${premOver} งวด`, href: "/income-expenses?tab=expense", tone: "red" });
-  if ((expected ?? []).length) attention.push({ text: `รายได้เลยกำหนดยังไม่ได้รับ ${(expected ?? []).length} รายการ`, href: "/income-expenses?tab=income", tone: "amber" });
+  // ค่าเช่า: ภายในวันผ่อนผัน = ส้ม · เกินวันผ่อนผัน = แดง (เจ้าของ 6 พ.ย. 2026) · รายได้ประจำอื่นยังเป็นส้ม
+  const rentLate = (expected ?? []).filter((x) => x.source_type === "LEASE");
+  const rentRed = rentLate.filter((x) => !x.in_grace).length;
+  const rentGrace = rentLate.length - rentRed;
+  const otherLate = (expected ?? []).length - rentLate.length;
+  if (rentRed) attention.push({ text: `ค่าเช่าเลยกำหนด (เกินวันผ่อนผัน) ${rentRed} งวด`, href: "/property?tab=income", tone: "red" });
+  if (rentGrace) attention.push({ text: `ค่าเช่าครบกำหนด ยังไม่ได้รับ (อยู่ในวันผ่อนผัน) ${rentGrace} งวด`, href: "/property?tab=income", tone: "amber" });
+  if (otherLate) attention.push({ text: `รายได้เลยกำหนดยังไม่ได้รับ ${otherLate} รายการ`, href: "/income-expenses?tab=income", tone: "amber" });
   (liabs ?? []).forEach((l) => {
     if (l.derived_status === "PAID_AFTER_BALANCE_DATE") attention.push({ text: `${l.name}: จ่ายบัตรแล้ว ยังไม่อัปเดตยอด`, href: "/liabilities#cards", tone: "amber" });
     if (l.derived_status === "DEPOSIT_REFUND_OVERDUE") attention.push({ text: `${l.name}: เงินประกันเลยกำหนดคืน`, href: "/property", tone: "red" });

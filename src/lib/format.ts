@@ -203,6 +203,13 @@ export const REBILL_SUBTYPE = "ค่าน้ำไฟเรียกเก็�
 export const PRORATE_BASIS_LABEL: Record<string, string> = {
   ACTUAL: "ตามจำนวนวันจริงของรอบ (28–31 วัน)", DAYS30: "หาร 30 วันทุกรอบ",
 };
+/** ชำระค่าเช่า (property_leases.rent_timing · ตกลง 6 พ.ย. 2026) */
+export const RENT_TIMING_LABEL: Record<string, string> = {
+  ADVANCE: "ล่วงหน้าต้นรอบ",
+  ARREARS: "หลังสิ้นรอบ",
+};
+/** ผ่อนผันค่าเช่าหลังวันครบกำหนด (วัน) · ค่าเริ่มต้นของสัญญาใหม่ */
+export const RENT_GRACE_DAYS_DEFAULT = 15;
 /** ราคาตลาด Property (อ้างอิง · ไม่นับเข้า Net Worth · ตกลง 28 ต.ค. 2026) */
 export const MARKET_METHOD_LABEL: Record<string, string> = {
   OWNER_ESTIMATE: "เจ้าของประเมินเอง", BROKER: "นายหน้าประเมิน", APPRAISER: "ผู้ประเมินอิสระ / ธนาคาร",

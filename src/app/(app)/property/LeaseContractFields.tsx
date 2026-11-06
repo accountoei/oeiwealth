@@ -38,7 +38,7 @@ function IdField({ juristic, last4, copyFrom }: { juristic: boolean; last4: stri
 
 /**
  * ผู้เช่า (บุคคล / นิติบุคคล) · สถานที่ทำสัญญา · แจ้งเลิกล่วงหน้า · ค่าเสียหายส่งคืนล่าช้า · พยาน
- * ชื่อ input ขึ้นต้นด้วย lease_ · ใช้ทั้งฟอร์มสัญญาใหม่และปุ่ม "รายละเอียดสัญญา" · เลขผู้เช่าเฉพาะ ADMIN / EDITOR (canSensitive)
+ * ชื่อ input ขึ้นต้นด้วย lease_ · ใช้ทั้งฟอร์มสัญญาใหม่และปุ่ม "แก้ไขสัญญา" · เลขผู้เช่าเฉพาะ ADMIN / EDITOR (canSensitive)
  */
 export default function LeaseContractFields({ v, opt, canSensitive, idCopyFrom }: {
   v?: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;

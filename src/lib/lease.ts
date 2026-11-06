@@ -32,7 +32,7 @@ export function nextDay(d: string) {
  *   รอบนับจากวันจ่าย · วันจ่ายตรงวันเริ่ม = งวดเต็ม · ไม่ตรง = วันเริ่มถึงก่อนวันจ่ายของเดือนถัดไป คิดตามจำนวนวัน
  *   basis ACTUAL = ÷ วันจริงของรอบ · DAYS30 = ÷ 30 (ไม่เกินค่าเช่าเต็มรอบ)
  */
-export function firstRentCycle(start: string, dueDay: number | null, rent: number, basis: string, step = 1) {
+export function firstRentCycle(start: string, dueDay: number | null, rent: number, basis: string, step = 1, timing = "ADVANCE") {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !(step > 0)) return null;
   const y0 = Number(start.slice(0, 4)), m0 = Number(start.slice(5, 7)) - 1, d0 = Number(start.slice(8, 10));
   const day = dueDay && dueDay >= 1 && dueDay <= 31 ? dueDay : d0;
@@ -50,7 +50,8 @@ export function firstRentCycle(start: string, dueDay: number | null, rent: numbe
     amount += n >= len ? rent : basis === "DAYS30" ? Math.min(rent, (rent * n) / (30 * step)) : (rent * n) / len;
   }
   const to = new Date(anchor(step) - DAY).toISOString().slice(0, 10);
-  const due = new Date(s + 5 * DAY).toISOString().slice(0, 10);
+  // จ่ายล่วงหน้า: ภายใน 5 วันนับจากวันเริ่มสัญญา · จ่ายหลังสิ้นรอบ: วันถัดจากวันสุดท้ายของงวด (= วันจ่ายรอบถัดไป)
+  const due = new Date(timing === "ARREARS" ? anchor(step) : s + 5 * DAY).toISOString().slice(0, 10);
   return { from: start, to, days: Math.round((anchor(step) - s) / DAY), amount: Math.round(amount * 100) / 100, due, full: Math.abs(amount - rent) < 0.005 };
 }
 

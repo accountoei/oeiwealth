@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FREQ_LABEL, PRORATE_BASIS_LABEL, UTILITIES_BILLING_LABEL, money, thDate } from "@/lib/format";
+import { FREQ_LABEL, PRORATE_BASIS_LABEL, RENT_GRACE_DAYS_DEFAULT, RENT_TIMING_LABEL, UTILITIES_BILLING_LABEL, money, thDate } from "@/lib/format";
 import { firstRentCycle, nextDay, termEnd, termMonths } from "@/lib/lease";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "./LeaseContractFields";
@@ -17,6 +17,7 @@ export type LeasePrefill = Partial<LeaseDetail> & {
   id: string; label: string; unit_label: string | null; tenant_name: string; start_date: string; end_date: string;
   terminated_date: string | null; rent_amount: number; rent_currency: string; payment_frequency: string; payment_due_day: number | null;
   rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null; prorate_basis: string | null;
+  rent_timing?: string | null; grace_days?: number | null; late_fee_per_day?: number | null;
 };
 export const DEPOSIT_MONTHS_DEFAULT = 2;
 const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
@@ -27,7 +28,7 @@ const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
  *   ต่อสัญญา: เลือกสัญญาเดิม → ดึงผู้เช่า ค่าเช่า บัญชี รายละเอียดสัญญามาให้ · เริ่มวันถัดจากสัญญาเดิม อายุเท่าเดิม
  *     ยกเงินประกันได้เฉพาะตอนต่อสัญญา และยกจากฉบับที่เลือกเท่านั้น (สัญญาใหม่กรอกเอง = ไม่ยก · ตกลง 6 พ.ย. 2026)
  *   งวดแรก: แสดงตัวอย่างตามวันเริ่ม / วันจ่าย / วิธีคิดวันเศษ (สูตรจริง = private.lease_cycles)
- *   detail = ส่วนรายละเอียดสำหรับพิมพ์สัญญา (ไม่ส่ง = ไม่แสดง เช่นฟอร์มเพิ่มทรัพย์สินใหม่ → กรอกทีหลังที่ปุ่ม "รายละเอียดสัญญา")
+ *   detail = ส่วนรายละเอียดสำหรับพิมพ์สัญญา (ไม่ส่ง = ไม่แสดง เช่นฟอร์มเพิ่มทรัพย์สินใหม่ → กรอกทีหลังที่ปุ่ม "แก้ไขสัญญา")
  */
 export default function LeaseFields({ banks, goLive, currency = "THB", carryOptions = [], defaultStart, renewals = [], detail, initialFrom }: {
   banks: Bank[]; goLive: string; currency?: string; carryOptions?: CarryOption[]; defaultStart?: string;
@@ -72,8 +73,9 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
   const [freq, setFreq] = useState(p?.payment_frequency ?? "MONTHLY");
   const [dueDay, setDueDay] = useState(p?.payment_due_day ? String(p.payment_due_day) : "");
   const [basis, setBasis] = useState(p?.prorate_basis ?? "ACTUAL");
+  const [timing, setTiming] = useState(p?.rent_timing ?? "ADVANCE");
   const step = freq === "MONTHLY" ? 1 : freq === "QUARTERLY" ? 3 : freq === "YEARLY" ? 12 : 0;
-  const first = step && start && num(rent) > 0 ? firstRentCycle(start, num(dueDay) || null, num(rent), basis, step) : null;
+  const first = step && start && num(rent) > 0 ? firstRentCycle(start, num(dueDay) || null, num(rent), basis, step, timing) : null;
   const effRecv = carried ? start : (recvDate || start);
   const beforeGoLive = !!effRecv && effRecv < goLive;
   const autoDeposit = num(rent) * num(depMonths);
@@ -137,11 +139,28 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
         </select>
         <span className="mt-1 block text-xs text-slate-500">ใช้กับงวดแรก / งวดสุดท้ายที่ไม่เต็มรอบ (เข้าอยู่ไม่ตรงวันจ่าย · ออกก่อนครบรอบ)</span>
       </label>
+      <label className={label}>ชำระค่าเช่า
+        <select name="lease_rent_timing" value={timing} onChange={(e) => setTiming(e.target.value)} className={input}>
+          {Object.entries(RENT_TIMING_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <span className="mt-1 block text-xs text-slate-500">หลังสิ้นรอบ = เช่น วางประกัน 1 เดือน + ล่วงหน้า 1 เดือน (กรอกเงินประกัน 2 เดือน) แล้วจ่ายค่าเช่าเมื่อครบรอบ</span>
+      </label>
+      <div className="grid grid-cols-2 gap-3">
+        <label className={label}>ผ่อนผัน (วัน)
+          <input name="lease_grace_days" type="number" min={0} max={90} defaultValue={p?.grace_days ?? RENT_GRACE_DAYS_DEFAULT} className={input} />
+        </label>
+        <label className={label}>ค่าปรับล่าช้า (ต่อวัน)
+          <input name="lease_late_fee_per_day" inputMode="decimal" defaultValue={p?.late_fee_per_day != null ? money(p.late_fee_per_day) : ""} placeholder="ว่าง = ไม่คิด" className={input} />
+        </label>
+        <span className="col-span-2 -mt-2 text-xs text-slate-500">เลยวันครบกำหนดไม่เกินวันผ่อนผัน = ยังไม่ล่าช้า · ค่าปรับคิดเฉพาะวันที่เกิน</span>
+      </div>
       {first && (
         <p className="md:col-span-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-slate-700">
           งวดแรก {thDate(first.from)} – {thDate(first.to)}
           {first.full ? ` = ${money(first.amount)} (เต็มรอบ)` : ` (${first.days} วัน) = ${money(first.amount)} คิดตามจำนวนวัน`}
-          {" "}ครบกำหนด {thDate(first.due)} (ภายใน 5 วันนับจากวันเริ่มสัญญา) · งวดต่อไปเต็มรอบ จ่ายล่วงหน้าทุกวันที่ {num(dueDay) || Number(start.slice(8, 10))}
+          {timing === "ARREARS"
+            ? <>{" "}ครบกำหนด {thDate(first.due)} (หลังสิ้นรอบ) · งวดต่อไปเต็มรอบ จ่ายหลังสิ้นรอบทุกวันที่ {num(dueDay) || Number(start.slice(8, 10))} · งวดสุดท้ายหักจากเงินประกันตอนผู้เช่าออก</>
+            : <>{" "}ครบกำหนด {thDate(first.due)} (ภายใน 5 วันนับจากวันเริ่มสัญญา) · งวดต่อไปเต็มรอบ จ่ายล่วงหน้าทุกวันที่ {num(dueDay) || Number(start.slice(8, 10))}</>}
         </p>
       )}
       <label className={label}>บัญชีรับค่าเช่า (ค่าตั้งต้นตอนบันทึกรับ · ใช้ในสัญญาที่พิมพ์)
