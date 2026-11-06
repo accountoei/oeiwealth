@@ -5,7 +5,6 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { useActionSlot } from "@/components/ActionBar";
 import { addPerson, updateFamily, type ActionState } from "./actions";
 import { ROW_BTN, SMALL_DEL_BTN, SMALL_BTN, familyInitials, RELATIONSHIP_LABEL } from "@/lib/format";
-import { resizePhoto } from "./[id]/details-form";
 import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
@@ -26,6 +25,30 @@ function RelationshipSelect({ defaultValue }: { defaultValue?: string }) {
   );
 }
 
+/**
+ * รูปครอบครัว: ไม่ตัดรูป (กล่องครอบครัวแสดงแนวนอน 3:2 · เมนูซ้ายแสดงสี่เหลี่ยมเล็ก) · ย่อให้ด้านยาวไม่เกิน 840 px
+ * ให้คมบนจอความละเอียดสูง · ไฟล์ไม่เกิน 300,000 ตัวอักษรตามเงื่อนไขฐานข้อมูล (ลดคุณภาพทีละขั้นถ้ายังใหญ่) (ตกลง 6 พ.ย. 2026)
+ */
+async function resizeFamilyPhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, bad) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("เปิดรูปไม่ได้ — ลองใช้ไฟล์ JPG หรือ PNG")); i.src = url;
+    });
+    const scale = Math.min(1, 840 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.naturalWidth * scale)); c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);   // PNG โปร่งใส → พื้นขาว (JPEG ไม่มีความโปร่งใส)
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    for (const q of [0.82, 0.72, 0.62, 0.5]) {
+      const d = c.toDataURL("image/jpeg", q);
+      if (d.length <= 290000) return d;
+    }
+    throw new Error("รูปใหญ่เกินไป — ลองใช้รูปอื่น");
+  } finally { URL.revokeObjectURL(url); }
+}
+
 /** แก้ไขชื่อครอบครัว + รูป + หัวหน้าครอบครัว (ADMIN) — เปลี่ยนหัวหน้าต้องยืนยัน เพราะความสัมพันธ์ของทุกคนจะคำนวณใหม่ */
 export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
   name: string; headId: string | null; photo?: string | null; candidates: { id: string; name: string }[];
@@ -33,7 +56,7 @@ export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState(updateFamily, {});
   const [head, setHead] = useState(headId ?? "");
-  // รูปครอบครัว (มุมซ้ายบนของเมนู) — ย่อในเบราว์เซอร์แบบเดียวกับรูปสมาชิก
+  // รูปครอบครัว (กล่องครอบครัว + มุมซ้ายบนของเมนู) — ย่อในเบราว์เซอร์ · photo0 = ลิงก์รูปปัจจุบัน
   const [photo, setPhoto] = useState<string | null>(photo0);
   const [newPhoto, setNewPhoto] = useState("");
   const [clear, setClear] = useState(false);
@@ -46,7 +69,7 @@ export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
   async function pick(f: File | undefined) {
     setPhotoErr("");
     if (!f) return;
-    try { const d = await resizePhoto(f); setNewPhoto(d); setPhoto(d); setClear(false); }
+    try { const d = await resizeFamilyPhoto(f); setNewPhoto(d); setPhoto(d); setClear(false); }
     catch (e) { setPhotoErr(e instanceof Error ? e.message : String(e)); }
   }
   return present(trigger, (
@@ -59,14 +82,14 @@ export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
         <div className="flex flex-wrap items-center gap-4">
           {photo
             // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={photo} alt="" className="h-16 w-16 rounded-xl object-cover" />
-            : <span className="grid h-16 w-16 place-items-center rounded-xl bg-blue-600 text-lg font-bold text-white">{familyInitials(name)}</span>}
+            ? <img src={photo} alt="" className="aspect-[3/2] w-36 rounded-xl bg-slate-100 object-cover" />
+            : <span className="grid aspect-[3/2] w-36 place-items-center rounded-xl bg-blue-600 text-2xl font-bold text-white">{familyInitials(name)}</span>}
           <div className="space-y-1 text-sm">
             <label className={`${SMALL_BTN} cursor-pointer`}>
               เลือกรูปครอบครัว<input type="file" accept="image/*" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
             </label>
             {photo && <button type="button" onClick={() => { setPhoto(null); setNewPhoto(""); setClear(true); }} className={`${SMALL_DEL_BTN} ml-2`}>ลบรูป (ใช้ชื่อย่อแทน)</button>}
-            <p className="text-xs text-slate-500">ไม่บังคับ · แสดงมุมซ้ายบนของเมนู · ระบบย่อรูปให้อัตโนมัติ</p>
+            <p className="text-xs text-slate-500">ไม่บังคับ · แสดงในกล่องครอบครัว (แนวนอน) และมุมซ้ายบนของเมนู · ระบบย่อรูปให้อัตโนมัติ</p>
             {photoErr && <p className="text-xs text-red-600">{photoErr}</p>}
           </div>
         </div>
