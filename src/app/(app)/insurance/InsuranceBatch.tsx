@@ -8,7 +8,6 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
-import { InfoTip } from "@/components/HeaderBar";
 import { BatchBar, BatchSave, FillAll } from "@/components/BatchSave";
 import type { ReactNode } from "react";
 
@@ -82,17 +81,9 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
     {cf.dialog}
     {/* ฟอร์มบันทึกครอบเฉพาะแถบบันทึกด้านบน (BatchSave) ไม่ครอบตาราง: ในตารางมีปุ่ม "ยกเลิก" ที่เป็นฟอร์มของตัวเอง (ฟอร์มซ้อนฟอร์ม = กดไม่ได้ · 5 พ.ย. 2026) */}
     <div className="space-y-3">
-      {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · บริษัท · ปี · ใส่ยอดทุกแถว | บันทึก + วันที่ */}
+      {/* แถบบน (ตกลง 6 พ.ย. 2026): ปี (ช่องแรก · ไม่มีชื่อกล่อง) · บริษัท · ใส่ยอดทุกแถว | บันทึก + วันที่ ⓘ */}
       <BatchBar
-        title={<>{prem ? "เบี้ยประกัน" : "ผลประโยชน์"} ปี {year + 543}
-          <InfoTip label="คำอธิบาย">
-        {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
-          {" "}· กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ (ลบแล้วงวดกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน)</>
-          : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · แก้ยอดที่รับ: กด &ldquo;ยกเลิก&rdquo; (ย้อนทั้งก้อน) แล้วบันทึกใหม่
-          {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
-        {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
-          </InfoTip></>}
-        filters={<>{filter}<YearSelect options={years} value={year} hrefOf={hrefOf} />
+        filters={<><YearSelect options={years} value={year} hrefOf={hrefOf} />{filter}
           {canWrite && later > 0 && (
             <label className="flex items-center gap-2 text-slate-600">
               <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
@@ -105,7 +96,12 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก{" "}·
+        {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
+          {" "}· กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ (ลบแล้วงวดกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน)</>
+          : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · แก้ยอดที่รับ: กด &ldquo;ยกเลิก&rdquo; (ย้อนทั้งก้อน) แล้วบันทึกใหม่
+          {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
+        {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</>} />
         )}
       </BatchBar>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
