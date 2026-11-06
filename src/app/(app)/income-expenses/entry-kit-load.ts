@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { buildHints } from "@/lib/category-hints";
 import type { Bank, Card, Liab } from "./forms";
-import { EXP_SELECT, INC_SELECT, type KitCtx, type Move } from "./entry-kit";
+import { EXP_SELECT, INC_SELECT, closeoutIdSet, type KitCtx, type Move } from "./entry-kit";
 import { loadPfCash } from "@/lib/pf-cash";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
@@ -15,7 +15,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   const expIds = [...new Set(moves.filter((m) => m.source_entity_type === "EXPENSE" && m.source_entity_id).map((m) => m.source_entity_id as string))];
   const none = Promise.resolve({ data: [] as never[] });
   const [{ data: banksRaw }, { data: cardsRaw }, { data: cardBal }, { data: liabRaw }, { data: persons }, { data: cats }, { data: hintRows },
-    { data: incs }, { data: exps }, pfCash] = await Promise.all([
+    { data: incs }, { data: exps }, pfCash, { data: closeouts }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
@@ -29,6 +29,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
     incIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("id", incIds) : none,
     expIds.length ? supabase.from("expense_items").select(EXP_SELECT).in("id", expIds) : none,
     loadPfCash(supabase),
+    supabase.from("lease_closeouts").select("income_ids,expense_id").is("deleted_at", null),
   ]);
   // รายได้ที่แถวอื่นอ้างถึง: ปันผล / ดอกเบี้ยในพอร์ตที่เข้าบัญชีนี้ (แก้รายการในพอร์ต) · ดอกเบี้ยเงินกู้ภายในของผู้ให้กู้ (แก้จากฝั่งผู้กู้)
   const txIds = [...new Set(moves.filter((m) => m.source_entity_type === "INVESTMENT_TX" && m.source_entity_id).map((m) => m.source_entity_id as string))];
@@ -51,5 +52,6 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
     expHints: buildHints(hintRows ?? [], expCats), moves,
     incById: new Map([...(incs ?? []), ...(txIncs ?? []), ...(ilIncs ?? [])].map((i) => [i.id as string, i])), expById: new Map((exps ?? []).map((i) => [i.id as string, i])),
     otherAssets: (others ?? []) as { id: string; name: string; asset_type: string }[], tabLinks: false,
+    closeoutIds: closeoutIdSet(closeouts),
   };
 }

@@ -87,7 +87,16 @@ export type KitCtx = {
   tabLinks: boolean;
   /** บ้าน / ที่ดิน ให้เลือกตอนแก้ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค */
   properties?: { id: string; name: string }[];
+  /** รายได้ / ค่าใช้จ่ายที่สร้างตอนบันทึกผู้เช่าออก → แก้ / ลบที่นี่ไม่ได้ (ยกเลิกทั้งชุดที่สัญญาเช่า · ฐานข้อมูลล็อกไว้) */
+  closeoutIds?: Set<string>;
 };
+
+/** รายการจากผู้เช่าออก: กดแก้ไม่ได้ → บอกที่ยกเลิก (ข้อความเดียวกับหน้าทรัพย์สิน) */
+export const CLOSEOUT_NOTE = <div className="text-xs text-slate-400">มาจากผู้เช่าออก · ยกเลิกที่ &ldquo;ยกเลิกผู้เช่าออก&rdquo; ในสัญญา</div>;
+
+/** id ของรายได้ / ค่าใช้จ่ายที่สร้างตอนบันทึกผู้เช่าออก (lease_closeouts ที่ยังไม่ยกเลิก) */
+export const closeoutIdSet = (rows: { income_ids: string[] | null; expense_id: string | null }[] | null | undefined) =>
+  new Set((rows ?? []).flatMap((r) => [...(r.income_ids ?? []), ...(r.expense_id ? [r.expense_id] : [])]));
 
 export function makeEntryKit(c: KitCtx) {
   const { ym, personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons, incSubs, expCats, expHints } = c;
@@ -97,6 +106,7 @@ export function makeEntryKit(c: KitCtx) {
   const otherName = new Map(c.otherAssets.map((a) => [a.id, [ASSET_PREFIX[a.asset_type], a.name].filter(Boolean).join(" ")]));
   const assetType = new Map(c.otherAssets.map((a) => [a.id, a.asset_type]));
   const bankIds = new Set(banks.map((b) => b.asset_id));
+  const fromCloseout = (id: string) => !!c.closeoutIds?.has(id);
   const placeOf = (id: string | null) => (id ? name.get(id) ?? otherName.get(id) ?? "ทรัพย์สิน" : "ภายนอก");
 
   // รายการที่สร้างจากหน้าอื่น → หน้าต้นทาง (null = บันทึกที่หน้า Income & Expenses)
@@ -114,6 +124,7 @@ export function makeEntryKit(c: KitCtx) {
     return null;
   };
   const expSource = (i: ExpRec): { href: string; label: string } | null => {
+    if (fromCloseout(i.id) && i.related_asset_id) return { href: `/property/${i.related_asset_id}`, label: "ทรัพย์สิน (ผู้เช่าออก)" };
     if (i.internal_loan_income_id) return { href: i.il?.asset_id ? `/financial/loans/${i.il.asset_id}` : "/financial/loans", label: "เงินกู้ภายในครอบครัว" };
     if (i.source_cash_movement_id) return { href: `/income-expenses?m=${ym}${personId ? `&p=${personId}` : ""}#moves`, label: "รายการโอน" };
     if (i.liability_id) return { href: `/liabilities/${i.liability_id}`, label: "หนี้สิน" };
@@ -208,7 +219,7 @@ export function makeEntryKit(c: KitCtx) {
 
   /** แก้ไข / ลบ รายได้ · button = ปุ่มเดียว (ช่องสถานะ) · ไม่ใส่ = กดที่แถว */
   const incEdit = (i: IncFull, button?: string): ReactNode => {
-    if (!canWrite || i.pending_split) return null;
+    if (!canWrite || i.pending_split || fromCloseout(i.id)) return null;
     const src = incSource(i);
     // รายได้จากพอร์ต (ปันผล / ดอกเบี้ย / คูปอง) → แก้รายการในพอร์ตที่สร้างรายได้นี้ (ช่องเดียวกับหน้าพอร์ต)
     const tx = i.source_transaction_id ? one(i.src_tx as Rec | Rec[] | null) : null;
@@ -246,7 +257,7 @@ export function makeEntryKit(c: KitCtx) {
   };
   /** แก้ไข / ลบ ค่าใช้จ่าย */
   const expEdit = (i: ExpFull, button?: string): ReactNode => {
-    if (!canWrite || i.pending_split) return null;
+    if (!canWrite || i.pending_split || fromCloseout(i.id)) return null;
     // ค่าธรรมเนียมโอน → หน้าต่างแก้การโอนต้นทาง (ค่าธรรมเนียมเป็นช่องหนึ่งของการโอน)
     if (i.source_cash_movement_id) {
       const m = moveById.get(i.source_cash_movement_id);
@@ -377,7 +388,8 @@ export function makeEntryKit(c: KitCtx) {
       // แยกก้อนได้ที่นี่ (กดที่แถว) → ป้ายไม่ต้องเป็นลิงก์
       pendingHref: withActions && canDelete || !c.tabLinks ? undefined
         : inc?.pending_split ? `${tabLink("income", "")?.href}&it=split` : exp?.pending_split ? `${tabLink("expense", "")?.href}&et=split` : undefined,
-      detail: srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type),
+      detail: <>{srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type)}
+        {canWrite && (inc || exp) && fromCloseout((inc ?? exp)!.id) && CLOSEOUT_NOTE}</>,
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? moveEdit(m)
         // รับชำระเงินให้กู้ (เงินต้น + ดอกเบี้ย) → กดที่แถว: หน้าต่างเดียวแก้ทั้งคู่ (เหมือนหน้า Loans)
         : withActions && m.parts ? pairEdit(m)
@@ -392,5 +404,8 @@ export function makeEntryKit(c: KitCtx) {
     };
   });
 
-  return { incSource, expSource, incEdit, expEdit, incSplit, expSplit, buildMoveRows, name, placeOf, bankIds };
+  /** ใต้ชื่อรายการ: มาจากผู้เช่าออก (ผู้มีสิทธิ์เขียนเท่านั้น · ผู้ดูอย่างเดียวกดแก้อะไรไม่ได้อยู่แล้ว) */
+  const closeoutNote = (id: string): ReactNode => (canWrite && fromCloseout(id) ? CLOSEOUT_NOTE : null);
+
+  return { incSource, expSource, incEdit, expEdit, incSplit, expSplit, buildMoveRows, closeoutNote, name, placeOf, bankIds };
 }
