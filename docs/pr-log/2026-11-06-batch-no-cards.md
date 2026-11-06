@@ -1,4 +1,4 @@
-# 2026-11-06 · batch-no-cards
+# #357 · 2026-11-06 · batch-no-cards
 
 ## What changed
 - Removed the 3 summary cards above the batch table on: Insurance "บันทึกรับผลประโยชน์" and "จ่ายชำระเบี้ยประกัน", Loans "บันทึกรับชำระคืนเงินกู้", Investments "บันทึกรับผลตอบแทน". The other batch tabs never had them, so all batch tabs now look the same.
