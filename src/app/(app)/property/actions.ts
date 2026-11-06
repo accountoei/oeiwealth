@@ -814,7 +814,7 @@ export async function copyTaxYearAll(_: ActionState, form: FormData): Promise<Ac
 }
 
 // ---------------- ของในทรัพย์สิน + รายการส่งมอบ (ไม่นับใน Net Worth · ตกลง 2 พ.ย. 2026) ----------------
-type InvRow = { unit_label?: string; item_type?: string; name?: string; qty?: string; brand?: string; serial_no?: string; value?: string; notes?: string };
+type InvRow = { unit_label?: string; item_type?: string; name?: string; qty?: string; brand?: string; serial_no?: string; value?: string; damage_value?: string; notes?: string };
 const t = (v: string | undefined | null) => { const x = String(v ?? "").trim(); return x === "" ? null : x; };
 const n = (v: string | undefined | null) => { const x = String(v ?? "").replace(/,/g, "").trim(); return x === "" ? null : Number(x); };
 
@@ -829,7 +829,8 @@ export async function addInventoryItems(_: ActionState, form: FormData): Promise
   const assetId = String(form.get("asset_id"));
   const rows = (readRows<InvRow>(form) ?? []).filter((r) => t(r.name));
   if (!rows.length) return { error: "ยังไม่ได้กรอกชื่อรายการ" };
-  if (rows.some((r) => { const q = n(r.qty); const v = n(r.value); return (q != null && !(q > 0)) || (v != null && !(v >= 0)) || Number.isNaN(q) || Number.isNaN(v); }))
+  if (rows.some((r) => { const q = n(r.qty); const v = n(r.value); const d = n(r.damage_value);
+    return (q != null && !(q > 0)) || (v != null && !(v >= 0)) || (d != null && !(d >= 0)) || Number.isNaN(q) || Number.isNaN(v) || Number.isNaN(d); }))
     return { error: "จำนวนต้องมากกว่า 0 และมูลค่าต้องไม่ติดลบ" };
   let expense: Record<string, unknown> | null = null;
   if (form.get("buy") === "on") {
@@ -885,7 +886,7 @@ export async function copyInventoryRoom(_: ActionState, form: FormData): Promise
   if ((from ?? "") === (to ?? "")) return { error: "เลือกห้องปลายทางที่ต่างจากห้องต้นทาง" };
   const propertyId = await propertyIdOf(supabase, assetId);
   if (!propertyId) return { error: "ไม่พบทรัพย์สิน" };
-  let q = supabase.from("property_inventory_items").select("item_type,name,qty,brand,value,notes,sort_order")
+  let q = supabase.from("property_inventory_items").select("item_type,name,qty,brand,value,damage_value,notes,sort_order")
     .eq("property_id", propertyId).is("deleted_at", null).is("disposal_type", null).order("sort_order");
   q = from == null ? q.is("unit_label", null) : q.eq("unit_label", from);
   const { data: src, error: e0 } = await q;
@@ -908,7 +909,7 @@ export async function copyInventoryToLease(_: ActionState, form: FormData): Prom
 }
 
 type HandoverRow = InvRow & { id?: string; inventory_item_id?: string; in_condition?: string; in_reading?: string; out_status?: string;
-  out_condition?: string; out_reading?: string; deduction?: string };
+  out_qty?: string; out_condition?: string; out_reading?: string; deduction?: string };
 
 /**
  * เขียนรายการส่งมอบของสัญญา: แก้แถวเดิม (มี id) · เพิ่มแถวใหม่ · ลบแถวที่เอาออก (Soft Delete)
@@ -916,12 +917,17 @@ type HandoverRow = InvRow & { id?: string; inventory_item_id?: string; in_condit
  */
 async function writeHandover(supabase: Awaited<ReturnType<typeof createClient>>, leaseId: string, raw: HandoverRow[], removed: string[]) {
   const rows = raw.filter((r) => t(r.name));
-  const nums = rows.flatMap((r) => [n(r.qty), n(r.value), n(r.in_reading), n(r.out_reading), n(r.deduction)]);
+  const nums = rows.flatMap((r) => [n(r.qty), n(r.value), n(r.damage_value), n(r.in_reading), n(r.out_reading), n(r.deduction), n(r.out_qty)]);
   if (nums.some((x) => x != null && (Number.isNaN(x) || x < 0)) || rows.some((r) => n(r.qty) === 0))
     return { error: "ตัวเลขต้องไม่ติดลบ และจำนวนต้องมากกว่า 0", added: [] as string[] };
+  // จำนวนที่ชำรุด / สูญหาย: มากกว่า 0 และไม่เกินจำนวนที่ส่งมอบ (ฐานข้อมูลตรวจซ้ำ)
+  if (rows.some((r) => { const o = n(r.out_qty); return o != null && (o <= 0 || o > (n(r.qty) ?? 1)); }))
+    return { error: "จำนวนที่ชำรุด / สูญหายต้องมากกว่า 0 และไม่เกินจำนวนที่ส่งมอบ", added: [] as string[] };
   const body = (r: HandoverRow, i: number) => ({
     item_type: r.item_type || "OTHER", name: t(r.name), qty: n(r.qty) ?? 1, brand: t(r.brand), serial_no: t(r.serial_no), value: n(r.value),
-    in_condition: t(r.in_condition), in_reading: n(r.in_reading), out_status: t(r.out_status), out_condition: t(r.out_condition),
+    damage_value: n(r.damage_value), in_condition: t(r.in_condition), in_reading: n(r.in_reading), out_status: t(r.out_status),
+    // จำนวนที่ชำรุด / สูญหาย: เก็บเฉพาะเมื่อไม่ครบ
+    out_qty: r.out_status === "DAMAGED" || r.out_status === "MISSING" ? n(r.out_qty) : null, out_condition: t(r.out_condition),
     out_reading: n(r.out_reading), deduction: n(r.deduction), notes: t(r.notes), sort_order: i + 1,
   });
   const results = await Promise.all([

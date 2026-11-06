@@ -227,9 +227,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
     supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
     // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
-    supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
+    supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,damage_value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
-    supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
+    supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,damage_value,in_condition,in_reading,out_status,out_qty,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
     supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
@@ -394,7 +394,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
   // ของในทรัพย์สิน: หลายห้อง (ชื่อห้องจากสัญญา + ที่ตั้งไว้ในของ) → มีช่องห้อง · ห้องว่าง = ส่วนกลาง / ทั้งหลัง
   type Inv = { id: string; unit_label: string | null; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null;
-    value: number | null; notes: string | null; expense_item_id: string | null; disposal_type: string | null; disposed_date: string | null;
+    value: number | null; damage_value: number | null; notes: string | null; expense_item_id: string | null; disposal_type: string | null; disposed_date: string | null;
     disposal_amount: number | null; expense_items: { date: string } | { date: string }[] | null };
   const invAll = (invRows ?? []) as Inv[];
   const inv = invAll.filter((x) => !x.disposal_type);
@@ -406,13 +406,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const multiRoom = rooms.length > 1;
   const roomsWithItems = [...new Set(inv.map((x) => x.unit_label?.trim() ?? ""))];
   type Hand = { id: string; lease_id: string; inventory_item_id: string | null; utility_id: string | null; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null; value: number | null;
+    damage_value: number | null; out_qty: number | null;
     in_condition: string | null; in_reading: number | null; out_status: string | null; out_condition: string | null; out_reading: number | null;
     deduction: number | null; notes: string | null };
   const s2 = (v: unknown) => (v == null ? "" : String(v));
   const handByLease = ((handRows ?? []) as unknown as Hand[]).reduce((m, h) => m.set(h.lease_id, [...(m.get(h.lease_id) ?? []), h]), new Map<string, Hand[]>());
   const handItems = (leaseId: string): HandoverItem[] => (handByLease.get(leaseId) ?? []).map((h) => ({
     id: h.id, pulled: !!(h.inventory_item_id || h.utility_id), item_type: h.item_type, name: h.name, qty: s2(Number(h.qty)), brand: s2(h.brand), serial_no: s2(h.serial_no),
-    value: h.value == null ? "" : money(h.value), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
+    value: h.value == null ? "" : money(h.value), damage_value: h.damage_value == null ? "" : money(h.damage_value),
+    out_qty: h.out_qty == null ? "" : s2(Number(h.out_qty)), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
     out_status: s2(h.out_status), out_condition: s2(h.out_condition), out_reading: h.out_reading == null ? "" : s2(Number(h.out_reading)),
     deduction: h.deduction == null ? "" : money(h.deduction), notes: s2(h.notes) }));
   // ค่าเสียหายจากรายการส่งมอบ → เติมให้ตอน "คืน / หักเงินประกัน" (เงินประกันคนละสกุล · ผู้เช่าออกปกติใช้ตารางตรวจของในหน้าต่างผู้เช่าออก)
@@ -804,7 +806,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               <table className="w-full min-w-[44rem] text-sm">
                 <thead className="text-left text-xs text-slate-500">
                   <tr>{multiRoom && <th className="py-1">ห้อง</th>}<th>ประเภท</th><th>รายการ</th><th className="text-right">จำนวน</th><th className="pl-4">ยี่ห้อ / รุ่น</th>
-                    <th>Serial</th><th className="text-right">มูลค่าทดแทน</th><th></th></tr>
+                    <th>Serial</th><th className="text-right">มูลค่าต่อชิ้น</th><th className="text-right">มูลค่าชำรุดต่อชิ้น</th>
+                    <th className="text-right">มูลค่าทดแทน</th><th></th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(multiRoom ? [...inv].sort((x, y) => (x.unit_label ?? "").localeCompare(y.unit_label ?? "", "th", { numeric: true })) : inv).map((x) => (
@@ -816,6 +819,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                       <td className="pl-4 text-slate-600">{x.brand ?? "-"}</td>
                       <td className="text-slate-600">{x.serial_no ?? "-"}</td>
                       <td className="text-right tabular-nums">{x.value != null ? money(x.value) : "-"}</td>
+                      <td className="text-right tabular-nums">{x.damage_value != null ? money(x.damage_value) : "-"}</td>
+                      {/* มูลค่าทดแทน = จำนวน × มูลค่าต่อชิ้น */}
+                      <td className="text-right tabular-nums">{x.value != null ? money(Number(x.qty) * Number(x.value)) : "-"}</td>
                       <td className="whitespace-nowrap pl-2 text-right">
                         {canWrite && <DisposeButton assetId={id} itemId={x.id} name={x.name} today={today} minDate={goLive || undefined}
                           banks={bankList.filter((b) => b.currency === a.currency).map((b) => [b.asset_id, b.name] as [string, string])} />}{" "}
@@ -827,7 +833,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                           { name: "qty", label: "จำนวน", type: "number" as const, value: x.qty, width: "w-20" },
                           { name: "brand", label: "ยี่ห้อ / รุ่น", value: x.brand },
                           { name: "serial_no", label: "Serial", value: x.serial_no },
-                          { name: "value", label: "มูลค่าทดแทน", type: "number" as const, value: x.value },
+                          { name: "value", label: "มูลค่าต่อชิ้น", type: "number" as const, value: x.value },
+                          { name: "damage_value", label: "มูลค่าชำรุดต่อชิ้น", type: "number" as const, value: x.damage_value },
                           { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }]} />}
                       </td>
                     </tr>

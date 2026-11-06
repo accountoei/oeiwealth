@@ -3546,6 +3546,22 @@ SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT t.ok(NOT has_function_privilege('anon', 'public.add_inventory_items(uuid,jsonb,jsonb)', 'EXECUTE')
             AND NOT has_function_privilege('anon', 'public.dispose_inventory_item(uuid,text,date,numeric,uuid,text)', 'EXECUTE')
             AND NOT has_function_privilege('anon', 'public.undo_inventory_disposal(uuid)', 'EXECUTE'), 'ของในทรัพย์สิน: anon เรียกฟังก์ชันซื้อ / ขายไม่ได้');
+-- มูลค่าชำรุดต่อชิ้น + จำนวนที่ชำรุด / สูญหาย (6 พ.ย. 2026)
+SELECT t.ok(public.add_inventory_items(:'lease_b_asset',
+  jsonb_build_array(jsonb_build_object('unit_label', :'lease_b_unit', 'item_type', 'FURNITURE', 'name', 'เก้าอี้ทดสอบ', 'qty', '4', 'value', '1,200', 'damage_value', '300'))) = 1,
+            'ของในทรัพย์สิน: เพิ่มของ 1 รายการ (มีมูลค่าชำรุดต่อชิ้น)');
+SELECT t.ok((SELECT value = 1200 AND damage_value = 300 FROM public.property_inventory_items WHERE name = 'เก้าอี้ทดสอบ'),
+            'ของในทรัพย์สิน: เก็บมูลค่าต่อชิ้น + มูลค่าชำรุดต่อชิ้น');
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 1, 'ส่งมอบ: ดึงของใหม่ 1 รายการ');
+SELECT t.ok((SELECT value = 1200 AND damage_value = 300 AND qty = 4 FROM public.lease_handover_items
+              WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ' AND deleted_at IS NULL),
+            'ส่งมอบ: ดึงของพร้อมมูลค่าชำรุดต่อชิ้น');
+UPDATE public.lease_handover_items SET out_status = 'DAMAGED', out_qty = 1, deduction = 300 WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ';
+SELECT t.ok((SELECT out_qty = 1 AND deduction = 300 FROM public.lease_handover_items WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ'),
+            'ส่งมอบ: บันทึกชำรุด 1 จาก 4 ชิ้น');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_qty = 5 WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_out_qty_ck', 'ส่งมอบ: จำนวนที่ชำรุด / สูญหายเกินจำนวนที่ส่งมอบไม่ได้');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_qty = 0 WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_out_qty_ck', 'ส่งมอบ: จำนวนที่ชำรุด / สูญหายต้องมากกว่า 0');
+SELECT t.fails($$UPDATE public.property_inventory_items SET damage_value = -1 WHERE name = 'เก้าอี้ทดสอบ'$$, 'pinv_damage_value_ck', 'ของในทรัพย์สิน: มูลค่าชำรุดต่อชิ้นติดลบไม่ได้');
 -- เงินกู้ภายในครอบครัว (2 พ.ย. 2026): ผู้กู้เป็นสมาชิก → หนี้สินของผู้กู้ · ยอดรวมครอบครัวหักกันเป็น 0
 UPDATE public.loan_details SET status = 'ACTIVE' WHERE asset_id = t.a('เงินกู้ญาติ');
 INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
