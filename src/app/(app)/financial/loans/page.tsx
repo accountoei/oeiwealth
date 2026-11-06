@@ -118,10 +118,6 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
   const monthLines = sched.filter((x) => loanOf.has(x.loan_asset_id)
     && ((x.due_date >= start && x.due_date <= end) || (x.due_date < start && ["OVERDUE", "DUE", "PARTIAL"].includes(x.status))));
   const lr = (x: Line) => loanOf.get(x.loan_asset_id)!;
-  const dueMonth = monthLines.filter((x) => x.due_date >= start).reduce((t, x) => t + thbOf(lr(x), x.total_due), 0);
-  const recvMonth = [...(pMoves ?? []).map((m) => ({ id: m.from_asset_id as string, d: m.movement_date as string, v: Number(m.amount) })),
-    ...(iRows ?? []).map((i) => ({ id: i.asset_id as string, d: i.date as string, v: Number(i.amount) }))]
-    .filter((x) => loanOf.has(x.id) && x.d >= start && x.d <= end).reduce((t, x) => t + thbOf(loanOf.get(x.id)!, x.v), 0);
   const overdueAll = sched.filter((x) => x.status === "OVERDUE" && loanOf.has(x.loan_asset_id));
   const overdueThb = overdueAll.reduce((t, x) => t + thbOf(lr(x), x.total_remaining), 0);
   const upTo = (loan: string, d: string, k: "interest_remaining" | "principal_remaining") =>
@@ -297,24 +293,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
 
       {/* ============================================================ บันทึกรับชำระคืนเงินกู้ */}
       <TabPanel id="monthly">
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">ต้องรับเดือนนี้ (เงินต้น + ดอกเบี้ย)</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums">{money(dueMonth, "THB")}</div>
-            <div className="mt-1 text-xs text-slate-500">{monthLines.filter((x) => x.due_date >= start).length} งวด</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">รับแล้วในเดือนนี้</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-700">{money(recvMonth, "THB")}</div>
-            <div className="mt-1 text-xs text-slate-500">ตามวันที่รับจริง</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-            <div className="text-xs text-slate-500">ค้างรับ (เลยกำหนด ณ วันนี้)</div>
-            <div className={`mt-1 text-xl font-semibold tabular-nums ${overdueThb > 0.005 ? "text-red-700" : ""}`}>{money(overdueThb, "THB")}</div>
-            <div className="mt-1 text-xs text-slate-500">{overdueAll.length} งวด</div>
-          </div>
-        </section>
         <LoanBatch rows={batchRows} others={batchOthers} banks={bankList} today={today} minDate={goLive} canWrite={canWrite}
+          late={{ count: overdueAll.length, amount: overdueThb }}
           info={<>งวดที่ครบกำหนดในเดือนที่เลือก + งวดที่ยังค้างจากเดือนก่อน · บันทึกที่นี่หรือที่หน้า Income &amp; Expenses ก็ได้ (คำสั่งเดียวกัน ไม่นับซ้ำ)
             {" "}· เงินที่รับตัดงวดที่ค้างเรียงจากงวดเก่าก่อน · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · เงินต้นลดยอดเงินให้กู้ · ดอกเบี้ยเป็นรายได้ (เห็นในหน้า Income &amp; Expenses ด้วย) · ยอดในกล่องเป็นบาท{pv.personId ? " ตามสัดส่วนของสมาชิกที่เลือก" : ""}</>} />
       </TabPanel>

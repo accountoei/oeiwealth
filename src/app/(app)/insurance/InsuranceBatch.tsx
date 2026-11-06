@@ -8,7 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
-import { BatchBar, BatchSave, FillAll } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, LateNote } from "@/components/BatchSave";
 import type { ReactNode } from "react";
 
 /** แถวจาก v_insurance_schedule_status */
@@ -35,10 +35,11 @@ const cur = (c: string) => (c !== "THB" ? c : undefined);
  *   กรมธรรม์ละกลุ่ม: งวดในปีที่เลือก (ปีนี้ = รวมงวดค้างจากปีก่อน + งวดที่ครบภายใน 60 วัน) · ยอดงวด / จ่าย-รับแล้ว (กดแก้) / คงเหลือ
  *   ช่องกรอกเฉพาะงวดที่ถึงกำหนด (ติ๊กเพื่อเปิดงวดที่ยังไม่ถึง) · วันที่ช่องเดียวใช้กับทุกแถว · ผิดแถวเดียว = ไม่บันทึกเลย
  */
-export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pays, today, defaultDate = today, soon, minDate, canWrite, filter }: {
+export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pays, today, defaultDate = today, soon, minDate, canWrite, filter, late }: {
   kind: "PREMIUM" | "BENEFIT"; year: number; years: { value: number; mark?: string }[]; hrefOf: string; policies: BoxPolicy[];
   pays: PayOpt[]; today: string; defaultDate?: string; soon: string; minDate: string; canWrite: boolean;
-  /** ตัวกรองบริษัทประกัน (ต่อจากชื่อในแถบบน) */ filter?: ReactNode;
+  /** ตัวกรองบริษัทประกัน (ต่อจากปีในแถบบน) */ filter?: ReactNode;
+  /** งวดค้าง THB ทุกปี (เลยกำหนด ณ วันนี้) → บรรทัดสีแดงใต้ตาราง */ late?: { count: number; amount: number };
 }) {
   const prem = kind === "PREMIUM";
   const router = useRouter();
@@ -200,6 +201,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
           )}
         </table>
       </div>
+      {late && <LateNote label={prem ? "ค้างจ่าย" : "ค้างรับ"} count={late.count} amounts={money(late.amount, "THB")} />}
     </div>
     </>
   );

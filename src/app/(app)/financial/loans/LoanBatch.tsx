@@ -8,7 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave, FillAll, FilterSelect } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, FilterSelect, LateNote } from "@/components/BatchSave";
 
 export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
@@ -33,8 +33,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  *   วันที่ช่องเดียวใช้กับทุกแถว · ช่องว่าง = ไม่บันทึก · กดบันทึกครั้งเดียว · ผิดแถวเดียว = ไม่บันทึกเลย
  *   เงินต้นที่รับไม่เท่าที่ถึงกำหนด (เกิน / ขาด) → หลังบันทึกถาม: ตารางเดิม หรือ "คำนวณงวดที่เหลือใหม่" ของสัญญานั้น
  */
-export default function LoanBatch({ rows: rows0, others: others0, banks, today, minDate, canWrite, info }: {
+export default function LoanBatch({ rows: rows0, others: others0, banks, today, minDate, canWrite, info, late }: {
   rows: LoanRow[]; others: LoanRow[]; banks: BankOpt[]; today: string; minDate: string; canWrite: boolean;
+  /** งวดค้างทุกสัญญา (เลยกำหนด ณ วันนี้ · THB) → บรรทัดสีแดงใต้ตาราง */
+  late?: { count: number; amount: number };
   /** คำอธิบายแท็บ → ⓘ ที่หัวตาราง */
   info?: ReactNode;
 }) {
@@ -68,6 +70,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   // ตัวกรองผู้กู้ (ตกลง 6 พ.ย. 2026) · ยอดที่กรอกไว้ในแถวที่ถูกกรองซ่อนยังบันทึกด้วย
   const borrowers = [...new Set(all.map((r) => r.borrower).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
   const shown = who ? base.filter((r) => r.borrower === who) : base;
+  const thbShown = shown.filter((r) => r.currency === "THB");
   const has = (r: LoanRow) => (pr[r.id] ?? "").trim() !== "" || (int[r.id] ?? "").trim() !== "";
   const chosen = base.filter(has);
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
@@ -202,8 +205,17 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
             {shown.length === 0 && <tr><td colSpan={canWrite ? 5 : 3} className="px-4 py-6 text-center text-slate-500">ไม่มีงวดที่ต้องรับในเดือนนี้</td></tr>}
             {shown.map(row)}
           </tbody>
+          {/* แถวรวม (THB) แทนการ์ดสรุปด้านบน (ตกลง 6 พ.ย. 2026) */}
+          {thbShown.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              <tr><td colSpan={2} className="px-3 py-2">รวม (THB){thbShown.length < shown.length && <div className="text-xs font-normal text-slate-500">ไม่รวมสัญญาสกุลเงินอื่น</div>}</td>
+                <td className="px-3 text-right tabular-nums">{money(r2(thbShown.reduce((t, r) => t + r.dueP + r.dueI, 0)))}</td>
+                {canWrite && <><td className="px-3 text-right tabular-nums">{money(r2(thbShown.reduce((t, r) => t + n(tot[r.id]), 0)))}</td><td /></>}</tr>
+            </tfoot>
+          )}
         </table>
       </div>
+      {late && <LateNote label="ค้างรับ" count={late.count} amounts={money(late.amount, "THB")} />}
     </div>
     </>
   );
