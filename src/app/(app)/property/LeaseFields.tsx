@@ -28,18 +28,20 @@ const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
  *   ต่อสัญญา: เลือกสัญญาเดิม → ดึงผู้เช่า ค่าเช่า บัญชี รายละเอียดสัญญามาให้ · เริ่มวันถัดจากสัญญาเดิม อายุเท่าเดิม
  *     ยกเงินประกันได้เฉพาะตอนต่อสัญญา และยกจากฉบับที่เลือกเท่านั้น (สัญญาใหม่กรอกเอง = ไม่ยก · ตกลง 6 พ.ย. 2026)
  *   งวดแรก: แสดงตัวอย่างตามวันเริ่ม / วันจ่าย / วิธีคิดวันเศษ (สูตรจริง = private.lease_cycles)
- *   detail = ส่วนรายละเอียดสำหรับพิมพ์สัญญา (ไม่ส่ง = ไม่แสดง เช่นฟอร์มเพิ่มทรัพย์สินใหม่ → กรอกทีหลังที่ปุ่ม "แก้ไขสัญญา")
+ *   detail = ส่วนรายละเอียดสำหรับพิมพ์สัญญา (ไม่ส่ง = ไม่แสดง เช่นฟอร์มเพิ่มทรัพย์สินใหม่ → กรอกทีหลังที่ "แก้ไขสัญญา")
  */
-export default function LeaseFields({ banks, goLive, currency = "THB", carryOptions = [], defaultStart, renewals = [], detail, initialFrom }: {
+export default function LeaseFields({ banks, goLive, currency = "THB", carryOptions = [], defaultStart, renewals = [], detail, initialFrom, fixedFrom = false }: {
   banks: Bank[]; goLive: string; currency?: string; carryOptions?: CarryOption[]; defaultStart?: string;
   renewals?: LeasePrefill[]; detail?: { opt: LeaseDetailOptions; canSensitive: boolean };
-  /** ปุ่ม "ต่อสัญญา" บนการ์ด → เลือกสัญญาเดิมไว้ให้ */ initialFrom?: string;
+  /** ต่อจากสัญญานี้ (เลือกไว้ให้) */ initialFrom?: string;
+  /** เลือกสัญญาเดิมไว้แล้วที่ช่อง "ทำอะไร" ของหน้าต่างสัญญาเช่า → ไม่มีช่องเลือกซ้ำ */ fixedFrom?: boolean;
 }) {
   const [fromId, setFromId] = useState(initialFrom ?? "");
   const from = renewals.find((r) => r.id === fromId);
   return (
     <div className="space-y-4">
-      {renewals.length > 0 && (
+      {fixedFrom && fromId && <input type="hidden" name="lease_renew_from" value={fromId} />}
+      {!fixedFrom && renewals.length > 0 && (
         <label className={label}>ต่อจากสัญญาเดิม (ดึงข้อมูลมาให้ แก้ได้)
           <select name="lease_renew_from" value={fromId} onChange={(e) => setFromId(e.target.value)} className={input}>
             <option value="">— สัญญาใหม่ (กรอกเอง) —</option>

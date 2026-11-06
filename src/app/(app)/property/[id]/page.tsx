@@ -8,10 +8,11 @@ import {
   INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
-  EditPropertyForm, EditTerminationForm, LeaseEditForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
+  EditPropertyForm, EditTerminationForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
   UtilityForm,
 } from "./forms";
 import CloseLeaseForm from "./CloseLeaseForm";
+import { LeaseCardClick, LeaseHub, LeaseHubButton, type LeaseEditEntry } from "./LeaseHub";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -448,6 +449,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       + (ded > 0 ? ` · หักจากเงินประกัน ${money(ded)}` : "") + ` · เมื่อ ${thDate(co.settled_date)}`;
   };
 
+  // full = การ์ดสัญญาปัจจุบัน · false = บรรทัดสัญญาเดิมที่จบแล้ว: พิมพ์ + ดูรายการส่งมอบอย่างเดียว · ยกเลิกผู้เช่าออก / คืนเงินประกัน เฉพาะ ADMIN (ตกลง 6 พ.ย. 2026)
+  //   สร้าง / ต่อ / แก้ไขสัญญา = ปุ่มเดียวบนหัวกล่อง (LeaseHub) · กดที่การ์ด = แก้ไขสัญญานั้น
   const leaseActions = (l: Lease, full = false) => {
     const dep = Number(l.security_deposit ?? 0);
     const leaseEnded = l.deposit_due_date <= today;
@@ -460,45 +463,30 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       <>
         <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
         {co && <Link href={`/print/lease/${l.id}?s=closeout`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์ใบสรุปผู้เช่าออก</Link>}
-        {(canWrite || hand.length > 0) && (
-          <HandoverButton assetId={id} leaseId={l.id} label={`รายการส่งมอบ${hand.length ? ` (${hand.length})` : ""}`} items={hand} canWrite={canWrite}
-            currency={l.rent_currency} docs={full ? <EntityDocuments category="PROPERTY" entityType="PROPERTY_LEASE" entityId={l.id} module="PROPERTY"
-              role={me.role} paths={paths} title="รูปถ่าย / เอกสารการส่งมอบ" bare /> : undefined} />
-        )}
-        {canWrite && full && !co && !hasSuccessor(l) && l.lease_status !== "UPCOMING" && l.deposit_settlement_type !== "REFUNDED" && (
-          <NewLeaseForm assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions} label="ต่อสัญญา"
-            renewals={renewals} detail={{ opt: detailOpt, canSensitive }} renewFrom={l.id} />
+        {(full ? canWrite || hand.length > 0 : hand.length > 0) && (
+          <HandoverButton assetId={id} leaseId={l.id} label={`${full ? "" : "ดู"}รายการส่งมอบ${hand.length ? ` (${hand.length})` : ""}`} items={hand}
+            canWrite={full && canWrite} currency={l.rent_currency}
+            docs={<EntityDocuments category="PROPERTY" entityType="PROPERTY_LEASE" entityId={l.id} module="PROPERTY"
+              role={full ? me.role : "VIEWER"} paths={paths} title="รูปถ่าย / เอกสารการส่งมอบ" bare />} />
         )}
         {canSettle && full && !co && !l.deposit_settlement_type && depSameCcy && l.start_date <= today && (l.terminated_date ?? today) <= today && (
           <CloseLeaseForm assetId={id} leaseId={l.id} tenant={[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
             startDate={l.start_date} endDate={l.end_date} terminated={l.terminated_date} today={today} currency={l.rent_currency}
             banks={bankList} defaultBank={rentTo.get(l.id) ?? null} damage={Math.min(hd.amount, dep)} damageReason={hd.reason} />
         )}
-        {me.role === "ADMIN" && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED" && (
+        {me.role === "ADMIN" && full && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED" && (
           <EditTerminationForm assetId={id} leaseId={l.id} terminated={l.terminated_date} startDate={l.start_date} endDate={l.end_date} />
-        )}
-        {canWrite && (
-          <LeaseEditForm assetId={id} leaseId={l.id} v={leaseExtra.get(l.id) ?? {}} opt={detailOpt} canSensitive={canSensitive}
-            m={{ tenant_name: l.tenant_name, unit_label: l.unit_label, contract_no: l.contract_no, start_date: l.start_date, end_date: l.end_date,
-              rent_amount: Number(l.rent_amount), payment_due_day: l.payment_due_day, prorate_basis: leaseExtra.get(l.id)?.prorate_basis ?? "ACTUAL",
-              utilities_billing: leaseExtra.get(l.id)?.utilities_billing ?? null, notes: l.notes,
-              rent_timing: leaseExtra.get(l.id)?.rent_timing ?? "ADVANCE", grace_days: leaseExtra.get(l.id)?.grace_days ?? 15,
-              late_fee_per_day: leaseExtra.get(l.id)?.late_fee_per_day == null ? null : Number(leaseExtra.get(l.id)!.late_fee_per_day) }}
-            banks={bankList} rentCurrency={l.rent_currency} rentTo={rentTo.get(l.id) ?? null} depositMonths={leaseExtra.get(l.id)?.deposit_months ?? null}
-            deleteControl={canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
-              hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
-              buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />} />
         )}
         {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && !depSameCcy && (
           <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
             deduction={Math.min(hd.amount, dep)} reason={hd.reason}
             banks={bankList} minDate={l.deposit_due_date} today={today} />
         )}
-        {canSettle && co && (
+        {canSettle && co && (full || me.role === "ADMIN") && (
           <UndoButton kind="CLOSEOUT" id={l.id} paths={paths} label="ยกเลิกผู้เช่าออก"
             confirmText={`ยกเลิกการบันทึกผู้เช่าออกของ ${l.tenant_name}?\nเงินโอนคืน ค่าเช่า / ค่าน้ำไฟที่หักจากเงินประกัน ค่าเสียหาย และค่าใช้จ่ายคืนค่าเช่าล่วงหน้า จะถูกลบทั้งหมด · เงินประกันกลับเป็นหนี้สิน · วันเลิกสัญญากลับเหมือนก่อนบันทึก`} />
         )}
-        {canSettle && !co && l.deposit_settlement_type === "REFUNDED" && (
+        {canSettle && !co && l.deposit_settlement_type === "REFUNDED" && (full || me.role === "ADMIN") && (
           <UndoButton kind="DEPOSIT" id={l.id} paths={paths} label="ยกเลิกการคืนเงินประกัน"
             confirmText={`ยกเลิกการคืนเงินประกันของ ${l.tenant_name}?\nเงินคืนผู้เช่า และรายได้ส่วนที่หักไว้ จะถูกลบ · สัญญากลับมาถือเงินประกัน (หนี้สิน) เหมือนเดิม`} />
         )}
@@ -511,7 +499,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     const ds = DEPOSIT_LABEL[l.deposit_status];
     const leaseEnded = l.deposit_due_date <= today;
     return (
-      <div key={l.id} className="rounded-lg border border-slate-200 p-4 text-sm">
+      <LeaseCardClick key={l.id} leaseId={l.id} className="rounded-lg border border-slate-200 p-4 text-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? l.lease_status}</span>
           <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
@@ -549,7 +537,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
           <p className="mt-1 text-xs text-slate-400">คืนเงินประกันได้ตั้งแต่ {thDate(l.deposit_due_date)}</p>
         )}
-      </div>
+      </LeaseCardClick>
     );
   };
   // สัญญาที่จบครบแล้ว (ไม่มีผล · เงินประกันเคลียร์แล้ว · ไม่มีค่าเช่า / ค่าน้ำไฟค้าง) → พับเป็นบรรทัดสั้นใน "สัญญาเดิม" (ตกลง 2 พ.ย. 2026)
@@ -576,6 +564,27 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       </div>
     );
   };
+
+  // หน้าต่างสัญญาเช่า (ปุ่มเดียว): ต่อได้ = ยังไม่บันทึกผู้เช่าออก · ไม่มีสัญญาถัดไปของห้องเดียวกัน · เริ่มแล้ว · ยังไม่คืนเงินประกัน
+  //   แก้ไข = สัญญาปัจจุบันทั้งหมด + สัญญาเดิมที่จบแล้ว (ADMIN เท่านั้น)
+  const canRenew = (l: Lease) => !closeOf.get(l.id) && !hasSuccessor(l) && l.lease_status !== "UPCOMING" && l.deposit_settlement_type !== "REFUNDED";
+  const hubRenewals = canWrite ? renewals.filter((r) => leases.some((l) => l.id === r.id && canRenew(l))) : [];
+  const editEntry = (l: Lease, old: boolean): LeaseEditEntry => {
+    const x = leaseExtra.get(l.id);
+    return {
+      id: l.id, old, label: renewals.find((r) => r.id === l.id)?.label ?? l.tenant_name,
+      m: { tenant_name: l.tenant_name, unit_label: l.unit_label, contract_no: l.contract_no, start_date: l.start_date, end_date: l.end_date,
+        rent_amount: Number(l.rent_amount), payment_due_day: l.payment_due_day, prorate_basis: x?.prorate_basis ?? "ACTUAL",
+        utilities_billing: x?.utilities_billing ?? null, notes: l.notes,
+        rent_timing: x?.rent_timing ?? "ADVANCE", grace_days: x?.grace_days ?? 15,
+        late_fee_per_day: x?.late_fee_per_day == null ? null : Number(x.late_fee_per_day) },
+      v: x ?? {}, rentCurrency: l.rent_currency, rentTo: rentTo.get(l.id) ?? null, depositMonths: x?.deposit_months ?? null,
+      deleteControl: canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
+        hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
+        buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />,
+    };
+  };
+  const hubEdits = canWrite ? [...openLeases.map((l) => editEntry(l, false)), ...(me.role === "ADMIN" ? doneLeases.map((l) => editEntry(l, true)) : [])] : [];
 
   return (
     <div className="space-y-6">
@@ -839,14 +848,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
       {/* ---------------- สัญญาเช่า (แสดงเฉพาะที่ให้เช่า · ไม่ได้ให้เช่าแล้วแต่เคยมีสัญญา → พับเป็นประวัติ · ตกลง 27 ต.ค. 2026) ---------------- */}
       {(isRental || leases.length > 0) && <LeaseWrap open={isRental} count={leases.length}>
+      <LeaseHub enabled={canWrite} assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions}
+        detail={{ opt: detailOpt, canSensitive }} renewals={hubRenewals} edits={hubEdits}>
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-medium text-slate-900">สัญญาเช่า</h2>
-          {canWrite && (
-            <NewLeaseForm assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions}
-              label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา"}
-              renewals={renewals} detail={{ opt: detailOpt, canSensitive }} />
-          )}
+          <LeaseHubButton label={leases.length === 0 ? "+ เริ่มให้เช่า (เพิ่มสัญญา)" : "+ สัญญาใหม่ / ต่อสัญญา / แก้ไข"} />
         </div>
         {canWrite && pd.usage_type === "RENTAL" && liveLeases.length === 0 && <SuggestVacant assetId={id} />}
 
@@ -975,7 +982,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           </table>
         </section>
       )}
-
+      </LeaseHub>
       </LeaseWrap>}
 
       {/* ---------------- ค่าใช้จ่ายของทรัพย์สินนี้: ครั้งเดียว (ซ่อม / ปรับปรุง) + ประจำ / สาธารณูปโภค ---------------- */}

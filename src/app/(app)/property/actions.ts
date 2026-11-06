@@ -65,7 +65,7 @@ async function saveLeaseExtras(supabase: Awaited<ReturnType<typeof createClient>
     ...(timing ? { rent_timing: timing } : {}), ...(grace != null ? { grace_days: grace } : {}), ...(fee !== undefined ? { late_fee_per_day: fee } : {}) };
   if (Object.keys(patch).length) {
     const { error } = await supabase.from("property_leases").update(patch).in("id", leaseIds);
-    if (error) return `บันทึกบัญชีรับค่าเช่า / รายละเอียดสัญญาไม่ได้ (${friendlyError(error.message)}) — แก้ที่ปุ่ม "แก้ไขสัญญา"`;
+    if (error) return `บันทึกบัญชีรับค่าเช่า / รายละเอียดสัญญาไม่ได้ (${friendlyError(error.message)}) — แก้ที่ "แก้ไขสัญญา" (กดที่การ์ดสัญญา)`;
   }
   return setTenantId(supabase, leaseIds[0], form);
 }
@@ -439,7 +439,7 @@ export async function createLease(_: ActionState, form: FormData): Promise<Actio
 }
 
 /**
- * ปุ่ม "แก้ไขสัญญา" บนการ์ดสัญญา (รวมปุ่มแก้ไข + รายละเอียดสัญญา · ตกลง 6 พ.ย. 2026)
+ * "แก้ไขสัญญา" (กดที่การ์ดสัญญา หรือปุ่มเดียวบนกล่องสัญญาเช่า · รวมข้อมูลหลัก + รายละเอียดสัญญา · ตกลง 6 พ.ย. 2026)
  *   ข้อมูลหลัก (ส่งเฉพาะช่องที่เปลี่ยน → trigger ของสัญญาตรวจเท่าเดิม) + บัญชีรับค่าเช่า · จำนวนเดือนเงินประกัน · รายละเอียดพิมพ์สัญญา
  */
 export async function updateLease(_: ActionState, form: FormData): Promise<ActionState> {
