@@ -1,6 +1,6 @@
 # ผ่อนผันค่าเช่า + ค่าปรับชำระล่าช้า + ชำระค่าเช่าหลังสิ้นรอบ
 
-- วันที่: 6 พ.ย. 2026 · branch `feat/rent-grace-arrears` (ต่อจาก #349 · กด Merge หลัง #349)
+- วันที่: 6 พ.ย. 2026 · branch `feat/rent-grace-arrears` (ต่อจาก #349 ที่ Merge แล้ว)
 - SQL: `supabase/migrations/20261106070000_lease_grace_arrears.sql` (เจ้าของรันเองก่อนกด Merge)
 - ทดสอบ: `tests/run.sh --scenario` ผ่าน 1156 checks (ส่วนที่ 19 ใหม่) · tsc / eslint (0 errors) / build ผ่าน · `scripts/*.test.mjs` ผ่าน · ดูตารางรับค่าเช่าด้วยข้อมูลสมมติ (Playwright)
 
