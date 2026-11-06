@@ -11,7 +11,7 @@ import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, FillAll, STICKY_BAR, TaxAll } from "@/components/BatchSave";
+import { BatchSave, FillAll, LateNote, STICKY_BAR, TaxAll } from "@/components/BatchSave";
 
 // แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
@@ -104,6 +104,22 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
   const onSubmit = cf.guard(`บันทึกรับ ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""}`).join("\n")}`
     + (maturities ? `\n\nเงินต้นครบกำหนด ${maturities} รายการ: หลักทรัพย์จะปิดเป็น "ครบกำหนด" (เงินต้นไม่ใช่รายได้)` : ""), { okLabel: "ยืนยันบันทึก" });
 
+  // แถวรวมท้ายตาราง: บรรทัดละ 1 สกุลเงิน (THB ก่อน) · แทนการ์ดสรุปด้านบน (ตกลง 6 พ.ย. 2026)
+  const ccyOrder = (a: string, b: string) => Number(b === "THB") - Number(a === "THB") || a.localeCompare(b);
+  const totals = [...new Set(shown.map((r) => r.currency))].sort(ccyOrder).map((ccy) => {
+    const rs = shown.filter((r) => r.currency === ccy);
+    const add = (f: (r: Row) => number) => Math.round(rs.reduce((t, r) => t + (f(r) || 0), 0) * 100) / 100;
+    const typed = rs.filter((r) => editable(r) && (vals[r.key] ?? "").trim() !== "" && !Number.isNaN(n(vals[r.key])));
+    return { ccy, expected: add((r) => Number(r.item?.expected ?? 0)),
+      received: add((r) => r.item ? Number(r.item.received?.amount ?? 0) : r.cash!.received),
+      gross: typed.reduce((t, r) => t + n(vals[r.key]), 0), tax: typed.reduce((t, r) => t + ((tax[r.key] ?? "").trim() ? n(tax[r.key]) || 0 : 0), 0),
+      net: typed.reduce((t, r) => t + (net(r.key) || 0), 0), typed: typed.length };
+  });
+  // ค้างรับ (เลยกำหนด ณ วันนี้) ทุกพอร์ต → บรรทัดสีแดงใต้ตาราง
+  const lateRows = rows.filter((r) => r.item && !r.item.received && r.item.due < today);
+  const lateAmt = [...new Set(lateRows.map((r) => r.currency))].sort(ccyOrder)
+    .map((ccy) => money(lateRows.filter((r) => r.currency === ccy).reduce((t, r) => t + Number(r.item!.expected ?? 0), 0), ccy)).join(" · ");
+
   if (rows.length === 0) return null;
   return (
     <>
@@ -193,9 +209,22 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
               );
             })}
           </tbody>
+          {totals.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium">
+              {totals.map((t) => (
+                <tr key={t.ccy}><td colSpan={2} className="px-3 py-2">รวม ({t.ccy})</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(t.expected)}
+                    {t.received > 0 && <div className="text-xs font-normal text-emerald-700">ได้รับ {money(t.received)}</div>}</td>
+                  {canWrite && <>
+                    <td className="px-2 text-right tabular-nums">{t.typed ? money(t.gross) : ""}</td>
+                    <td className="px-2 text-right tabular-nums">{t.typed ? money(t.tax) : ""}</td>
+                    <td className="whitespace-nowrap px-2 text-right tabular-nums">{t.typed ? money(t.net) : ""}</td><td /></>}</tr>
+              ))}
+            </tfoot>
+          )}
         </table>
       </div>
-
+      <LateNote label="ค้างรับ" count={lateRows.length} unit="รายการ" amounts={lateAmt} />
     </div>
     </>
   );

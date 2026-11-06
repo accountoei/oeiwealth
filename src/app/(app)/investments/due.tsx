@@ -114,14 +114,6 @@ export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
     const g = groups.get(pf.asset_id) ?? { name: pf.assets?.name ?? "พอร์ต", rows: [] };
     g.rows.push(x); groups.set(pf.asset_id, g);
   });
-  // กล่องสรุป: บรรทัดละ 1 สกุลเงิน · ทั้งสองกล่องใช้ลำดับสกุลเดียวกัน (บรรทัดตรงกัน · THB ก่อน)
-  const ccys = [...new Set(items.map(({ h }) => h.currency))].sort((a, b) => Number(b === "THB") - Number(a === "THB") || a.localeCompare(b));
-  const sumBy = (rows: typeof items, pick: (x: (typeof items)[number]) => boolean) => {
-    const m = new Map<string, number>();
-    rows.filter(pick).forEach(({ r, h }) => m.set(h.currency, (m.get(h.currency) ?? 0) + Number(r.received ? r.received.amount : r.expected ?? 0)));
-    if (!ccys.length) return <div>-</div>;
-    return ccys.map((c) => <div key={c}>{m.has(c) ? money(m.get(c)!, c) : <span className="text-slate-400">- {c}</span>}</div>);
-  };
   // รับแล้ว → กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติของหลักทรัพย์ · ผ่านบัญชีธนาคาร = แก้ที่หน้าหลักทรัพย์ไม่ได้ → ลิงก์)
   const txById = new Map(((txs as Tx[] | null) ?? []).map((t) => [t.id, t]));
   const paths = ["/investments", "/income-expenses", "/financial/cash"];
@@ -152,21 +144,10 @@ export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
     // บัญชีที่ระบบสร้างให้แต่ไม่มีเงิน ไม่มีอัตรา และไม่ได้รับดอกเบี้ยเดือนนี้ → ไม่แสดง (ไม่มีดอกเบี้ยให้รับ)
     .filter((c) => c.rate != null || c.received !== 0 || Math.abs(Number(cashRows.find((x) => x.id === c.id)?.current_value ?? 0)) >= 0.005)
     .sort((a, b) => a.pfName.localeCompare(b.pfName, "th"));
-  const open = items.filter(({ r }) => !r.received);
 
   return (
     <div className="space-y-4">
       {/* ตัวเลือกเดือนอยู่ที่แถบบนของหน้า Investments (28 ต.ค. 2026) */}
-      <section className="grid gap-4 sm:grid-cols-3">
-        <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">ยังไม่บันทึกรับ</div>
-          <div className="text-2xl font-semibold">{open.length} รายการ</div>
-          <div className="text-xs text-red-700">{open.filter(({ r }) => late(r)).length ? `ค้างรับ (เลยกำหนด) ${open.filter(({ r }) => late(r)).length} รายการ` : ""}</div></div>
-        <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">ยอดที่รอรับ (คาดการณ์ก่อนภาษี)</div>
-          <div className="text-lg font-semibold tabular-nums">{sumBy(items, ({ r }) => !r.received)}</div></div>
-        <div className="num-box rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">รับแล้วในเดือนนี้</div>
-          <div className="text-lg font-semibold tabular-nums">{sumBy(items, ({ r }) => !!r.received)}</div></div>
-      </section>
-
       {groups.size === 0 && (
         <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
           ไม่มีรายการที่ต้องรับในเดือนนี้ · หุ้นกู้จะขึ้นที่นี่เมื่อใส่วันครบกำหนด + เงินต้น + อัตรา + จ่ายทุก ในหน้าแก้ไขข้อมูลของหลักทรัพย์

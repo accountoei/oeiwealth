@@ -67,6 +67,12 @@ export function FillAll({ onClick, disabled }: { onClick: () => void; disabled?:
   );
 }
 
+/** บรรทัดสีแดงใต้ตาราง: งวดที่ค้าง (เลยกำหนด ณ วันนี้) — แทนการ์ดสรุปด้านบนของแท็บบันทึก (ตกลง 6 พ.ย. 2026) · ไม่มีค้าง = ไม่แสดง */
+export function LateNote({ label, count, unit = "งวด", amounts }: { label: string; count: number; unit?: string; amounts: ReactNode }) {
+  if (!count) return null;
+  return <p className="px-1 text-sm text-red-700">{label} (เลยกำหนด ณ วันนี้) {count} {unit} · <span className="tabular-nums">{amounts}</span></p>;
+}
+
 /** "หัก ณ ที่จ่าย x%" — คิดภาษีให้ทุกแถวที่กรอก · วางเป็น children ของ BatchSave (ก่อน "ล้างช่องที่กรอก") · ตัวจางแบบเดียวกัน */
 export function TaxAll({ pct, onClick, disabled }: { pct: number; onClick: () => void; disabled?: boolean }) {
   return (

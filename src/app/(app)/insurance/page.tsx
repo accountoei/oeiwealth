@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, insCountedPaid, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -39,7 +39,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   //   เดือนอื่น = งวดค้าง + งวดที่ครบถึงสิ้นเดือนนั้น · งวดครบแล้วที่บันทึกในเดือนนั้น · วันที่ตั้งต้น = สิ้นเดือน (ไม่เกินวันนี้)
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
   const isCur = ym === today.slice(0, 7);
-  const { start: mStart, end: mEnd } = monthRange(ym);
+  const { end: mEnd } = monthRange(ym);
   const defaultDate = mEnd < today ? mEnd : today;
   const year = today.slice(0, 4);
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
@@ -65,7 +65,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     return { pays: p.data ?? [], bens: b.data ?? [] };
   });
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: monthPayRows }, { data: monthBenRows }, { data: yearLumps }, rec] = await Promise.all([
+    { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: yearLumps }, rec] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id")
       .order("status").order("insurer"),
@@ -84,11 +84,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("insurance_cash_value_table").select("policy_id,policy_year,value_date,value").is("deleted_at", null).lte("value_date", today)
       .order("value_date"),
-    // การ์ด "จ่ายแล้ว / รับแล้ว เดือน…" (ตามวันที่จ่าย / รับจริง)
-    supabase.from("expense_items").select("insurance_schedule_line_id,amount,currency").not("insurance_schedule_line_id", "is", null)
-      .gte("date", mStart).lte("date", mEnd).is("deleted_at", null),
-    supabase.from("insurance_benefit_receipts").select("policy_id,amount,currency").gte("receipt_date", mStart).lte("receipt_date", mEnd)
-      .is("undone_at", null).is("deleted_at", null),
     // รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือก → แสดงใต้ชื่อกรมธรรม์
     supabase.from("insurance_benefit_receipts").select("id,policy_id,receipt_date,amount,currency,outcome").is("line_id", null)
       .gte("receipt_date", yStart).lte("receipt_date", yEnd).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
@@ -151,7 +146,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const goLive = family?.go_live_date ?? "";
   const mine = new Set(mineRows.map((r) => r.id));
   const activeIds = new Set(mineRows.filter((r) => r.status === "ACTIVE").map((r) => r.id));
-  const lineById = new Map(lineList.map((l) => [l.id, l]));
   const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
   // ยอดที่จ่าย / รับแล้วของงวด → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026) · เบี้ย = ฟอร์มเดียวกับหน้ากรมธรรม์ · ผลประโยชน์ = ยกเลิกทั้งก้อนแล้วบันทึกใหม่
   const editsOf = (l: YLine): Recorded[] => {
@@ -199,27 +193,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   };
   const yHrefOf = (t: string) => { const q = new URLSearchParams({ tab: t }); if (sp.p) q.set("p", sp.p); if (sp.m) q.set("m", sp.m); if (iFilter) q.set("i", iFilter);
     return `/insurance?${q.toString()}&y=__Y__`; };
-  // การ์ดด้านบนของแท็บรับ / จ่าย (THB · ตามตัวกรองคน · เดือนจากแถบบน)
-  const monthLabel = thMonth(mStart);
-  const sumThbOf = (xs: { amount: number | string; currency: string }[]) => xs.filter((x) => x.currency === "THB").reduce((t, x) => t + Number(x.amount), 0);
-  const cardsOf = (kind: "PREMIUM" | "BENEFIT") => {
-    const prem = kind === "PREMIUM";
-    const ls = lineList.filter((l) => l.kind === kind && activeIds.has(l.policy_id) && l.currency === "THB");
-    const dueM = ls.filter((l) => l.due_date >= mStart && l.due_date <= mEnd && !["CLOSED", "SKIPPED"].includes(l.status));
-    const late = ls.filter((l) => (l.status === "OVERDUE" || (l.status === "PARTIAL" && l.due_date < today)) && Number(l.remaining) > 0);
-    const done = prem ? (monthPayRows ?? []).filter((e) => mine.has(lineById.get(e.insurance_schedule_line_id as string)?.policy_id ?? ""))
-      : (monthBenRows ?? []).filter((b) => mine.has(b.policy_id));
-    const lateAmt = late.reduce((t, l) => t + Number(l.remaining), 0);
-    return (
-      <section className="grid gap-4 md:grid-cols-3">
-        <StatBox label={`ครบกำหนด ${monthLabel} (THB)`} value={money(dueM.reduce((t, l) => t + Number(l.amount), 0))}
-          sub={`${dueM.length} งวด · คงเหลือ ${money(dueM.reduce((t, l) => t + Number(l.remaining), 0))}`} />
-        <StatBox label={`${prem ? "จ่ายแล้ว" : "รับแล้ว"} ${monthLabel} (THB)`} value={money(sumThbOf(done))} valueClass={prem ? "text-red-700" : "text-emerald-700"}
-          sub={`${done.length} รายการ · ตามวันที่${prem ? "จ่าย" : "รับ"}จริง`} />
-        <StatBox label={`${prem ? "ค้างจ่าย" : "ค้างรับ"} (เลยกำหนด ณ วันนี้ · THB)`} value={money(lateAmt)} valueClass={lateAmt > 0.005 ? "text-red-700" : undefined}
-          sub={`${late.length} งวด`} />
-      </section>
-    );
+  // งวดค้าง (เลยกำหนด ณ วันนี้ · THB · ทุกปี) → บรรทัดสีแดงใต้ตาราง (เลิกการ์ด 3 กล่องด้านบน · ตกลง 6 พ.ย. 2026)
+  const lateOf = (kind: "PREMIUM" | "BENEFIT") => {
+    const late = lineList.filter((l) => l.kind === kind && activeIds.has(l.policy_id) && l.currency === "THB"
+      && (l.status === "OVERDUE" || (l.status === "PARTIAL" && l.due_date < today)) && Number(l.remaining) > 0);
+    return { count: late.length, amount: late.reduce((t, l) => t + Number(l.remaining), 0) };
   };
   const actRows = rows.filter((r) => r.status === "ACTIVE");
   // แท็บอัปเดตมูลค่าเวนคืน: กรมธรรม์ที่มีผลและมีมูลค่าเวนคืน / ตารางตามสัญญา · ปีล่าสุดที่ถึงวันแล้ว · ยังไม่ได้ลง (เงื่อนไขเดียวกับ sync_insurance_cash_value)
@@ -279,13 +257,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
       <TabPanel id="benefit" className="space-y-4">
-        {cardsOf("BENEFIT")}
-        <InsuranceBatch key={`b${ym}${yr}${lineList.length}`} kind="BENEFIT" year={yr} years={yearsOf("BENEFIT")} hrefOf={yHrefOf("benefit")} policies={boxOf("BENEFIT")} filter={insFilter("benefit")}
+        <InsuranceBatch key={`b${ym}${yr}${lineList.length}`} kind="BENEFIT" year={yr} years={yearsOf("BENEFIT")} hrefOf={yHrefOf("benefit")} policies={boxOf("BENEFIT")} filter={insFilter("benefit")} late={lateOf("BENEFIT")}
           pays={bankPays} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
       </TabPanel>
       <TabPanel id="premium" className="space-y-4">
-        {cardsOf("PREMIUM")}
-        <InsuranceBatch key={`p${ym}${yr}${lineList.length}`} kind="PREMIUM" year={yr} years={yearsOf("PREMIUM")} hrefOf={yHrefOf("premium")} policies={boxOf("PREMIUM")} filter={insFilter("premium")}
+        <InsuranceBatch key={`p${ym}${yr}${lineList.length}`} kind="PREMIUM" year={yr} years={yearsOf("PREMIUM")} hrefOf={yHrefOf("premium")} policies={boxOf("PREMIUM")} filter={insFilter("premium")} late={lateOf("PREMIUM")}
           pays={[...bankPays, ...cardPays]} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
       </TabPanel>
 
