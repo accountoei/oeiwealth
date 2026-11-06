@@ -6,8 +6,8 @@ import BalanceGuard from "@/components/BalanceGuard";
 import BankOptions from "@/components/BankOptions";
 import Flash from "@/components/Flash";
 import { InfoTip } from "@/components/HeaderBar";
-import { SMALL_BTN, minusMoney, money, numOrZero as num, plusMoney, thDate } from "@/lib/format";
-import { closeLease, closeoutPreview, terminateLease, type ActionState, type CloseoutPreview } from "../actions";
+import { SMALL_BTN, SMALL_DEL_BTN, minusMoney, money, numOrZero as num, plusMoney, thDate } from "@/lib/format";
+import { closeLease, closeoutPreview, terminateLease, undoTermination, type ActionState, type CloseoutPreview } from "../actions";
 import type { Bank } from "../LeaseFields";
 import { MoveOutCheck, checkDamage, type HandoverItem } from "../Inventory";
 
@@ -25,21 +25,26 @@ const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 8640000
  *     บันทึกผลตรวจ (lease_handover_items) ก่อน แล้วจึงบันทึกผู้เช่าออก · ยกเลิกผู้เช่าออกแล้วผลตรวจยังอยู่
  *   ติ๊ก "คืนเงินทีหลัง" = บันทึกวันออกอย่างเดียว (แทนปุ่มเลิกสัญญาก่อนกำหนดเดิม · วันในอนาคตได้)
  *     → สัญญาเลิก ณ วันนั้น ค่าเช่าหยุด เงินประกันขึ้น "รอคืน" · เปิดอีกครั้งเมื่อพร้อมคืนเงิน (วันออกล็อกไว้)
+ *   ปุ่มเดียว (ตกลง 6 พ.ย. 2026): ปุ่มอยู่บนการ์ดตลอด · บันทึกวันออกไว้แล้วแต่ยังไม่ถึงวัน → เปิดมาเป็นหน้าแก้ / ยกเลิกวันออก
+ *     (ADMIN / EDITOR · ฐานข้อมูลตรวจ: EDITOR ได้ก่อนถึงวันนั้น) · ถึงวันแล้ว → ฟอร์มเต็ม วันออกล็อก (ADMIN กด "แก้ / ยกเลิกวันออก" ได้)
  *   บันทึกครั้งเดียวทั้งชุด (ยกเลิกได้ที่ปุ่ม "ยกเลิกผู้เช่าออก") · พิมพ์ใบสรุปได้จากการ์ดสัญญา
  */
-export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, endDate, terminated, today, currency, banks, defaultBank, items }: {
+export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, endDate, terminated, today, currency, banks, defaultBank, items, isAdmin }: {
   assetId: string; leaseId: string; tenant: string; startDate: string; endDate: string; terminated: string | null; today: string;
-  currency: string; banks: Bank[]; defaultBank?: string | null;
+  currency: string; banks: Bank[]; defaultBank?: string | null; isAdmin: boolean;
   /** รายการส่งมอบของสัญญา → ตารางตรวจของตอนส่งคืน */ items: HandoverItem[];
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
+  // บันทึกวันออกไว้แล้ว ยังไม่ถึงวัน → หน้าต่างเล็ก (แก้ / ยกเลิกวันออกอย่างเดียว) · อื่น ๆ = ฟอร์มเต็ม
+  const scheduled = !!terminated && terminated > today;
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: scheduled ? "sm" : "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(closeLease, {});
   const [termState, termAction, termPending] = useActionState<ActionState, FormData>(terminateLease, {});
+  const [undoState, undoAction, undoPending] = useActionState<ActionState, FormData>(undoTermination, {});
   const maxOut = endDate < today ? endDate : today;
   // คืนเงินทีหลัง: เฉพาะสัญญาที่ยังไม่เลิกและยังไม่ถึงวันสิ้นสุด (ออกตามกำหนด = ไม่ต้องบันทึกวันออก)
   const canLater = !terminated && endDate > today;
   const lastDay = dayBefore(endDate);
-  const [later, setLater] = useState(false);
+  const [later, setLater] = useState(scheduled);         // โหมดวันออกอย่างเดียว (คืนเงินทีหลัง / แก้ / ยกเลิกวันออก)
   const [moveOut, setMoveOut] = useState(terminated ?? maxOut);
   const [settled, setSettled] = useState(today);
   const [pv, setPv] = useState<CloseoutPreview | null>(null);
@@ -60,9 +65,11 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
   }, [open, later, leaseId, moveOut]);
 
   if (state.ok) return <Flash on={state} as="p" className="text-xs text-emerald-700" />;
-  if (termState.ok) return <Flash on={termState} as="p" className="text-xs text-emerald-700" />;
-  // เปิดหน้าต่างใหม่ = ดึงรายการส่งมอบล่าสุด (อาจแก้ที่ปุ่ม "รายการส่งมอบ" หลังโหลดหน้า)
-  const trigger = <button onClick={() => { if (!open) setChecks(initChecks()); setOpen(!open); }} className={activeCls(SMALL_BTN)}>ผู้เช่าออก / คืนเงินประกัน</button>;
+  // เปิดหน้าต่างใหม่ = ดึงรายการส่งมอบล่าสุด (อาจแก้ที่ปุ่ม "รายการส่งมอบ" หลังโหลดหน้า) + เริ่มจากวันออกที่บันทึกไว้ล่าสุด
+  const trigger = <button onClick={() => {
+    if (!open) { setChecks(initChecks()); setLater(scheduled); setMoveOut(terminated ?? maxOut); }
+    setOpen(!open);
+  }} className={activeCls(SMALL_BTN)}>ผู้เช่าออก / คืนเงินประกัน</button>;
   if (!open) return trigger;
 
   const toggleLater = (on: boolean) => {
@@ -117,6 +124,11 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
       <h3 className="font-medium text-slate-900">ผู้เช่าออก · {tenant} <InfoTip label="คำอธิบาย">ค่าเช่าคิดถึงวันที่ออก (สูตรเดียวกับหน้ารับค่าเช่า · งวดสุดท้ายคิดตามจำนวนวัน) · บันทึกแล้ว: ค่าเช่า / ค่าน้ำไฟที่ค้าง ขึ้น &ldquo;ได้รับแล้ว&rdquo; (หักจากเงินประกัน ไม่ผ่านบัญชี) · ค่าเสียหายและส่วนที่ริบเป็นรายได้อื่น · เงินประกันที่เหลือโอนคืน · ค่าเช่าที่จ่ายล่วงหน้าเกินคืนเป็นค่าใช้จ่ายของทรัพย์สิน &ldquo;คืนค่าเช่าล่วงหน้า&rdquo;
         · หักเกินเงินประกัน: หักตามลำดับ ค่าเช่า → ค่าน้ำไฟ → ค่าเสียหาย แล้วหักกับค่าเช่าล่วงหน้าที่ต้องคืน ที่เหลือผู้เช่าจ่ายเพิ่ม (รับแล้ว = รายได้เข้าบัญชี · ยังไม่ได้รับ = ค่าเสียหายค้างรับในแท็บรับค่าเช่า)
         · ยกเลิกทั้งชุดได้ที่ปุ่ม &ldquo;ยกเลิกผู้เช่าออก&rdquo; · พิมพ์ใบสรุปได้จากการ์ดสัญญา</InfoTip></h3>
+      {scheduled && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          บันทึกวันออกไว้ {thDate(terminated)} · ตรวจของ หักเงิน และคืนเงินประกันได้ตั้งแต่วันนั้นที่ปุ่มนี้ · ก่อนถึงวันแก้ / ยกเลิกวันออกได้
+        </p>
+      )}
       {canLater && (
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" checked={later} onChange={(e) => toggleLater(e.target.checked)} className="mt-0.5" />
@@ -125,9 +137,9 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
       )}
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">วันที่ผู้เช่าออก (วันสุดท้ายที่คิดค่าเช่า)
-          <input name="move_out" type="date" required value={moveOut} min={startDate} max={later ? lastDay : maxOut} readOnly={!!terminated}
+          <input name="move_out" type="date" required value={moveOut} min={startDate} max={later ? lastDay : maxOut} readOnly={!!terminated && !later}
             onChange={(e) => { setMoveOut(e.target.value); if (settled < e.target.value) setSettled(e.target.value); }}
-            className={`mt-1 block ${input} ${terminated ? "bg-slate-50 text-slate-500" : ""}`} />
+            className={`mt-1 block ${input} ${terminated && !later ? "bg-slate-50 text-slate-500" : ""}`} />
         </label>
         {!later && (
           <label className="text-sm">{short > 0 ? "วันที่คืน / รับเงิน" : "วันที่คืนเงิน"}
@@ -138,15 +150,27 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
       </div>
       <p className="text-xs text-slate-500">
         {later ? `สัญญาเลิก ณ วันที่ออก (สิ้นสุดเดิม ${thDate(endDate)}) · ค่าเช่าคิดถึงวันนั้น · เงินประกันขึ้น "รอคืน" (คืนภายใน 30 วันตามสัญญา)`
-          : terminated ? `สัญญาเลิกไว้แล้ววันที่ ${thDate(terminated)} (ADMIN แก้วันได้ที่ปุ่ม "แก้วันเลิกสัญญา")`
+            + (terminated ? ` · ยกเลิกวันออก = สัญญามีผลถึง ${thDate(endDate)} เหมือนเดิม` : "")
+          : terminated ? `สัญญาเลิกไว้แล้ววันที่ ${thDate(terminated)}` + (isAdmin ? "" : " (ถึงวันแล้ว แก้วันได้เฉพาะ ADMIN)")
           : early ? `ออกก่อนครบสัญญา (สิ้นสุด ${thDate(endDate)}) → ระบบเลิกสัญญาให้ ณ วันที่ออก`
           : "ออกตามวันสิ้นสุดสัญญา"}
+        {terminated && !scheduled && isAdmin && (
+          <button type="button" onClick={() => { if (later) setMoveOut(terminated ?? maxOut); setLater(!later); }} className={`ml-2 ${later ? "text-blue-700 hover:underline" : SMALL_BTN}`}>
+            {later ? "← กลับไปบันทึกผู้เช่าออก" : "แก้ / ยกเลิกวันออก"}</button>
+        )}
       </p>
 
       {later ? (
         <div className="flex flex-wrap items-center gap-3">
-          <button formAction={termAction} formNoValidate disabled={termPending || !moveOut} className={btn}>{termPending ? "กำลังบันทึก…" : "บันทึกวันออก"}</button>
+          <button formAction={termAction} formNoValidate disabled={termPending || undoPending || !moveOut} className={btn}>{termPending ? "กำลังบันทึก…" : "บันทึกวันออก"}</button>
+          {terminated && (
+            <button formAction={undoAction} formNoValidate disabled={termPending || undoPending} className={SMALL_DEL_BTN}>
+              {undoPending ? "…" : "ยกเลิกวันออก"}</button>
+          )}
           {termState.error && <span className="text-sm text-red-600">{termState.error}</span>}
+          {undoState.error && <span className="text-sm text-red-600">{undoState.error}</span>}
+          <Flash on={termState} />
+          <Flash on={undoState} />
         </div>
       ) : <>
         <MoveOutCheck rows={checks} setRows={setChecks} currency={currency} />

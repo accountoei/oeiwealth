@@ -64,7 +64,7 @@ type Lease = { id: string; unit_label: string | null; tenant_name: string; contr
   end_date: string; terminated_date: string | null; rent_amount: number; rent_currency: string; payment_frequency: string;
   payment_due_day: number | null; security_deposit: number | null; deposit_currency: string | null;
   deposit_received_date: string | null; deposit_settled_date: string | null; deposit_settlement_type: string | null;
-  deposit_refunded_amount: number | null; deposit_carried_amount: number | null; status: string; notes: string | null;
+  deposit_refunded_amount: number | null; deposit_carried_amount: number | null; deposit_carried_from_lease_id: string | null; status: string; notes: string | null;
   lease_status: string; deposit_status: string; deposit_due_date: string; deposit_refund_by: string };
 type Util = { id: string; utility_type: string; unit_label: string | null; provider: string | null; account_no: string | null; meter_no: string | null;
   notes: string | null; deleted_at: string | null; expected_amount: number | null; currency: string; frequency: string | null;
@@ -203,7 +203,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
   const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
-    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }] = await Promise.all([
+    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }, { data: depMoveRows }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -234,7 +234,17 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
     supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null),
+    // เงินประกัน: รายการรับ / คืนส่วนต่างตอนต่อสัญญา (ค่าตั้งต้นของช่องบัญชีใน "แก้ไขสัญญา")
+    leases.length ? supabase.from("cash_movements").select("related_lease_id,movement_type,from_asset_id,to_asset_id")
+      .in("related_lease_id", leases.map((l) => l.id)).in("movement_type", ["SECURITY_DEPOSIT_IN", "SECURITY_DEPOSIT_OUT"])
+      .eq("is_derived", false).is("deleted_at", null).order("created_at") : Promise.resolve({ data: [] as never[] }),
   ]);
+  type DepMove = { related_lease_id: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null };
+  const depIn = new Map<string, string | null>(), depOut = new Map<string, string | null>();
+  ((depMoveRows ?? []) as DepMove[]).forEach((m) => {
+    if (m.movement_type === "SECURITY_DEPOSIT_IN" && !depIn.has(m.related_lease_id)) depIn.set(m.related_lease_id, m.to_asset_id);
+    if (m.movement_type === "SECURITY_DEPOSIT_OUT" && !depOut.has(m.related_lease_id)) depOut.set(m.related_lease_id, m.from_asset_id);
+  });
   type PayRow = { amount: number; currency: string; movement_date: string; metadata: { component_id?: string; add_value?: boolean | string } | null };
   // จ่ายเพิ่มเป็นต้นทุนเสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · รายการเก่าที่ไม่ได้ติ๊ก = ไม่นับเป็นต้นทุน
   const addPays = ((payRows ?? []) as PayRow[]).filter((p) => p.currency === a.currency && String(p.metadata?.add_value) === "true");
@@ -474,12 +484,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             docs={<EntityDocuments category="PROPERTY" entityType="PROPERTY_LEASE" entityId={l.id} module="PROPERTY"
               role={full ? me.role : "VIEWER"} paths={paths} title="รูปถ่าย / เอกสารการส่งมอบ" bare />} />
         )}
-        {canSettle && full && !co && !l.deposit_settlement_type && depSameCcy && l.start_date <= today && (l.terminated_date ?? today) <= today && (
+        {/* ปุ่มผู้เช่าออกปุ่มเดียว (ตกลง 6 พ.ย. 2026): อยู่ตลอด · บันทึกวันออกล่วงหน้าแล้ว = เปิดมาแก้ / ยกเลิกวันออก · ถึงวันแล้ว = ฟอร์มเต็ม */}
+        {canSettle && full && !co && !l.deposit_settlement_type && depSameCcy && l.start_date <= today && (
           <CloseLeaseForm assetId={id} leaseId={l.id} tenant={[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
             startDate={l.start_date} endDate={l.end_date} terminated={l.terminated_date} today={today} currency={l.rent_currency}
-            banks={bankList} defaultBank={rentTo.get(l.id) ?? null} items={hand} />
+            banks={bankList} defaultBank={rentTo.get(l.id) ?? null} items={hand} isAdmin={me.role === "ADMIN"} />
         )}
-        {me.role === "ADMIN" && full && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED" && (
+        {/* เงินประกันคนละสกุล (ไม่มีฟอร์มผู้เช่าออก): แก้ / ยกเลิกวันเลิกสัญญา = ADMIN หรือ EDITOR ก่อนถึงวันนั้น */}
+        {full && !depSameCcy && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED"
+          && (me.role === "ADMIN" || (canSettle && l.terminated_date > today)) && (
           <EditTerminationForm assetId={id} leaseId={l.id} terminated={l.terminated_date} startDate={l.start_date} endDate={l.end_date} />
         )}
         {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && !depSameCcy && (
@@ -535,7 +548,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
             {l.deposit_settlement_type === "REFUNDED" &&
               <span className="text-xs text-slate-500"> · คืน {money(l.deposit_refunded_amount)} เมื่อ {thDate(l.deposit_settled_date)}</span>}
             {l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" &&
-              <span className="text-xs text-slate-500"> · ยกไปสัญญาใหม่ {thDate(l.deposit_settled_date)}</span>}
+              <span className="text-xs text-slate-500"> · ยกไปสัญญาใหม่ {thDate(l.deposit_settled_date)}
+                {Number(l.deposit_refunded_amount ?? 0) > 0 && ` · คืนส่วนต่าง ${money(l.deposit_refunded_amount)}`}</span>}
           </div>
         )}
         {closeOf.get(l.id) && <div className="mt-1 text-slate-600">{closeoutText(l, closeOf.get(l.id)!)}</div>}
@@ -568,7 +582,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)}
           {dep > 0 && <span className="text-slate-500"> · เงินประกัน {money(dep)}
             {l.deposit_settlement_type === "REFUNDED" ? ` คืน ${money(l.deposit_refunded_amount)} เมื่อ ${thDate(l.deposit_settled_date)}`
-              : l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" ? ` ยกไปสัญญาใหม่ ${thDate(l.deposit_settled_date)}` : ""}</span>}
+              : l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" ? ` ยกไปสัญญาใหม่ ${thDate(l.deposit_settled_date)}`
+                + (Number(l.deposit_refunded_amount ?? 0) > 0 ? ` · คืนส่วนต่าง ${money(l.deposit_refunded_amount)}` : "") : ""}</span>}
           {closeOf.get(l.id) && <span className="block text-xs text-slate-500">{closeoutText(l, closeOf.get(l.id)!)}</span>}</span>
         <span className="ml-auto flex flex-wrap items-center gap-4">{leaseActions(l)}</span>
       </div>
@@ -581,6 +596,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const hubRenewals = canWrite ? renewals.filter((r) => leases.some((l) => l.id === r.id && canRenew(l))) : [];
   const editEntry = (l: Lease, old: boolean): LeaseEditEntry => {
     const x = leaseExtra.get(l.id);
+    const fromL = l.deposit_carried_from_lease_id ? leases.find((o) => o.id === l.deposit_carried_from_lease_id) : undefined;
+    const fromDep = Number(fromL?.security_deposit ?? 0);
     return {
       id: l.id, old, label: renewals.find((r) => r.id === l.id)?.label ?? l.tenant_name,
       m: { tenant_name: l.tenant_name, unit_label: l.unit_label, contract_no: l.contract_no, start_date: l.start_date, end_date: l.end_date,
@@ -589,8 +606,17 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         rent_timing: x?.rent_timing ?? "ADVANCE", grace_days: x?.grace_days ?? 15,
         late_fee_per_day: x?.late_fee_per_day == null ? null : Number(x.late_fee_per_day), start_locked: closeOf.has(l.id) },
       v: x ?? {}, rentCurrency: l.rent_currency, rentTo: rentTo.get(l.id) ?? null, depositMonths: x?.deposit_months ?? null,
+      // เงินประกัน (ตกลง 6 พ.ย. 2026): แก้ได้จนกว่าจะคืน / ยกไปสัญญาใหม่ / บันทึกผู้เช่าออก · ยกมา + น้อยกว่าเดิม = บัญชีของรายการคืนส่วนต่าง
+      dep: {
+        amount: Number(l.security_deposit ?? 0), currency: l.deposit_currency ?? l.rent_currency, received: l.deposit_received_date, goLive,
+        locked: closeOf.has(l.id) ? "บันทึกผู้เช่าออกแล้ว (แก้ได้หลังกด “ยกเลิกผู้เช่าออก”)"
+          : l.deposit_settlement_type === "REFUNDED" ? "คืนเงินประกันแล้ว"
+          : l.deposit_settlement_type ? "ยกไปสัญญาใหม่แล้ว" : null,
+        carried: fromL ? { deposit: fromDep } : null,
+        bank: (fromL && Number(l.security_deposit ?? 0) < fromDep ? depOut.get(fromL.id) : depIn.get(l.id)) ?? null,
+      },
       deleteControl: canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
-        hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
+        hint="รายการรับเงินประกัน / คืนส่วนต่างเงินประกัน (ตอนต่อสัญญา) ของสัญญานี้จะถูกลบด้วย"
         buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />,
     };
   };

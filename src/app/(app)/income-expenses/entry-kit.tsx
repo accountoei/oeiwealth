@@ -42,8 +42,10 @@ export type Move = { id: string; movement_date: string; movement_type: string; f
   counter_currency: string | null; counter_fee?: number | null; cash_holding_id?: string | null; fee: number | null; is_derived: boolean; description: string | null; movement_group_id?: string | null;
   source_entity_type?: string | null; source_entity_id?: string | null; metadata?: unknown; parts?: Move[] };
 
+// เงินประกันการเช่า (รับ / คืน) แก้ที่สัญญาเท่านั้น (ตกลง 6 พ.ย. 2026 · ฐานข้อมูลกัน) → DEPOSIT_NOTE ใต้รายการ
 export const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PAYMENT", "OTHER_IN", "OTHER_OUT",
-  "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT", "SECURITY_DEPOSIT_IN"];
+  "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT"];
+const DEPOSIT_MOVES = ["SECURITY_DEPOSIT_IN", "SECURITY_DEPOSIT_OUT"];
 const NAME_LINK = "cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400";
 export const SPLIT_BTN = "rounded-md border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100";
 const ASSET_PREFIX: Record<string, string> = { LOAN_RECEIVABLE: "เงินให้กู้", INVESTMENT_PORTFOLIO: "พอร์ต", INSURANCE_CASH_VALUE: "มูลค่าเวนคืน" };
@@ -93,6 +95,7 @@ export type KitCtx = {
 
 /** รายการจากผู้เช่าออก: กดแก้ไม่ได้ → บอกที่ยกเลิก (ข้อความเดียวกับหน้าทรัพย์สิน) */
 export const CLOSEOUT_NOTE = <div className="text-xs text-slate-400">มาจากผู้เช่าออก · ยกเลิกที่ &ldquo;ยกเลิกผู้เช่าออก&rdquo; ในสัญญา</div>;
+const DEPOSIT_NOTE = <div className="text-xs text-slate-400">เงินประกันของสัญญาเช่า · แก้ / ยกเลิกที่สัญญาในหน้าทรัพย์สิน</div>;
 
 /** id ของรายได้ / ค่าใช้จ่ายที่สร้างตอนบันทึกผู้เช่าออก (lease_closeouts ที่ยังไม่ยกเลิก) */
 export const closeoutIdSet = (rows: { income_ids: string[] | null; expense_id: string | null }[] | null | undefined) =>
@@ -389,7 +392,8 @@ export function makeEntryKit(c: KitCtx) {
       pendingHref: withActions && canDelete || !c.tabLinks ? undefined
         : inc?.pending_split ? `${tabLink("income", "")?.href}&it=split` : exp?.pending_split ? `${tabLink("expense", "")?.href}&et=split` : undefined,
       detail: <>{srcLink(link, (pending && typeof detail === "string" ? stripPending(detail) : detail) || type)}
-        {canWrite && (inc || exp) && fromCloseout((inc ?? exp)!.id) && CLOSEOUT_NOTE}</>,
+        {canWrite && (inc || exp) && fromCloseout((inc ?? exp)!.id) && CLOSEOUT_NOTE}
+        {canWrite && DEPOSIT_MOVES.includes(m.movement_type) && DEPOSIT_NOTE}</>,
       actions: withActions && !m.parts && !m.is_derived && EDITABLE_MOVES.includes(m.movement_type) ? moveEdit(m)
         // รับชำระเงินให้กู้ (เงินต้น + ดอกเบี้ย) → กดที่แถว: หน้าต่างเดียวแก้ทั้งคู่ (เหมือนหน้า Loans)
         : withActions && m.parts ? pairEdit(m)

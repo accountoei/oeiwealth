@@ -4961,4 +4961,96 @@ SELECT t.fails($$INSERT INTO public.property_leases(property_id, unit_label, ten
 SELECT t.ok(NOT has_function_privilege('anon', 'private.tg_lease_start_guard()', 'EXECUTE')
         AND NOT has_function_privilege('anon', 'private.tg_lease_overlap()', 'EXECUTE'),
             'วันเริ่มสัญญา: anon เรียกฟังก์ชันตรวจไม่ได้');
+\echo '== 22. แก้เงินประกัน · ต่อสัญญาเงินประกันน้อยกว่าเดิม · EDITOR แก้วันออกล่วงหน้า (6 พ.ย. 2026)'
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_lease(t.a('บ้าน A'), jsonb_build_object('unit_label', 'ชั้น 30', 'tenant_name', 'ผู้เช่า ประกัน', 'start_date', '2026-08-05',
+         'end_date', '2026-12-31', 'rent_amount', '9000', 'security_deposit', '20000', 'deposit_received_date', '2026-08-05',
+         'deposit_to_asset_id', t.a('KBank ออมทรัพย์'))) AS lease_d \gset
+SELECT public.set_lease_deposit(:'lease_d', 18000, '2026-08-05', t.a('KBank ออมทรัพย์')) IS NULL AS dep1;
+SELECT t.ok((SELECT security_deposit = 18000 FROM public.property_leases WHERE id = :'lease_d')
+        AND (SELECT count(*) = 1 AND sum(amount) = 18000 FROM public.cash_movements
+              WHERE related_lease_id = :'lease_d' AND movement_type = 'SECURITY_DEPOSIT_IN' AND deleted_at IS NULL),
+            'แก้เงินประกัน: 20,000 → 18,000 · รายการรับเงินประกันแก้ยอดตาม (แถวเดิม)');
+SELECT public.set_lease_deposit(:'lease_d', 18000, '2026-08-06', NULL) IS NULL AS dep2;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE related_lease_id = :'lease_d' AND movement_type = 'SECURITY_DEPOSIT_IN' AND deleted_at IS NULL)
+        AND (SELECT deposit_received_date = '2026-08-06' FROM public.property_leases WHERE id = :'lease_d'),
+            'แก้เงินประกัน: เอาบัญชีออก = ไม่ผ่านบัญชี → ลบรายการรับเงิน · วันที่รับเปลี่ยนตาม');
+SELECT public.set_lease_deposit(:'lease_d', 18000, '2026-08-07', t.a('KBank ออมทรัพย์')) IS NULL AS dep3;
+SELECT t.ok((SELECT count(*) = 1 AND min(movement_date) = '2026-08-07' AND sum(amount) = 18000 FROM public.cash_movements
+              WHERE related_lease_id = :'lease_d' AND movement_type = 'SECURITY_DEPOSIT_IN' AND deleted_at IS NULL),
+            'แก้เงินประกัน: บันทึกรับทีหลัง (เลือกบัญชี + วันที่) → สร้างรายการรับเงินประกัน');
+SELECT t.fails($$SELECT public.set_lease_deposit('$$ || :'lease_d' || $$', 18000, '2026-06-15', t.a('KBank ออมทรัพย์'))$$,
+               'ก่อน Go-live', 'แก้เงินประกัน: รับก่อน Go-live เลือกบัญชีไม่ได้ (อยู่ในยอดตั้งต้น)');
+SELECT t.fails($$SELECT public.set_lease_deposit('$$ || :'lease_d' || $$', 18000, '2026-08-07', t.a('BBL USD'))$$,
+               'สกุลเดียวกับเงินประกัน', 'แก้เงินประกัน: บัญชีต้องสกุลเดียวกับเงินประกัน');
+SELECT t.fails($$UPDATE public.property_leases SET security_deposit = 1 WHERE id = '$$ || :'lease_d' || $$'$$,
+               'แก้เงินประกันที่หน้าต่าง', 'แก้เงินประกัน: แก้ตรงที่ตารางไม่ได้ (ต้องผ่านแก้ไขสัญญา ให้รายการเงินตรงกัน)');
+SELECT t.fails($$UPDATE public.cash_movements SET amount = 1 WHERE related_lease_id = '$$ || :'lease_d' || $$' AND deleted_at IS NULL$$,
+               'เงินประกันของสัญญาเช่า', 'แก้เงินประกัน: แก้ยอดรายการรับเงินประกันที่หน้าบัญชีไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.set_lease_deposit('$$ || :'lease_d' || $$', 1, NULL, NULL)$$, 'PERMISSION_DENIED|permission denied',
+               'แก้เงินประกัน: VIEWER แก้ไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+-- ต่อสัญญา: เงินประกันใหม่น้อยกว่าเดิม → ยกมาเท่าที่เก็บ + คืนส่วนต่าง ณ วันเริ่มสัญญาใหม่
+SELECT t.fails($$SELECT public.create_lease(t.a('บ้าน A'), jsonb_build_object('unit_label', 'ชั้น 30', 'tenant_name', 'ผู้เช่า ประกัน',
+                 'start_date', '2027-01-01', 'end_date', '2027-12-31', 'rent_amount', '9000', 'security_deposit', '15000',
+                 'carried_from_lease_id', '$$ || :'lease_d' || $$'))$$,
+               'เลือกบัญชีที่คืนส่วนต่าง 3,000.00', 'ต่อสัญญา: เงินประกันใหม่น้อยกว่าเดิม ต้องเลือกบัญชีคืนส่วนต่าง');
+SELECT t.fails($$SELECT public.create_lease(t.a('บ้าน A'), jsonb_build_object('unit_label', 'ชั้น 30', 'tenant_name', 'ผู้เช่า ประกัน',
+                 'start_date', '2027-01-01', 'end_date', '2027-12-31', 'rent_amount', '9000',
+                 'carried_from_lease_id', '$$ || :'lease_d' || $$'))$$,
+               'สัญญาใหม่ต้องมีเงินประกัน', 'ต่อสัญญา: ยกเงินประกันแล้วสัญญาใหม่ต้องมีเงินประกัน');
+SELECT public.create_lease(t.a('บ้าน A'), jsonb_build_object('unit_label', 'ชั้น 30', 'tenant_name', 'ผู้เช่า ประกัน', 'start_date', '2027-01-01',
+         'end_date', '2027-12-31', 'rent_amount', '9000', 'security_deposit', '15000', 'carried_from_lease_id', :'lease_d',
+         'deposit_refund_from_asset_id', t.a('KBank ออมทรัพย์'))) AS lease_d2 \gset
+SELECT t.ok((SELECT deposit_settlement_type = 'CARRIED_TO_NEW_LEASE' AND deposit_settled_date = '2027-01-01' AND deposit_refunded_amount = 3000
+               FROM public.property_leases WHERE id = :'lease_d')
+        AND (SELECT deposit_carried_amount = 15000 AND security_deposit = 15000 FROM public.property_leases WHERE id = :'lease_d2')
+        AND (SELECT count(*) = 1 AND sum(amount) = 3000 AND min(movement_date) = '2027-01-01' FROM public.cash_movements
+              WHERE related_lease_id = :'lease_d' AND movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE related_lease_id = :'lease_d2' AND deleted_at IS NULL),
+            'ต่อสัญญา: เงินประกัน 18,000 → 15,000 · ยกมา 15,000 · คืนส่วนต่าง 3,000 (เงินออก ณ 1 ม.ค. ผูกกับสัญญาเดิม)');
+SELECT public.set_lease_deposit(:'lease_d2', 20000, NULL, t.a('KBank ออมทรัพย์')) IS NULL AS dep4;
+SELECT t.ok((SELECT deposit_carried_amount = 18000 FROM public.property_leases WHERE id = :'lease_d2')
+        AND (SELECT deposit_refunded_amount = 0 FROM public.property_leases WHERE id = :'lease_d')
+        AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE related_lease_id = :'lease_d' AND movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL)
+        AND (SELECT count(*) = 1 AND sum(amount) = 2000 AND min(movement_date) = '2027-01-01' FROM public.cash_movements
+              WHERE related_lease_id = :'lease_d2' AND movement_type = 'SECURITY_DEPOSIT_IN' AND deleted_at IS NULL),
+            'แก้เงินประกันสัญญาที่ยกมา: 15,000 → 20,000 · ยกมา 18,000 + รับเพิ่ม 2,000 · รายการคืนส่วนต่างถูกลบ');
+SELECT public.set_lease_deposit(:'lease_d2', 16000, NULL, t.a('KBank ออมทรัพย์')) IS NULL AS dep5;
+UPDATE public.property_leases SET start_date = '2027-01-05' WHERE id = :'lease_d2';
+SELECT t.ok((SELECT deposit_carried_amount = 16000 FROM public.property_leases WHERE id = :'lease_d2')
+        AND (SELECT deposit_refunded_amount = 2000 AND deposit_settled_date = '2027-01-05' FROM public.property_leases WHERE id = :'lease_d')
+        AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE related_lease_id = :'lease_d2' AND deleted_at IS NULL)
+        AND (SELECT count(*) = 1 AND sum(amount) = 2000 AND min(movement_date) = '2027-01-05' FROM public.cash_movements
+              WHERE related_lease_id = :'lease_d' AND movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL),
+            'แก้เงินประกันสัญญาที่ยกมา: → 16,000 = คืนส่วนต่าง 2,000 · เลื่อนวันเริ่ม → วันปิดเงินประกันเดิม + เงินออกเลื่อนตาม');
+SELECT t.fails($$SELECT public.set_lease_deposit('$$ || :'lease_d' || $$', 1000, NULL, NULL)$$,
+               'ยกไปสัญญาใหม่แล้ว', 'แก้เงินประกัน: สัญญาเดิมที่ยกเงินประกันไปแล้วแก้ไม่ได้');
+SELECT t.fails($$SELECT public.set_lease_deposit('$$ || :'lease_d2' || $$', 0, NULL, NULL)$$,
+               'ต้องมีเงินประกัน', 'แก้เงินประกัน: สัญญาที่ยกมาใส่ 0 ไม่ได้');
+SELECT public.delete_lease(:'lease_d2') IS NULL AS del_d2;
+SELECT t.ok((SELECT deposit_settlement_type IS NULL AND deposit_refunded_amount IS NULL AND deposit_settled_date IS NULL
+               FROM public.property_leases WHERE id = :'lease_d')
+        AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE related_lease_id IN (:'lease_d', :'lease_d2')
+                         AND movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL),
+            'ลบสัญญาที่ต่อ: รายการคืนส่วนต่างถูกลบ · สัญญาเดิมกลับมาถือเงินประกันเต็ม');
+-- วันออกล่วงหน้า: EDITOR แก้ / ยกเลิกได้ก่อนถึงวัน · ถึงวันแล้วเฉพาะ ADMIN
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
+  VALUES (:'prop_a', 'ชั้น 31', 'ผู้เช่า นัดออก', '2026-08-01', '2027-12-31', 7000);
+SELECT id AS lease_o FROM public.property_leases WHERE tenant_name = 'ผู้เช่า นัดออก' \gset
+UPDATE public.property_leases SET status = 'TERMINATED', terminated_date = current_date + 10 WHERE id = :'lease_o';
+UPDATE public.property_leases SET terminated_date = current_date + 20 WHERE id = :'lease_o';
+UPDATE public.property_leases SET status = 'ACTIVE', terminated_date = NULL WHERE id = :'lease_o';
+SELECT t.ok((SELECT status = 'ACTIVE' AND terminated_date IS NULL FROM public.property_leases WHERE id = :'lease_o'),
+            'วันออกล่วงหน้า: EDITOR แก้วัน / ยกเลิกได้ก่อนถึงวันนั้น');
+UPDATE public.property_leases SET status = 'TERMINATED', terminated_date = current_date WHERE id = :'lease_o';
+SELECT t.fails($$UPDATE public.property_leases SET terminated_date = current_date + 5 WHERE id = '$$ || :'lease_o' || $$'$$,
+               'เฉพาะ ADMIN', 'วันออก: ถึงวันแล้ว EDITOR แก้ไม่ได้ (เฉพาะ ADMIN)');
+SELECT t.ok(has_function_privilege('authenticated', 'public.set_lease_deposit(uuid, numeric, date, uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.set_lease_deposit(uuid, numeric, date, uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'private.lease_deposit_cash(uuid, uuid)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'private.tg_lease_deposit_guard()', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'private.tg_deposit_movement_lock()', 'EXECUTE'),
+            'แก้เงินประกัน: anon เรียกไม่ได้');
 \echo 'ALL SCENARIO TESTS PASSED'

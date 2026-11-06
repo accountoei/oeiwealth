@@ -160,13 +160,19 @@ export type LeaseMain = {
   /** บันทึกผู้เช่าออกแล้ว → แก้วันเริ่มไม่ได้ (ฐานข้อมูลตรวจซ้ำ) */ start_locked?: boolean;
 };
 
+/** เงินประกันใน "แก้ไขสัญญา" · locked = เหตุที่แก้ไม่ได้ (คืน / ยกไปสัญญาใหม่ / ผู้เช่าออกแล้ว) · carried = ยกมาจากสัญญาเดิม */
+export type LeaseDeposit = {
+  amount: number; currency: string; received: string | null; locked: string | null;
+  carried: { deposit: number } | null; /** บัญชีของรายการรับ (หรือคืนส่วนต่าง) ที่มีอยู่ */ bank: string | null; goLive: string;
+};
+
 /**
  * แก้ไขสัญญา (ในหน้าต่างปุ่มเดียวของกล่องสัญญาเช่า หรือกดที่การ์ดสัญญา · ตกลง 6 พ.ย. 2026)
  *   บน: ข้อมูลหลัก · ล่าง: รายละเอียดสำหรับพิมพ์ · บันทึกครั้งเดียว · ปุ่มลบสัญญาข้างปุ่มบันทึก
  */
-export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, deleteControl }: {
+export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, dep, deleteControl }: {
   assetId: string; leaseId: string; m: LeaseMain; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
-  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; deleteControl?: React.ReactNode;
+  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; dep: LeaseDeposit; deleteControl?: React.ReactNode;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateLease, {});
   const [start, setStart] = useState(m.start_date);
@@ -193,7 +199,7 @@ export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks
               ? <><input type="date" disabled value={m.start_date} className={`${f} bg-slate-50 text-slate-500`} />
                   <span className="text-xs text-slate-500">บันทึกผู้เช่าออกแล้ว · แก้ได้หลังกด &ldquo;ยกเลิกผู้เช่าออก&rdquo;</span></>
               : <><input name="m_start_date" type="date" required value={start} onChange={(e) => setStart(e.target.value)} className={f} />
-                  <span className="text-xs text-slate-500">รอบค่าเช่า / งวดแรกคิดใหม่ให้ · วันรับเงินประกันไม่เปลี่ยน</span></>}
+                  <span className="text-xs text-slate-500">รอบค่าเช่า / งวดแรกคิดใหม่ให้</span></>}
           </label>
           <label className="text-sm">สิ้นสุดสัญญา
             <input name="m_end_date" type="date" required defaultValue={m.end_date} min={start} className={f} />
@@ -233,14 +239,11 @@ export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks
               {Object.entries(UTILITIES_BILLING_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </label>
-          <label className="text-sm">จำนวนเดือนที่วางประกัน
-            <input name="lease_deposit_months" inputMode="decimal" data-money="off" defaultValue={depositMonths ?? DEPOSIT_MONTHS_DEFAULT} className={f} />
-            <span className="text-xs text-slate-500">ใช้อ้างอิงในสัญญา · ไม่เปลี่ยนยอดเงินประกันที่บันทึกไว้</span>
-          </label>
           <label className="text-sm md:col-span-2">หมายเหตุ
             <input name="m_notes" defaultValue={m.notes ?? ""} className={f} />
           </label>
         </div>
+        <DepositEdit dep={dep} start={start} banks={banks} depositMonths={depositMonths} />
         <div className="border-t border-slate-200 pt-4">
           <div className="mb-3 text-sm font-medium text-slate-800">รายละเอียดสำหรับพิมพ์สัญญา <span className="font-normal text-slate-500">(ไม่บังคับ · ว่าง = เว้นเส้นให้เขียนเอง)</span></div>
           <LeaseContractFields v={v} opt={opt} canSensitive={canSensitive} />
@@ -255,7 +258,82 @@ export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks
   );
 }
 
-/** ADMIN: แก้วันเลิกสัญญา / ยกเลิกการเลิกสัญญา (ก่อนคืนเงินประกัน · ฐานข้อมูลตรวจซ้ำ) */
+/**
+ * เงินประกันใน "แก้ไขสัญญา" (ตกลง 6 พ.ย. 2026): แก้ยอด / วันที่รับ / บัญชีได้จนกว่าจะคืน ยกไปสัญญาใหม่ หรือบันทึกผู้เช่าออก
+ *   ระบบปรับรายการเงินเข้า "รับเงินประกัน" ให้ตรง (เลือกบัญชีทีหลัง = บันทึกรับทีหลัง · เอาบัญชีออก = ไม่ผ่านบัญชี)
+ *   ยกมาจากสัญญาเดิม: มากกว่าเดิม = รับส่วนที่เพิ่ม · น้อยกว่าเดิม = คืนส่วนต่างให้ผู้เช่า (ณ วันเริ่มสัญญา)
+ *   รับก่อน Go-live = อยู่ในยอดบัญชีตั้งต้นแล้ว ไม่มีช่องบัญชี
+ */
+function DepositEdit({ dep, start, banks, depositMonths }: { dep: LeaseDeposit; start: string; banks: Bank[]; depositMonths: number | null }) {
+  const [amt, setAmt] = useState(dep.amount > 0 ? money(dep.amount) : "");
+  const origDate = dep.carried ? "" : (dep.received ?? start);
+  const [date, setDate] = useState(origDate);
+  const f = "mt-1 block w-full " + input;
+  const months = (
+    <label className="text-sm">จำนวนเดือนที่วางประกัน
+      <input name="lease_deposit_months" inputMode="decimal" data-money="off" defaultValue={depositMonths ?? DEPOSIT_MONTHS_DEFAULT} className={f} />
+      <span className="text-xs text-slate-500">ใช้อ้างอิงในสัญญาที่พิมพ์</span>
+    </label>
+  );
+  const head = <div className="text-sm font-medium text-slate-800">เงินประกัน <span className="font-normal text-slate-500">(นับเป็นหนี้สินจนกว่าจะคืน)</span></div>;
+  if (dep.locked) {
+    return (
+      <div className="space-y-3 rounded-lg bg-slate-50 p-4">
+        {head}
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="text-sm">ยอดเงินประกัน
+            <div className="mt-1 py-2 tabular-nums">{dep.amount > 0 ? money(dep.amount, dep.currency) : "ไม่มี"}</div>
+            <span className="text-xs text-slate-500">{dep.locked} · แก้ยอดไม่ได้</span>
+          </div>
+          {months}
+        </div>
+      </div>
+    );
+  }
+  const n = Number(amt.replace(/,/g, "")) || 0;
+  const eff = dep.carried ? start : (date || start);
+  const beforeGoLive = !!eff && eff < dep.goLive;
+  const diff = dep.carried ? Math.round((n - dep.carried.deposit) * 100) / 100 : n;
+  const sameCcy = banks.filter((b) => b.currency === dep.currency);
+  return (
+    <div className="space-y-3 rounded-lg bg-slate-50 p-4">
+      {head}
+      <input type="hidden" name="dep_orig_amount" value={String(dep.amount)} />
+      <input type="hidden" name="dep_orig_date" value={origDate} />
+      <input type="hidden" name="dep_orig_bank" value={dep.bank ?? ""} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="text-sm">ยอดเงินประกัน ({dep.currency})
+          <input name="dep_amount" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="ไม่มี = เว้นว่าง"
+            required={!!dep.carried} className={`${f} text-right`} />
+          {dep.carried && <span className="text-xs text-slate-500">ยกมาจากสัญญาเดิม {money(dep.carried.deposit)} · มากกว่า = รับเพิ่ม · น้อยกว่า = คืนส่วนต่าง (ณ วันเริ่มสัญญา)</span>}
+        </label>
+        {!dep.carried && (
+          <label className="text-sm">วันที่รับเงินประกัน
+            <input name="dep_received_date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className={f} />
+            <span className="text-xs text-slate-500">นับเป็นหนี้สินตั้งแต่วันนี้ · ว่าง = วันเริ่มสัญญา</span>
+          </label>
+        )}
+        {diff !== 0 && (beforeGoLive ? (
+          <p className="self-center text-xs text-slate-600">
+            {diff > 0 ? "รับ" : "คืนส่วนต่าง"}ก่อน Go-live ({thDate(dep.goLive)}) → อยู่ในยอดบัญชีตั้งต้นแล้ว ไม่ต้องเลือกบัญชี
+          </p>
+        ) : (
+          <label className="text-sm">
+            {diff < 0 ? `คืนส่วนต่าง ${money(-diff)} ให้ผู้เช่าจากบัญชี` : dep.carried ? `รับเงินประกันเพิ่ม ${money(diff)} เข้าบัญชี` : "รับเงินประกันเข้าบัญชี"}
+            <select name="dep_bank" defaultValue={dep.bank ?? ""} required={diff < 0} className={f}>
+              <option value="">{diff < 0 ? "— เลือกบัญชี —" : "— ไม่บันทึกเงินเข้าบัญชี —"}</option>
+              <BankOptions banks={sameCcy} />
+            </select>
+            <span className="text-xs text-slate-500">ระบบสร้าง / แก้รายการ{diff < 0 ? "เงินออก “คืนเงินประกัน”" : "เงินเข้า “รับเงินประกัน”"} ให้ตรงกับยอดนี้</span>
+          </label>
+        ))}
+        {months}
+      </div>
+    </div>
+  );
+}
+
+/** แก้วันเลิกสัญญา / ยกเลิกการเลิกสัญญา (เงินประกันคนละสกุล · ADMIN หรือ EDITOR ก่อนถึงวันนั้น · ฐานข้อมูลตรวจซ้ำ) */
 export function EditTerminationForm({ assetId, leaseId, terminated, startDate, endDate }:
   { assetId: string; leaseId: string; terminated: string; startDate: string; endDate: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
