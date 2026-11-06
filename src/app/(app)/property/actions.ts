@@ -534,8 +534,21 @@ export async function closeLease(_: ActionState, form: FormData): Promise<Action
   const damage = num(form.get("damage")) ?? 0;
   const forfeit = num(form.get("forfeit")) ?? 0;
   if (Number.isNaN(damage) || Number.isNaN(forfeit) || damage < 0 || forfeit < 0) return { error: "ยอดหักต้องเป็นตัวเลขไม่ติดลบ" };
+  const leaseId = String(form.get("lease_id"));
+  // ผลตรวจของตอนส่งคืน (ตาราง "ตรวจของตอนส่งคืน") บันทึกก่อน · ติ๊ก "คืนเงินทีหลัง" = ไม่มีตารางนี้
+  let added: string[] = [];
+  const hv = form.get("handover_rows");
+  if (hv != null) {
+    let rows: HandoverRow[];
+    try { rows = JSON.parse(String(hv)); } catch { return { error: BAD_ROWS_ERROR }; }
+    if (!Array.isArray(rows)) return { error: BAD_ROWS_ERROR };
+    if (rows.some((r) => !t(r.name) && (n(r.deduction) ?? 0) > 0)) return { error: "ใส่ชื่อรายการของแถวที่มีค่าเสียหาย" };
+    const w = await writeHandover(supabase, leaseId, rows, []);
+    added = w.added;
+    if (w.error) { await dropAdded(supabase, leaseId, added); return { error: w.error }; }
+  }
   const { data, error } = await supabase.rpc("close_lease", {
-    p_lease_id: String(form.get("lease_id")),
+    p_lease_id: leaseId,
     p_move_out: str(form.get("move_out")),
     p_settled_date: str(form.get("settled_date")),
     p_bank_asset_id: str(form.get("bank_asset_id")),
@@ -545,7 +558,8 @@ export async function closeLease(_: ActionState, form: FormData): Promise<Action
     // หักเกินเงินประกัน: NOW = รับเงินแล้ว (เข้าบัญชีที่เลือก) · LATER = ค่าเสียหายส่วนที่เกินค้างรับในแท็บรับค่าเช่า
     p_collect: form.get("collect") === "NOW" ? "NOW" : "LATER",
   });
-  if (error) return { error: friendlyError(error.message) };
+  // บันทึกผู้เช่าออกไม่ได้ → เอาแถวที่เพิ่งเพิ่มในตารางตรวจออก (กดบันทึกซ้ำจะได้ไม่ซ้ำ) · แถวเดิมที่แก้ผลตรวจไว้คงอยู่
+  if (error) { await dropAdded(supabase, leaseId, added); revalidateProperty(id); return { error: friendlyError(error.message) }; }
   revalidateProperty(id);
   revalidatePath("/");
   revalidatePath("/financial/cash", "layout");
@@ -896,16 +910,15 @@ export async function copyInventoryToLease(_: ActionState, form: FormData): Prom
 type HandoverRow = InvRow & { id?: string; inventory_item_id?: string; in_condition?: string; in_reading?: string; out_status?: string;
   out_condition?: string; out_reading?: string; deduction?: string };
 
-/** บันทึกรายการส่งมอบทั้งตาราง: แก้แถวเดิม · เพิ่มแถวใหม่ · ลบแถวที่เอาออก (Soft Delete) */
-export async function saveHandover(_: ActionState, form: FormData): Promise<ActionState> {
-  const supabase = await createClient();
-  const assetId = String(form.get("asset_id"));
-  const leaseId = String(form.get("lease_id"));
-  const rows = (readRows<HandoverRow>(form) ?? []).filter((r) => t(r.name));
-  let removed: string[] = [];
-  try { removed = JSON.parse(String(form.get("removed") ?? "[]")); } catch { return { error: BAD_ROWS_ERROR }; }
+/**
+ * เขียนรายการส่งมอบของสัญญา: แก้แถวเดิม (มี id) · เพิ่มแถวใหม่ · ลบแถวที่เอาออก (Soft Delete)
+ * คืน error (ข้อความ) หรือ null + id ของแถวที่เพิ่มใหม่ (ใช้ย้อนกลับเมื่อขั้นต่อไปบันทึกไม่ได้)
+ */
+async function writeHandover(supabase: Awaited<ReturnType<typeof createClient>>, leaseId: string, raw: HandoverRow[], removed: string[]) {
+  const rows = raw.filter((r) => t(r.name));
   const nums = rows.flatMap((r) => [n(r.qty), n(r.value), n(r.in_reading), n(r.out_reading), n(r.deduction)]);
-  if (nums.some((x) => x != null && (Number.isNaN(x) || x < 0)) || rows.some((r) => n(r.qty) === 0)) return { error: "ตัวเลขต้องไม่ติดลบ และจำนวนต้องมากกว่า 0" };
+  if (nums.some((x) => x != null && (Number.isNaN(x) || x < 0)) || rows.some((r) => n(r.qty) === 0))
+    return { error: "ตัวเลขต้องไม่ติดลบ และจำนวนต้องมากกว่า 0", added: [] as string[] };
   const body = (r: HandoverRow, i: number) => ({
     item_type: r.item_type || "OTHER", name: t(r.name), qty: n(r.qty) ?? 1, brand: t(r.brand), serial_no: t(r.serial_no), value: n(r.value),
     in_condition: t(r.in_condition), in_reading: n(r.in_reading), out_status: t(r.out_status), out_condition: t(r.out_condition),
@@ -917,8 +930,26 @@ export async function saveHandover(_: ActionState, form: FormData): Promise<Acti
       : supabase.from("lease_handover_items").insert({ ...body(r, i), lease_id: leaseId }).select("id")),
     ...removed.map((id) => supabase.from("lease_handover_items").update({ deleted_at: new Date().toISOString() }).eq("id", id).eq("lease_id", leaseId).select("id")),
   ]);
+  const added = rows.flatMap((r, i) => (!r.id && results[i].data?.[0]?.id ? [String(results[i].data![0].id)] : []));
   const bad = results.find((x) => x.error || !x.data?.length);
+  if (bad) return { error: bad.error ? friendlyError(bad.error.message) : "บางรายการบันทึกไม่ได้ (ไม่มีสิทธิ์แก้รายการนี้)", added };
+  return { error: null, added };
+}
+
+/** ย้อนแถวที่เพิ่งเพิ่มในรายการส่งมอบ (Soft Delete) เมื่อขั้นต่อไปบันทึกไม่ได้ */
+async function dropAdded(supabase: Awaited<ReturnType<typeof createClient>>, leaseId: string, ids: string[]) {
+  if (!ids.length) return;
+  await supabase.from("lease_handover_items").update({ deleted_at: new Date().toISOString() }).in("id", ids).eq("lease_id", leaseId);
+}
+
+/** บันทึกรายการส่งมอบทั้งตาราง (ปุ่ม "รายการส่งมอบ" บนการ์ดสัญญา) */
+export async function saveHandover(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const assetId = String(form.get("asset_id"));
+  let removed: string[] = [];
+  try { removed = JSON.parse(String(form.get("removed") ?? "[]")); } catch { return { error: BAD_ROWS_ERROR }; }
+  const { error } = await writeHandover(supabase, String(form.get("lease_id")), readRows<HandoverRow>(form) ?? [], removed);
   revalidateProperty(assetId);
-  if (bad) return { error: bad.error ? friendlyError(bad.error.message) : "บางรายการบันทึกไม่ได้ (ไม่มีสิทธิ์แก้รายการนี้)" };
+  if (error) return { error };
   return { ok: "บันทึกรายการส่งมอบแล้ว" };
 }

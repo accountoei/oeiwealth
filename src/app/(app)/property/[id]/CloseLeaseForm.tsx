@@ -9,6 +9,7 @@ import { InfoTip } from "@/components/HeaderBar";
 import { SMALL_BTN, minusMoney, money, numOrZero as num, plusMoney, thDate } from "@/lib/format";
 import { closeLease, closeoutPreview, terminateLease, type ActionState, type CloseoutPreview } from "../actions";
 import type { Bank } from "../LeaseFields";
+import { MoveOutCheck, checkDamage, type HandoverItem } from "../Inventory";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -20,14 +21,16 @@ const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 8640000
  *   เงินประกัน − ค่าเช่าค้าง − ค่าน้ำไฟค้าง − ค่าเสียหาย − ริบ = คืนเงินประกัน · + ค่าเช่าที่จ่ายล่วงหน้าเกิน = โอนคืนรวม
  *   หักเกินเงินประกัน (ลำดับ ค่าเช่า → ค่าน้ำไฟ → ค่าเสียหาย · ริบได้ไม่เกินที่เหลือ): หักกับค่าเช่าล่วงหน้าก่อน
  *     ที่เหลือ = ผู้เช่าต้องจ่ายเพิ่ม → รับเงินแล้ว (เข้าบัญชี) / ยังไม่ได้รับ (ค่าเสียหายค้างรับในแท็บรับค่าเช่า)
+ *   ตรวจของตอนส่งคืน (ตกลง 6 พ.ย. 2026): ตารางจากรายการส่งมอบ · ผลตรวจตั้งต้น "ครบ / ปกติ" → ยอดรวม = "หัก ค่าเสียหาย"
+ *     บันทึกผลตรวจ (lease_handover_items) ก่อน แล้วจึงบันทึกผู้เช่าออก · ยกเลิกผู้เช่าออกแล้วผลตรวจยังอยู่
  *   ติ๊ก "คืนเงินทีหลัง" = บันทึกวันออกอย่างเดียว (แทนปุ่มเลิกสัญญาก่อนกำหนดเดิม · วันในอนาคตได้)
  *     → สัญญาเลิก ณ วันนั้น ค่าเช่าหยุด เงินประกันขึ้น "รอคืน" · เปิดอีกครั้งเมื่อพร้อมคืนเงิน (วันออกล็อกไว้)
  *   บันทึกครั้งเดียวทั้งชุด (ยกเลิกได้ที่ปุ่ม "ยกเลิกผู้เช่าออก") · พิมพ์ใบสรุปได้จากการ์ดสัญญา
  */
-export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, endDate, terminated, today, currency, banks, defaultBank, damage, damageReason }: {
+export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, endDate, terminated, today, currency, banks, defaultBank, items }: {
   assetId: string; leaseId: string; tenant: string; startDate: string; endDate: string; terminated: string | null; today: string;
   currency: string; banks: Bank[]; defaultBank?: string | null;
-  /** ค่าเสียหายจากรายการส่งมอบ (เติมให้ · แก้ได้) */ damage: number; damageReason: string;
+  /** รายการส่งมอบของสัญญา → ตารางตรวจของตอนส่งคืน */ items: HandoverItem[];
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(closeLease, {});
@@ -41,7 +44,8 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
   const [settled, setSettled] = useState(today);
   const [pv, setPv] = useState<CloseoutPreview | null>(null);
   const [pvErr, setPvErr] = useState("");
-  const [dmg, setDmg] = useState(damage > 0 ? money(damage) : "");
+  const initChecks = () => items.map((r) => ({ ...r, out_status: r.out_status || "OK" }));
+  const [checks, setChecks] = useState<HandoverItem[]>(initChecks);
   const [forfeit, setForfeit] = useState("");
   const [collect, setCollect] = useState<"LATER" | "NOW">("LATER");
 
@@ -57,7 +61,8 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
 
   if (state.ok) return <Flash on={state} as="p" className="text-xs text-emerald-700" />;
   if (termState.ok) return <Flash on={termState} as="p" className="text-xs text-emerald-700" />;
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>ผู้เช่าออก / คืนเงินประกัน</button>;
+  // เปิดหน้าต่างใหม่ = ดึงรายการส่งมอบล่าสุด (อาจแก้ที่ปุ่ม "รายการส่งมอบ" หลังโหลดหน้า)
+  const trigger = <button onClick={() => { if (!open) setChecks(initChecks()); setOpen(!open); }} className={activeCls(SMALL_BTN)}>ผู้เช่าออก / คืนเงินประกัน</button>;
   if (!open) return trigger;
 
   const toggleLater = (on: boolean) => {
@@ -71,7 +76,8 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
   const unpaid = Number(pv?.unpaid_rent ?? 0);
   const util = Number(pv?.utilities ?? 0);
   const over = Number(pv?.advance_rent ?? 0);
-  const dmgN = num(dmg);
+  const dmgInfo = checkDamage(checks);
+  const dmgN = dmgInfo.amount;
   const room = r2(Math.max(dep - unpaid - util - dmgN, 0));
   const forfeitErr = num(forfeit) > room + 0.005;
   const ded = r2(unpaid + util + dmgN + num(forfeit));
@@ -102,6 +108,11 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
       <input type="hidden" name="lease_id" value={leaseId} />
       <input type="hidden" name="net_transfer" value={netOut > 0 ? String(netOut) : ""} />
       <input type="hidden" name="collect" value={mode} />
+      {!later && <>
+        <input type="hidden" name="handover_rows" value={JSON.stringify(checks.filter((r) => r.id || r.name.trim() || num(r.deduction) > 0))} />
+        <input type="hidden" name="damage" value={dmgN > 0 ? String(dmgN) : ""} />
+        <input type="hidden" name="damage_reason" value={dmgInfo.reason} />
+      </>}
       {later && <input type="hidden" name="terminated_date" value={moveOut} />}
       <h3 className="font-medium text-slate-900">ผู้เช่าออก · {tenant} <InfoTip label="คำอธิบาย">ค่าเช่าคิดถึงวันที่ออก (สูตรเดียวกับหน้ารับค่าเช่า · งวดสุดท้ายคิดตามจำนวนวัน) · บันทึกแล้ว: ค่าเช่า / ค่าน้ำไฟที่ค้าง ขึ้น &ldquo;ได้รับแล้ว&rdquo; (หักจากเงินประกัน ไม่ผ่านบัญชี) · ค่าเสียหายและส่วนที่ริบเป็นรายได้อื่น · เงินประกันที่เหลือโอนคืน · ค่าเช่าที่จ่ายล่วงหน้าเกินคืนเป็นค่าใช้จ่ายของทรัพย์สิน &ldquo;คืนค่าเช่าล่วงหน้า&rdquo;
         · หักเกินเงินประกัน: หักตามลำดับ ค่าเช่า → ค่าน้ำไฟ → ค่าเสียหาย แล้วหักกับค่าเช่าล่วงหน้าที่ต้องคืน ที่เหลือผู้เช่าจ่ายเพิ่ม (รับแล้ว = รายได้เข้าบัญชี · ยังไม่ได้รับ = ค่าเสียหายค้างรับในแท็บรับค่าเช่า)
@@ -138,6 +149,7 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
           {termState.error && <span className="text-sm text-red-600">{termState.error}</span>}
         </div>
       ) : <>
+        <MoveOutCheck rows={checks} setRows={setChecks} currency={currency} />
         {pvErr && <p className="text-sm text-red-600">{pvErr}</p>}
         {!pv && !pvErr && <p className="text-sm text-slate-500">กำลังคำนวณ…</p>}
         {pv && (
@@ -155,15 +167,11 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
                 {pv.charges.map((c) => <div key={c.id} className={sub}>{c.description} · {money(c.amount)}</div>)}
               </div>
             )}
+            <div className="py-1">
+              <div className={row}><span>หัก ค่าเสียหาย (จากตารางตรวจของ)</span><span className={`tabular-nums ${dmgN > 0 ? "text-red-600" : ""}`}>{minusMoney(dmgN)}</span></div>
+              {dmgInfo.reason && <div className={sub}>{dmgInfo.reason}</div>}
+            </div>
             <div className="grid gap-2 py-2 md:grid-cols-[8rem_1fr]">
-              <label className="text-xs">หัก ค่าเสียหาย
-                <input name="damage" inputMode="decimal" value={dmg} onChange={(e) => setDmg(e.target.value)} placeholder="0.00"
-                  className={`mt-1 block w-full ${input}`} />
-              </label>
-              <label className="text-xs">รายการค่าเสียหาย{dmgN > 0 ? " (จำเป็น)" : ""}
-                <input name="damage_reason" required={dmgN > 0} defaultValue={damageReason} placeholder="เช่น ผนังเป็นรอย · กุญแจหาย"
-                  className={`mt-1 block w-full ${input}`} />
-              </label>
               <label className="text-xs">หัก ริบเงินประกัน
                 <input name="forfeit" inputMode="decimal" value={forfeit} onChange={(e) => setForfeit(e.target.value)} placeholder="0.00"
                   className={`mt-1 block w-full ${input} ${forfeitErr ? "border-red-400" : ""}`} />
@@ -223,7 +231,8 @@ export default function CloseLeaseForm({ assetId, leaseId, tenant, startDate, en
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button disabled={pending || !pv || forfeitErr} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกผู้เช่าออก"}</button>
+          <button disabled={pending || !pv || forfeitErr || dmgInfo.unnamed} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกผู้เช่าออก"}</button>
+          {dmgInfo.unnamed && <span className="text-sm text-red-600">ใส่ชื่อรายการของแถวที่มีค่าเสียหาย</span>}
           <BalanceGuard bank="bank_asset_id" amount="net_transfer" date="settled_date" />
           {state.error && <span className="text-sm text-red-600">{state.error}</span>}
         </div>

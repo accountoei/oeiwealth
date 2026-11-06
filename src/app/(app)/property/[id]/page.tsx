@@ -415,7 +415,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     value: h.value == null ? "" : money(h.value), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
     out_status: s2(h.out_status), out_condition: s2(h.out_condition), out_reading: h.out_reading == null ? "" : s2(Number(h.out_reading)),
     deduction: h.deduction == null ? "" : money(h.deduction), notes: s2(h.notes) }));
-  // ค่าเสียหายจากรายการส่งมอบ → เติมให้ตอน "คืน / หักเงินประกัน"
+  // ค่าเสียหายจากรายการส่งมอบ → เติมให้ตอน "คืน / หักเงินประกัน" (เงินประกันคนละสกุล · ผู้เช่าออกปกติใช้ตารางตรวจของในหน้าต่างผู้เช่าออก)
   const handDeduct = (leaseId: string) => {
     const rows = (handByLease.get(leaseId) ?? []).filter((h) => Number(h.deduction ?? 0) > 0);
     return { amount: rows.reduce((t, h) => t + Number(h.deduction), 0),
@@ -459,20 +459,23 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     const co = closeOf.get(l.id);
     // เงินประกันคนละสกุลกับค่าเช่า → ใช้ "คืน / หักเงินประกัน" แบบเดิม
     const depSameCcy = dep <= 0 || (l.deposit_currency ?? l.rent_currency) === l.rent_currency;
+    // รายการส่งมอบ 2 ช่วง (ตกลง 6 พ.ย. 2026): ระหว่างสัญญา = กรอกตอนรับมอบ · ผลตรวจตอนส่งคืนกรอกในหน้าต่างผู้เช่าออก
+    //   ผู้เช่าออกแล้ว / คืนเงินประกันแล้ว / สัญญาเดิม / VIEWER = ดูอย่างเดียว · เงินประกันคนละสกุล = แก้ได้ทั้ง 2 ฝั่ง (ใช้ "คืน / หักเงินประกัน" แบบเดิม)
+    const handMode = !full || !canWrite || co || l.deposit_settlement_type ? "view" : depSameCcy ? "in" : "both";
     return (
       <>
         <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
         {co && <Link href={`/print/lease/${l.id}?s=closeout`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์ใบสรุปผู้เช่าออก</Link>}
-        {(full ? canWrite || hand.length > 0 : hand.length > 0) && (
-          <HandoverButton assetId={id} leaseId={l.id} label={`${full ? "" : "ดู"}รายการส่งมอบ${hand.length ? ` (${hand.length})` : ""}`} items={hand}
-            canWrite={full && canWrite} currency={l.rent_currency}
+        {(handMode !== "view" || hand.length > 0) && (
+          <HandoverButton assetId={id} leaseId={l.id} label={`${handMode === "view" ? "ดู" : ""}รายการส่งมอบ${hand.length ? ` (${hand.length})` : ""}`} items={hand}
+            mode={handMode} currency={l.rent_currency}
             docs={<EntityDocuments category="PROPERTY" entityType="PROPERTY_LEASE" entityId={l.id} module="PROPERTY"
               role={full ? me.role : "VIEWER"} paths={paths} title="รูปถ่าย / เอกสารการส่งมอบ" bare />} />
         )}
         {canSettle && full && !co && !l.deposit_settlement_type && depSameCcy && l.start_date <= today && (l.terminated_date ?? today) <= today && (
           <CloseLeaseForm assetId={id} leaseId={l.id} tenant={[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
             startDate={l.start_date} endDate={l.end_date} terminated={l.terminated_date} today={today} currency={l.rent_currency}
-            banks={bankList} defaultBank={rentTo.get(l.id) ?? null} damage={Math.min(hd.amount, dep)} damageReason={hd.reason} />
+            banks={bankList} defaultBank={rentTo.get(l.id) ?? null} items={hand} />
         )}
         {me.role === "ADMIN" && full && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED" && (
           <EditTerminationForm assetId={id} leaseId={l.id} terminated={l.terminated_date} startDate={l.start_date} endDate={l.end_date} />
