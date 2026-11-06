@@ -7,12 +7,12 @@ import type { Component } from "../components";
 import { useActionSlot } from "@/components/ActionBar";
 import {
   addUtility, addValuation, createLease, receiveUtilityCharge, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
-  undoTermination, updateLeaseDetails, updatePropertyInfo, type ActionState,
+  undoTermination, updateLease, updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
 import ModalButton from "@/components/ModalButton";
-import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, PRORATE_BASIS_LABEL, UTILITIES_BILLING_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -137,47 +137,97 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
   ));
 }
 
-/** ปุ่ม "รายละเอียดสัญญา" (pop up): บัญชีรับค่าเช่า · จำนวนเดือนเงินประกัน · ผู้เช่า · สถานที่ · แจ้งล่วงหน้า · ค่าเสียหาย · พยาน */
-export function LeaseDetailsForm({ assetId, leaseId, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths }: {
-  assetId: string; leaseId: string; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
-  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null;
+/** ข้อมูลหลักของสัญญาที่แก้ได้ในปุ่ม "แก้ไขสัญญา" */
+export type LeaseMain = {
+  tenant_name: string; unit_label: string | null; contract_no: string | null; start_date: string; end_date: string;
+  rent_amount: number; payment_due_day: number | null; prorate_basis: string; utilities_billing: string | null; notes: string | null;
+};
+
+/**
+ * ปุ่ม "แก้ไขสัญญา" (pop up กว้าง · รวมปุ่มแก้ไข + รายละเอียดสัญญา ตกลง 6 พ.ย. 2026)
+ *   บน: ข้อมูลหลัก · ล่าง: รายละเอียดสำหรับพิมพ์ · บันทึกครั้งเดียว · ปุ่มลบสัญญาข้างปุ่มบันทึก
+ */
+export function LeaseEditForm({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, deleteControl }: {
+  assetId: string; leaseId: string; m: LeaseMain; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
+  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; deleteControl?: React.ReactNode;
 }) {
   return (
-    <ModalButton label="รายละเอียดสัญญา" title="รายละเอียดสัญญา (สำหรับพิมพ์)" size="lg" className={SMALL_BTN}>
-      <LeaseDetailsBody assetId={assetId} leaseId={leaseId} v={v} opt={opt} canSensitive={canSensitive} banks={banks}
-        rentCurrency={rentCurrency} rentTo={rentTo} depositMonths={depositMonths} />
+    <ModalButton label="แก้ไขสัญญา" title="แก้ไขสัญญาเช่า" size="lg" className={SMALL_BTN}>
+      <LeaseEditBody assetId={assetId} leaseId={leaseId} m={m} v={v} opt={opt} canSensitive={canSensitive} banks={banks}
+        rentCurrency={rentCurrency} rentTo={rentTo} depositMonths={depositMonths} deleteControl={deleteControl} />
     </ModalButton>
   );
 }
 
-function LeaseDetailsBody({ assetId, leaseId, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths }: {
-  assetId: string; leaseId: string; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
-  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null;
+function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, deleteControl }: {
+  assetId: string; leaseId: string; m: LeaseMain; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
+  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; deleteControl?: React.ReactNode;
 }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(updateLeaseDetails, {});
+  const [state, action, pending] = useActionState<ActionState, FormData>(updateLease, {});
+  const formId = `lease-edit-${leaseId}`;
   const f = "mt-1 block w-full " + input;
   return (
-    <form action={action} className="space-y-4">
-      <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="lease_id" value={leaseId} />
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-sm">บัญชีรับค่าเช่า (ใช้ในสัญญาที่พิมพ์)
-          <select name="lease_rent_to_asset_id" defaultValue={rentTo ?? ""} className={f}>
-            <option value="">— ไม่ระบุ (เว้นให้เขียนเอง) —</option>
-            <BankOptions banks={banks.filter((b) => b.currency === rentCurrency)} />
-          </select>
-        </label>
-        <label className="text-sm">จำนวนเดือนที่วางประกัน
-          <input name="lease_deposit_months" inputMode="decimal" data-money="off" defaultValue={depositMonths ?? DEPOSIT_MONTHS_DEFAULT} className={f} />
-          <span className="text-xs text-slate-500">ใช้อ้างอิงในสัญญา · ไม่เปลี่ยนยอดเงินประกันที่บันทึกไว้</span>
-        </label>
-      </div>
-      <LeaseContractFields v={v} opt={opt} canSensitive={canSensitive} />
+    <div className="space-y-4">
+      {/* ปุ่มลบสัญญามีฟอร์มของตัวเอง → แถวปุ่มอยู่นอกฟอร์มนี้ (ปุ่มบันทึกผูกด้วย form={id}) */}
+      <form id={formId} action={action} className="space-y-4">
+        <input type="hidden" name="asset_id" value={assetId} />
+        <input type="hidden" name="lease_id" value={leaseId} />
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="text-sm">ผู้เช่า
+            <input name="m_tenant_name" required defaultValue={m.tenant_name} className={f} />
+          </label>
+          <label className="text-sm">ห้อง
+            <input name="m_unit_label" defaultValue={m.unit_label ?? ""} className={f} />
+          </label>
+          <label className="text-sm">เลขสัญญา
+            <input name="m_contract_no" defaultValue={m.contract_no ?? ""} className={f} />
+          </label>
+          <label className="text-sm">สิ้นสุดสัญญา
+            <input name="m_end_date" type="date" required defaultValue={m.end_date} min={m.start_date} className={f} />
+            <span className="text-xs text-slate-500">เริ่ม {thDate(m.start_date)}</span>
+          </label>
+          <label className="text-sm">ค่าเช่า ({rentCurrency})
+            <input name="m_rent_amount" required inputMode="decimal" defaultValue={money(m.rent_amount)} className={`${f} text-right`} />
+          </label>
+          <label className="text-sm">จ่ายทุกวันที่
+            <input name="m_payment_due_day" inputMode="decimal" defaultValue={m.payment_due_day ?? ""} placeholder="ว่าง = วันเริ่มสัญญา" className={`${f} text-right`} />
+          </label>
+          <label className="text-sm">คิดค่าเช่าวันเศษ
+            <select name="m_prorate_basis" defaultValue={m.prorate_basis} className={f}>
+              {Object.entries(PRORATE_BASIS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">บัญชีรับค่าเช่า
+            <select name="lease_rent_to_asset_id" defaultValue={rentTo ?? ""} className={f}>
+              <option value="">— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —</option>
+              <BankOptions banks={banks.filter((b) => b.currency === rentCurrency)} />
+            </select>
+          </label>
+          <label className="text-sm">ค่าน้ำ / ค่าไฟ
+            <select name="m_utilities_billing" defaultValue={m.utilities_billing ?? ""} className={f}>
+              <option value="">— ไม่ระบุ —</option>
+              {Object.entries(UTILITIES_BILLING_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">จำนวนเดือนที่วางประกัน
+            <input name="lease_deposit_months" inputMode="decimal" data-money="off" defaultValue={depositMonths ?? DEPOSIT_MONTHS_DEFAULT} className={f} />
+            <span className="text-xs text-slate-500">ใช้อ้างอิงในสัญญา · ไม่เปลี่ยนยอดเงินประกันที่บันทึกไว้</span>
+          </label>
+          <label className="text-sm md:col-span-2">หมายเหตุ
+            <input name="m_notes" defaultValue={m.notes ?? ""} className={f} />
+          </label>
+        </div>
+        <div className="border-t border-slate-200 pt-4">
+          <div className="mb-3 text-sm font-medium text-slate-800">รายละเอียดสำหรับพิมพ์สัญญา <span className="font-normal text-slate-500">(ไม่บังคับ · ว่าง = เว้นเส้นให้เขียนเอง)</span></div>
+          <LeaseContractFields v={v} opt={opt} canSensitive={canSensitive} />
+        </div>
+      </form>
       <div className="flex flex-wrap items-center gap-3">
-        <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button form={formId} disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        {deleteControl}
         <Msg s={state} />
       </div>
-    </form>
+    </div>
   );
 }
 

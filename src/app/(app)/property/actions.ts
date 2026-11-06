@@ -434,21 +434,46 @@ export async function createLease(_: ActionState, form: FormData): Promise<Actio
   return warn ? { error: `สร้างสัญญาแล้ว แต่${warn}` } : { ok: "สร้างสัญญาเช่าแล้ว" };
 }
 
-/** ปุ่ม "รายละเอียดสัญญา" บนการ์ดสัญญา: บัญชีรับค่าเช่า · จำนวนเดือนเงินประกัน · ผู้เช่า · สถานที่ · แจ้งล่วงหน้า · ค่าเสียหาย · พยาน */
-export async function updateLeaseDetails(_: ActionState, form: FormData): Promise<ActionState> {
+/**
+ * ปุ่ม "แก้ไขสัญญา" บนการ์ดสัญญา (รวมปุ่มแก้ไข + รายละเอียดสัญญา · ตกลง 6 พ.ย. 2026)
+ *   ข้อมูลหลัก (ส่งเฉพาะช่องที่เปลี่ยน → trigger ของสัญญาตรวจเท่าเดิม) + บัญชีรับค่าเช่า · จำนวนเดือนเงินประกัน · รายละเอียดพิมพ์สัญญา
+ */
+export async function updateLease(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("asset_id"));
   const leaseId = String(form.get("lease_id"));
+  const tenant = str(form.get("m_tenant_name"));
+  const end = str(form.get("m_end_date"));
+  const rent = num(form.get("m_rent_amount"));
+  const day = num(form.get("m_payment_due_day"));
+  if (!tenant) return { error: "กรุณาใส่ชื่อผู้เช่า" };
+  if (!end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { error: "กรุณาใส่วันสิ้นสุดสัญญา" };
+  if (rent == null || Number.isNaN(rent) || rent <= 0) return { error: "ค่าเช่าต้องมากกว่า 0" };
+  if (day != null && (Number.isNaN(day) || !Number.isInteger(day) || day < 1 || day > 31)) return { error: "วันจ่ายต้องเป็นวันที่ 1–31" };
+  const { data: cur, error: e0 } = await supabase.from("property_leases")
+    .select("tenant_name,unit_label,contract_no,end_date,rent_amount,payment_due_day,prorate_basis,utilities_billing,notes")
+    .eq("id", leaseId).maybeSingle();
+  if (e0) return { error: friendlyError(e0.message) };
+  if (!cur) return { error: "ไม่พบสัญญานี้" };
+  const main: Record<string, unknown> = {
+    tenant_name: tenant, unit_label: str(form.get("m_unit_label")), contract_no: str(form.get("m_contract_no")), end_date: end,
+    rent_amount: rent, payment_due_day: day, prorate_basis: str(form.get("m_prorate_basis")) ?? "ACTUAL",
+    utilities_billing: str(form.get("m_utilities_billing")), notes: str(form.get("m_notes")),
+  };
+  const changed = Object.fromEntries(Object.entries(main).filter(([k, v]) => {
+    const o = (cur as Record<string, unknown>)[k];
+    return typeof v === "number" ? Number(o) !== v || o == null : (o ?? null) !== (v ?? null);
+  }));
   const detail = leaseDetailFromForm(form) ?? {};
   const { data, error } = await supabase.from("property_leases").update({
-    ...detail, deposit_months: num(form.get("lease_deposit_months")),
+    ...changed, ...detail, deposit_months: num(form.get("lease_deposit_months")),
     rent_to_asset_id: str(form.get("lease_rent_to_asset_id")),
   }).eq("id", leaseId).select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขสัญญานี้" };
   const warn = await setTenantId(supabase, leaseId, form);
   revalidateProperty(id);
-  return warn ? { error: `บันทึกรายละเอียดแล้ว แต่${warn}` } : { ok: "บันทึกรายละเอียดสัญญาแล้ว" };
+  return warn ? { error: `บันทึกสัญญาแล้ว แต่${warn}` } : { ok: "บันทึกสัญญาแล้ว" };
 }
 
 export async function terminateLease(_: ActionState, form: FormData): Promise<ActionState> {
