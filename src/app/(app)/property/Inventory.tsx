@@ -153,7 +153,8 @@ function CopyRoomBody({ assetId, rooms, roomsWithItems }: { assetId: string; roo
 }
 
 export type HandoverItem = {
-  id?: string; item_type: string; name: string; qty: string; brand: string; serial_no: string; value: string;
+  /** pulled = ดึงมาจากของในทรัพย์สิน / มิเตอร์ (ลบแล้วยังไม่บันทึก → กดดึงอีกครั้งได้คืน) */
+  id?: string; pulled?: boolean; item_type: string; name: string; qty: string; brand: string; serial_no: string; value: string;
   in_condition: string; in_reading: string; out_status: string; out_condition: string; out_reading: string; deduction: string; notes: string;
 };
 
@@ -188,7 +189,7 @@ export function HandoverButton({ assetId, leaseId, label, items, mode, currency,
   assetId: string; leaseId: string; label: string; items: HandoverItem[]; mode: "in" | "view" | "both"; currency: string; docs?: ReactNode;
 }) {
   return (
-    <ModalButton label={label} title="รายการส่งมอบ (รับมอบ / ส่งคืน)" size="lg" className={SMALL_BTN}>
+    <ModalButton label={label} title="รายการส่งมอบ" size="lg" className={SMALL_BTN}>
       <HandoverBody assetId={assetId} leaseId={leaseId} items={items} mode={mode} currency={currency} />
       {docs && <div className="mt-5 border-t border-slate-200 pt-4">{docs}</div>}
     </ModalButton>
@@ -199,7 +200,7 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
   assetId: string; leaseId: string; items: HandoverItem[]; mode: "in" | "view" | "both"; currency: string;
 }) {
   const [rows, setRows] = useState<HandoverItem[]>(items);
-  const [removed, setRemoved] = useState<string[]>([]);
+  const [removed, setRemoved] = useState<HandoverItem[]>([]);   // แถวเดิมที่กดลบ (ยังไม่บันทึก)
   const [state, action, pending] = useActionState<ActionState, FormData>(saveHandover, {});
   const [cs, copyAction, copying] = useActionState<ActionState, FormData>(copyInventoryToLease, {});
   // รายการเปลี่ยน (ดึงของ / บันทึกแถวใหม่) → ตารางเริ่มจากข้อมูลล่าสุด โดยไม่สร้างฟอร์มใหม่
@@ -207,6 +208,14 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
   const idKey = items.map((x) => x.id).join(",");
   const [seenKey, setSeenKey] = useState(idKey);
   if (seenKey !== idKey) { setSeenKey(idKey); setRows(items); setRemoved([]); }
+  // กดดึงอีกครั้ง: แถวที่ดึงมาแล้วกดลบ (ยังไม่บันทึก) กลับมาที่เดิม · แก้ไขในแถวอื่น / แถวใหม่ยังอยู่
+  const restorePulled = () => {
+    const back = new Set(removed.filter((x) => x.pulled).map((x) => x.id));
+    if (!back.size) return;
+    const kept = new Map(rows.filter((r) => r.id).map((r) => [r.id, r]));
+    setRows([...items.filter((x) => back.has(x.id) || kept.has(x.id)).map((x) => kept.get(x.id) ?? x), ...rows.filter((r) => !r.id)]);
+    setRemoved(removed.filter((x) => !x.pulled));
+  };
   const set = (i: number, k: keyof HandoverItem, v: string) => setRows(rows.map((r, j) => {
     if (j !== i) return r;
     const x = { ...r, [k]: v };
@@ -227,7 +236,7 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
     <div className="space-y-3">
       {canWrite && (
         // ดึงของ = เติมรายการ ไม่ใช่การบันทึก → หน้าต่างไม่ปิด (data-no-close)
-        <form action={copyAction} data-no-close className="flex flex-wrap items-center gap-3">
+        <form action={copyAction} onSubmit={restorePulled} data-no-close className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="asset_id" value={assetId} />
           <input type="hidden" name="lease_id" value={leaseId} />
           <button disabled={copying} className={ghost}>{copying ? "กำลังดึง…" : "ดึงของ + มิเตอร์ (ห้องนี้ + ส่วนกลาง)"}</button>
@@ -239,12 +248,12 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
         <input type="hidden" name="asset_id" value={assetId} />
         <input type="hidden" name="lease_id" value={leaseId} />
         <input type="hidden" name="rows" value={JSON.stringify(rows)} />
-        <input type="hidden" name="removed" value={JSON.stringify(removed)} />
+        <input type="hidden" name="removed" value={JSON.stringify(removed.map((x) => x.id))} />
         {rows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ{canWrite && <> · กด &ldquo;ดึงของ + มิเตอร์&rdquo; หรือ &ldquo;+ เพิ่มแถว&rdquo;</>}</p> : (
           <div className="overflow-x-auto">
             <table className={`w-full text-sm ${showOut ? "min-w-[60rem]" : "min-w-[44rem]"}`}>
               <thead className="text-left text-xs text-slate-500">
-                <tr><th className="w-32 pb-1">ประเภท</th><th>รายการ</th><th className="w-16">จำนวน</th><th className="w-28">มูลค่าต่อชิ้น</th>
+                <tr><th className="w-32 pb-1">ประเภท</th><th>รายการ</th><th className="w-16">จำนวน</th><th className="w-40 whitespace-nowrap">มูลค่าต่อชิ้น / เลขมิเตอร์</th>
                   <th className={`${showOut ? "w-40" : "w-56"} ${sideL}`}>ตอนรับมอบ: สภาพ</th>
                   {showOut && <><th className={`w-32 ${sideL}`}>ตอนส่งคืน: ผลตรวจ</th><th className="w-40">สภาพตอนคืน</th><th className="w-28">ค่าเสียหาย</th></>}
                   {canWrite && <th className="w-6" />}</tr>
@@ -257,34 +266,40 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
                     <tr key={r.id ?? `n${i}`} className="align-top">
                       <td className="py-1 pr-1">{ro ? <div className="px-1 py-1.5 text-slate-600">{INVENTORY_TYPE_LABEL[r.item_type] ?? r.item_type}</div>
                         : <TypeSelect value={r.item_type} onChange={(v) => set(i, "item_type", v)} />}</td>
-                      <td className="py-1 pr-1"><input value={r.name} readOnly={ro} onChange={(e) => set(i, "name", e.target.value)} className={ic} />
-                        {(r.brand || r.serial_no) && <div className={note}>{[r.brand, r.serial_no].filter(Boolean).join(" · ")}</div>}</td>
+                      <td className="py-1 pr-1">
+                        {/* มิเตอร์: เลขที่มิเตอร์อยู่ท้ายชื่อ บรรทัดเดียว */}
+                        <div className="flex items-center gap-2"><input value={r.name} readOnly={ro} onChange={(e) => set(i, "name", e.target.value)} className={ic} />
+                          {meter && r.serial_no && <span className="shrink-0 text-xs text-slate-500">เลขที่ {r.serial_no}</span>}</div>
+                        {!meter && (r.brand || r.serial_no) && <div className={note}>{[r.brand, r.serial_no].filter(Boolean).join(" · ")}</div>}</td>
                       <td className="py-1 pr-1"><input value={r.qty} readOnly={ro} onChange={(e) => set(i, "qty", e.target.value)} inputMode="decimal" data-money="off" className={`${ic} text-right`} /></td>
-                      <td className="py-1 pr-1">{!meter && <>
-                        <input value={r.value} readOnly={ro} onChange={(e) => set(i, "value", e.target.value)} inputMode="decimal" placeholder={ro ? "" : "0.00"} className={`${ic} text-right`} />
-                        {valueHint(r) && <div className={`${note} text-right`}>{valueHint(r)}</div>}</>}</td>
+                      <td className="py-1 pr-1">{meter
+                        ? <input value={r.in_reading} readOnly={ro} onChange={(e) => set(i, "in_reading", e.target.value)} inputMode="decimal" data-money="off"
+                            placeholder={ro ? "" : "เลขมิเตอร์"} aria-label="เลขมิเตอร์ตอนรับมอบ" className={`${ic} text-right`} />
+                        : <>
+                          <input value={r.value} readOnly={ro} onChange={(e) => set(i, "value", e.target.value)} inputMode="decimal" placeholder={ro ? "" : "0.00"} className={`${ic} text-right`} />
+                          {valueHint(r) && <div className={`${note} text-right`}>{valueHint(r)}</div>}</>}</td>
                       <td className={`py-1 pr-1 ${sideL}`}>
                         <input value={r.in_condition} readOnly={ro} onChange={(e) => set(i, "in_condition", e.target.value)} placeholder="ปกติ" className={ic} />
-                        {meter && <label className="mt-1 block text-xs text-slate-500">เลขมิเตอร์
-                          <input value={r.in_reading} readOnly={ro} onChange={(e) => set(i, "in_reading", e.target.value)} inputMode="decimal" data-money="off" className={`${ic} text-right`} /></label>}
                       </td>
                       {showOut && <>
                         <td className={`py-1 pr-1 ${sideL}`}>
-                          {editOut ? (
+                          {meter ? (
+                            <input value={r.out_reading} readOnly={!editOut} onChange={(e) => set(i, "out_reading", e.target.value)} inputMode="decimal" data-money="off"
+                              placeholder={editOut ? "เลขมิเตอร์ตอนออก" : ""} aria-label="เลขมิเตอร์ตอนออก" className={`${oc} text-right`} />
+                          ) : editOut ? (
                             <select value={r.out_status} onChange={(e) => set(i, "out_status", e.target.value)} className={cell}>
                               <option value="">—</option>
                               {Object.entries(HANDOVER_OUT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                             </select>
                           ) : <div className={`px-1 py-1.5 ${r.out_status && r.out_status !== "OK" ? "text-red-700" : "text-slate-600"}`}>{HANDOVER_OUT_LABEL[r.out_status] ?? "—"}</div>}
-                          {meter && <label className="mt-1 block text-xs text-slate-500">เลขมิเตอร์
-                            <input value={r.out_reading} readOnly={!editOut} onChange={(e) => set(i, "out_reading", e.target.value)} inputMode="decimal" data-money="off" className={`${oc} text-right`} /></label>}
-                          {used != null && <div className={`${note} text-right`}>ใช้ไป {used.toLocaleString("th-TH")} หน่วย</div>}
                         </td>
-                        <td className="py-1 pr-1"><input value={r.out_condition} readOnly={!editOut} onChange={(e) => set(i, "out_condition", e.target.value)} className={oc} /></td>
+                        <td className="py-1 pr-1">{meter
+                          ? <div className="px-1 py-1.5 text-slate-600">{used != null ? `ใช้ไป ${used.toLocaleString("th-TH")} หน่วย` : ""}</div>
+                          : <input value={r.out_condition} readOnly={!editOut} onChange={(e) => set(i, "out_condition", e.target.value)} className={oc} />}</td>
                         <td className="py-1 pr-1"><input value={r.deduction} readOnly={!editOut} onChange={(e) => set(i, "deduction", e.target.value)} inputMode="decimal" className={`${oc} text-right`} /></td>
                       </>}
                       {canWrite && <td className="py-1 text-center">
-                        <button type="button" onClick={() => { if (r.id) setRemoved([...removed, r.id]); setRows(rows.filter((_, j) => j !== i)); }}
+                        <button type="button" onClick={() => { if (r.id) setRemoved([...removed, r]); setRows(rows.filter((_, j) => j !== i)); }}
                           className={SMALL_DEL_BTN}>ลบ</button></td>}
                     </tr>
                   );
@@ -348,21 +363,23 @@ export function MoveOutCheck({ rows, setRows, currency }: { rows: HandoverItem[]
                   <tr key={r.id ?? `n${i}`} className="align-top">
                     <td className="py-1 pr-2">
                       {isNew ? <input value={r.name} onChange={(e) => set(i, "name", e.target.value)} placeholder="เช่น ทาสีผนัง" className={cell} />
-                        : <div className="py-1.5">{r.name}{num(r.qty) > 1 && <span className="text-slate-500"> × {r.qty}</span>}</div>}
-                      {!isNew && <div className={note}>{[INVENTORY_TYPE_LABEL[r.item_type] === r.name.trim() ? "" : INVENTORY_TYPE_LABEL[r.item_type], r.brand, r.serial_no].filter(Boolean).join(" · ")}</div>}
+                        : <div className="py-1.5">{r.name}{num(r.qty) > 1 && <span className="text-slate-500"> × {r.qty}</span>}
+                          {meter && r.serial_no && <span className="text-xs text-slate-500"> · เลขที่ {r.serial_no}</span>}</div>}
+                      {!isNew && !meter && <div className={note}>{[INVENTORY_TYPE_LABEL[r.item_type] === r.name.trim() ? "" : INVENTORY_TYPE_LABEL[r.item_type], r.brand, r.serial_no].filter(Boolean).join(" · ")}</div>}
                     </td>
-                    <td className="py-1.5 pr-2 text-slate-600">{r.in_condition || (isNew ? "" : "ปกติ")}
-                      {meter && r.in_reading && <div className={note}>เลขมิเตอร์ {r.in_reading}</div>}</td>
+                    <td className="py-1.5 pr-2 text-slate-600">{meter ? (r.in_reading ? `เลขมิเตอร์ ${num(r.in_reading).toLocaleString("th-TH")}` : "") : r.in_condition || (isNew ? "" : "ปกติ")}</td>
                     <td className="py-1.5 pr-2 text-right tabular-nums text-slate-600">{!meter && num(r.value) > 0 ? money(num(r.value) * (num(r.qty) || 1)) : ""}</td>
                     <td className="border-l border-slate-200 py-1 pl-2 pr-1">
-                      <select value={r.out_status || "OK"} onChange={(e) => set(i, "out_status", e.target.value)} className={cell}>
-                        {Object.entries(HANDOVER_OUT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
-                      {meter && <label className="mt-1 block text-xs text-slate-500">เลขมิเตอร์ตอนออก
-                        <input value={r.out_reading} onChange={(e) => set(i, "out_reading", e.target.value)} inputMode="decimal" data-money="off" className={`${cell} text-right`} /></label>}
-                      {used != null && <div className={`${note} text-right`}>ใช้ไป {used.toLocaleString("th-TH")} หน่วย</div>}
+                      {/* มิเตอร์: ช่องเลขตอนออกแทนผลตรวจ (บรรทัดเดียว) */}
+                      {meter ? <input value={r.out_reading} onChange={(e) => set(i, "out_reading", e.target.value)} inputMode="decimal" data-money="off"
+                          placeholder="เลขมิเตอร์ตอนออก" aria-label="เลขมิเตอร์ตอนออก" className={`${cell} text-right`} />
+                        : <select value={r.out_status || "OK"} onChange={(e) => set(i, "out_status", e.target.value)} className={cell}>
+                          {Object.entries(HANDOVER_OUT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>}
                     </td>
-                    <td className="py-1 pr-1"><input value={r.out_condition} onChange={(e) => set(i, "out_condition", e.target.value)} placeholder="ถ้ามี" className={cell} /></td>
+                    <td className="py-1 pr-1">{meter
+                      ? <div className="py-1.5 text-slate-600">{used != null ? `ใช้ไป ${used.toLocaleString("th-TH")} หน่วย` : ""}</div>
+                      : <input value={r.out_condition} onChange={(e) => set(i, "out_condition", e.target.value)} placeholder="ถ้ามี" className={cell} />}</td>
                     <td className="py-1 pr-1"><input value={r.deduction} onChange={(e) => set(i, "deduction", e.target.value)} inputMode="decimal" placeholder="0.00" className={`${cell} text-right`} /></td>
                     <td className="py-1 text-center">{isNew && (
                       <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} className={SMALL_DEL_BTN}>ลบ</button>)}</td>

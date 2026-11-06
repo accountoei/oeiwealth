@@ -12,7 +12,7 @@ import {
   UtilityForm,
 } from "./forms";
 import CloseLeaseForm from "./CloseLeaseForm";
-import { LeaseCardClick, LeaseHub, LeaseHubButton, type LeaseEditEntry } from "./LeaseHub";
+import { LeaseEditName, LeaseHub, LeaseHubButton, type LeaseEditEntry } from "./LeaseHub";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -229,7 +229,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
     supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
-    supabase.from("lease_handover_items").select("id,lease_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
+    supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
     supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
@@ -405,13 +405,13 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     .sort((x, y) => x.localeCompare(y, "th", { numeric: true }));
   const multiRoom = rooms.length > 1;
   const roomsWithItems = [...new Set(inv.map((x) => x.unit_label?.trim() ?? ""))];
-  type Hand = { id: string; lease_id: string; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null; value: number | null;
+  type Hand = { id: string; lease_id: string; inventory_item_id: string | null; utility_id: string | null; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null; value: number | null;
     in_condition: string | null; in_reading: number | null; out_status: string | null; out_condition: string | null; out_reading: number | null;
     deduction: number | null; notes: string | null };
   const s2 = (v: unknown) => (v == null ? "" : String(v));
   const handByLease = ((handRows ?? []) as unknown as Hand[]).reduce((m, h) => m.set(h.lease_id, [...(m.get(h.lease_id) ?? []), h]), new Map<string, Hand[]>());
   const handItems = (leaseId: string): HandoverItem[] => (handByLease.get(leaseId) ?? []).map((h) => ({
-    id: h.id, item_type: h.item_type, name: h.name, qty: s2(Number(h.qty)), brand: s2(h.brand), serial_no: s2(h.serial_no),
+    id: h.id, pulled: !!(h.inventory_item_id || h.utility_id), item_type: h.item_type, name: h.name, qty: s2(Number(h.qty)), brand: s2(h.brand), serial_no: s2(h.serial_no),
     value: h.value == null ? "" : money(h.value), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
     out_status: s2(h.out_status), out_condition: s2(h.out_condition), out_reading: h.out_reading == null ? "" : s2(Number(h.out_reading)),
     deduction: h.deduction == null ? "" : money(h.deduction), notes: s2(h.notes) }));
@@ -502,11 +502,13 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     const ds = DEPOSIT_LABEL[l.deposit_status];
     const leaseEnded = l.deposit_due_date <= today;
     return (
-      <LeaseCardClick key={l.id} leaseId={l.id} className="rounded-lg border border-slate-200 p-4 text-sm">
+      <div key={l.id} className="rounded-lg border border-slate-200 p-4 text-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? l.lease_status}</span>
-          <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
-          {l.contract_no && <span className="text-xs text-slate-500">สัญญาเลขที่ {l.contract_no}</span>}
+          <LeaseEditName leaseId={l.id}>
+            <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
+            {l.contract_no && <span className="text-xs text-slate-500"> · สัญญาเลขที่ {l.contract_no}</span>}
+          </LeaseEditName>
         </div>
         <div className="mt-1 text-slate-600">
           {thDate(l.start_date)} – {thDate(l.end_date)}
@@ -536,11 +538,11 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         )}
         {closeOf.get(l.id) && <div className="mt-1 text-slate-600">{closeoutText(l, closeOf.get(l.id)!)}</div>}
         {l.notes && <div className="mt-1 whitespace-pre-line text-xs text-slate-500">{l.notes}</div>}
-        <div className="mt-2 flex flex-wrap gap-4">{leaseActions(l, true)}</div>
+        <div className="mt-2 flex flex-wrap items-center gap-4">{leaseActions(l, true)}</div>
         {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
           <p className="mt-1 text-xs text-slate-400">คืนเงินประกันได้ตั้งแต่ {thDate(l.deposit_due_date)}</p>
         )}
-      </LeaseCardClick>
+      </div>
     );
   };
   // สัญญาที่จบครบแล้ว (ไม่มีผล · เงินประกันเคลียร์แล้ว · ไม่มีค่าเช่า / ค่าน้ำไฟค้าง) → พับเป็นบรรทัดสั้นใน "สัญญาเดิม" (ตกลง 2 พ.ย. 2026)
@@ -553,17 +555,20 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     const st = LEASE_STATUS[l.lease_status];
     const dep = Number(l.security_deposit ?? 0);
     return (
-      <div key={l.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5">
+      // แถวเดียว: ทุกชิ้นอยู่กึ่งกลางแนวเดียวกัน (เดิมจัดตามเส้นฐาน + ตัวหนังสือหลายขนาด → ดูเอียง)
+      <div key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
         <span className={`rounded px-1.5 py-0.5 text-xs ${st?.cls ?? ""}`}>{st?.text ?? l.lease_status}</span>
-        <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
-        {l.contract_no && <span className="text-xs text-slate-500">เลขที่ {l.contract_no}</span>}
+        <LeaseEditName leaseId={l.id}>
+          <span className="font-medium">{[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}</span>
+          {l.contract_no && <span className="text-slate-500"> · เลขที่ {l.contract_no}</span>}
+        </LeaseEditName>
         <span className="text-slate-600">{thDate(l.start_date)} – {l.terminated_date ? <span className="text-red-600">เลิก {thDate(l.terminated_date)}</span> : thDate(l.end_date)}
           {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)}
-          {dep > 0 && <span className="text-xs text-slate-500"> · เงินประกัน {money(dep)}
+          {dep > 0 && <span className="text-slate-500"> · เงินประกัน {money(dep)}
             {l.deposit_settlement_type === "REFUNDED" ? ` คืน ${money(l.deposit_refunded_amount)} เมื่อ ${thDate(l.deposit_settled_date)}`
               : l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" ? ` ยกไปสัญญาใหม่ ${thDate(l.deposit_settled_date)}` : ""}</span>}
           {closeOf.get(l.id) && <span className="block text-xs text-slate-500">{closeoutText(l, closeOf.get(l.id)!)}</span>}</span>
-        <span className="ml-auto flex flex-wrap gap-4">{leaseActions(l)}</span>
+        <span className="ml-auto flex flex-wrap items-center gap-4">{leaseActions(l)}</span>
       </div>
     );
   };
