@@ -271,3 +271,59 @@ export function HandoverAnnex({ d }: { d: LeaseData }) {
     </article>
   );
 }
+
+/** บันทึกผู้เช่าออก (lease_closeouts · ตัวเลข ณ วันบันทึก) */
+export type CloseoutData = {
+  moveOut: string; settled: string; deposit: number; unpaid: number; utilities: number; damage: number; damageReason: string | null;
+  forfeit: number; forfeitReason: string | null; depositRefund: number; advanceRefund: number; net: number;
+  rent: { period: string; from: string | null; to: string | null; expected: number; received: number; unpaid: number; over: number }[];
+  charges: { description: string; amount: number }[];
+};
+
+/** ใบสรุปผู้เช่าออก / คืนเงินประกัน (ตกลง 6 พ.ย. 2026): เงินประกัน − หักค้าง / ค่าเสียหาย / ริบ + คืนค่าเช่าล่วงหน้า = ยอดคืนผู้เช่า */
+export function CloseoutSummary({ d, c }: { d: LeaseData; c: CloseoutData }) {
+  const early = c.moveOut < d.endDate;
+  const range = (x: { from: string | null; to: string | null; period: string }) =>
+    x.from && x.to ? `รอบ ${thDate(x.from)} – ${thDate(x.to)}` : `งวด ${thDate(x.period)}`;
+  const cell = "py-1 align-top";
+  const amt = (v: number, neg = false) => <td className={`${cell} text-right tabular-nums`}>{neg && v > 0 ? `(${money(v)})` : money(v)}</td>;
+  const unpaidRows = c.rent.filter((x) => x.unpaid > 0);
+  const overRows = c.rent.filter((x) => x.over > 0);
+  return (
+    <article className="text-[12px] leading-relaxed">
+      <h2 className="text-center text-base font-semibold">บันทึกการส่งคืนทรัพย์สินที่เช่าและการคืนเงินประกัน</h2>
+      <p className="text-center">ตาม{TITLE[d.propertyType]}{d.contractNo ? ` เลขที่ ${d.contractNo}` : ""} · {d.propertyName}{d.unit ? ` (${d.unit})` : ""} · ผู้เช่า {d.tenant}</p>
+      <p className="mt-3 indent-8">
+        ผู้เช่าได้ส่งคืนทรัพย์สินที่เช่าแก่ผู้ให้เช่าเมื่อวันที่ {thDateLong(c.moveOut)}
+        {early ? ` ก่อนครบกำหนดสัญญา (สัญญาสิ้นสุดวันที่ ${thDateLong(d.endDate)}) สัญญาเช่าจึงสิ้นสุดลง ณ วันดังกล่าว` : " ตามกำหนดสิ้นสุดสัญญา"}
+        {" "}ทั้งสองฝ่ายได้ตรวจสอบค่าเช่าถึงวันส่งคืน ค่าใช้จ่ายที่ค้าง และสภาพทรัพย์สินแล้ว ตกลงยอดเงินดังนี้
+      </p>
+      <table className="mt-3 w-full border-collapse">
+        <tbody>
+          <tr className="border-t border-slate-400"><td className={cell}>เงินประกันการเช่าที่ผู้ให้เช่าถืออยู่</td>{amt(c.deposit)}</tr>
+          <tr><td className={cell}>หัก ค่าเช่าค้างชำระถึงวันส่งคืน
+            {unpaidRows.map((x) => <div key={x.period} className="pl-4 text-slate-600">{range(x)} · ค่าเช่า {money(x.expected)} · ชำระแล้ว {money(x.received)}</div>)}
+          </td>{amt(c.unpaid, true)}</tr>
+          {(c.utilities > 0 || c.charges.length > 0) && (
+            <tr><td className={cell}>หัก ค่าน้ำ / ค่าไฟที่เรียกเก็บ
+              {c.charges.map((x, i) => <div key={i} className="pl-4 text-slate-600">{x.description} · {money(x.amount)}</div>)}
+            </td>{amt(c.utilities, true)}</tr>
+          )}
+          <tr><td className={cell}>หัก ค่าเสียหาย{c.damageReason ? `: ${c.damageReason}` : ""}</td>{amt(c.damage, true)}</tr>
+          {c.forfeit > 0 && <tr><td className={cell}>หัก ริบเงินประกัน{c.forfeitReason ? `: ${c.forfeitReason}` : ""}</td>{amt(c.forfeit, true)}</tr>}
+          <tr className="border-t border-slate-300 font-medium"><td className={cell}>คงเหลือเงินประกันที่คืนผู้เช่า</td>{amt(c.depositRefund)}</tr>
+          <tr><td className={cell}>บวก ค่าเช่าที่ผู้เช่าชำระล่วงหน้าเกินวันที่เช่าจริง
+            {overRows.map((x) => <div key={x.period} className="pl-4 text-slate-600">{range(x)} · ชำระแล้ว {money(x.received)} · ค่าเช่าถึงวันส่งคืน {money(x.expected)}</div>)}
+          </td>{amt(c.advanceRefund)}</tr>
+          <tr className="border-y border-slate-400 font-semibold"><td className={cell}>รวมเงินที่ผู้ให้เช่าคืนแก่ผู้เช่า</td>{amt(c.net)}</tr>
+        </tbody>
+      </table>
+      <p className="mt-2">เป็นเงิน {amountOf(c.net, d.currency)} ผู้ให้เช่าชำระคืนเมื่อวันที่ {thDateLong(c.settled)} โดย ☐ โอนเข้าบัญชีผู้เช่า {blank("10rem")} ☐ เงินสด</p>
+      <p className="mt-2 indent-8">ผู้เช่าได้รับเงินจำนวนดังกล่าวครบถ้วนแล้ว และทั้งสองฝ่ายไม่มีข้อเรียกร้องใด ๆ ต่อกันอีกเกี่ยวกับสัญญาเช่าฉบับนี้</p>
+      <div className="mt-10 grid grid-cols-2 gap-6 break-inside-avoid">
+        <Sign role="ผู้ให้เช่า" name={d.lessors.map((x) => x.name).join(" และ ") || undefined} />
+        <Sign role="ผู้เช่า" name={tenantSign(d)} />
+      </div>
+    </article>
+  );
+}

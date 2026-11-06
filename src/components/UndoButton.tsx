@@ -7,7 +7,7 @@ import Flash from "@/components/Flash";
 
 /** ปุ่ม "ยกเลิกทั้งก้อน" · ถามยืนยันก่อน · ฐานข้อมูลย้อนทุกส่วนพร้อมกัน */
 export default function UndoButton({ kind, id, paths = [], label = "ยกเลิกทั้งก้อน", confirmText, size = "sm" }: {
-  kind: "BENEFIT" | "DEPOSIT" | "PAYMENT" | "ALT_PART_SALE"; id: string; paths?: string[]; label?: string; confirmText: string;
+  kind: "BENEFIT" | "CLOSEOUT" | "DEPOSIT" | "PAYMENT" | "ALT_PART_SALE"; id: string; paths?: string[]; label?: string; confirmText: string;
   /** md = ขนาดเดียวกับปุ่มบันทึก (วางข้างปุ่มบันทึกในหน้าต่างแก้ไข) */
   size?: "sm" | "md";
 }) {

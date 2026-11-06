@@ -29,11 +29,12 @@ const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
  *   งวดแรก: แสดงตัวอย่างตามวันเริ่ม / วันจ่าย / วิธีคิดวันเศษ (สูตรจริง = private.lease_cycles)
  *   detail = ส่วนรายละเอียดสำหรับพิมพ์สัญญา (ไม่ส่ง = ไม่แสดง เช่นฟอร์มเพิ่มทรัพย์สินใหม่ → กรอกทีหลังที่ปุ่ม "รายละเอียดสัญญา")
  */
-export default function LeaseFields({ banks, goLive, currency = "THB", carryOptions = [], defaultStart, renewals = [], detail }: {
+export default function LeaseFields({ banks, goLive, currency = "THB", carryOptions = [], defaultStart, renewals = [], detail, initialFrom }: {
   banks: Bank[]; goLive: string; currency?: string; carryOptions?: CarryOption[]; defaultStart?: string;
   renewals?: LeasePrefill[]; detail?: { opt: LeaseDetailOptions; canSensitive: boolean };
+  /** ปุ่ม "ต่อสัญญา" บนการ์ด → เลือกสัญญาเดิมไว้ให้ */ initialFrom?: string;
 }) {
-  const [fromId, setFromId] = useState("");
+  const [fromId, setFromId] = useState(initialFrom ?? "");
   const from = renewals.find((r) => r.id === fromId);
   return (
     <div className="space-y-4">

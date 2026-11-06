@@ -4629,4 +4629,110 @@ SELECT t.fails($$UPDATE public.property_leases SET unit_label = ' ชั้น 2
 INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
   VALUES (:'prop_a', 'ชั้น 3', 'ผู้เช่า ง', '2027-09-16', '2028-09-15', 7500);
 SELECT t.ok((SELECT count(*) = 1 FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ง'), 'สัญญาทับ: ห้องเดิมเริ่มวันถัดจากวันเลิกสัญญาเดิม → บันทึกได้');
+\echo '== 18. ผู้เช่าออก: คืนค่าเช่าล่วงหน้า · หักค้าง / ค่าน้ำไฟ / ค่าเสียหาย / ริบ · ยกเลิกได้ · แก้วันเลิกสัญญา (6 พ.ย. 2026)'
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount, payment_due_day, security_deposit)
+  VALUES (:'prop_a', 'ชั้น 5', 'ผู้เช่า ออก', '2026-08-10', '2027-08-09', 9000, 10, 18000);
+SELECT id AS lease_x FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ออก' \gset
+INSERT INTO public.cash_movements(family_id, movement_date, movement_type, to_asset_id, related_lease_id, amount, currency)
+  SELECT f.id, '2026-08-10', 'SECURITY_DEPOSIT_IN', t.a('KBank ออมทรัพย์'), :'lease_x', 18000, 'THB' FROM public.families f;
+-- รับค่าเช่า ส.ค. เต็ม · ก.ย. ขาด 1,000 · ต.ค. เต็ม (จ่ายล่วงหน้าทั้งรอบ 10 ต.ค.–9 พ.ย.)
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', :'lease_x', 'income_period', '2026-08-01', 'date', '2026-08-10', 'amount', 9000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')),
+  jsonb_build_object('lease_id', :'lease_x', 'income_period', '2026-09-01', 'date', '2026-09-10', 'amount', 8000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')),
+  jsonb_build_object('lease_id', :'lease_x', 'income_period', '2026-10-01', 'date', '2026-10-10', 'amount', 9000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')))) AS rent_x;
+INSERT INTO public.lease_utility_charges(lease_id, cost_period, description, amount) VALUES (:'lease_x', '2026-09-01', 'ค่าไฟ ก.ย.', 650);
+SELECT public.lease_closeout_preview(:'lease_x', '2026-10-20') AS pv_x \gset
+SELECT t.ok((:'pv_x'::jsonb ->> 'unpaid_rent')::numeric = 1000 AND (:'pv_x'::jsonb ->> 'advance_rent')::numeric = 5806.45
+        AND (:'pv_x'::jsonb ->> 'utilities')::numeric = 650 AND (:'pv_x'::jsonb ->> 'deposit')::numeric = 18000
+        AND jsonb_array_length(:'pv_x'::jsonb -> 'rent') = 3
+        AND (SELECT (r ->> 'expected')::numeric = 3193.55 AND r ->> 'to' = '2026-10-20'
+               FROM jsonb_array_elements(:'pv_x'::jsonb -> 'rent') r WHERE r ->> 'period' = '2026-10-01'),
+            'ผู้เช่าออก 20 ต.ค.: ค่าเช่า ต.ค. คิด 11 จาก 31 วัน = 3,193.55 · รับแล้ว 9,000 → คืน 5,806.45 · ก.ย. ค้าง 1,000 · ค่าไฟค้าง 650');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-25', t.a('KBank ออมทรัพย์'))$$,
+               'PERMISSION_DENIED', 'ผู้เช่าออก: CONTRIBUTOR บันทึกไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-19', t.a('KBank ออมทรัพย์'))$$,
+               'วันที่คืนเงิน', 'ผู้เช่าออก: วันคืนเงินก่อนวันที่ออกไม่ได้');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-25', t.a('KBank ออมทรัพย์'), 20000, 'ทาสีใหม่ทั้งห้อง')$$,
+               'เกินเงินประกัน', 'ผู้เช่าออก: ยอดหักเกินเงินประกัน → บันทึกไม่ได้');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-25', NULL)$$,
+               'เลือกบัญชี', 'ผู้เช่าออก: มียอดโอนคืนต้องเลือกบัญชี');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-25', t.a('KBank ออมทรัพย์'), 500, '  ')$$,
+               'ระบุรายการค่าเสียหาย', 'ผู้เช่าออก: ค่าเสียหายต้องมีรายการ');
+SELECT public.close_lease(:'lease_x', '2026-10-20', '2026-10-25', t.a('KBank ออมทรัพย์'), 1200, 'ผนังเป็นรอย', 3000, 'ออกก่อนครบสัญญา') AS co_x \gset
+SELECT t.ok((:'co_x'::jsonb ->> 'deposit_refund')::numeric = 12150 AND (:'co_x'::jsonb ->> 'advance_refund')::numeric = 5806.45
+        AND (:'co_x'::jsonb ->> 'net_transfer')::numeric = 17956.45 AND (:'co_x'::jsonb ->> 'terminated')::boolean,
+            'ผู้เช่าออก: หัก 1,000 + 650 + 1,200 + 3,000 → คืนเงินประกัน 12,150 + ค่าเช่าล่วงหน้า 5,806.45 = โอนคืน 17,956.45');
+SELECT t.ok((SELECT status = 'TERMINATED' AND terminated_date = '2026-10-20' AND deposit_settlement_type = 'REFUNDED'
+                    AND deposit_refunded_amount = 12150 AND deposit_settled_date = '2026-10-25' FROM public.property_leases WHERE id = :'lease_x')
+        AND (SELECT count(*) = 1 AND sum(amount) = 12150 FROM public.cash_movements
+              WHERE related_lease_id = :'lease_x' AND movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL),
+            'ผู้เช่าออก: เลิกสัญญา ณ วันที่ออก + คืนเงินประกัน (เงินออก 12,150)');
+SELECT t.ok((SELECT count(*) = 1 FROM public.expense_items e WHERE e.deleted_at IS NULL AND e.description LIKE 'คืนค่าเช่าล่วงหน้า%'
+               AND e.amount = 5806.45 AND e.paid_from_asset_id = t.a('KBank ออมทรัพย์') AND e.related_asset_id = t.a('บ้าน A'))
+        AND (SELECT count(*) = 1 FROM public.cash_movements m JOIN public.expense_items e ON e.id = m.source_entity_id
+              WHERE e.description LIKE 'คืนค่าเช่าล่วงหน้า%' AND m.deleted_at IS NULL AND m.from_asset_id = t.a('KBank ออมทรัพย์')),
+            'ผู้เช่าออก: ค่าเช่าที่รับเกิน = ค่าใช้จ่ายทรัพย์สิน "คืนค่าเช่าล่วงหน้า" + เงินออกจากบัญชี');
+SELECT t.ok((SELECT status = 'RECEIVED' AND received_amount = 9000 FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_x' AND income_period = '2026-09-01')
+        AND (SELECT expected_amount = 3193.55 FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_x' AND income_period = '2026-10-01')
+        AND (SELECT received_to_asset_id IS NULL FROM public.income_transactions WHERE lease_id = :'lease_x' AND income_type = 'RENT'
+              AND income_period = '2026-09-01' AND amount = 1000 AND deleted_at IS NULL)
+        AND (SELECT status = 'RECEIVED' FROM public.v_lease_utility_charges WHERE lease_id = :'lease_x')
+        AND (SELECT count(*) = 2 AND sum(amount) = 4200 FROM public.income_transactions WHERE lease_id = :'lease_x' AND income_type = 'OTHER'
+              AND notes LIKE 'หักจากเงินประกัน:%' AND deleted_at IS NULL),
+            'ผู้เช่าออก: ค่าเช่า ก.ย. ที่ค้าง + ค่าไฟ = รายได้หักจากเงินประกัน (ไม่ผ่านบัญชี) · ค่าเสียหาย + ริบ = รายได้อื่น');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-25', t.a('KBank ออมทรัพย์'))$$,
+               'บันทึกผู้เช่าออกของสัญญานี้แล้ว', 'ผู้เช่าออก: บันทึกซ้ำไม่ได้');
+SELECT t.fails($$SELECT public.undo_security_deposit('$$ || :'lease_x' || $$')$$, 'ยกเลิกผู้เช่าออก', 'ผู้เช่าออก: ยกเลิกคืนเงินประกันอย่างเดียวไม่ได้ (ต้องยกเลิกทั้งชุด)');
+SELECT t.fails($$UPDATE public.income_transactions SET deleted_at = now() WHERE lease_id = '$$ || :'lease_x' || $$' AND notes = 'หักจากเงินประกันตอนผู้เช่าออก'$$,
+               'ยกเลิกผู้เช่าออก', 'ผู้เช่าออก: ลบค่าเช่าที่หักจากเงินประกันทีละรายการไม่ได้');
+SELECT t.fails($$UPDATE public.expense_items SET amount = 1 WHERE description LIKE 'คืนค่าเช่าล่วงหน้า%' AND deleted_at IS NULL$$,
+               'ยกเลิกผู้เช่าออก', 'ผู้เช่าออก: แก้ยอดคืนค่าเช่าล่วงหน้าทีละรายการไม่ได้');
+SELECT t.fails($$UPDATE public.property_leases SET terminated_date = '2026-10-31' WHERE id = '$$ || :'lease_x' || $$'$$,
+               'บันทึกผู้เช่าออกแล้ว', 'ผู้เช่าออก: แก้วันเลิกสัญญาหลังบันทึกไม่ได้');
+SELECT t.fails($$INSERT INTO public.lease_closeouts(lease_id, move_out_date, settled_date, currency) VALUES ('$$ || :'lease_x' || $$', '2026-10-20', '2026-10-20', 'THB')$$,
+               'permission denied', 'ผู้เช่าออก: เขียนตารางตรงไม่ได้ (ต้องผ่าน close_lease)');
+SELECT t.ok(has_function_privilege('authenticated', 'public.close_lease(uuid, date, date, uuid, numeric, text, numeric, text, text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.close_lease(uuid, date, date, uuid, numeric, text, numeric, text, text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.lease_closeout_preview(uuid, date)', 'EXECUTE')
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.lease_closeouts'::regclass),
+            'ผู้เช่าออก: anon เรียกไม่ได้ · RLS เปิด');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) = 1 FROM public.lease_closeouts WHERE lease_id = :'lease_x' AND deleted_at IS NULL), 'ผู้เช่าออก: VIEWER อ่านใบสรุปได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.undo_close_lease(:'lease_x') IS NULL AS undo_x;
+SELECT t.ok((SELECT status = 'ACTIVE' AND terminated_date IS NULL AND deposit_settlement_type IS NULL AND deposit_refunded_amount IS NULL
+               FROM public.property_leases WHERE id = :'lease_x')
+        AND NOT EXISTS (SELECT 1 FROM public.cash_movements WHERE related_lease_id = :'lease_x' AND movement_type = 'SECURITY_DEPOSIT_OUT' AND deleted_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM public.expense_items WHERE description LIKE 'คืนค่าเช่าล่วงหน้า%' AND deleted_at IS NULL)
+        AND (SELECT count(*) = 3 AND sum(amount) = 26000 FROM public.income_transactions WHERE lease_id = :'lease_x' AND deleted_at IS NULL)
+        AND (SELECT status = 'PENDING' FROM public.v_lease_utility_charges WHERE lease_id = :'lease_x')
+        AND NOT EXISTS (SELECT 1 FROM public.lease_closeouts WHERE lease_id = :'lease_x' AND deleted_at IS NULL),
+            'ยกเลิกผู้เช่าออก: สัญญากลับไม่เลิก · เงินประกันกลับเป็นหนี้ · รายได้ / ค่าใช้จ่าย / เงินออกที่สร้างถูกลบ · ค่าไฟกลับเป็นรอรับ');
+-- วันเลิกสัญญา: EDITOR เลิกได้ · แก้ / ยกเลิกหลังเลิกแล้ว = ADMIN
+UPDATE public.property_leases SET status = 'TERMINATED', terminated_date = '2026-10-20' WHERE id = :'lease_x';
+SELECT t.fails($$UPDATE public.property_leases SET terminated_date = '2026-10-25' WHERE id = '$$ || :'lease_x' || $$'$$,
+               'เฉพาะ ADMIN', 'วันเลิกสัญญา: EDITOR แก้วันหลังเลิกแล้วไม่ได้');
+SELECT t.fails($$SELECT public.close_lease('$$ || :'lease_x' || $$', '2026-10-21', '2026-10-25', t.a('KBank ออมทรัพย์'))$$,
+               'เลิกไว้แล้ว', 'ผู้เช่าออก: สัญญาที่เลิกแล้ว วันที่ออกต้องตรงกับวันเลิกสัญญา');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+UPDATE public.property_leases SET terminated_date = '2026-10-25' WHERE id = :'lease_x';
+UPDATE public.property_leases SET status = 'ACTIVE', terminated_date = NULL WHERE id = :'lease_x';
+SELECT t.ok((SELECT status = 'ACTIVE' AND terminated_date IS NULL FROM public.property_leases WHERE id = :'lease_x'),
+            'วันเลิกสัญญา: ADMIN แก้ / ยกเลิกได้ (ก่อนคืนเงินประกัน)');
+-- สัญญาไม่มีเงินประกัน: คืนเฉพาะค่าเช่าล่วงหน้า
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount, payment_due_day)
+  VALUES (:'prop_a', 'ชั้น 6', 'ผู้เช่า ไม่มีประกัน', '2026-08-01', '2027-07-31', 5000, 1);
+SELECT id AS lease_y FROM public.property_leases WHERE tenant_name = 'ผู้เช่า ไม่มีประกัน' \gset
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', :'lease_y', 'income_period', '2026-08-01', 'date', '2026-08-01', 'amount', 5000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')),
+  jsonb_build_object('lease_id', :'lease_y', 'income_period', '2026-09-01', 'date', '2026-09-01', 'amount', 5000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')))) AS rent_y;
+SELECT public.close_lease(:'lease_y', '2026-09-15', '2026-09-16', t.a('KBank ออมทรัพย์')) AS co_y \gset
+SELECT t.ok((:'co_y'::jsonb ->> 'net_transfer')::numeric = 2500
+        AND (SELECT deposit_settlement_type IS NULL AND terminated_date = '2026-09-15' FROM public.property_leases WHERE id = :'lease_y')
+        AND (SELECT deposit_held = 0 AND advance_refund = 2500 FROM public.lease_closeouts WHERE lease_id = :'lease_y' AND deleted_at IS NULL),
+            'ผู้เช่าออก (ไม่มีเงินประกัน): ออก 15 ก.ย. → คืนค่าเช่าล่วงหน้า 2,500 (15 จาก 30 วัน)');
 \echo 'ALL SCENARIO TESTS PASSED'
