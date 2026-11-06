@@ -191,7 +191,18 @@ export const INVENTORY_METER_TYPES = ["ELECTRIC_METER", "WATER_METER"];
 /** ประเภทที่เลือกได้ตอนเพิ่ม / แก้ของในทรัพย์สิน (ไม่มีมิเตอร์) */
 export const INVENTORY_PICK_TYPES = Object.entries(INVENTORY_TYPE_LABEL).filter(([k]) => !INVENTORY_METER_TYPES.includes(k)) as [string, string][];
 export const INVENTORY_DISPOSAL_LABEL: Record<string, string> = { SOLD: "ขาย", DISCARDED: "ทิ้ง / ชำรุดใช้ไม่ได้" };
-export const HANDOVER_OUT_LABEL: Record<string, string> = { OK: "ครบ / ปกติ", DAMAGED: "ชำรุด", MISSING: "สูญหาย" };
+/** ผลตรวจตอนส่งคืน (ลำดับ = ลำดับในช่องเลือก) · MIXED เลือกได้เฉพาะของหลายชิ้น */
+export const HANDOVER_OUT_LABEL: Record<string, string> = { OK: "ครบ / ปกติ", DAMAGED: "ชำรุด", MISSING: "สูญหาย", MIXED: "ชำรุด + สูญหาย" };
+/** ผลตรวจเป็นข้อความ: "ชำรุด" · "สูญหาย 1 จาก 3" · "ชำรุด 1 · สูญหาย 1 จาก 2" (ว่าง = ยังไม่ตรวจ) */
+export function handoverCheckText(h: { out_status?: string | null; qty?: string | number | null; out_qty?: string | number | null; out_missing_qty?: string | number | null }) {
+  const l = HANDOVER_OUT_LABEL[h.out_status ?? ""];
+  if (!l) return "";
+  const q = (v: string | number | null | undefined) => Number(String(v ?? "").replace(/,/g, "")) || 0;
+  const th = (v: number) => v.toLocaleString("th-TH");
+  const qty = q(h.qty);
+  if (h.out_status === "MIXED") return `ชำรุด ${th(q(h.out_qty))} · สูญหาย ${th(q(h.out_missing_qty))} จาก ${th(qty)}`;
+  return h.out_status === "OK" || qty <= 1 ? l : `${l} ${th(q(h.out_qty) || qty)} จาก ${th(qty)}`;
+}
 /** ห้องว่าง (unit_label = NULL) ของของในทรัพย์สิน */
 export const COMMON_ROOM_LABEL = "ส่วนกลาง / ทั้งหลัง";
 

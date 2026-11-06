@@ -2,7 +2,7 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import { addInventoryItems, copyInventoryRoom, copyInventoryToLease, disposeInventoryItem, saveHandover, undoInventoryDisposal, type ActionState } from "./actions";
-import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, money } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, handoverCheckText, money } from "@/lib/format";
 import ModalButton from "@/components/ModalButton";
 import Flash from "@/components/Flash";
 
@@ -154,41 +154,48 @@ function CopyRoomBody({ assetId, rooms, roomsWithItems }: { assetId: string; roo
 }
 
 export type HandoverItem = {
-  /** pulled = ดึงมาจากของในทรัพย์สิน / มิเตอร์ (ลบแล้วยังไม่บันทึก → กดดึงอีกครั้งได้คืน) */
+  /** pulled = ดึงมาจากของในทรัพย์สิน / มิเตอร์ (ลบแล้วยังไม่บันทึก → กดดึงอีกครั้ง = ดึงข้อมูลล่าสุดมาใหม่) */
   id?: string; pulled?: boolean; item_type: string; name: string; qty: string; brand: string; serial_no: string;
   /** มูลค่าต่อชิ้น · มูลค่าชำรุดต่อชิ้น */ value: string; damage_value: string;
   in_condition: string; in_reading: string; out_status: string;
-  /** จำนวนที่ชำรุด / สูญหาย (ว่าง = ทั้งหมด) */ out_qty: string;
+  /** จำนวนที่ชำรุด / สูญหาย (ว่าง = ทั้งหมด) · ชำรุด + สูญหาย = จำนวนที่ชำรุด */ out_qty: string;
+  /** จำนวนที่สูญหาย (เฉพาะ ชำรุด + สูญหาย) */ out_missing_qty: string;
   out_condition: string; out_reading: string; deduction: string; notes: string;
 };
 
 const num = (v: string) => Number((v ?? "").replace(/,/g, "")) || 0;
 const meterUsed = (r: HandoverItem) => INVENTORY_METER_TYPES.includes(r.item_type) && r.in_reading && r.out_reading
   ? num(r.out_reading) - num(r.in_reading) : null;
-const valueHint = (r: HandoverItem) => (num(r.qty) > 1 && num(r.value) > 0 ? `รวม ${money(num(r.value) * num(r.qty))}` : "");
+/** มูลค่าทดแทน = จำนวน × มูลค่าต่อชิ้น (เหมือนกล่องของในทรัพย์สิน) */
+const replaceValue = (r: HandoverItem) => (INVENTORY_METER_TYPES.includes(r.item_type) ? 0 : num(r.qty) * num(r.value));
 const BLANK: HandoverItem = { item_type: "OTHER", name: "", qty: "1", brand: "", serial_no: "", value: "", damage_value: "", in_condition: "", in_reading: "",
-  out_status: "", out_qty: "", out_condition: "", out_reading: "", deduction: "", notes: "" };
+  out_status: "", out_qty: "", out_missing_qty: "", out_condition: "", out_reading: "", deduction: "", notes: "" };
 
 /** มูลค่าต่อชิ้นตามผลตรวจ: ชำรุด = มูลค่าชำรุดต่อชิ้น · สูญหาย = มูลค่าต่อชิ้น */
 const rateOf = (r: HandoverItem) => (r.out_status === "DAMAGED" ? r.damage_value : r.out_status === "MISSING" ? r.value : "");
 const multi = (r: HandoverItem) => num(r.qty) > 1;
 /** จำนวนที่ชำรุด / สูญหาย (ว่าง = ทั้งหมด) */
 const countOf = (r: HandoverItem) => num(r.out_qty) || num(r.qty) || 1;
-/** ค่าเสียหายเสนอ = จำนวนที่ชำรุด / สูญหาย × มูลค่าต่อชิ้นตามผลตรวจ */
-const autoDamage = (r: HandoverItem) => (num(rateOf(r)) > 0 ? money(num(rateOf(r)) * countOf(r)) : "");
+/** ค่าเสียหายเสนอ = จำนวนที่ชำรุด / สูญหาย × มูลค่าต่อชิ้นตามผลตรวจ · ชำรุด + สูญหาย = ชำรุด × มูลค่าชำรุด + สูญหาย × มูลค่าต่อชิ้น */
+const autoDamage = (r: HandoverItem) => {
+  const v = r.out_status === "MIXED" ? num(r.out_qty) * num(r.damage_value) + num(r.out_missing_qty) * num(r.value) : num(rateOf(r)) * countOf(r);
+  return v > 0 ? money(v) : "";
+};
 /** เปลี่ยนช่องในแถวรายการส่งมอบ · ผลตรวจ / จำนวนเปลี่ยน → ค่าเสียหายคำนวณใหม่ ถ้ายังไม่ได้แก้เอง */
 function applyCheck(r: HandoverItem, k: keyof HandoverItem, v: string): HandoverItem {
   const x = { ...r, [k]: v };
-  if (k === "out_status") x.out_qty = (v === "DAMAGED" || v === "MISSING") && multi(r) ? (r.out_qty || r.qty) : "";
-  if (["out_status", "out_qty", "qty", "value", "damage_value"].includes(k) && (!r.deduction || r.deduction === autoDamage(r))) x.deduction = autoDamage(x);
+  if (k === "out_status") {
+    // ชำรุด + สูญหาย ตั้งต้นอย่างละ 1 ชิ้น
+    x.out_qty = (v === "DAMAGED" || v === "MISSING") && multi(r) ? (r.out_qty || r.qty) : v === "MIXED" ? "1" : "";
+    x.out_missing_qty = v === "MIXED" ? "1" : "";
+  }
+  if (["out_status", "out_qty", "out_missing_qty", "qty", "value", "damage_value"].includes(k) && (!r.deduction || r.deduction === autoDamage(r))) x.deduction = autoDamage(x);
   return x;
 }
-/** "สูญหาย 1 จาก 3" (ของหลายชิ้น) */
-const checkLabel = (r: HandoverItem) => {
-  const l = HANDOVER_OUT_LABEL[r.out_status];
-  if (!l) return "—";
-  return r.out_status !== "OK" && multi(r) ? `${l} ${countOf(r).toLocaleString("th-TH")} จาก ${num(r.qty).toLocaleString("th-TH")}` : l;
-};
+/** "สูญหาย 1 จาก 3" · "ชำรุด 1 · สูญหาย 1 จาก 2" (ของหลายชิ้น) */
+const checkLabel = (r: HandoverItem) => handoverCheckText(r) || "—";
+/** ตัวเลือกผลตรวจ: "ชำรุด + สูญหาย" เฉพาะของหลายชิ้น (หรือแถวที่เลือกไว้แล้ว) */
+const outOptions = (r: HandoverItem) => Object.entries(HANDOVER_OUT_LABEL).filter(([v]) => v !== "MIXED" || multi(r) || r.out_status === "MIXED");
 
 /** ยอดค่าเสียหายรวม + รายละเอียด (ส่งเข้า close_lease) จากตารางตรวจของ */
 export function checkDamage(rows: HandoverItem[]) {
@@ -230,20 +237,27 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
   //   (เดิมใช้ key → ฟอร์มถูกสร้างใหม่ ข้อความ "บันทึกแล้ว" หาย หน้าต่างไม่ปิด ต้องกดบันทึกซ้ำ · แก้ 6 พ.ย. 2026)
   const idKey = items.map((x) => x.id).join(",");
   const [seenKey, setSeenKey] = useState(idKey);
-  if (seenKey !== idKey) { setSeenKey(idKey); setRows(items); setRemoved([]); }
-  // กดดึงอีกครั้ง: แถวที่ดึงมาแล้วกดลบ (ยังไม่บันทึก) กลับมาที่เดิม · แก้ไขในแถวอื่น / แถวใหม่ยังอยู่
-  const restorePulled = () => {
-    const back = new Set(removed.filter((x) => x.pulled).map((x) => x.id));
-    if (!back.size) return;
-    const kept = new Map(rows.filter((r) => r.id).map((r) => [r.id, r]));
-    setRows([...items.filter((x) => back.has(x.id) || kept.has(x.id)).map((x) => kept.get(x.id) ?? x), ...rows.filter((r) => !r.id)]);
-    setRemoved(removed.filter((x) => !x.pulled));
-  };
+  // pulling = กดดึงแล้ว รอรายการใหม่ → รวมกับที่แก้ไว้ (ไม่ล้าง) · กดบันทึก = เริ่มจากข้อมูลที่บันทึกแล้ว
+  const [pulling, setPulling] = useState(false);
+  if (seenKey !== idKey) {
+    setSeenKey(idKey);
+    if (pulling) {
+      // ดึงใหม่ (6 พ.ย. 2026): แถวที่แก้ไว้ยังอยู่ · แถวที่ดึงมาแล้วกดลบ = ถูกลบแล้วดึงข้อมูลล่าสุดมาแทน (ตำแหน่งเดิม)
+      //   แถวที่เพิ่มเอง (ยังไม่บันทึก) อยู่ท้ายตาราง · แถวที่เพิ่มเองแล้วกดลบ รอลบตอนบันทึก
+      const cur = new Map(rows.filter((r) => r.id).map((r) => [r.id, r]));
+      const still = removed.filter((x) => !x.pulled);
+      const gone = new Set(still.map((x) => x.id));
+      setRows([...items.filter((x) => !gone.has(x.id)).map((x) => cur.get(x.id) ?? x), ...rows.filter((r) => !r.id)]);
+      setRemoved(still);
+      setPulling(false);
+    } else { setRows(items); setRemoved([]); }
+  }
   const set = (i: number, k: keyof HandoverItem, v: string) => setRows(rows.map((r, j) => (j === i ? applyCheck(r, k, v) : r)));
   const canWrite = mode !== "view";
   const showOut = mode !== "in";
   const editOut = mode === "both";
   const total = rows.reduce((s, r) => s + num(r.deduction), 0);
+  const replaceTotal = rows.reduce((s, r) => s + replaceValue(r), 0);
   const ro = !canWrite;
   // ดูอย่างเดียว = ตัวหนังสือธรรมดา (ไม่มีกรอบช่องกรอก)
   const roCell = "w-full border-0 bg-transparent px-1 py-1.5 text-sm text-slate-700 focus:outline-none";
@@ -254,28 +268,32 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
     <div className="space-y-3">
       {canWrite && (
         // ดึงของ = เติมรายการ ไม่ใช่การบันทึก → หน้าต่างไม่ปิด (data-no-close)
-        <form action={copyAction} onSubmit={restorePulled} data-no-close className="flex flex-wrap items-center gap-3">
+        <form action={copyAction} onSubmit={() => setPulling(true)} data-no-close className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="asset_id" value={assetId} />
           <input type="hidden" name="lease_id" value={leaseId} />
+          {/* แถวที่ดึงมาแล้วกดลบ → ลบจริงแล้วดึงใหม่จากของในทรัพย์สิน (ได้จำนวน / มูลค่าล่าสุด) */}
+          <input type="hidden" name="repull" value={JSON.stringify(removed.filter((x) => x.pulled).map((x) => x.id))} />
           <button disabled={copying} className={ghost}>{copying ? "กำลังดึง…" : "ดึงของ + มิเตอร์ (ห้องนี้ + ส่วนกลาง)"}</button>
-          <span className="text-xs text-slate-500">กดซ้ำได้ เพิ่มเฉพาะของที่ยังไม่มี</span>
+          <span className="text-xs text-slate-500">กดซ้ำได้ เพิ่มเฉพาะของที่ยังไม่มี · แถวที่ลบไปจะได้ข้อมูลล่าสุด</span>
           <Msg s={cs} />
         </form>
       )}
-      <form action={action} className="space-y-3">
+      <form action={action} onSubmit={() => setPulling(false)} className="space-y-3">
         <input type="hidden" name="asset_id" value={assetId} />
         <input type="hidden" name="lease_id" value={leaseId} />
         <input type="hidden" name="rows" value={JSON.stringify(rows)} />
         <input type="hidden" name="removed" value={JSON.stringify(removed.map((x) => x.id))} />
         {rows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ{canWrite && <> · กด &ldquo;ดึงของ + มิเตอร์&rdquo; หรือ &ldquo;+ เพิ่มแถว&rdquo;</>}</p> : (
           <div className="overflow-x-auto">
-            <table className={`w-full text-sm ${showOut ? "min-w-[68rem]" : "min-w-[52rem]"}`}>
+            <table className={`w-full text-sm ${ro ? "min-w-[68rem]" : showOut ? "min-w-[75rem]" : "min-w-[60rem]"}`}>
               <thead className="text-left text-xs text-slate-500">
                 {/* มีฝั่งส่งคืน (ดูอย่างเดียว / เงินประกันคนละสกุล) = คอลัมน์แคบลง ให้ช่องรายการยังกว้างพอ */}
-                <tr><th className={`${showOut ? "w-28" : "w-32"} pb-1`}>ประเภท</th><th>รายการ</th><th className="w-16">จำนวน</th>
+                {/* ดูอย่างเดียว: ประเภทอยู่ใต้ชื่อรายการ (ไม่มีคอลัมน์ประเภท) ให้ตารางพอดีหน้าต่าง */}
+                <tr>{!ro && <th className={`${showOut ? "w-28" : "w-32"} pb-1`}>ประเภท</th>}<th className="pb-1">รายการ</th><th className="w-16">จำนวน</th>
                   <th className={showOut ? "w-28" : "w-40 whitespace-nowrap"}>มูลค่าต่อชิ้น / เลขมิเตอร์</th>
                   <th className={showOut ? "w-28" : "w-32 whitespace-nowrap"}>มูลค่าชำรุดต่อชิ้น</th>
-                  <th className={`${showOut ? "w-32" : "w-56"} ${sideL}`}>ตอนรับมอบ: สภาพ</th>
+                  <th className={`${showOut ? "w-28" : "w-32"} pr-2 text-right`}>มูลค่าทดแทน</th>
+                  <th className={`${showOut ? "w-32" : "w-48"} ${sideL}`}>ตอนรับมอบ: สภาพ</th>
                   {showOut && <><th className={`w-32 ${sideL}`}>ตอนส่งคืน: ผลตรวจ</th><th className="w-32">สภาพตอนคืน</th><th className="w-24">ค่าเสียหาย</th></>}
                   {canWrite && <th className="w-6" />}</tr>
               </thead>
@@ -283,24 +301,27 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
                 {rows.map((r, i) => {
                   const meter = INVENTORY_METER_TYPES.includes(r.item_type);
                   const used = meterUsed(r);
+                  // ใต้ชื่อ: ยี่ห้อ · Serial (ดูอย่างเดียว = มีประเภทด้วย ถ้าไม่ซ้ำกับชื่อ)
+                  const sub = [ro && INVENTORY_TYPE_LABEL[r.item_type] !== r.name.trim() ? INVENTORY_TYPE_LABEL[r.item_type] : "", r.brand, r.serial_no].filter(Boolean).join(" · ");
                   return (
                     <tr key={r.id ?? `n${i}`} className="align-top">
-                      <td className="py-1 pr-1">{ro ? <div className="px-1 py-1.5 text-slate-600">{INVENTORY_TYPE_LABEL[r.item_type] ?? r.item_type}</div>
-                        : <TypeSelect value={r.item_type} onChange={(v) => set(i, "item_type", v)} />}</td>
+                      {!ro && <td className="py-1 pr-1"><TypeSelect value={r.item_type} onChange={(v) => set(i, "item_type", v)} /></td>}
                       <td className="py-1 pr-1">
                         {/* มิเตอร์: เลขที่มิเตอร์อยู่ท้ายชื่อ บรรทัดเดียว */}
                         <div className="flex items-center gap-2"><input value={r.name} readOnly={ro} onChange={(e) => set(i, "name", e.target.value)} className={ic} />
                           {meter && r.serial_no && <span className="shrink-0 text-xs text-slate-500">เลขที่ {r.serial_no}</span>}</div>
-                        {!meter && (r.brand || r.serial_no) && <div className={note}>{[r.brand, r.serial_no].filter(Boolean).join(" · ")}</div>}</td>
+                        {!meter && sub && <div className={`${note} ${ro ? "px-1" : ""}`}>{sub}</div>}</td>
                       <td className="py-1 pr-1"><input value={r.qty} readOnly={ro} onChange={(e) => set(i, "qty", e.target.value)} inputMode="decimal" data-money="off" className={`${ic} text-right`} /></td>
                       <td className="py-1 pr-1">{meter
                         ? <input value={r.in_reading} readOnly={ro} onChange={(e) => set(i, "in_reading", e.target.value)} inputMode="decimal" data-money="off"
                             placeholder={ro ? "" : "เลขมิเตอร์"} aria-label="เลขมิเตอร์ตอนรับมอบ" className={`${ic} text-right`} />
                         : <>
                           <input value={r.value} readOnly={ro} onChange={(e) => set(i, "value", e.target.value)} inputMode="decimal" placeholder={ro ? "" : "0.00"} className={`${ic} text-right`} />
-                          {valueHint(r) && <div className={`${note} text-right`}>{valueHint(r)}</div>}</>}</td>
+                          </>}</td>
                       <td className="py-1 pr-1">{!meter && <input value={r.damage_value} readOnly={ro} onChange={(e) => set(i, "damage_value", e.target.value)} inputMode="decimal"
                         placeholder={ro ? "" : "0.00"} aria-label="มูลค่าชำรุดต่อชิ้น" className={`${ic} text-right`} />}</td>
+                      {/* มูลค่าทดแทน = จำนวน × มูลค่าต่อชิ้น (คำนวณ · แก้ไม่ได้) */}
+                      <td className="py-1 pr-2 text-right tabular-nums text-slate-500"><div className="py-1.5">{replaceValue(r) > 0 ? money(replaceValue(r)) : ""}</div></td>
                       <td className={`py-1 pr-1 ${sideL}`}>
                         <input value={r.in_condition} readOnly={ro} onChange={(e) => set(i, "in_condition", e.target.value)} placeholder="ปกติ" className={ic} />
                       </td>
@@ -312,9 +333,9 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
                           ) : editOut ? (<>
                             <select value={r.out_status} onChange={(e) => set(i, "out_status", e.target.value)} className={cell}>
                               <option value="">—</option>
-                              {Object.entries(HANDOVER_OUT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                              {outOptions(r).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                             </select>
-                            <OutQty r={r} onChange={(v) => set(i, "out_qty", v)} /></>
+                            <OutQty r={r} onChange={(k, v) => set(i, k, v)} /></>
                           ) : <div className={`px-1 py-1.5 ${r.out_status && r.out_status !== "OK" ? "text-red-700" : "text-slate-600"}`}>{checkLabel(r)}</div>}
                         </td>
                         <td className="py-1 pr-1">{meter
@@ -329,9 +350,15 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
                   );
                 })}
               </tbody>
-              {showOut && total > 0 && (
-                <tfoot><tr className="border-t border-slate-200 font-medium"><td colSpan={8} className="py-2 text-right">รวมค่าเสียหาย</td>
-                  <td className="py-2 pr-1 text-right tabular-nums">{money(total, currency)}</td>{canWrite && <td />}</tr></tfoot>
+              {/* แถวรวม: มูลค่าทดแทนรวม (เทียบกับเงินประกัน) · ค่าเสียหายรวม (มีฝั่งส่งคืน) · เป็น 0 ไม่แสดง */}
+              {(replaceTotal > 0 || (showOut && total > 0)) && (
+                <tfoot><tr className="border-t border-slate-200 font-medium">
+                  <td colSpan={ro ? 4 : 5} className="py-2 pr-2 text-right">รวม</td>
+                  <td className="whitespace-nowrap py-2 pr-2 text-right tabular-nums">{replaceTotal > 0 ? money(replaceTotal, currency) : ""}</td>
+                  <td />
+                  {showOut && <><td colSpan={2} className="py-2 pr-2 text-right">{total > 0 ? "ค่าเสียหาย" : ""}</td>
+                    <td className="whitespace-nowrap py-2 pr-1 text-right tabular-nums">{total > 0 ? money(total, currency) : ""}</td></>}
+                  {canWrite && <td />}</tr></tfoot>
               )}
             </table>
           </div>
@@ -353,14 +380,28 @@ function HandoverBody({ assetId, leaseId, items, mode, currency }: {
   );
 }
 
-/** จำนวนที่ชำรุด / สูญหาย: "[1] จาก 3 ชิ้น" ใต้ผลตรวจ (เฉพาะของหลายชิ้นที่ไม่ครบ) */
-function OutQty({ r, onChange }: { r: HandoverItem; onChange: (v: string) => void }) {
-  if (!multi(r) || !r.out_status || r.out_status === "OK") return null;
+/**
+ * จำนวนที่ชำรุด / สูญหาย ใต้ผลตรวจ (เฉพาะของหลายชิ้นที่ไม่ครบ): "[1] จาก 3 ชิ้น"
+ * ชำรุด + สูญหาย: "ชำรุด [1]" / "สูญหาย [1] จาก 2 ชิ้น"
+ */
+function OutQty({ r, onChange }: { r: HandoverItem; onChange: (k: "out_qty" | "out_missing_qty", v: string) => void }) {
+  if (!r.out_status || r.out_status === "OK" || (!multi(r) && r.out_status !== "MIXED")) return null;
+  const box = "w-14 rounded-md border border-slate-300 px-2 py-1 text-right text-sm";
+  const of = <>จาก {num(r.qty).toLocaleString("th-TH")} ชิ้น</>;
+  if (r.out_status === "MIXED") return (
+    <div className="mt-1 space-y-1 whitespace-nowrap text-xs text-slate-500">
+      <div className="flex items-center gap-1"><span className="w-11">ชำรุด</span>
+        <input value={r.out_qty} onChange={(e) => onChange("out_qty", e.target.value)} inputMode="decimal" data-money="off" aria-label="จำนวนที่ชำรุด" className={box} /></div>
+      <div className="flex items-center gap-1"><span className="w-11">สูญหาย</span>
+        <input value={r.out_missing_qty} onChange={(e) => onChange("out_missing_qty", e.target.value)} inputMode="decimal" data-money="off" aria-label="จำนวนที่สูญหาย" className={box} />
+        {of}</div>
+    </div>
+  );
   return (
     <div className="mt-1 flex items-center gap-1 whitespace-nowrap text-xs text-slate-500">
-      <input value={r.out_qty} onChange={(e) => onChange(e.target.value)} inputMode="decimal" data-money="off" placeholder={r.qty}
-        aria-label={`จำนวนที่${HANDOVER_OUT_LABEL[r.out_status]}`} className="w-14 rounded-md border border-slate-300 px-2 py-1 text-right text-sm" />
-      จาก {num(r.qty).toLocaleString("th-TH")} ชิ้น
+      <input value={r.out_qty} onChange={(e) => onChange("out_qty", e.target.value)} inputMode="decimal" data-money="off" placeholder={r.qty}
+        aria-label={`จำนวนที่${HANDOVER_OUT_LABEL[r.out_status]}`} className={box} />
+      {of}
     </div>
   );
 }
@@ -381,8 +422,8 @@ export function MoveOutCheck({ rows, setRows, currency }: { rows: HandoverItem[]
         <div className="overflow-x-auto">
           <table className="w-full min-w-[56rem] text-sm">
             <thead className="text-left text-xs text-slate-500">
-              <tr><th className="pb-1">รายการ</th><th className="w-44">ตอนรับมอบ</th><th className="w-28 text-right">มูลค่าต่อชิ้น</th>
-                <th className="w-36 border-l border-slate-200 pl-2">ผลตรวจ</th><th className="w-44">สภาพตอนคืน</th><th className="w-28">ค่าเสียหาย</th><th className="w-6" /></tr>
+              <tr><th className="pb-1">รายการ</th><th className="w-40">ตอนรับมอบ</th><th className="w-32 text-right">มูลค่าต่อชิ้น</th>
+                <th className="w-40 border-l border-slate-200 pl-2">ผลตรวจ</th><th className="w-44">สภาพตอนคืน</th><th className="w-28">ค่าเสียหาย</th><th className="w-6" /></tr>
             </thead>
             <tbody>
               {rows.map((r, i) => {
@@ -398,8 +439,11 @@ export function MoveOutCheck({ rows, setRows, currency }: { rows: HandoverItem[]
                       {!isNew && !meter && <div className={note}>{[INVENTORY_TYPE_LABEL[r.item_type] === r.name.trim() ? "" : INVENTORY_TYPE_LABEL[r.item_type], r.brand, r.serial_no].filter(Boolean).join(" · ")}</div>}
                     </td>
                     <td className="py-1.5 pr-2 text-slate-600">{meter ? (r.in_reading ? `เลขมิเตอร์ ${num(r.in_reading).toLocaleString("th-TH")}` : "") : r.in_condition || (isNew ? "" : "ปกติ")}</td>
-                    {/* ชำรุด = มูลค่าชำรุดต่อชิ้น · สูญหาย = มูลค่าต่อชิ้น · ครบ = มูลค่าต่อชิ้น (สีจาง ไว้ดูเทียบ) */}
-                    <td className="py-1.5 pr-2 text-right tabular-nums">{meter || isNew ? "" : (() => {
+                    {/* ชำรุด = มูลค่าชำรุดต่อชิ้น · สูญหาย = มูลค่าต่อชิ้น · ครบ = มูลค่าต่อชิ้น (สีจาง ไว้ดูเทียบ) · ชำรุด + สูญหาย = 2 บรรทัด */}
+                    <td className="py-1.5 pr-2 text-right tabular-nums">{meter || isNew ? "" : r.out_status === "MIXED" ? (
+                      <div className="space-y-0.5 whitespace-nowrap text-slate-700">{([["ชำรุด", r.damage_value], ["สูญหาย", r.value]] as const).map(([l, v]) => (
+                        <div key={l}><span className="text-xs text-slate-500">{l} </span>{num(v) > 0 ? money(num(v)) : <span className="text-xs text-slate-400">ไม่ได้ตั้งไว้</span>}</div>))}</div>
+                    ) : (() => {
                       const ok = !r.out_status || r.out_status === "OK";
                       const v = ok ? r.value : rateOf(r);
                       return num(v) > 0 ? <span className={ok ? "text-slate-400" : "text-slate-700"}>{money(num(v))}</span>
@@ -410,9 +454,9 @@ export function MoveOutCheck({ rows, setRows, currency }: { rows: HandoverItem[]
                       {meter ? <input value={r.out_reading} onChange={(e) => set(i, "out_reading", e.target.value)} inputMode="decimal" data-money="off"
                           placeholder="เลขตอนออก" aria-label="เลขมิเตอร์ตอนออก" className={`${cell} text-right`} />
                         : <><select value={r.out_status || "OK"} onChange={(e) => set(i, "out_status", e.target.value)} className={cell}>
-                          {Object.entries(HANDOVER_OUT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                          {outOptions(r).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                         </select>
-                        <OutQty r={r} onChange={(v) => set(i, "out_qty", v)} /></>}
+                        <OutQty r={r} onChange={(k, v) => set(i, k, v)} /></>}
                     </td>
                     <td className="py-1 pr-1">{meter
                       ? <div className="py-1.5 text-slate-600">{used != null ? `ใช้ไป ${used.toLocaleString("th-TH")} หน่วย` : ""}</div>

@@ -899,17 +899,38 @@ export async function copyInventoryRoom(_: ActionState, form: FormData): Promise
   return { ok: `คัดลอก ${src.length} รายการไป${to ?? "ส่วนกลาง"}แล้ว · เลขมิเตอร์ / Serial กรอกเพิ่มที่แต่ละแถว` };
 }
 
-/** ดึงของในทรัพย์สิน (ห้องของสัญญา + ส่วนกลาง) เข้ารายการส่งมอบ · กดซ้ำได้ เพิ่มเฉพาะของใหม่ */
+/**
+ * ดึงของในทรัพย์สิน (ห้องของสัญญา + ส่วนกลาง) เข้ารายการส่งมอบ · กดซ้ำได้ เพิ่มเฉพาะของใหม่ (แถวที่มีอยู่ไม่แตะ)
+ * repull = แถวที่ดึงมาแล้วกดลบ (ยังไม่บันทึก) → ลบจริงก่อน แล้วดึงข้อมูลล่าสุดจากของในทรัพย์สินมาแทน ที่ตำแหน่งเดิม (ตกลง 6 พ.ย. 2026)
+ */
 export async function copyInventoryToLease(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("copy_inventory_to_lease", { p_lease_id: String(form.get("lease_id")) });
-  if (error) return { error: friendlyError(error.message) };
+  const leaseId = String(form.get("lease_id"));
+  let repull: string[] = [];
+  try { repull = JSON.parse(String(form.get("repull") ?? "[]")); } catch { return { error: BAD_ROWS_ERROR }; }
+  if (!Array.isArray(repull)) return { error: BAD_ROWS_ERROR };
+  repull = repull.filter((x) => typeof x === "string");
+  type Old = { inventory_item_id: string | null; utility_id: string | null; sort_order: number | null };
+  let old: Old[] = [];
+  if (repull.length) {
+    const { data, error } = await supabase.from("lease_handover_items").update({ deleted_at: new Date().toISOString() })
+      .in("id", repull).eq("lease_id", leaseId).is("deleted_at", null).select("inventory_item_id,utility_id,sort_order");
+    if (error) return { error: friendlyError(error.message) };
+    old = (data ?? []) as Old[];
+  }
+  const { data, error } = await supabase.rpc("copy_inventory_to_lease", { p_lease_id: leaseId });
+  if (error) { revalidateProperty(String(form.get("asset_id"))); return { error: friendlyError(error.message) }; }
+  // แถวที่ดึงใหม่กลับไปอยู่ตำแหน่งเดิม
+  await Promise.all(old.filter((o) => o.sort_order != null && (o.inventory_item_id || o.utility_id)).map((o) => {
+    const q = supabase.from("lease_handover_items").update({ sort_order: o.sort_order }).eq("lease_id", leaseId).is("deleted_at", null);
+    return o.inventory_item_id ? q.eq("inventory_item_id", o.inventory_item_id) : q.eq("utility_id", o.utility_id!);
+  }));
   revalidateProperty(String(form.get("asset_id")));
   return { ok: Number(data) > 0 ? `ดึงมา ${data} รายการ` : "ไม่มีรายการใหม่ให้ดึง" };
 }
 
 type HandoverRow = InvRow & { id?: string; inventory_item_id?: string; in_condition?: string; in_reading?: string; out_status?: string;
-  out_qty?: string; out_condition?: string; out_reading?: string; deduction?: string };
+  out_qty?: string; out_missing_qty?: string; out_condition?: string; out_reading?: string; deduction?: string };
 
 /**
  * เขียนรายการส่งมอบของสัญญา: แก้แถวเดิม (มี id) · เพิ่มแถวใหม่ · ลบแถวที่เอาออก (Soft Delete)
@@ -917,17 +938,22 @@ type HandoverRow = InvRow & { id?: string; inventory_item_id?: string; in_condit
  */
 async function writeHandover(supabase: Awaited<ReturnType<typeof createClient>>, leaseId: string, raw: HandoverRow[], removed: string[]) {
   const rows = raw.filter((r) => t(r.name));
-  const nums = rows.flatMap((r) => [n(r.qty), n(r.value), n(r.damage_value), n(r.in_reading), n(r.out_reading), n(r.deduction), n(r.out_qty)]);
+  const nums = rows.flatMap((r) => [n(r.qty), n(r.value), n(r.damage_value), n(r.in_reading), n(r.out_reading), n(r.deduction), n(r.out_qty), n(r.out_missing_qty)]);
   if (nums.some((x) => x != null && (Number.isNaN(x) || x < 0)) || rows.some((r) => n(r.qty) === 0))
     return { error: "ตัวเลขต้องไม่ติดลบ และจำนวนต้องมากกว่า 0", added: [] as string[] };
   // จำนวนที่ชำรุด / สูญหาย: มากกว่า 0 และไม่เกินจำนวนที่ส่งมอบ (ฐานข้อมูลตรวจซ้ำ)
   if (rows.some((r) => { const o = n(r.out_qty); return o != null && (o <= 0 || o > (n(r.qty) ?? 1)); }))
     return { error: "จำนวนที่ชำรุด / สูญหายต้องมากกว่า 0 และไม่เกินจำนวนที่ส่งมอบ", added: [] as string[] };
+  // ชำรุด + สูญหาย: ใส่จำนวนทั้ง 2 ช่อง รวมกันไม่เกินจำนวนที่ส่งมอบ
+  if (rows.some((r) => { if (r.out_status !== "MIXED") return false; const d = n(r.out_qty) ?? 0, m = n(r.out_missing_qty) ?? 0;
+    return d <= 0 || m <= 0 || d + m > (n(r.qty) ?? 1); }))
+    return { error: "ชำรุด + สูญหาย: ใส่จำนวนทั้ง 2 ช่อง (มากกว่า 0) รวมกันไม่เกินจำนวนที่ส่งมอบ", added: [] as string[] };
   const body = (r: HandoverRow, i: number) => ({
     item_type: r.item_type || "OTHER", name: t(r.name), qty: n(r.qty) ?? 1, brand: t(r.brand), serial_no: t(r.serial_no), value: n(r.value),
     damage_value: n(r.damage_value), in_condition: t(r.in_condition), in_reading: n(r.in_reading), out_status: t(r.out_status),
-    // จำนวนที่ชำรุด / สูญหาย: เก็บเฉพาะเมื่อไม่ครบ
-    out_qty: r.out_status === "DAMAGED" || r.out_status === "MISSING" ? n(r.out_qty) : null, out_condition: t(r.out_condition),
+    // จำนวนที่ชำรุด / สูญหาย: เก็บเฉพาะเมื่อไม่ครบ · ชำรุด + สูญหาย = out_qty (ชำรุด) + out_missing_qty (สูญหาย)
+    out_qty: ["DAMAGED", "MISSING", "MIXED"].includes(r.out_status ?? "") ? n(r.out_qty) : null,
+    out_missing_qty: r.out_status === "MIXED" ? n(r.out_missing_qty) : null, out_condition: t(r.out_condition),
     out_reading: n(r.out_reading), deduction: n(r.deduction), notes: t(r.notes), sort_order: i + 1,
   });
   const results = await Promise.all([

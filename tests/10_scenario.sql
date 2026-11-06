@@ -3562,6 +3562,23 @@ SELECT t.ok((SELECT out_qty = 1 AND deduction = 300 FROM public.lease_handover_i
 SELECT t.fails($$UPDATE public.lease_handover_items SET out_qty = 5 WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_out_qty_ck', 'ส่งมอบ: จำนวนที่ชำรุด / สูญหายเกินจำนวนที่ส่งมอบไม่ได้');
 SELECT t.fails($$UPDATE public.lease_handover_items SET out_qty = 0 WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_out_qty_ck', 'ส่งมอบ: จำนวนที่ชำรุด / สูญหายต้องมากกว่า 0');
 SELECT t.fails($$UPDATE public.property_inventory_items SET damage_value = -1 WHERE name = 'เก้าอี้ทดสอบ'$$, 'pinv_damage_value_ck', 'ของในทรัพย์สิน: มูลค่าชำรุดต่อชิ้นติดลบไม่ได้');
+-- ชำรุด + สูญหายในแถวเดียว (6 พ.ย. 2026)
+UPDATE public.lease_handover_items SET out_status = 'MIXED', out_qty = 1, out_missing_qty = 2, deduction = 2700 WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ';
+SELECT t.ok((SELECT out_status = 'MIXED' AND out_qty = 1 AND out_missing_qty = 2 FROM public.lease_handover_items WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ'),
+            'ส่งมอบ: บันทึกชำรุด 1 + สูญหาย 2 จาก 4 ชิ้นในแถวเดียว');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_missing_qty = 4 WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_mixed_ck', 'ส่งมอบ: ชำรุด + สูญหายรวมกันเกินจำนวนที่ส่งมอบไม่ได้');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_missing_qty = NULL WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_mixed_ck', 'ส่งมอบ: ชำรุด + สูญหายต้องมีจำนวนที่สูญหาย');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_qty = NULL WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_mixed_ck', 'ส่งมอบ: ชำรุด + สูญหายต้องมีจำนวนที่ชำรุด');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_status = 'DAMAGED' WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_mixed_ck', 'ส่งมอบ: ผลตรวจอื่นไม่มีจำนวนที่สูญหายแยก');
+SELECT t.fails($$UPDATE public.lease_handover_items SET out_status = 'LOST', out_qty = NULL, out_missing_qty = NULL WHERE name = 'เก้าอี้ทดสอบ'$$, 'lho_out_ck', 'ส่งมอบ: ผลตรวจต้องเป็นค่าที่กำหนด');
+-- ลบแถวที่ดึงมาแล้วกดดึงใหม่ = ได้ข้อมูลล่าสุดจากของในทรัพย์สิน (หน้าจอลบแถวเดิมก่อนดึง)
+UPDATE public.property_inventory_items SET qty = 6, value = 1500 WHERE name = 'เก้าอี้ทดสอบ';
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 0, 'ส่งมอบ: ดึงซ้ำไม่แตะแถวที่ยังอยู่');
+UPDATE public.lease_handover_items SET deleted_at = now() WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ' AND deleted_at IS NULL;
+SELECT t.ok(public.copy_inventory_to_lease(:'lease_b') = 1, 'ส่งมอบ: ลบแล้วดึงใหม่ได้ 1 รายการ');
+SELECT t.ok((SELECT qty = 6 AND value = 1500 AND out_status IS NULL AND out_missing_qty IS NULL FROM public.lease_handover_items
+              WHERE lease_id = :'lease_b' AND name = 'เก้าอี้ทดสอบ' AND deleted_at IS NULL),
+            'ส่งมอบ: แถวที่ดึงใหม่ใช้จำนวน / มูลค่าล่าสุด');
 -- เงินกู้ภายในครอบครัว (2 พ.ย. 2026): ผู้กู้เป็นสมาชิก → หนี้สินของผู้กู้ · ยอดรวมครอบครัวหักกันเป็น 0
 UPDATE public.loan_details SET status = 'ACTIVE' WHERE asset_id = t.a('เงินกู้ญาติ');
 INSERT INTO public.cash_movements(movement_date, movement_type, from_asset_id, to_asset_id, amount, currency, description)
