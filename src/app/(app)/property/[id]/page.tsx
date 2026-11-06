@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
-  INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
+  INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, handoverCheckText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
   EditPropertyForm, EditTerminationForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
@@ -229,7 +229,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
     supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,damage_value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
-    supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,damage_value,in_condition,in_reading,out_status,out_qty,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
+    supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,damage_value,in_condition,in_reading,out_status,out_qty,out_missing_qty,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
     supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
@@ -406,7 +406,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const multiRoom = rooms.length > 1;
   const roomsWithItems = [...new Set(inv.map((x) => x.unit_label?.trim() ?? ""))];
   type Hand = { id: string; lease_id: string; inventory_item_id: string | null; utility_id: string | null; item_type: string; name: string; qty: number; brand: string | null; serial_no: string | null; value: number | null;
-    damage_value: number | null; out_qty: number | null;
+    damage_value: number | null; out_qty: number | null; out_missing_qty: number | null;
     in_condition: string | null; in_reading: number | null; out_status: string | null; out_condition: string | null; out_reading: number | null;
     deduction: number | null; notes: string | null };
   const s2 = (v: unknown) => (v == null ? "" : String(v));
@@ -414,14 +414,14 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const handItems = (leaseId: string): HandoverItem[] => (handByLease.get(leaseId) ?? []).map((h) => ({
     id: h.id, pulled: !!(h.inventory_item_id || h.utility_id), item_type: h.item_type, name: h.name, qty: s2(Number(h.qty)), brand: s2(h.brand), serial_no: s2(h.serial_no),
     value: h.value == null ? "" : money(h.value), damage_value: h.damage_value == null ? "" : money(h.damage_value),
-    out_qty: h.out_qty == null ? "" : s2(Number(h.out_qty)), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
+    out_qty: h.out_qty == null ? "" : s2(Number(h.out_qty)), out_missing_qty: h.out_missing_qty == null ? "" : s2(Number(h.out_missing_qty)), in_condition: s2(h.in_condition), in_reading: h.in_reading == null ? "" : s2(Number(h.in_reading)),
     out_status: s2(h.out_status), out_condition: s2(h.out_condition), out_reading: h.out_reading == null ? "" : s2(Number(h.out_reading)),
     deduction: h.deduction == null ? "" : money(h.deduction), notes: s2(h.notes) }));
   // ค่าเสียหายจากรายการส่งมอบ → เติมให้ตอน "คืน / หักเงินประกัน" (เงินประกันคนละสกุล · ผู้เช่าออกปกติใช้ตารางตรวจของในหน้าต่างผู้เช่าออก)
   const handDeduct = (leaseId: string) => {
     const rows = (handByLease.get(leaseId) ?? []).filter((h) => Number(h.deduction ?? 0) > 0);
     return { amount: rows.reduce((t, h) => t + Number(h.deduction), 0),
-      reason: rows.map((h) => `${h.name}${h.out_status ? ` (${HANDOVER_OUT_LABEL[h.out_status]})` : ""} ${money(h.deduction)}`).join(" · ") };
+      reason: rows.map((h) => `${h.name}${h.out_status && h.out_status !== "OK" ? ` (${handoverCheckText(h)})` : ""} ${money(h.deduction)}`).join(" · ") };
   };
 
   // ผู้เช่าออก (ตกลง 6 พ.ย. 2026) · ต่อสัญญาได้เมื่อยังไม่มีสัญญาถัดไปของห้องเดียวกัน (หรือทั้งหลัง)
