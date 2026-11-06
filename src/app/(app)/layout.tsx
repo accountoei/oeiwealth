@@ -19,6 +19,7 @@ import { NAV_COLLAPSED_COOKIE, NAV_ORDER_COOKIE, NAV_WIDTH_COOKIE } from "@/comp
 import { requireAppUser, ROLE_LABEL } from "@/lib/auth";
 import { CurrencyProvider } from "@/components/CurrencyContext";
 import { getCurrencyLists } from "@/lib/currencies";
+import { loadFamilyPhotoUrl } from "@/lib/family-photo";
 import { createClient } from "@/lib/supabase/server";
 import { Toaster } from "@/components/Modal";
 import KeepHeight from "@/components/KeepHeight";
@@ -29,10 +30,12 @@ import { DEFAULT_FONT, FONT_COOKIE, fontKey, fontStack } from "@/lib/fonts";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
   const supabase = await createClient();
-  const [ccy, due, jar, { data: person }, { data: family }] = await Promise.all([
+  // รูปครอบครัว = ลิงก์ไฟล์รูป (ไม่ฝังรูปในทุกหน้า · ตกลง 6 พ.ย. 2026)
+  const [ccy, due, jar, { data: person }, { data: family }, familyPhoto] = await Promise.all([
     getCurrencyLists(supabase), monthToClose(), cookies(),
     user.person_id ? supabase.from("persons").select("name").eq("id", user.person_id).maybeSingle() : Promise.resolve({ data: null }),
-    supabase.from("families").select("name,photo").maybeSingle(),
+    supabase.from("families").select("name").maybeSingle(),
+    loadFamilyPhotoUrl(supabase),
   ]);
   // จำนวนงานค้างที่ปุ่มกระดิ่ง (To-Do List): ไม่รอ (ส่งเป็น Promise → ตัวเลขขึ้นเมื่อคำนวณเสร็จ หน้าไม่ช้าลง) · จำไว้ 5 นาที / จนมีการบันทึก
   const todo: Promise<TodoCount | null> = getTodoCount().catch(() => null);
@@ -46,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {font !== DEFAULT_FONT && <style>{`:root{--font-sans:${fontStack(font)}}`}</style>}
       <Sidebar dots={due ? ["/settings/month-closing"] : []} initialOrder={order}
         initialCollapsed={navCollapsed === "1" ? true : navCollapsed === "0" ? false : undefined} initialWidth={Number(jar.get(NAV_WIDTH_COOKIE)?.value)}
-        familyName={(family as { name: string } | null)?.name ?? ""} familyPhoto={(family as { photo: string | null } | null)?.photo ?? null} />
+        familyName={(family as { name: string } | null)?.name ?? ""} familyPhoto={familyPhoto} />
       <NavPendingProvider><div className="flex-1 min-w-0">
         <AppHeader todo={todo} user={{ name: (person as { name: string } | null)?.name ?? "", email: user.email, role: ROLE_LABEL[user.role] }} />
         <main className="mx-auto max-w-[90rem] p-4 md:p-8"><KeepHeight><CurrencyProvider used={ccy.used} others={ccy.others}>

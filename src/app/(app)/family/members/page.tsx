@@ -6,6 +6,7 @@ import { requireAppUser } from "@/lib/auth";
 import { ageFrom, familyInitials, daysToBirthday, EDUCATION_LEVEL_LABEL, GEN_FILTER_LABEL, GENDER_LABEL, genderOf, kinLabel, money, PERSON_STATUS_LABEL, RELATION_GEN, todayBangkok } from "@/lib/format";
 import { movePerson } from "./actions";
 import { AddPersonForm, FamilyForm } from "./forms";
+import { loadFamilyPhotoUrl } from "@/lib/family-photo";
 import { FamilyTree } from "./tree";
 import { SortToggle } from "@/components/SortControls";
 import { ActionBar } from "@/components/ActionBar";
@@ -47,11 +48,12 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   };
   const cur = { archived: sp.archived === "1", q, gen: fGen, g: fG, missing: fMissing };
 
-  const [{ data: family }, { data: persons, error }, { data: nwRows }, { data: policyRows }] = await Promise.all([
-    supabase.from("families").select("name,head_person_id,photo").maybeSingle(),
+  const [{ data: family }, { data: persons, error }, { data: nwRows }, { data: policyRows }, photoUrl] = await Promise.all([
+    supabase.from("families").select("name,head_person_id").maybeSingle(),
     supabase.from("persons").select("id,name,relationship,status,photo,nickname,birth_date,full_name_th,full_name_en,title_prefix,gender,national_id,education_level,occupation,workplace,job_title,passport_expiry,father_id,mother_id,spouse_id").is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("v_net_worth_by_person").select("person_id,net_worth"),
     supabase.from("insurance_policies").select("person_id").eq("status", "ACTIVE").is("deleted_at", null),
+    loadFamilyPhotoUrl(supabase),
   ]);
   const nwOf = new Map((nwRows ?? []).map((r) => [r.person_id as string, r]));
   // Net Worth ทั้งครอบครัว (รวมรายการที่ไม่ได้ระบุเจ้าของ) → % ของแต่ละคน
@@ -112,29 +114,24 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       <PageInfo>สมาชิกครอบครัว · ลำดับในหน้านี้ใช้เรียงรายชื่อทุกหน้าและตัวกรองสมาชิก</PageInfo>
 
       <section className="grid gap-4 sm:grid-cols-2">
-        {/* กล่องครอบครัว: ปุ่มแก้ไข + เพิ่มสมาชิก มุมขวาบน · รูปใหญ่ทางซ้าย ชื่อ / อายุ / หัวหน้าครอบครัว ทางขวา (ตกลง 5 พ.ย. 2026) */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-start justify-between gap-2 text-xs text-slate-500">ชื่อครอบครัว
+        {/* กล่องครอบครัว: รูปใหญ่ซ้าย · ชื่อ / ช่วงอายุ / หัวหน้าครอบครัว ทางขวา · ปุ่มล่างขวา (ตกลง 6 พ.ย. 2026) · จอแคบ: รูปอยู่บน */}
+        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row">
+          {photoUrl
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={photoUrl} alt="รูปครอบครัว" className="aspect-[3/2] w-full shrink-0 rounded-xl bg-slate-100 object-cover lg:w-1/2" />
+            : <span className="grid h-28 w-40 shrink-0 place-items-center rounded-xl bg-blue-600 text-4xl font-bold text-white lg:aspect-[3/2] lg:h-auto lg:w-1/2 lg:text-5xl">{familyInitials(family?.name ?? "")}</span>}
+          <div className="flex min-w-0 flex-1 flex-col lg:py-1">
+            <div className="truncate text-2xl font-bold text-slate-900">{family?.name || "-"}</div>
+            {ages.length > 0 && <div className="mt-1 text-sm text-slate-600">ช่วงอายุสมาชิก {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
+            <div className="mt-4 flex items-center gap-1 text-sm text-slate-600">หัวหน้าครอบครัว <InfoTip label="คำอธิบาย">ความสัมพันธ์ของสมาชิกทุกคนคิดเทียบกับคนนี้</InfoTip></div>
+            <div className="truncate text-xl font-bold text-slate-900">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">{head.name}</Link> : "-"}</div>
             {me.role !== "VIEWER" && (
-              <ActionBar className="shrink-0">
-                {isAdmin && <FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null} photo={family?.photo ?? null}
+              <ActionBar className="mt-auto pt-4">
+                {isAdmin && <FamilyForm name={family?.name ?? ""} headId={family?.head_person_id ?? null} photo={photoUrl}
                   candidates={active.map((p) => ({ id: p.id, name: p.name }))} />}
                 <AddPersonForm />
               </ActionBar>
             )}
-          </div>
-          <div className="mt-2 flex min-w-0 items-center gap-4">
-            {family?.photo
-              // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={family.photo} alt="" className="h-24 w-24 shrink-0 rounded-2xl object-cover" />
-              : <span className="grid h-24 w-24 shrink-0 place-items-center rounded-2xl bg-blue-600 text-3xl font-bold text-white">{familyInitials(family?.name ?? "")}</span>}
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-2xl font-semibold">{family?.name || "-"}</div>
-              {ages.length > 0 && <div className="text-xs text-slate-500">อายุ {Math.min(...ages)}–{Math.max(...ages)} ปี</div>}
-              <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">หัวหน้าครอบครัว</div>
-              <div className="truncate text-lg font-semibold">{head ? <Link href={`/family/members/${head.id}`} className="hover:underline">★ {head.name}</Link> : "-"}</div>
-              <div className="text-xs text-slate-500">ความสัมพันธ์ของทุกคนคิดเทียบกับคนนี้</div>
-            </div>
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
