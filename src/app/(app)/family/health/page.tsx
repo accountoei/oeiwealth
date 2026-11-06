@@ -186,7 +186,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-baseline gap-3">
-              <h2 className="font-medium text-slate-900">ผลตรวจสุขภาพ</h2>
+              {/* ⓘ อยู่ที่ชื่อกล่อง ไม่อยู่ในหัวคอลัมน์ "รายการ": ช่องแรกของทุกแถวตรึงไว้ (พื้นขาว) จะทับกล่องคำอธิบาย */}
+              <h2 className="font-medium text-slate-900">ผลตรวจสุขภาพ{recent.length > 0 && <> <InfoTip label="คำอธิบาย">● = ผิดปกติตามใบผล (สีแดง = สูง / ผิดปกติ · สีฟ้า = ต่ำ){canWrite && " · กดที่ตัวเลขเพื่อแก้ผลรายการนั้น · ปุ่มแก้ไขใต้วันที่ = แก้ / ลบผลตรวจครั้งนั้น"}</InfoTip></>}</h2>
               {canDelete && metrics.length > 1 && <SortToggle active={ordering} {...orderHrefs("/family/health", { p: pid })} />}
             </div>
             {canWrite && <ActionBar className="shrink-0"><CheckupForm personId={pid} today={today} /></ActionBar>}
@@ -216,7 +217,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-slate-500">
                     <tr className="align-bottom">
-                      <th className="sticky left-0 z-10 bg-white py-1 pr-2">รายการ <InfoTip label="คำอธิบาย">● = ผิดปกติตามใบผล (สีแดง = สูง / ผิดปกติ · สีฟ้า = ต่ำ){canWrite && " · กดที่ตัวเลขเพื่อแก้ผลรายการนั้น · ปุ่มแก้ไขใต้วันที่ = แก้ / ลบผลตรวจครั้งนั้น"}</InfoTip></th>
+                      <th className="sticky left-0 z-10 bg-white py-1 pr-2">รายการ</th>
                       <th className="whitespace-nowrap px-2">ค่าปกติ</th>
                       {recent.map((c) => (
                         <th key={c.id} className="whitespace-nowrap px-2 text-right font-normal">
