@@ -1,4 +1,4 @@
-# 2026-11-06 · hide-zero-totals
+# #360 · 2026-11-06 · hide-zero-totals
 
 ## What changed
 - Investments "บันทึกรับผลตอบแทน": a currency's "รวม" row at the foot of the table is hidden when its expected, received and typed amounts are all 0 (e.g. pf cash accounts in AUD / EUR / NZD with nothing due).
