@@ -260,27 +260,6 @@ function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentC
   );
 }
 
-export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
-  { assetId: string; leaseId: string; today: string; startDate: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
-  const [state, action, pending] = useActionState<ActionState, FormData>(terminateLease, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>เลิกสัญญาก่อนกำหนด</button>;
-  if (!open) return trigger;
-  return present(trigger, (
-    <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
-      <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="lease_id" value={leaseId} />
-      <label className="text-xs">วันที่เลิกสัญญา
-        <input name="terminated_date" type="date" required defaultValue={today} min={startDate} className={`mt-1 block ${small}`} />
-      </label>
-      <button disabled={pending} className={sbtn}>ยืนยันเลิกสัญญา</button>
-      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
-      <p className="w-full text-xs text-slate-500">ระบบหยุดคาดค่าเช่าหลังวันนี้ · เงินประกันยังเป็นหนี้จนกว่าจะบันทึกคืน</p>
-      <div className="w-full"><Msg s={state} /></div>
-    </form>
-  ));
-}
-
 /** ADMIN: แก้วันเลิกสัญญา / ยกเลิกการเลิกสัญญา (ก่อนคืนเงินประกัน · ฐานข้อมูลตรวจซ้ำ) */
 export function EditTerminationForm({ assetId, leaseId, terminated, startDate, endDate }:
   { assetId: string; leaseId: string; terminated: string; startDate: string; endDate: string }) {

@@ -105,6 +105,7 @@ export default async function PrintLeasePage({ params, searchParams }: { params:
     moveOut: co.move_out_date, settled: co.settled_date, deposit: Number(co.deposit_held), unpaid: Number(co.unpaid_rent),
     utilities: Number(co.utilities), damage: Number(co.damage), damageReason: co.damage_reason, forfeit: Number(co.forfeit),
     forfeitReason: co.forfeit_reason, depositRefund: Number(co.deposit_refund), advanceRefund: Number(co.advance_refund), net: Number(co.net_transfer),
+    shortfall: Number(co.shortfall ?? 0), tenantPaid: Number(co.tenant_paid ?? 0), owedPending: Number(co.owed_pending ?? 0),
     rent: (coLines.rent ?? []).map((x) => ({ ...x, expected: Number(x.expected), received: Number(x.received), unpaid: Number(x.unpaid), over: Number(x.over) })),
     charges: (coLines.charges ?? []).map((x) => ({ description: x.description, amount: Number(x.amount) })),
   } : null;

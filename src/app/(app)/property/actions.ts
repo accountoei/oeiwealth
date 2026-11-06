@@ -542,13 +542,18 @@ export async function closeLease(_: ActionState, form: FormData): Promise<Action
     p_damage: damage, p_damage_reason: str(form.get("damage_reason")),
     p_forfeit: forfeit, p_forfeit_reason: str(form.get("forfeit_reason")),
     p_notes: str(form.get("notes")),
+    // หักเกินเงินประกัน: NOW = รับเงินแล้ว (เข้าบัญชีที่เลือก) · LATER = ค่าเสียหายส่วนที่เกินค้างรับในแท็บรับค่าเช่า
+    p_collect: form.get("collect") === "NOW" ? "NOW" : "LATER",
   });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty(id);
   revalidatePath("/");
   revalidatePath("/financial/cash", "layout");
-  const net = Number((data as { net_transfer?: number } | null)?.net_transfer ?? 0);
-  return { ok: net > 0 ? `บันทึกผู้เช่าออกแล้ว · โอนคืนผู้เช่า ${money(net)}` : "บันทึกผู้เช่าออกแล้ว" };
+  const r = (data ?? {}) as { net_transfer?: number; tenant_paid?: number; owed_pending?: number };
+  const parts = [Number(r.net_transfer ?? 0) > 0 && `โอนคืนผู้เช่า ${money(Number(r.net_transfer))}`,
+    Number(r.tenant_paid ?? 0) > 0 && `ผู้เช่าจ่ายเพิ่ม ${money(Number(r.tenant_paid))}`,
+    Number(r.owed_pending ?? 0) > 0 && `ค่าเสียหายค้างรับ ${money(Number(r.owed_pending))} (แท็บรับค่าเช่า)`].filter(Boolean);
+  return { ok: ["บันทึกผู้เช่าออกแล้ว", ...parts].join(" · ") };
 }
 
 export async function settleDeposit(_: ActionState, form: FormData): Promise<ActionState> {
@@ -667,7 +672,7 @@ export async function receiveUtilityCharge(_: ActionState, form: FormData): Prom
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty(id);
   if (toAsset) revalidatePath(`/financial/cash/${toAsset}`);
-  return { ok: "บันทึกรับค่าน้ำไฟแล้ว" };
+  return { ok: "บันทึกรับเงินแล้ว" };
 }
 
 /** รับค่าเช่าหลายสัญญาพร้อมกัน (แท็บ บันทึกรับค่าเช่า/สัญญาเช่า) · ผิดแถวเดียว = ไม่บันทึกเลย */

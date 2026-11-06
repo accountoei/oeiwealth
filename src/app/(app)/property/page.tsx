@@ -115,7 +115,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน
     Promise.all([
       supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").is("deleted_at", null),
-      supabase.from("v_lease_utility_charges").select("id,lease_id,property_asset_id,name,cost_period,description,amount,currency").eq("status", "PENDING").order("cost_period"),
+      supabase.from("v_lease_utility_charges").select("id,lease_id,property_asset_id,name,cost_period,description,amount,currency,kind").eq("status", "PENDING").order("cost_period"),
     ]),
   ]);
   const allProps = (data as unknown as Prop[] | null) ?? [];
@@ -352,10 +352,12 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       paths: [...paths, `/property/${r.assetId}`, "/income-expenses"], fields: rentIncomeFields(i) }) }));
   });
   // ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน (ทุกงวด) → ต่อท้ายตารางรับค่าเช่า
-  type CH = { id: string; lease_id: string; property_asset_id: string; name: string; cost_period: string; description: string; amount: number; currency: string };
+  type CH = { id: string; lease_id: string; property_asset_id: string; name: string; cost_period: string; description: string; amount: number; currency: string; kind: string };
   rentRows.push(...((chargeRaw ?? []) as CH[]).filter((c) => shown.has(c.property_asset_id)).map((c) => ({
     key: `c:${c.id}`, leaseId: c.lease_id, chargeId: c.id, assetId: c.property_asset_id, property: propName.get(c.property_asset_id) ?? "",
-    tenant: `${REBILL_SUBTYPE} · ${c.description}`, period: c.cost_period, due: null, expected: Number(c.amount), received: 0,
+    // ค่าเสียหายส่วนที่เกินเงินประกัน (ผู้เช่าออก · ค้างรับ) → บอกผู้เช่า + รายการ
+    tenant: c.kind === "DAMAGE" ? [c.name.split(" · ").slice(1).join(" · "), c.description].filter(Boolean).join(" · ") : `${REBILL_SUBTYPE} · ${c.description}`,
+    period: c.cost_period, due: null, expected: Number(c.amount), received: 0,
     currency: c.currency, status: "PENDING", bank: bankFor(c.lease_id, c.currency),
   })));
   // รายได้ที่รับในเดือนนี้ที่ไม่ได้อยู่ในแถวงวดค่าเช่า (รายได้อื่น · ค่าน้ำไฟที่รับคืนแล้ว · ค่าเช่างวดอื่น) → แถวท้ายตาราง
