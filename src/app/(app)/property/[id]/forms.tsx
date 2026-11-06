@@ -11,7 +11,6 @@ import {
 } from "../actions";
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
-import ModalButton from "@/components/ModalButton";
 import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, PRORATE_BASIS_LABEL, RENT_TIMING_LABEL, UTILITIES_BILLING_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -80,29 +79,29 @@ export function SuggestVacant({ assetId }: { assetId: string }) {
   );
 }
 
-export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, label, renewals, detail, renewFrom }: {
-  assetId: string; banks: Bank[]; goLive: string; currency: string; carryOptions: CarryOption[]; label: string;
-  renewals: LeasePrefill[]; detail: { opt: LeaseDetailOptions; canSensitive: boolean };
-  /** ปุ่ม "ต่อสัญญา" บนการ์ดสัญญา: เลือกสัญญานี้ไว้ให้ (ปุ่มเล็ก) */ renewFrom?: string;
+/**
+ * ฟอร์มสัญญาใหม่ / ต่อสัญญา ในหน้าต่างปุ่มเดียวของกล่องสัญญาเช่า (LeaseHub · ตกลง 6 พ.ย. 2026)
+ *   renewFrom = ต่อจากสัญญานี้ (เลือกไว้ที่ช่อง "ทำอะไร" แล้ว → ไม่มีช่องเลือกซ้ำ) · ว่าง = สัญญาใหม่กรอกเอง
+ */
+export function NewLeaseBody({ assetId, banks, goLive, currency, carryOptions, renewal, detail }: {
+  assetId: string; banks: Bank[]; goLive: string; currency: string; carryOptions: CarryOption[];
+  renewal?: LeasePrefill; detail: { opt: LeaseDetailOptions; canSensitive: boolean };
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(createLease, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(renewFrom ? link : btn)}>{label}</button>;
-  if (!open) return trigger;
-  return present(trigger, (
-    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+  return (
+    <form action={action} className="space-y-4">
       <input type="hidden" name="asset_id" value={assetId} />
-      <h3 className="font-medium text-slate-900">{renewFrom ? "ต่อสัญญา" : "สัญญาเช่าใหม่"}</h3>
-      <p className="text-xs text-slate-500">ต่อสัญญา = สร้างสัญญาใหม่ (สัญญาเดิมไม่ถูกแก้ ประวัติค่าเช่าแต่ละช่วงยังอยู่) · การใช้งานจะเปลี่ยนเป็น &ldquo;ปล่อยเช่า&rdquo;</p>
-      <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} renewals={renewals} detail={detail}
-        initialFrom={renewFrom} />
+      <p className="text-xs text-slate-500">
+        {renewal && "ต่อสัญญา = สร้างสัญญาใหม่ (สัญญาเดิมไม่ถูกแก้ ประวัติค่าเช่าแต่ละช่วงยังอยู่) · "}การใช้งานจะเปลี่ยนเป็น &ldquo;ปล่อยเช่า&rdquo;
+      </p>
+      <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} renewals={renewal ? [renewal] : []} detail={detail}
+        initialFrom={renewal?.id} fixedFrom />
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกสัญญา"}</button>
-        <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
         <Msg s={state} />
       </div>
     </form>
-  ));
+  );
 }
 
 export function RecordRentForm({ assetId, leaseId, period, expected, currency, banks, today, defaultBank, late }: {
@@ -153,7 +152,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
   ));
 }
 
-/** ข้อมูลหลักของสัญญาที่แก้ได้ในปุ่ม "แก้ไขสัญญา" */
+/** ข้อมูลหลักของสัญญาที่แก้ได้ใน "แก้ไขสัญญา" */
 export type LeaseMain = {
   tenant_name: string; unit_label: string | null; contract_no: string | null; start_date: string; end_date: string;
   rent_amount: number; payment_due_day: number | null; prorate_basis: string; utilities_billing: string | null; notes: string | null;
@@ -161,22 +160,10 @@ export type LeaseMain = {
 };
 
 /**
- * ปุ่ม "แก้ไขสัญญา" (pop up กว้าง · รวมปุ่มแก้ไข + รายละเอียดสัญญา ตกลง 6 พ.ย. 2026)
+ * แก้ไขสัญญา (ในหน้าต่างปุ่มเดียวของกล่องสัญญาเช่า หรือกดที่การ์ดสัญญา · ตกลง 6 พ.ย. 2026)
  *   บน: ข้อมูลหลัก · ล่าง: รายละเอียดสำหรับพิมพ์ · บันทึกครั้งเดียว · ปุ่มลบสัญญาข้างปุ่มบันทึก
  */
-export function LeaseEditForm({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, deleteControl }: {
-  assetId: string; leaseId: string; m: LeaseMain; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
-  banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; deleteControl?: React.ReactNode;
-}) {
-  return (
-    <ModalButton label="แก้ไขสัญญา" title="แก้ไขสัญญาเช่า" size="lg" className={SMALL_BTN}>
-      <LeaseEditBody assetId={assetId} leaseId={leaseId} m={m} v={v} opt={opt} canSensitive={canSensitive} banks={banks}
-        rentCurrency={rentCurrency} rentTo={rentTo} depositMonths={depositMonths} deleteControl={deleteControl} />
-    </ModalButton>
-  );
-}
-
-function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, deleteControl }: {
+export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentCurrency, rentTo, depositMonths, deleteControl }: {
   assetId: string; leaseId: string; m: LeaseMain; v: Partial<LeaseDetail>; opt: LeaseDetailOptions; canSensitive: boolean;
   banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; deleteControl?: React.ReactNode;
 }) {

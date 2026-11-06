@@ -92,7 +92,7 @@ export default async function PrintLeasePage({ params, searchParams }: { params:
   const warn: string[] = [];
   if (lessors.length === 0) warn.push("ยังไม่ได้ระบุเจ้าของทรัพย์สิน — ช่องผู้ให้เช่าจะเว้นว่าง");
   if (lessors.some((x) => !x.address)) warn.push("สมาชิกบางคนยังไม่มีที่อยู่ในหน้า Family — ช่องที่อยู่จะเว้นเส้นให้เขียนเอง");
-  if (!l.tenant_address || !l.tenant_id_last4) warn.push("ยังไม่ได้กรอกเลขบัตร / ที่อยู่ผู้เช่า — กด \"แก้ไขสัญญา\" ที่การ์ดสัญญาในหน้าทรัพย์สิน (ว่าง = เว้นเส้นให้เขียนเอง)");
+  if (!l.tenant_address || !l.tenant_id_last4) warn.push("ยังไม่ได้กรอกเลขบัตร / ที่อยู่ผู้เช่า — กดที่การ์ดสัญญาในหน้าทรัพย์สินเพื่อแก้ไขสัญญา (ว่าง = เว้นเส้นให้เขียนเอง)");
   if (l.tenant_id_last4 && !tenantId) warn.push("เลขบัตร / ทะเบียนผู้เช่าแสดงเต็มเฉพาะ ADMIN / EDITOR — สิทธิ์ของคุณเห็น 4 ตัวท้าย");
   if (l.contract_place_type === "LESSOR" && !place) warn.push("ผู้ให้เช่าที่เลือกเป็นสถานที่ทำสัญญายังไม่มีที่อยู่ในหน้า Family — ช่อง \"ทำที่\" จะเว้นเส้น");
   if (termMonths(l.start_date, l.end_date) > 36) warn.push("สัญญาเกิน 3 ปี ต้องจดทะเบียนการเช่าที่สำนักงานที่ดิน (ไม่จดทะเบียน ฟ้องบังคับได้เพียง 3 ปี)");
