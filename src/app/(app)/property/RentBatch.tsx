@@ -18,6 +18,8 @@ export type RentRow = {
   lease?: { id: string; term: string; freq: string; badge?: { text: string; cls: string } };
   /** สัญญาที่ไม่มีงวดเดือนนี้ (status NONE) → งวดถัดไป / เริ่มสัญญา */ note?: string;
   /** งวดไม่เต็มรอบ (คิดตามจำนวนวัน) → ช่วงวันของงวด */ cycle?: string;
+  /** เลยวันครบกำหนด (ณ วันนี้): จำนวนวัน · ยังอยู่ในช่วงผ่อนผัน · ค่าปรับ */ late?: { days: number; inGrace: boolean; grace: number; fee: number };
+  /** ค่าปรับล่าช้าต่อวัน (สัญญาที่ตั้งไว้) + วันผ่อนผัน → เติมค่าปรับตามวันที่รับ */ feePerDay?: number; grace?: number;
 };
 /** รายได้ที่รับในเดือนนี้ที่ไม่อยู่ในแถวงวดค่าเช่า (เดิมอยู่ตาราง "รายได้จากทรัพย์สินที่บันทึกแล้ว") · amount = ยอดบาท กดแก้ได้ */
 export type OtherIncome = { key: string; assetId: string; property: string; date: string; label: string; amount: ReactNode };
@@ -35,7 +37,9 @@ function RentStatus({ r, today }: { r: RentRow; today: string }) {
   if (r.status === "DISMISSED") return <span className="text-slate-400">ยกเว้น</span>;
   if (r.status === "OVERDUE") {
     const d = r.due ? Math.round((Date.parse(today) - Date.parse(r.due)) / 86400000) : 0;
-    return <span className="whitespace-nowrap text-red-700">ค้างรับ{d > 0 && ` · เลยกำหนด ${d} วัน`}</span>;
+    // ผ่อนผัน (ตกลง 6 พ.ย. 2026): เลยกำหนดไม่เกินวันผ่อนผัน = ครบกำหนด (ส้ม) · เกิน = ค้างรับ (แดง) + ค่าปรับ
+    if (r.late?.inGrace) return <span className="whitespace-nowrap text-amber-700">ครบกำหนด · เลย {d} วัน (ผ่อนผัน {r.late.grace} วัน)</span>;
+    return <span className="whitespace-nowrap text-red-700">ค้างรับ{d > 0 && ` · เลยกำหนด ${d} วัน`}{r.late && r.late.fee > 0 && ` · ค่าปรับ ${money(r.late.fee)}`}</span>;
   }
   if (r.status === "NONE") return <span className="text-slate-500">{r.note}</span>;
   if (r.due && r.due === today) return <span className="text-amber-700">ถึงกำหนดวันนี้</span>;
@@ -58,10 +62,11 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
+  const [fee, setFee] = useState<Record<string, string>>({});   // ไม่มีในนี้ = ค่าปรับตามวันที่รับ
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key, r.bank])));
   const [state, action, pending] = useActionState<BatchState, FormData>(batchRent, {});
   const cf = useConfirmSubmit();
-  useEffect(() => { if (state.ok) { setVals({}); setTax({}); router.refresh(); } }, [state, router]);
+  useEffect(() => { if (state.ok) { setVals({}); setTax({}); setFee({}); router.refresh(); } }, [state, router]);
 
   const propList = [...new Map(rows.map((r) => [r.assetId, r.property])).entries()].sort((a, b) => a[1].localeCompare(b[1], "th"));
   const shown = rows.filter((r) => !prop || r.assetId === prop);
@@ -74,17 +79,25 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
   const chosen = rows.filter(filled);
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
   const taxOf = (r: RentRow) => (r.chargeId ? "" : tax[r.key] ?? "");
-  const net = (r: RentRow) => n(vals[r.key] ?? "") - (taxOf(r).trim() ? n(taxOf(r)) : 0);
+  // ค่าปรับล่าช้า ณ วันที่รับ = (วันที่เลยกำหนด − วันผ่อนผัน) × ค่าปรับต่อวัน · แก้ / ลบได้ (ไม่เก็บ = ลบเป็นว่าง)
+  const autoFee = (r: RentRow) => {
+    if (!r.feePerDay || !r.due || r.chargeId) return "";
+    const days = Math.round((Date.parse(date) - Date.parse(r.due)) / 86400000) - (r.grace ?? 0);
+    return days > 0 ? fmt(days * r.feePerDay) : "";
+  };
+  const feeOf = (r: RentRow) => (r.feePerDay ? fee[r.key] ?? autoFee(r) : "");
+  // ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษี + ค่าปรับล่าช้า (เข้าบัญชีเดียวกัน)
+  const net = (r: RentRow) => n(vals[r.key] ?? "") - (taxOf(r).trim() ? n(taxOf(r)) : 0) + (feeOf(r).trim() ? n(feeOf(r)) : 0);
   const payload = chosen.map((r) => r.chargeId
     ? { charge_id: r.chargeId, amount: vals[r.key], date, received_to_asset_id: bank[r.key] ?? "" }
-    : { lease_id: r.leaseId, amount: vals[r.key], tax: taxOf(r), date, received_to_asset_id: bank[r.key] ?? "", income_period: r.period });
+    : { lease_id: r.leaseId, amount: vals[r.key], tax: taxOf(r), late_fee: feeOf(r).replace(/,/g, ""), date, received_to_asset_id: bank[r.key] ?? "", income_period: r.period });
 
   const fillable = shown.filter((r) => editable(r) && gap(r) > 0 && !(vals[r.key] ?? "").trim());
   const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.key, fmt(gap(r))])) });
   const taxable = shown.filter((r) => filled(r) && !r.chargeId && !Number.isNaN(n(vals[r.key])));
   const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
   const onSubmit = cf.guard(`บันทึกรับค่าเช่า ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
-    `• ${r.property} · ${r.tenant} ${vals[r.key]}${taxOf(r).trim() ? ` (ภาษี ${taxOf(r)})` : ""}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+    `• ${r.property} · ${r.tenant} ${vals[r.key]}${taxOf(r).trim() ? ` (ภาษี ${taxOf(r)})` : ""}${n(feeOf(r)) > 0 ? ` + ค่าปรับ ${feeOf(r)}` : ""}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
 
   return (
     <>
@@ -105,11 +118,12 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
               {fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามสัญญาทุกแถว ({fillable.length})</button>}
             </div>
             <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
-              count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
+              count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); setFee({}); }} state={state}
               date={date} onDate={setDate} minDate={minDate} maxDate={today}
               note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในทรัพย์สินอื่น</span>}
               info={<>กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ)
-            · ยอดก่อนภาษี = ค่าเช่าเต็มตามสัญญา ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย (ผู้เช่านิติบุคคลหัก 5%)
+            · ยอดก่อนภาษี = ค่าเช่าเต็มตามสัญญา ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย (ผู้เช่านิติบุคคลหัก 5%) + ค่าปรับล่าช้า
+            · ค่าปรับล่าช้า (สัญญาที่ตั้งไว้) เติมให้ตามวันที่รับ นับเฉพาะวันที่เกินวันผ่อนผัน แก้หรือลบได้ บันทึกเป็นรายได้อื่น &ldquo;ค่าปรับชำระค่าเช่าล่าช้า&rdquo;
             · งวดเดือนก่อนที่ยังค้างรับยกมาให้ · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</>}>
               {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 5% ทุกแถวที่กรอก</button>}
             </BatchSave>
@@ -158,6 +172,12 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
                     <td className="px-2 text-right">
                       <input inputMode="decimal" value={v} aria-label={`ยอดก่อนภาษี ${r.property}`} placeholder={r.currency}
                         onChange={(e) => setVals({ ...vals, [r.key]: e.target.value })} className={`w-28 text-right ${small}`} />
+                      {r.feePerDay && v.trim() && (fee[r.key] !== undefined || autoFee(r)) && (
+                        <label className="mt-1 block text-right text-xs text-slate-500"><span className="block whitespace-nowrap">+ ค่าปรับล่าช้า</span>
+                          <input inputMode="decimal" value={feeOf(r)} placeholder="0.00" aria-label={`ค่าปรับล่าช้า ${r.property}`}
+                            onChange={(e) => setFee({ ...fee, [r.key]: e.target.value })} className={`mt-0.5 w-28 text-right ${small}`} />
+                        </label>
+                      )}
                     </td>
                     <td className="px-2 text-right">{r.chargeId ? <span className="text-xs text-slate-400">-</span>
                       : <input inputMode="decimal" value={tax[r.key] ?? ""} disabled={!v.trim()} aria-label={`ภาษีหัก ณ ที่จ่าย ${r.property}`}

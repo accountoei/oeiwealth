@@ -71,7 +71,8 @@ type Cost = { utility_id: string; utility_type: string; provider: string | null;
   expected_amount: number; paid_amount: number; gap: number; currency: string; status: string; last_paid_date: string | null;
   dismissal_id: string | null; dismissal_reason: string | null };
 type Rent = { lease_id: string; name: string; income_period: string; due_date: string; expected_amount: number;
-  received_amount: number; currency: string; status: string; cycle_start: string | null; cycle_end: string | null };
+  received_amount: number; currency: string; status: string; cycle_start: string | null; cycle_end: string | null;
+  grace_days: number | null; late_fee_per_day: number | null; days_past_due: number | null; in_grace: boolean; late_fee: number | null };
 
 export default async function PropertyDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ ty?: string }>;
@@ -209,7 +210,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
     supabase.rpc("asset_has_history", { p_asset_id: id }),
     // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
-    supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,prorate_basis,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
+    supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,prorate_basis,rent_timing,grace_days,late_fee_per_day,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
     // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
     supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount")
       .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
@@ -259,7 +260,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const eventVals = new Set(((eventRows ?? []) as { valuation_id: string | null }[]).map((e) => e.valuation_id).filter(Boolean));
   const v0 = vals?.[0];
   const deletableVal = v0 && (vals?.length ?? 0) > 1 && !v0.source_movement_id && v0.notes !== "ราคาขาย" && !eventVals.has(v0.id) ? v0.id as string : null;
-  type LeaseExtra = LeaseDetail & { id: string; rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null; prorate_basis: string };
+  type LeaseExtra = LeaseDetail & { id: string; rent_to_asset_id: string | null; utilities_billing: string | null; deposit_months: number | null; prorate_basis: string;
+    rent_timing: string; grace_days: number; late_fee_per_day: number | null };
   const leaseExtra = new Map(((rentToRows ?? []) as LeaseExtra[]).map((r) => [r.id, r]));
   const rentTo = new Map([...leaseExtra.values()].filter((r) => r.rent_to_asset_id).map((r) => [r.id, r.rent_to_asset_id as string]));
   const charges = (chargeRows ?? []) as { id: string; lease_id: string; cost_period: string; description: string; amount: number; currency: string;
@@ -471,7 +473,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <LeaseEditForm assetId={id} leaseId={l.id} v={leaseExtra.get(l.id) ?? {}} opt={detailOpt} canSensitive={canSensitive}
             m={{ tenant_name: l.tenant_name, unit_label: l.unit_label, contract_no: l.contract_no, start_date: l.start_date, end_date: l.end_date,
               rent_amount: Number(l.rent_amount), payment_due_day: l.payment_due_day, prorate_basis: leaseExtra.get(l.id)?.prorate_basis ?? "ACTUAL",
-              utilities_billing: leaseExtra.get(l.id)?.utilities_billing ?? null, notes: l.notes }}
+              utilities_billing: leaseExtra.get(l.id)?.utilities_billing ?? null, notes: l.notes,
+              rent_timing: leaseExtra.get(l.id)?.rent_timing ?? "ADVANCE", grace_days: leaseExtra.get(l.id)?.grace_days ?? 15,
+              late_fee_per_day: leaseExtra.get(l.id)?.late_fee_per_day == null ? null : Number(leaseExtra.get(l.id)!.late_fee_per_day) }}
             banks={bankList} rentCurrency={l.rent_currency} rentTo={rentTo.get(l.id) ?? null} depositMonths={leaseExtra.get(l.id)?.deposit_months ?? null}
             deleteControl={canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
               hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
@@ -511,6 +515,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
           {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
           {leaseExtra.get(l.id)?.prorate_basis === "DAYS30" && " · วันเศษหาร 30"}
+          {leaseExtra.get(l.id)?.rent_timing === "ARREARS" && " · จ่ายหลังสิ้นรอบ"}
+          {Number(leaseExtra.get(l.id)?.late_fee_per_day ?? 0) > 0
+            && ` · ค่าปรับ ${money(Number(leaseExtra.get(l.id)!.late_fee_per_day))}/วัน หลังผ่อนผัน ${leaseExtra.get(l.id)!.grace_days} วัน`}
           {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}
           {leaseExtra.get(l.id)?.utilities_billing && <span className="text-xs text-slate-500"> · ค่าน้ำไฟ: {UTILITIES_BILLING_LABEL[leaseExtra.get(l.id)!.utilities_billing!]}</span>}
         </div>
@@ -876,12 +883,18 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                     {r.status === "RECEIVED" && over > 0.005 && <div className="text-xs text-amber-700">รับเกิน {money(over)}
                       {closeOf.has(r.lease_id) ? " · คืนแล้วตอนผู้เช่าออก" : ""}</div>}
                   </td>
-                  <td className={`pl-4 ${RENT_STATUS[r.status]?.cls ?? ""}`}>{RENT_STATUS[r.status]?.text ?? r.status}</td>
+                  <td className={`pl-4 ${r.in_grace ? "text-amber-700" : RENT_STATUS[r.status]?.cls ?? ""}`}>
+                    {r.in_grace ? "ครบกำหนด" : RENT_STATUS[r.status]?.text ?? r.status}
+                    {r.status === "OVERDUE" && r.days_past_due != null && (
+                      <div className="text-xs">{r.in_grace ? `เลย ${r.days_past_due} วัน · ผ่อนผัน ${r.grace_days} วัน` : `เลยกำหนด ${r.days_past_due} วัน`}
+                        {Number(r.late_fee ?? 0) > 0 && ` · ค่าปรับ ${money(r.late_fee)}`}</div>
+                    )}</td>
                   <td className="text-right">
                     {canWrite && (r.status === "OVERDUE" || r.status === "PENDING") && (
                       <RecordRentForm assetId={id} leaseId={r.lease_id} period={r.income_period}
                         expected={Number(r.expected_amount) - Number(r.received_amount)} currency={r.currency}
-                        banks={bankList} today={today} defaultBank={rentTo.get(r.lease_id) ?? lastRentBank.get(r.lease_id)} />
+                        banks={bankList} today={today} defaultBank={rentTo.get(r.lease_id) ?? lastRentBank.get(r.lease_id)}
+                        late={Number(r.late_fee_per_day ?? 0) > 0 ? { due: r.due_date, grace: Number(r.grace_days ?? 0), perDay: Number(r.late_fee_per_day) } : undefined} />
                     )}
                   </td>
                 </tr>

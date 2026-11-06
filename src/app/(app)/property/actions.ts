@@ -57,11 +57,15 @@ async function saveLeaseExtras(supabase: Awaited<ReturnType<typeof createClient>
   const basis = str(form.get("lease_prorate_basis"));
   const months = form.has("lease_deposit_months") ? num(form.get("lease_deposit_months")) : undefined;
   const detail = leaseDetailFromForm(form);
+  const timing = str(form.get("lease_rent_timing"));
+  const grace = form.has("lease_grace_days") ? num(form.get("lease_grace_days")) : null;
+  const fee = form.has("lease_late_fee_per_day") ? num(form.get("lease_late_fee_per_day")) : undefined;
   const patch = { ...(to ? { rent_to_asset_id: to } : {}), ...(billing ? { utilities_billing: billing } : {}), ...(basis ? { prorate_basis: basis } : {}),
-    ...(months !== undefined ? { deposit_months: months } : {}), ...(detail ?? {}) };
+    ...(months !== undefined ? { deposit_months: months } : {}), ...(detail ?? {}),
+    ...(timing ? { rent_timing: timing } : {}), ...(grace != null ? { grace_days: grace } : {}), ...(fee !== undefined ? { late_fee_per_day: fee } : {}) };
   if (Object.keys(patch).length) {
     const { error } = await supabase.from("property_leases").update(patch).in("id", leaseIds);
-    if (error) return `บันทึกบัญชีรับค่าเช่า / รายละเอียดสัญญาไม่ได้ (${friendlyError(error.message)}) — แก้ที่ปุ่ม "รายละเอียดสัญญา"`;
+    if (error) return `บันทึกบัญชีรับค่าเช่า / รายละเอียดสัญญาไม่ได้ (${friendlyError(error.message)}) — แก้ที่ปุ่ม "แก้ไขสัญญา"`;
   }
   return setTenantId(supabase, leaseIds[0], form);
 }
@@ -450,8 +454,12 @@ export async function updateLease(_: ActionState, form: FormData): Promise<Actio
   if (!end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { error: "กรุณาใส่วันสิ้นสุดสัญญา" };
   if (rent == null || Number.isNaN(rent) || rent <= 0) return { error: "ค่าเช่าต้องมากกว่า 0" };
   if (day != null && (Number.isNaN(day) || !Number.isInteger(day) || day < 1 || day > 31)) return { error: "วันจ่ายต้องเป็นวันที่ 1–31" };
+  const grace = num(form.get("m_grace_days"));
+  const fee = num(form.get("m_late_fee_per_day"));
+  if (grace != null && (Number.isNaN(grace) || !Number.isInteger(grace) || grace < 0 || grace > 90)) return { error: "ผ่อนผันต้องเป็น 0–90 วัน" };
+  if (fee != null && (Number.isNaN(fee) || fee < 0)) return { error: "ค่าปรับต้องไม่ติดลบ" };
   const { data: cur, error: e0 } = await supabase.from("property_leases")
-    .select("tenant_name,unit_label,contract_no,end_date,rent_amount,payment_due_day,prorate_basis,utilities_billing,notes")
+    .select("tenant_name,unit_label,contract_no,end_date,rent_amount,payment_due_day,prorate_basis,utilities_billing,notes,rent_timing,grace_days,late_fee_per_day")
     .eq("id", leaseId).maybeSingle();
   if (e0) return { error: friendlyError(e0.message) };
   if (!cur) return { error: "ไม่พบสัญญานี้" };
@@ -459,6 +467,7 @@ export async function updateLease(_: ActionState, form: FormData): Promise<Actio
     tenant_name: tenant, unit_label: str(form.get("m_unit_label")), contract_no: str(form.get("m_contract_no")), end_date: end,
     rent_amount: rent, payment_due_day: day, prorate_basis: str(form.get("m_prorate_basis")) ?? "ACTUAL",
     utilities_billing: str(form.get("m_utilities_billing")), notes: str(form.get("m_notes")),
+    rent_timing: str(form.get("m_rent_timing")) ?? "ADVANCE", grace_days: grace ?? 0, late_fee_per_day: fee,
   };
   const changed = Object.fromEntries(Object.entries(main).filter(([k, v]) => {
     const o = (cur as Record<string, unknown>)[k];
@@ -568,21 +577,18 @@ export async function recordRent(_: ActionState, form: FormData): Promise<Action
   if (amount === null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
   const tax = num(form.get("tax"));
   if (tax !== null && (Number.isNaN(tax) || tax < 0 || tax >= amount)) return { error: "ภาษีหัก ณ ที่จ่ายต้องน้อยกว่ายอดก่อนภาษี" };
+  const fee = num(form.get("late_fee"));
+  if (fee !== null && (Number.isNaN(fee) || fee < 0)) return { error: "ค่าปรับต้องไม่ติดลบ" };
   const toAsset = str(form.get("received_to_asset_id"));
-  let currency = str(form.get("currency")) ?? "THB";
-  if (toAsset) {
-    const { data: acc } = await supabase.from("assets").select("currency").eq("id", toAsset).maybeSingle();
-    if (acc?.currency) currency = acc.currency;
-  }
-  const { error } = await supabase.from("income_transactions").insert({
-    lease_id: String(form.get("lease_id")), income_type: "RENT", date: str(form.get("date")),
-    income_period: str(form.get("income_period")), amount, tax: tax || null, currency,
-    received_to_asset_id: toAsset, notes: str(form.get("notes")),
-  });
+  // ผ่าน batch_record_rent: ค่าเช่า + ค่าปรับล่าช้า (รายได้อื่น) บันทึกพร้อมกัน · สกุลเงินตามบัญชีที่รับ
+  const { error } = await supabase.rpc("batch_record_rent", { p_rows: [{
+    lease_id: String(form.get("lease_id")), date: str(form.get("date")), income_period: str(form.get("income_period")),
+    amount, tax: tax ?? 0, late_fee: fee ?? 0, received_to_asset_id: toAsset ?? "", notes: str(form.get("notes")) ?? "",
+  }] });
   if (error) return { error: friendlyError(error.message) };
   revalidateProperty(id);
   if (toAsset) revalidatePath(`/financial/cash/${toAsset}`);
-  return { ok: "บันทึกรับค่าเช่าแล้ว" };
+  return { ok: fee ? `บันทึกรับค่าเช่า + ค่าปรับ ${money(fee)} แล้ว` : "บันทึกรับค่าเช่าแล้ว" };
 }
 
 export async function addUtility(_: ActionState, form: FormData): Promise<ActionState> {

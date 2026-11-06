@@ -71,9 +71,11 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
    * รายการรายงวด (ค่าเช่า / ค่าใช้จ่ายประจำ): งวดเดือนนี้ + งวดก่อนที่ยังค้าง (OVERDUE · ยกมา)
    *   + งวดก่อนที่รับ / จ่ายในเดือนนี้ (paidQ = รายการรับ / จ่ายที่ผูกงวด → ดึงงวดนั้นมาด้วย ไม่หายจากตารางทันทีหลังบันทึก)
    */
-  const withCarried = async (view: string, cols: string, idCol: string, periodCol: string, paidQ: PromiseLike<{ data: unknown }>) => {
+  // dueInMonth: งวดเดือนก่อนที่ครบกำหนดในเดือนนี้ (ค่าเช่าจ่ายหลังสิ้นรอบ) ขึ้นด้วยแม้ยังไม่เลยกำหนด
+  const withCarried = async (view: string, cols: string, idCol: string, periodCol: string, paidQ: PromiseLike<{ data: unknown }>, dueInMonth = false) => {
     const [{ data: cur }, { data: paidNow }] = await Promise.all([
-      supabase.from(view).select(cols).or(`${periodCol}.eq.${start},and(status.eq.OVERDUE,${periodCol}.lt.${start})`),
+      supabase.from(view).select(cols).or(`${periodCol}.eq.${start},and(status.eq.OVERDUE,${periodCol}.lt.${start})`
+        + (dueInMonth ? `,and(due_date.gte.${start},due_date.lte.${end},${periodCol}.lt.${start})` : "")),
       paidQ,
     ]);
     const pairs = (paidNow ?? []) as unknown as Record<string, string>[];
@@ -100,9 +102,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       supabase.from("families").select("go_live_date").maybeSingle(),
       loadSortMap("assets"),
       // งวดเดือนนี้ + งวดก่อนที่ยังค้าง (ยกมา) + งวดก่อนที่รับ / จ่ายในเดือนนี้ (ยังเห็นหลังบันทึก) · ตกลง 5 พ.ย. 2026
-      withCarried("v_lease_rent_tracking", "lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status,cycle_start,cycle_end",
+      withCarried("v_lease_rent_tracking", "lease_id,property_asset_id,name,income_period,due_date,expected_amount,received_amount,currency,status,cycle_start,cycle_end,"
+        + "grace_days,late_fee_per_day,rent_timing,days_past_due,in_grace,late_fee",
         "lease_id", "income_period", supabase.from("income_transactions").select("lease_id,income_period").eq("income_type", "RENT").not("lease_id", "is", null)
-          .lt("income_period", start).gte("date", start).lte("date", end).is("deleted_at", null)),
+          .lt("income_period", start).gte("date", start).lte("date", end).is("deleted_at", null), true),
       withCarried("v_property_cost_tracking", "utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status",
         "utility_id", "cost_period", supabase.from("expense_items").select("utility_id:property_utility_id,cost_period").not("property_utility_id", "is", null)
           .lt("cost_period", start).gte("date", start).lte("date", end).is("deleted_at", null)),
@@ -121,7 +124,11 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const props = bySort(allProps.filter((p) => pv.showAsset(p.asset_id)), (p) => p.asset_id, sortMap);
   const shown = new Set(props.map((p) => p.asset_id));
   type RT = { lease_id: string; property_asset_id: string; name: string; income_period: string; due_date: string | null; expected_amount: number; received_amount: number | null; currency: string; status: string;
-    cycle_start: string | null; cycle_end: string | null };
+    cycle_start: string | null; cycle_end: string | null; grace_days: number | null; late_fee_per_day: number | null; rent_timing: string | null;
+    days_past_due: number | null; in_grace: boolean | null; late_fee: number | null };
+  // จ่ายหลังสิ้นรอบ: งวดเดือนนี้ที่ครบกำหนดเดือนหน้า → ไปขึ้นเดือนหน้า (เดือนนี้แสดงงวดที่ครบกำหนดในเดือนนี้)
+  const arrearsLater = new Map(((rentTrack ?? []) as RT[]).filter((r) => r.rent_timing === "ARREARS" && r.status === "PENDING"
+    && r.income_period === start && !!r.due_date && r.due_date > end).map((r) => [r.lease_id, r.due_date as string]));
   const leaseIds = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.lease_id))];
   const rentPeriods = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.income_period))];
   const utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
@@ -306,7 +313,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     const next = s0 + Math.max(0, Math.ceil((monthNo(start) + 1 - s0) / step)) * step;
     return next > monthNo(l.end_date) ? "ไม่มีงวดเหลือในสัญญา" : `ไม่มีงวดเดือนนี้ · งวดถัดไป ${thMonth(monthOf(next))}`;
   };
-  const rentRows: RentRow[] = ((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => {
+  const rentRows: RentRow[] = ((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)
+    && !(r.rent_timing === "ARREARS" && r.status === "PENDING" && r.income_period === start && !!r.due_date && r.due_date > end)).map((r) => {
     const l = leaseById.get(r.lease_id);
     const property = propName.get(r.property_asset_id) ?? "";
     return {
@@ -315,12 +323,15 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       period: r.income_period, due: r.due_date, expected: Number(r.expected_amount), received: Number(r.received_amount ?? 0),
       currency: r.currency, status: r.status, bank: bankFor(r.lease_id, r.currency),
       cycle: cycleNote(r.cycle_start, r.cycle_end, Number(r.expected_amount), l ? Number(l.rent_amount) : undefined) ?? undefined,
+      late: r.status === "OVERDUE" ? { days: Number(r.days_past_due ?? 0), inGrace: !!r.in_grace, grace: Number(r.grace_days ?? 0), fee: Number(r.late_fee ?? 0) } : undefined,
+      feePerDay: Number(r.late_fee_per_day ?? 0) > 0 ? Number(r.late_fee_per_day) : undefined, grace: Number(r.grace_days ?? 0),
     };
   });
   const withRow = new Set(rentRows.map((r) => r.leaseId));
   rentRows.push(...props.flatMap((p) => (byProp.get(p.asset_id) ?? []).filter((l) => !withRow.has(l.id)).map((l): RentRow => ({
     key: `l:${l.id}`, leaseId: l.id, assetId: p.asset_id, property: p.assets.name, tenant: who(l), period: start, due: null,
-    expected: Number(l.rent_amount), received: 0, currency: l.rent_currency, status: "NONE", bank: "", note: nextNote(l),
+    expected: Number(l.rent_amount), received: 0, currency: l.rent_currency, status: "NONE", bank: "",
+    note: arrearsLater.has(l.id) ? `จ่ายหลังสิ้นรอบ · งวดเดือนนี้ครบกำหนด ${thDate(arrearsLater.get(l.id)!)}` : nextNote(l),
   }))));
   // เรียงตามทรัพย์สิน → ผู้เช่า → งวด · รายละเอียดสัญญาแสดงที่แถวแรกของสัญญา
   rentRows.sort((a, b) => a.property.localeCompare(b.property, "th") || a.tenant.localeCompare(b.tenant, "th") || a.period.localeCompare(b.period));

@@ -161,7 +161,11 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const reimbThb = (reimbs ?? []).filter((r) => !pv.personId || itemShare.has(r.expense_item_id))
     .reduce((s, r) => s + thb(r.amount, r.currency) * (itemShare.get(r.expense_item_id) ?? 1), 0);
   // รายได้ที่คาดไว้: รายได้ประจำตามเจ้าของ · ค่าเช่าตามเจ้าของทรัพย์สิน
+  // ค่าเช่าจ่ายหลังสิ้นรอบ: งวดเดือนนี้ที่ครบกำหนดเดือนหน้าไปขึ้นในเดือนที่ครบกำหนด (งวดเดือนก่อนขึ้นเดือนนี้แทน)
+  const arrearsWait = (e: { rent_timing?: string | null; status: string; income_period: string; due_date: string }) =>
+    e.rent_timing === "ARREARS" && e.status === "PENDING";
   const expectedList = (expected ?? []).filter((e) => (e.source_type === "LEASE" ? pv.showAsset(e.asset_id) : pv.isPerson(e.person_id)))
+    .filter((e) => !(arrearsWait(e) && e.income_period === start && e.due_date > end))
     .map((e) => ({ ...e, pct: e.source_type === "LEASE" ? pv.assetPct(e.asset_id) : null }));
   const templateList = (templates ?? []).filter((t) => pv.isPerson(t.person_id));
   type LoanDue = { id: string; loan_asset_id: string; loan_name: string; borrower_name: string; currency: string; installment_no: number;
@@ -280,15 +284,18 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             : toSettings("income", e.name)}</div>
           <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
             {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
-          {late(e.income_period as string)}
+          {arrearsWait(e) && e.income_period < start
+            ? <div className="text-xs text-slate-500">งวด {thMonth(e.income_period)} · จ่ายหลังสิ้นรอบ</div>
+            : late(e.income_period as string)}
         </>,
         account: e.receive_to_asset_id ? name.get(e.receive_to_asset_id) ?? "บัญชี" : "",
-        late: e.status === "OVERDUE",
+        late: e.status === "OVERDUE" && !e.in_grace, inGrace: e.status === "OVERDUE" && !!e.in_grace,
         action: canWrite && open ? (
           <ExpectedActions sourceType={e.source_type} sourceId={e.source_id} period={e.income_period} incomeType={e.income_type}
             personId={tpl?.person_id ?? null} expected={Number(e.expected_amount)} currency={e.currency}
             receiveTo={e.receive_to_asset_id} banks={banks} today={maxDate} minDate={minDate} />
-        ) : badge(EXP_STATUS[e.status]?.text ?? e.status, EXP_STATUS[e.status]?.cls ?? ""),
+        ) : e.in_grace ? badge("ครบกำหนด", "bg-amber-50 text-amber-800")
+          : badge(EXP_STATUS[e.status]?.text ?? e.status, EXP_STATUS[e.status]?.cls ?? ""),
       };
     }),
     ...loanDue.filter((x) => x.status !== "PAID").map((x): MonthRow => {

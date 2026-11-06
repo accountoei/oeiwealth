@@ -97,7 +97,10 @@ export function loadIeMonth(start: string, end: string) {
       supabase.from("income_transactions").select(INC_SELECT)
         .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
       // รายได้ที่คาดไว้ (ค่าเช่า / รายได้ประจำ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน (ตกลง 5 พ.ย. 2026)
-      supabase.from("v_expected_income").select("*").or(`income_period.eq.${start},and(status.eq.OVERDUE,income_period.lt.${start})`).order("due_date"),
+      // + งวดเดือนก่อนที่ครบกำหนดในเดือนนี้ (ค่าเช่าจ่ายหลังสิ้นรอบ, 6 พ.ย. 2026)
+      supabase.from("v_expected_income").select("*")
+        .or(`income_period.eq.${start},and(status.eq.OVERDUE,income_period.lt.${start}),and(due_date.gte.${start},due_date.lte.${end},income_period.lt.${start})`)
+        .order("due_date"),
       supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
       supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id),internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)")
         .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),

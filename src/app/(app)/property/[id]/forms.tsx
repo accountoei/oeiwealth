@@ -12,7 +12,7 @@ import {
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
 import ModalButton from "@/components/ModalButton";
-import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, PRORATE_BASIS_LABEL, UTILITIES_BILLING_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, PRORATE_BASIS_LABEL, RENT_TIMING_LABEL, UTILITIES_BILLING_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -26,6 +26,12 @@ const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-7
 const sbtn = "rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white disabled:opacity-50";
 const BOX_BTN = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50";
 const link = SMALL_BTN;   // ปุ่มเล็ก (เดิมเป็นลิงก์ขีดเส้นใต้ · กติกา 5 พ.ย. 2026)
+
+/** ค่าปรับล่าช้า ณ วันที่รับ: (วันที่เลยกำหนด − วันผ่อนผัน) × ค่าปรับต่อวัน · ไม่เกินผ่อนผัน = "" */
+export function lateFeeOf(late: { due: string; grace: number; perDay: number }, date: string) {
+  const days = Math.round((Date.parse(date) - Date.parse(late.due)) / 86400000) - late.grace;
+  return days > 0 && late.perDay > 0 ? money(days * late.perDay) : "";
+}
 
 function Msg({ s }: { s: ActionState }) {
   if (s.error) return <p className="text-sm text-red-600">{s.error}</p>;
@@ -99,12 +105,16 @@ export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, l
   ));
 }
 
-export function RecordRentForm({ assetId, leaseId, period, expected, currency, banks, today, defaultBank }: {
+export function RecordRentForm({ assetId, leaseId, period, expected, currency, banks, today, defaultBank, late }: {
   assetId: string; leaseId: string; period: string; expected: number; currency: string; banks: Bank[]; today: string;
   /** บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา (หรือบัญชีที่รับครั้งล่าสุด) */ defaultBank?: string;
+  /** สัญญามีค่าปรับล่าช้า → เติมค่าปรับตามวันที่รับ (คิดเฉพาะวันที่เกินวันผ่อนผัน · แก้ / ลบได้) */
+  late?: { due: string; grace: number; perDay: number };
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(recordRent, {});
+  const [date, setDate] = useState(today);
+  const [fee, setFee] = useState<string | null>(null);   // null = คำนวณตามวันที่รับ
   if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกรับ</button>;
   if (!open) return trigger;
@@ -122,8 +132,14 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
         <input name="tax" inputMode="decimal" placeholder="ถ้ามี" className={`mt-1 block w-24 ${small}`} />
       </label>
       <label className="text-xs">วันที่รับ
-        <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
+        <input name="date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} max={today} className={`mt-1 block ${small}`} />
       </label>
+      {late && (
+        <label className="text-xs">ค่าปรับล่าช้า
+          <input name="late_fee" inputMode="decimal" value={fee ?? lateFeeOf(late, date)} onChange={(e) => setFee(e.target.value)} placeholder="0.00"
+            className={`mt-1 block w-24 ${small}`} />
+        </label>
+      )}
       <label className="text-xs">เข้าบัญชี
         <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block max-w-full ${small}`}>
           <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
@@ -141,6 +157,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
 export type LeaseMain = {
   tenant_name: string; unit_label: string | null; contract_no: string | null; start_date: string; end_date: string;
   rent_amount: number; payment_due_day: number | null; prorate_basis: string; utilities_billing: string | null; notes: string | null;
+  rent_timing: string; grace_days: number; late_fee_per_day: number | null;
 };
 
 /**
@@ -196,6 +213,18 @@ function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks, rentC
             <select name="m_prorate_basis" defaultValue={m.prorate_basis} className={f}>
               {Object.entries(PRORATE_BASIS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
+          </label>
+          <label className="text-sm">ชำระค่าเช่า
+            <select name="m_rent_timing" defaultValue={m.rent_timing} className={f}>
+              {Object.entries(RENT_TIMING_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">ผ่อนผัน (วัน)
+            <input name="m_grace_days" type="number" min={0} max={90} required defaultValue={m.grace_days} className={f} />
+          </label>
+          <label className="text-sm">ค่าปรับล่าช้า (ต่อวัน)
+            <input name="m_late_fee_per_day" inputMode="decimal" defaultValue={m.late_fee_per_day != null ? money(m.late_fee_per_day) : ""} placeholder="ว่าง = ไม่คิด" className={f} />
+            <span className="text-xs text-slate-500">คิดเฉพาะวันที่เกินวันผ่อนผัน</span>
           </label>
           <label className="text-sm">บัญชีรับค่าเช่า
             <select name="lease_rent_to_asset_id" defaultValue={rentTo ?? ""} className={f}>
