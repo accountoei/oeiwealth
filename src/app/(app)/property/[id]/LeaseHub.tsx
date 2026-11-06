@@ -14,16 +14,17 @@ export type LeaseEditEntry = {
 };
 
 // ค่า "ทำอะไร": "" = สัญญาใหม่ (กรอกเอง) · renew:<id> = ต่อสัญญา · edit:<id> = แก้ไขสัญญา · null = ปิดหน้าต่าง
-type Open = (choice: string) => void;
-const HubCtx = createContext<Open | null>(null);
-// คลิกโดนสิ่งที่กดได้อยู่แล้วในการ์ด (ลิงก์ / ปุ่ม / ช่องกรอก) → ไม่เปิดหน้าต่างแก้ไข (เหมือนกดแถวตาราง · RowPanel)
-const INTERACTIVE = "a,button,input,select,textarea,label,form,summary,details,[data-no-row-click]";
+type Hub = { open: (choice: string) => void; editable: Set<string> };
+const HubCtx = createContext<Hub | null>(null);
+// ชื่อผู้เช่าที่กดแก้ไขได้ = ขีดเส้นใต้จุด + ✎ (แบบเดียวกับยอดในตารางที่กดแล้วเปิดรายการนั้น · ลิงก์สีน้ำเงิน = ไปหน้าอื่นเท่านั้น)
+const EDIT_NAME = "text-left underline decoration-dotted underline-offset-4 hover:text-blue-700";
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 
 /**
  * ปุ่มเดียวของกล่องสัญญาเช่า (ตกลง 6 พ.ย. 2026): สัญญาใหม่ / ต่อสัญญา / แก้ไขสัญญา ในหน้าต่างเดียว
- *   บนสุด = ช่อง "ทำอะไร" → ฟอร์มด้านล่างเปลี่ยนตาม · กดที่การ์ดสัญญา = เปิดหน้าต่างนี้ที่ "แก้ไขสัญญา" ของสัญญานั้น
- *   ไม่มีสิทธิ์เขียน (enabled = false) → ไม่มีปุ่ม การ์ดกดไม่ได้
+ *   บนสุด = ช่อง "ทำอะไร" → ฟอร์มด้านล่างเปลี่ยนตาม · กดชื่อผู้เช่า / เลขที่สัญญาบนการ์ด = เปิดหน้าต่างนี้ที่ "แก้ไขสัญญา" ของสัญญานั้น
+ *     (ตกลง 6 พ.ย. 2026: กดเฉพาะชื่อ ไม่ใช่ทั้งการ์ด)
+ *   ไม่มีสิทธิ์เขียน (enabled = false) → ไม่มีปุ่ม ชื่อเป็นตัวหนังสือธรรมดา
  */
 export function LeaseHub({ enabled, children, assetId, banks, goLive, currency, carryOptions, detail, renewals, edits }: {
   enabled: boolean; children: ReactNode;
@@ -39,7 +40,7 @@ export function LeaseHub({ enabled, children, assetId, banks, goLive, currency, 
   const cur = edits.filter((e) => !e.old), old = edits.filter((e) => e.old);
   const title = edit ? "แก้ไขสัญญาเช่า" : renewal ? "ต่อสัญญา" : "สัญญาเช่าใหม่";
   return (
-    <HubCtx.Provider value={enabled ? setChoice : null}>
+    <HubCtx.Provider value={enabled ? { open: setChoice, editable: new Set(edits.map((e) => e.id)) } : null}>
       {children}
       {choice !== null && (
         <Modal size="lg" title={title} onClose={() => setChoice(null)}>
@@ -84,26 +85,15 @@ export function LeaseHub({ enabled, children, assetId, banks, goLive, currency, 
 
 /** ปุ่ม "+ สัญญาใหม่ / ต่อสัญญา / แก้ไข" บนหัวกล่องสัญญาเช่า */
 export function LeaseHubButton({ label }: { label: string }) {
-  const open = useContext(HubCtx);
-  if (!open) return null;
-  return <button type="button" onClick={() => open("")}
+  const hub = useContext(HubCtx);
+  if (!hub) return null;
+  return <button type="button" onClick={() => hub.open("")}
     className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">{label}</button>;
 }
 
-/** การ์ดสัญญา: กดที่การ์ด (ไม่โดนปุ่ม / ลิงก์) = แก้ไขสัญญานี้ · ไม่มีสิทธิ์เขียน = การ์ดธรรมดา */
-export function LeaseCardClick({ leaseId, className, children }: { leaseId: string; className: string; children: ReactNode }) {
-  const open = useContext(HubCtx);
-  if (!open) return <div className={className}>{children}</div>;
-  return (
-    <div title="กดเพื่อแก้ไขสัญญา" className={`${className} cursor-pointer hover:bg-slate-50`}
-      onClick={(e) => {
-        // pop up อื่นที่เปิดจากปุ่มในการ์ด (รายการส่งมอบ / ผู้เช่าออก) อยู่นอกการ์ดใน DOM แต่ event ของ React ยังส่งต่อมาถึงการ์ด → ไม่นับ
-        if (!e.currentTarget.contains(e.target as Node)) return;
-        if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
-        if (window.getSelection()?.toString()) return;          // กำลังลากเลือกข้อความ
-        open(`edit:${leaseId}`);
-      }}>
-      {children}
-    </div>
-  );
+/** ชื่อผู้เช่า · เลขที่สัญญา บนการ์ด: กด = แก้ไขสัญญานี้ · แก้ไม่ได้ (ไม่มีสิทธิ์ / สัญญาเดิมที่ไม่ใช่ ADMIN) = ตัวหนังสือธรรมดา */
+export function LeaseEditName({ leaseId, children }: { leaseId: string; children: ReactNode }) {
+  const hub = useContext(HubCtx);
+  if (!hub?.editable.has(leaseId)) return <span>{children}</span>;
+  return <button type="button" title="แก้ไขสัญญา" onClick={() => hub.open(`edit:${leaseId}`)} className={EDIT_NAME}>{children} ✎</button>;
 }
