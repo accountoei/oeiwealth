@@ -122,7 +122,7 @@ function InventoryAddBody({ assetId, rooms, roomsWithItems, pays, today, minDate
 /** คัดลอกของทั้งห้องไปอีกห้อง (ห้องตกแต่งเหมือนกัน) */
 export function CopyRoomButton({ assetId, rooms, roomsWithItems }: { assetId: string; rooms: string[]; roomsWithItems: string[] }) {
   return (
-    <ModalButton label="คัดลอกห้อง" title="คัดลอกรายการจากห้องหนึ่งไปอีกห้อง">
+    <ModalButton size="sm" label="คัดลอกห้อง" title="คัดลอกรายการจากห้องหนึ่งไปอีกห้อง">
       <CopyRoomBody assetId={assetId} rooms={rooms} roomsWithItems={roomsWithItems} />
     </ModalButton>
   );

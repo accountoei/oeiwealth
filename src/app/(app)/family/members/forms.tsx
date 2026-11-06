@@ -30,7 +30,7 @@ function RelationshipSelect({ defaultValue }: { defaultValue?: string }) {
 export function FamilyForm({ name, headId, photo: photo0 = null, candidates }: {
   name: string; headId: string | null; photo?: string | null; candidates: { id: string; name: string }[];
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState(updateFamily, {});
   const [head, setHead] = useState(headId ?? "");
   // รูปครอบครัว (มุมซ้ายบนของเมนู) — ย่อในเบราว์เซอร์แบบเดียวกับรูปสมาชิก

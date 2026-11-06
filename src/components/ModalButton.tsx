@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import Modal from "./Modal";
+import Modal, { type ModalSize } from "./Modal";
 
 // ปุ่มเปิดหน้าต่าง pop up (ใช้ในกล่องมูลค่าล่าสุด: อัปเดตมูลค่า / ประวัติ · ตกลง 27 ต.ค. 2026)
 export default function ModalButton({ label, title, size = "md", primary = false, className, children }: {
-  label: ReactNode; title?: string; size?: "md" | "lg"; primary?: boolean; /** แทนรูปปุ่มเดิม (เช่น เป็นลิงก์) */ className?: string; children: ReactNode;
+  label: ReactNode; title?: string; size?: ModalSize; primary?: boolean; /** แทนรูปปุ่มเดิม (เช่น เป็นลิงก์) */ className?: string; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const cls = className ?? (primary

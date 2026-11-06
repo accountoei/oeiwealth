@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 const TOAST_EVENT = "fwv-toast";
 const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: Esc ปิดเฉพาะบนสุด
 const InModal = createContext(false);
+export type ModalSize = "sm" | "md" | "lg";
+const MODAL_WIDTH: Record<ModalSize, string> = { sm: "max-w-md", md: "max-w-3xl", lg: "max-w-6xl" };
 /** อยู่ในหน้าต่าง pop up หรือไม่ (Flash ใช้: ในหน้าต่าง = ข้อความในฟอร์ม · นอกหน้าต่าง = แจ้งมุมจอ) */
 export const useInModal = () => useContext(InModal);
 /** แจ้งข้อความมุมขวาล่าง (ขึ้นแล้วหายเอง) — แสดงโดย Toaster ใน layout หลัก */
@@ -21,8 +23,14 @@ export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST
  *   ฟอร์มที่ไม่ใช่การบันทึก (เช่น แสดงเลขบัญชีเต็ม) → ใส่ data-no-close ที่ <form> · กดแล้วหน้าต่างไม่ปิด
  *   ข้อความสีเขียวที่แสดงค้างไว้ (เช่น "รวม 100%") → ใส่ data-info · ไม่นับเป็นข้อความบันทึกสำเร็จ
  *   บันทึกไม่สำเร็จ = มีข้อความสีแดงขึ้นใหม่หลังกดบันทึก · สีแดงที่มีอยู่ก่อนกด (ดอกจันช่องบังคับ ตัวเลขติดลบ "เลยกำหนด") ไม่นับ (5 พ.ย. 2026)
+ *
+ * ขนาด 3 แบบ เลือกตามสิ่งที่อยู่ในหน้าต่าง (ตกลง 6 พ.ย. 2026 · กติกาใน AGENTS.md)
+ *   sm (448 px) = ถามยืนยัน / ลบ / ฟอร์ม 1–3 ช่องที่เรียงลงหรือไม่เกิน 2 คอลัมน์
+ *   md (768 px · ค่าเริ่มต้น) = ฟอร์มบันทึก / แก้ไข 1 รายการ · ตารางเล็กอ่านอย่างเดียว
+ *   lg (1,152 px) = ตารางกว้าง / กรอกหลายแถว / ประวัติ · ฟอร์มยาวหลายส่วน (แก้ไขรายละเอียดของหน้า · สัญญาเช่าใหม่)
+ *   ระวัง: sm: / md: / lg: ของ Tailwind ดูความกว้างจอ ไม่ใช่ความกว้างหน้าต่าง → ฟอร์ม 3–4 คอลัมน์ห้ามใช้ sm
  */
-export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: "md" | "lg"; title?: string }) {
+export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: ModalSize; title?: string }) {
   const [mounted, setMounted] = useState(false);
   const body = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -90,7 +98,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
   if (!mounted) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 md:p-10" role="dialog" aria-modal="true">
-      <div className={`relative w-full ${size === "lg" ? "max-w-6xl" : "max-w-3xl"} rounded-xl bg-white p-5 pt-10 text-left shadow-xl`}>
+      <div className={`relative w-full ${MODAL_WIDTH[size]} rounded-xl bg-white p-5 pt-10 text-left shadow-xl`}>
         <button type="button" onClick={() => close.current()} aria-label="ปิด"
           className="absolute right-3 top-3 rounded-md px-2 py-0.5 text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-800">✕</button>
         {title && <h2 className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}

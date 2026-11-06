@@ -148,7 +148,7 @@ export default function DocumentUpload({ module: fixedModule, link, entityOption
   }
 
   const groups = [...new Set((entityOptions ?? []).map((o) => o.group))];
-  return (<>{trigger}<Modal size="lg" onClose={close}>
+  return (<>{trigger}<Modal onClose={close}>
     <form ref={formRef} onSubmit={submit} className="w-full space-y-3 text-left" data-keep-open>
       <h3 className="text-sm font-medium text-slate-900">{supersedes ? `อัปโหลดฉบับใหม่แทน "${supersedes.title}"` : "แนบเอกสาร"}</h3>
       <div className="grid gap-3 md:grid-cols-3">

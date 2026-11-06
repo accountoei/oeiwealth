@@ -9,7 +9,7 @@ import Flash from "@/components/Flash";
 
 /** ADMIN เลือกแหล่งอัตราแลกเปลี่ยน — มีผลตั้งแต่วันนี้ · อัตราที่บันทึกไว้แล้วไม่เปลี่ยน */
 export default function FxSourceForm({ source, bblRate }: { source: string; bblRate: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<FxState, FormData>(setFxSource, {});
   const [src, setSrc] = useState(source);
   const trigger = <button type="button" onClick={() => setOpen(!open)}

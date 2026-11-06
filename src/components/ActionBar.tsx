@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import Modal from "./Modal";
+import Modal, { type ModalSize } from "./Modal";
 
 // แถวปุ่มคำสั่ง: ปุ่มอยู่แถวบนตลอด · กดปุ่มไหน ฟอร์มนั้นเปิดเป็นหน้าต่าง pop up (Modal) ทีละฟอร์ม
 // ฟอร์มที่เปิดค้างตั้งแต่แรก (initial) ไม่ใช่ pop up: กาง "ใต้แถว" ใน <ActionBar> หรือแทนที่ปุ่มเหมือนเดิม
@@ -33,7 +33,7 @@ export function ActionBar({ children, right, className = "" }: { children: React
  *   if (!open) return trigger;
  *   return present(trigger, <form>…</form>);
  */
-export function useActionSlot(initial = false, opts: { modal?: boolean; size?: "md" | "lg" } = {}) {
+export function useActionSlot(initial = false, opts: { modal?: boolean; size?: ModalSize } = {}) {
   const modal = opts.modal ?? !initial;                       // ค่าเริ่มต้น: pop up · ฟอร์มที่เปิดค้างตั้งแต่แรก = กางในหน้า
   const bar = useContext(BarCtx);
   const id = useId();

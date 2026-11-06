@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import Modal from "./Modal";
+import Modal, { type ModalSize } from "./Modal";
 
 // กดที่แถวของตาราง → เปิดหน้าต่าง pop up แก้ไข / ลบ ของแถวนั้น (เปิดได้ทีละแถวทั้งหน้า)
 //   ใช้กับคอมโพเนนต์ที่วางไว้ในเซลล์ของแถว (เช่น RowActions) · ไม่อยู่ในตาราง = ใช้ปุ่มแบบเดิม (เปิด pop up เหมือนกัน)
@@ -66,7 +66,7 @@ export function useRowPanel(enabled: boolean) {
   /** ยังไม่รู้ (ก่อนโหลดเสร็จ) หรืออยู่ในแถว = ไม่ต้องแสดงปุ่มแบบเดิม */
   const showButtons = checked && !inRow;
   /** ตัวยึดตำแหน่ง (ใส่ในเซลล์) + หน้าต่าง pop up เมื่อเปิด */
-  const render = (panel: ReactNode, title?: string, size?: "md" | "lg") => (
+  const render = (panel: ReactNode, title?: string, size?: ModalSize) => (
     <>
       <span ref={anchor} className="hidden" />
       {inRow && open ? <Modal title={title} size={size} onClose={() => setOpen(false)}>{panel}</Modal> : null}

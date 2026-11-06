@@ -88,7 +88,7 @@ export function FileReturn({ id, today, result }: { id: string; today: string; r
 export function AmendReturn({ id }: { id: string }) {
   const { state, action, pending } = useAct(amendReturn);
   return (
-    <ModalButton label="ยื่นเพิ่มเติม" title="ยื่นแบบเพิ่มเติม">
+    <ModalButton size="sm" label="ยื่นเพิ่มเติม" title="ยื่นแบบเพิ่มเติม">
       <form action={action} className="space-y-3">
         <input type="hidden" name="id" value={id} />
         <label className="block text-sm">เหตุผลที่ยื่นเพิ่มเติม *<input name="reason" required className={input} placeholder="เช่น ได้หนังสือรับรอง 50 ทวิ เพิ่ม" /></label>
@@ -103,7 +103,7 @@ export function AmendReturn({ id }: { id: string }) {
 export function DeleteReturn({ id }: { id: string }) {
   const { state, action, pending } = useAct(deleteReturn);
   return (
-    <ModalButton label="ลบแบบร่าง" title="ลบแบบร่าง">
+    <ModalButton size="sm" label="ลบแบบร่าง" title="ลบแบบร่าง">
       <form action={action} className="space-y-3">
         <input type="hidden" name="id" value={id} />
         <p className="text-sm text-slate-700">ลบแบบร่างนี้และยอดที่แก้ไว้ · ไม่กระทบรายได้ / รายจ่ายในระบบ</p>
@@ -119,7 +119,7 @@ export function DeleteReturn({ id }: { id: string }) {
 export function SettlementForm({ id, v }: { id: string; v: { settlement_status: string | null; settled_date: string | null; notes: string | null } }) {
   const { state, action, pending } = useAct(saveSettlement);
   return (
-    <ModalButton label="บันทึกผลชำระ / รับคืน" title="ผลการชำระ / รับคืนภาษี">
+    <ModalButton size="sm" label="บันทึกผลชำระ / รับคืน" title="ผลการชำระ / รับคืนภาษี">
       <form action={action} className="space-y-3">
         <input type="hidden" name="id" value={id} />
         <div className="grid gap-3 md:grid-cols-2">

@@ -28,7 +28,7 @@ export default function FontPicker({ onClose }: { onClose: () => void }) {
     applyFont(key);
   };
   return (
-    <Modal onClose={onClose}>
+    <Modal size="sm" onClose={onClose}>
       <h2 className="font-medium text-slate-900">การแสดงผล</h2>
       <p className="mt-1 text-sm text-slate-600">แบบอักษร · กดเลือกแล้วเปลี่ยนทันที และจำไว้ที่เครื่องนี้ (เครื่องอื่นไม่เปลี่ยน)</p>
       <div role="radiogroup" aria-label="แบบอักษร" className="mt-3 space-y-2">
