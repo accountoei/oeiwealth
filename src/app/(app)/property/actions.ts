@@ -3,7 +3,8 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, HOME_CATEGORY, numOrNull as num, ownersFromForm, parseSalvage, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { friendlyError, HOME_CATEGORY, money, numOrNull as num, ownersFromForm, parseSalvage, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { requireAppUser } from "@/lib/auth";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { bankId, cardId, parseEndpoint, payLinesFromForm } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, isPositive, notSaved, readRows } from "@/lib/batch-entry";
@@ -461,6 +462,59 @@ export async function terminateLease(_: ActionState, form: FormData): Promise<Ac
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขสัญญานี้" };
   revalidateProperty(id);
   return { ok: "บันทึกการเลิกสัญญาแล้ว" };
+}
+
+/** ADMIN: ยกเลิกการเลิกสัญญา (สัญญากลับมามีผลถึงวันสิ้นสุด · ฐานข้อมูลตรวจสิทธิ์ + ห้ามหลังคืนเงินประกัน / บันทึกผู้เช่าออก) */
+export async function undoTermination(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const { data, error } = await supabase.from("property_leases")
+    .update({ status: "ACTIVE", terminated_date: null }).eq("id", String(form.get("lease_id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขสัญญานี้" };
+  revalidateProperty(id);
+  return { ok: "ยกเลิกการเลิกสัญญาแล้ว" };
+}
+
+/** ผู้เช่าออก: ตัวอย่างยอดถึงวันที่ออก (อ่านอย่างเดียว · สูตรเดียวกับตอนบันทึก) */
+export type CloseoutPreview = {
+  move_out: string; currency: string; deposit: number; deposit_currency: string | null;
+  rent: { period: string; from: string | null; to: string | null; expected: number; received: number; dismissed: boolean; unpaid: number; over: number }[];
+  expected_rent: number; received_rent: number; unpaid_rent: number; advance_rent: number;
+  charges: { id: string; description: string; period: string; amount: number; currency: string }[]; utilities: number;
+};
+export async function closeoutPreview(leaseId: string, moveOut: string): Promise<CloseoutPreview | { error: string }> {
+  await requireAppUser();
+  if (!/^[0-9a-f-]{36}$/i.test(leaseId) || !/^\d{4}-\d{2}-\d{2}$/.test(moveOut)) return { error: "วันที่ไม่ถูกต้อง" };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("lease_closeout_preview", { p_lease_id: leaseId, p_move_out: moveOut });
+  if (error) return { error: friendlyError(error.message) };
+  if (!data) return { error: "ไม่พบสัญญา" };
+  return data as CloseoutPreview;
+}
+
+/** ผู้เช่าออก: เลิกสัญญา (ถ้าออกก่อนกำหนด) + หักค้าง / ค่าเสียหาย / ริบ + คืนเงินประกัน + คืนค่าเช่าล่วงหน้า ในครั้งเดียว */
+export async function closeLease(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const damage = num(form.get("damage")) ?? 0;
+  const forfeit = num(form.get("forfeit")) ?? 0;
+  if (Number.isNaN(damage) || Number.isNaN(forfeit) || damage < 0 || forfeit < 0) return { error: "ยอดหักต้องเป็นตัวเลขไม่ติดลบ" };
+  const { data, error } = await supabase.rpc("close_lease", {
+    p_lease_id: String(form.get("lease_id")),
+    p_move_out: str(form.get("move_out")),
+    p_settled_date: str(form.get("settled_date")),
+    p_bank_asset_id: str(form.get("bank_asset_id")),
+    p_damage: damage, p_damage_reason: str(form.get("damage_reason")),
+    p_forfeit: forfeit, p_forfeit_reason: str(form.get("forfeit_reason")),
+    p_notes: str(form.get("notes")),
+  });
+  if (error) return { error: friendlyError(error.message) };
+  revalidateProperty(id);
+  revalidatePath("/");
+  revalidatePath("/financial/cash", "layout");
+  const net = Number((data as { net_transfer?: number } | null)?.net_transfer ?? 0);
+  return { ok: net > 0 ? `บันทึกผู้เช่าออกแล้ว · โอนคืนผู้เช่า ${money(net)}` : "บันทึกผู้เช่าออกแล้ว" };
 }
 
 export async function settleDeposit(_: ActionState, form: FormData): Promise<ActionState> {

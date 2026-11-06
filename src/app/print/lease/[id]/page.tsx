@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import PrintShell, { type PrintSection } from "../../loan/[id]/print-shell";
-import { HandoverAnnex, LeaseContract, RentAnnex, termMonths, TITLE, type LeaseData } from "./contract";
+import { CloseoutSummary, HandoverAnnex, LeaseContract, RentAnnex, termMonths, TITLE, type CloseoutData, type LeaseData } from "./contract";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
 
 export const metadata = { title: "พิมพ์สัญญาเช่า" };
@@ -14,8 +14,8 @@ export const metadata = { title: "พิมพ์สัญญาเช่า" };
  *   ผู้เช่า / ทำที่ / แจ้งล่วงหน้า / ค่าเสียหาย / พยาน = จาก "รายละเอียดสัญญา" (ว่าง = เว้นเส้นให้เขียนเอง)
  *   เลขบัญชีรับค่าเช่า + เลขบัตร / ทะเบียนผู้เช่า เต็มเฉพาะ ADMIN / EDITOR (ฐานข้อมูลตรวจซ้ำ · บันทึก Audit)
  */
-export default async function PrintLeasePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function PrintLeasePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ s?: string }> }) {
+  const [{ id }, { s: only }] = await Promise.all([params, searchParams]);
   const me = await requireAppUser();
   const supabase = await createClient();
   const canReveal = me.role === "ADMIN" || me.role === "EDITOR";
@@ -26,7 +26,7 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
   const { data: pd } = await supabase.from("property_details").select("id,asset_id,property_type,address,land_area_sq_wa,house_no,unit_no,floor_no,building_name,assets!inner(name)")
     .eq("id", l.property_id).maybeSingle();
   if (!pd) notFound();
-  const [{ data: deeds }, { data: owners }, { data: people }, { data: banks }, { data: biz }, { data: tenantId }, { data: hand }, { data: sched }] = await Promise.all([
+  const [{ data: deeds }, { data: owners }, { data: people }, { data: banks }, { data: biz }, { data: tenantId }, { data: hand }, { data: sched }, { data: co }] = await Promise.all([
     supabase.from("property_deeds").select("component_type,title_type,title_deed_no,land_no,deed_book,deed_page,land_area_sq_wa,building_area_sqm,sort_order")
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order"),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,end_date").eq("asset_id", pd.asset_id),
@@ -40,6 +40,8 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
       .eq("lease_id", l.id).is("deleted_at", null).order("sort_order").order("created_at"),
     // ตารางค่าเช่าทั้งสัญญาจากฐานข้อมูล (สูตรเดียวกับหน้ารับค่าเช่า) · คิดถึงวันสิ้นสุดสัญญาเดิมแม้เลิกก่อนกำหนด
     supabase.rpc("lease_rent_schedule", { p_lease_id: l.id, p_end: l.end_date }),
+    // ใบสรุปผู้เช่าออก (ถ้าบันทึกแล้ว)
+    supabase.from("lease_closeouts").select("*").eq("lease_id", l.id).is("deleted_at", null).maybeSingle(),
   ]);
   const bank = (banks ?? []).find((b) => b.asset_id === l.rent_to_asset_id);
   const accountNo = bank && canReveal
@@ -95,10 +97,22 @@ export default async function PrintLeasePage({ params }: { params: Promise<{ id:
   if (!d.lines.length) warn.push("ความถี่ค่าเช่าเป็น \"อื่น ๆ\" — ระบบสร้างตารางค่าเช่าไม่ได้ ข้อค่าเช่าเว้นเส้นให้เขียนกำหนดชำระเอง");
   warn.push(`ร่าง${TITLE[type]}จากแบบมาตรฐานทั่วไป ไม่ใช่คำปรึกษากฎหมาย — ควรให้ทนายตรวจข้อความก่อนใช้จริง · ช่องเส้นประให้เขียนด้วยมือ`);
 
+  type CoLine = { period: string; from: string | null; to: string | null; expected: number; received: number; unpaid: number; over: number };
+  const coLines = (co?.lines ?? {}) as { rent?: CoLine[]; charges?: { description: string; amount: number }[] };
+  const c: CloseoutData | null = co ? {
+    moveOut: co.move_out_date, settled: co.settled_date, deposit: Number(co.deposit_held), unpaid: Number(co.unpaid_rent),
+    utilities: Number(co.utilities), damage: Number(co.damage), damageReason: co.damage_reason, forfeit: Number(co.forfeit),
+    forfeitReason: co.forfeit_reason, depositRefund: Number(co.deposit_refund), advanceRefund: Number(co.advance_refund), net: Number(co.net_transfer),
+    rent: (coLines.rent ?? []).map((x) => ({ ...x, expected: Number(x.expected), received: Number(x.received), unpaid: Number(x.unpaid), over: Number(x.over) })),
+    charges: (coLines.charges ?? []).map((x) => ({ description: x.description, amount: Number(x.amount) })),
+  } : null;
+  // ?s=closeout (ปุ่ม "พิมพ์ใบสรุปผู้เช่าออก") → เลือกเฉพาะใบสรุปไว้ให้
+  const onlyClose = only === "closeout" && !!c;
   const sections: PrintSection[] = [
-    { key: "contract", label: TITLE[type], on: true, node: <LeaseContract d={d} place={place} signDate={l.start_date} /> },
-    ...(d.lines.length ? [{ key: "rent", label: "ตารางค่าเช่า (แนบท้าย)", on: true, node: <RentAnnex d={d} /> }] : []),
-    { key: "handover", label: type === "LAND" ? "บันทึกสภาพที่ดิน (แนบท้าย)" : "บัญชีทรัพย์สิน / สภาพ (แนบท้าย)", on: true, node: <HandoverAnnex d={d} /> },
+    { key: "contract", label: TITLE[type], on: !onlyClose, node: <LeaseContract d={d} place={place} signDate={l.start_date} /> },
+    ...(d.lines.length ? [{ key: "rent", label: "ตารางค่าเช่า (แนบท้าย)", on: !onlyClose, node: <RentAnnex d={d} /> }] : []),
+    { key: "handover", label: type === "LAND" ? "บันทึกสภาพที่ดิน (แนบท้าย)" : "บัญชีทรัพย์สิน / สภาพ (แนบท้าย)", on: !onlyClose, node: <HandoverAnnex d={d} /> },
+    ...(c ? [{ key: "closeout", label: "ใบสรุปผู้เช่าออก / คืนเงินประกัน", on: onlyClose, node: <CloseoutSummary d={d} c={c} /> }] : []),
   ];
   return <PrintShell back={`/property/${pd.asset_id}`} sections={sections} warn={warn} />;
 }

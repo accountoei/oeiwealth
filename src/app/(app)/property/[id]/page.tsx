@@ -8,9 +8,10 @@ import {
   INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
-  EditPropertyForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant, TerminateLeaseForm,
-  UtilityForm,
+  EditPropertyForm, EditTerminationForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
+  TerminateLeaseForm, UtilityForm,
 } from "./forms";
+import CloseLeaseForm from "./CloseLeaseForm";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
@@ -199,7 +200,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
   const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
-    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }] = await Promise.all([
+    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -227,6 +228,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("lease_handover_items").select("id,lease_id,item_type,name,qty,brand,serial_no,value,in_condition,in_reading,out_status,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
+    // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
+    supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,property_leases!inner(property_id)")
+      .eq("property_leases.property_id", pd.id).is("deleted_at", null),
   ]);
   type PayRow = { amount: number; currency: string; movement_date: string; metadata: { component_id?: string; add_value?: boolean | string } | null };
   // จ่ายเพิ่มเป็นต้นทุนเสมอ (ไม่มีติ๊กแล้ว · ตกลง 29 ต.ค. 2026) · รายการเก่าที่ไม่ได้ติ๊ก = ไม่นับเป็นต้นทุน
@@ -414,21 +418,54 @@ export default async function PropertyDetailPage({ params, searchParams }: {
       reason: rows.map((h) => `${h.name}${h.out_status ? ` (${HANDOVER_OUT_LABEL[h.out_status]})` : ""} ${money(h.deduction)}`).join(" · ") };
   };
 
+  // ผู้เช่าออก (ตกลง 6 พ.ย. 2026) · ต่อสัญญาได้เมื่อยังไม่มีสัญญาถัดไปของห้องเดียวกัน (หรือทั้งหลัง)
+  type Closeout = { lease_id: string; move_out_date: string; settled_date: string; deposit_refund: number; advance_refund: number; net_transfer: number;
+    unpaid_rent: number; utilities: number; damage: number; forfeit: number; income_ids: string[] };
+  const closeOf = new Map(((closeRows ?? []) as unknown as Closeout[]).map((c) => [c.lease_id, c]));
+  // รายได้ที่สร้างตอนผู้เช่าออก → แก้ / ลบทีละรายการไม่ได้ (ยกเลิกทั้งชุดที่การ์ดสัญญา)
+  const closeIncome = new Set([...closeOf.values()].flatMap((c) => c.income_ids ?? []));
+  const CLOSE_NOTE = <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกผู้เช่าออก&rdquo; ในสัญญา</span>;
+  const roomKey = (u: string | null) => (u ?? "").trim().toLowerCase();
+  const hasSuccessor = (l: Lease) => leases.some((o) => o.id !== l.id && o.start_date > l.start_date
+    && (!roomKey(o.unit_label) || !roomKey(l.unit_label) || roomKey(o.unit_label) === roomKey(l.unit_label)));
+  const closeoutText = (l: Lease, co: Closeout) => {
+    const ded = Number(co.unpaid_rent) + Number(co.utilities) + Number(co.damage) + Number(co.forfeit);
+    return `ผู้เช่าออก ${thDate(co.move_out_date)} · โอนคืน ${money(co.net_transfer, l.rent_currency)}`
+      + (Number(co.advance_refund) > 0 ? ` (เงินประกัน ${money(co.deposit_refund)} + ค่าเช่าล่วงหน้า ${money(co.advance_refund)})` : "")
+      + (ded > 0 ? ` · หักจากเงินประกัน ${money(ded)}` : "") + ` · เมื่อ ${thDate(co.settled_date)}`;
+  };
+
   const leaseActions = (l: Lease, full = false) => {
     const dep = Number(l.security_deposit ?? 0);
     const leaseEnded = l.deposit_due_date <= today;
     const hand = handItems(l.id);
     const hd = handDeduct(l.id);
+    const co = closeOf.get(l.id);
+    // เงินประกันคนละสกุลกับค่าเช่า → ใช้ "คืน / หักเงินประกัน" แบบเดิม
+    const depSameCcy = dep <= 0 || (l.deposit_currency ?? l.rent_currency) === l.rent_currency;
     return (
       <>
         <Link href={`/print/lease/${l.id}`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์สัญญาเช่า</Link>
+        {co && <Link href={`/print/lease/${l.id}?s=closeout`} target="_blank" className="text-sm text-blue-700 hover:underline">พิมพ์ใบสรุปผู้เช่าออก</Link>}
         {(canWrite || hand.length > 0) && (
           <HandoverButton assetId={id} leaseId={l.id} label={`รายการส่งมอบ${hand.length ? ` (${hand.length})` : ""}`} items={hand} canWrite={canWrite}
             currency={l.rent_currency} docs={full ? <EntityDocuments category="PROPERTY" entityType="PROPERTY_LEASE" entityId={l.id} module="PROPERTY"
               role={me.role} paths={paths} title="รูปถ่าย / เอกสารการส่งมอบ" bare /> : undefined} />
         )}
+        {canWrite && full && !co && !hasSuccessor(l) && l.lease_status !== "UPCOMING" && l.deposit_settlement_type !== "REFUNDED" && (
+          <NewLeaseForm assetId={id} banks={bankList} goLive={goLive} currency={a.currency} carryOptions={carryOptions} label="ต่อสัญญา"
+            renewals={renewals} detail={{ opt: detailOpt, canSensitive }} renewFrom={l.id} />
+        )}
+        {canSettle && full && !co && !l.deposit_settlement_type && depSameCcy && l.start_date <= today && (l.terminated_date ?? today) <= today && (
+          <CloseLeaseForm assetId={id} leaseId={l.id} tenant={[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}
+            startDate={l.start_date} endDate={l.end_date} terminated={l.terminated_date} today={today} currency={l.rent_currency}
+            banks={bankList} defaultBank={rentTo.get(l.id) ?? null} damage={Math.min(hd.amount, dep)} damageReason={hd.reason} />
+        )}
         {canWrite && l.status === "ACTIVE" && l.end_date > today && (
           <TerminateLeaseForm assetId={id} leaseId={l.id} today={today} startDate={l.start_date} />
+        )}
+        {me.role === "ADMIN" && l.terminated_date && !co && l.deposit_settlement_type !== "REFUNDED" && (
+          <EditTerminationForm assetId={id} leaseId={l.id} terminated={l.terminated_date} startDate={l.start_date} endDate={l.end_date} />
         )}
         {canWrite && (
           <LeaseDetailsForm assetId={id} leaseId={l.id} v={leaseExtra.get(l.id) ?? {}} opt={detailOpt} canSensitive={canSensitive}
@@ -453,12 +490,16 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               options: [["", "— ไม่ระบุ —"], ...Object.entries(UTILITIES_BILLING_LABEL) as [string, string][]] },
             { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
         )}
-        {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && (
+        {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && !depSameCcy && (
           <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}
             deduction={Math.min(hd.amount, dep)} reason={hd.reason}
             banks={bankList} minDate={l.deposit_due_date} today={today} />
         )}
-        {canSettle && l.deposit_settlement_type === "REFUNDED" && (
+        {canSettle && co && (
+          <UndoButton kind="CLOSEOUT" id={l.id} paths={paths} label="ยกเลิกผู้เช่าออก"
+            confirmText={`ยกเลิกการบันทึกผู้เช่าออกของ ${l.tenant_name}?\nเงินโอนคืน ค่าเช่า / ค่าน้ำไฟที่หักจากเงินประกัน ค่าเสียหาย และค่าใช้จ่ายคืนค่าเช่าล่วงหน้า จะถูกลบทั้งหมด · เงินประกันกลับเป็นหนี้สิน · วันเลิกสัญญากลับเหมือนก่อนบันทึก`} />
+        )}
+        {canSettle && !co && l.deposit_settlement_type === "REFUNDED" && (
           <UndoButton kind="DEPOSIT" id={l.id} paths={paths} label="ยกเลิกการคืนเงินประกัน"
             confirmText={`ยกเลิกการคืนเงินประกันของ ${l.tenant_name}?\nเงินคืนผู้เช่า และรายได้ส่วนที่หักไว้ จะถูกลบ · สัญญากลับมาถือเงินประกัน (หนี้สิน) เหมือนเดิม`} />
         )}
@@ -499,6 +540,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
               <span className="text-xs text-slate-500"> · ยกไปสัญญาใหม่ {thDate(l.deposit_settled_date)}</span>}
           </div>
         )}
+        {closeOf.get(l.id) && <div className="mt-1 text-slate-600">{closeoutText(l, closeOf.get(l.id)!)}</div>}
         {l.notes && <div className="mt-1 whitespace-pre-line text-xs text-slate-500">{l.notes}</div>}
         <div className="mt-2 flex flex-wrap gap-4">{leaseActions(l, true)}</div>
         {dep > 0 && !l.deposit_settled_date && !leaseEnded && (
@@ -525,7 +567,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)}
           {dep > 0 && <span className="text-xs text-slate-500"> · เงินประกัน {money(dep)}
             {l.deposit_settlement_type === "REFUNDED" ? ` คืน ${money(l.deposit_refunded_amount)} เมื่อ ${thDate(l.deposit_settled_date)}`
-              : l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" ? ` ยกไปสัญญาใหม่ ${thDate(l.deposit_settled_date)}` : ""}</span>}</span>
+              : l.deposit_settlement_type === "CARRIED_TO_NEW_LEASE" ? ` ยกไปสัญญาใหม่ ${thDate(l.deposit_settled_date)}` : ""}</span>}
+          {closeOf.get(l.id) && <span className="block text-xs text-slate-500">{closeoutText(l, closeOf.get(l.id)!)}</span>}</span>
         <span className="ml-auto flex flex-wrap gap-4">{leaseActions(l)}</span>
       </div>
     );
@@ -836,14 +879,15 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="text-right tabular-nums">
                     {got.length === 0 ? (Number(r.received_amount) > 0 ? money(r.received_amount) : "-") : got.map((x) => (
                       <div key={x.id} className="mb-1 last:mb-0">
-                        {canWrite ? <RowActions table="income_transactions" id={x.id} paths={paths} canDelete={canDelete}
+                        {canWrite && !closeIncome.has(x.id) ? <RowActions table="income_transactions" id={x.id} paths={paths} canDelete={canDelete}
                           fields={rentIncomeFields(x)} button={`${money(x.amount)} ✎`} buttonClass={AMT} /> : money(x.amount)}
                         <div className="text-xs text-slate-500">รับ {thDate(x.date)}{Number(x.tax ?? 0) > 0 && ` · ภาษี ${money(x.tax)}`}</div>
                         <div className="text-xs text-slate-400">{x.received_to_asset_id ? bankName.get(x.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</div>
                         {x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}
                       </div>
                     ))}
-                    {r.status === "RECEIVED" && over > 0.005 && <div className="text-xs text-amber-700">รับเกิน {money(over)}</div>}
+                    {r.status === "RECEIVED" && over > 0.005 && <div className="text-xs text-amber-700">รับเกิน {money(over)}
+                      {closeOf.has(r.lease_id) ? " · คืนแล้วตอนผู้เช่าออก" : ""}</div>}
                   </td>
                   <td className={`pl-4 ${RENT_STATUS[r.status]?.cls ?? ""}`}>{RENT_STATUS[r.status]?.text ?? r.status}</td>
                   <td className="text-right">
@@ -878,8 +922,8 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                   <td className="text-right tabular-nums">{money(r.amount, r.currency)}{Number(r.tax ?? 0) > 0 && <div className="text-xs text-slate-500">ภาษี {money(r.tax)}</div>}</td>
                   <td className="pl-4 text-xs text-slate-600">{r.received_to_asset_id ? bankName.get(r.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</td>
                   <td className="pl-2 text-right">
-                    {r.income_type !== "RENT" && r.income_subtype !== REBILL_SUBTYPE && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
-                    {canWrite && (r.income_type === "RENT" || r.income_subtype === REBILL_SUBTYPE) && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
+                    {closeIncome.has(r.id) ? CLOSE_NOTE : r.income_type !== "RENT" && r.income_subtype !== REBILL_SUBTYPE && <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกการคืนเงินประกัน&rdquo; ในสัญญา</span>}
+                    {canWrite && !closeIncome.has(r.id) && (r.income_type === "RENT" || r.income_subtype === REBILL_SUBTYPE) && <RowActions table="income_transactions" id={r.id} paths={paths} canDelete={canDelete}
                       fields={rentIncomeFields(r)} />}
                   </td>
                 </tr>

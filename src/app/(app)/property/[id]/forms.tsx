@@ -7,12 +7,12 @@ import type { Component } from "../components";
 import { useActionSlot } from "@/components/ActionBar";
 import {
   addUtility, addValuation, createLease, receiveUtilityCharge, recordPropertyCost, recordRent, setUsage, settleDeposit, terminateLease,
-  updateLeaseDetails, updatePropertyInfo, type ActionState,
+  undoTermination, updateLeaseDetails, updatePropertyInfo, type ActionState,
 } from "../actions";
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
 import ModalButton from "@/components/ModalButton";
-import { SMALL_BTN, COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -74,20 +74,22 @@ export function SuggestVacant({ assetId }: { assetId: string }) {
   );
 }
 
-export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, label, renewals, detail }: {
+export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, label, renewals, detail, renewFrom }: {
   assetId: string; banks: Bank[]; goLive: string; currency: string; carryOptions: CarryOption[]; label: string;
   renewals: LeasePrefill[]; detail: { opt: LeaseDetailOptions; canSensitive: boolean };
+  /** ปุ่ม "ต่อสัญญา" บนการ์ดสัญญา: เลือกสัญญานี้ไว้ให้ (ปุ่มเล็ก) */ renewFrom?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(createLease, {});
-  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>{label}</button>;
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(renewFrom ? link : btn)}>{label}</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
       <input type="hidden" name="asset_id" value={assetId} />
-      <h3 className="font-medium text-slate-900">สัญญาเช่าใหม่</h3>
+      <h3 className="font-medium text-slate-900">{renewFrom ? "ต่อสัญญา" : "สัญญาเช่าใหม่"}</h3>
       <p className="text-xs text-slate-500">ต่อสัญญา = สร้างสัญญาใหม่ (สัญญาเดิมไม่ถูกแก้ ประวัติค่าเช่าแต่ละช่วงยังอยู่) · การใช้งานจะเปลี่ยนเป็น &ldquo;ปล่อยเช่า&rdquo;</p>
-      <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} renewals={renewals} detail={detail} />
+      <LeaseFields banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions} renewals={renewals} detail={detail}
+        initialFrom={renewFrom} />
       <div className="flex items-center gap-3">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกสัญญา"}</button>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
@@ -196,6 +198,35 @@ export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
       <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ยกเลิก</button>
       <p className="w-full text-xs text-slate-500">ระบบหยุดคาดค่าเช่าหลังวันนี้ · เงินประกันยังเป็นหนี้จนกว่าจะบันทึกคืน</p>
       <div className="w-full"><Msg s={state} /></div>
+    </form>
+  ));
+}
+
+/** ADMIN: แก้วันเลิกสัญญา / ยกเลิกการเลิกสัญญา (ก่อนคืนเงินประกัน · ฐานข้อมูลตรวจซ้ำ) */
+export function EditTerminationForm({ assetId, leaseId, terminated, startDate, endDate }:
+  { assetId: string; leaseId: string; terminated: string; startDate: string; endDate: string }) {
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
+  const [state, action, pending] = useActionState<ActionState, FormData>(terminateLease, {});
+  const [undoState, undoAction, undoPending] = useActionState<ActionState, FormData>(undoTermination, {});
+  const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>แก้วันเลิกสัญญา</button>;
+  if (!open) return trigger;
+  const lastDay = new Date(Date.parse(`${endDate}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+  return present(trigger, (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="asset_id" value={assetId} />
+      <input type="hidden" name="lease_id" value={leaseId} />
+      <h3 className="font-medium text-slate-900">แก้วันเลิกสัญญา</h3>
+      <label className="block text-sm">วันที่เลิกสัญญา
+        <input name="terminated_date" type="date" required defaultValue={terminated} min={startDate} max={lastDay} className={`mt-1 block ${input}`} />
+      </label>
+      <p className="text-xs text-slate-500">ค่าเช่าคิดถึงวันนี้ (งวดสุดท้ายคิดตามจำนวนวัน) · ยกเลิกการเลิกสัญญา = สัญญามีผลถึง {thDate(endDate)} เหมือนเดิม</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={pending || undoPending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button formAction={undoAction} formNoValidate disabled={pending || undoPending} className={SMALL_DEL_BTN}>
+          {undoPending ? "…" : "ยกเลิกการเลิกสัญญา"}</button>
+      </div>
+      <Msg s={state} />
+      <Msg s={undoState} />
     </form>
   ));
 }
