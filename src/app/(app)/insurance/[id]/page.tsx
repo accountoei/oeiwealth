@@ -492,7 +492,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 <section className={BOX}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-medium text-slate-900">ประวัติมูลค่าเวนคืน</h2>
-                    {cvUpdate && <ModalButton label="อัปเดตมูลค่า" title="มูลค่าเวนคืน · อัปเดตมูลค่า" size="lg" primary>{cvUpdate}</ModalButton>}
+                    {cvUpdate && <ModalButton label="อัปเดตมูลค่า" title="มูลค่าเวนคืน · อัปเดตมูลค่า" primary>{cvUpdate}</ModalButton>}
                   </div>
                   {cvAsset ? cvHistory : (
                     <>

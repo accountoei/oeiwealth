@@ -10,7 +10,7 @@ const addDay = (d: string, n: number) => { const x = new Date(`${d}T00:00:00Z`);
 
 /** ปุ่ม "เปลี่ยนวัน Go-live" (ADMIN · ก่อน Confirm) → pop up เลือกเดือน */
 export default function ChangeGoLive({ current }: { current: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<GoLiveState, FormData>(changeGoLiveDate, {});
   const [month, setMonth] = useState(current.slice(0, 7));
   const trigger = <button type="button" onClick={() => setOpen(!open)}

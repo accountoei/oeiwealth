@@ -16,7 +16,7 @@ const blank = (code = ""): R => {
 };
 
 export default function CheckupForm({ personId, today }: { personId: string; today: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [rows, setRows] = useState<R[]>(["SYSTOLIC_BP", "DIASTOLIC_BP", "FBS", "CHOLESTEROL", "LDL", "HDL"].map(blank));
   const [state, action, pending] = useActionState<ActionState, FormData>(addCheckup, {});
   const set = (i: number, p: Partial<R>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...p } : r)));

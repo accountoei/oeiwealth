@@ -159,7 +159,7 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
 }
 
 export function CoverageForm({ policyId, currency }: { policyId: string; currency: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<ActionState, FormData>(addCoverage, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ เพิ่มความคุ้มครอง</button>;
   if (!open) return trigger;
@@ -184,7 +184,7 @@ export function CoverageForm({ policyId, currency }: { policyId: string; currenc
 export function AddCashValueForm({ policyId, currency, today, goLive }: {
   policyId: string; currency: string; today: string; goLive: string;
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [date, setDate] = useState(today);
   const [state, action, pending] = useActionState<ActionState, FormData>(addCashValue, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(`mt-2 ${sbtn}`)}>+ เพิ่มมูลค่าเวนคืน</button>;
@@ -263,7 +263,7 @@ export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, c
  * บันทึกแล้วระบบลงมูลค่าเวนคืนให้เองเมื่อถึงวัน และจ่ายเบี้ยก่อนวันนั้นครบ
  */
 export function CashValueTableEditor({ policyId, startDate, current }: { policyId: string; startDate: string | null; current: CvLine[] }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [text, setText] = useState(() => current.map((l) => [l.policy_year, l.value.toFixed(2), l.value_date ?? ""].join("\t").trimEnd()).join("\n"));
   const [state, action, pending] = useActionState<ActionState, FormData>(saveCashValueTable, {});
   const parsed = useMemo(() => parseCashValueText(text, startDate), [text, startDate]);

@@ -37,7 +37,7 @@ export async function resizePhoto(file: File): Promise<string> {
 export function PersonDetailsForm({ p, others, isHead = false, headCandidates = [] }: {
   p: PersonDetails; others: { id: string; name: string }[]; isHead?: boolean; headCandidates?: { id: string; name: string }[];
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [photo, setPhoto] = useState<string | null>(p.photo);
   const [newPhoto, setNewPhoto] = useState("");
   const [clear, setClear] = useState(false);

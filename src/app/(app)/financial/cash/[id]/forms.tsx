@@ -77,7 +77,7 @@ export function AccountNoPanel({ assetId, bankAccountId, masked, canReveal, canS
       {shown && <p className="text-xs text-slate-500">ซ่อนอัตโนมัติใน 30 วินาที · การดูถูกบันทึกใน Audit Log</p>}
       {revealState.error && <p className="text-sm text-red-600">{revealState.error}</p>}
       {editing && (
-        <Modal title={masked ? "เปลี่ยนเลขบัญชี" : "บันทึกเลขบัญชี"} onClose={() => setEditing(false)}>
+        <Modal size="sm" title={masked ? "เปลี่ยนเลขบัญชี" : "บันทึกเลขบัญชี"} onClose={() => setEditing(false)}>
           <form action={setAction} className="space-y-3">
             <input type="hidden" name="bank_account_id" value={bankAccountId} />
             <input type="hidden" name="asset_id" value={assetId} />

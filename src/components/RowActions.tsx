@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { deleteRecord, updateRecord, type RecState } from "@/lib/records";
 import { useRowPanel } from "@/components/RowPanel";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
-import Modal from "@/components/Modal";
+import Modal, { type ModalSize } from "@/components/Modal";
 import Flash from "@/components/Flash";
 import { SMALL_BTN, SMALL_DEL_BTN } from "@/lib/format";
 
@@ -68,6 +68,8 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
   const [es, editAction, saving] = useActionState<RecState, FormData>(updateRecord, {});
   const [ds, delAction, deleting] = useActionState<RecState, FormData>(deleteRecord, {});
   const editable = canEdit && (fields.length > 0 || !!editor);
+  // ขนาดหน้าต่าง (ตกลง 6 พ.ย. 2026): ฟอร์มของหน้าเอง / มีส่วนเพิ่ม / ช่องแก้ไขเกิน 3 ช่อง = กลาง · ช่อง 1–3 ช่อง หรือไม่มีช่อง (ลบ / ปุ่มเพิ่มเติม) = เล็ก เรียงลงคอลัมน์เดียว
+  const size: ModalSize = editor || section || fields.length > 3 ? "md" : "sm";
   const row = useRowPanel(!button && (editable || canDelete || !!extra || !!section));
   const cf = useConfirmSubmit();
   const router = useRouter();
@@ -116,7 +118,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
           if (n) recalc(e.currentTarget, n, fields);
         } : undefined}>
         {hidden}
-        <div className={`grid gap-3 sm:grid-cols-2 ${cols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>{fieldInputs}</div>
+        <div className={size === "sm" ? "grid gap-3" : `grid gap-3 sm:grid-cols-2 ${cols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>{fieldInputs}</div>
       </form>
       <div className="flex flex-wrap items-center gap-3">
         <button form={editFormId} disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
@@ -150,10 +152,10 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
     <>
       <button type="button" onClick={() => setPanelOpen(true)}
         className={buttonClass ?? "rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"}>{button}</button>
-      {panelOpen && <Modal title={title} onClose={() => setPanelOpen(false)}>{panel}</Modal>}
+      {panelOpen && <Modal title={title} size={size} onClose={() => setPanelOpen(false)}>{panel}</Modal>}
     </>
   );
-  if (!row.showButtons) return row.render(panel, title);
+  if (!row.showButtons) return row.render(panel, title, size);
 
   return (
     <div className="inline-block text-left">
@@ -170,7 +172,7 @@ export default function RowActions({ table, id, paths, fields = [], cols = 3, ca
       </span>
       {ds.error && <div className="text-xs text-red-600">{ds.error}</div>}
       {editing && (
-        <Modal title="แก้ไขรายการ" onClose={() => setEditing(false)}>{editorWithDelete || editForm}{section && <div className="mt-4 border-t border-slate-100 pt-3">{section}</div>}{delForm}</Modal>
+        <Modal title="แก้ไขรายการ" size={size} onClose={() => setEditing(false)}>{editorWithDelete || editForm}{section && <div className="mt-4 border-t border-slate-100 pt-3">{section}</div>}{delForm}</Modal>
       )}
     </div>
   );

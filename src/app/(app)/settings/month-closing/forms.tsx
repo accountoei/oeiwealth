@@ -89,7 +89,7 @@ export function ConfirmReconForm({ id, calculated, currency, canConfirm }:
 export function FinalizeForm({ month, warnings, label, summary, blockers = [] }: {
   month: string; warnings: number; label: string; summary: React.ReactNode; blockers?: string[];
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<ActionState, FormData>(finalizeMonth, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700")}>{label}</button>;
   if (!open) return trigger;
@@ -123,7 +123,7 @@ export function FinalizeForm({ month, warnings, label, summary, blockers = [] }:
 
 /** ยกเลิกการปิดเดือน (Reopen) เดือนที่ปิดล่าสุด · ADMIN · ปุ่มอยู่ที่กล่อง "เดือนที่ปิดแล้ว" (ตกลง 4 พ.ย. 2026) */
 export function ReopenForm({ month, label = "ยกเลิกการปิดเดือน" }: { month: string; label?: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<ActionState, FormData>(reopenMonth, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-red-300 bg-white px-4 py-2 text-sm text-red-700 hover:bg-red-50")}>{label}</button>;
   if (!open) return trigger;

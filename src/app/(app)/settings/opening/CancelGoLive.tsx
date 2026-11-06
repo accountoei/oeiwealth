@@ -9,7 +9,7 @@ import Flash from "@/components/Flash";
 
 /** ปุ่ม "ยกเลิก Go-live" (ADMIN · หลัง LIVE) → pop up ใส่เหตุผล · ต้อง Reopen ทุกเดือนก่อน */
 export default function CancelGoLive({ goLive, finalMonths }: { goLive: string; finalMonths: number }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<GoLiveState, FormData>(cancelGoLive, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)}
     className={activeCls("rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50")}>ยกเลิก Go-live</button>;

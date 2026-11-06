@@ -130,7 +130,7 @@ export function PfCardPayBody({ ctx, today, minDate, fixed, onClose }: { ctx: Pf
 
 /** ปุ่มเดียว "+ ค่าใช้จ่าย / จ่ายบัตร" (หน้าบัญชีเงินฝากในพอร์ต · ล็อกบัญชีไว้) */
 export function PfPayButton({ ctx, today, minDate, fixed }: { ctx: PfPayCtx; today: string; minDate: string; fixed?: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const [kind, setKind] = useState<"expense" | "card">("expense");
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ ค่าใช้จ่าย / จ่ายบัตร</button>;
   if (!open) return trigger;

@@ -78,7 +78,7 @@ export function NewLeaseForm({ assetId, banks, goLive, currency, carryOptions, l
   assetId: string; banks: Bank[]; goLive: string; currency: string; carryOptions: CarryOption[]; label: string;
   renewals: LeasePrefill[]; detail: { opt: LeaseDetailOptions; canSensitive: boolean };
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(createLease, {});
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(btn)}>{label}</button>;
   if (!open) return trigger;
@@ -123,7 +123,7 @@ export function RecordRentForm({ assetId, leaseId, period, expected, currency, b
         <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
       </label>
       <label className="text-xs">เข้าบัญชี
-        <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
+        <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block max-w-full ${small}`}>
           <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
           <BankOptions banks={sameCcy} />
         </select>
@@ -181,7 +181,7 @@ function LeaseDetailsBody({ assetId, leaseId, v, opt, canSensitive, banks, rentC
 
 export function TerminateLeaseForm({ assetId, leaseId, today, startDate }:
   { assetId: string; leaseId: string; today: string; startDate: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<ActionState, FormData>(terminateLease, {});
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>เลิกสัญญาก่อนกำหนด</button>;
   if (!open) return trigger;
@@ -565,7 +565,7 @@ function RecordCostInner({ assetId, utilityId, period, label, expected, currency
 export function ReceiveChargeForm({ assetId, chargeId, amount, currency, banks, today, defaultBank }: {
   assetId: string; chargeId: string; amount: number; currency: string; banks: Bank[]; today: string; defaultBank?: string;
 }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<ActionState, FormData>(receiveUtilityCharge, {});
   if (state.ok) return <Flash on={state} as="span" className="text-xs text-emerald-700" />;
   const trigger = <button onClick={() => setOpen(!open)} className={activeCls(link)}>บันทึกรับ</button>;
@@ -582,7 +582,7 @@ export function ReceiveChargeForm({ assetId, chargeId, amount, currency, banks, 
         <input name="date" type="date" required defaultValue={today} max={today} className={`mt-1 block ${small}`} />
       </label>
       <label className="text-xs">เข้าบัญชี
-        <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block ${small}`}>
+        <select name="received_to_asset_id" defaultValue={sameCcy.find((b) => b.asset_id === defaultBank)?.asset_id ?? sameCcy[0]?.asset_id ?? ""} className={`mt-1 block max-w-full ${small}`}>
           <option value="">— ไม่ผ่านบัญชี (เงินสด) —</option>
           <BankOptions banks={sameCcy} />
         </select>

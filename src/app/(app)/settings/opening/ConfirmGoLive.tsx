@@ -10,7 +10,7 @@ import Flash from "@/components/Flash";
  * ยังมีรายการ "ยังขาด" → pop up บอกเหตุผล ไม่มีปุ่มยืนยัน (ฐานข้อมูลตรวจซ้ำตอนยืนยันเสมอ)
  */
 export default function ConfirmGoLive({ missing, warn, goLive }: { missing: number; warn: number; goLive: string }) {
-  const { open, setOpen, present, activeCls } = useActionSlot();
+  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<GoLiveState, FormData>(confirmGoLive, {});
   const blocked = missing > 0;
   const trigger = <button type="button" onClick={() => setOpen(!open)}

@@ -58,7 +58,7 @@ function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boo
         {c.name}
         {locked && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">ระบบใช้อัตโนมัติ</span>}
         {editing && (
-          <Modal title="เปลี่ยนชื่อหมวด" onClose={() => setEditing(false)}>
+          <Modal size="sm" title="เปลี่ยนชื่อหมวด" onClose={() => setEditing(false)}>
             <form action={renameAction} className="space-y-3">
               <input type="hidden" name="id" value={c.id} />
               <input name="name" defaultValue={c.name} required autoFocus className={`w-full ${small} py-2`} />

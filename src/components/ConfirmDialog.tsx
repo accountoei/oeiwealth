@@ -17,7 +17,7 @@ export function useConfirm() {
     new Promise<boolean>((resolve) => setCur({ text, ...opts, resolve }));
   const done = (ok: boolean) => { cur?.resolve(ok); setCur(null); };
   const dialog: ReactNode = cur ? (
-    <Modal onClose={() => done(false)}>
+    <Modal size="sm" onClose={() => done(false)}>
       <div className="space-y-4">
         <p className="whitespace-pre-line text-sm text-slate-800">{cur.text}</p>
         <div className="flex items-center gap-3">

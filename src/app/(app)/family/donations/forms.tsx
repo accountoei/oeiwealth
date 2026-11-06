@@ -112,7 +112,7 @@ const note = <p className="text-xs text-slate-500">บันทึกประ�
 /** ปุ่ม "+ บันทึกการบริจาค" (มุมขวาบนของกล่องสรุป) */
 export function DonationAdd({ persons, businesses, today }: { persons: Opt[]; businesses: Opt[]; today: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(saveDonation, {});
-  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
+  const { open, setOpen, present, activeCls } = useActionSlot();
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(ROW_BTN)}>+ บันทึกการบริจาค</button>;
   if (!open) return trigger;
   return present(trigger, (
@@ -144,7 +144,7 @@ export function FromExpense({ v, persons, businesses }: { v: DonationValues; per
   const router = useRouter();
   useEffect(() => { if (state.ok) router.refresh(); }, [state, router]);
   return (
-    <ModalButton label="กรอกรายละเอียด" title="กรอกรายละเอียดการบริจาค" size="lg">
+    <ModalButton label="กรอกรายละเอียด" title="กรอกรายละเอียดการบริจาค">
       <form action={action} className="space-y-3">
         <Fields v={v} persons={persons} businesses={businesses} lockAmount />
         <p className="text-xs text-slate-500">ผูกกับรายจ่ายรายการนี้ · ยอดเงินแก้ที่ Income &amp; Expenses</p>
