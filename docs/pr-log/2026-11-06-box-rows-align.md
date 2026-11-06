@@ -1,4 +1,4 @@
-# 2026-11-06 · box-rows-align
+# #363 · 2026-11-06 · box-rows-align
 
 ## What changed
 - Property detail page: the top section is now two grid rows — "มูลค่าล่าสุด" | "รายละเอียด", then "เอกสาร" | "ประกันของทรัพย์สินนี้". Boxes in the same row are the same height, so top edges, the middle seam and bottom edges all line up (before: two separate flex columns, only the outer bottoms matched). Phone order: value → details → documents → insurance.
