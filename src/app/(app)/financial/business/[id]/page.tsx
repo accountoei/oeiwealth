@@ -108,7 +108,8 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
 
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า + เอกสาร (ยืดให้ขอบล่างเท่ากล่องรายละเอียด) */}
-        <div className="flex flex-col gap-4">
+        {/* มีกล่อง "เงินกู้กับสมาชิก" = ทางขวามี 2 กล่อง → คอลัมน์ซ้ายยาว 2 แถว (ตกลง 6 พ.ย. 2026) */}
+        <div className={`flex flex-col gap-4${(inLoans ?? []).length > 0 || (inDebts ?? []).length > 0 ? " md:row-span-2" : ""}`}>
           <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
             <div className="text-xs text-slate-500">มูลค่าส่วนของครอบครัว</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(a.current_value, a.currency, 0)}</div>
