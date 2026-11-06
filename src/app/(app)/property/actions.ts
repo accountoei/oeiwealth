@@ -24,6 +24,8 @@ function leaseFromForm(form: FormData) {
     payment_frequency: g("payment_frequency"), payment_due_day: g("payment_due_day"),
     security_deposit: g("security_deposit")?.replace(/,/g, "") ?? null,
     deposit_received_date: g("deposit_received_date"), deposit_to_asset_id: g("deposit_to_asset_id"),
+    // ต่อสัญญาแล้วเงินประกันใหม่น้อยกว่าเดิม → คืนส่วนต่างจากบัญชีนี้ ณ วันเริ่มสัญญาใหม่
+    deposit_refund_from_asset_id: g("deposit_refund_from_asset_id"),
     carried_from_lease_id: form.get("lease_carry") === "on" ? g("carried_from_lease_id") : null,
     notes: g("notes"),
   };
@@ -435,6 +437,7 @@ export async function createLease(_: ActionState, form: FormData): Promise<Actio
   if (error) return { error: friendlyError(error.message) };
   const warn = await saveLeaseExtras(supabase, leaseId ? [String(leaseId)] : [], form);
   revalidateProperty(id);
+  revalidatePath("/financial/cash", "layout");   // รับเงินประกัน / คืนส่วนต่างตอนต่อสัญญา
   return warn ? { error: `สร้างสัญญาแล้ว แต่${warn}` } : { ok: "สร้างสัญญาเช่าแล้ว" };
 }
 
@@ -484,9 +487,28 @@ export async function updateLease(_: ActionState, form: FormData): Promise<Actio
   }).eq("id", leaseId).select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขสัญญานี้" };
-  const warn = await setTenantId(supabase, leaseId, form);
+  const warn = [await saveDeposit(supabase, leaseId, form), await setTenantId(supabase, leaseId, form)].filter(Boolean).join(" · ");
   revalidateProperty(id);
+  if (form.has("dep_amount")) revalidatePath("/financial/cash", "layout");
   return warn ? { error: `บันทึกสัญญาแล้ว แต่${warn}` } : { ok: "บันทึกสัญญาแล้ว" };
+}
+
+/**
+ * เงินประกันใน "แก้ไขสัญญา" (ตกลง 6 พ.ย. 2026): ยอด / วันที่รับ / บัญชี → set_lease_deposit (ฐานข้อมูลปรับรายการรับ / คืนส่วนต่างให้ตรงกัน)
+ *   ส่งเฉพาะเมื่อเปลี่ยนจากค่าเดิม (dep_orig_*) · ช่องถูกล็อก (คืน / ยกไป / ผู้เช่าออกแล้ว) = ไม่มีช่อง dep_amount
+ */
+async function saveDeposit(supabase: Awaited<ReturnType<typeof createClient>>, leaseId: string, form: FormData): Promise<string | null> {
+  if (!form.has("dep_amount")) return null;
+  const amount = num(form.get("dep_amount")) ?? 0;
+  if (Number.isNaN(amount) || amount < 0) return "เงินประกันต้องเป็นตัวเลขไม่ติดลบ";
+  const date = str(form.get("dep_received_date"));
+  const bank = str(form.get("dep_bank"));
+  const orig = { amount: num(form.get("dep_orig_amount")) ?? 0, date: str(form.get("dep_orig_date")), bank: str(form.get("dep_orig_bank")) };
+  if (amount === orig.amount && date === orig.date && bank === orig.bank) return null;
+  const { error } = await supabase.rpc("set_lease_deposit", {
+    p_lease_id: leaseId, p_amount: amount, p_received_date: date, p_bank_asset_id: bank,
+  });
+  return error ? `แก้เงินประกันไม่สำเร็จ: ${friendlyError(error.message)}` : null;
 }
 
 export async function terminateLease(_: ActionState, form: FormData): Promise<ActionState> {

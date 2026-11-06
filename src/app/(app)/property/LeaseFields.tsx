@@ -186,7 +186,8 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
         {carryFrom && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" name="lease_carry" checked={carry} onChange={(e) => setCarry(e.target.checked)} className="mt-1" />
-            <span>ต่อสัญญา: ยกเงินประกัน {money(carryFrom.deposit, carryFrom.currency)} จากสัญญาเดิมมาใช้ต่อ (สัญญาเดิมจะปิดเงินประกันในวันเริ่มสัญญาใหม่)</span>
+            <span>ต่อสัญญา: ยกเงินประกัน {money(carryFrom.deposit, carryFrom.currency)} จากสัญญาเดิมมาใช้ต่อ (สัญญาเดิมจะปิดเงินประกันในวันเริ่มสัญญาใหม่)
+              <span className="block text-xs text-slate-500">เงินประกันใหม่มากกว่าเดิม = รับส่วนที่เพิ่ม · น้อยกว่าเดิม = คืนส่วนต่างให้ผู้เช่า ณ วันเริ่มสัญญาใหม่</span></span>
           </label>
         )}
         {carried && <input type="hidden" name="lease_carried_from_lease_id" value={carried.id} />}
@@ -198,7 +199,7 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
           </label>
           <label className={label}>เงินประกันทั้งหมดของสัญญานี้
             <input name="lease_security_deposit" inputMode="decimal" value={depShown} onChange={(e) => setDeposit(e.target.value)}
-              placeholder={carried ? `อย่างน้อย ${money(carried.deposit)}` : "ไม่มี = เว้นว่าง"} className={input} />
+              placeholder={carried ? `เดิม ${money(carried.deposit)}` : "ไม่มี = เว้นว่าง"} required={!!carried} className={input} />
             {deposit != null && autoDeposit > 0 && num(deposit) !== autoDeposit && (
               <button type="button" onClick={() => setDeposit(null)} className="mt-1 text-xs text-blue-700 hover:underline">ใช้ค่าเช่า × {depMonths} เดือน = {money(autoDeposit)}</button>
             )}
@@ -209,6 +210,20 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
             </label>
           )}
         </div>
+        {carried && extra < 0 && (beforeGoLive ? (
+          <p className="text-xs text-slate-600">
+            ต่อสัญญาก่อน Go-live ({thDate(goLive)}) → ส่วนต่างที่คืนผู้เช่า {money(-extra)} อยู่ในยอดบัญชีตั้งต้นแล้ว ไม่ต้องเลือกบัญชี
+          </p>
+        ) : (
+          <label className={label}>
+            คืนส่วนต่างเงินประกัน {money(-extra)} ให้ผู้เช่าจากบัญชี
+            <select name="lease_deposit_refund_from_asset_id" required defaultValue="" className={input}>
+              <option value="">— เลือกบัญชี —</option>
+              <BankOptions banks={banks.filter((b) => b.currency === carried.currency)} />
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">ระบบสร้างรายการเงินออก &ldquo;คืนเงินประกัน&rdquo; ณ วันเริ่มสัญญาใหม่ให้</span>
+          </label>
+        ))}
         {extra > 0 && (beforeGoLive ? (
           <p className="text-xs text-slate-600">
             รับเงินประกันก่อน Go-live ({thDate(goLive)}) → เงินนี้อยู่ในยอดบัญชีตั้งต้นแล้ว ไม่ต้องเลือกบัญชี

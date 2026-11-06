@@ -2,14 +2,14 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
-import { LeaseEditBody, NewLeaseBody, type LeaseMain } from "./forms";
+import { LeaseEditBody, NewLeaseBody, type LeaseDeposit, type LeaseMain } from "./forms";
 import type { Bank, CarryOption, LeasePrefill } from "../LeaseFields";
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 
 /** สัญญาที่แก้ได้ในหน้าต่างสัญญาเช่า · old = สัญญาเดิมที่จบแล้ว (แก้ได้เฉพาะ ADMIN) */
 export type LeaseEditEntry = {
   id: string; label: string; old: boolean;
-  m: LeaseMain; v: Partial<LeaseDetail>; rentCurrency: string; rentTo: string | null; depositMonths: number | null;
+  m: LeaseMain; v: Partial<LeaseDetail>; rentCurrency: string; rentTo: string | null; depositMonths: number | null; dep: LeaseDeposit;
   deleteControl?: ReactNode;
 };
 
@@ -70,7 +70,7 @@ export function LeaseHub({ enabled, children, assetId, banks, goLive, currency, 
             <div key={choice} className={renewals.length > 0 || edits.length > 0 ? "border-t border-slate-200 pt-4" : undefined}>
               {edit ? (
                 <LeaseEditBody assetId={assetId} leaseId={edit.id} m={edit.m} v={edit.v} opt={detail.opt} canSensitive={detail.canSensitive}
-                  banks={banks} rentCurrency={edit.rentCurrency} rentTo={edit.rentTo} depositMonths={edit.depositMonths} deleteControl={edit.deleteControl} />
+                  banks={banks} rentCurrency={edit.rentCurrency} rentTo={edit.rentTo} depositMonths={edit.depositMonths} dep={edit.dep} deleteControl={edit.deleteControl} />
               ) : (
                 <NewLeaseBody assetId={assetId} banks={banks} goLive={goLive} currency={currency} carryOptions={carryOptions}
                   renewal={renewal} detail={detail} />
