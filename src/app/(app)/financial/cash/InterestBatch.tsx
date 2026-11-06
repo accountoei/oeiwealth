@@ -9,7 +9,7 @@ import { useOnMainTab } from "../../income-expenses/tabs";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchSave, FillAll, STICKY_BAR, TaxAll } from "@/components/BatchSave";
 
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
@@ -70,7 +70,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
                 </select>
               </label>
             )}
-            {canWrite && fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามยอดคาดว่าจะได้รับ ({fillable.length})</button>}
+            {canWrite && <FillAll onClick={fillAll} disabled={fillable.length === 0} />}
           </div>
           <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
@@ -79,9 +79,7 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
             info={<>กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
           · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
           · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</>}>
-            {canWrite && chosen.length > 0 && (
-              <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>
-            )}
+            {canWrite && <TaxAll pct={15} onClick={taxAll} disabled={chosen.length === 0} />}
           </BatchSave>
         </div>
       </div>

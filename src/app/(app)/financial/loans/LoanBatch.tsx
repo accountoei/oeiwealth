@@ -8,7 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, FilterSelect } from "@/components/BatchSave";
 
 export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
@@ -42,6 +42,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   const cf = useConfirmSubmit();
   const [date, setDate] = useState(today);
   const [showOthers, setShowOthers] = useState(false);
+  const [who, setWho] = useState("");
   const [tot, setTot] = useState<Record<string, string>>({});
   const [pr, setPr] = useState<Record<string, string>>({});
   const [int, setInt] = useState<Record<string, string>>({});
@@ -63,9 +64,13 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
     setOver(sent.current); setTot({}); setPr({}); setInt({}); setTax({}); router.refresh();
   }, [state, router]);
 
-  const shown = showOthers ? all : rows;
+  const base = showOthers ? all : rows;
+  // ตัวกรองผู้กู้ (ตกลง 6 พ.ย. 2026) · ยอดที่กรอกไว้ในแถวที่ถูกกรองซ่อนยังบันทึกด้วย
+  const borrowers = [...new Set(all.map((r) => r.borrower).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+  const shown = who ? base.filter((r) => r.borrower === who) : base;
   const has = (r: LoanRow) => (pr[r.id] ?? "").trim() !== "" || (int[r.id] ?? "").trim() !== "";
-  const chosen = shown.filter(has);
+  const chosen = base.filter(has);
+  const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
   const payload = chosen.map((r) => ({ loan_asset_id: r.id, label: r.name, bank_asset_id: bank[r.id] ?? "",
     principal: pr[r.id] ?? "", interest: int[r.id] ?? "", interest_tax: tax[r.id] ?? "" }));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
@@ -157,15 +162,24 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
     <>
     {cf.dialog}
     <div className="space-y-3">
-      {canWrite && (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
-          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+      {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · ผู้กู้ · ใส่ยอดทุกแถว | บันทึก + วันที่ */}
+      <BatchBar title={<>รับชำระคืนเงินกู้{info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}</>}
+        filters={<>
+          <FilterSelect label="ผู้กู้" value={who} onChange={setWho} options={borrowers.map((b) => [b, b])} />
+          {others.length > 0 && (
+            <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} />
+              แสดงสัญญาอื่นที่ยังไม่ปิด ({others.length})</label>
+          )}</>}
+        fill={canWrite && <FillAll onClick={() => fill(shown)} disabled={!shown.some((r) => r.dueP + r.dueI > 0.005)} />}>
+        {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => { setTot({}); setPr({}); setInt({}); setTax({}); }} state={state}
+            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ของผู้กู้อื่น</span>}
             date={date} onDate={onDate} minDate={minDate} maxDate={today}
             info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</>} />
-        </div>
-      )}
+        )}
+      </BatchBar>
       {state.ok && over.length > 0 && (
         <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
           <p className="font-medium text-slate-900">เงินต้นที่รับไม่เท่างวด — จะคำนวณงวดที่เหลือใหม่จากเงินต้นคงเหลือจริงไหม? (ดอกเบี้ยงวดที่เหลือคิดใหม่ตามยอดคงเหลือ)</p>
@@ -178,17 +192,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
         </div>
       )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <span className="inline-flex items-center gap-2">
-          <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} />
-            แสดงสัญญาอื่นที่ยังไม่ปิด ({others.length})</label>
-          {info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}</span>
-          {canWrite && shown.some((r) => r.dueP + r.dueI > 0.005) && (
-            <button type="button" onClick={() => fill(shown)} className="text-sm text-blue-700 hover:underline">ใส่ยอดตามงวดทุกแถว</button>
-          )}
-        </div>
-        <table className="mt-3 w-full min-w-[52rem] text-sm">
+        <table className="w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-3 py-2">สัญญา / ผู้กู้</th><th className="px-3">งวด</th><th className="px-3 text-right">ถึงกำหนด (ยังไม่รับ)</th>
               {canWrite && <><th className="px-3 py-2 text-right">ยอดรวมที่รับ · ภาษีหัก ณ ที่จ่าย<div className="font-normal">เงินต้น · ดอกเบี้ย (Gross)</div></th>

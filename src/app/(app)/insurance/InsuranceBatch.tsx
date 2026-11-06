@@ -9,7 +9,8 @@ import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll } from "@/components/BatchSave";
+import type { ReactNode } from "react";
 
 /** แถวจาก v_insurance_schedule_status */
 export type YLine = { id: string; policy_id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string;
@@ -35,9 +36,10 @@ const cur = (c: string) => (c !== "THB" ? c : undefined);
  *   กรมธรรม์ละกลุ่ม: งวดในปีที่เลือก (ปีนี้ = รวมงวดค้างจากปีก่อน + งวดที่ครบภายใน 60 วัน) · ยอดงวด / จ่าย-รับแล้ว (กดแก้) / คงเหลือ
  *   ช่องกรอกเฉพาะงวดที่ถึงกำหนด (ติ๊กเพื่อเปิดงวดที่ยังไม่ถึง) · วันที่ช่องเดียวใช้กับทุกแถว · ผิดแถวเดียว = ไม่บันทึกเลย
  */
-export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pays, today, defaultDate = today, soon, minDate, canWrite }: {
+export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pays, today, defaultDate = today, soon, minDate, canWrite, filter }: {
   kind: "PREMIUM" | "BENEFIT"; year: number; years: { value: number; mark?: string }[]; hrefOf: string; policies: BoxPolicy[];
   pays: PayOpt[]; today: string; defaultDate?: string; soon: string; minDate: string; canWrite: boolean;
+  /** ตัวกรองบริษัทประกัน (ต่อจากชื่อในแถบบน) */ filter?: ReactNode;
 }) {
   const prem = kind === "PREMIUM";
   const router = useRouter();
@@ -80,40 +82,34 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
     {cf.dialog}
     {/* ฟอร์มบันทึกครอบเฉพาะแถบบันทึกด้านบน (BatchSave) ไม่ครอบตาราง: ในตารางมีปุ่ม "ยกเลิก" ที่เป็นฟอร์มของตัวเอง (ฟอร์มซ้อนฟอร์ม = กดไม่ได้ · 5 พ.ย. 2026) */}
     <div className="space-y-3">
-      {canWrite && (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
-          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
-          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
-            count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
-            date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
-        </div>
-      )}
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="flex items-center gap-1 font-medium text-slate-900">{prem ? "เบี้ยประกัน" : "ผลประโยชน์"} ปี {year + 543}
-            <InfoTip label="คำอธิบาย">
+      {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · บริษัท · ปี · ใส่ยอดทุกแถว | บันทึก + วันที่ */}
+      <BatchBar
+        title={<>{prem ? "เบี้ยประกัน" : "ผลประโยชน์"} ปี {year + 543}
+          <InfoTip label="คำอธิบาย">
         {prem ? <>ลงค่าใช้จ่ายหมวด &ldquo;ประกัน&rdquo; ผูกงวด · กรมธรรม์ที่มีตารางมูลค่าเวนคืนตามสัญญา ลงมูลค่าเวนคืนต่อให้ · จ่ายเป็นเงินสด / จ่ายจากพอร์ต ทำที่หน้ากรมธรรม์
           {" "}· กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ (ลบแล้วงวดกลับเป็น &ldquo;รอจ่าย&rdquo; · เดือนที่ปิดแล้วต้อง Reopen ก่อน)</>
           : <>ถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินเป็นรายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · แก้ยอดที่รับ: กด &ldquo;ยกเลิก&rdquo; (ย้อนทั้งก้อน) แล้วบันทึกใหม่
           {" "}· ครบสัญญา / เวนคืน / สินไหม (ปิดกรมธรรม์) ทำและยกเลิกที่หน้ากรมธรรม์</>}
         {" "}· รายการไหนผิด จะไม่บันทึกเลยทั้งชุด
-            </InfoTip></h2>
-          <div className="flex flex-wrap items-center gap-4 text-sm">
-            {canWrite && later > 0 && (
-              <label className="flex items-center gap-2 text-slate-600">
-                <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-                เปิดช่องกรอกงวดที่ยังไม่ถึงกำหนด ({later})
-              </label>
-            )}
-            {canWrite && lines.some(canInput) && (
-              <button type="button" onClick={() => setVals({ ...vals, ...Object.fromEntries(lines.filter(canInput).map((l) => [l.id, fmt(l.remaining)])) })}
-                className="text-blue-700 hover:underline">ใส่ยอดตามงวดทุกแถว</button>
-            )}
-            <YearSelect options={years} value={year} hrefOf={hrefOf} />
-          </div>
-        </div>
-        <table className="mt-3 w-full min-w-[60rem] text-sm">
+          </InfoTip></>}
+        filters={<>{filter}<YearSelect options={years} value={year} hrefOf={hrefOf} />
+          {canWrite && later > 0 && (
+            <label className="flex items-center gap-2 text-slate-600">
+              <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+              เปิดช่องกรอกงวดที่ยังไม่ถึงกำหนด ({later})
+            </label>
+          )}</>}
+        fill={canWrite && <FillAll disabled={!lines.some(canInput)}
+          onClick={() => setVals({ ...vals, ...Object.fromEntries(lines.filter(canInput).map((l) => [l.id, fmt(l.remaining)])) })} />}>
+        {canWrite && (
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+            count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
+        )}
+      </BatchBar>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[60rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             {/* ทุกคอลัมน์ยกเว้นชื่อกว้างคงที่ → กรอกตัวเลขแล้วคอลัมน์ไม่ขยับ */}
             <tr><th className="min-w-[12rem] px-3 py-2">กรมธรรม์ / {prem ? "ผู้จ่าย" : "ผู้เอาประกัน"}</th><th className="w-48 px-3">งวด / ครบกำหนด</th>

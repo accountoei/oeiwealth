@@ -15,7 +15,7 @@ import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { businessDividendFields } from "@/lib/source-edit";
 
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["record", "บันทึกรับเงินปันผล/อัพเดตมูลค่า"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"]];
 
 type Row = { id: string; asset_id: string; company_name: string; logo_data: string | null; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null; par_value: number | null; investment_cost: number | null;
@@ -245,8 +245,11 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       </div>
       </TabPanel>
 
+      <TabPanel id="update">
+        <BusinessBatch key={`v${ym}`} part="value" rows={batchRows} banks={bizBanks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
+      </TabPanel>
       <TabPanel id="record">
-        <BusinessBatch key={ym} rows={batchRows} banks={bizBanks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
+        <BusinessBatch key={`d${ym}`} part="dividend" rows={batchRows} banks={bizBanks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
       </TabPanel>
     </div>
     </TabsProvider>

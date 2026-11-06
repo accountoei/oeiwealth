@@ -8,7 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchBar, BatchSave, TaxAll } from "@/components/BatchSave";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
   /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -22,19 +22,16 @@ const TAX_RATE = 0.1;
 const METHODS: [string, string][] = [["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]];
 
 /**
- * แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" ของหน้า Private Business — 2 ส่วน แต่ละส่วนกดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกทั้งชุด)
+ * แท็บ "อัปเดตมูลค่า" (part="value") / "บันทึกรับเงินปันผล" (part="dividend") ของหน้า Private Business (แยกแท็บ 6 พ.ย. 2026) — กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกทั้งชุด)
  *   ปันผล: 1 แถว = ผู้ถือหุ้น 1 คน → เข้าบัญชีของคนนั้น · รายได้เป็นของคนนั้น · ใส่ "ปันผลต่อหุ้น" แล้วคิดยอดรายคนให้
  *   มูลค่า: 1 แถว = 1 กิจการ · วันที่ / วิธีประเมินเดียวทั้งชุด
  */
-export default function BusinessBatch({ rows, banks, today, defaultDate = today, minDate, canWrite }: {
-  rows: BizRow[]; banks: BizBank[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
+export default function BusinessBatch({ part, rows, banks, today, defaultDate = today, minDate, canWrite }: {
+  part: "dividend" | "value"; rows: BizRow[]; banks: BizBank[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
 }) {
-  return (
-    <div className="space-y-6">
-      <DividendBatch rows={rows} banks={banks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
-      <ValueBatch rows={rows} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
-    </div>
-  );
+  return part === "dividend"
+    ? <DividendBatch rows={rows} banks={banks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
+    : <ValueBatch rows={rows} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />;
 }
 
 function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; banks: BizBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
@@ -68,18 +65,15 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <div className={`flex flex-wrap items-center justify-between gap-3 bg-[var(--page-bg)] py-1 ${STICKY_BAR}`}>
-        <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">รับปันผล (แยกตามผู้ถือหุ้น) <InfoTip label="คำอธิบาย">กรอกเฉพาะผู้ถือหุ้นที่ได้รับ (ช่องว่าง = ไม่บันทึก) · รายได้ &ldquo;ปันผลกิจการ&rdquo; เป็นของคนนั้น 100% เข้าบัญชีที่เลือก · ผู้ถือหุ้นคนไหนผิด จะไม่บันทึกเลยทั้งชุด · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses</InfoTip></h2>
+      <BatchBar title={<>รับปันผล (แยกตามผู้ถือหุ้น) <InfoTip label="คำอธิบาย">กรอกเฉพาะผู้ถือหุ้นที่ได้รับ (ช่องว่าง = ไม่บันทึก) · รายได้ &ldquo;ปันผลกิจการ&rdquo; เป็นของคนนั้น 100% เข้าบัญชีที่เลือก · ผู้ถือหุ้นคนไหนผิด จะไม่บันทึกเลยทั้งชุด · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses</InfoTip></>}>
         {canWrite && (
-          <div className="ml-auto text-sm">
-            <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
-              count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); setDps({}); }} state={state}
-              date={date} onDate={setDate} minDate={minDate} maxDate={today}>
-              {lines.length > 0 && <button type="button" onClick={taxAll} className="text-blue-700 hover:underline">คิดภาษี 10% ทุกแถวที่กรอก</button>}
-            </BatchSave>
-          </div>
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
+            count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); setDps({}); }} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}>
+            <TaxAll pct={10} onClick={taxAll} disabled={lines.length === 0} />
+          </BatchSave>
         )}
-      </div>
+      </BatchBar>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
@@ -156,22 +150,19 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <div className={`flex flex-wrap items-center justify-between gap-3 bg-[var(--page-bg)] py-1 ${STICKY_BAR}`}>
-        <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ</InfoTip></h2>
+      <BatchBar title={<>อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ</InfoTip></>}>
         {canWrite && (
-          <div className="ml-auto text-sm">
-            <BatchSave action={action} onSubmit={onSubmit} fields={{ date, method, rows: JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] }))) }}
-              count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
-              date={date} onDate={setDate} minDate={minDate} maxDate={today}>
-              <label className="flex items-center gap-2">วิธีประเมิน
-                <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
-                  {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </label>
-            </BatchSave>
-          </div>
+          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, method, rows: JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] }))) }}
+            count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
+            date={date} onDate={setDate} minDate={minDate} maxDate={today}>
+            <label className="flex items-center gap-2">วิธีประเมิน
+              <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
+                {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+          </BatchSave>
         )}
-      </div>
+      </BatchBar>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[40rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
