@@ -1,7 +1,7 @@
 import { cachedLoad } from "@/lib/data-cache";
 import { buildHints } from "@/lib/category-hints";
 import { queryPfCash } from "@/lib/pf-cash";
-import { INC_SELECT, MOVE_SELECT } from "./entry-kit";
+import { INC_SELECT, MOVE_SELECT, closeoutIdSet } from "./entry-kit";
 
 /**
  * ข้อมูลหน้า Income & Expenses (5 พ.ย. 2026)
@@ -66,10 +66,13 @@ export function loadIeRef() {
         const ids = [...new Set(((data ?? []) as { property_asset_id: string }[]).map((l) => l.property_asset_id))];
         return ids.length ? await supabase.from("property_details").select("asset_id,property_type,assets!inner(name)").in("asset_id", ids) : none();
       }),
+      // รายได้ / ค่าใช้จ่ายที่สร้างตอนบันทึกผู้เช่าออก → แก้ที่หน้านี้ไม่ได้ (ยกเลิกที่สัญญาเช่า)
+      supabase.from("lease_closeouts").select("income_ids,expense_id").is("deleted_at", null),
     ]);
     const [{ data: family }, { data: banksRaw }, { data: cardsRaw }, { data: liabRaw }, { data: persons }, { data: fx },
       { data: templates }, { data: claimsRaw }, { data: utilRows }, { data: cardBalRaw }, { data: catRows }, { data: catUseExp }, { data: catUseInc },
-      { data: rexpTplRaw }, { data: leaseRaw }, { data: covRaw }, { data: pfCash }, { data: hintRows }, { data: propRows }, { data: leaseProps }] = res;
+      { data: rexpTplRaw }, { data: leaseRaw }, { data: covRaw }, { data: pfCash }, { data: hintRows }, { data: propRows }, { data: leaseProps },
+      { data: closeRows }] = res;
     const useCount = new Map<string, number>();
     (catUseExp ?? []).forEach((r) => { const k = `E:${r.expense_category}`; useCount.set(k, (useCount.get(k) ?? 0) + 1); });
     (catUseInc ?? []).forEach((r) => { const k = `I:${r.income_subtype}`; useCount.set(k, (useCount.get(k) ?? 0) + 1); });
@@ -81,6 +84,7 @@ export function loadIeRef() {
       value: {
         goLive: (family?.go_live_date ?? "") as string, banksRaw, cardsRaw, liabRaw, persons, fx, templates, claimsRaw, utilRows, cardBalRaw,
         rexpTplRaw, leaseRaw, covRaw, pfCash, propRows, leaseProps, expCatAll, incSubAll,
+        closeoutIds: [...closeoutIdSet(closeRows)],
         expHints: buildHints(hintRows ?? [], expCatAll.filter((c) => c.active).map((c) => c.name)),
       },
     };

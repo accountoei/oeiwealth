@@ -79,5 +79,6 @@ export async function resetMfa(_: ActionState, form: FormData): Promise<ActionSt
     if (ctx && typeof ctx.json === "function") { try { msg = (await ctx.json()).error ?? msg; } catch { /* */ } }
     return { error: msg };
   }
+  revalidatePath("/settings/family-users");
   return { ok: `ลบ MFA แล้ว ${data?.removed ?? 0} รายการ · ผู้ใช้ต้องสแกน QR ใหม่ตอนเข้าระบบครั้งถัดไป` };
 }

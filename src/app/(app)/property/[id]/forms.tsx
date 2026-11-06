@@ -157,6 +157,7 @@ export type LeaseMain = {
   tenant_name: string; unit_label: string | null; contract_no: string | null; start_date: string; end_date: string;
   rent_amount: number; payment_due_day: number | null; prorate_basis: string; utilities_billing: string | null; notes: string | null;
   rent_timing: string; grace_days: number; late_fee_per_day: number | null;
+  /** บันทึกผู้เช่าออกแล้ว → แก้วันเริ่มไม่ได้ (ฐานข้อมูลตรวจซ้ำ) */ start_locked?: boolean;
 };
 
 /**
@@ -168,6 +169,7 @@ export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks
   banks: Bank[]; rentCurrency: string; rentTo: string | null; depositMonths: number | null; deleteControl?: React.ReactNode;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateLease, {});
+  const [start, setStart] = useState(m.start_date);
   const formId = `lease-edit-${leaseId}`;
   const f = "mt-1 block w-full " + input;
   return (
@@ -186,9 +188,15 @@ export function LeaseEditBody({ assetId, leaseId, m, v, opt, canSensitive, banks
           <label className="text-sm">เลขสัญญา
             <input name="m_contract_no" defaultValue={m.contract_no ?? ""} className={f} />
           </label>
+          <label className="text-sm">เริ่มสัญญา
+            {m.start_locked
+              ? <><input type="date" disabled value={m.start_date} className={`${f} bg-slate-50 text-slate-500`} />
+                  <span className="text-xs text-slate-500">บันทึกผู้เช่าออกแล้ว · แก้ได้หลังกด &ldquo;ยกเลิกผู้เช่าออก&rdquo;</span></>
+              : <><input name="m_start_date" type="date" required value={start} onChange={(e) => setStart(e.target.value)} className={f} />
+                  <span className="text-xs text-slate-500">รอบค่าเช่า / งวดแรกคิดใหม่ให้ · วันรับเงินประกันไม่เปลี่ยน</span></>}
+          </label>
           <label className="text-sm">สิ้นสุดสัญญา
-            <input name="m_end_date" type="date" required defaultValue={m.end_date} min={m.start_date} className={f} />
-            <span className="text-xs text-slate-500">เริ่ม {thDate(m.start_date)}</span>
+            <input name="m_end_date" type="date" required defaultValue={m.end_date} min={start} className={f} />
           </label>
           <label className="text-sm">ค่าเช่า ({rentCurrency})
             <input name="m_rent_amount" required inputMode="decimal" defaultValue={money(m.rent_amount)} className={`${f} text-right`} />

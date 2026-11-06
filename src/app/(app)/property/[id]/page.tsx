@@ -587,7 +587,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
         rent_amount: Number(l.rent_amount), payment_due_day: l.payment_due_day, prorate_basis: x?.prorate_basis ?? "ACTUAL",
         utilities_billing: x?.utilities_billing ?? null, notes: l.notes,
         rent_timing: x?.rent_timing ?? "ADVANCE", grace_days: x?.grace_days ?? 15,
-        late_fee_per_day: x?.late_fee_per_day == null ? null : Number(x.late_fee_per_day) },
+        late_fee_per_day: x?.late_fee_per_day == null ? null : Number(x.late_fee_per_day), start_locked: closeOf.has(l.id) },
       v: x ?? {}, rentCurrency: l.rent_currency, rentTo: rentTo.get(l.id) ?? null, depositMonths: x?.deposit_months ?? null,
       deleteControl: canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
         hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
@@ -909,6 +909,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                         <div className="text-xs text-slate-500">รับ {thDate(x.date)}{Number(x.tax ?? 0) > 0 && ` · ภาษี ${money(x.tax)}`}</div>
                         <div className="text-xs text-slate-400">{x.received_to_asset_id ? bankName.get(x.received_to_asset_id) ?? "บัญชี" : "ไม่ผ่านบัญชี"}</div>
                         {x.notes && <div className="text-xs text-slate-400">{x.notes}</div>}
+                        {canWrite && closeIncome.has(x.id) && <div>{CLOSE_NOTE}</div>}
                       </div>
                     ))}
                     {r.status === "RECEIVED" && over > 0.005 && <div className="text-xs text-amber-700">รับเกิน {money(over)}

@@ -19,7 +19,12 @@ export async function undoWhole(_: UndoState, form: FormData): Promise<UndoState
     : null;
   if (!rpc) return { error: "ประเภทไม่ถูกต้อง" };
   const { error } = await rpc;
-  if (error) return { error: friendlyError(error.message) };
+  if (error) {
+    const msg = friendlyError(error.message);
+    // ผู้เช่าออกที่เลิกสัญญาไว้: ยกเลิกแล้วสัญญากลับมีผลถึงวันสิ้นสุด → ทับสัญญาอื่น (ข้อความบอกฉบับที่ต้องแก้)
+    return { error: kind === "CLOSEOUT" && msg.includes("จะทับกับสัญญา")
+      ? `ยกเลิกผู้เช่าออกไม่ได้ เพราะสัญญานี้จะกลับมามีผลถึงวันสิ้นสุดสัญญา — ${msg}` : msg };
+  }
   String(form.get("paths") ?? "").split(",").filter(Boolean).forEach((p) => revalidatePath(p));
   ["/", "/income-expenses", "/financial/cash", "/liabilities", "/settings/month-closing", "/alternative"].forEach((p) => revalidatePath(p));
   revalidatePath("/financial/cash", "layout");

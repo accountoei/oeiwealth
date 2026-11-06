@@ -4911,4 +4911,54 @@ SELECT t.ok((:'co_m'::jsonb ->> 'tenant_paid')::numeric = 19193.55
                FROM public.income_transactions WHERE lease_id = :'lease_m' AND income_type = 'RENT' AND deleted_at IS NULL)
         AND NOT EXISTS (SELECT 1 FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_m' AND status IN ('PENDING', 'OVERDUE')),
             'ค่าเช่าค้าง 21,193.55 (ส.ค. ก.ย. + 11 วัน ต.ค.): ประกัน 2,000 หักก่อน · ผู้เช่าจ่ายเพิ่ม 19,193.55 เข้าบัญชี · ไม่มีงวดค้าง');
+\echo '== 21. แก้วันเริ่มสัญญา · ข้อความสัญญาทับตอนแก้สัญญาเดิม (6 พ.ย. 2026)'
+SELECT t.fails($$UPDATE public.property_leases SET start_date = '2026-08-01' WHERE id = '$$ || :'lease_m' || $$'$$,
+               'ยกเลิกผู้เช่าออก" ก่อนแก้วันเริ่มสัญญา', 'วันเริ่มสัญญา: บันทึกผู้เช่าออกแล้ว → แก้ไม่ได้');
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount, payment_due_day)
+  VALUES (:'prop_a', 'ชั้น 21', 'ผู้เช่า เลื่อนวัน', '2026-08-10', '2027-08-09', 9000, 10);
+SELECT id AS lease_s FROM public.property_leases WHERE tenant_name = 'ผู้เช่า เลื่อนวัน' \gset
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', :'lease_s', 'income_period', '2026-08-01', 'date', '2026-08-10', 'amount', 9000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')),
+  jsonb_build_object('lease_id', :'lease_s', 'income_period', '2026-09-01', 'date', '2026-09-10', 'amount', 9000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')))) AS rent_s;
+UPDATE public.property_leases SET start_date = '2026-08-01' WHERE id = :'lease_s';
+SELECT t.ok((SELECT cycle_start = '2026-08-01' AND cycle_end = '2026-09-09' AND expected_amount = 11612.90
+               FROM public.lease_rent_schedule(:'lease_s') WHERE no = 1)
+        AND (SELECT count(*) = 2 FROM public.v_lease_rent_tracking WHERE lease_id = :'lease_s' AND status = 'RECEIVED'),
+            'วันเริ่มสัญญา: เร็วขึ้นเป็น 1 ส.ค. → งวดแรกคิดใหม่ 1 ส.ค.–9 ก.ย. = 11,612.90 · ค่าเช่าที่รับแล้วยังตรงงวด');
+SELECT t.fails($$UPDATE public.property_leases SET start_date = '2026-09-15' WHERE id = '$$ || :'lease_s' || $$'$$,
+               'รับค่าเช่างวด 08/2569 แล้ว', 'วันเริ่มสัญญา: เลื่อนเลยงวดที่รับค่าเช่าแล้ว → แก้ไม่ได้ บอกงวดให้ลบรายการรับก่อน');
+UPDATE public.property_leases SET start_date = '2026-08-20' WHERE id = :'lease_s';
+SELECT t.ok((SELECT cycle_start = '2026-08-20' AND expected_amount = 6096.77 FROM public.lease_rent_schedule(:'lease_s') WHERE no = 1),
+            'วันเริ่มสัญญา: เลื่อนช้าลงในเดือนเดิม (20 ส.ค.) → งวดแรก 21 จาก 31 วัน = 6,096.77');
+UPDATE public.income_transactions SET deleted_at = now() WHERE lease_id = :'lease_s' AND income_period = '2026-08-01';
+UPDATE public.property_leases SET start_date = '2026-09-01' WHERE id = :'lease_s';
+SELECT t.ok((SELECT income_period = '2026-09-01' FROM public.lease_rent_schedule(:'lease_s') WHERE no = 1),
+            'วันเริ่มสัญญา: ลบรายการรับงวด ส.ค. แล้ว → เลื่อนเป็น 1 ก.ย. ได้');
+UPDATE public.property_leases SET status = 'TERMINATED', terminated_date = '2026-10-20' WHERE id = :'lease_s';
+SELECT t.fails($$UPDATE public.property_leases SET start_date = '2026-10-25' WHERE id = '$$ || :'lease_s' || $$'$$,
+               'ไม่เกินวันเลิกสัญญา', 'วันเริ่มสัญญา: เกินวันเลิกสัญญาไม่ได้');
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount, payment_frequency)
+  VALUES (:'prop_a', 'ชั้น 22', 'ผู้เช่า รายไตรมาส', '2026-08-01', '2027-07-31', 30000, 'QUARTERLY');
+SELECT id AS lease_q FROM public.property_leases WHERE tenant_name = 'ผู้เช่า รายไตรมาส' \gset
+SELECT public.batch_record_rent(jsonb_build_array(
+  jsonb_build_object('lease_id', :'lease_q', 'income_period', '2026-11-01', 'date', '2026-10-30', 'amount', 30000, 'received_to_asset_id', t.a('KBank ออมทรัพย์')))) AS rent_q;
+SELECT t.fails($$UPDATE public.property_leases SET start_date = '2026-07-01' WHERE id = '$$ || :'lease_q' || $$'$$,
+               'รับค่าเช่างวด 11/2569 แล้ว', 'วันเริ่มสัญญา: รายไตรมาส เลื่อนแล้วรอบไม่ตรงงวดที่รับแล้ว (พ.ย.) → แก้ไม่ได้');
+UPDATE public.property_leases SET start_date = '2026-05-01' WHERE id = :'lease_q';
+SELECT t.ok((SELECT count(*) = 1 FROM public.lease_rent_schedule(:'lease_q') WHERE income_period = '2026-11-01'),
+            'วันเริ่มสัญญา: รายไตรมาส เลื่อนเร็วขึ้น 3 เดือน → งวด พ.ย. ยังอยู่ในรอบ');
+-- สัญญาทับตอนแก้สัญญาเดิม: บอกฉบับที่ต้องแก้ · สร้างใหม่ข้อความเดิม
+INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
+  VALUES (:'prop_a', 'ชั้น 23', 'ผู้เช่า เก่า', '2026-01-01', '2026-12-31', 8000),
+         (:'prop_a', 'ชั้น 23', 'ผู้เช่า ใหม่', '2027-01-01', '2027-12-31', 8000);
+SELECT t.fails($$UPDATE public.property_leases SET start_date = '2026-12-01' WHERE tenant_name = 'ผู้เช่า ใหม่'$$,
+               'ของสัญญา ชั้น 23 · ผู้เช่า เก่า ให้ไม่เกินวันที่ 30/11/2569 ก่อน', 'สัญญาทับ (แก้): ฉบับเก่าต้องจบก่อนวันเริ่มฉบับนี้ → บอกให้แก้วันสิ้นสุด / เลิกของฉบับเก่า');
+SELECT t.fails($$UPDATE public.property_leases SET end_date = '2027-02-01' WHERE tenant_name = 'ผู้เช่า เก่า'$$,
+               'สัญญานี้ต้องสิ้นสุด / เลิกไม่เกินวันที่ 31/12/2569 หรือแก้วันเริ่มของสัญญา ชั้น 23 · ผู้เช่า ใหม่', 'สัญญาทับ (แก้): ฉบับนี้เริ่มก่อน → บอกวันสิ้นสุดที่ได้ หรือให้แก้วันเริ่มฉบับใหม่');
+SELECT t.fails($$INSERT INTO public.property_leases(property_id, unit_label, tenant_name, start_date, end_date, rent_amount)
+                 VALUES ('$$ || :'prop_a' || $$', 'ชั้น 23', 'ผู้เช่า ซ้อน', '2027-06-01', '2028-05-31', 8000)$$,
+               'สัญญาใหม่ต้องเริ่มหลังวันที่ 31/12/2570', 'สัญญาทับ (สร้างใหม่): ข้อความเดิม');
+SELECT t.ok(NOT has_function_privilege('anon', 'private.tg_lease_start_guard()', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'private.tg_lease_overlap()', 'EXECUTE'),
+            'วันเริ่มสัญญา: anon เรียกฟังก์ชันตรวจไม่ได้');
 \echo 'ALL SCENARIO TESTS PASSED'

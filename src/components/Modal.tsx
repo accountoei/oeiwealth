@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
 
 const TOAST_EVENT = "fwv-toast";
 const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: Esc ปิดเฉพาะบนสุด
@@ -33,9 +32,6 @@ export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST
 export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: ModalSize; title?: string }) {
   const [mounted, setMounted] = useState(false);
   const body = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const routerRef = useRef(router);
-  routerRef.current = router;
   const close = useRef(onClose);
   close.current = onClose;
 
@@ -89,7 +85,8 @@ export default function Modal({ children, onClose, size = "md", title }: { child
       armed = null;
       toast(fresh ?? g[0]);
       close.current();
-      routerRef.current.refresh();                             // ดึงข้อมูลหน้านี้ใหม่ทันที (ไม่ต้องกดรีเฟรชเอง) + ล้างหน้าที่จำไว้
+      // ไม่ต้อง router.refresh(): Server Action ที่บันทึกเรียก revalidatePath แล้ว → คำตอบมีหน้านี้ที่อัปเดตแล้วมาด้วย
+      //   (รีเฟรชซ้ำ = ดึงข้อมูลทั้งหน้าอีกรอบ · ตกลง 6 พ.ย. 2026) · เอกสาร (อัปโหลดตรงไป Drive) รีเฟรชเองใน components/docs
     });
     obs.observe(el, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["disabled"] });
     return () => { el.removeEventListener("submit", onSubmit, true); obs.disconnect(); };

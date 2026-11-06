@@ -447,10 +447,12 @@ export async function updateLease(_: ActionState, form: FormData): Promise<Actio
   const id = String(form.get("asset_id"));
   const leaseId = String(form.get("lease_id"));
   const tenant = str(form.get("m_tenant_name"));
+  const start = str(form.get("m_start_date"));   // ว่าง = ช่องถูกล็อก (บันทึกผู้เช่าออกแล้ว) → ไม่เปลี่ยน
   const end = str(form.get("m_end_date"));
   const rent = num(form.get("m_rent_amount"));
   const day = num(form.get("m_payment_due_day"));
   if (!tenant) return { error: "กรุณาใส่ชื่อผู้เช่า" };
+  if (start != null && !/^\d{4}-\d{2}-\d{2}$/.test(start)) return { error: "กรุณาใส่วันเริ่มสัญญา" };
   if (!end || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { error: "กรุณาใส่วันสิ้นสุดสัญญา" };
   if (rent == null || Number.isNaN(rent) || rent <= 0) return { error: "ค่าเช่าต้องมากกว่า 0" };
   if (day != null && (Number.isNaN(day) || !Number.isInteger(day) || day < 1 || day > 31)) return { error: "วันจ่ายต้องเป็นวันที่ 1–31" };
@@ -459,12 +461,14 @@ export async function updateLease(_: ActionState, form: FormData): Promise<Actio
   if (grace != null && (Number.isNaN(grace) || !Number.isInteger(grace) || grace < 0 || grace > 90)) return { error: "ผ่อนผันต้องเป็น 0–90 วัน" };
   if (fee != null && (Number.isNaN(fee) || fee < 0)) return { error: "ค่าปรับต้องไม่ติดลบ" };
   const { data: cur, error: e0 } = await supabase.from("property_leases")
-    .select("tenant_name,unit_label,contract_no,end_date,rent_amount,payment_due_day,prorate_basis,utilities_billing,notes,rent_timing,grace_days,late_fee_per_day")
+    .select("tenant_name,unit_label,contract_no,start_date,end_date,rent_amount,payment_due_day,prorate_basis,utilities_billing,notes,rent_timing,grace_days,late_fee_per_day")
     .eq("id", leaseId).maybeSingle();
   if (e0) return { error: friendlyError(e0.message) };
   if (!cur) return { error: "ไม่พบสัญญานี้" };
+  if (end <= (start ?? cur.start_date)) return { error: "วันสิ้นสุดสัญญาต้องหลังวันเริ่มสัญญา" };
   const main: Record<string, unknown> = {
-    tenant_name: tenant, unit_label: str(form.get("m_unit_label")), contract_no: str(form.get("m_contract_no")), end_date: end,
+    tenant_name: tenant, unit_label: str(form.get("m_unit_label")), contract_no: str(form.get("m_contract_no")),
+    start_date: start ?? cur.start_date, end_date: end,
     rent_amount: rent, payment_due_day: day, prorate_basis: str(form.get("m_prorate_basis")) ?? "ACTUAL",
     utilities_billing: str(form.get("m_utilities_billing")), notes: str(form.get("m_notes")),
     rent_timing: str(form.get("m_rent_timing")) ?? "ADVANCE", grace_days: grace ?? 0, late_fee_per_day: fee,

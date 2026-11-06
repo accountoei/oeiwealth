@@ -215,8 +215,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   // ชุดคำสั่งกลาง (แก้ไข / ลบ / แยกก้อน / แถวเงินเข้า–ออก) — ใช้ร่วมกับหน้ารายละเอียดบัญชี
   const kit = makeEntryKit({ ym, personId: pv.personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons: persons ?? [],
     pfCash, incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets,
-    tabLinks: true, properties });
-  const { incSource, expSource, incEdit, expEdit, incSplit, expSplit } = kit;
+    tabLinks: true, properties, closeoutIds: new Set(ref.closeoutIds) });
+  const { incSource, expSource, incEdit, expEdit, incSplit, expSplit, closeoutNote } = kit;
   const moveRows = (withActions: boolean): MoveRow[] => kit.buildMoveRows(moveList as Move[], withActions);
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));
   // ยอดยกมา (สิ้นเดือนก่อน) ของแต่ละบัญชี → ยอดคงเหลือหลังแต่ละรายการ เมื่อกรองทีละบัญชี
@@ -364,6 +364,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <div className="font-medium">{src ? <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className={NAME_LINK}>{title}</Link> : title}</div>
           <div className="text-xs text-slate-500">{who}</div>
           {i.notes && !i.source_transaction_id && !i.pending_split && <div className="text-xs text-slate-400">{stripPending(i.notes)}</div>}
+          {closeoutNote(i.id)}
           {tax !== 0 && <div className="text-xs text-slate-500">รายได้รวม {money(gross, i.currency)} · ภาษี {money(tax, i.currency)}</div>}
           {i.pct != null && <div className="text-xs text-slate-500">ส่วนของคนนี้ {i.pct}% ของ {money(i.full_amount, i.currency)}</div>}
           {i.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(netThb, "THB")}</div>}
@@ -462,6 +463,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             : <Link href={src.href} title={`แก้ที่หน้า${src.label}`} className={NAME_LINK}>{title}</Link>}</div>
           {!i.pending_split && <div className="text-xs text-indigo-700">{cat}</div>}
           {i.notes && <div className="text-xs text-slate-400">{i.notes}</div>}
+          {closeoutNote(i.id)}
           {i.pct != null && <div className="text-xs text-slate-500">{i.pct}% ของ {money(i.full_amount, i.currency)}</div>}
           {i.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(Number(i.base_amount ?? 0) * i.share, "THB")}</div>}
           {i.is_reimbursable && (
