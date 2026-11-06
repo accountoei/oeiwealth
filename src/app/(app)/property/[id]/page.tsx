@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, PRORATE_BASIS_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
+  COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
   INS_OPEN, INS_STATUS, PROPERTY_COST_TYPE_LABEL, UTIL_LABEL, COMMON_ROOM_LABEL, HANDOVER_OUT_LABEL, INVENTORY_DISPOSAL_LABEL, INVENTORY_METER_TYPES, INVENTORY_PICK_TYPES, INVENTORY_TYPE_LABEL, addDays, diffText, durationText, landText, money, monthsBetween, scheduleText, SMALL_BTN, thDate, thMonth, todayBangkok, vacancyWarning,
 } from "@/lib/format";
 import {
-  EditPropertyForm, EditTerminationForm, LeaseDetailsForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
+  EditPropertyForm, EditTerminationForm, LeaseEditForm, NewLeaseForm, RecordCostForm, ReceiveChargeForm, RecordRentForm, SettleDepositForm, SuggestVacant,
   TerminateLeaseForm, UtilityForm,
 } from "./forms";
 import CloseLeaseForm from "./CloseLeaseForm";
@@ -468,27 +468,14 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           <EditTerminationForm assetId={id} leaseId={l.id} terminated={l.terminated_date} startDate={l.start_date} endDate={l.end_date} />
         )}
         {canWrite && (
-          <LeaseDetailsForm assetId={id} leaseId={l.id} v={leaseExtra.get(l.id) ?? {}} opt={detailOpt} canSensitive={canSensitive}
-            banks={bankList} rentCurrency={l.rent_currency} rentTo={rentTo.get(l.id) ?? null} depositMonths={leaseExtra.get(l.id)?.deposit_months ?? null} />
-        )}
-        {canWrite && (
-          <RowActions table="property_leases" id={l.id} paths={paths} canDelete={false}
+          <LeaseEditForm assetId={id} leaseId={l.id} v={leaseExtra.get(l.id) ?? {}} opt={detailOpt} canSensitive={canSensitive}
+            m={{ tenant_name: l.tenant_name, unit_label: l.unit_label, contract_no: l.contract_no, start_date: l.start_date, end_date: l.end_date,
+              rent_amount: Number(l.rent_amount), payment_due_day: l.payment_due_day, prorate_basis: leaseExtra.get(l.id)?.prorate_basis ?? "ACTUAL",
+              utilities_billing: leaseExtra.get(l.id)?.utilities_billing ?? null, notes: l.notes }}
+            banks={bankList} rentCurrency={l.rent_currency} rentTo={rentTo.get(l.id) ?? null} depositMonths={leaseExtra.get(l.id)?.deposit_months ?? null}
             deleteControl={canDelete && <DeleteEntity kind="lease" id={l.id} paths={paths} label="ลบสัญญา" needReason={false}
               hint="รายการรับเงินประกันของสัญญานี้จะถูกลบด้วย"
-              buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />} fields={[
-            { name: "tenant_name", label: "ผู้เช่า", value: l.tenant_name },
-            { name: "unit_label", label: "ห้อง", value: l.unit_label, width: "w-24" },
-            { name: "contract_no", label: "เลขสัญญา", value: l.contract_no, width: "w-24" },
-            { name: "end_date", label: "สิ้นสุด", type: "date", value: l.end_date },
-            { name: "rent_amount", label: "ค่าเช่า", type: "number", value: l.rent_amount },
-            { name: "payment_due_day", label: "จ่ายวันที่", type: "number", value: l.payment_due_day, width: "w-16" },
-            { name: "prorate_basis", label: "คิดค่าเช่าวันเศษ", type: "select", value: leaseExtra.get(l.id)?.prorate_basis ?? "ACTUAL",
-              options: Object.entries(PRORATE_BASIS_LABEL) as [string, string][] },
-            { name: "rent_to_asset_id", label: "บัญชีรับค่าเช่า", type: "select", value: rentTo.get(l.id) ?? "",
-              options: [["", "— ไม่ระบุ (ใช้บัญชีที่รับครั้งล่าสุด) —"], ...bankList.filter((b) => b.currency === l.rent_currency).map((b) => [b.asset_id, b.name] as [string, string])] },
-            { name: "utilities_billing", label: "ค่าน้ำ / ค่าไฟ", type: "select", value: leaseExtra.get(l.id)?.utilities_billing ?? "",
-              options: [["", "— ไม่ระบุ —"], ...Object.entries(UTILITIES_BILLING_LABEL) as [string, string][]] },
-            { name: "notes", label: "หมายเหตุ", value: l.notes, width: "w-40" }]} />
+              buttonCls="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50" />} />
         )}
         {canSettle && dep > 0 && !l.deposit_settled_date && leaseEnded && !depSameCcy && (
           <SettleDepositForm assetId={id} leaseId={l.id} deposit={dep} currency={l.deposit_currency ?? l.rent_currency}

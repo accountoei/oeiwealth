@@ -166,8 +166,7 @@ export function HandoverButton({ assetId, leaseId, label, items, canWrite, curre
 }) {
   return (
     <ModalButton label={label} title="รายการส่งมอบ (รับมอบ / ส่งคืน)" size="lg" className={SMALL_BTN}>
-      {/* รายการเปลี่ยน (ดึงของ / บันทึก) → เริ่มตารางใหม่จากข้อมูลล่าสุด */}
-      <HandoverBody key={items.map((x) => x.id).join(",")} assetId={assetId} leaseId={leaseId} items={items} canWrite={canWrite} currency={currency} />
+      <HandoverBody assetId={assetId} leaseId={leaseId} items={items} canWrite={canWrite} currency={currency} />
       {docs && <div className="mt-5 border-t border-slate-200 pt-4">{docs}</div>}
     </ModalButton>
   );
@@ -180,6 +179,11 @@ function HandoverBody({ assetId, leaseId, items, canWrite, currency }: {
   const [removed, setRemoved] = useState<string[]>([]);
   const [state, action, pending] = useActionState<ActionState, FormData>(saveHandover, {});
   const [cs, copyAction, copying] = useActionState<ActionState, FormData>(copyInventoryToLease, {});
+  // รายการเปลี่ยน (ดึงของ / บันทึกแถวใหม่) → ตารางเริ่มจากข้อมูลล่าสุด โดยไม่สร้างฟอร์มใหม่
+  //   (เดิมใช้ key → ฟอร์มถูกสร้างใหม่ ข้อความ "บันทึกแล้ว" หาย หน้าต่างไม่ปิด ต้องกดบันทึกซ้ำ · แก้ 6 พ.ย. 2026)
+  const idKey = items.map((x) => x.id).join(",");
+  const [seenKey, setSeenKey] = useState(idKey);
+  if (seenKey !== idKey) { setSeenKey(idKey); setRows(items); setRemoved([]); }
   const set = (i: number, k: keyof HandoverItem, v: string) => setRows(rows.map((r, j) => {
     if (j !== i) return r;
     const x = { ...r, [k]: v };
@@ -194,7 +198,8 @@ function HandoverBody({ assetId, leaseId, items, canWrite, currency }: {
   return (
     <div className="space-y-3">
       {canWrite && (
-        <form action={copyAction} className="flex flex-wrap items-center gap-3">
+        // ดึงของ = เติมรายการ ไม่ใช่การบันทึก → หน้าต่างไม่ปิด (data-no-close)
+        <form action={copyAction} data-no-close className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="asset_id" value={assetId} />
           <input type="hidden" name="lease_id" value={leaseId} />
           <button disabled={copying} className={ghost}>{copying ? "กำลังดึง…" : "ดึงของ + มิเตอร์ (ห้องนี้ + ส่วนกลาง)"}</button>
