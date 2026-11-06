@@ -1,4 +1,4 @@
-# ⓘ แท็บ Health ไม่แสดงคำอธิบาย
+# PR #345 — ⓘ แท็บ Health ไม่แสดงคำอธิบาย
 
 - วันที่: 6 พ.ย. 2026 · branch `claude/health-infotip`
 - SQL: ไม่มี SQL
