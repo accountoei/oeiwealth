@@ -3,14 +3,18 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useNavPending } from "./HeaderBar";
 
-/** เลือกเดือน: ‹ dropdown › · เปลี่ยนเฉพาะ ?m= และคงพารามิเตอร์อื่น (สมาชิก / แท็บ) · months เรียงใหม่สุดก่อน */
-export default function MonthPicker({ months, value }: { months: { value: string; label: string }[]; value: string }) {
+/**
+ * เลือกเดือน: ‹ dropdown › · เปลี่ยนเฉพาะ ?m= และคงพารามิเตอร์อื่น (สมาชิก / แท็บ) · months เรียงใหม่สุดก่อน
+ *   reset = พารามิเตอร์ที่ต้องกลับไปตามเดือนเมื่อเปลี่ยนเดือน (เช่น ปีของแท็บรับ / จ่ายในหน้าประกัน)
+ */
+export default function MonthPicker({ months, value, reset = [] }: { months: { value: string; label: string }[]; value: string; reset?: string[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const { start } = useNavPending();
   const go = (m: string) => {
     const q = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
     q.set("m", m);
+    reset.forEach((k) => q.delete(k));
     start(() => router.push(`${pathname}?${q}`, { scroll: false }));
   };
   const i = months.findIndex((m) => m.value === value);
