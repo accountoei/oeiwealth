@@ -26,7 +26,7 @@ const STATUS = Object.fromEntries(INS_STATUS);
 // ความคุ้มครองต่อจากภาพรวม (ตกลง 3 พ.ย. 2026 · เดิมอยู่ท้ายสุด)
 const TABS = [["overview", "ภาพรวม"], ["coverage", "ความคุ้มครอง"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
 
-export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; s?: string; y?: string; tab?: string; m?: string }> }) {
+export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; s?: string; y?: string; tab?: string; m?: string; i?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
@@ -96,8 +96,12 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   ]);
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
+  // ตัวกรองบริษัทประกัน (?i= · ใช้กับทุกแท็บ · ตกลง 6 พ.ย. 2026)
+  const insurers = [...new Set((data ?? []).map((r) => r.insurer as string).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+  const iFilter = insurers.includes(sp.i ?? "") ? (sp.i as string) : "";
+  const pol = (data ?? []).filter((r) => !iFilter || r.insurer === iFilter);
   // มุมมองรายบุคคล: กรมธรรม์ที่คนนั้นเป็นผู้เอาประกัน หรือเป็นเจ้าของมูลค่าเวนคืน · มูลค่าเวนคืน × สัดส่วนเจ้าของ
-  const mineRows = bySort((data ?? []).filter((r) => pv.isPerson(r.person_id) || (pv.personId !== "" && r.payer_person_id === pv.personId)
+  const mineRows = bySort(pol.filter((r) => pv.isPerson(r.person_id) || (pv.personId !== "" && r.payer_person_id === pv.personId)
     || (!!r.cash_value_asset_id && pv.personId !== "" && pv.showAsset(r.cash_value_asset_id))), (r) => r.id, sortMap);
   // ตัวกรองด้านบนตารางภาพรวม แบบหน้าทรัพย์สิน (ตกลง 3 พ.ย. 2026): ประเภท (?t=) · สถานะ (?s= · ตั้งต้น = มีผล · all = ทั้งหมด)
   const types = INS_TYPE.map(([k]) => k).filter((k) => mineRows.some((r) => r.insurance_type === k));
@@ -108,7 +112,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const listRows = sFilter === "all" ? rows : rows.filter((r) => r.status === sFilter);
   const sParam = sFilter === "ACTIVE" ? undefined : sFilter;
   const fHref = (t: string | undefined, s: string | undefined) => {
-    const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); if (s && s !== "ACTIVE") q.set("s", s);
+    const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (iFilter) q.set("i", iFilter); if (t) q.set("t", t); if (s && s !== "ACTIVE") q.set("s", s);
     const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`;
   };
   // เบี้ยงวดถัดไป / เลยกำหนด ต่อกรมธรรม์
@@ -120,7 +124,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   });
   const policyName = new Map((data ?? []).map((r) => [r.id, `${r.insurer}${r.policy_no ? ` · ${r.policy_no}` : ""}`]));
   const fupRows = (fups ?? []).filter((f) => pv.isPerson(f.person_id) || rows.some((r) => r.id === f.policy_id));
-  const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id))
+  const cvOfPol = new Set(pol.map((r) => r.cash_value_asset_id).filter(Boolean));
+  const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id) && (!iFilter || cvOfPol.has(a.id)))
     .reduce((s, a) => s + (a.currency === "THB" ? Number(a.current_value ?? 0) * pv.assetShare(a.id) : 0), 0);
   // สรุปด้านบน (กรมธรรม์ที่มีผล · THB)
   const act = mineRows.filter((r) => r.status === "ACTIVE");
@@ -192,7 +197,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     const late = new Set(lineList.filter((l) => l.kind === kind && mine.has(l.policy_id) && l.status === "OVERDUE").map((l) => Number(l.due_date.slice(0, 4))));
     return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).map((y) => ({ value: y, mark: late.has(y) ? "· ค้าง" : has.has(y) ? "✓" : undefined }));
   };
-  const yHrefOf = (t: string) => { const q = new URLSearchParams({ tab: t }); if (sp.p) q.set("p", sp.p); if (sp.m) q.set("m", sp.m);
+  const yHrefOf = (t: string) => { const q = new URLSearchParams({ tab: t }); if (sp.p) q.set("p", sp.p); if (sp.m) q.set("m", sp.m); if (iFilter) q.set("i", iFilter);
     return `/insurance?${q.toString()}&y=__Y__`; };
   // การ์ดด้านบนของแท็บรับ / จ่าย (THB · ตามตัวกรองคน · เดือนจากแถบบน)
   const monthLabel = thMonth(mStart);
@@ -233,7 +238,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const usedByCov = new Map<string, number>();
   (claims ?? []).filter((c) => c.coverage_id && !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
     usedByCov.set(c.coverage_id as string, (usedByCov.get(c.coverage_id as string) ?? 0) + Number(c.received_amount ?? c.claimed_amount ?? 0)));
-  const activeAll = (data ?? []).filter((r) => r.status === "ACTIVE" && r.person_id);
+  const activeAll = pol.filter((r) => r.status === "ACTIVE" && r.person_id);
   const activePerson = new Map(activeAll.map((r) => [r.id, r.person_id as string]));
   const covRows = (covs ?? []).filter((c) => activePerson.has(c.policy_id));
   const covItems: CovItem[] = covRows.map((c) => ({ policyId: c.policy_id, personId: activePerson.get(c.policy_id) as string, type: c.coverage_type,
@@ -250,10 +255,20 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     premium: Number(r.premium ?? 0), premiumCcy: r.premium_currency ?? "THB", hasCov: covRows.some((c) => c.policy_id === r.id) }));
   const covByIdType = new Map((covs ?? []).map((c) => [c.id, c.coverage_type as string]));
   const policyPerson = new Map((data ?? []).map((r) => [r.id, r.person_id as string | null]));
-  const covClaims: CovClaim[] = (claims ?? []).map((c) => ({ id: c.id, policyId: c.policy_id, personId: policyPerson.get(c.policy_id) ?? null,
+  const polIds = new Set(pol.map((r) => r.id));
+  const covClaims: CovClaim[] = (claims ?? []).filter((c) => polIds.has(c.policy_id)).map((c) => ({ id: c.id, policyId: c.policy_id, personId: policyPerson.get(c.policy_id) ?? null,
     coverageType: c.coverage_id ? covByIdType.get(c.coverage_id) ?? null : null, date: c.claim_date ?? c.incident_date, claimed: Number(c.claimed_amount ?? 0),
     received: Number(c.received_amount ?? 0), currency: c.currency, status: c.status, notes: c.notes }));
   const covPersonsInView = pv.persons.filter((x) => pv.isPerson(x.id));
+  // ตัวกรองบริษัทประกันของแต่ละแท็บ (เปลี่ยนแล้วอยู่แท็บเดิม · คงตัวกรองอื่นไว้)
+  const insFilter = (t: string) => insurers.length < 2 && !iFilter ? null : (
+    <UrlSelect label="บริษัทประกัน" value={iFilter} options={["", ...insurers].map((v) => {
+      const q = new URLSearchParams(); if (t !== "overview") q.set("tab", t); if (sp.p) q.set("p", sp.p); if (sp.m) q.set("m", sp.m);
+      if (v) q.set("i", v); if (t === "overview") { if (tFilter) q.set("t", tFilter); if (sParam) q.set("s", sParam); }
+      if ((t === "benefit" || t === "premium") && sp.y) q.set("y", sp.y);
+      return { value: v, label: v || "ทั้งหมด", href: `/insurance${q.size ? `?${q.toString()}` : ""}` };
+    })} />
+  );
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -265,23 +280,23 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
 
       <TabPanel id="benefit" className="space-y-4">
         {cardsOf("BENEFIT")}
-        <InsuranceBatch key={`b${ym}${yr}${lineList.length}`} kind="BENEFIT" year={yr} years={yearsOf("BENEFIT")} hrefOf={yHrefOf("benefit")} policies={boxOf("BENEFIT")}
+        <InsuranceBatch key={`b${ym}${yr}${lineList.length}`} kind="BENEFIT" year={yr} years={yearsOf("BENEFIT")} hrefOf={yHrefOf("benefit")} policies={boxOf("BENEFIT")} filter={insFilter("benefit")}
           pays={bankPays} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
       </TabPanel>
       <TabPanel id="premium" className="space-y-4">
         {cardsOf("PREMIUM")}
-        <InsuranceBatch key={`p${ym}${yr}${lineList.length}`} kind="PREMIUM" year={yr} years={yearsOf("PREMIUM")} hrefOf={yHrefOf("premium")} policies={boxOf("PREMIUM")}
+        <InsuranceBatch key={`p${ym}${yr}${lineList.length}`} kind="PREMIUM" year={yr} years={yearsOf("PREMIUM")} hrefOf={yHrefOf("premium")} policies={boxOf("PREMIUM")} filter={insFilter("premium")}
           pays={[...bankPays, ...cardPays]} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
       </TabPanel>
 
       <TabPanel id="update">
-        <CashValueBatch key={`u${cvRows.map((r) => `${r.policyId}${r.date}`).join("")}`} rows={cvRows} today={today} minDate={goLive} canWrite={canWrite} canCreate={canOrder}
+        <CashValueBatch key={`u${cvRows.map((r) => `${r.policyId}${r.date}`).join("")}`} rows={cvRows} today={today} minDate={goLive} canWrite={canWrite} canCreate={canOrder} filter={insFilter("update")}
           shareNote={pv.personId ? `ยอดรวมท้ายตาราง = ส่วนของ ${pv.personName} ตามสัดส่วนเจ้าของ (มูลค่าในแถว = ทั้งกรมธรรม์)` : null} />
       </TabPanel>
 
       <TabPanel id="coverage">
         <CoverageTab persons={covPersonsInView} personId={pv.personId} personName={pv.personName} policies={covPolicies} items={covItems} claims={covClaims}
-          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} />
+          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} filter={insFilter("coverage")} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">
@@ -312,6 +327,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {/* ตัวกรอง + ยอดรวมตามตัวกรองอยู่แถวบน แบบหน้าทรัพย์สิน (ตกลง 3 พ.ย. 2026 · เดิมยอดรวมอยู่ท้ายตาราง) */}
         <div className="flex flex-wrap items-center gap-4 px-4 pt-4 text-xs text-slate-600">
+          {insFilter("overview")}
           <UrlSelect label="ประเภท" value={tFilter ?? ""} options={[{ value: "", label: "ทั้งหมด", href: fHref(undefined, sParam) },
             ...types.map((t) => ({ value: t, label: TYPE[t] ?? t, href: fHref(t, sParam) }))]} />
           <UrlSelect label="สถานะ" value={sFilter} options={[{ value: "all", label: "ทั้งหมด", href: fHref(tFilter, "all") },
@@ -321,13 +337,13 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
             const cvSum = listRows.reduce((t, r) => t + cvOf(r), 0);
             return (
               <span className="ml-auto text-right text-sm text-slate-700">
-                รวม{tFilter || sFilter !== "ACTIVE" ? "ตามตัวกรอง" : ""} {listRows.length} ฉบับ
+                รวม{tFilter || iFilter || sFilter !== "ACTIVE" ? "ตามตัวกรอง" : ""} {listRows.length} ฉบับ
                 {prem > 0 && <> · เบี้ย <b className="tabular-nums">{money(prem, undefined, 0)}</b>/ปี</>}
                 {cvSum > 0 && <> · มูลค่าเวนคืน <b className="tabular-nums">{money(cvSum, undefined, 0)}</b></>}
               </span>
             );
           })()}
-          {canOrder && listRows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, t: tFilter, s: sParam })} />}
+          {canOrder && listRows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, i: iFilter || undefined, t: tFilter, s: sParam })} />}
         </div>
         {/* รวมกล่อง "กรมธรรม์ที่มีผล" ของแท็บรับ / จ่ายไว้ที่นี่ (ตกลง 3 พ.ย. 2026): ระยะสัญญา · เบี้ยงวดถัดไป · ผลประโยชน์งวดถัดไป */}
         <table className="mt-2 w-full min-w-[60rem] text-sm">

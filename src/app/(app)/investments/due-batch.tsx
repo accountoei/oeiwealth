@@ -11,7 +11,7 @@ import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchSave, FillAll, STICKY_BAR, TaxAll } from "@/components/BatchSave";
 
 // แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
@@ -121,7 +121,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
                   </select>
                 </label>
               )}
-              {fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามตารางทุกแถว ({fillable.length})</button>}
+              <FillAll onClick={fillAll} disabled={fillable.length === 0} />
             </div>
             <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(lines.map((l) => ({ ...l, title: undefined }))) }}
               count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
@@ -129,7 +129,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
               note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
               info={<>กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
             · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</>}>
-              {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 15% ทุกแถวที่กรอก</button>}
+              <TaxAll pct={15} onClick={taxAll} disabled={taxable.length === 0} />
             </BatchSave>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, thDate } from "@/lib/format";
 import { StatBox } from "@/components/Boxes";
 import ModalButton from "@/components/ModalButton";
@@ -38,9 +39,10 @@ function byCcy(xs: { amount: number; currency: string }[]) {
 const thb = (xs: CovItem[], type: string) => xs.filter((x) => x.type === type && x.currency === "THB").reduce((t, x) => t + x.limit, 0);
 const label = (k: string) => <>{COVERAGE_LABEL[k]?.[0] ?? k}{COVERAGE_LABEL[k]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[k][1]}</span>}</>;
 
-export default function CoverageTab({ persons, personId, personName, policies, items, claims, year, printHref, canWrite }: {
+export default function CoverageTab({ persons, personId, personName, policies, items, claims, year, printHref, canWrite, filter }: {
   persons: { id: string; name: string }[]; personId: string; personName: string; policies: CovPolicy[]; items: CovItem[]; claims: CovClaim[];
   year: string; printHref: string; canWrite: boolean;
+  /** ตัวกรองบริษัทประกัน (ต่อจากชื่อกล่อง) */ filter?: ReactNode;
 }) {
   const pname = new Map(persons.map((p) => [p.id, p.name]));
   const policy = new Map(policies.map((p) => [p.id, p]));
@@ -110,7 +112,7 @@ export default function CoverageTab({ persons, personId, personName, policies, i
       {/* เลื่อนซ้าย-ขวาเฉพาะตาราง (หัวกล่อง / ปุ่มพิมพ์ / คำอธิบายอยู่กับที่) */}
       <section className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <h2 className="font-medium text-slate-900">ความคุ้มครอง · {who} <InfoTip label="คำอธิบาย">จากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองใช้ทุนประกันของกรมธรรม์ · กดตัวเลขเพื่อดูว่ามาจากกรมธรรม์ไหน · เลือกคนที่แถบบนเพื่อดูแยกตามกรมธรรม์</InfoTip></h2>
+          <div className="flex flex-wrap items-center gap-3 text-sm"><h2 className="text-base font-medium text-slate-900">ความคุ้มครอง · {who} <InfoTip label="คำอธิบาย">จากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองใช้ทุนประกันของกรมธรรม์ · กดตัวเลขเพื่อดูว่ามาจากกรมธรรม์ไหน · เลือกคนที่แถบบนเพื่อดูแยกตามกรมธรรม์</InfoTip></h2>{filter}</div>
           <Link href={printHref} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">พิมพ์สรุปสำหรับโรงพยาบาล</Link>
         </div>
         {groups.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีข้อมูลความคุ้มครอง · กรอกได้ที่หน้ากรมธรรม์แต่ละฉบับ</p>

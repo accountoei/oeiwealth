@@ -8,7 +8,7 @@ import { batchPropertyExpenses, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, FilterSelect } from "@/components/BatchSave";
 
 export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
@@ -81,38 +81,24 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
     <>
     {cf.dialog}
     <div className="space-y-3">
-      {canWrite && (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
-          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+      {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · ประเภท · ใส่ยอดทุกแถว | บันทึก + วันที่ */}
+      <BatchBar title={<>ค่าใช้จ่ายทรัพย์สิน งวด {thMonth(`${ym}-01`)}
+              {rows.some((r) => r.period < `${ym}-01` && r.status === "OVERDUE") && <span className="text-sm font-normal text-red-700"> + ค้างจ่ายยกมา</span>}
+              <InfoTip label="คำอธิบาย">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า) · กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ</InfoTip></>}
+        filters={kinds.length > 1 && <FilterSelect label="ประเภท" value={kind} onChange={setKind}
+          options={kinds.map(([k, l]) => [k, `${l} (${rows.filter((r) => r.type === k).length})`])} />}
+        fill={canWrite && <FillAll disabled={!open.some((r) => r.expected > 0)}
+          onClick={() => setVals({ ...vals, ...Object.fromEntries(open.filter((r) => r.expected > 0).map((r) => [r.key, fmt(r.expected)])) })} />}>
+        {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
             count={count} pending={pending} onClear={() => { setVals({}); setExtra([blank(Date.now())]); }} state={state}
             date={date} onDate={setDate} maxDate={today}
             info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
-        </div>
-      )}
+        )}
+      </BatchBar>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="flex flex-wrap items-center gap-1 font-medium text-slate-900">ค่าใช้จ่ายทรัพย์สิน งวด {thMonth(`${ym}-01`)}
-              {rows.some((r) => r.period < `${ym}-01` && r.status === "OVERDUE") && <span className="text-sm font-normal text-red-700"> + ค้างจ่ายยกมา</span>}
-              <InfoTip label="คำอธิบาย">หมวดค่าใช้จ่าย &ldquo;บ้าน / สาธารณูปโภค&rdquo; · แบ่งตามสัดส่วนเจ้าของบัญชี / บัตรที่จ่าย · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด · &ldquo;เดือนนี้ไม่ได้จ่าย&rdquo; / แก้ไข ทำที่หน้าของทรัพย์สิน · ติ๊ก &ldquo;เรียกเก็บผู้เช่า&rdquo; = ตั้งยอดรอรับคืนเท่ายอดที่จ่าย (รับได้ที่แท็บรับค่าเช่า) · กดยอดที่จ่ายแล้วเพื่อแก้ / ลบ</InfoTip></h2>
-            {kinds.length > 1 && (
-              <div className="flex flex-wrap gap-1 text-xs">
-                {[["", "ทั้งหมด"] as [string, string], ...kinds].map(([k, l]) => (
-                  <button key={k || "all"} type="button" onClick={() => setKind(k)}
-                    className={`rounded-full border px-2.5 py-0.5 ${kind === k ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                    {l}{k && ` (${rows.filter((r) => r.type === k).length})`}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          {canWrite && open.length > 0 && (
-            <button type="button" onClick={() => setVals({ ...vals, ...Object.fromEntries(open.filter((r) => r.expected > 0).map((r) => [r.key, fmt(r.expected)])) })}
-              className="text-sm text-blue-700 hover:underline">ใส่ยอดประมาณทุกแถว</button>
-          )}
-        </div>
-        <table className="mt-3 w-full min-w-[52rem] text-sm">
+        <table className="w-full min-w-[52rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-3 py-2">ทรัพย์สิน / รายการ</th><th className="px-3">ครบกำหนด</th><th className="px-3 text-right">ยอดประมาณ</th>
               <th className="px-3">สถานะ</th>{canWrite && <><th className="px-3 text-right">ยอดที่จ่าย</th><th className="px-3">จ่ายจาก</th></>}</tr>

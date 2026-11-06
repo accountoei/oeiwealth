@@ -8,7 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchPayDebts, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll } from "@/components/BatchSave";
 
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
@@ -68,23 +68,23 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
     <>
     {cf.dialog}
     <div className="space-y-3">
-      {canWrite && (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
-          {/* ปุ่มบันทึก + วันที่อยู่มุมขวาบน (ตกลง 5 พ.ย. 2026) */}
+      {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · ใส่ยอดทุกแถว (เงินกู้ = ค่างวดเป็นเงินต้น · บัตร = ยอดค้างเต็มจำนวน) | บันทึก + วันที่ */}
+      <BatchBar title="จ่ายชำระเงินกู้ / บัตรเครดิต"
+        fill={canWrite && <FillAll disabled={!loans.some((r) => r.monthly) && !cards.some((r) => r.balance > 0)}
+          onClick={() => setPr({ ...pr,
+            ...Object.fromEntries(loans.filter((r) => r.monthly).map((r) => [r.key, fmt(r.monthly!)])),
+            ...Object.fromEntries(cards.filter((r) => r.balance > 0).map((r) => [r.key, fmt(r.balance)])) })} />}>
+        {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => { setPr({}); setInt({}); }} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก</>} />
-        </div>
-      )}
+            info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องยอดว่าง = ไม่บันทึก · &ldquo;ใส่ยอดทุกแถว&rdquo; = เงินกู้ใส่ค่างวดเป็นเงินต้น · บัตรใส่ยอดค้างเต็มจำนวน</>} />
+        )}
+      </BatchBar>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <h2 className="flex items-center gap-1 font-medium text-slate-900">เงินกู้ <InfoTip label="คำอธิบาย">เงินต้นลดยอดหนี้ · ดอกเบี้ยลงค่าใช้จ่าย &ldquo;ดอกเบี้ยจ่าย&rdquo; · อัปเดตยอดตาม Statement ทำที่หน้าเงินกู้ · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</InfoTip></h2>
-          {canWrite && loans.some((r) => r.monthly) && (
-            <button type="button" onClick={() => setPr({ ...pr, ...Object.fromEntries(loans.filter((r) => r.monthly).map((r) => [r.key, fmt(r.monthly!)])) })}
-              className="text-sm text-blue-700 hover:underline">ใส่ค่างวดเป็นเงินต้นทุกแถว</button>
-          )}
         </div>
         <table className="mt-3 w-full min-w-[56rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
@@ -117,10 +117,6 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
           <h2 className="flex items-center gap-1 font-medium text-slate-900">บัตรเครดิต <InfoTip label="คำอธิบาย">จ่ายบัตรไม่เปลี่ยนยอด Statement (ยอดปัจจุบันลดตามการจ่าย) · จ่ายบัตรจากบัญชีเงินฝากในพอร์ต / อัปเดตยอดตาม Statement ทำที่หน้าบัตร · รายการไหนผิด จะไม่บันทึกเลยทั้งชุด</InfoTip></h2>
-          {canWrite && cards.some((r) => r.balance > 0) && (
-            <button type="button" onClick={() => setPr({ ...pr, ...Object.fromEntries(cards.filter((r) => r.balance > 0).map((r) => [r.key, fmt(r.balance)])) })}
-              className="text-sm text-blue-700 hover:underline">ใส่ยอดค้างเต็มจำนวนทุกบัตร</button>
-          )}
         </div>
         <table className="mt-3 w-full min-w-[56rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">

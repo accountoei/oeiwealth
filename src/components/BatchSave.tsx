@@ -6,7 +6,7 @@ import { InfoTip } from "./HeaderBar";
 
 /**
  * แถบบันทึกของตารางบันทึกหลายรายการ (แท็บอัปเดตยอด / มูลค่า และแท็บบันทึกรับ / จ่าย ทุกเมนู · ตกลง 5 พ.ย. 2026)
- *   อยู่ด้านบนตาราง ชิดขวา เรียงเหมือนกันทุกหน้า: [ข้อความผิดพลาด / หมายเหตุ] · ล้างช่องที่กรอก · [บันทึก N รายการ] · ณ วันที่ [วันที่] ⓘ
+ *   อยู่ด้านบนตาราง ชิดขวา (ใน <BatchBar>) เรียงเหมือนกันทุกหน้า: [ข้อความผิดพลาด / หมายเหตุ] · [หัก ณ ที่จ่าย x% / วิธีประเมิน] · ล้างช่องที่กรอก · [บันทึก N รายการ] · ณ วันที่ [วันที่] ⓘ
  *   "ล้างช่องที่กรอก" อยู่ที่เดิมเสมอ (ยังไม่ได้กรอก = สีจาง กดไม่ได้) → ปุ่มไม่ขยับ
  *   หน้าต่างยืนยันของแต่ละหน้ายังบอกชื่อเต็ม (บันทึกรับดอกเบี้ย 2 บัญชี ณ วันที่ …) · ไม่มีสิทธิ์บันทึก = แสดงเฉพาะช่องวันที่
  *   กล่อง / แถวที่ครอบแถบนี้ใส่ STICKY_BAR → ค้างใต้แถบบนตอนเลื่อนตารางยาว ๆ ลง (จอ iPad ขึ้นไป · มือถือไม่ค้าง กันบังจอ)
@@ -14,6 +14,66 @@ import { InfoTip } from "./HeaderBar";
 export const STICKY_BAR = "z-[5] md:sticky md:top-[var(--app-header-h,4rem)]";
 
 const SMALL = "rounded-md border border-slate-300 px-2 py-1 text-sm";
+
+/**
+ * แถบบนของแท็บบันทึกหลายรายการ — เรียงเหมือนกันทุกหน้า (ตกลง 6 พ.ย. 2026):
+ *   ซ้าย: [ชื่อ ⓘ] [ตัวกรอง] [ใส่ยอดทุกแถว] · ขวา (BatchSave): [หัก ณ ที่จ่าย x%] [ล้างช่องที่กรอก] [บันทึก N รายการ] ณ วันที่
+ *   ตารางด้านล่างไม่มีหัวซ้ำ · ผู้ดู (VIEWER) ยังเห็นชื่อ / ตัวกรอง / วันที่
+ */
+export function BatchBar({ title, filters, fill, children }: {
+  /** ชื่อตาราง (ใส่ InfoTip ต่อท้ายได้) */
+  title?: ReactNode;
+  /** ตัวกรอง (FilterSelect / ปี) */
+  filters?: ReactNode;
+  /** <FillAll /> */
+  fill?: ReactNode;
+  /** <BatchSave /> (ไม่มีสิทธิ์บันทึก = ไม่ใส่) */
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {title && <h2 className="flex flex-wrap items-center gap-1 text-base font-medium text-slate-900">{title}</h2>}
+          {filters}
+          {fill}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** ตัวกรองในแถบบน: ป้าย + ช่องเลือก ("ทั้งหมด" = ค่าว่าง) · มีตัวเลือกเดียวไม่ต้องแสดง */
+export function FilterSelect({ label, value, onChange, options, allLabel = "ทั้งหมด" }: {
+  label: string; value: string; onChange: (v: string) => void; options: [string, string][]; allLabel?: string;
+}) {
+  if (options.length < 2 && !value) return null;
+  return (
+    <label className="flex items-center gap-2 text-sm">{label}
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={`max-w-[16rem] ${SMALL}`}>
+        <option value="">{allLabel}</option>
+        {options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/** "ใส่ยอดทุกแถว" — ชื่อเดียวกันทุกหน้า · ต่อจากตัวกรองทางซ้าย · ไม่มีแถวให้เติม = สีจาง (ไม่หาย ปุ่มไม่ขยับ) */
+export function FillAll({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="text-sm text-blue-700 hover:underline disabled:cursor-default disabled:text-slate-300 disabled:no-underline">ใส่ยอดทุกแถว</button>
+  );
+}
+
+/** "หัก ณ ที่จ่าย x%" — คิดภาษีให้ทุกแถวที่กรอก · วางเป็น children ของ BatchSave (ก่อน "ล้างช่องที่กรอก") · ตัวจางแบบเดียวกัน */
+export function TaxAll({ pct, onClick, disabled }: { pct: number; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="text-sm text-slate-500 underline hover:text-slate-800 disabled:cursor-default disabled:text-slate-300 disabled:no-underline">หัก ณ ที่จ่าย {pct}%</button>
+  );
+}
 
 export function BatchSave({ canWrite = true, action, onSubmit, fields, count, pending, disabled, onClear, canClear, date, onDate, minDate, maxDate, info, state, note, children }: {
   canWrite?: boolean;
@@ -38,7 +98,7 @@ export function BatchSave({ canWrite = true, action, onSubmit, fields, count, pe
   state: { ok?: string | null; error?: string | null };
   /** ข้อความเล็กก่อน "ล้างช่องที่กรอก" (เช่น รวม 2 รายการที่กรอกไว้ในพอร์ตอื่น) */
   note?: ReactNode;
-  /** ปุ่ม / ตัวเลือกที่ใช้กับทั้งชุด วางก่อน "ล้างช่องที่กรอก" (เช่น คิดภาษี 15% ทุกแถวที่กรอก · วิธีประเมิน) */
+  /** ปุ่ม / ตัวเลือกที่ใช้กับทั้งชุด วางก่อน "ล้างช่องที่กรอก" (เช่น <TaxAll pct={15} /> · วิธีประเมิน) */
   children?: ReactNode;
 }) {
   const dateField = (

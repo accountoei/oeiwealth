@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { diffText, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
 import { batchCashValues, syncAllCashValues, type ActionState } from "./actions";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchBar, BatchSave } from "@/components/BatchSave";
 
 export type CvRow = {
   policyId: string; assetId: string | null; name: string; person: string | null; currency: string;
@@ -28,15 +28,15 @@ const CV_NOTE = (y: number) => `ตามตารางมูลค่าเว
  *   ทุกกรมธรรม์ที่มีมูลค่าเวนคืนในตารางเดียว · ปีที่ถึงวันแล้วแต่ยังไม่ได้ลง = กรอกค่าตามสัญญาไว้ให้ (สีเหลือง) · กรอกเฉพาะแถวที่เปลี่ยน
  *   ระบบลงตามตารางให้เองทุกเช้าด้วย (เมื่อจ่ายเบี้ยก่อนหน้าครบ) · ยังไม่มีมูลค่าเวนคืน → ปุ่ม "ลงตามสัญญา" สร้างให้ (ADMIN / EDITOR)
  */
-export default function CashValueBatch({ rows, today, minDate, canWrite, canCreate, shareNote }: {
+export default function CashValueBatch({ rows, today, minDate, canWrite, canCreate, shareNote, filter }: {
   rows: CvRow[]; today: string; minDate: string; canWrite: boolean; canCreate: boolean; shareNote: string | null;
+  /** ตัวกรองบริษัทประกัน (ซ้ายของแถบบน) */ filter?: ReactNode;
 }) {
   const router = useRouter();
   const cf = useConfirmSubmit();
   const initial = () => Object.fromEntries(rows.filter((r) => r.assetId && r.pending && r.due)
     .map((r) => [r.policyId, { value: r.due!.value.toFixed(2), date: r.due!.date, fromTable: true }])) as Record<string, Entry>;
   const [date, setDate] = useState(today);
-  const [method, setMethod] = useState("STATEMENT");
   const [ent, setEnt] = useState<Record<string, Entry>>(initial);
   const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, form) => {
     const r = await batchCashValues(prev, form);
@@ -57,7 +57,8 @@ export default function CashValueBatch({ rows, today, minDate, canWrite, canCrea
   };
   const payload = chosen.map((r) => ({
     asset_id: r.assetId, policy_id: r.policyId, label: r.name, value: ent[r.policyId].value, date: dateOf(r),
-    method: isTable(r) ? "STATEMENT" : method, notes: isTable(r) ? CV_NOTE(r.due!.year) : null,
+    // ช่อง "วิธี" เอาออก (ตกลง 6 พ.ย. 2026): มูลค่าเวนคืนมาจากหนังสือแจ้ง / ตารางในสัญญาเสมอ
+    method: "STATEMENT", notes: isTable(r) ? CV_NOTE(r.due!.year) : null,
   }));
   // ลงตามสัญญาให้ระบบทำ (รวมกรมธรรม์ที่ยังไม่มีมูลค่าเวนคืน): ถึงวันแล้ว + เบี้ยก่อนหน้าครบ
   const syncable = rows.filter((r) => r.pending && !r.premiumDue && (r.assetId || canCreate));
@@ -72,29 +73,22 @@ export default function CashValueBatch({ rows, today, minDate, canWrite, canCrea
     <>
     {cf.dialog}
     <div className="space-y-3">
-      <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2">วิธี (แถวที่กรอกเอง)
-            <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
-              <option value="STATEMENT">ตามหนังสือแจ้งจากบริษัทประกัน</option>
-              <option value="USER_ESTIMATE">ประมาณเอง</option>
-            </select></label>
-          {canWrite && syncable.length > 0 && (
-            <form action={syncAction} className="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="policy_ids" value={JSON.stringify(syncable.map((r) => r.policyId))} />
-              <button disabled={syncing} className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                {syncing ? "กำลังลง…" : `ลงตามสัญญาให้ระบบทำ (${syncable.length} กรมธรรม์)`}</button>
-              {sState.error && <span className="text-sm text-red-600">{sState.error}</span>}
-              <Flash on={sState} as="span" className="text-sm text-emerald-700" />
-            </form>
-          )}
-          <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
-            count={chosen.length} pending={pending} onClear={() => setEnt({})} state={state}
-            date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            info={<>กรอกเฉพาะกรมธรรม์ที่มูลค่าเปลี่ยน (ช่องว่าง = ไม่บันทึก) · แถวสีเหลือง = ถึงวันครบปีตามตารางในสัญญาแล้วแต่ยังไม่ได้ลง (กรอกค่าตามสัญญาไว้ให้ · แก้ได้)
+      <BatchBar filters={filter}
+        fill={canWrite && syncable.length > 0 && (
+          <form action={syncAction} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="policy_ids" value={JSON.stringify(syncable.map((r) => r.policyId))} />
+            <button disabled={syncing} className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              {syncing ? "กำลังลง…" : `ลงตามสัญญาให้ระบบทำ (${syncable.length} กรมธรรม์)`}</button>
+            {sState.error && <span className="text-sm text-red-600">{sState.error}</span>}
+            <Flash on={sState} as="span" className="text-sm text-emerald-700" />
+          </form>
+        )}>
+        <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
+          count={chosen.length} pending={pending} onClear={() => setEnt({})} state={state}
+          date={date} onDate={setDate} minDate={minDate} maxDate={today}
+          info={<>กรอกเฉพาะกรมธรรม์ที่มูลค่าเปลี่ยน (ช่องว่าง = ไม่บันทึก · บันทึกเป็น &ldquo;ตามหนังสือแจ้งจากบริษัทประกัน&rdquo;) · แถวสีเหลือง = ถึงวันครบปีตามตารางในสัญญาแล้วแต่ยังไม่ได้ลง (กรอกค่าตามสัญญาไว้ให้ · แก้ได้)
           · ระบบลงตามตารางให้เองทุกเช้า เมื่อจ่ายเบี้ยก่อนหน้าครบ{shareNote && ` · ${shareNote}`}</>} />
-        </div>
-      </div>
+      </BatchBar>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[56rem] text-sm">

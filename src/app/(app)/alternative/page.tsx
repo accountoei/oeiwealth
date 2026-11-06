@@ -16,7 +16,7 @@ import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { assetIncomeFields } from "@/lib/source-edit";
 
 type Cat = { id: string; category_name: string; category_code: string; default_unit: string | null };
-const TABS = [["overview", "ภาพรวม"], ["record", "บันทึกรับผลตอบแทน/อัพเดตมูลค่า"]] as const;
+const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับผลตอบแทน"]] as const;
 
 type Row = { id: string; asset_id: string; category_id: string; quantity: number | null; unit: string | null; purity_pct: number | null; auto_price: boolean | null;
   brand: string | null; model: string | null; storage_location: string | null;
@@ -102,6 +102,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
     value: r.assets.current_value != null ? Number(r.assets.current_value) : null, valueDate: r.assets.current_value_date,
     auto: !!r.auto_price && catOf(r)?.category_code === "GOLD" && r.assets.currency === "THB" }));
 
+  const altBanks = (banks ?? []).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }));
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -111,8 +112,12 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
+      <TabPanel id="update">
+        <AltBatch key={`v${ym}${batchRows.map((r) => r.id).join()}`} part="value" rows={batchRows} banks={altBanks}
+          today={today} defaultDate={defaultDate} minDate={family?.go_live_date ?? ""} canWrite={me.role !== "VIEWER"} />
+      </TabPanel>
       <TabPanel id="record">
-        <AltBatch key={`${ym}${batchRows.map((r) => r.id).join()}`} rows={batchRows} banks={(banks ?? []).map((b) => ({ id: b.asset_id, name: b.name, currency: b.currency }))}
+        <AltBatch key={`i${ym}${batchRows.map((r) => r.id).join()}`} part="income" rows={batchRows} banks={altBanks}
           today={today} defaultDate={defaultDate} minDate={family?.go_live_date ?? ""} canWrite={me.role !== "VIEWER"} />
       </TabPanel>
 

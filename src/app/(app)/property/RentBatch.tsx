@@ -7,7 +7,7 @@ import { money, thDate } from "@/lib/format";
 import { batchRent, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchSave, FillAll, STICKY_BAR, TaxAll } from "@/components/BatchSave";
 
 export type RentRow = {
   key: string; leaseId: string; assetId: string; property: string; tenant: string; period: string; due: string | null;
@@ -115,7 +115,7 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
                   </select>
                 </label>
               )}
-              {fillable.length > 0 && <button type="button" onClick={fillAll} className="text-sm text-blue-700 hover:underline">กรอกตามสัญญาทุกแถว ({fillable.length})</button>}
+              <FillAll onClick={fillAll} disabled={fillable.length === 0} />
             </div>
             <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
               count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); setFee({}); }} state={state}
@@ -125,7 +125,7 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
             · ยอดก่อนภาษี = ค่าเช่าเต็มตามสัญญา ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย (ผู้เช่านิติบุคคลหัก 5%) + ค่าปรับล่าช้า
             · ค่าปรับล่าช้า (สัญญาที่ตั้งไว้) เติมให้ตามวันที่รับ นับเฉพาะวันที่เกินวันผ่อนผัน แก้หรือลบได้ บันทึกเป็นรายได้อื่น &ldquo;ค่าปรับชำระค่าเช่าล่าช้า&rdquo;
             · งวดเดือนก่อนที่ยังค้างรับยกมาให้ · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</>}>
-              {taxable.length > 0 && <button type="button" onClick={taxAll} className="text-sm text-blue-700 hover:underline">คิดภาษี 5% ทุกแถวที่กรอก</button>}
+              <TaxAll pct={5} onClick={taxAll} disabled={taxable.length === 0} />
             </BatchSave>
           </div>
         </div>
