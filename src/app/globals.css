@@ -103,8 +103,10 @@ button.bg-blue-600, a.bg-blue-600 { font-weight: 500; box-shadow: 0 1px 2px rgb(
 a.underline, button.underline { text-underline-offset: 3px; }
 
 /* ตัวเลข KPI: ย่อขนาดตามความกว้างจอ ให้ยอดหลักสิบล้าน + ทศนิยม 2 ตำแหน่งอยู่บรรทัดเดียว */
-.text-2xl.tabular-nums { font-size: clamp(1.15rem, 1.45vw, 1.5rem); line-height: 1.3; font-weight: 700; color: #0b1220; }
-.text-xl.tabular-nums { font-size: clamp(1.05rem, 1.3vw, 1.25rem); line-height: 1.35; font-weight: 700; color: #0b1220; }
+.text-2xl.tabular-nums { font-size: clamp(1.15rem, 1.45vw, 1.5rem); line-height: 1.3; font-weight: 700; }
+.text-xl.tabular-nums { font-size: clamp(1.05rem, 1.3vw, 1.25rem); line-height: 1.35; font-weight: 700; }
+/* สีตั้งต้นของตัวเลข KPI อยู่ใน layer base → สีที่ใส่เอง (valueClass เช่น text-red-700 ติดลบ / text-emerald-700) ชนะ (เดิมสีนี้ทับทุกสี · 7 พ.ย. 2026) */
+@layer base { .text-2xl.tabular-nums, .text-xl.tabular-nums { color: #0b1220; } }
 
 /* หน้าพิมพ์ (สัญญาเงินกู้ ฯลฯ): กระดาษ A4 · ขอบบน-ล่าง 14 มม. ซ้าย-ขวา 16 มม. */
 @page { size: A4; margin: 14mm 16mm; }

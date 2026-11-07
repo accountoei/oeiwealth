@@ -28,6 +28,11 @@ export function minusMoney(value: number | string | null | undefined, currency?:
 export function plusMoney(value: number | string | null | undefined, currency?: string, digits = 2): string {
   return signedMoney(Math.abs(Number(value ?? 0)), currency, digits);
 }
+/** สีของตัวเลขมีเครื่องหมาย: บวก = เขียว · ลบ = แดง · ปัดแล้วเป็นศูนย์ = สีปกติ */
+export function signTone(value: number, digits = 2): string {
+  if (isZero(value, digits)) return "";
+  return value > 0 ? "text-emerald-700" : "text-red-700";
+}
 /** เปอร์เซ็นต์มีเครื่องหมาย "+1.23%" / "−1.23%" · ปัดแล้วเป็นศูนย์ → "0.00%" */
 export function signedPct(value: number, digits = 2): string {
   if (isZero(value, digits)) return `${(0).toFixed(digits)}%`;

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, addDays, money, monthOptions, monthRange, qty, thDate, thMonth, todayBangkok, signedPct } from "@/lib/format";
+import { ADD_BTN, addDays, money, monthOptions, monthRange, plusMoney, qty, signedMoney, signedPct, signTone, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { MonthChange, StatBox } from "@/components/Boxes";
+import { changePct, prevMonthValue } from "@/lib/month-change";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -49,7 +51,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const none = Promise.resolve({ data: [] as never[] });
   const canWrite = me.role !== "VIEWER";
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
-  const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }] = await Promise.all([
+  const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }, valuePrev] = await Promise.all([
     ids.length ? supabase.from("asset_ownerships").select("asset_id,person_id,ownership_percent,shares,cost_per_share,start_date,end_date").in("asset_id", ids).is("deleted_at", null) : none,
     ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount,person_id,date,amount,tax,notes,currency").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
       .gte("date", yearStart).lte("date", divEnd).is("deleted_at", null) : none,
@@ -58,6 +60,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     canWrite ? supabase.from("v_asset_ownerships_active").select("asset_id,person_id,end_date") : none,
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null),
+    prevMonthValue(today, pv.personId, "BUSINESS"),
   ]);
   const rowsBase = bySort(all.filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   const color = new Map(all.map((r, i) => [r.asset_id, COLORS[i % COLORS.length]]));
@@ -109,7 +112,6 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const cur = nowOwn;
   const famActive = all.filter((r) => r.status === "ACTIVE" && (famValue(r) ?? 0) > 0);
   const totalAll = famActive.reduce((t, r) => t + (famValue(r) ?? 0), 0);
-  const latestAll = famActive.map((r) => r.assets.current_value_date ?? "").sort().at(-1) ?? null;
   famActive.forEach((r) => {
     const os = cur.filter((o) => o.asset_id === r.asset_id);
     const bySh = os.length > 0 && os.every((o) => o.shares != null);
@@ -128,6 +130,21 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     div: rows.reduce((t, r) => t + (divOf.get(r.asset_id) ?? 0), 0),
   };
   const who = pv.personId ? pv.personName : "ครอบครัว";
+
+  // กล่องสรุป 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าธุรกิจรวม · มูลค่าเทียบเงินลงทุน · เงินปันผลปีนี้ · ประเมินมูลค่า
+  const held = rows.filter((r) => r.status === "ACTIVE");
+  const withCost = held.filter((r) => myValue(r) != null && (costOf(r) ?? 0) > 0);
+  const gain = { val: withCost.reduce((t, r) => t + (myValue(r) ?? 0), 0), cost: withCost.reduce((t, r) => t + (costOf(r) ?? 0), 0) };
+  const gainAmt = gain.val - gain.cost;
+  const gainPct = gain.cost > 0 ? (gainAmt * 100) / gain.cost : null;
+  const shownIds = new Set(rows.map((r) => r.asset_id));
+  const divMonth = ((divs ?? []) as { id: string; asset_id: string; date: string; base_amount: number | null }[])
+    .filter((x) => x.date >= mStart && shownIds.has(x.asset_id))
+    .reduce((t, x) => t + (pv.personId ? divShare.get(x.id) ?? 0 : Number(x.base_amount ?? 0)), 0);
+  const divPct = gain.cost > 0 ? (totals.div * 100) / gain.cost : null;
+  const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(mStart);
+  const oldest = held.map((r) => r.assets.current_value_date ?? "").sort()[0] ?? null;
+  const staleN = held.filter((r) => !r.assets.current_value_date || r.assets.current_value_date < old).length;
 
   // ---------------------------------------------------------------- แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
   type DivRow = { id: string; asset_id: string; person_id: string | null; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
@@ -163,12 +180,31 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       <TabNav tabs={TABS} />
 
       <TabPanel id="overview">
+      {held.length > 0 && (
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatBox label={<>{pv.personId ? `มูลค่าธุรกิจส่วนของ ${pv.personName}` : "มูลค่าธุรกิจรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalFam, "THB")}
+            sub={<>
+              <MonthChange pct={changePct(totalFam, valuePrev)} prev={valuePrev} />
+              <div>{held.length} กิจการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</div>
+            </>} />
+          <StatBox label="มูลค่าเทียบเงินลงทุน" value={withCost.length ? signedMoney(gainAmt, "THB") : "-"} valueClass={signTone(gainAmt)}
+            sub={withCost.length ? <>{gainPct != null && <span className={`font-semibold ${signTone(gainAmt)}`}>{signedPct(gainPct)}</span>} · เงินลงทุน {money(gain.cost)}
+              {withCost.length < held.length && <div>ไม่รวม {held.length - withCost.length} กิจการที่ไม่มีเงินลงทุน</div>}</> : "ยังไม่มีเงินลงทุน"} />
+          <StatBox label={`เงินปันผลรับ ปี ${Number(ym.slice(0, 4)) + 543}`} value={plusMoney(totals.div, "THB")} valueClass={signTone(totals.div)}
+            sub={<>
+              <div>ม.ค. – {thMonth(mStart)} · ก่อนภาษี</div>
+              <div>{mLabel} {plusMoney(divMonth)}{divPct != null && <> · คิดเป็น <span className="font-semibold">{divPct.toFixed(2)}%</span> ของเงินลงทุน</>}</div>
+            </>} />
+          <StatBox label="ประเมินมูลค่า (เก่าสุด)" value={oldest ? thDate(oldest) : "-"}
+            sub={staleN ? `${staleN} กิจการเกิน 1 ปียังไม่ประเมินใหม่` : "✓ ประเมินครบภายใน 1 ปี"} subClass={staleN ? "text-red-700" : "text-emerald-700"} />
+        </section>
+      )}
       {totalFam > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <ShareBox title={<>สัดส่วนมูลค่าธุรกิจของ{who}</>} sub={<>รวม {money(totalFam, "THB")}{latestDate && ` ณ ${thDate(latestDate)}`}</>} label="กิจการ" total={totalFam}
+          <ShareBox title={<>สัดส่วนมูลค่าธุรกิจของ{who}</>} label="กิจการ" total={totalFam}
             rows={[...active].sort((a, b) => (myValue(b) ?? 0) - (myValue(a) ?? 0))
               .map((r) => ({ key: r.asset_id, name: r.assets.name, value: myValue(r) ?? 0, color: color.get(r.asset_id) ?? COLORS[0] }))} />
-          <ShareBox title="มูลค่าตามสมาชิกครอบครัว" sub={<>รวม {money(totalAll, "THB")}{latestAll && ` ณ ${thDate(latestAll)}`}</>} label="สมาชิกครอบครัว" total={totalAll}
+          <ShareBox title="มูลค่าตามสมาชิกครอบครัว" label="สมาชิกครอบครัว" total={totalAll}
             rows={personRows.map(([pid, v], i) => ({ key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[i % COLORS.length] }))} />
         </section>
       )}
