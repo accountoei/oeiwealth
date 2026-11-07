@@ -9,7 +9,7 @@ import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
-import ShareTable, { SHARE_COLORS } from "@/components/ShareTable";
+import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import AltBatch, { type AltRow } from "./AltBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
@@ -125,18 +125,12 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
 
       {totalMine > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">สัดส่วนมูลค่าตามหมวด{pv.personId ? `ของ ${pv.personName}` : ""}</h2>
-            <p className="mb-3 text-xs text-slate-500">รวม {money(totalMine, "THB")} · {active.length} รายการ</p>
-            <ShareTable label="หมวด" total={totalMine} rows={[...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
+          <ShareBox title={<>สัดส่วนมูลค่าตามหมวด{pv.personId ? `ของ ${pv.personName}` : ""}</>} sub={<>รวม {money(totalMine, "THB")} · {active.length} รายการ</>}
+            label="หมวด" total={totalMine} rows={[...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
               key: k, name: `${cats.find(([c]) => c === k)?.[1] ?? "-"} (${active.filter((r) => r.category_id === k).length})`, value: v, color: color.get(k) ?? COLORS[0] }))} />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">มูลค่าตามสมาชิกครอบครัว</h2>
-            <p className="mb-3 text-xs text-slate-500">รวม {money(totalFam, "THB")}</p>
-            <ShareTable label="สมาชิกครอบครัว" total={totalFam} rows={[...byPerson.entries()].sort((a, b) => b[1] - a[1]).map(([pid, v], i) => ({
+          <ShareBox title="มูลค่าตามสมาชิกครอบครัว" sub={<>รวม {money(totalFam, "THB")}</>}
+            label="สมาชิกครอบครัว" total={totalFam} rows={[...byPerson.entries()].sort((a, b) => b[1] - a[1]).map(([pid, v], i) => ({
               key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[(i + 1) % COLORS.length] }))} />
-          </div>
         </section>
       )}
 
