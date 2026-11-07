@@ -9,6 +9,7 @@ import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
+import { ShareBox } from "@/components/ShareTable";
 import BusinessBadge from "./badge";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
@@ -164,17 +165,11 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       <TabPanel id="overview">
       {totalFam > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">สัดส่วนมูลค่าธุรกิจของ{who}</h2>
-            <p className="mb-3 text-xs text-slate-500">รวม {money(totalFam, "THB")}{latestDate && ` ณ ${thDate(latestDate)}`}</p>
-            <ShareTable label="กิจการ" rows={[...active].sort((a, b) => (myValue(b) ?? 0) - (myValue(a) ?? 0))
-              .map((r) => ({ key: r.asset_id, name: r.assets.name, value: myValue(r) ?? 0, color: color.get(r.asset_id) ?? COLORS[0] }))} total={totalFam} />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="font-medium text-slate-900">มูลค่าตามสมาชิกครอบครัว</h2>
-            <p className="mb-3 text-xs text-slate-500">รวม {money(totalAll, "THB")}{latestAll && ` ณ ${thDate(latestAll)}`}</p>
-            <ShareTable label="สมาชิกครอบครัว" rows={personRows.map(([pid, v], i) => ({ key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[i % COLORS.length] }))} total={totalAll} />
-          </div>
+          <ShareBox title={<>สัดส่วนมูลค่าธุรกิจของ{who}</>} sub={<>รวม {money(totalFam, "THB")}{latestDate && ` ณ ${thDate(latestDate)}`}</>} label="กิจการ" total={totalFam}
+            rows={[...active].sort((a, b) => (myValue(b) ?? 0) - (myValue(a) ?? 0))
+              .map((r) => ({ key: r.asset_id, name: r.assets.name, value: myValue(r) ?? 0, color: color.get(r.asset_id) ?? COLORS[0] }))} />
+          <ShareBox title="มูลค่าตามสมาชิกครอบครัว" sub={<>รวม {money(totalAll, "THB")}{latestAll && ` ณ ${thDate(latestAll)}`}</>} label="สมาชิกครอบครัว" total={totalAll}
+            rows={personRows.map(([pid, v], i) => ({ key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[i % COLORS.length] }))} />
         </section>
       )}
 
@@ -253,29 +248,5 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       </TabPanel>
     </div>
     </TabsProvider>
-  );
-}
-
-/** ตารางสัดส่วน: ชื่อ · แถบ · มูลค่า · % */
-function ShareTable({ label, rows, total }: { label: string; rows: { key: string; name: string; value: number; color: string }[]; total: number }) {
-  return (
-    <table className="w-full text-sm">
-      <thead className="bg-slate-50 text-left text-xs text-slate-500">
-        <tr><th className="px-3 py-2">{label}</th><th className="px-3"></th><th className="px-3 text-right">มูลค่า (THB)</th><th className="px-3 text-right">สัดส่วน</th></tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {rows.map((r) => {
-          const pct = total > 0 ? (r.value * 100) / total : 0;
-          return (
-            <tr key={r.key}>
-              <td className="whitespace-nowrap px-3 py-2"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: r.color }} />{r.name}</td>
-              <td className="w-2/5 px-3"><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} /></div></td>
-              <td className="whitespace-nowrap px-3 text-right tabular-nums">{money(r.value, undefined, 0)}</td>
-              <td className="px-3 text-right tabular-nums">{pct.toFixed(1)}%</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
   );
 }

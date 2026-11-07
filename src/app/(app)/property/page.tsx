@@ -23,6 +23,7 @@ import ValueBatch, { type ValueRow } from "./ValueBatch";
 import { compName, type Component } from "./components";
 import type { MarketValuation } from "./MarketValuationForm";
 import LandTaxTable, { type TaxLineRow, type TaxPropRow } from "./LandTaxTable";
+import { ShareBox } from "@/components/ShareTable";
 
 type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; vacant_since: string | null; location_group: string | null;
   land_area_sq_wa: number | null; latitude: number | null; longitude: number | null; address: string | null;
@@ -265,7 +266,6 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const months = monthOptions(family?.go_live_date, today, 0, ym);
   const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(start);
   const old = addDays(today, -90);
-  const card = "rounded-xl border border-slate-200 bg-white p-5";
 
   // ---------------------------------------------------------------- แท็บทรัพย์สินทั้งหมด
   const propRows: PropRow[] = props.map((p, i) => {
@@ -460,14 +460,12 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
             sub={leaseCount ? `จากสัญญาที่มีผล ${leaseCount} สัญญา (ต่อเดือน × 12)` : "ยังไม่มีสัญญาเช่าที่มีผล"} />
         </section>
         <section className="grid gap-4 lg:grid-cols-2">
-          <div className={card}>
-            <h2 className="font-medium text-slate-900">มูลค่ารวม</h2>
+          {/* ตารางสัดส่วนชุดเดียวกับทุกหน้า (ShareBox · ตกลง 7 พ.ย. 2026) */}
+          <ShareBox title="มูลค่ารวม" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}>
             <div className="mt-1 text-right text-xl font-semibold tabular-nums">{money(totalValue, "THB")}</div>
             <p className="text-right text-xs text-slate-500">รวม {active.length} รายการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</p>
-            <ShareRows label="ประเภท" rows={typeRows} total={totalValue} />
-          </div>
-          <div className={card}>
-            <h2 className="font-medium text-slate-900">มูลค่าตามการใช้งาน</h2>
+          </ShareBox>
+          <ShareBox title="มูลค่าตามการใช้งาน" label="การใช้งาน" total={totalValue} rows={shareRows(usageRows)}>
             <p className="text-right text-xs text-slate-500">รวม {money(totalValue, "THB")}</p>
             {totalValue > 0 && (
               <div className="mt-3 flex h-6 overflow-hidden rounded-md text-[11px] font-medium text-white">
@@ -477,8 +475,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                 })}
               </div>
             )}
-            <ShareRows label="การใช้งาน" rows={usageRows} total={totalValue} />
-          </div>
+          </ShareBox>
         </section>
         <PropertyTable rows={propRows} note={<>มูลค่า = มูลค่าประเมินล่าสุด{pv.personId && ` · แสดงเฉพาะส่วนของ ${pv.personName} ตามสัดส่วนความเป็นเจ้าของ`} · สกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</>}
           empty={pv.personId ? `ไม่มีทรัพย์สินของ ${pv.personName}` : "ยังไม่มีทรัพย์สิน"}
@@ -512,24 +509,6 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   );
 }
 
-/** ตารางสัดส่วน: ชื่อ (จำนวนรายการ) · มูลค่า · % */
-function ShareRows({ label, rows, total }: { label: string; rows: { key: string; label: string; n: number; value: number; color: string }[]; total: number }) {
-  if (rows.length === 0) return <p className="mt-3 text-sm text-slate-500">ยังไม่มีข้อมูล</p>;
-  return (
-    <table className="mt-3 w-full text-sm">
-      <thead className="text-left text-xs text-slate-500">
-        <tr className="border-b border-slate-100"><th className="py-2 font-normal">{label}</th><th className="text-right font-normal">มูลค่า (THB)</th><th className="text-right font-normal">สัดส่วน</th></tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {rows.map((r) => (
-          <tr key={r.key}>
-            <td className="py-2.5"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: r.color }} />{r.label}
-              <span className="ml-1 text-xs text-slate-400">({r.n} รายการ)</span></td>
-            <td className="text-right tabular-nums text-slate-700">{money(r.value, undefined, 0)}</td>
-            <td className="text-right tabular-nums text-slate-600">{(total > 0 ? (r.value * 100) / total : 0).toFixed(1)}%</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
+/** แถวสัดส่วน (ประเภท / การใช้งาน) → ตารางสัดส่วนชุดเดียวกับทุกหน้า · ชื่อ (จำนวนรายการ) */
+const shareRows = (rows: { key: string; label: string; n: number; value: number; color: string }[]) =>
+  rows.map((r) => ({ key: r.key, name: r.label, sub: `(${r.n} รายการ)`, value: r.value, color: r.color }));
