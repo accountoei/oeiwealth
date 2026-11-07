@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, money, monthOptions, monthRange, plusMoney, signTone, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { MonthChange, StatBox } from "@/components/Boxes";
+import { changePct, prevMonthValue } from "@/lib/month-change";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
@@ -40,7 +42,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const paths = ["/financial/loans"];
-  const [{ data, error }, { data: extras }, { data: schedRaw }, { data: fx }, { data: pMoves }, { data: iRows }, { data: banks }, { data: family }, sortMap] = await Promise.all([
+  const [{ data, error }, { data: extras }, { data: schedRaw }, { data: fx }, { data: pMoves }, { data: iRows }, { data: banks }, { data: family }, sortMap, valuePrev] = await Promise.all([
     supabase.from("v_loans_status")
       .select("asset_id,name,currency,borrower_name,principal,outstanding_principal,interest_rate,due_date,status,derived_status")
       .order("status").order("name"),
@@ -55,6 +57,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     loadSortMap("assets"),
+    prevMonthValue(today, pv.personId, "LOANS"),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const phone = new Map((extras ?? []).map((x) => [x.asset_id as string, x.borrower_phone as string | null]));
@@ -172,6 +175,20 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     defaultBank: [lastBank.get(r.asset_id)].find((b) => b && bankList.some((x) => x.id === b && x.currency === r.currency))
       ?? bankList.find((x) => x.currency === r.currency)?.id ?? "",
   });
+  // กล่องสรุป 4 กล่อง (ตกลง 7 พ.ย. 2026): เงินต้นคงเหลือรวม · รับชำระเดือนที่เลือก · ดอกเบี้ยรับปีนี้ · ค้างชำระ
+  const closedN = rows.filter((r) => r.status === "CLOSED").length;
+  const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(start);
+  const recvP = pMonth.filter((m) => m.from_asset_id && loanOf.has(m.from_asset_id)).reduce((t, m) => t + thbOf(loanOf.get(m.from_asset_id!)!, m.amount), 0);
+  const recvI = iMonth.filter((i) => loanOf.has(i.asset_id)).reduce((t, i) => t + thbOf(loanOf.get(i.asset_id)!, i.amount), 0);
+  const dueLines = sched.filter((x) => loanOf.has(x.loan_asset_id) && x.due_date >= start && x.due_date <= end);
+  const dueM = dueLines.reduce((t, x) => t + thbOf(lr(x), x.total_due), 0);
+  const leftM = dueLines.reduce((t, x) => t + thbOf(lr(x), x.total_remaining), 0);
+  const yStart = `${ym.slice(0, 4)}-01-01`;
+  const intYear = (iRows ?? []).filter((i) => loanOf.has(i.asset_id) && i.date >= yStart && i.date <= end).reduce((t, i) => t + thbOf(loanOf.get(i.asset_id)!, i.amount), 0);
+  const rated = open.filter((r) => r.interest_rate != null && Number(r.outstanding_principal ?? 0) > 0);
+  const ratedOut = rated.reduce((t, r) => t + thbOf(r, r.outstanding_principal), 0);
+  const avgRate = ratedOut > 0 ? rated.reduce((t, r) => t + Number(r.interest_rate) * thbOf(r, r.outstanding_principal), 0) / ratedOut : null;
+  const overdueLoans = new Set(overdueAll.map((x) => x.loan_asset_id)).size;
   const withLines = new Set(monthLines.map((x) => x.loan_asset_id));
   const batchRows = open.filter((r) => withLines.has(r.asset_id)).map(toRow);
   const batchOthers = open.filter((r) => !withLines.has(r.asset_id)).map(toRow);
@@ -187,6 +204,30 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
 
       {/* ============================================================ ภาพรวม */}
       <TabPanel id="overview">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatBox label={<>{pv.personId ? `เงินต้นคงเหลือส่วนของ ${pv.personName}` : "เงินต้นคงเหลือรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(gTotal, "THB")}
+          sub={<>
+            <MonthChange pct={changePct(gTotal, valuePrev)} prev={valuePrev} />
+            <div>สัญญาที่เปิด {open.length} สัญญา{closedN ? ` · ปิดแล้ว ${closedN}` : ""}</div>
+          </>} />
+        <StatBox label={`รับชำระ${mLabel}`} value={plusMoney(recvP + recvI, "THB")} valueClass={signTone(recvP + recvI)}
+          sub={<>
+            <div>เงินต้น {money(recvP)} · ดอกเบี้ย {money(recvI)}</div>
+            {dueM > 0.005 ? <div>ถึงกำหนด{mLabel} {money(dueM)} · รับแล้ว <span className="font-semibold">{(((dueM - leftM) * 100) / dueM).toFixed(0)}%</span></div>
+              : <div className="text-slate-400">ไม่มีงวดถึงกำหนด{mLabel}</div>}
+          </>} />
+        <StatBox label={`ดอกเบี้ยรับ ปี ${Number(ym.slice(0, 4)) + 543}`} value={plusMoney(intYear, "THB")} valueClass={signTone(intYear)}
+          sub={<>
+            <div>ม.ค. – {thMonth(start)} · ก่อนภาษี</div>
+            {avgRate != null && <div>อัตราเฉลี่ย <span className="font-semibold">{avgRate.toFixed(2)}%</span> ต่อปี (ถ่วงตามเงินต้นคงเหลือ)</div>}
+          </>} />
+        <StatBox label="ค้างชำระ (เลยกำหนด ณ วันนี้)" value={money(overdueThb, "THB")} valueClass={overdueThb > 0.005 ? "text-red-700" : ""}
+          sub={<>
+            {overdueAll.length ? <div className="text-red-700">{overdueAll.length} งวด · {overdueLoans} สัญญา</div> : <div className="text-emerald-700">✓ ไม่มีงวดค้าง</div>}
+            {riskTotal > 0.005 && <div className="text-amber-800">เสี่ยงไม่ได้คืน {money(riskTotal)}</div>}
+          </>} />
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-3 font-medium text-slate-900">สรุปเงินต้นคงเหลือตามสถานะ <span className="text-xs font-normal text-slate-500">(THB)</span> <InfoTip label="คำอธิบาย">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ในความมั่งคั่งสุทธิ

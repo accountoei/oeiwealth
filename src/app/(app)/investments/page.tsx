@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct } from "@/lib/format";
+import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -13,7 +13,8 @@ import { CAPITAL_MOVE_COLS, netInvested, vsInvested, type CapitalMove, type Capi
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
-import { StatBox } from "@/components/Boxes";
+import { MonthChange, StatBox } from "@/components/Boxes";
+import { changePct, prevMonthValue } from "@/lib/month-change";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { DueTab, loadDue } from "./due";
 import { UpdateTab, loadUpdate } from "./update";
@@ -48,11 +49,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  // มูลค่าลงทุน ณ สิ้นเดือนก่อน (เทียบ ▲/▼ ในกล่องแรก · ชุดเดียวกับ Dashboard: ปิดเดือนแล้ว = ยอดที่ปิด · จำผลไว้)
-  const prevStart = `${addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7)}-01`;
-  type NwItem = { item_type: string; item_group: string; base_value: number | null };
   const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: capPre }, { data: capMoves }], { data: income }, rets,
-    [openPfs, updateData], dueData, prevItems] = await Promise.all([
+    [openPfs, updateData], dueData, totalPrev] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
     Promise.all([
@@ -84,9 +82,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       return [open, await loadUpdate(open)] as const;
     }),
     pvQ.then((v) => loadDue(ym, canWrite, v.showAsset)),
-    pvQ.then((v) => v.personId
-      ? cachedRpc<NwItem[]>("month_person_items", { p_month: prevStart, p_person: v.personId })
-      : cachedRpc<NwItem[]>("month_family_items", { p_month: prevStart })),
+    // มูลค่าลงทุน ณ สิ้นเดือนก่อน (เทียบ ▲/▼ ในกล่องแรก)
+    pvQ.then((v) => prevMonthValue(today, v.personId, "INVESTMENT")),
   ]);
   const goLive = family?.go_live_date ?? "";
   const monthEnd = monthRange(ym).end;
@@ -118,8 +115,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const total = list.reduce((s, p) => s + Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), 0);
   const cash = holdings.filter((h) => h.holding_type === "CASH").reduce((s, h) => s + thb(h), 0)
     + list.reduce((s, p) => s + Number(p.in_transit_thb ?? 0), 0);
-  const totalPrev = (prevItems ?? []).filter((i) => i.item_type === "ASSET" && i.item_group === "INVESTMENT").reduce((t, i) => t + Number(i.base_value ?? 0), 0);
-  const changePct = Math.abs(totalPrev) < 0.005 ? null : ((total - totalPrev) / Math.abs(totalPrev)) * 100;
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const byType = new Map<string, number>();
   holdings.forEach((h) => byType.set(h.holding_type, (byType.get(h.holding_type) ?? 0) + thb(h)));
@@ -182,9 +177,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         {/* 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าลงทุนรวม + จำนวนพอร์ต (แบบกล่องยอดเงินฝากรวมของ Bank Accounts) · รายได้ · เงินลงทุนสุทธิ · เงินฝากในพอร์ต (ท้ายสุด) */}
         <StatBox label={<>{pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(total, "THB", 0)}
           sub={<>
-            <div>{changePct == null ? <span className="text-slate-400">ไม่มีข้อมูลเดือนก่อน</span>
-              : <span className={changePct >= 0 ? "text-emerald-700" : "text-red-700"}>{changePct >= 0 ? "▲" : "▼"} <span className="font-semibold">{Math.abs(changePct).toFixed(1)}%</span> จากเดือนก่อน</span>}
-              {changePct != null && <span className="text-slate-400"> ({money(totalPrev, undefined, 0)})</span>}</div>
+            <MonthChange pct={changePct(total, totalPrev)} prev={totalPrev} />
             <div>พอร์ตที่เปิด {openCount} พอร์ต{closedCount ? ` · ปิดแล้ว ${closedCount}` : ""}</div>
           </>} />
         <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { money } from "@/lib/format";
 
 // กล่องมาตรฐานของทุกหน้า (ใช้ได้ทั้งหน้า server และ client · ไม่มี state)
 //   StatBox    = กล่องสรุปตัวเลข: หัวข้อชิดซ้าย · ตัวเลข + บรรทัดใต้ตัวเลขชิดขวา (class num-box ใน globals.css)
@@ -33,6 +34,15 @@ export function StatBox({ label, value, unit, sub, subClass, valueClass, flag, s
       {flag != null && flag !== "" && flag !== false && <div className="mt-1 text-xs font-medium text-amber-700">{flag}</div>}
       {children}
     </div>
+  );
+}
+
+/** บรรทัด "▲ x.x% จากเดือนก่อน (ยอดเดือนก่อน)" ในกล่องแรกของหน้ารายการ (ตกลง 7 พ.ย. 2026) · pct = null → ไม่มีข้อมูลเดือนก่อน */
+export function MonthChange({ pct, prev }: { pct: number | null; prev: number }) {
+  if (pct == null) return <div className="text-slate-400">ไม่มีข้อมูลเดือนก่อน</div>;
+  return (
+    <div><span className={pct >= 0 ? "text-emerald-700" : "text-red-700"}>{pct >= 0 ? "▲" : "▼"} <span className="font-semibold">{Math.abs(pct).toFixed(1)}%</span> จากเดือนก่อน</span>
+      <span className="text-slate-400"> ({money(prev, undefined, 0)})</span></div>
   );
 }
 

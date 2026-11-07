@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, addDays, money, monthOptions, monthRange, qtyUnit, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, addDays, money, monthOptions, monthRange, plusMoney, qtyUnit, signedMoney, signedPct, signTone, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { MonthChange, StatBox } from "@/components/Boxes";
+import { changePct, prevMonthValue } from "@/lib/month-change";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -36,7 +38,10 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder && sp.order === "1";
   const paths = ["/alternative"];
-  const [sortMap, { data, error }, { data: owners }, { data: fx }, { data: banks }, { data: family }] = await Promise.all([
+  const today = todayBangkok();
+  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
+  const { start: mStart, end: mEnd } = monthRange(ym);
+  const [sortMap, { data, error }, { data: owners }, { data: fx }, { data: banks }, { data: family }, { data: yearInc }, valuePrev] = await Promise.all([
     loadSortMap("assets"),
     supabase.from("alternative_asset_details")
       .select("id,asset_id,category_id,quantity,unit,purity_pct,auto_price,brand,model,storage_location,asset_categories(id,category_name,category_code,default_unit),assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,deleted_at)")
@@ -45,6 +50,10 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("families").select("go_live_date").maybeSingle(),
+    // ผลตอบแทนที่รับแล้วตั้งแต่ต้นปีถึงสิ้นเดือนที่เลือก (กล่องสรุป · กรองเฉพาะสินทรัพย์ทางเลือกด้านล่าง)
+    supabase.from("income_transactions").select("asset_id,date,base_amount").eq("income_type", "OTHER").eq("pending_split", false)
+      .not("asset_id", "is", null).gte("date", `${ym.slice(0, 4)}-01-01`).lte("date", mEnd).is("deleted_at", null),
+    prevMonthValue(today, pv.personId, "ALTERNATIVE"),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => (v == null ? null : Number(v) * (rate.get(c) ?? 0));
@@ -63,7 +72,6 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const per = (v: number | null, r: Row) => (v == null || !r.quantity ? null : v / (Number(r.quantity) * share(r.asset_id)));
   const vs = (r: Row) => { const v = valueOf(r), c = costOf(r); return v == null || !c ? null : ((v - c) * 100) / c; };
   const pctText = (v: number) => `${v >= 0 ? "+" : ""}${v.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
-  const today = todayBangkok();
   const old = addDays(today, -90);
 
   // กล่องสรุป: ตามหมวด (ตามสมาชิกที่เลือก) · ตามสมาชิก (ทั้งครอบครัวเสมอ)
@@ -79,6 +87,20 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const totalFam = [...byPerson.values()].reduce((t, v) => t + v, 0);
   const personName = new Map(pv.persons.map((x) => [x.id, x.name]));
   const totals = { cost: rows.reduce((t, r) => t + (costOf(r) ?? 0), 0), val: rows.reduce((t, r) => t + (valueOf(r) ?? 0), 0) };
+  // กล่องสรุป 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่ารวม · กำไร / ขาดทุนที่ยังไม่ขาย · ผลตอบแทนที่รับปีนี้ · อัปเดตมูลค่า
+  const held = mine.filter((r) => r.assets.status === "ACTIVE");
+  const autoN = held.filter((r) => !!r.auto_price && catOf(r)?.category_code === "GOLD").length;
+  const withCost = held.filter((r) => valueOf(r) != null && (costOf(r) ?? 0) > 0);
+  const gain = { val: withCost.reduce((t, r) => t + (valueOf(r) ?? 0), 0), cost: withCost.reduce((t, r) => t + (costOf(r) ?? 0), 0) };
+  const gainAmt = gain.val - gain.cost;
+  const gainPct = gain.cost > 0 ? (gainAmt * 100) / gain.cost : null;
+  const altIds = new Set(mine.map((r) => r.asset_id));
+  const incRows = (yearInc ?? []).filter((i) => altIds.has(i.asset_id as string));
+  const incOf = (list: typeof incRows) => list.reduce((t, i) => t + Number(i.base_amount ?? 0) * share(i.asset_id as string), 0);
+  const incYear = incOf(incRows), incMonth = incOf(incRows.filter((i) => i.date >= mStart));
+  const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(mStart);
+  const oldest = held.map((r) => r.assets.current_value_date ?? "").sort()[0] ?? null;
+  const staleN = held.filter((r) => !r.assets.current_value_date || r.assets.current_value_date < old).length;
   const href = (c?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (c) q.set("c", c); const s = q.toString(); return `/alternative${s ? `?${s}` : ""}`; };
   const num = "px-3 py-3 align-top text-right tabular-nums";
 
@@ -86,8 +108,6 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
   // ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026) · เดือนที่แถบบน: วันที่ตั้งต้น = สิ้นเดือน (ไม่เกินวันนี้)
   const activeIds = mine.filter((r) => r.assets.status === "ACTIVE").map((r) => r.asset_id);
-  const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
-  const { start: mStart, end: mEnd } = monthRange(ym);
   const defaultDate = mEnd < today ? mEnd : today;
   const months = monthOptions(family?.go_live_date, today, 0, ym);
   const { data: gotRaw } = activeIds.length ? await supabase.from("income_transactions").select("id,asset_id,date,amount,tax,notes,currency")
@@ -123,12 +143,29 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
 
       <TabPanel id="overview" className="space-y-6">
 
+      {held.length > 0 && (
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatBox label={<>{pv.personId ? `มูลค่าสินทรัพย์ทางเลือกส่วนของ ${pv.personName}` : "มูลค่าสินทรัพย์ทางเลือกรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalMine, "THB")}
+            sub={<>
+              <MonthChange pct={changePct(totalMine, valuePrev)} prev={valuePrev} />
+              <div>{held.length} รายการ{autoN ? ` · ทองราคาอัตโนมัติ ${autoN}` : ""}</div>
+            </>} />
+          <StatBox label="กำไร / ขาดทุนที่ยังไม่ขาย" value={withCost.length ? signedMoney(gainAmt, "THB") : "-"} valueClass={signTone(gainAmt)}
+            sub={withCost.length ? <>{gainPct != null && <span className={`font-semibold ${signTone(gainAmt)}`}>{signedPct(gainPct)}</span>} · ราคาทุน {money(gain.cost)}
+              {withCost.length < held.length && <div>ไม่รวม {held.length - withCost.length} รายการที่ไม่มีราคาทุน</div>}</> : "ยังไม่มีราคาทุน"} />
+          <StatBox label={`ผลตอบแทนที่รับแล้ว ปี ${Number(ym.slice(0, 4)) + 543}`} value={plusMoney(incYear, "THB")} valueClass={signTone(incYear)}
+            sub={<><div>ม.ค. – {thMonth(mStart)} · ก่อนภาษี</div><div>{mLabel} {plusMoney(incMonth)}</div></>} />
+          <StatBox label="อัปเดตมูลค่า (เก่าสุด)" value={oldest ? thDate(oldest) : "-"}
+            sub={staleN ? `${staleN} รายการเกิน 90 วันยังไม่อัปเดต` : "✓ อัปเดตครบภายใน 90 วัน"} subClass={staleN ? "text-red-700" : "text-emerald-700"} />
+        </section>
+      )}
+
       {totalMine > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <ShareBox title={<>สัดส่วนมูลค่าตามหมวด{pv.personId ? `ของ ${pv.personName}` : ""}</>} sub={<>รวม {money(totalMine, "THB")} · {active.length} รายการ</>}
+          <ShareBox title={<>สัดส่วนมูลค่าตามหมวด{pv.personId ? `ของ ${pv.personName}` : ""}</>} 
             label="หมวด" total={totalMine} rows={[...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
               key: k, name: `${cats.find(([c]) => c === k)?.[1] ?? "-"} (${active.filter((r) => r.category_id === k).length})`, value: v, color: color.get(k) ?? COLORS[0] }))} />
-          <ShareBox title="มูลค่าตามสมาชิกครอบครัว" sub={<>รวม {money(totalFam, "THB")}</>}
+          <ShareBox title="มูลค่าตามสมาชิกครอบครัว"
             label="สมาชิกครอบครัว" total={totalFam} rows={[...byPerson.entries()].sort((a, b) => b[1] - a[1]).map(([pid, v], i) => ({
               key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[(i + 1) % COLORS.length] }))} />
         </section>
