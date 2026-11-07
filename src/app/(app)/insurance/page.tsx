@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Fragment } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
@@ -21,7 +20,7 @@ import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
 import UndoButton from "@/components/UndoButton";
-import { bookletCount, bookletGroups, bookletOrder, bookletRole, partLabel } from "@/lib/insurance-booklet";
+import { PART_LABEL, bookletCount, bookletGroups, bookletOrder, bookletRole, partLabel } from "@/lib/insurance-booklet";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -58,8 +57,17 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     return (l.due_date >= `${yr}-01-01` && l.due_date <= `${yr}-12-31`)
       || (yr === yNow && INS_OPEN.includes(l.status) && (l.due_date < `${yr}-01-01` || l.due_date <= soon));
   };
-  const linesQ = supabase.from("v_insurance_schedule_status").select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,paid_amount,remaining,status")
-    .order("due_date").order("installment_no").then((r) => r);
+  // ทุกงวดของทุกกรมธรรม์: Supabase ส่งครั้งละไม่เกิน 1,000 แถว (ตอนนี้ ~800 แถว · ข้อมูลจริงเกินได้) → อ่านทีละ 1,000 แถวจนครบ
+  const linesQ = (async () => {
+    const out: YLine[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase.from("v_insurance_schedule_status").select("id,policy_id,kind,installment_no,due_date,amount,currency,benefit_type,paid_amount,remaining,status")
+        .order("due_date").order("installment_no").order("id").range(from, from + 999);
+      if (error) return { data: out, error };
+      out.push(...((data as YLine[] | null) ?? []));
+      if (!data || data.length < 1000) return { data: out, error: null };
+    }
+  })();
   // ที่จ่าย / รับแล้วของงวดในกล่อง (ทีละครั้ง · กดแก้ / ยกเลิก) → ต่อจากผลของ linesQ ในรอบเดียวกัน
   const recQ = linesQ.then(async ({ data: ls }) => {
     const ids = ((ls ?? []) as YLine[]).filter((l) => inBox(l) && Number(l.paid_amount ?? 0) > 0).map((l) => l.id);
@@ -71,8 +79,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     ]);
     return { pays: p.data ?? [], bens: b.data ?? [] };
   });
-  const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: dues }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: yearLumps }, rec] = await Promise.all([
+  const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: fups }, { data: allLines },
+    { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: yearLumps }, { data: allLumps }, rec] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id")
       .order("status").order("insurer"),
@@ -81,8 +89,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count").is("deleted_at", null),
     supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
       .gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`).order("claim_date", { ascending: false }),
-    supabase.from("v_insurance_schedule_status").select("policy_id,due_date,remaining,status").eq("kind", "PREMIUM")
-      .in("status", ["PENDING", "OVERDUE", "PARTIAL"]).order("due_date"),
     supabase.from("insurance_followups").select("id,person_id,policy_id,role,action,status").is("deleted_at", null)
       .in("status", ["OPEN", "IN_PROGRESS"]).order("created_at"),
     linesQ,
@@ -94,6 +100,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     // รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือกของแท็บรับ → แสดงใต้ชื่อกรมธรรม์
     supabase.from("insurance_benefit_receipts").select("id,policy_id,receipt_date,amount,currency,outcome").is("line_id", null)
       .gte("receipt_date", `${yBen}-01-01`).lte("receipt_date", `${yBen}-12-31`).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
+    // รับเงินก้อนที่ไม่ผูกงวด ทุกปี → กล่อง "ได้คืนเทียบเบี้ย" (แบบหน้ากรมธรรม์)
+    supabase.from("insurance_benefit_receipts").select("policy_id,amount,currency").is("line_id", null).is("undone_at", null).is("deleted_at", null),
     recQ,
   ]);
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
@@ -117,33 +125,42 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (iFilter) q.set("i", iFilter); if (t) q.set("t", t); if (s && s !== "ACTIVE") q.set("s", s);
     const x = q.toString(); return `/insurance${x ? `?${x}` : ""}`;
   };
-  // เบี้ยงวดถัดไป / เลยกำหนด ต่อกรมธรรม์
-  const nextPremium = new Map<string, { due_date: string; remaining: number }>();
+  const lineList = (allLines ?? []) as YLine[];
+  // เบี้ยเลยกำหนดต่อกรมธรรม์ (ใต้สถานะ · ตกลง 7 พ.ย. 2026 · เลิกคอลัมน์เบี้ย / ผลประโยชน์งวดถัดไป เพราะมีแท็บแล้ว)
   const overduePremium = new Map<string, number>();
-  (dues ?? []).forEach((d) => {
-    if (d.status === "OVERDUE") overduePremium.set(d.policy_id, (overduePremium.get(d.policy_id) ?? 0) + 1);
-    else if (!nextPremium.has(d.policy_id)) nextPremium.set(d.policy_id, { due_date: d.due_date, remaining: Number(d.remaining) });
-  });
+  lineList.forEach((l) => { if (l.kind === "PREMIUM" && l.status === "OVERDUE") overduePremium.set(l.policy_id, (overduePremium.get(l.policy_id) ?? 0) + 1); });
   const policyName = new Map((data ?? []).map((r) => [r.id, `${r.insurer}${r.policy_no ? ` · ${r.policy_no}` : ""}`]));
   const fupRows = (fups ?? []).filter((f) => pv.isPerson(f.person_id) || rows.some((r) => r.id === f.policy_id));
   const cvOfPol = new Set(pol.map((r) => r.cash_value_asset_id).filter(Boolean));
   const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id) && (!iFilter || cvOfPol.has(a.id)))
     .reduce((s, a) => s + (a.currency === "THB" ? Number(a.current_value ?? 0) * pv.assetShare(a.id) : 0), 0);
-  // สรุปด้านบน (กรมธรรม์ที่มีผล · THB)
+  // กล่องสรุปด้านบน (ตกลง 7 พ.ย. 2026 · กรมธรรม์ที่มีผล · THB)
   const act = mineRows.filter((r) => r.status === "ACTIVE");
+  const activeIds = new Set(act.map((r) => r.id));
   const sumThb = (f: (r: (typeof act)[number]) => number | null, ccyOf: (r: (typeof act)[number]) => string | null) =>
     act.reduce((t, r) => t + ((ccyOf(r) ?? "THB") === "THB" ? Number(f(r) ?? 0) : 0), 0);
-  const insuredTotal = sumThb((r) => r.insured_amount, (r) => r.insured_amount_currency);
+  //   ทุนประกันชีวิต = ชีวิต + บำนาญ (สุขภาพใช้วงเงิน · ส่วนใหญ่เป็นเบี้ยทิ้ง → ไม่รวม) · อุบัติเหตุ = เสียชีวิตจากอุบัติเหตุเพิ่มอีก
+  const lifeTotal = sumThb((r) => (r.insurance_type === "LIFE" || r.insurance_type === "ANNUITY" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
+  const accidentTotal = sumThb((r) => (r.insurance_type === "ACCIDENT" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
   const premiumTotal = sumThb((r) => r.premium, (r) => r.premium_currency);
   const overdueTotal = mineRows.reduce((t, r) => t + (overduePremium.get(r.id) ?? 0), 0);
-  // งวดสุดท้าย (ปี พ.ศ.) + งวดที่เหลือ ต่อกรมธรรม์
-  const lineList = (allLines ?? []) as YLine[];
-  const lastOf = (pid: string, kind: string) => {
-    const xs = lineList.filter((l) => l.policy_id === pid && l.kind === kind);
-    const d = xs.at(-1)?.due_date;
-    return d ? { year: Number(d.slice(0, 4)) + 543, left: xs.filter((l) => INS_OPEN.includes(l.status)).length } : null;
-  };
-  const nextBenefit = (pid: string) => lineList.find((l) => l.policy_id === pid && l.kind === "BENEFIT" && INS_OPEN.includes(l.status));
+  //   ปีนี้ยังต้องจ่าย = เบี้ยงวดที่ยังจ่ายไม่ครบ ครบกำหนดไม่เกินสิ้นปีนี้ (รวมงวดเลยกำหนด)
+  const premLeftYear = lineList.filter((l) => l.kind === "PREMIUM" && activeIds.has(l.policy_id) && l.currency === "THB"
+    && INS_OPEN.includes(l.status) && l.due_date <= `${year}-12-31`).reduce((t, l) => t + Number(l.remaining ?? 0), 0);
+  //   ได้คืนเทียบเบี้ย (สูตรเดียวกับหน้ากรมธรรม์ รวมทุกฉบับ) = (ผลประโยชน์ที่รับ + เงินก้อน + มูลค่าเวนคืนปัจจุบัน) ÷ เบี้ยที่จ่ายรวม
+  //   เฉพาะกรมธรรม์ที่มีผล มีเงินคืน (มูลค่าเวนคืน / ตารางผลประโยชน์) และมีเบี้ยที่จ่ายแล้ว · ทั้งกรมธรรม์ (ไม่คูณสัดส่วนเจ้าของ) · THB
+  const benefitPols = new Set(lineList.filter((l) => l.kind === "BENEFIT").map((l) => l.policy_id));
+  const paidOf = new Map<string, number>();
+  lineList.forEach((l) => { if (l.kind === "PREMIUM" && l.currency === "THB") paidOf.set(l.policy_id, (paidOf.get(l.policy_id) ?? 0) + insCountedPaid(l)); });
+  const withBack = act.filter((r) => r.has_cash_value || r.cash_value_asset_id || benefitPols.has(r.id));
+  const savings = withBack.filter((r) => (paidOf.get(r.id) ?? 0) > 0);
+  const savingIds = new Set(savings.map((r) => r.id));
+  const premPaid = savings.reduce((t, r) => t + (paidOf.get(r.id) ?? 0), 0);
+  const backGot = lineList.filter((l) => l.kind === "BENEFIT" && l.currency === "THB" && savingIds.has(l.policy_id)).reduce((t, l) => t + insCountedPaid(l), 0)
+    + (allLumps ?? []).filter((b) => b.currency === "THB" && savingIds.has(b.policy_id)).reduce((t, b) => t + Number(b.amount), 0)
+    + savings.reduce((t, r) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
+      return t + (c && c.currency === "THB" ? Number(c.current_value ?? 0) : 0); }, 0);
+  const backPct = premPaid > 0 ? (backGot / premPaid) * 100 : null;
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
@@ -152,7 +169,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const canWrite = me.role !== "VIEWER";
   const goLive = family?.go_live_date ?? "";
   const mine = new Set(mineRows.map((r) => r.id));
-  const activeIds = new Set(mineRows.filter((r) => r.status === "ACTIVE").map((r) => r.id));
   const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
   // ยอดที่จ่าย / รับแล้วของงวด → กดเพื่อแก้ / ลบ (ตกลง 28 ต.ค. 2026) · เบี้ย = ฟอร์มเดียวกับหน้ากรมธรรม์ · ผลประโยชน์ = ยกเลิกทั้งก้อนแล้วบันทึกใหม่
   const editsOf = (l: YLine): Recorded[] => {
@@ -264,26 +280,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       return { value: v, label: v || "ทั้งหมด", href: `/insurance${q.size ? `?${q.toString()}` : ""}` };
     })} />
   );
-  // ภาพรวม: สัญญาเพิ่มเติม (บริษัท + เลขกรมธรรม์เดียวกัน) อยู่ใต้รายการหลัก + บรรทัดรวมทั้งเล่ม (ตกลง 6 พ.ย. 2026) · โหมดจัดลำดับ = ลำดับเดิม
+  // ภาพรวม: สัญญาเพิ่มเติม (บริษัท + เลขกรมธรรม์เดียวกัน) อยู่ใต้รายการหลัก · โหมดจัดลำดับ = ลำดับเดิม
+  //   เบี้ยรวมทั้งเล่มต่อท้าย "↳ สัญญาเพิ่มเติม" ของส่วนสุดท้าย (แทนบรรทัดรวมทั้งเล่ม · ตกลง 7 พ.ย. 2026)
   const listGroups = bookletGroups(listRows);
   const shownRows = ordering ? listRows : bookletOrder(listRows);
-  const bookTotalRow = (parts: typeof listRows) => {
-    const live = parts.filter((x) => x.status === "ACTIVE" && (x.premium_currency ?? "THB") === "THB");
-    const prem = live.reduce((t, x) => t + Number(x.premium ?? 0), 0);
-    const nexts = live.map((x) => nextPremium.get(x.id)).filter((x): x is { due_date: string; remaining: number } => !!x);
-    const due = nexts[0]?.due_date;
-    const sameDue = nexts.filter((x) => x.due_date === due);
-    return (
-      <tr className="bg-slate-50/70 text-xs">
-        <td className="py-2 pl-8 pr-4 font-medium text-slate-700">รวมทั้งเล่ม<span className="font-normal text-slate-500"> · {parts.length} ส่วน</span></td>
-        <td className="px-4" />
-        <td className="px-4 text-right font-medium tabular-nums">{prem > 0 && <>เบี้ย {money(prem, undefined, 0)}/ปี</>}</td>
-        <td className="px-4" />
-        <td className="px-4">{due && <>{thDate(due)}<div className="font-medium tabular-nums text-slate-700">{money(sameDue.reduce((t, x) => t + x.remaining, 0))}</div></>}</td>
-        <td className="px-4" /><td className="px-4" />
-      </tr>
-    );
-  };
+  const ccyTag = (c: string | null) => (c && c !== "THB" ? c : undefined);
   return (
     <TabsProvider initial={tab} defaultKey="overview">
     <div className="space-y-6">
@@ -314,15 +315,19 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
 
       <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatBox label="กรมธรรม์ที่มีผล" value={bookletCount(act)} unit="ฉบับ"
-          sub={<>ทั้งหมด {bookletCount(mineRows)} ฉบับ{bookletCount(mineRows) < mineRows.length && " · สัญญาเพิ่มเติมนับรวมในเล่ม"}</>} />
-        <StatBox label="ทุนประกันรวม (THB)" value={money(insuredTotal, "THB", 0)} />
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">เบี้ยรวมต่อปี (THB)</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">{money(premiumTotal, "THB", 0)}</div>
-          {overdueTotal > 0 && <div className="text-xs text-red-600">เบี้ยเลยกำหนด {overdueTotal} งวด</div>}
-        </div>
-        <StatBox label={<>{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</>} value={money(cvTotal, "THB", 0)} sub="นับเป็นสินทรัพย์หมวดการเงิน" />
+        {/* กล่องสรุป 4 อัน (ตกลง 7 พ.ย. 2026): มูลค่าเวนคืน (+ จำนวนกรมธรรม์) · ทุนประกันชีวิต · เบี้ยต่อปี (+ ปีนี้ยังต้องจ่าย) · ได้คืนเทียบเบี้ย */}
+        <StatBox label={<>{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</>} value={money(cvTotal, "THB", 0)}
+          sub={`กรมธรรม์ที่มีผล ${bookletCount(act)} ฉบับ`} />
+        <StatBox label="ทุนประกันชีวิตรวม (THB)" value={money(lifeTotal, "THB", 0)}
+          sub={accidentTotal > 0 ? `เสียชีวิตจากอุบัติเหตุ เพิ่มอีก ${money(accidentTotal, undefined, 0)}` : "ชีวิต + บำนาญ · สุขภาพดูวงเงินที่แท็บความคุ้มครอง"} />
+        <StatBox label="เบี้ยรวมต่อปี (THB)" value={money(premiumTotal, "THB", 0)} sub={`ปีนี้ยังต้องจ่าย ${money(premLeftYear, undefined, 0)}`}>
+          {overdueTotal > 0 && <div className="mt-1 text-xs text-red-600">เลยกำหนด {overdueTotal} งวด</div>}
+        </StatBox>
+        <StatBox label="ได้คืนเทียบเบี้ย" value={backPct == null ? "-" : `${backPct.toFixed(0)}%`} valueClass={backPct != null && backPct >= 100 ? "text-emerald-700" : undefined}
+          sub={backPct == null
+            ? (withBack.length === 0 ? "ไม่มีกรมธรรม์ที่มีมูลค่าเวนคืน / เงินคืน" : "ยังไม่มีเบี้ยที่จ่ายแล้วของกรมธรรม์ที่มีเงินคืน")
+            : <><span className="whitespace-nowrap">เบี้ยจ่ายแล้ว {money(premPaid, undefined, 0)}</span> · <span className="whitespace-nowrap">ได้คืน {money(backGot, undefined, 0)}</span>
+                <div className="text-slate-400">เฉพาะกรมธรรม์ที่มีเงินคืน {bookletCount(savings)} ฉบับ</div></>} />
       </section>
       {fupRows.length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
@@ -359,57 +364,49 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           })()}
           {canOrder && listRows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, i: iFilter || undefined, t: tFilter, s: sParam })} />}
         </div>
-        {/* รวมกล่อง "กรมธรรม์ที่มีผล" ของแท็บรับ / จ่ายไว้ที่นี่ (ตกลง 3 พ.ย. 2026): ระยะสัญญา · เบี้ยงวดถัดไป · ผลประโยชน์งวดถัดไป */}
-        <table className="mt-2 w-full min-w-[60rem] text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-4 py-2">กรมธรรม์ / ระยะสัญญา</th><th className="px-4">ผู้เอาประกัน</th><th className="px-4 text-right">ทุน / เบี้ย</th><th className="px-4 text-right">มูลค่าเวนคืน</th>
-              <th className="px-4">เบี้ยงวดถัดไป</th><th className="px-4">ผลประโยชน์งวดถัดไป</th><th className="px-4">สถานะ</th></tr>
+        {/* คอลัมน์ (ตกลง 7 พ.ย. 2026): ประเภท · ทุน · เบี้ย · วันเริ่ม / วันสิ้นสุด แยกช่อง · งวดถัดไปดูที่แท็บรับ / จ่าย */}
+        <table className="mt-2 w-full min-w-[64rem] text-sm">
+          <thead className="whitespace-nowrap bg-slate-50 text-left text-xs text-slate-500">
+            <tr><th className="py-2 pl-4 pr-3">กรมธรรม์</th><th className="px-2.5">ประเภท</th><th className="px-2.5">ผู้เอาประกัน</th>
+              <th className="px-2.5 text-right">ทุนประกัน</th><th className="px-2.5 text-right">เบี้ยต่อปี</th><th className="px-2.5 text-right">มูลค่าเวนคืน</th>
+              <th className="px-2.5">วันเริ่มสัญญา</th><th className="px-2.5">วันสิ้นสุดสัญญา</th><th className="pl-3 pr-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {listRows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+            {listRows.length === 0 && <tr><td colSpan={9} className="px-2.5 py-6 text-center text-slate-500">
               {rows.length > 0 ? "ไม่มีกรมธรรม์ตามตัวกรอง" : pv.personId ? `ไม่มีกรมธรรม์ของ ${pv.personName}` : "ยังไม่มีกรมธรรม์"}</td></tr>}
             {shownRows.map((r, i) => {
               const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
-              const nb = nextBenefit(r.id);
               const role = ordering ? null : bookletRole(r, listGroups);
               const rider = !!role && !role.isMain;
+              // ส่วนสุดท้ายของเล่ม: เบี้ยรวมทั้งเล่ม (ส่วนที่มีผล · THB)
+              const bookPrem = rider && role.parts.at(-1)?.id === r.id
+                ? role.parts.filter((x) => x.status === "ACTIVE" && (x.premium_currency ?? "THB") === "THB").reduce((t, x) => t + Number(x.premium ?? 0), 0) : 0;
+              const late = overduePremium.get(r.id) ?? 0;
               return (
-                <Fragment key={r.id}>
-                <tr className={`${r.status !== "ACTIVE" ? "opacity-50" : ""} ${role ? "bg-slate-50/40" : ""}`}>
-                  <td className={`py-3 pr-4 ${rider ? "pl-8" : "pl-4"}`}>
+                <tr key={r.id} className={`${r.status !== "ACTIVE" ? "opacity-50" : ""} ${role ? "bg-slate-50/40" : ""}`}>
+                  <td className={`py-3 pr-3 ${rider ? "pl-8" : "pl-4"}`}>
                     {ordering && <span className="mr-2 align-middle"><MoveButtons table="insurance_policies" id={r.id} paths={paths} {...neighbors(listRows, i, (x) => x.id)} /></span>}
                     {rider
-                      ? <Link href={`/insurance/${role.main.id}`} className="font-medium text-slate-900 hover:underline">↳ สัญญาเพิ่มเติม · {partLabel(r, role.main)}</Link>
+                      ? <><Link href={`/insurance/${role.main.id}`} className="whitespace-nowrap font-medium text-slate-900 hover:underline">↳ สัญญาเพิ่มเติม</Link>
+                          {bookPrem > 0 && <> <span className="whitespace-nowrap text-xs text-slate-500">· รวมทั้งเล่ม {money(bookPrem, undefined, 0)}/ปี</span></>}</>
                       : <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.insurer}{r.policy_no && ` · ${r.policy_no}`}</Link>}
-                    <div className="text-xs text-slate-500">{rider ? "เล่มเดียวกัน" : TYPE[r.insurance_type] ?? r.insurance_type}
-                      {role?.isMain && ` (สัญญาหลัก)`}
-                      {(r.start_date || r.end_date) && ` · ${r.start_date ? `${thDate(r.start_date)} – ` : "ถึง "}${thDate(r.end_date)}`}</div>
                   </td>
-                  <td className="px-4">{r.person_id ? pname.get(r.person_id) : "-"}
+                  <td className="whitespace-nowrap px-2.5">{PART_LABEL[r.insurance_type] ?? TYPE[r.insurance_type] ?? r.insurance_type}</td>
+                  <td className="whitespace-nowrap px-2.5">{r.person_id ? pname.get(r.person_id) : "-"}
                     {r.payer_person_id && r.payer_person_id !== r.person_id && <div className="text-xs text-slate-500">ผู้จ่าย {pname.get(r.payer_person_id)}</div>}</td>
-                  <td className="px-4 text-right tabular-nums text-xs">
-                    {r.insured_amount != null && <div>ทุน {money(r.insured_amount, r.insured_amount_currency ?? undefined, 0)}</div>}
-                    {r.premium != null && <div className="text-slate-500">เบี้ย {money(r.premium, undefined, 0)}/ปี</div>}
-                  </td>
-                  <td className="px-4 text-right tabular-nums">{r.has_cash_value ? (c ? <>
-                    {money(c.current_value == null ? null : Number(c.current_value) * pv.assetShare(c.id), c.currency, 0)}
-                    {pv.assetPct(c.id) != null && <div className="text-xs text-slate-500">{pv.assetPct(c.id)}% ของ {money(c.current_value, c.currency, 0)}</div>}
+                  <td className="px-2.5 text-right tabular-nums">{money(r.insured_amount, ccyTag(r.insured_amount_currency), 0)}</td>
+                  <td className="px-2.5 text-right tabular-nums">{money(r.premium, ccyTag(r.premium_currency), 0)}</td>
+                  <td className="px-2.5 text-right tabular-nums">{r.has_cash_value ? (c ? <>
+                    {money(c.current_value == null ? null : Number(c.current_value) * pv.assetShare(c.id), ccyTag(c.currency), 0)}
+                    {pv.assetPct(c.id) != null && <div className="text-xs text-slate-500">{pv.assetPct(c.id)}% ของ {money(c.current_value, ccyTag(c.currency), 0)}</div>}
                   </> : <span className="text-amber-700">ยังไม่มี</span>) : "-"}</td>
-                  <td className="px-4 text-xs">
-                    {nextPremium.get(r.id) ? <>{thDate(nextPremium.get(r.id)?.due_date)}<div className="tabular-nums text-slate-500">{money(nextPremium.get(r.id)?.remaining)}</div></> : <span className="text-slate-400">-</span>}
-                    {overduePremium.get(r.id) && <div className="text-red-600">เลยกำหนด {overduePremium.get(r.id)} งวด</div>}
-                    {lastOf(r.id, "PREMIUM") && <div className="text-slate-500">จ่ายถึงปี {lastOf(r.id, "PREMIUM")?.year} · เหลือ {lastOf(r.id, "PREMIUM")?.left} งวด</div>}
-                  </td>
-                  <td className="px-4 text-xs">
-                    {nb ? <>{thDate(nb.due_date)}<div className="tabular-nums text-slate-500">{money(nb.remaining, nb.currency !== "THB" ? nb.currency : undefined)}</div></> : <span className="text-slate-400">-</span>}
-                    {lastOf(r.id, "BENEFIT") && <div className="text-slate-500">รับถึงปี {lastOf(r.id, "BENEFIT")?.year} · เหลือ {lastOf(r.id, "BENEFIT")?.left} งวด</div>}
-                  </td>
-                  <td className="px-4 text-xs">{STATUS[r.status] ?? r.status}
+                  <td className="whitespace-nowrap px-2.5">{thDate(r.start_date)}</td>
+                  <td className="whitespace-nowrap px-2.5">{thDate(r.end_date)}</td>
+                  <td className="whitespace-nowrap pl-3 pr-4 text-xs">{STATUS[r.status] ?? r.status}
                     {r.derived_status === "EXPIRING_SOON" && <div className="text-amber-700">ใกล้ครบ</div>}
-                    {r.derived_status === "EXPIRED" && r.status === "ACTIVE" && <div className="text-red-600">เลยวันสิ้นสุด</div>}</td>
+                    {r.derived_status === "EXPIRED" && r.status === "ACTIVE" && <div className="text-red-600">เลยวันสิ้นสุด</div>}
+                    {late > 0 && <div className="text-red-600">เบี้ยเลยกำหนด {late} งวด</div>}</td>
                 </tr>
-                {role && role.parts.at(-1)?.id === r.id && bookTotalRow(role.parts)}
-                </Fragment>
               );
             })}
           </tbody>
