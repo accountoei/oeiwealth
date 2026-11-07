@@ -2,7 +2,7 @@
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
 import { addMonthsIso, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, sortGrid } from "../src/lib/insurance-grid.ts";
-import { blankKey, covPayload, covRemoved, patchCovRow, rowsFromExisting, visibleCovTypes } from "../src/lib/insurance-coverage.ts";
+import { blankKey, blankRider, covPayload, covRemoved, patchCovRow, riderPayload, rowsFromExisting, visibleCovTypes } from "../src/lib/insurance-coverage.ts";
 
 const R = (key, due, amount, extra = {}) => ({ key, due, amount, type: "", skipped: false, notes: "", ...extra });
 
@@ -104,6 +104,37 @@ assert.deepEqual(gridToLines([R("p", "2026-09-01", "100", { locked: "จ่า�
   assert.match(bad2.errors[3], /0 ขึ้นไป/);
   // หัวข้อที่ซ่อน (เปลี่ยนประเภทในฟอร์มเพิ่มกรมธรรม์) ไม่บันทึก
   assert.equal(covPayload([{ key: "h", type: "COPAY", amount: "10", count: "", asOf: "", notes: "", waiver: false }], ["LIFE"], lbl).rows.length, 0);
+}
+
+// สัญญาเพิ่มเติม (ตกลง 7 พ.ย. 2026): ประเภท · ทุน · เบี้ย · วันสิ้นสุด · หมายเหตุ + ความคุ้มครองของส่วนนั้น
+{
+  const lbl = (t) => ({ ROOM_PER_DAY: "ค่าห้อง", OTHER: "อื่น ๆ" })[t] ?? t;
+  const types = () => ["ROOM_PER_DAY", "OTHER"];
+  const h = { ...blankRider(), sum: "1,000,000.00", premium: "15,000.00", end: "2036-01-15", notes: " แผน A ",
+    cov: [{ key: "x", type: "ROOM_PER_DAY", amount: "4,000.00", count: "365", asOf: "", notes: "", waiver: false }] };
+  assert.equal(blankRider().type, "HEALTH");
+  assert.notEqual(blankRider().key, blankRider().key);
+  const ok = riderPayload([h, { ...blankRider("ACCIDENT"), premium: "1,200" }], types, lbl, "BK-001");
+  assert.deepEqual(ok.errors, []);
+  assert.deepEqual(ok.rows, [
+    { insurance_type: "HEALTH", insured_amount: 1000000, premium: 15000, end_date: "2036-01-15", notes: "แผน A",
+      coverages: [{ coverage_type: "ROOM_PER_DAY", limit_amount: 4000, max_count: 365, as_of_date: null, notes: null }] },
+    { insurance_type: "ACCIDENT", insured_amount: null, premium: 1200, end_date: null, notes: null, coverages: [] },
+  ]);
+  // ไม่มีสัญญาเพิ่มเติม = ไม่ต้องมีเลขกรมธรรม์
+  assert.deepEqual(riderPayload([], types, lbl, ""), { rows: [], errors: [] });
+  // มีสัญญาเพิ่มเติมแต่ไม่มีเลขกรมธรรม์ · ไม่มีทุนและเบี้ย · ตัวเลขผิด · ความคุ้มครองผิด (บอกส่วนที่ผิด)
+  const bad = riderPayload([
+    blankRider(),
+    { ...blankRider(), sum: "abc", premium: "-5" },
+    { ...h, cov: [{ key: "y", type: "OTHER", amount: "", count: "", asOf: "", notes: "ทันตกรรม", waiver: false }] },
+  ], types, lbl, "  ");
+  assert.equal(bad.rows.length, 0);
+  assert.match(bad.errors[0], /ใส่เลขกรมธรรม์ก่อน/);
+  assert.match(bad.errors[1], /^สัญญาเพิ่มเติม 1: ใส่ทุนประกันหรือเบี้ย/);
+  assert.match(bad.errors[2], /^สัญญาเพิ่มเติม 2: ทุนประกันต้องเป็นตัวเลข/);
+  assert.match(bad.errors[3], /^สัญญาเพิ่มเติม 2: เบี้ยต้องเป็นตัวเลข/);
+  assert.match(bad.errors[4], /^สัญญาเพิ่มเติม 3 · อื่น ๆ \(ทันตกรรม\): ใส่วงเงิน/);
 }
 
 console.log("insurance-grid: all tests passed");

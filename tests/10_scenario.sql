@@ -5228,4 +5228,79 @@ SELECT t.ok(has_function_privilege('authenticated', 'public.set_insurance_covera
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz-booklet. ประกัน: สร้างเล่มพร้อมสัญญาเพิ่มเติมในคำสั่งเดียว (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+CREATE TEMP TABLE tbk(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tbk TO authenticated;
+-- เล่มใหม่: สัญญาหลัก (ชีวิต) + สุขภาพ (มีตารางความคุ้มครอง) + อุบัติเหตุ · ผู้จ่ายเบี้ย / จ่ายเบี้ยจาก ตั้งพร้อมกัน
+INSERT INTO tbk SELECT 'main', public.create_insurance_booklet(jsonb_build_object('insurance_type', 'LIFE', 'person_id', t.p('คุณพ่อ'),
+  'payer_person_id', t.p('คุณแม่'), 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurer', 'ประกันทดสอบเล่ม', 'policy_no', 'BK-001', 'start_date', '2026-01-15', 'end_date', '2046-01-15', 'currency', 'THB',
+  'insured_amount', 500000, 'premium', 20000, 'beneficiaries', jsonb_build_array(jsonb_build_object('person_id', t.p('คุณแม่'), 'percent', 100)),
+  'coverages', jsonb_build_array(jsonb_build_object('coverage_type', 'LIFE', 'limit_amount', 500000)),
+  'riders', jsonb_build_array(
+    jsonb_build_object('insurance_type', 'HEALTH', 'insured_amount', '1000000', 'premium', '15000', 'end_date', '2036-01-15', 'notes', 'สุขภาพเหมาจ่าย',
+      'coverages', jsonb_build_array(jsonb_build_object('coverage_type', 'ROOM_PER_DAY', 'limit_amount', 4000, 'max_count', 365))),
+    jsonb_build_object('insurance_type', 'ACCIDENT', 'insured_amount', 200000, 'premium', 1200))));
+SELECT t.ok((SELECT count(*) = 3 AND count(DISTINCT insurer) = 1 AND bool_and(person_id = t.p('คุณพ่อ')) AND bool_and(payer_person_id = t.p('คุณแม่'))
+                AND bool_and(paid_from_asset_id = t.a('KBank ออมทรัพย์')) AND bool_and(start_date = '2026-01-15') AND bool_and(premium_currency = 'THB')
+               FROM public.insurance_policies WHERE policy_no = 'BK-001' AND deleted_at IS NULL)
+        AND (SELECT insurance_type = 'LIFE' AND premium = 20000 FROM public.insurance_policies WHERE id = (SELECT id FROM tbk WHERE k = 'main')),
+            'เล่มใหม่: สัญญาหลัก + สัญญาเพิ่มเติม 2 ส่วน ในคำสั่งเดียว · ส่วนเพิ่มเติมใช้บริษัท / เลข / ผู้เอาประกัน / ผู้จ่าย / บัญชี / วันเริ่ม ของสัญญาหลัก');
+INSERT INTO tbk SELECT 'health', id FROM public.insurance_policies WHERE policy_no = 'BK-001' AND insurance_type = 'HEALTH' AND deleted_at IS NULL;
+SELECT t.ok((SELECT insured_amount = 1000000 AND premium = 15000 AND end_date = '2036-01-15' AND notes = 'สุขภาพเหมาจ่าย' AND NOT has_cash_value
+               FROM public.insurance_policies WHERE id = (SELECT id FROM tbk WHERE k = 'health'))
+        AND (SELECT max_count = 365 FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tbk WHERE k = 'health') AND coverage_type = 'ROOM_PER_DAY' AND deleted_at IS NULL)
+        AND EXISTS (SELECT 1 FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tbk WHERE k = 'main') AND coverage_type = 'LIFE' AND deleted_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM public.insurance_beneficiaries WHERE policy_id = (SELECT id FROM tbk WHERE k = 'health') AND deleted_at IS NULL)
+        AND EXISTS (SELECT 1 FROM public.insurance_beneficiaries WHERE policy_id = (SELECT id FROM tbk WHERE k = 'main') AND deleted_at IS NULL),
+            'เล่มใหม่: ส่วนเพิ่มเติมเก็บทุน / เบี้ย / วันสิ้นสุด / หมายเหตุ / ความคุ้มครองของตัวเอง · ผู้รับผลประโยชน์อยู่ที่สัญญาหลัก');
+-- ผิดส่วนเดียว = ไม่บันทึกทั้งเล่ม
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('insurance_type', 'LIFE', 'insurer', 'ประกันทดสอบเล่ม', 'policy_no', 'BK-BAD',
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 1000), jsonb_build_object('insurance_type', 'PROPERTY', 'premium', 1000))))$$,
+  'สัญญาเพิ่มเติมที่ 2', 'เล่มใหม่: สัญญาเพิ่มเติมเป็นประกันทรัพย์สินไม่ได้');
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('insurance_type', 'LIFE', 'insurer', 'ประกันทดสอบเล่ม', 'policy_no', 'BK-BAD',
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 1000,
+    'coverages', jsonb_build_array(jsonb_build_object('coverage_type', 'ROOM_PER_DAY', 'limit_amount', ''))))))$$,
+  'กรุณาใส่วงเงิน', 'เล่มใหม่: ความคุ้มครองของส่วนเพิ่มเติมผิด → ไม่บันทึกทั้งเล่ม');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.insurance_policies WHERE policy_no = 'BK-BAD'), 'เล่มใหม่: บันทึกไม่ผ่าน = ไม่มีสัญญาหลักค้าง');
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('insurance_type', 'LIFE', 'insurer', 'ประกันทดสอบเล่ม',
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 1000))))$$,
+  'ใส่เลขกรมธรรม์ก่อน', 'เล่มใหม่: มีสัญญาเพิ่มเติมต้องมีเลขกรมธรรม์');
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('insurance_type', 'PROPERTY', 'insurer', 'ประกันทดสอบเล่ม', 'policy_no', 'BK-P',
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 1000))))$$,
+  'ประกันทรัพย์สินเพิ่มสัญญาเพิ่มเติมไม่ได้', 'เล่มใหม่: ประกันทรัพย์สินมีสัญญาเพิ่มเติมไม่ได้');
+-- ไม่มีสัญญาเพิ่มเติม = เหมือน create_insurance_policy · ผู้จ่ายเบี้ย = ผู้เอาประกัน → เก็บว่าง
+INSERT INTO tbk SELECT 'single', public.create_insurance_booklet(jsonb_build_object('insurance_type', 'HEALTH', 'person_id', t.p('คุณพ่อ'),
+  'payer_person_id', t.p('คุณพ่อ'), 'insurer', 'ประกันทดสอบเล่ม', 'currency', 'THB', 'premium', 9000));
+SELECT t.ok((SELECT payer_person_id IS NULL AND paid_from_asset_id IS NULL AND premium = 9000 FROM public.insurance_policies WHERE id = (SELECT id FROM tbk WHERE k = 'single')),
+            'เล่มใหม่: ไม่มีสัญญาเพิ่มเติม = กรมธรรม์เดียว · ผู้จ่ายคนเดียวกับผู้เอาประกัน = เก็บว่าง');
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('main_id', (SELECT id FROM tbk WHERE k = 'single'),
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'ACCIDENT', 'premium', 500))))$$,
+  'ใส่เลขกรมธรรม์ก่อน', 'เพิ่มในเล่มเดิม: สัญญาหลักไม่มีเลขกรมธรรม์ → เพิ่มไม่ได้');
+-- เพิ่มสัญญาเพิ่มเติมในเล่มที่มีอยู่ (ปุ่มในหน้าเล่ม) · CONTRIBUTOR ทำได้
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.ok(public.create_insurance_booklet(jsonb_build_object('main_id', (SELECT id FROM tbk WHERE k = 'main'),
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'LIFE', 'insured_amount', 100000, 'premium', 800, 'end_date', '2031-01-15', 'notes', 'ชีวิตเพิ่มเติม 5 ปี'))))
+            = (SELECT id FROM tbk WHERE k = 'main'), 'เพิ่มในเล่มเดิม: คืน id ของสัญญาหลัก');
+SELECT t.ok((SELECT count(*) = 4 FROM public.insurance_policies WHERE policy_no = 'BK-001' AND deleted_at IS NULL)
+        AND (SELECT person_id = t.p('คุณพ่อ') AND payer_person_id = t.p('คุณแม่') AND paid_from_asset_id = t.a('KBank ออมทรัพย์') AND start_date = '2026-01-15'
+                AND insured_amount = 100000 AND end_date = '2031-01-15'
+               FROM public.insurance_policies WHERE policy_no = 'BK-001' AND notes = 'ชีวิตเพิ่มเติม 5 ปี' AND deleted_at IS NULL),
+            'เพิ่มในเล่มเดิม: CONTRIBUTOR เพิ่มได้ · ใช้ข้อมูลร่วมของสัญญาหลัก');
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('main_id', (SELECT id FROM tbk WHERE k = 'main'), 'riders', '[]'::jsonb))$$,
+  'ยังไม่ได้ใส่สัญญาเพิ่มเติม', 'เพิ่มในเล่มเดิม: ไม่มีรายการ = แจ้ง');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.create_insurance_booklet(jsonb_build_object('main_id', (SELECT id FROM tbk WHERE k = 'main'),
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 1))))$$,
+  'PERMISSION_DENIED', 'เล่ม: VIEWER เพิ่มไม่ได้');
+SELECT t.ok(has_function_privilege('authenticated', 'public.create_insurance_booklet(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.create_insurance_booklet(jsonb)', 'EXECUTE')
+        AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.create_insurance_booklet(jsonb)'::regprocedure)
+        AND (SELECT proconfig @> ARRAY['search_path=""'] FROM pg_proc WHERE oid = 'public.create_insurance_booklet(jsonb)'::regprocedure),
+            'เล่ม: anon เรียกไม่ได้ · SECURITY INVOKER + search_path ว่าง');
+RESET ROLE;
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'

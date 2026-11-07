@@ -73,3 +73,44 @@ export function covPayload(rows: CovRow[], types: string[], label: (t: string) =
 
 /** จำนวนรายการเดิมที่จะถูกลบ (ล้างช่องแล้ว หรืออยู่ในหัวข้อที่ซ่อน) */
 export const covRemoved = (existingIds: string[], payload: CovSave[]) => existingIds.filter((id) => !payload.some((r) => r.id === id)).length;
+
+/* ---------------------------------------------------------------- สัญญาเพิ่มเติม (ตกลง 7 พ.ย. 2026)
+ * ฟอร์มเพิ่มกรมธรรม์ (ส่วน "สัญญาเพิ่มเติม (ถ้ามี)") · ปุ่ม "+ เพิ่มสัญญาเพิ่มเติม" ในหน้าเล่ม
+ *   กรอกเฉพาะ ประเภท · ทุน · เบี้ยต่อปี · วันสิ้นสุด · หมายเหตุ + ตารางความคุ้มครอง · ที่เหลือใช้ของสัญญาหลัก
+ *   บันทึกด้วย create_insurance_booklet (ผิดส่วนเดียว = ไม่บันทึกเลยทั้งเล่ม)
+ */
+export type RiderRow = { key: string; type: string; sum: string; premium: string; end: string; notes: string; cov: CovRow[] };
+export type RiderSave = { insurance_type: string; insured_amount: number | null; premium: number | null; end_date: string | null; notes: string | null; coverages: CovSave[] };
+
+/** สัญญาเพิ่มเติมว่าง (ค่าเริ่มต้น = สุขภาพ · พบบ่อยสุด) */
+export const blankRider = (type = "HEALTH"): RiderRow => ({ key: `r${++seq}`, type, sum: "", premium: "", end: "", notes: "", cov: [] });
+
+/**
+ * ข้อมูลสัญญาเพิ่มเติมที่ส่งบันทึก + ข้อผิดพลาด (ขึ้นต้นด้วย "สัญญาเพิ่มเติม N")
+ *   types(r) = หัวข้อความคุ้มครองที่แสดงของส่วนนั้น · policyNo = เลขกรมธรรม์ของเล่ม (ต้องมีเมื่อมีสัญญาเพิ่มเติม)
+ */
+export function riderPayload(rs: RiderRow[], types: (r: RiderRow) => string[], label: (t: string) => string, policyNo: string | null): { rows: RiderSave[]; errors: string[] } {
+  const rows: RiderSave[] = [];
+  const errors: string[] = [];
+  if (rs.length > 0 && !(policyNo ?? "").replace(/\s/g, ""))
+    errors.push("สัญญาเพิ่มเติม: ใส่เลขกรมธรรม์ก่อน (สัญญาเพิ่มเติมผูกกับเล่มด้วยบริษัท + เลขกรมธรรม์)");
+  rs.forEach((r, i) => {
+    const name = `สัญญาเพิ่มเติม ${i + 1}`;
+    const sum = num(r.sum);
+    const prem = num(r.premium);
+    const cov = covPayload(r.cov, types(r), label);
+    const bad: string[] = [];
+    if (r.sum.trim() === "" && r.premium.trim() === "") bad.push("ใส่ทุนประกันหรือเบี้ย (หรือกดลบส่วนนี้)");
+    if (r.sum.trim() !== "" && (!Number.isFinite(sum) || sum < 0)) bad.push("ทุนประกันต้องเป็นตัวเลข 0 ขึ้นไป");
+    if (r.premium.trim() !== "" && (!Number.isFinite(prem) || prem < 0)) bad.push("เบี้ยต้องเป็นตัวเลข 0 ขึ้นไป");
+    if (r.end && !ISO.test(r.end)) bad.push("วันสิ้นสุดไม่ถูกต้อง");
+    bad.forEach((e) => errors.push(`${name}: ${e}`));
+    cov.errors.forEach((e) => errors.push(`${name} · ${e}`));
+    if (bad.length || cov.errors.length) return;
+    rows.push({
+      insurance_type: r.type, insured_amount: r.sum.trim() === "" ? null : sum, premium: r.premium.trim() === "" ? null : prem,
+      end_date: r.end || null, notes: r.notes.trim() || null, coverages: cov.rows,
+    });
+  });
+  return { rows, errors };
+}
