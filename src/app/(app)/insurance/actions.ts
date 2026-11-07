@@ -23,6 +23,21 @@ function bens(form: FormData) {
   try { return JSON.parse(String(form.get("beneficiaries") ?? "[]")); } catch { return []; }
 }
 
+/** สัญญาเพิ่มเติมจากฟอร์ม (JSON · ตัวเลขตัดคอมมาซ้ำอีกชั้น) · อ่านไม่ได้ = null */
+function ridersFromForm(form: FormData): Record<string, unknown>[] | null {
+  let xs: unknown = [];
+  try { xs = JSON.parse(String(form.get("riders") ?? "[]")); } catch { return null; }
+  if (!Array.isArray(xs)) return null;
+  return xs.map((r) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const s = (v: unknown) => (v == null ? null : String(v));
+    return {
+      insurance_type: s(o.insurance_type), insured_amount: num(s(o.insured_amount)), premium: num(s(o.premium)),
+      end_date: str(s(o.end_date)), notes: str(s(o.notes)), coverages: Array.isArray(o.coverages) ? o.coverages : [],
+    };
+  });
+}
+
 export async function createPolicy(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const hasCv = form.get("has_cash_value") === "on";
@@ -30,28 +45,36 @@ export async function createPolicy(_: ActionState, form: FormData): Promise<Acti
   let covs: unknown = [];
   try { covs = JSON.parse(String(form.get("coverages") ?? "[]")); } catch { return { error: "อ่านตารางความคุ้มครองไม่ได้" }; }
   if (!Array.isArray(covs)) return { error: "อ่านตารางความคุ้มครองไม่ได้" };
-  const { data, error } = await supabase.rpc("create_insurance_policy", { p: {
+  // สัญญาเพิ่มเติม (ถ้ามี) + ผู้จ่ายเบี้ย / จ่ายเบี้ยจาก บันทึกพร้อมกันทั้งเล่ม (ผิดส่วนเดียว = ไม่บันทึกเลย)
+  const riders = ridersFromForm(form);
+  if (!riders) return { error: "อ่านข้อมูลสัญญาเพิ่มเติมไม่ได้" };
+  const pay = payDefault(form);
+  const { data, error } = await supabase.rpc("create_insurance_booklet", { p: {
     insurance_type: str(form.get("insurance_type")), person_id: str(form.get("person_id")), insured_asset_id: str(form.get("insured_asset_id")),
     insurer: str(form.get("insurer")), policy_no: str(form.get("policy_no")), start_date: str(form.get("start_date")),
     end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")),
     currency: str(form.get("currency")), has_cash_value: hasCv, is_opening: form.get("is_opening") === "on",
     cash_value: hasCv ? num(form.get("cash_value")) : null, cash_value_date: hasCv ? str(form.get("cash_value_date")) : null,
     owners: ownersFromForm(form), beneficiaries: bens(form), notes: str(form.get("notes")), coverages: covs,
+    payer_person_id: str(form.get("payer_person_id")), paid_from_asset_id: pay.paid_from_asset_id, paid_from_credit_card_id: pay.paid_from_credit_card_id,
+    riders,
   } });
   if (error) return { error: friendlyError(error.message) };
-  // ผู้จ่ายเบี้ย (ว่าง = ผู้เอาประกัน) · จ่ายเบี้ยจาก (ค่าตั้งต้น)
-  const payer = str(form.get("payer_person_id"));
-  const pay = payDefault(form);
-  const extra: Record<string, unknown> = {
-    ...(payer && payer !== str(form.get("person_id")) ? { payer_person_id: payer } : {}),
-    ...(pay.paid_from_asset_id || pay.paid_from_credit_card_id ? pay : {}),
-  };
-  if (Object.keys(extra).length) {
-    const { error: e2 } = await supabase.from("insurance_policies").update(extra).eq("id", data);
-    if (e2) return { error: `บันทึกกรมธรรม์แล้ว แต่ตั้งค่าเพิ่มไม่สำเร็จ (แก้ได้ที่หน้ากรมธรรม์): ${friendlyError(e2.message)}` };
-  }
   revalidatePath("/insurance");
   redirect(`/insurance/${data}`);
+}
+
+/** ปุ่ม "+ เพิ่มสัญญาเพิ่มเติม" หน้าเล่ม: ส่วนใหม่ใช้ข้อมูลร่วมของสัญญาหลัก (ตกลง 7 พ.ย. 2026) */
+export async function addRiders(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const riders = ridersFromForm(form);
+  if (!riders) return { error: "อ่านข้อมูลสัญญาเพิ่มเติมไม่ได้" };
+  if (riders.length === 0) return { error: "ยังไม่ได้ใส่สัญญาเพิ่มเติม" };
+  const { error } = await supabase.rpc("create_insurance_booklet", { p: { main_id: str(form.get("main_id")), riders } });
+  if (error) return { error: friendlyError(error.message) };
+  refresh();
+  revalidatePath("/family", "layout");   // สรุปสิทธิ์รักษาของสมาชิก
+  return { ok: `เพิ่มสัญญาเพิ่มเติมแล้ว ${riders.length} ส่วน` };
 }
 
 export async function saveBeneficiaries(_: ActionState, form: FormData): Promise<ActionState> {

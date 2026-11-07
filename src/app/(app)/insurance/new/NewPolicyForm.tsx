@@ -6,7 +6,8 @@ import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
 import { SMALL_BTN, INS_TAX, INS_TYPE, numOrZero, thDate } from "@/lib/format";
 import { CoverageGrid, covLabel, covTypesOf } from "../CoverageGrid";
-import { covPayload, type CovRow } from "@/lib/insurance-coverage";
+import { covPayload, riderPayload, type CovRow, type RiderRow } from "@/lib/insurance-coverage";
+import { RiderFields, riderCovTypes } from "../RiderFields";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import PayDefaultSelect from "../PayDefaultSelect";
 
@@ -32,6 +33,11 @@ export default function NewPolicyForm(props: {
   const [sum, setSum] = useState(0);
   const [ccy, setCcy] = useState("THB");
   const cov = covPayload(covRows, covTypesOf(type, covRows, covAll), covLabel);
+  // สัญญาเพิ่มเติม (ถ้ามี · ตกลง 7 พ.ย. 2026): บันทึกพร้อมสัญญาหลักทั้งเล่ม · ใช้ข้อมูลร่วมของสัญญาหลัก
+  const [riders, setRiders] = useState<RiderRow[]>([]);
+  const [policyNo, setPolicyNo] = useState("");
+  const rid = riderPayload(type === "PROPERTY" ? [] : riders, riderCovTypes(covAll), covLabel, policyNo);
+  const errors = [...cov.errors, ...rid.errors];
   return (
     <form action={action} className="space-y-6">
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
@@ -43,7 +49,7 @@ export default function NewPolicyForm(props: {
           <span className="mt-1 block text-xs text-slate-500">ภาษี: {INS_TAX[type]}</span>
         </label>
         <label className={label}>บริษัทประกัน *<input name="insurer" required className={input} /></label>
-        <label className={label}>เลขกรมธรรม์<input name="policy_no" className={input} /></label>
+        <label className={label}>เลขกรมธรรม์{riders.length > 0 && type !== "PROPERTY" && " *"}<input name="policy_no" value={policyNo} onChange={(e) => setPolicyNo(e.target.value)} className={input} /></label>
         {type === "PROPERTY" ? (
           <label className={label}>ทรัพย์สินที่เอาประกัน
             <select name="insured_asset_id" defaultValue={initialAsset} className={input}>
@@ -123,9 +129,18 @@ export default function NewPolicyForm(props: {
         {cov.errors.length > 0 && <ul className="list-disc space-y-0.5 pl-5 text-sm text-red-600">{cov.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
       </section>
 
+      {type !== "PROPERTY" && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-medium text-slate-900">สัญญาเพิ่มเติม (ถ้ามี) <span className="text-xs font-normal text-slate-500">เช่น สุขภาพ / อุบัติเหตุ ในเล่มเดียวกัน · ใช้บริษัท เลขกรมธรรม์ ผู้เอาประกัน ผู้จ่ายเบี้ย จ่ายเบี้ยจาก และวันเริ่มคุ้มครอง ของสัญญาหลัก · เพิ่มภายหลังได้ที่หน้ากรมธรรม์</span></h2>
+          <RiderFields riders={riders} setRiders={setRiders} currency={ccy} all={covAll} />
+          <input type="hidden" name="riders" value={JSON.stringify(rid.rows)} />
+          {rid.errors.length > 0 && <ul className="list-disc space-y-0.5 pl-5 text-sm text-red-600">{rid.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+        </section>
+      )}
+
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       <div className="flex gap-3">
-        <button disabled={pending || cov.errors.length > 0} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending || errors.length > 0} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <Link href="/insurance" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
       </div>
     </form>

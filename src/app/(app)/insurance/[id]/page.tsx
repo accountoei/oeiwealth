@@ -12,6 +12,7 @@ import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTabl
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
 import { AddCashValueForm, BenefitForm, BookletPayForm, CashValueTableEditor, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
 import { CoverageEditor } from "../CoverageGrid";
+import { AddRiderButton } from "../RiderFields";
 import { PART_LABEL, bookletGroups, bookletKey, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
 import InsScheduleEditor from "./InsScheduleEditor";
 import EditToggle from "@/components/EditToggle";
@@ -470,6 +471,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             <ActionBar>
               <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
                 cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม)" canClose={canDelete} />
+              <AddRiderButton mainId={id} policyNo={p.policy_no} currency={ccy} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50" />
             </ActionBar>
           )}
         </div>
