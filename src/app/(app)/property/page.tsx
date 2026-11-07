@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, marketDefaultUnit, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning, signedMoney, plusMoney, minusMoney } from "@/lib/format";
+import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPERTY_TYPE_LABEL, REBILL_SUBTYPE, marketDefaultUnit, landTaxYears, USAGE_LABEL, UTIL_EXPENSE_CATEGORY, UTIL_LABEL, addDays, durationText, landText, money, monthOptions, monthRange, monthsBetween, thDate, thMonth, todayBangkok, vacancyWarning, signedMoney, signedPct, plusMoney, minusMoney, PERIODS_PER_YEAR, TH_MONTHS } from "@/lib/format";
+import { periodsIn, yearSpan } from "@/lib/property-year";
 import { cycleNote } from "@/lib/lease";
 import { loadPersonView } from "@/lib/person-view";
 import { endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
-import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
+import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
@@ -36,6 +37,8 @@ type Inc = { id: string; asset_id: string; lease_id: string | null; received_to_
 type Exp = { id: string; related_asset_id: string | null; property_utility_id: string | null; date: string; description: string;
   amount: number; currency: string; base_amount: number | null; notes: string | null; pending_split: boolean | null;
   source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null; cost_period: string | null };
+type Util = { id: string; property_id: string; unit_label: string | null; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null;
+  expected_amount: number | null; currency: string; frequency: string | null; due_month: number | null; active: boolean; deleted_at: string | null };
 
 // ทรัพย์สินทั้งหมดอยู่ท้ายแท็บภาพรวม (ลิงก์เดิม ?tab=all → ภาพรวม)
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["income", "บันทึกรับค่าเช่า/สัญญาเช่า"], ["expense", "ค่าใช้จ่าย"]];
@@ -137,15 +140,18 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const expCols = "id,related_asset_id,property_utility_id,cost_period,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
   const [{ utils, utilProp, expU }, { taxDataYears, taxYears, taxYear, taxRaw }, { latestVal, partRaw },
     [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }]] = await Promise.all([
-    // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของเดือนที่ผูกกับรายการเหล่านั้น
+    // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของปี (ถึงสิ้นเดือนที่เลือก) ที่ผูกกับรายการเหล่านั้น
+    //   ยอด / ความถี่ → ประมาณค่าใช้จ่ายประจำทั้งปี + เติมเดือนก่อน Go-live (กล่องภาพรวม)
     (async () => {
       const { data: utils } = allProps.length
-        ? await supabase.from("property_utilities").select("id,property_id,unit_label,paid_from_asset_id,paid_from_credit_card_id").in("property_id", allProps.map((p) => p.id))
-        : { data: [] as { id: string; property_id: string; unit_label: string | null; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[] };
+        ? await supabase.from("property_utilities")
+          .select("id,property_id,unit_label,paid_from_asset_id,paid_from_credit_card_id,expected_amount,currency,frequency,due_month,active,deleted_at")
+          .in("property_id", allProps.map((p) => p.id))
+        : { data: [] as Util[] };
       const utilProp = new Map(((utils ?? []) as { id: string; property_id: string }[])
         .map((u) => [u.id, allProps.find((p) => p.id === u.property_id)?.asset_id ?? ""]));
       const { data: expU } = utilProp.size
-        ? await supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", start).lte("date", end).is("deleted_at", null)
+        ? await supabase.from("expense_items").select(expCols).in("property_utility_id", [...utilProp.keys()]).gte("date", yearStart).lte("date", end).is("deleted_at", null)
         : await none;
       return { utils, utilProp, expU };
     })(),
@@ -177,7 +183,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     Promise.all([
       ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split,income_period")
         .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
-      ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", start).lte("date", end).is("deleted_at", null) : none,
+      // ค่าใช้จ่ายของปี (ถึงสิ้นเดือนที่เลือก) → เดือนที่เลือก + รายได้สุทธิทั้งปี
+      ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null) : none,
       // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
       ids.length ? supabase.from("v_property_market_latest").select("*").in("asset_id", ids) : none,
       ids.length ? supabase.from("v_property_target_price").select("asset_id,min_price").in("asset_id", ids) : none,
@@ -219,9 +226,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const incOf = (x: Inc) => baseOf(x) * share(x.asset_id);
   const ytdRent = new Map<string, number>();
   incAll.forEach((x) => ytdRent.set(x.asset_id, (ytdRent.get(x.asset_id) ?? 0) + incOf(x)));
-  const expRows = [...new Map([...((expA as Exp[] | null) ?? []), ...((expU as Exp[] | null) ?? [])].map((x) => [x.id, x])).values()]
+  const expYear = [...new Map([...((expA as Exp[] | null) ?? []), ...((expU as Exp[] | null) ?? [])].map((x) => [x.id, x])).values()]
     .map((x) => ({ ...x, prop: x.related_asset_id && shown.has(x.related_asset_id) ? x.related_asset_id : utilProp.get(x.property_utility_id ?? "") ?? "" }))
     .filter((x) => shown.has(x.prop)).sort((a, b) => b.date.localeCompare(a.date));
+  const expRows = expYear.filter((x) => x.date >= start);
   const expOf = (x: (typeof expRows)[number]) => baseOf(x) * share(x.prop);
   // กล่อง "ที่บันทึกแล้ว" ของเดือน: กดยอดเพื่อแก้ / ลบ (ฟอร์มเดียวกับหน้าทรัพย์สิน · ตกลง 28 ต.ค. 2026)
   //   รายการที่มาจากหน้าอื่น (หนี้สิน · กรมธรรม์ · รายการโอน · หักจากเงินประกัน) → ลิงก์ไปแก้ที่หน้าต้นทาง · รอแยกก้อน → แยกที่ Income & Expenses
@@ -432,6 +440,33 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   // ประมาณรายได้ค่าเช่าทั้งปี = ค่าเช่าตามสัญญาที่มีผล (ต่อเดือน) × 12
   const leaseCount = props.reduce((t, p) => t + (byProp.get(p.asset_id) ?? []).filter((l) => l.lease_status !== "UPCOMING" && PER_MONTHS[l.payment_frequency]).length, 0);
   const annualRent = props.reduce((t, p) => t + monthlyRent(p.asset_id), 0) * 12;
+  // ประมาณค่าใช้จ่ายประจำทั้งปี = ยอดที่ตั้งไว้ในค่าใช้จ่ายประจำ × จำนวนงวดต่อปี (ไม่รวมค่าใช้จ่ายครั้งเดียว · ตกลง 7 พ.ย. 2026)
+  const activeIds = new Set(active.map((p) => p.asset_id));
+  const recurring = ((utils ?? []) as Util[]).map((u) => ({ ...u, asset: utilProp.get(u.id) ?? "" }))
+    .filter((u) => u.active && !u.deleted_at && u.expected_amount != null && !!PERIODS_PER_YEAR[u.frequency ?? ""] && activeIds.has(u.asset));
+  const utilCost = (u: (typeof recurring)[number], periods: number) => thb(u.expected_amount, u.currency) * periods * share(u.asset);
+  const annualCost = recurring.reduce((t, u) => t + utilCost(u, PERIODS_PER_YEAR[u.frequency ?? ""]), 0);
+  // รายได้สุทธิทั้งปี = ยอดจริง ม.ค. → เดือนที่เลือก · ปีที่ Go-live เติมเดือนก่อน Go-live (src/lib/property-year.ts · ตกลง 7 พ.ย. 2026)
+  //   รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น
+  //   % ต่อปี = เฉพาะกลุ่มปล่อยเช่า: รายได้ − ค่าใช้จ่ายของกลุ่มนี้ ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มนี้
+  const span = yearSpan(ym, family?.go_live_date, today);
+  const netYearOf = (inGroup: (asset: string) => boolean) => {
+    const inc = incAll.filter((x) => inGroup(x.asset_id));
+    const actual = inc.filter((x) => x.date >= span.actualFrom).reduce((t, x) => t + incOf(x), 0)
+      - expYear.filter((x) => inGroup(x.prop) && x.date >= span.actualFrom).reduce((t, x) => t + expOf(x), 0);
+    if (!span.fillMonths) return actual;
+    const avgInc = inc.filter((x) => x.date >= span.avgFrom && x.date <= span.avgTo).reduce((t, x) => t + incOf(x), 0) / span.avgMonths;
+    const fillCost = recurring.filter((u) => inGroup(u.asset))
+      .reduce((t, u) => t + utilCost(u, periodsIn(PERIODS_PER_YEAR[u.frequency ?? ""], u.due_month, span.anchorMonth, 1, span.fillMonths)), 0);
+    return actual + avgInc * span.fillMonths - fillCost;
+  };
+  const netYear = netYearOf(() => true);
+  const rentalIds = new Set(active.filter((p) => USAGE_GROUP[p.usage_type] === "RENTAL").map((p) => p.asset_id));
+  const rentalValue = active.filter((p) => rentalIds.has(p.asset_id)).reduce((t, p) => t + (valueOf(p) ?? 0), 0);
+  const rentalPct = rentalValue > 0 ? ((netYearOf((a) => rentalIds.has(a)) * 12) / span.months / rentalValue) * 100 : null;
+  const monthSpan = (to: number) => `ม.ค.${to > 1 ? `–${TH_MONTHS[to - 1]}` : ""}`;
+  const tone = (v: number) => (v < 0 ? "text-red-700" : "text-emerald-700");
+  const EST = "mt-2 border-t border-slate-100 pt-2";
   const pays: PayOpt[] = [
     ...banks.map((b) => ({ value: endpointValue({ kind: "bank", id: b.id }), label: `บัญชี ${b.name}`, currency: b.currency })),
     ...((cardRows ?? []) as { id: string; issuer: string | null; card_name: string | null; card_last4: string | null; currency: string }[])
@@ -451,22 +486,44 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       <TabNav tabs={TABS} />
 
       <TabPanel id="overview">
+        {/* 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าทรัพย์สินรวม · รายได้ + ประมาณค่าเช่าทั้งปี · ค่าใช้จ่าย + ประมาณค่าใช้จ่ายประจำทั้งปี
+              · รายได้สุทธิ + ทั้งปี (ยอดจริง) + % ต่อปีของกลุ่มปล่อยเช่า */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700" sub={`${incMonth.length} รายการ`} />
-          <StatBox label={`ค่าใช้จ่ายทรัพย์สิน${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700" sub={`${expRows.length} รายการ`} />
-          <StatBox label={`รายได้สุทธิ${mLabel}`} value={signedMoney(incTotal - expTotal, "THB")}
-            valueClass={incTotal - expTotal >= 0 ? "text-emerald-700" : "text-red-700"} sub="รายได้ − ค่าใช้จ่าย" />
-          <StatBox label="ประมาณรายได้ค่าเช่าทั้งปี" value={money(annualRent, "THB")} valueClass="text-emerald-700"
-            sub={leaseCount ? `จากสัญญาที่มีผล ${leaseCount} สัญญา (ต่อเดือน × 12)` : "ยังไม่มีสัญญาเช่าที่มีผล"} />
+          <StatBox label={<>{pv.personId ? `มูลค่าทรัพย์สินส่วนของ ${pv.personName}` : "มูลค่าทรัพย์สินรวม"} (THB Equivalent)</>} value={money(totalValue, "THB")}
+            sub={`${active.length} รายการ`} />
+          <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
+            sub={<>
+              <div>{incMonth.length} รายการ</div>
+              <div className={EST}>ประมาณค่าเช่าทั้งปี <span className="font-medium text-emerald-700">{plusMoney(annualRent, "THB")}</span></div>
+              <div className="text-slate-400">{leaseCount ? `สัญญาที่มีผล ${leaseCount} สัญญา × 12 เดือน` : "ยังไม่มีสัญญาเช่าที่มีผล"}</div>
+            </>} />
+          <StatBox label={`ค่าใช้จ่ายทรัพย์สิน${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700"
+            sub={<>
+              <div>{expRows.length} รายการ</div>
+              <div className={EST}>ประมาณค่าใช้จ่ายประจำทั้งปี <span className="font-medium text-red-700">{minusMoney(annualCost, "THB")}</span></div>
+              <div className="text-slate-400">{recurring.length ? `ค่าใช้จ่ายประจำ ${recurring.length} รายการ · ไม่รวมค่าใช้จ่ายครั้งเดียว` : "ยังไม่ได้ตั้งค่าใช้จ่ายประจำ"}</div>
+            </>} />
+          <StatBox label={`รายได้สุทธิ${mLabel}`} value={signedMoney(incTotal - expTotal, "THB")} valueClass={tone(incTotal - expTotal)}
+            sub={<>
+              <div>รายได้ − ค่าใช้จ่าย</div>
+              <div className={EST}>ทั้งปี {span.year + 543} ({monthSpan(span.months)}) <span className={`font-medium ${tone(netYear)}`}>{signedMoney(netYear, "THB")}</span></div>
+              {span.fillMonths > 0 && <div className="text-slate-400">{monthSpan(span.fillMonths)} ประมาณ · ตั้งแต่ {TH_MONTHS[span.fillMonths]} ยอดจริง</div>}
+              {rentalPct != null && (
+                <div className="inline-flex items-center gap-1">ปล่อยเช่า <span className={`font-semibold ${tone(rentalPct)}`}>{signedPct(rentalPct)}</span> ต่อปีของมูลค่า
+                  <InfoTip label="วิธีคิดรายได้สุทธิทั้งปี">
+                    ทั้งปี = รายได้ − ค่าใช้จ่ายที่บันทึกจริง ตั้งแต่ ม.ค. ถึงเดือนที่เลือก
+                    {span.fillMonths > 0 && <> · ปีที่เริ่มใช้ระบบ เดือนก่อน Go-live ประมาณให้: รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น (ไม่รวมค่าใช้จ่ายครั้งเดียว)</>}
+                    {" "}· % ต่อปี = รายได้ − ค่าใช้จ่ายของทรัพย์สินกลุ่มปล่อยเช่า ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มปล่อยเช่า ({money(rentalValue, "THB")})
+                  </InfoTip>
+                </div>
+              )}
+            </>} />
         </section>
         <section className="grid gap-4 lg:grid-cols-2">
-          {/* ตารางสัดส่วนชุดเดียวกับทุกหน้า (ShareBox · ตกลง 7 พ.ย. 2026) */}
-          <ShareBox title="มูลค่ารวม" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}>
-            <div className="mt-1 text-right text-xl font-semibold tabular-nums">{money(totalValue, "THB")}</div>
-            <p className="text-right text-xs text-slate-500">รวม {active.length} รายการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</p>
-          </ShareBox>
+          {/* ตารางสัดส่วนชุดเดียวกับทุกหน้า (ShareBox · ตกลง 7 พ.ย. 2026) · ยอดรวม / จำนวนรายการอยู่กล่องบนแล้ว */}
+          <ShareBox title="มูลค่าตามประเภท" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}
+            aside={latestDate ? `ประเมินล่าสุด ${thDate(latestDate)}` : undefined} />
           <ShareBox title="มูลค่าตามการใช้งาน" label="การใช้งาน" total={totalValue} rows={shareRows(usageRows)}>
-            <p className="text-right text-xs text-slate-500">รวม {money(totalValue, "THB")}</p>
             {totalValue > 0 && (
               <div className="mt-3 flex h-6 overflow-hidden rounded-md text-[11px] font-medium text-white">
                 {usageRows.filter((r) => r.value > 0).map((r) => {

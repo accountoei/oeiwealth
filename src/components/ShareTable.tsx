@@ -35,15 +35,21 @@ export default function ShareTable({ label, rows, total }: { label: string; rows
 }
 
 /** กล่องสรุป 1 ใบ: หัวข้อ (THB Equivalent) + บรรทัดใต้หัวข้อ (ถ้ามี) + ตารางสัดส่วน · total ไม่ใส่ = รวมจากแถว */
-export function ShareBox({ title, sub, label, rows, total, children, footer, className, empty = "ยังไม่มีข้อมูล" }: {
-  title: ReactNode; sub?: ReactNode; label: string; rows: ShareRow[]; total?: number;
+export function ShareBox({ title, aside, sub, label, rows, total, children, footer, className, empty = "ยังไม่มีข้อมูล" }: {
+  title: ReactNode; /** ข้อความเล็กชิดขวาบรรทัดเดียวกับหัวข้อ (เช่น ประเมินล่าสุด …) */ aside?: ReactNode;
+  sub?: ReactNode; label: string; rows: ShareRow[]; total?: number;
   /** ใส่ระหว่างหัวข้อกับตาราง (เช่น แถบสัดส่วนรวม) */ children?: ReactNode;
   footer?: ReactNode; /** เช่น flex-1 = ยืดให้ขอบล่างเท่ากล่องข้าง ๆ */ className?: string; empty?: string;
 }) {
   const sum = total ?? rows.reduce((t, r) => t + r.value, 0);
   return (
-    <section className={`rounded-xl border border-slate-200 bg-white p-5 ${className ?? ""}`}>
-      <h2 className="font-medium text-slate-900">{title} <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>
+    <section className={`min-w-0 rounded-xl border border-slate-200 bg-white p-5 ${className ?? ""}`}>
+      {aside ? (
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <h2 className="font-medium text-slate-900">{title} <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>
+          <span className="text-xs text-slate-500">{aside}</span>
+        </div>
+      ) : <h2 className="font-medium text-slate-900">{title} <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>}
       {sub && <p className="text-xs text-slate-500">{sub}</p>}
       {children}
       {rows.length === 0 ? <p className="mt-3 text-sm text-slate-500">{empty}</p>
