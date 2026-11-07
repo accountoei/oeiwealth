@@ -379,7 +379,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
                   <td className={`py-3 pr-4 ${rider ? "pl-8" : "pl-4"}`}>
                     {ordering && <span className="mr-2 align-middle"><MoveButtons table="insurance_policies" id={r.id} paths={paths} {...neighbors(listRows, i, (x) => x.id)} /></span>}
                     {rider
-                      ? <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">↳ สัญญาเพิ่มเติม · {partLabel(r, role.main)}</Link>
+                      ? <Link href={`/insurance/${role.main.id}`} className="font-medium text-slate-900 hover:underline">↳ สัญญาเพิ่มเติม · {partLabel(r, role.main)}</Link>
                       : <Link href={`/insurance/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.insurer}{r.policy_no && ` · ${r.policy_no}`}</Link>}
                     <div className="text-xs text-slate-500">{rider ? "เล่มเดียวกัน" : TYPE[r.insurance_type] ?? r.insurance_type}
                       {role?.isMain && ` (สัญญาหลัก)`}

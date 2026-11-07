@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addClaim, type ActionState } from "../actions";
 import { CLAIM_STATUS, COVERAGE_LABEL } from "@/lib/format";
@@ -8,29 +8,43 @@ import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 
-export default function ClaimForm({ policyId, currency, today, coverages = [] }: {
-  policyId: string; currency: string; today: string; coverages?: { id: string; coverage_type: string; limit_amount: number }[];
+/** บันทึกเคลม · เล่มที่มีสัญญาเพิ่มเติม (parts) = เลือกส่วนของเล่ม · เลือกความคุ้มครองแล้วส่วนเปลี่ยนตามให้ (ตกลง 7 พ.ย. 2026) */
+export default function ClaimForm({ policyId, currency, today, coverages = [], parts }: {
+  policyId: string; currency: string; today: string; parts?: { id: string; label: string }[];
+  coverages?: { id: string; coverage_type: string; limit_amount: number; policy_id?: string; part?: string }[];
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addClaim, {});
+  const [pol, setPol] = useState(policyId);
+  const [cov, setCov] = useState("");
+  const pick = parts && parts.length > 1;
+  // เลือกส่วนแล้ว → เหลือเฉพาะความคุ้มครองของส่วนนั้น
+  const covList = pick ? coverages.filter((c) => (c.policy_id ?? policyId) === pol) : coverages;
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls("rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50")}>+ บันทึกเคลม</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="space-y-3 rounded-lg bg-slate-50 p-4">
-      <input type="hidden" name="policy_id" value={policyId} />
+      {!pick && <input type="hidden" name="policy_id" value={policyId} />}
       <input type="hidden" name="currency" value={currency} />
       <div className="grid gap-3 md:grid-cols-3">
+        {pick && (
+          <label className="text-sm">ส่วนของเล่ม
+            <select name="policy_id" value={pol} onChange={(e) => { setPol(e.target.value); setCov(""); }} className={input}>
+              {parts.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </label>
+        )}
         <label className="text-sm">วันเกิดเหตุ<input name="incident_date" type="date" max={today} className={input} /></label>
         <label className="text-sm">วันยื่นเคลม<input name="claim_date" type="date" defaultValue={today} max={today} className={input} /></label>
         <label className="text-sm">ยอดที่เคลม ({currency})<input name="claimed_amount" inputMode="decimal" className={input} /></label>
         <label className="text-sm">สถานะ
           <select name="status" defaultValue="SUBMITTED" className={input}>{CLAIM_STATUS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </label>
-        {coverages.length > 0 && (
+        {covList.length > 0 && (
           <label className="text-sm">เคลมจากความคุ้มครอง
-            <select name="coverage_id" defaultValue="" className={input}>
+            <select name="coverage_id" value={cov} onChange={(e) => setCov(e.target.value)} className={input}>
               <option value="">— ไม่ระบุ —</option>
-              {coverages.map((c) => <option key={c.id} value={c.id}>{COVERAGE_LABEL[c.coverage_type]?.join(" ") ?? c.coverage_type}</option>)}
+              {covList.map((c) => <option key={c.id} value={c.id}>{COVERAGE_LABEL[c.coverage_type]?.join(" ") ?? c.coverage_type}</option>)}
             </select>
           </label>
         )}
