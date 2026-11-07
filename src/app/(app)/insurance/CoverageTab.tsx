@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, thDate } from "@/lib/format";
+import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_COUNT_UNIT, COVERAGE_GROUPS, COVERAGE_LABEL, COVERAGE_NOSUM, covAmount, money, thDate } from "@/lib/format";
 import { StatBox } from "@/components/Boxes";
 import ModalButton from "@/components/ModalButton";
 import { InfoTip } from "@/components/HeaderBar";
@@ -10,20 +10,19 @@ import { InfoTip } from "@/components/HeaderBar";
  *   ทั้งครอบครัว = ตาราง ประเภท × คน (ย้ายมาจากภาพรวม) · เลือกคน = แยกตามกรมธรรม์ + ใช้ปีนี้ / คงเหลือ / สิ้นสุด
  *   การ์ดสรุป · กล่องเตือน · เคลมปีนี้ · ปุ่มพิมพ์สรุปสำหรับโรงพยาบาล (/print/insurance)
  *   ทุนชีวิต / อุบัติเหตุ: กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองประเภทนั้น ใช้ทุนประกันของกรมธรรม์แทน
+ *   หัวข้อครบตามตารางมาตรฐานทุกคน · ไม่มี = "ยังไม่มี" (ตกลง 7 พ.ย. 2026 · ดูว่าใครยังขาดสิทธิ์ไหน)
  */
 export type CovPolicy = { id: string; name: string; type: string; personId: string | null; endDate: string | null; expiring: boolean; expired: boolean;
   premium: number; premiumCcy: string; hasCov: boolean };
-export type CovItem = { policyId: string; personId: string; type: string; limit: number; used: number; currency: string; notes: string | null; fromPolicy?: boolean };
+export type CovItem = { policyId: string; personId: string; type: string; limit: number; used: number; currency: string; notes: string | null; fromPolicy?: boolean;
+  maxCount?: number | null };
 export type CovClaim = { id: string; policyId: string; personId: string | null; coverageType: string | null; date: string | null; claimed: number; received: number;
   currency: string; status: string; notes: string | null };
 
-const GROUPS: [string, string[]][] = [
-  ["สุขภาพ", ["IPD_ANNUAL", "IPD_PER_ADMIT", "ROOM_PER_DAY", "OPD_PER_VISIT", "OPD_ANNUAL", "HOSPITAL_CASH_PER_DAY"]],
-  ["ชีวิตและอุบัติเหตุ", ["LIFE", "ACCIDENT_DEATH", "DISABILITY"]],
-  ["โรคร้ายแรง", ["CRITICAL_ILLNESS"]],
-  ["อื่น ๆ", ["OTHER"]],
-];
-const HEALTH_TYPES = GROUPS[0][1];
+const HEALTH_TYPES = COVERAGE_GROUPS.find(([g]) => g === "สุขภาพ")?.[1] ?? [];
+const NONE = <span className="text-xs text-slate-400">ยังไม่มี</span>;
+/** วงเงินของรายการเดียว (ยกเว้นเบี้ย = มีสิทธิ์ · ร่วมจ่าย = % · สูงสุด N วัน) */
+const one = (x: CovItem) => `${covAmount(x.type, x.limit, ccy(x.currency), 0)}${x.maxCount ? ` · ${x.maxCount} ${COVERAGE_COUNT_UNIT[x.type] ?? "ครั้ง"}` : ""}`;
 const CLAIM = Object.fromEntries(CLAIM_STATUS);
 const ccy = (c: string) => (c !== "THB" ? c : undefined);
 const LINK = "tabular-nums text-slate-900 underline decoration-dotted underline-offset-4 hover:text-blue-700";
@@ -66,8 +65,8 @@ export default function CoverageTab({ persons, personId, personName, policies, i
   const pol = (id: string) => <Link href={`/insurance/${id}`} className="font-medium hover:underline">{policy.get(id)?.name ?? "กรมธรรม์"}</Link>;
 
   // ตาราง
-  const covPersons = persons.filter((p) => of(p.id).length > 0);
-  const groups = GROUPS.map(([g, ks]) => [g, ks.filter((k) => mine.some((x) => x.type === k))] as const).filter(([, ks]) => ks.length > 0);
+  const covPersons = persons;
+  const groups = COVERAGE_GROUPS;
   const myClaims = claims.filter((c) => c.personId && pname.has(c.personId));
   const live = (c: CovClaim) => !["REJECTED", "CANCELLED"].includes(c.status);
 
@@ -78,7 +77,7 @@ export default function CoverageTab({ persons, personId, personName, policies, i
         {xs.map((it, n) => (
           <tr key={n} className="align-top"><td className="py-1.5"><Link href={`/insurance/${it.policyId}`} className="hover:underline">{policy.get(it.policyId)?.name ?? "-"}</Link>
             {(it.notes || it.fromPolicy) && <div className="text-xs text-slate-500">{it.fromPolicy ? "ทุนประกันของกรมธรรม์" : it.notes}</div>}</td>
-            <td className="text-right tabular-nums">{money(it.limit, ccy(it.currency), 0)}</td>
+            <td className="text-right tabular-nums">{one(it)}</td>
             {annual && <td className="text-right tabular-nums">{it.used > 0 ? money(it.used, undefined, 0) : "-"}</td>}</tr>
         ))}
       </tbody>
@@ -115,7 +114,7 @@ export default function CoverageTab({ persons, personId, personName, policies, i
           <div className="flex flex-wrap items-center gap-3 text-sm"><h2 className="text-base font-medium text-slate-900">ความคุ้มครอง · {who} <InfoTip label="คำอธิบาย">จากกรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ · กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองใช้ทุนประกันของกรมธรรม์ · กดตัวเลขเพื่อดูว่ามาจากกรมธรรม์ไหน · เลือกคนที่แถบบนเพื่อดูแยกตามกรมธรรม์</InfoTip></h2>{filter}</div>
           <Link href={printHref} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">พิมพ์สรุปสำหรับโรงพยาบาล</Link>
         </div>
-        {groups.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีข้อมูลความคุ้มครอง · กรอกได้ที่หน้ากรมธรรม์แต่ละฉบับ</p>
+        {covPersons.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-500">ยังไม่มีสมาชิกในมุมมองนี้</p>
           : personId ? (
           <div className="overflow-x-auto"><table className="mt-2 w-full min-w-[44rem] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
@@ -130,7 +129,8 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                   return [
                     <tr key={k} className="font-medium">
                       <td className="px-4 py-2">{label(k)}</td>
-                      <td className="px-4 text-right tabular-nums">{byCcy(xs.map((x) => ({ amount: x.limit, currency: x.currency }))).map(([c, v]) => <div key={c}>{money(v, ccy(c), 0)}</div>)}</td>
+                      <td className="px-4 text-right tabular-nums">{xs.length === 0 ? NONE : COVERAGE_NOSUM.includes(k) ? ""
+                        : byCcy(xs.map((x) => ({ amount: x.limit, currency: x.currency }))).map(([c, v]) => <div key={c}>{money(v, ccy(c), 0)}</div>)}</td>
                       <td className="px-4 text-right tabular-nums">{annual ? money(xs.reduce((t, x) => t + x.used, 0), undefined, 0) : ""}</td>
                       <td className="px-4 text-right tabular-nums">{annual ? money(xs.reduce((t, x) => t + Math.max(x.limit - x.used, 0), 0), undefined, 0) : ""}</td>
                       <td></td>
@@ -139,7 +139,7 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                       <tr key={`${k}${n}`} className="align-top text-slate-600">
                         <td className="py-1.5 pl-8 pr-4"><Link href={`/insurance/${x.policyId}`} className="hover:underline">{policy.get(x.policyId)?.name ?? "-"}</Link>
                           {(x.notes || x.fromPolicy) && <div className="text-xs text-slate-500">{x.fromPolicy ? "ทุนประกันของกรมธรรม์" : x.notes}</div>}</td>
-                        <td className="px-4 text-right tabular-nums">{money(x.limit, ccy(x.currency), 0)}</td>
+                        <td className="px-4 text-right tabular-nums">{one(x)}</td>
                         <td className="px-4 text-right tabular-nums">{annual ? (x.used > 0 ? money(x.used, undefined, 0) : "-") : ""}</td>
                         <td className={`px-4 text-right tabular-nums ${annual && x.limit > 0 && x.used / x.limit >= 0.8 ? "text-red-700" : ""}`}>{annual ? money(Math.max(x.limit - x.used, 0), undefined, 0) : ""}</td>
                         <td className="whitespace-nowrap px-4 text-xs">{thDate(policy.get(x.policyId)?.endDate)}
@@ -165,8 +165,13 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                     <td className={`${STICKY} bg-white px-4 py-2`}>{label(k)}</td>
                     {covPersons.map((p) => {
                       const xs = of(p.id).filter((x) => x.type === k);
-                      if (xs.length === 0) return <td key={p.id} className="px-4 text-right text-slate-300">-</td>;
+                      if (xs.length === 0) return <td key={p.id} className="px-4 py-2 text-right">{NONE}</td>;
                       const annual = COVERAGE_ANNUAL.includes(k);
+                      if (COVERAGE_NOSUM.includes(k)) return (
+                        <td key={p.id} className="px-4 py-2 text-right">
+                          <ModalButton label={xs.length === 1 ? one(xs[0]) : `${xs.length} กรมธรรม์`} title={`${COVERAGE_LABEL[k]?.[0] ?? k} · ${p.name}`} className={LINK}>{detail(xs, false)}</ModalButton>
+                        </td>
+                      );
                       const lim = xs.filter((x) => x.currency === "THB").reduce((t, x) => t + x.limit, 0);
                       const used = xs.reduce((t, x) => t + x.used, 0);
                       return (

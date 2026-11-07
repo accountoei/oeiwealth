@@ -5125,4 +5125,107 @@ SELECT t.ok(has_function_privilege('authenticated', 'private.link_premium_paymen
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz-covgrid. ประกัน: บำนาญ · แก้ประเภท · ตารางความคุ้มครองทั้งชุด (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+CREATE TEMP TABLE tcg(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tcg TO authenticated;
+-- สร้างกรมธรรม์พร้อมความคุ้มครอง (คำสั่งเดียว) · ยกเว้นเบี้ยเก็บวงเงิน 0
+INSERT INTO tcg SELECT 'life', public.create_insurance_policy(jsonb_build_object('insurance_type', 'LIFE', 'person_id', t.p('คุณพ่อ'),
+  'insurer', 'ประกันทดสอบตาราง', 'policy_no', 'CG-001', 'currency', 'THB', 'insured_amount', 500000, 'premium', 12000,
+  'coverages', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'LIFE', 'limit_amount', '600,000', 'as_of_date', '2026-01-01'),
+    jsonb_build_object('coverage_type', 'WAIVER', 'limit_amount', '', 'notes', 'เมื่อทุพพลภาพ'))));
+SELECT t.ok((SELECT count(*) = 2 AND bool_and(currency = 'THB') FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcg WHERE k = 'life') AND deleted_at IS NULL)
+        AND (SELECT limit_amount = 600000 AND as_of_date = '2026-01-01' FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcg WHERE k = 'life') AND coverage_type = 'LIFE' AND deleted_at IS NULL)
+        AND (SELECT limit_amount = 0 AND notes = 'เมื่อทุพพลภาพ' FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcg WHERE k = 'life') AND coverage_type = 'WAIVER' AND deleted_at IS NULL),
+            'ตารางความคุ้มครอง: สร้างกรมธรรม์พร้อมความคุ้มครองในคำสั่งเดียว · ยกเว้นเบี้ย = มีสิทธิ์ (วงเงิน 0)');
+SELECT t.fails($$SELECT public.create_insurance_policy(jsonb_build_object('insurance_type', 'LIFE', 'insurer', 'ประกันทดสอบตาราง', 'policy_no', 'CG-BAD',
+  'coverages', jsonb_build_array(jsonb_build_object('coverage_type', 'ROOM_PER_DAY', 'limit_amount', ''))))$$,
+  'กรุณาใส่วงเงิน', 'ตารางความคุ้มครอง: แถวไม่มีวงเงิน → ไม่บันทึกทั้งกรมธรรม์');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.insurance_policies WHERE policy_no = 'CG-BAD'), 'ตารางความคุ้มครอง: สร้างไม่ผ่าน = ไม่มีกรมธรรม์ค้าง');
+INSERT INTO tcg SELECT 'rider', public.create_insurance_policy(jsonb_build_object('insurance_type', 'HEALTH', 'person_id', t.p('คุณพ่อ'),
+  'insurer', 'ประกันทดสอบตาราง', 'policy_no', 'CG-001', 'currency', 'THB', 'premium', 5000));
+INSERT INTO tcg SELECT 'cov_life', id FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcg WHERE k = 'life') AND coverage_type = 'LIFE' AND deleted_at IS NULL;
+SELECT updated_at AS cg_upd FROM public.insurance_coverages WHERE id = (SELECT id FROM tcg WHERE k = 'cov_life') \gset
+-- บันทึกทั้งเล่ม: แถวเดิมไม่เปลี่ยน = ไม่แตะ · ไม่ส่งยกเว้นเบี้ย = ลบ · สัญญาเพิ่มเติมเพิ่มค่าห้อง + จำนวนวัน
+SELECT t.ok(public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'life'), 'rows', jsonb_build_array(
+    jsonb_build_object('id', (SELECT id FROM tcg WHERE k = 'cov_life'), 'coverage_type', 'LIFE', 'limit_amount', 600000, 'as_of_date', '2026-01-01'))),
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'ROOM_PER_DAY', 'limit_amount', 4000, 'max_count', 365),
+    jsonb_build_object('coverage_type', 'COPAY', 'limit_amount', 20),
+    jsonb_build_object('coverage_type', 'CI_EARLY', 'limit_amount', 100000, 'max_count', 1)))))) = 4,
+            'ตารางความคุ้มครอง: บันทึกทั้งเล่ม (สัญญาหลัก + สัญญาเพิ่มเติม) ในครั้งเดียว');
+SELECT t.ok((SELECT updated_at = :'cg_upd' FROM public.insurance_coverages WHERE id = (SELECT id FROM tcg WHERE k = 'cov_life'))
+        AND NOT EXISTS (SELECT 1 FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcg WHERE k = 'life') AND coverage_type = 'WAIVER' AND deleted_at IS NULL)
+        AND (SELECT max_count = 365 FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcg WHERE k = 'rider') AND coverage_type = 'ROOM_PER_DAY' AND deleted_at IS NULL),
+            'ตารางความคุ้มครอง: แถวที่ไม่เปลี่ยนไม่ถูกแตะ · ช่องว่าง = ลบ · เก็บจำนวนวันสูงสุด');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', jsonb_build_array(
+    jsonb_build_object('id', (SELECT id FROM tcg WHERE k = 'cov_life'), 'coverage_type', 'LIFE', 'limit_amount', 1))))))$$,
+  'เปลี่ยนไปแล้ว', 'ตารางความคุ้มครอง: แถวของกรมธรรม์อื่นแก้ผ่านกรมธรรม์นี้ไม่ได้');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'life'), 'rows', '[]'::jsonb),
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'COPAY', 'limit_amount', 120))))))$$,
+  'insurance_coverages_copay_check', 'ตารางความคุ้มครอง: ร่วมจ่ายเกิน 100% ไม่ได้');
+SELECT t.ok(EXISTS (SELECT 1 FROM public.insurance_coverages WHERE id = (SELECT id FROM tcg WHERE k = 'cov_life') AND deleted_at IS NULL),
+            'ตารางความคุ้มครอง: ผิดแถวเดียว = ไม่บันทึกเลย (สัญญาหลักไม่ถูกลบ)');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'OPD_PER_VISIT', 'limit_amount', 1000, 'max_count', 0))))))$$,
+  'insurance_coverages_max_count_check', 'ตารางความคุ้มครอง: จำนวนสูงสุดต้องมากกว่า 0');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'DENTAL', 'limit_amount', 1000))))))$$,
+  'insurance_coverages_coverage_type_check', 'ตารางความคุ้มครอง: หัวข้อนอกรายการไม่ได้');
+-- แก้ประเภท: ชีวิต ↔ บำนาญ ได้ · ทรัพย์สินเปลี่ยนเข้า / ออกไม่ได้
+UPDATE public.insurance_policies SET insurance_type = 'ANNUITY' WHERE id = (SELECT id FROM tcg WHERE k = 'life');
+SELECT t.ok((SELECT insurance_type = 'ANNUITY' FROM public.insurance_policies WHERE id = (SELECT id FROM tcg WHERE k = 'life')), 'ประเภท: เปลี่ยนชีวิต → บำนาญได้');
+SELECT t.fails($$UPDATE public.insurance_policies SET insurance_type = 'PROPERTY' WHERE id = (SELECT id FROM tcg WHERE k = 'rider')$$,
+  'ประกันทรัพย์สินเปลี่ยนประเภทไม่ได้', 'ประเภท: เปลี่ยนเป็นประกันทรัพย์สินไม่ได้');
+INSERT INTO tcg SELECT 'prop', public.create_insurance_policy(jsonb_build_object('insurance_type', 'PROPERTY', 'insurer', 'ประกันทดสอบตาราง', 'policy_no', 'CG-P'));
+SELECT t.fails($$UPDATE public.insurance_policies SET insurance_type = 'HEALTH' WHERE id = (SELECT id FROM tcg WHERE k = 'prop')$$,
+  'ประกันทรัพย์สินเปลี่ยนประเภทไม่ได้', 'ประเภท: ประกันทรัพย์สินเปลี่ยนเป็นประเภทอื่นไม่ได้');
+-- ภาษี: เบี้ยบำนาญที่จ่าย → ค่าลดหย่อนเบี้ยประกันชีวิตแบบบำนาญ (ไม่ปนกับเบี้ยประกันชีวิต)
+SELECT public.set_insurance_schedule((SELECT id FROM tcg WHERE k = 'life'), 'PREMIUM',
+  jsonb_build_array(jsonb_build_object('due_date', current_date - 1, 'amount', 12000)));
+SELECT coalesce((SELECT system_amount FROM public.tax_system_lines(t.p('คุณพ่อ'), extract(year FROM current_date)::int) WHERE code = 'PENSION_INS'), 0) AS cg_pen0,
+       coalesce((SELECT system_amount FROM public.tax_system_lines(t.p('คุณพ่อ'), extract(year FROM current_date)::int) WHERE code = 'LIFE_INS'), 0) AS cg_life0 \gset
+SELECT public.batch_pay_insurance_premiums(jsonb_build_array(jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'life'), 'label', 'บำนาญ งวด 1',
+  'date', current_date, 'description', 'เบี้ยบำนาญ', 'amount', 12000, 'currency', 'THB', 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurance_schedule_line_id', (SELECT id FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM tcg WHERE k = 'life') AND kind = 'PREMIUM' AND deleted_at IS NULL))));
+SELECT t.ok((SELECT system_amount = :cg_pen0 + 12000 FROM public.tax_system_lines(t.p('คุณพ่อ'), extract(year FROM current_date)::int) WHERE code = 'PENSION_INS')
+        AND (SELECT coalesce(system_amount, 0) = :cg_life0 FROM public.tax_system_lines(t.p('คุณพ่อ'), extract(year FROM current_date)::int) WHERE code = 'LIFE_INS'),
+            'ภาษี: เบี้ยประกันบำนาญเข้าค่าลดหย่อนเบี้ยประกันชีวิตแบบบำนาญ');
+SELECT t.ok((SELECT prosrc LIKE '%''LIFE'',''ANNUITY'',''ACCIDENT''%' FROM pg_proc WHERE oid = 'private.tg_person_deceased_followups()'::regprocedure),
+            'ติดตามเมื่อเสียชีวิต: บำนาญ = เคลมสินไหมมรณกรรม');
+-- สิทธิ์: CONTRIBUTOR เพิ่มได้แต่ลบไม่ได้ · VIEWER ทำไม่ได้
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', '[]'::jsonb))))$$,
+  'PERMISSION_DENIED', 'ตารางความคุ้มครอง: CONTRIBUTOR ลบแถวไม่ได้');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'life'), 'rows', jsonb_build_array(
+    jsonb_build_object('id', (SELECT id FROM tcg WHERE k = 'cov_life'), 'coverage_type', 'LIFE', 'limit_amount', 1))))))$$,
+  'PERMISSION_DENIED', 'ตารางความคุ้มครอง: CONTRIBUTOR แก้แถวของคนอื่นไม่ได้ (แจ้ง ไม่เงียบ)');
+SELECT t.ok(public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'life'), 'rows', jsonb_build_array(
+    jsonb_build_object('id', (SELECT id FROM tcg WHERE k = 'cov_life'), 'coverage_type', 'LIFE', 'limit_amount', 600000, 'as_of_date', '2026-01-01'),
+    jsonb_build_object('coverage_type', 'DISABILITY', 'limit_amount', 100000)))))) = 2,
+            'ตารางความคุ้มครอง: CONTRIBUTOR เพิ่มแถวใหม่ได้ (แถวเดิมที่ไม่ได้แก้ไม่ติดสิทธิ์)');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcg WHERE k = 'rider'), 'rows', '[]'::jsonb))))$$,
+  'PERMISSION_DENIED', 'ตารางความคุ้มครอง: VIEWER ทำไม่ได้');
+SELECT t.ok(has_function_privilege('authenticated', 'public.set_insurance_coverages(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.set_insurance_coverages(jsonb)', 'EXECUTE')
+        AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.set_insurance_coverages(jsonb)'::regprocedure)
+        AND (SELECT proconfig @> ARRAY['search_path=""'] FROM pg_proc WHERE oid = 'public.set_insurance_coverages(jsonb)'::regprocedure)
+        AND NOT has_function_privilege('anon', 'private.tg_policy_type_change()', 'EXECUTE'),
+            'ตารางความคุ้มครอง: anon เรียกไม่ได้ · SECURITY INVOKER + search_path ว่าง');
+RESET ROLE;
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'

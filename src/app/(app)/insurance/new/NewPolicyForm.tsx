@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
-import { SMALL_BTN, INS_TYPE, thDate } from "@/lib/format";
+import { SMALL_BTN, INS_TAX, INS_TYPE, numOrZero, thDate } from "@/lib/format";
+import { CoverageGrid, covLabel, covTypesOf } from "../CoverageGrid";
+import { covPayload, type CovRow } from "@/lib/insurance-coverage";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import PayDefaultSelect from "../PayDefaultSelect";
 
@@ -24,6 +26,12 @@ export default function NewPolicyForm(props: {
   // หลัง Go-live: ซ่อนตัวเลือก "มีอยู่ก่อน Go-live" (ไม่ติ๊ก) · ADMIN กดลิงก์เล็กเพื่อเพิ่มรายการที่ตกหล่น
   const [late, setLate] = useState(false);
   const [rows, setRows] = useState([{ person_id: "", name: "", percent: "" }]);
+  // ตารางความคุ้มครองมาตรฐาน (ตกลง 7 พ.ย. 2026) · หัวข้อตามประเภท · บันทึกพร้อมกรมธรรม์ในคำสั่งเดียว
+  const [covRows, setCovRows] = useState<CovRow[]>([]);
+  const [covAll, setCovAll] = useState(false);
+  const [sum, setSum] = useState(0);
+  const [ccy, setCcy] = useState("THB");
+  const cov = covPayload(covRows, covTypesOf(type, covRows, covAll), covLabel);
   return (
     <form action={action} className="space-y-6">
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
@@ -32,6 +40,7 @@ export default function NewPolicyForm(props: {
           <select name="insurance_type" value={type} onChange={(e) => setType(e.target.value)} className={input}>
             {INS_TYPE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          <span className="mt-1 block text-xs text-slate-500">ภาษี: {INS_TAX[type]}</span>
         </label>
         <label className={label}>บริษัทประกัน *<input name="insurer" required className={input} /></label>
         <label className={label}>เลขกรมธรรม์<input name="policy_no" className={input} /></label>
@@ -57,10 +66,10 @@ export default function NewPolicyForm(props: {
         )}
         <label className={label}>วันเริ่มคุ้มครอง<input name="start_date" type="date" className={input} /></label>
         <label className={label}>วันสิ้นสุด / ครบสัญญา<input name="end_date" type="date" className={input} /></label>
-        <label className={label}>ทุนประกัน<input name="insured_amount" inputMode="decimal" className={input} /></label>
+        <label className={label}>ทุนประกัน<input name="insured_amount" inputMode="decimal" onChange={(e) => setSum(numOrZero(e.target.value))} className={input} /></label>
         <label className={label}>เบี้ยประกัน (ต่อปี)<input name="premium" inputMode="decimal" className={input} /></label>
         <label className={label}>สกุลเงิน
-          <CurrencySelect name="currency" defaultValue="THB" className={input} />
+          <CurrencySelect name="currency" defaultValue="THB" onChange={setCcy} className={input} />
         </label>
         <label className={label}>จ่ายเบี้ยจาก (ค่าตั้งต้น)
           <PayDefaultSelect banks={banks} cards={cards} className={input} />
@@ -104,9 +113,19 @@ export default function NewPolicyForm(props: {
         )}
       </section>
 
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium text-slate-900">ความคุ้มครอง <span className="text-xs font-normal text-slate-500">ถ้ามี · ช่องว่าง = ไม่คุ้มครอง · กรอกหรือแก้ภายหลังได้ที่หน้ากรมธรรม์</span></h2>
+          <button type="button" onClick={() => setCovAll(!covAll)} className="text-sm text-blue-700 hover:underline">{covAll ? "แสดงเฉพาะหัวข้อตามประเภท" : "แสดงทุกหัวข้อ"}</button>
+        </div>
+        <CoverageGrid insType={type} rows={covRows} setRows={setCovRows} sum={sum} currency={ccy} all={covAll} />
+        <input type="hidden" name="coverages" value={JSON.stringify(cov.rows)} />
+        {cov.errors.length > 0 && <ul className="list-disc space-y-0.5 pl-5 text-sm text-red-600">{cov.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+      </section>
+
       {state.error && <p className="text-sm text-red-600">{state.error}</p>}
       <div className="flex gap-3">
-        <button disabled={pending} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button disabled={pending || cov.errors.length > 0} className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white disabled:opacity-50">{pending ? "กำลังบันทึก…" : "บันทึก"}</button>
         <Link href="/insurance" className="rounded-md border border-slate-300 px-5 py-2 text-sm">ยกเลิก</Link>
       </div>
     </form>

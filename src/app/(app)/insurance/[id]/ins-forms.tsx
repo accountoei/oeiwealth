@@ -5,7 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { addCashValue, addCoverage, payBooklet, payPremium, receiveBenefit, saveCashValueTable, syncCashValue, updatePolicyInfo, type ActionState, type PayState } from "../actions";
 import AssetValuationForm from "@/components/AssetValuationForm";
 import { parseCashValueText, type CvLine } from "@/lib/insurance-schedule";
-import { SMALL_BTN, COVERAGE_LABEL, ROW_BTN, money, numOrZero, thDate } from "@/lib/format";
+import { SMALL_BTN, COVERAGE_LABEL, INS_TAX, INS_TYPE, INS_TYPE_EDITABLE, ROW_BTN, money, numOrZero, thDate } from "@/lib/format";
 import { useRowPanel } from "@/components/RowPanel";
 import BalanceGuard from "@/components/BalanceGuard";
 import { StatusSlot } from "@/components/StatusSelect";
@@ -159,36 +159,6 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
   ));
 }
 
-/** เพิ่มความคุ้มครอง · เล่มที่มีสัญญาเพิ่มเติม (parts) = เลือกส่วนของเล่มก่อน (ตกลง 7 พ.ย. 2026) */
-export function CoverageForm({ policyId, currency, parts }: { policyId: string; currency: string; parts?: { id: string; label: string }[] }) {
-  const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
-  const [state, action, pending] = useActionState<ActionState, FormData>(addCoverage, {});
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ เพิ่มความคุ้มครอง</button>;
-  if (!open) return trigger;
-  return present(trigger, (
-    <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3">
-      {parts && parts.length > 1 ? (
-        <label className="w-full text-xs">ส่วนของเล่ม
-          <select name="policy_id" defaultValue={policyId} className={`mt-1 block ${small}`}>
-            {parts.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-          </select>
-        </label>
-      ) : <input type="hidden" name="policy_id" value={policyId} />}
-      <input type="hidden" name="currency" value={currency} />
-      <label className="text-xs">ความคุ้มครอง
-        <select name="coverage_type" defaultValue="LIFE" className={`mt-1 block ${small}`}>
-          {Object.entries(COVERAGE_LABEL).map(([k, [l, u]]) => <option key={k} value={k}>{l}{u && ` (${u})`}</option>)}
-        </select>
-      </label>
-      <label className="text-xs">วงเงิน ({currency})<input name="limit_amount" required inputMode="decimal" className={`mt-1 block w-32 ${small}`} /></label>
-      <label className="text-xs">หมายเหตุ<input name="notes" className={`mt-1 block w-48 ${small}`} /></label>
-      <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1 text-xs text-white disabled:opacity-50">เพิ่ม</button>
-      <button type="button" data-close onClick={() => setOpen(false)} className="text-xs text-slate-500">ปิด</button>
-      <div className="w-full"><Msg s={state} /></div>
-    </form>
-  ));
-}
-
 export function AddCashValueForm({ policyId, currency, today, goLive }: {
   policyId: string; currency: string; today: string; goLive: string;
 }) {
@@ -230,15 +200,28 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
 export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, currency, v, booklet, part }: {
   policyId: string; persons: Person[]; showInsured: boolean; banks: Bank[]; cards: Card[]; currency: string;
   v: { person_id: string | null; payer_person_id: string | null; insurer: string; policy_no: string | null; start_date: string | null;
-    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null; pay_default: string };
+    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null; pay_default: string; insurance_type: string };
   booklet?: boolean; part?: boolean;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePolicyInfo, {});
+  const [type, setType] = useState(v.insurance_type);
   const d = (x: string | number | null) => (x == null ? "" : String(x));
+  const canType = INS_TYPE_EDITABLE.includes(v.insurance_type);
   return (
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="policy_id" value={policyId} />
       {part && <input type="hidden" name="part" value="1" />}
+      {canType && (
+        <label className="text-sm md:col-span-2">ประเภท
+          <select name="insurance_type" value={type} onChange={(e) => setType(e.target.value)} className={input}>
+            {INS_TYPE.filter(([k]) => INS_TYPE_EDITABLE.includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          {type !== v.insurance_type && (
+            <span className="mt-1 block text-xs text-amber-700">เปลี่ยนประเภทมีผลกับภาษี: {INS_TAX[type]} (เดิม: {INS_TAX[v.insurance_type]})
+              · แบบภาษีที่ยื่นแล้วไม่เปลี่ยน · แบบที่ยังไม่ยื่นกด &ldquo;ดึงยอดจากระบบใหม่&rdquo; ในหน้าภาษี · หัวข้อความคุ้มครองเปลี่ยนตามประเภท</span>
+          )}
+        </label>
+      )}
       {!part && <>
         <label className="text-sm">บริษัทประกัน<input name="insurer" required defaultValue={v.insurer} className={input} /></label>
         <label className="text-sm">เลขกรมธรรม์<input name="policy_no" defaultValue={d(v.policy_no)} className={input} data-plain /></label>

@@ -1,15 +1,15 @@
 /**
  * กรมธรรม์เล่มเดียวกัน (ตกลง 6 พ.ย. 2026): สัญญาเพิ่มเติม (เช่น สุขภาพ / มะเร็ง) บันทึกเป็นอีกรายการ
  *   บริษัท + เลขกรมธรรม์เดียวกัน = เล่มเดียวกัน → หน้าจอแสดงรวมเป็นเล่ม (IRR / ภาษี ยังแยกตามรายการ)
- *   รายการหลัก = ประกันชีวิตก่อน แล้วอุบัติเหตุ สุขภาพ ทรัพย์สิน (ประเภทเดียวกัน = ตามลำดับเดิม)
+ *   รายการหลัก = ประกันชีวิตก่อน แล้วบำนาญ อุบัติเหตุ สุขภาพ ทรัพย์สิน (ประเภทเดียวกัน = ตามลำดับเดิม)
  *   ฐานข้อมูลใช้กติกาเดียวกันตอนผูกชุดการจ่าย (private.link_premium_payments)
  */
 export type BookletPolicy = { id: string; insurance_type: string; insurer: string | null; policy_no: string | null };
 
 /** ชื่อส่วนของเล่ม (หัวคอลัมน์ / ป้าย) */
-export const PART_LABEL: Record<string, string> = { LIFE: "ชีวิต", ACCIDENT: "อุบัติเหตุ", HEALTH: "สุขภาพ", PROPERTY: "ทรัพย์สิน" };
+export const PART_LABEL: Record<string, string> = { LIFE: "ชีวิต", ANNUITY: "บำนาญ", ACCIDENT: "อุบัติเหตุ", HEALTH: "สุขภาพ", PROPERTY: "ทรัพย์สิน" };
 /** ลำดับในเล่ม (รายการหลัก = ลำดับน้อยสุด) */
-export const partRank = (type: string) => ({ LIFE: 0, ACCIDENT: 1, HEALTH: 2, PROPERTY: 3 } as Record<string, number>)[type] ?? 9;
+export const partRank = (type: string) => ({ LIFE: 0, ANNUITY: 1, ACCIDENT: 2, HEALTH: 3, PROPERTY: 4 } as Record<string, number>)[type] ?? 9;
 
 /** กุญแจของเล่ม: บริษัท (ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย) + เลขกรมธรรม์ (ไม่สนตัวพิมพ์ / ช่องว่าง) · ไม่มีเลข = ไม่ใช่เล่ม */
 export function bookletKey(p: { insurer: string | null; policy_no: string | null }): string | null {

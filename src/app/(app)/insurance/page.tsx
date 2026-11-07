@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -78,7 +78,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       .order("status").order("insurer"),
     supabase.from("persons").select("id,name").order("sort_order"),
     supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
-    supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes").is("deleted_at", null),
+    supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count").is("deleted_at", null),
     supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
       .gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`).order("claim_date", { ascending: false }),
     supabase.from("v_insurance_schedule_status").select("policy_id,due_date,remaining,status").eq("kind", "PREMIUM")
@@ -237,10 +237,10 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const activePerson = new Map(activeAll.map((r) => [r.id, r.person_id as string]));
   const covRows = (covs ?? []).filter((c) => activePerson.has(c.policy_id));
   const covItems: CovItem[] = covRows.map((c) => ({ policyId: c.policy_id, personId: activePerson.get(c.policy_id) as string, type: c.coverage_type,
-    limit: Number(c.limit_amount), used: usedByCov.get(c.id) ?? 0, currency: c.currency, notes: c.notes }));
+    limit: Number(c.limit_amount), used: usedByCov.get(c.id) ?? 0, currency: c.currency, notes: c.notes, maxCount: c.max_count }));
   // กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองประเภทนั้น → ใช้ทุนประกันของกรมธรรม์
   activeAll.forEach((r) => {
-    const k = r.insurance_type === "LIFE" ? "LIFE" : r.insurance_type === "ACCIDENT" ? "ACCIDENT_DEATH" : null;
+    const k = deathCoverage(r.insurance_type);
     if (!k || Number(r.insured_amount ?? 0) <= 0 || covRows.some((c) => c.policy_id === r.id && c.coverage_type === k)) return;
     covItems.push({ policyId: r.id, personId: r.person_id as string, type: k, limit: Number(r.insured_amount), used: 0,
       currency: r.insured_amount_currency ?? "THB", notes: null, fromPolicy: true });

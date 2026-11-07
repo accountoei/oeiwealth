@@ -419,7 +419,15 @@ export const SMALL_BTN = "inline-flex items-center whitespace-nowrap rounded-md 
 /** ปุ่มเล็กสีแดง — ลบ / ยกเลิกรายการ (ถามยืนยันก่อนเสมอ) */
 export const SMALL_DEL_BTN = "inline-flex items-center whitespace-nowrap rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50";
 
-export const INS_TYPE: [string, string][] = [["LIFE", "ประกันชีวิต / สะสมทรัพย์"], ["HEALTH", "ประกันสุขภาพ"], ["ACCIDENT", "ประกันอุบัติเหตุ"], ["PROPERTY", "ประกันทรัพย์สิน"]];
+export const INS_TYPE: [string, string][] = [["LIFE", "ประกันชีวิต / สะสมทรัพย์"], ["ANNUITY", "ประกันชีวิตแบบบำนาญ"], ["HEALTH", "ประกันสุขภาพ"],
+  ["ACCIDENT", "ประกันอุบัติเหตุ"], ["PROPERTY", "ประกันทรัพย์สิน"]];
+/** ประเภทที่เปลี่ยนไปมาได้หลังบันทึก (ประกันทรัพย์สินเปลี่ยนไม่ได้ · ฐานข้อมูลกันไว้อีกชั้น · ตกลง 7 พ.ย. 2026) */
+export const INS_TYPE_EDITABLE = ["LIFE", "ANNUITY", "HEALTH", "ACCIDENT"];
+/** ประเภท → ค่าลดหย่อนภาษีที่ระบบดึงให้ (แท็บภาษี) */
+export const INS_TAX: Record<string, string> = {
+  LIFE: "นับเป็นค่าลดหย่อน เบี้ยประกันชีวิต", ANNUITY: "นับเป็นค่าลดหย่อน เบี้ยประกันชีวิตแบบบำนาญ",
+  HEALTH: "นับเป็นค่าลดหย่อน เบี้ยประกันสุขภาพ (ของตัวเอง / บิดามารดา)", ACCIDENT: "ไม่นับเป็นค่าลดหย่อน", PROPERTY: "ไม่นับเป็นค่าลดหย่อน",
+};
 export const INS_STATUS: [string, string][] = [["ACTIVE", "มีผล"], ["LAPSED", "ขาดอายุ"], ["SURRENDERED", "เวนคืนแล้ว"], ["MATURED", "ครบสัญญา"], ["CLAIMED", "เคลมจบแล้ว"], ["CANCELLED", "ยกเลิก"]];
 export const CLAIM_STATUS: [string, string][] = [["DRAFT", "ร่าง"], ["SUBMITTED", "ยื่นแล้ว"], ["APPROVED", "อนุมัติ"], ["PARTIALLY_PAID", "จ่ายบางส่วน"], ["PAID", "จ่ายครบ"], ["REJECTED", "ปฏิเสธ"], ["CANCELLED", "ยกเลิก"]];
 
@@ -525,13 +533,61 @@ export const BLUES = ["#1442b8", "#1f5eff", "#3d78ff", "#5f92ff", "#86afff", "#a
 export const blueAt = (i: number) => BLUES[Math.min(i, BLUES.length - 1)];
 
 // ---------------------------------------------------------------- ประกัน: ความคุ้มครอง / ตารางเบี้ย / ผลประโยชน์ / ติดตาม
-/** ความคุ้มครอง: [ชื่อ, หน่วย] · หน่วยใช้แสดงผล (ต่อปี / ต่อวัน / ต่อครั้ง) */
+/**
+ * ความคุ้มครอง: [ชื่อ, หน่วย] · หน่วยใช้แสดงผล (ต่อปี / ต่อวัน / ต่อครั้ง) · เรียงตามหัวข้อมาตรฐาน (ตกลง 7 พ.ย. 2026)
+ *   ยกเว้นเบี้ย = "มีสิทธิ์" (วงเงินเก็บเป็น 0) · ร่วมจ่าย = % · ข้อมูลเดิมไม่แก้ (ชื่อบางหัวข้อชัดขึ้นเท่านั้น)
+ */
 export const COVERAGE_LABEL: Record<string, [string, string]> = {
-  LIFE: ["เสียชีวิต", ""], ACCIDENT_DEATH: ["เสียชีวิต / ทุพพลภาพ จากอุบัติเหตุ", ""], DISABILITY: ["ทุพพลภาพ", ""],
-  CRITICAL_ILLNESS: ["โรคร้ายแรง", ""], IPD_ANNUAL: ["ค่ารักษาผู้ป่วยใน (IPD)", "ต่อปี"], IPD_PER_ADMIT: ["ค่ารักษาผู้ป่วยใน (IPD)", "ต่อครั้ง"],
-  ROOM_PER_DAY: ["ค่าห้อง", "ต่อวัน"], OPD_PER_VISIT: ["ผู้ป่วยนอก (OPD)", "ต่อครั้ง"], OPD_ANNUAL: ["ผู้ป่วยนอก (OPD)", "ต่อปี"],
-  HOSPITAL_CASH_PER_DAY: ["ค่าชดเชยรายวัน", "ต่อวัน"], OTHER: ["อื่น ๆ", ""],
+  LIFE: ["เสียชีวิต", ""],
+  ACCIDENT_DEATH: ["เสียชีวิตจากอุบัติเหตุ", ""], ACCIDENT_DISMEMBER: ["สูญเสียอวัยวะ / ทุพพลภาพจากอุบัติเหตุ", ""],
+  ACCIDENT_MEDICAL: ["ค่ารักษาจากอุบัติเหตุ", "ต่อครั้ง"],
+  IPD_ANNUAL: ["ค่ารักษาผู้ป่วยใน (IPD)", "ต่อปี"], IPD_PER_ADMIT: ["ค่ารักษาผู้ป่วยใน (IPD)", "ต่อครั้ง"],
+  ROOM_PER_DAY: ["ค่าห้องและค่าอาหาร", "ต่อวัน"], OPD_PER_VISIT: ["ผู้ป่วยนอก (OPD)", "ต่อครั้ง"], OPD_ANNUAL: ["ผู้ป่วยนอก (OPD)", "ต่อปี"],
+  HOSPITAL_CASH_PER_DAY: ["ค่าชดเชยนอนโรงพยาบาล", "ต่อวัน"],
+  DEDUCTIBLE: ["ความรับผิดส่วนแรก (Deductible)", ""], COPAY: ["ร่วมจ่าย (Co-payment)", ""],
+  CI_EARLY: ["โรคร้ายแรงระยะเริ่มต้น–ปานกลาง", ""], CRITICAL_ILLNESS: ["โรคร้ายแรงระยะรุนแรง", ""],
+  DISABILITY: ["ทุพพลภาพ (เงินก้อน)", ""], DISABILITY_INCOME: ["ทุพพลภาพ (รายงวด)", "ต่องวด"],
+  WAIVER: ["ยกเว้นเบี้ยประกัน", ""],
+  OTHER: ["อื่น ๆ", ""],
 };
+/** หัวข้อมาตรฐาน (แท็บความคุ้มครอง / ตารางกรอก) */
+export const COVERAGE_GROUPS: [string, string[]][] = [
+  ["ชีวิต", ["LIFE"]],
+  ["อุบัติเหตุ", ["ACCIDENT_DEATH", "ACCIDENT_DISMEMBER", "ACCIDENT_MEDICAL"]],
+  ["สุขภาพ", ["IPD_ANNUAL", "IPD_PER_ADMIT", "ROOM_PER_DAY", "OPD_PER_VISIT", "OPD_ANNUAL", "HOSPITAL_CASH_PER_DAY", "DEDUCTIBLE", "COPAY"]],
+  ["โรคร้ายแรง", ["CI_EARLY", "CRITICAL_ILLNESS"]],
+  ["ทุพพลภาพ", ["DISABILITY", "DISABILITY_INCOME"]],
+  ["ยกเว้นเบี้ย", ["WAIVER"]],
+  ["อื่น ๆ", ["OTHER"]],
+];
+/** หัวข้อที่ตารางกรอกแสดงตามประเภทกรมธรรม์ (กด "แสดงทุกหัวข้อ" ดูที่เหลือได้) */
+export const COVERAGE_FOR_TYPE: Record<string, string[]> = {
+  LIFE: ["LIFE", "DISABILITY", "DISABILITY_INCOME", "WAIVER", "OTHER"],
+  ANNUITY: ["LIFE", "WAIVER", "OTHER"],
+  ACCIDENT: ["ACCIDENT_DEATH", "ACCIDENT_DISMEMBER", "ACCIDENT_MEDICAL", "DISABILITY", "DISABILITY_INCOME", "HOSPITAL_CASH_PER_DAY", "OTHER"],
+  HEALTH: ["IPD_ANNUAL", "IPD_PER_ADMIT", "ROOM_PER_DAY", "OPD_PER_VISIT", "OPD_ANNUAL", "HOSPITAL_CASH_PER_DAY", "DEDUCTIBLE", "COPAY",
+    "CI_EARLY", "CRITICAL_ILLNESS", "WAIVER", "OTHER"],
+  PROPERTY: ["OTHER"],
+};
+/** หน่วยของ "สูงสุด" (ไม่มีในรายการ = หัวข้อนั้นไม่มีจำนวนสูงสุด) */
+export const COVERAGE_COUNT_UNIT: Record<string, string> = {
+  ROOM_PER_DAY: "วัน", HOSPITAL_CASH_PER_DAY: "วัน", OPD_PER_VISIT: "ครั้ง/ปี", CI_EARLY: "ครั้ง", CRITICAL_ILLNESS: "ครั้ง", DISABILITY_INCOME: "งวด",
+};
+/** หัวข้อที่รวมยอดข้ามกรมธรรม์ไม่ได้ (แสดงทีละรายการ) */
+export const COVERAGE_NOSUM = ["DEDUCTIBLE", "COPAY", "WAIVER"];
+/** แถวเสียชีวิตที่ใช้ทุนประกันแทนเมื่อยังไม่ได้กรอก (ไม่คัดลอกยอด · ตกลง 6 พ.ย. 2026) */
+export const deathCoverage = (insType: string) => (insType === "LIFE" || insType === "ANNUITY" ? "LIFE" : insType === "ACCIDENT" ? "ACCIDENT_DEATH" : null);
+/** วงเงินของความคุ้มครองสำหรับแสดงผล: ยกเว้นเบี้ย = มีสิทธิ์ · ร่วมจ่าย = % · ที่เหลือ = จำนวนเงิน */
+export function covAmount(type: string, amount: number | string | null | undefined, currency?: string, digits = 2): string {
+  if (type === "WAIVER") return "มีสิทธิ์";
+  if (type === "COPAY") return `${Number(amount ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+  return money(amount, currency, digits);
+}
+/** ข้อความเล็กใต้วงเงิน: สูงสุด N วัน · ณ วันที่ */
+export function covExtra(c: { coverage_type: string; max_count?: number | null; as_of_date?: string | null }): string {
+  return [c.max_count ? `สูงสุด ${c.max_count} ${COVERAGE_COUNT_UNIT[c.coverage_type] ?? "ครั้ง"}` : "", c.as_of_date ? `ณ ${thDate(c.as_of_date)}` : ""]
+    .filter(Boolean).join(" · ");
+}
 /** ความคุ้มครองที่วงเงินเป็น "ต่อปี" → หักยอดเคลมในปีนั้นเพื่อดูวงเงินคงเหลือ */
 export const COVERAGE_ANNUAL = ["IPD_ANNUAL", "OPD_ANNUAL"];
 export const BENEFIT_TYPE_LABEL: Record<string, string> = {

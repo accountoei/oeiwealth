@@ -39,7 +39,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   insurance_policies: { person_id: "str", insurer: "str", policy_no: "str", start_date: "date", end_date: "date", insured_amount: "num", premium: "num", status: "str", notes: "str",
     payer_person_id: "str" },
   insurance_schedule_lines: { due_date: "date", amount: "num", benefit_type: "str", notes: "str", skipped: "bool" },
-  insurance_coverages: { coverage_type: "str", limit_amount: "num", notes: "str" },
+  insurance_coverages: { coverage_type: "str", limit_amount: "num", max_count: "num", as_of_date: "date", notes: "str" },
   insurance_followups: { status: "str", notes: "str" },
   assets: { name: "str", acquisition_date: "date", acquisition_cost: "num", status: "str", notes: "str" },
   private_business_details: { company_name: "str", registration_no: "str", business_type: "str", total_shares: "num",
