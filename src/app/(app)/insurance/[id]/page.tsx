@@ -4,13 +4,14 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE, insCountedPaid, money,
-  signedMoney, signedPct, thDate, todayBangkok,
+  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_COUNT_UNIT, COVERAGE_LABEL, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
+  covAmount, covExtra, deathCoverage, insCountedPaid, money, signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
 import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
 import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { AddCashValueForm, BenefitForm, BookletPayForm, CashValueTableEditor, CoverageForm, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
+import { AddCashValueForm, BenefitForm, BookletPayForm, CashValueTableEditor, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
+import { CoverageEditor } from "../CoverageGrid";
 import { PART_LABEL, bookletGroups, bookletKey, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
 import InsScheduleEditor from "./InsScheduleEditor";
 import EditToggle from "@/components/EditToggle";
@@ -43,6 +44,8 @@ const BOOK_COLS = "id,insurance_type,insurer,policy_no,insured_amount,insured_am
 const LINE_COLS = "id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status,skipped";
 const PAY_COLS = "id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes";
 const RECV_COLS = "id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes,created_at";
+/** ลำดับหัวข้อความคุ้มครองมาตรฐาน */
+const COV_ORDER = Object.keys(COVERAGE_LABEL);
 /** ยอดในเซลล์ที่กดเพื่อแก้รายการของเซลล์นั้น */
 const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
 
@@ -67,7 +70,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     if (!role.isMain) return { role, lines: [] as SLine[], covs: [], receipts: [], pays: [], claims: [] };
     const [{ data: ls }, { data: cv }, { data: rc }, { data: cl }] = await Promise.all([
       supabase.from("v_insurance_schedule_status").select(`policy_id,${LINE_COLS}`).in("policy_id", ids).order("due_date").order("installment_no"),
-      supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes").in("policy_id", ids).is("deleted_at", null).order("created_at"),
+      supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count,as_of_date").in("policy_id", ids).is("deleted_at", null).order("created_at"),
       supabase.from("insurance_benefit_receipts").select(`policy_id,${RECV_COLS}`).in("policy_id", ids).is("undone_at", null).is("deleted_at", null)
         .order("receipt_date", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("insurance_claims").select("*").in("policy_id", ids).is("deleted_at", null).order("claim_date", { ascending: false }),
@@ -96,7 +99,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
     supabase.from("v_insurance_schedule_status").select(LINE_COLS)
       .eq("policy_id", id).order("due_date").order("installment_no"),
-    supabase.from("insurance_coverages").select("id,coverage_type,limit_amount,currency,notes").eq("policy_id", id).is("deleted_at", null).order("created_at"),
+    supabase.from("insurance_coverages").select("id,coverage_type,limit_amount,currency,notes,max_count,as_of_date").eq("policy_id", id).is("deleted_at", null).order("created_at"),
     supabase.from("insurance_followups").select("id,policy_id,person_id,role,action,status,notes").in("policy_id", partIds).is("deleted_at", null).order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
@@ -157,7 +160,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const cvNow = cvAsset && cvAsset.current_value != null && cvAsset.currency === ccy ? Number(cvAsset.current_value) : null;
   const backPct = premPaid > 0 ? ((benReceived + (cvNow ?? 0)) / premPaid) * 100 : 0;
   // ปุ่มในกล่องมูลค่าเวนคืนด้านบน (แทนกล่องด้านล่าง · ตกลง 2 พ.ย. 2026 · คล้ายหน้า Property)
-  const showCv = !!cvAsset || cvRows.length > 0 || !!p.has_cash_value || p.insurance_type === "LIFE";
+  const showCv = !!cvAsset || cvRows.length > 0 || !!p.has_cash_value || p.insurance_type === "LIFE" || p.insurance_type === "ANNUITY";
   const cvTableCurrent = cvRows.map((r) => ({ ...r, value_date: startIso && addMonthsKeepDay(startIso, r.policy_year * 12) === r.value_date ? null : r.value_date }));
   const CV_SOURCE: Record<string, string> = { STATEMENT: "ตามหนังสือแจ้ง", USER: "บันทึกเอง", ACCOUNT_SETUP: "ยอดตั้งต้น" };
   const policyLabel = `เบี้ยประกัน ${p.insurer}${p.policy_no ? ` ${p.policy_no}` : ""}`;
@@ -412,9 +415,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
 
   // ความคุ้มครอง: ชีวิต / อุบัติเหตุที่ยังไม่ได้ใส่ชนิด "เสียชีวิต" → แถว "ตามทุนประกัน" (ไม่คัดลอกยอดไปเก็บ · ตกลง 6 พ.ย. 2026)
   //   กดแถวนั้น = บันทึกเป็นรายการจริงของเล่ม · รายการจริงที่ยอดไม่เท่าทุนประกัน → แสดงทุนประกันตัวเล็กไว้เทียบ
-  type Cov = { id: string; coverage_type: string; limit_amount: number; currency: string; notes: string | null };
+  type Cov = { id: string; coverage_type: string; limit_amount: number; currency: string; notes: string | null; max_count: number | null; as_of_date: string | null };
   const covTable = (pid: string, type: string, sum: number, sumCcy: string, list: Cov[]) => {
-    const k = type === "LIFE" ? "LIFE" : type === "ACCIDENT" ? "ACCIDENT_DEATH" : null;
+    const k = deathCoverage(type);
     const virtual = !!k && sum > 0 && !list.some((c) => c.coverage_type === k);
     if (!virtual && list.length === 0) return null;
     return (
@@ -429,14 +432,18 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               <td className="pl-4 text-xs text-slate-500">ตามทุนประกัน{canWrite && " · ถ้าเล่มนี้จ่ายไม่เท่าทุนประกัน กดที่แถวเพื่อบันทึกยอดจริง"}</td>
             </SumCoverageRow>
           )}
-          {list.map((c) => (
+          {[...list].sort((a, b) => COV_ORDER.indexOf(a.coverage_type) - COV_ORDER.indexOf(b.coverage_type)).map((c) => (
             <tr key={c.id}>
               <td className="py-1.5">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}</td>
-              <td className="text-right tabular-nums">{money(c.limit_amount, c.currency)}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}
+              <td className="text-right tabular-nums">{covAmount(c.coverage_type, c.limit_amount, c.currency)}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}
+                {covExtra(c) && <span className="block text-xs text-slate-500">{covExtra(c)}</span>}
                 {c.coverage_type === k && sum > 0 && Math.abs(Number(c.limit_amount) - sum) > 0.005 && <span className="block text-xs text-slate-500">ทุนประกัน {money(sum, sumCcy)}</span>}</td>
               <td className="pl-4 text-xs text-slate-500">{c.notes}</td>
               <td className="pl-2 text-right">{canWrite && <RowActions table="insurance_coverages" id={c.id} paths={linePaths(pid)} canDelete={canDelete} fields={[
-                { name: "limit_amount", label: "วงเงิน", type: "number", value: c.limit_amount }, { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
+                ...(c.coverage_type === "WAIVER" ? [] : [{ name: "limit_amount", label: c.coverage_type === "COPAY" ? "ร่วมจ่าย (%)" : "วงเงิน", type: "number" as const, value: c.limit_amount }]),
+                ...(COVERAGE_COUNT_UNIT[c.coverage_type] ? [{ name: "max_count", label: `สูงสุด (${COVERAGE_COUNT_UNIT[c.coverage_type]})`, type: "number" as const, value: c.max_count }] : []),
+                { name: "as_of_date", label: "ณ วันที่", type: "date" as const, value: c.as_of_date },
+                { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
             </tr>
           ))}
         </tbody>
@@ -575,7 +582,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                   remove: canDelete ? { kind: "policy", id, redirectTo: "/insurance", paths: ["/insurance"], label: "ลบกรมธรรม์นี้", hint: "มูลค่าเวนคืน ผู้รับผลประโยชน์ และเคลมจะถูกลบด้วย" } : undefined }}>
                   <PolicyInfoForm policyId={id} persons={persons ?? []} showInsured={p.insurance_type !== "PROPERTY"} banks={banks ?? []} cards={cards} currency={payCcy} v={{
                     person_id: p.person_id, payer_person_id: p.payer_person_id, insurer: p.insurer, policy_no: p.policy_no, start_date: p.start_date,
-                    end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes, pay_default: payDefault }} booklet={others.length > 0} />
+                    end_date: p.end_date, insured_amount: p.insured_amount, premium: p.premium, notes: p.notes, pay_default: payDefault, insurance_type: p.insurance_type }} booklet={others.length > 0} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผลประโยชน์</h3>
@@ -591,7 +598,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                         hint: "งวดเบี้ย ความคุ้มครอง และเคลมของส่วนนี้จะถูกลบด้วย" } : undefined }}>
                       <PolicyInfoForm policyId={o.id} persons={persons ?? []} showInsured banks={banks ?? []} cards={cards} currency={o.premium_currency ?? o.insured_amount_currency ?? "THB"} v={{
                         person_id: o.person_id, payer_person_id: o.payer_person_id, insurer: o.insurer ?? "", policy_no: o.policy_no, start_date: o.start_date,
-                        end_date: o.end_date, insured_amount: o.insured_amount, premium: o.premium, notes: o.notes, pay_default: payDefaultValue(o) }} part />
+                        end_date: o.end_date, insured_amount: o.insured_amount, premium: o.premium, notes: o.notes, pay_default: payDefaultValue(o), insurance_type: o.insurance_type }} part />
                     </WithStatus>
                   </div>
                 ))}
@@ -632,7 +639,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
-                {canWrite && <CoverageForm policyId={id} currency={ccy} parts={book ? bookParts.map((x) => ({ id: x.id, label: `${x.id === mainId ? "สัญญาหลัก" : "สัญญาเพิ่มเติม"} · ${typeLabel(x.id)}` })) : undefined} />}
+                {canWrite && <CoverageEditor parts={(book ? bookParts : [p]).map((x) => ({ id: x.id, label: book ? `${x.id === mainId ? "สัญญาหลัก" : "สัญญาเพิ่มเติม"} · ${typeLabel(x.id)}` : null,
+                  insType: x.insurance_type, sum: Number(x.insured_amount ?? 0), currency: x.insured_amount_currency ?? x.premium_currency ?? ccy,
+                  existing: x.id === id ? (covs ?? []) : (book?.covs ?? []).filter((c) => c.policy_id === x.id) }))} />}
               </div>
               {book && <h3 className="text-sm font-medium text-slate-800">สัญญาหลัก · {partName(id)}</h3>}
               {covTable(id, p.insurance_type, Number(p.insured_amount ?? 0), p.insured_amount_currency ?? ccy, covs ?? [])

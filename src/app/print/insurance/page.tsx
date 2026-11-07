@@ -1,12 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { COVERAGE_LABEL, INS_TYPE, money, thDate, thDateLong, todayBangkok } from "@/lib/format";
+import { COVERAGE_LABEL, INS_TYPE, covAmount, covExtra, money, thDate, thDateLong, todayBangkok } from "@/lib/format";
 import PrintShell, { type PrintSection } from "../loan/[id]/print-shell";
 
 export const metadata = { title: "พิมพ์สรุปประกันสำหรับโรงพยาบาล" };
 
 const TYPE = Object.fromEntries(INS_TYPE);
-const ORDER = ["HEALTH", "ACCIDENT", "LIFE"];
+const ORDER = ["HEALTH", "ACCIDENT", "LIFE", "ANNUITY"];
 
 /**
  * สรุปประกันสำหรับยื่นโรงพยาบาล (ตกลง 3 พ.ย. 2026) — หน้าละ 1 คน · ขนาด A4
@@ -23,7 +23,7 @@ export default async function PrintInsurancePage({ searchParams }: { searchParam
     supabase.from("persons").select("id,name,title_prefix,full_name_th,birth_date,status").is("deleted_at", null).order("sort_order").order("created_at"),
     supabase.from("insurance_policies").select("id,insurance_type,person_id,insurer,policy_no,start_date,end_date,insured_amount,insured_amount_currency,notes")
       .eq("status", "ACTIVE").is("deleted_at", null).neq("insurance_type", "PROPERTY").order("insurer"),
-    supabase.from("insurance_coverages").select("policy_id,coverage_type,limit_amount,currency,notes").is("deleted_at", null),
+    supabase.from("insurance_coverages").select("policy_id,coverage_type,limit_amount,currency,notes,max_count,as_of_date").is("deleted_at", null),
   ]);
   const order = Object.keys(COVERAGE_LABEL);
   const sections: PrintSection[] = (people ?? []).filter((x) => x.status !== "DECEASED" && (pols ?? []).some((r) => r.person_id === x.id)).map((x) => {
@@ -60,7 +60,7 @@ export default async function PrintInsurancePage({ searchParams }: { searchParam
                       {cs.map((c, n) => (
                         <tr key={n} className="align-top">
                           <td className="py-1">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}{COVERAGE_LABEL[c.coverage_type]?.[1] && ` (${COVERAGE_LABEL[c.coverage_type][1]})`}</td>
-                          <td className="whitespace-nowrap text-right tabular-nums">{money(c.limit_amount, c.currency, 0)}</td>
+                          <td className="whitespace-nowrap text-right tabular-nums">{covAmount(c.coverage_type, c.limit_amount, c.currency, 0)}{covExtra(c) && <div className="text-xs text-slate-500">{covExtra(c)}</div>}</td>
                           <td className="pl-4 text-slate-600">{c.notes ?? ""}</td>
                         </tr>
                       ))}

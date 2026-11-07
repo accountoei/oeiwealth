@@ -26,13 +26,17 @@ function bens(form: FormData) {
 export async function createPolicy(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const hasCv = form.get("has_cash_value") === "on";
+  // ตารางความคุ้มครอง (ถ้ากรอก) บันทึกในคำสั่งเดียวกับกรมธรรม์ (ตกลง 7 พ.ย. 2026)
+  let covs: unknown = [];
+  try { covs = JSON.parse(String(form.get("coverages") ?? "[]")); } catch { return { error: "อ่านตารางความคุ้มครองไม่ได้" }; }
+  if (!Array.isArray(covs)) return { error: "อ่านตารางความคุ้มครองไม่ได้" };
   const { data, error } = await supabase.rpc("create_insurance_policy", { p: {
     insurance_type: str(form.get("insurance_type")), person_id: str(form.get("person_id")), insured_asset_id: str(form.get("insured_asset_id")),
     insurer: str(form.get("insurer")), policy_no: str(form.get("policy_no")), start_date: str(form.get("start_date")),
     end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")),
     currency: str(form.get("currency")), has_cash_value: hasCv, is_opening: form.get("is_opening") === "on",
     cash_value: hasCv ? num(form.get("cash_value")) : null, cash_value_date: hasCv ? str(form.get("cash_value_date")) : null,
-    owners: ownersFromForm(form), beneficiaries: bens(form), notes: str(form.get("notes")),
+    owners: ownersFromForm(form), beneficiaries: bens(form), notes: str(form.get("notes")), coverages: covs,
   } });
   if (error) return { error: friendlyError(error.message) };
   // ผู้จ่ายเบี้ย (ว่าง = ผู้เอาประกัน) · จ่ายเบี้ยจาก (ค่าตั้งต้น)
@@ -204,6 +208,19 @@ export async function addCoverage(_: ActionState, form: FormData): Promise<Actio
   return { ok: "เพิ่มความคุ้มครองแล้ว" };
 }
 
+/** ตารางความคุ้มครองมาตรฐาน: ทุกส่วนของเล่มในครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลย · ตกลง 7 พ.ย. 2026) */
+export async function saveCoverages(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  let policies: unknown;
+  try { policies = JSON.parse(String(form.get("policies") ?? "[]")); } catch { return { error: "อ่านตารางความคุ้มครองไม่ได้" }; }
+  if (!Array.isArray(policies) || !policies.length) return { error: "อ่านตารางความคุ้มครองไม่ได้" };
+  const { data, error } = await supabase.rpc("set_insurance_coverages", { p: { policies } });
+  if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  refresh();
+  revalidatePath("/family", "layout");   // สรุปสิทธิ์รักษาของสมาชิก
+  return { ok: `บันทึกความคุ้มครองแล้ว (${data} รายการ)` };
+}
+
 /**
  * ข้อมูลที่ต้องเหมือนกันทั้งเล่ม (แบบผสม · ตกลง 7 พ.ย. 2026): แก้ที่สัญญาหลัก → สัญญาเพิ่มเติมในเล่มเปลี่ยนตาม
  *   แก้ทีละส่วน = ทุน · เบี้ย · วันสิ้นสุด · หมายเหตุ · สถานะ · ตารางเบี้ย
@@ -215,7 +232,9 @@ type SharedPol = BookletPolicy & Record<(typeof SHARED_COLS)[number], string | n
 export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("policy_id"));
-  const own = { end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")), notes: str(form.get("notes")) };
+  const own: Record<string, unknown> = { end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")), notes: str(form.get("notes")) };
+  // ประเภท (ชีวิต / บำนาญ / สุขภาพ / อุบัติเหตุ) แก้ได้ทีละส่วน · ประกันทรัพย์สินไม่มีช่องนี้ (ฐานข้อมูลกันไว้อีกชั้น)
+  if (form.has("insurance_type")) own.insurance_type = str(form.get("insurance_type"));
   if (form.get("part") === "1") {
     const { data, error } = await supabase.from("insurance_policies").update(own).eq("id", id).select("id");
     if (error) return { error: friendlyError(error.message) };
