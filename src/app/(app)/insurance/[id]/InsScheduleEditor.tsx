@@ -28,13 +28,15 @@ const newKey = () => `n${++seq}`;
  *   แต่ละแถว: วันครบกำหนด · ยอด · ชนิดผลประโยชน์ · ไม่ได้จ่าย / ไม่ได้รับ · หมายเหตุ · แทรก / ลบ / ใช้ยอดนี้กับงวดถัดไป
  *   งวดที่จ่าย / รับแล้วล็อกไว้ (ฐานข้อมูลเก็บไว้เอง) · บันทึก = แทนงวดที่ยังไม่ชำระทั้งชุด · ตารางว่าง = ลบงวดที่ยังไม่ชำระ
  */
-export default function InsScheduleEditor({ policyId, kind, currency, current, goLive, defaultAmount, defaultFirstDue }: {
+export default function InsScheduleEditor({ policyId, kind, currency, current, goLive, defaultAmount, defaultFirstDue, part }: {
   policyId: string; kind: "PREMIUM" | "BENEFIT"; currency: string; current: SchedCurrent[]; goLive: string | null;
   defaultAmount?: number; defaultFirstDue: string;
+  /** เล่มที่มีสัญญาเพิ่มเติม: ชื่อส่วน (ชีวิต / สุขภาพ) ต่อท้ายชื่อตาราง · ปุ่มละส่วน (ตกลง 7 พ.ย. 2026) */
+  part?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const prem = kind === "PREMIUM";
-  const label = prem ? "ตารางเบี้ย" : "ตารางผลประโยชน์";
+  const label = `${prem ? "ตารางเบี้ย" : "ตารางผลประโยชน์"}${part ? ` · ${part}` : ""}`;
   const hasLines = current.length > 0;
   const defType = prem ? "" : "CASH_BACK";
   const toRows = (): GridLine[] => sortGrid(current.map((x) => ({

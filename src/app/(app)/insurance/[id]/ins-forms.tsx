@@ -159,14 +159,21 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
   ));
 }
 
-export function CoverageForm({ policyId, currency }: { policyId: string; currency: string }) {
+/** เพิ่มความคุ้มครอง · เล่มที่มีสัญญาเพิ่มเติม (parts) = เลือกส่วนของเล่มก่อน (ตกลง 7 พ.ย. 2026) */
+export function CoverageForm({ policyId, currency, parts }: { policyId: string; currency: string; parts?: { id: string; label: string }[] }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [state, action, pending] = useActionState<ActionState, FormData>(addCoverage, {});
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(obtn)}>+ เพิ่มความคุ้มครอง</button>;
   if (!open) return trigger;
   return present(trigger, (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3">
-      <input type="hidden" name="policy_id" value={policyId} />
+      {parts && parts.length > 1 ? (
+        <label className="w-full text-xs">ส่วนของเล่ม
+          <select name="policy_id" defaultValue={policyId} className={`mt-1 block ${small}`}>
+            {parts.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </label>
+      ) : <input type="hidden" name="policy_id" value={policyId} />}
       <input type="hidden" name="currency" value={currency} />
       <label className="text-xs">ความคุ้มครอง
         <select name="coverage_type" defaultValue="LIFE" className={`mt-1 block ${small}`}>
@@ -215,40 +222,54 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
   ));
 }
 
-/** แก้ข้อมูลกรมธรรม์ (ในหน้าต่าง "แก้ไขข้อมูล") */
-export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, currency, v }: {
+/**
+ * แก้ข้อมูลกรมธรรม์ (ในหน้าต่าง "แก้ไขข้อมูล") · แบบผสม (ตกลง 7 พ.ย. 2026)
+ *   booklet = สัญญาหลักของเล่ม: ช่องที่ต้องเหมือนกันทั้งเล่มเปลี่ยนตามให้สัญญาเพิ่มเติม
+ *   part = สัญญาเพิ่มเติม: แก้ได้เฉพาะ วันสิ้นสุด · ทุน · เบี้ย · หมายเหตุ (ที่เหลือตามสัญญาหลัก)
+ */
+export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, currency, v, booklet, part }: {
   policyId: string; persons: Person[]; showInsured: boolean; banks: Bank[]; cards: Card[]; currency: string;
   v: { person_id: string | null; payer_person_id: string | null; insurer: string; policy_no: string | null; start_date: string | null;
     end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null; pay_default: string };
+  booklet?: boolean; part?: boolean;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePolicyInfo, {});
   const d = (x: string | number | null) => (x == null ? "" : String(x));
   return (
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <input type="hidden" name="policy_id" value={policyId} />
-      <label className="text-sm">บริษัทประกัน<input name="insurer" required defaultValue={v.insurer} className={input} /></label>
-      <label className="text-sm">เลขกรมธรรม์<input name="policy_no" defaultValue={d(v.policy_no)} className={input} data-plain /></label>
-      {showInsured && (
-        <label className="text-sm">ผู้เอาประกัน
-          <select name="person_id" defaultValue={d(v.person_id)} className={input}>
+      {part && <input type="hidden" name="part" value="1" />}
+      {!part && <>
+        <label className="text-sm">บริษัทประกัน<input name="insurer" required defaultValue={v.insurer} className={input} /></label>
+        <label className="text-sm">เลขกรมธรรม์<input name="policy_no" defaultValue={d(v.policy_no)} className={input} data-plain /></label>
+        {showInsured && (
+          <label className="text-sm">ผู้เอาประกัน
+            <select name="person_id" defaultValue={d(v.person_id)} className={input}>
+              {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </label>
+        )}
+        <label className="text-sm">ผู้จ่ายเบี้ย
+          <select name="payer_person_id" defaultValue={d(v.payer_person_id)} className={input}>
+            <option value="">คนเดียวกับผู้เอาประกัน</option>
             {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </label>
-      )}
-      <label className="text-sm">ผู้จ่ายเบี้ย
-        <select name="payer_person_id" defaultValue={d(v.payer_person_id)} className={input}>
-          <option value="">คนเดียวกับผู้เอาประกัน</option>
-          {persons.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-      </label>
-      <label className="text-sm">จ่ายเบี้ยจาก (ค่าตั้งต้น)
-        <PayDefaultSelect banks={banks} cards={cards} currency={currency} value={v.pay_default} className={input} />
-      </label>
-      <label className="text-sm">เริ่มคุ้มครอง<input name="start_date" type="date" defaultValue={d(v.start_date)} className={input} /></label>
+        <label className="text-sm">จ่ายเบี้ยจาก (ค่าตั้งต้น)
+          <PayDefaultSelect banks={banks} cards={cards} currency={currency} value={v.pay_default} className={input} />
+        </label>
+        <label className="text-sm">เริ่มคุ้มครอง<input name="start_date" type="date" defaultValue={d(v.start_date)} className={input} /></label>
+      </>}
       <label className="text-sm">สิ้นสุด<input name="end_date" type="date" defaultValue={d(v.end_date)} className={input} /></label>
       <label className="text-sm">ทุนประกัน<input name="insured_amount" inputMode="decimal" defaultValue={d(v.insured_amount)} className={input} /></label>
       <label className="text-sm">เบี้ยต่อปี<input name="premium" inputMode="decimal" defaultValue={d(v.premium)} className={input} /></label>
-      <label className="text-sm md:col-span-2">หมายเหตุ<input name="notes" defaultValue={d(v.notes)} className={input} /></label>
+      <label className={`text-sm ${part ? "" : "md:col-span-2"}`}>หมายเหตุ<input name="notes" defaultValue={d(v.notes)} className={input} /></label>
+      {(booklet || part) && (
+        <p className="text-xs text-slate-500 md:col-span-2">
+          {part ? "บริษัท · เลขกรมธรรม์ · ผู้เอาประกัน · ผู้จ่ายเบี้ย · จ่ายเบี้ยจาก · เริ่มคุ้มครอง ตามสัญญาหลัก (แก้ที่ด้านบน)"
+            : "บริษัท · เลขกรมธรรม์ · ผู้เอาประกัน · ผู้จ่ายเบี้ย · จ่ายเบี้ยจาก · เริ่มคุ้มครอง ใช้กับทั้งเล่ม: แก้ที่นี่แล้วสัญญาเพิ่มเติมเปลี่ยนตาม"}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button disabled={pending} className={btn}>{pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}</button>
         <StatusSlot />

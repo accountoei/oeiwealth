@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, amountOrNull, isPositive, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
+import { bookletGroups, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
 
 export type ActionState = FormState;
 /** ผลลงมูลค่าเวนคืนตามตารางในสัญญา (sync_insurance_cash_value) */
@@ -54,7 +55,7 @@ export async function saveBeneficiaries(_: ActionState, form: FormData): Promise
   const id = String(form.get("policy_id"));
   const { error } = await supabase.rpc("set_beneficiaries", { p_policy_id: id, p_list: bens(form) });
   if (error) return { error: friendlyError(error.message) };
-  revalidatePath(`/insurance/${id}`);
+  revalidatePath("/insurance", "layout");   // ทุกหน้ากรมธรรม์ (สัญญาเพิ่มเติมแสดงที่หน้ารายการหลักของเล่ม)
   return { ok: "บันทึกผู้รับผลประโยชน์แล้ว" };
 }
 
@@ -67,7 +68,7 @@ export async function addClaim(_: ActionState, form: FormData): Promise<ActionSt
     status: str(form.get("status")) ?? "SUBMITTED", notes: str(form.get("notes")), coverage_id: str(form.get("coverage_id")),
   });
   if (error) return { error: friendlyError(error.message) };
-  revalidatePath(`/insurance/${id}`);
+  revalidatePath("/insurance", "layout");   // ทุกหน้ากรมธรรม์ (สัญญาเพิ่มเติมแสดงที่หน้ารายการหลักของเล่ม)
   return { ok: "บันทึกเคลมแล้ว" };
 }
 
@@ -85,9 +86,8 @@ function refreshAssets(assetIds: Iterable<string>) {
   if (ids.length) { revalidatePath("/property"); revalidatePath("/alternative"); }
 }
 
-function refresh(id: string) {
-  revalidatePath(`/insurance/${id}`);
-  revalidatePath("/insurance");
+function refresh() {
+  revalidatePath("/insurance", "layout");   // ทุกหน้ากรมธรรม์ (สัญญาเพิ่มเติมแสดงที่หน้ารายการหลักของเล่ม)
   revalidatePath("/income-expenses");
   revalidatePath("/financial/cash", "layout");
   revalidatePath("/");
@@ -103,7 +103,7 @@ export async function saveInsSchedule(_: ActionState, form: FormData): Promise<A
   if (!Array.isArray(lines)) return { error: "อ่านตารางไม่ได้" };
   const { data, error } = await supabase.rpc("set_insurance_schedule", { p_policy_id: id, p_kind: String(form.get("kind")), p_lines: lines });
   if (error) return { error: friendlyError(error.message) };
-  refresh(id);
+  refresh();
   return { ok: lines.length ? `บันทึกตาราง ${data} งวดแล้ว` : "ลบงวดที่ยังไม่ชำระแล้ว" };
 }
 
@@ -125,7 +125,7 @@ export async function payPremium(_: PayState, form: FormData): Promise<PayState>
   if (error) return { error: friendlyError(error.message) };
   // ลงมูลค่าเวนคืนตามตารางในสัญญาต่อ (ถ้ามี) · ไม่สำเร็จก็ไม่กระทบการจ่ายเบี้ย
   const { data: cv } = await supabase.rpc("sync_insurance_cash_value", { p_policy_id: id });
-  refresh(id);
+  refresh();
   if (asset) refreshAssets([asset]);
   return { ok: "บันทึกจ่ายเบี้ยแล้ว", cv: (cv as CvSync | null) ?? undefined };
 }
@@ -143,7 +143,7 @@ export async function saveCashValueTable(_: ActionState, form: FormData): Promis
   if (!Array.isArray(lines)) return { error: "อ่านตารางไม่ได้" };
   const { data, error } = await supabase.rpc("set_insurance_cash_value_table", { p_policy_id: id, p_lines: lines });
   if (error) return { error: friendlyError(error.message) };
-  refresh(id);
+  refresh();
   const r = data as { count: number; sync: CvSync } | null;
   return { ok: lines.length === 0 ? "ล้างตารางแล้ว" : `บันทึกตาราง ${r?.count ?? lines.length} ปีแล้ว${cvMsg(r?.sync)}` };
 }
@@ -154,7 +154,7 @@ export async function syncCashValue(_: ActionState, form: FormData): Promise<Act
   const id = String(form.get("policy_id"));
   const { data, error } = await supabase.rpc("sync_insurance_cash_value", { p_policy_id: id });
   if (error) return { error: friendlyError(error.message) };
-  refresh(id);
+  refresh();
   const r = data as CvSync | null;
   return r && r.added > 0 ? { ok: `ลงแล้ว ${r.added} ปี${cvMsg(r)}` } : { ok: "ไม่มีปีที่ต้องลงเพิ่ม (ยังไม่ถึงวัน · เบี้ยก่อนหน้ายังค้าง · หรือมียอดที่ใหม่กว่าแล้ว)" };
 }
@@ -169,7 +169,7 @@ export async function receiveBenefit(_: ActionState, form: FormData): Promise<Ac
     outcome: str(form.get("outcome")), person_id: str(form.get("person_id")), notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
-  refresh(id);
+  refresh();
   const r = data as { cash_value_part: number; income_part: number } | null;
   const fmt = (n: number) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return { ok: r ? `บันทึกแล้ว · จากมูลค่าเวนคืน ${fmt(r.cash_value_part)} · รายได้ ${fmt(r.income_part)}` : "บันทึกแล้ว" };
@@ -186,7 +186,7 @@ export async function addCashValue(_: ActionState, form: FormData): Promise<Acti
     notes: str(form.get("notes")),
   } });
   if (error) return { error: friendlyError(error.message) };
-  refresh(id);
+  refresh();
   return { ok: "เพิ่มมูลค่าเวนคืนแล้ว" };
 }
 
@@ -200,27 +200,55 @@ export async function addCoverage(_: ActionState, form: FormData): Promise<Actio
     currency: str(form.get("currency")) ?? "THB", notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
-  refresh(id);
+  refresh();
   return { ok: "เพิ่มความคุ้มครองแล้ว" };
 }
 
-/** แก้ข้อมูลกรมธรรม์ (หน้าต่าง "แก้ไขข้อมูล") */
+/**
+ * ข้อมูลที่ต้องเหมือนกันทั้งเล่ม (แบบผสม · ตกลง 7 พ.ย. 2026): แก้ที่สัญญาหลัก → สัญญาเพิ่มเติมในเล่มเปลี่ยนตาม
+ *   แก้ทีละส่วน = ทุน · เบี้ย · วันสิ้นสุด · หมายเหตุ · สถานะ · ตารางเบี้ย
+ */
+const SHARED_COLS = ["insurer", "policy_no", "person_id", "payer_person_id", "start_date", "paid_from_asset_id", "paid_from_credit_card_id"] as const;
+type SharedPol = BookletPolicy & Record<(typeof SHARED_COLS)[number], string | null>;
+
+/** แก้ข้อมูลกรมธรรม์ (หน้าต่าง "แก้ไขข้อมูล") · part=1 = สัญญาเพิ่มเติม (แก้ได้เฉพาะช่องของส่วนนั้น) */
 export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const id = String(form.get("policy_id"));
+  const own = { end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")), notes: str(form.get("notes")) };
+  if (form.get("part") === "1") {
+    const { data, error } = await supabase.from("insurance_policies").update(own).eq("id", id).select("id");
+    if (error) return { error: friendlyError(error.message) };
+    if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+    revalidatePath("/insurance", "layout");
+    return { ok: "บันทึกข้อมูลแล้ว" };
+  }
   const patch: Record<string, unknown> = {
-    insurer: str(form.get("insurer")), policy_no: str(form.get("policy_no")), start_date: str(form.get("start_date")),
-    end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")),
-    payer_person_id: str(form.get("payer_person_id")), notes: str(form.get("notes")),
+    ...own, insurer: str(form.get("insurer")), policy_no: str(form.get("policy_no")), start_date: str(form.get("start_date")),
+    payer_person_id: str(form.get("payer_person_id")),
   };
   if (form.has("person_id")) patch.person_id = str(form.get("person_id"));
   if (form.has("pay_default")) Object.assign(patch, payDefault(form));
   if (!patch.insurer) return { error: "กรุณาใส่บริษัทประกัน" };
+  // เล่มเดิม (ก่อนแก้บริษัท / เลขกรมธรรม์): สัญญาหลักของเล่ม → หาสัญญาเพิ่มเติมที่ต้องเปลี่ยนตาม
+  const { data: all } = await supabase.from("v_insurance_status").select(`id,insurance_type,${SHARED_COLS.join(",")}`).not("policy_no", "is", null).order("created_at");
+  const pols = (all ?? []) as unknown as SharedPol[];
+  const me = pols.find((x) => x.id === id);
+  const role = me ? bookletRole(me, bookletGroups(pols)) : null;
   const { data, error } = await supabase.from("insurance_policies").update(patch).eq("id", id).select("id");
   if (error) return { error: friendlyError(error.message) };
   if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
-  revalidatePath("/insurance");
-  revalidatePath(`/insurance/${id}`);
+  revalidatePath("/insurance", "layout");   // ทุกหน้ากรมธรรม์ (สัญญาเพิ่มเติมแสดงที่หน้ารายการหลักของเล่ม)
+  if (me && role?.isMain) {
+    // เปลี่ยนตามเฉพาะช่องที่แก้จริง (ช่องที่ไม่ได้แก้ = สัญญาเพิ่มเติมคงค่าเดิมของตัวเอง)
+    const changed = Object.fromEntries(SHARED_COLS.filter((k) => k in patch && (patch[k] ?? null) !== (me[k] ?? null)).map((k) => [k, patch[k]]));
+    const riders = role.parts.filter((x) => x.id !== id).map((x) => x.id);
+    if (riders.length && Object.keys(changed).length) {
+      const { error: e2 } = await supabase.from("insurance_policies").update(changed).in("id", riders);
+      if (e2) return { error: `บันทึกสัญญาหลักแล้ว แต่สัญญาเพิ่มเติมยังไม่เปลี่ยนตาม: ${friendlyError(e2.message)}` };
+      return { ok: `บันทึกข้อมูลแล้ว (สัญญาเพิ่มเติม ${riders.length} ส่วนเปลี่ยนตาม)` };
+    }
+  }
   return { ok: "บันทึกข้อมูลแล้ว" };
 }
 
