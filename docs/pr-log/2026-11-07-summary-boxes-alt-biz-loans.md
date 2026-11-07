@@ -1,4 +1,4 @@
-# กล่องสรุป 4 กล่อง: Alternative Assets · Private Business · Loans Receivable
+# #373 · กล่องสรุป 4 กล่อง: Alternative Assets · Private Business · Loans Receivable
 
 - วันที่: 7 พ.ย. 2026 · branch `feat/summary-boxes-alt-biz-loans`
 - SQL: ไม่มี SQL
