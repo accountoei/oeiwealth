@@ -10,6 +10,8 @@ import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { StatBox } from "@/components/Boxes";
+import { ShareBox, SHARE_COLORS, type ShareRow } from "@/components/ShareTable";
+import MemberShareBox, { type MemberShareRow } from "./MemberShareBox";
 import UrlSelect from "@/components/UrlSelect";
 import { payDefaultValue } from "./PayDefaultSelect";
 import InsuranceBatch, { type BoxPolicy, type PayOpt, type YLine } from "./InsuranceBatch";
@@ -84,7 +86,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id,plan_name,coverage_scope")
       .order("status").order("insurer"),
     supabase.from("persons").select("id,name").order("sort_order"),
-    supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
+    supabase.from("assets").select("id,current_value,currency,current_value_date,asset_ownerships(person_id,ownership_percent,start_date,end_date,deleted_at)")
+      .eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
     supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count,count_period,label").is("deleted_at", null),
     supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
       .gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`).order("claim_date", { ascending: false }),
@@ -158,6 +161,40 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     + savings.reduce((t, r) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
       return t + (c && c.currency === "THB" ? Number(c.current_value ?? 0) : 0); }, 0);
   const backPct = premPaid > 0 ? (backGot / premPaid) * 100 : null;
+  // กล่องสัดส่วน (ตกลง 8 พ.ย. 2026 · แบบแรก) · THB เหมือนกล่องสรุปด้านบน
+  //   ซ้าย = เบี้ยต่อปีตามบริษัทประกัน (ตามตัวกรองคน + บริษัท) · ขวา = ตามสมาชิกครอบครัว (ทั้งครอบครัวแบบหน้า Alternative · ตามตัวกรองบริษัท)
+  const isThb = (c: string | null) => (c ?? "THB") === "THB";
+  const isLife = (t: string) => t === "LIFE" || t === "ANNUITY";
+  const byInsurer = new Map<string, { name: string; value: number; pols: typeof act }>();
+  act.forEach((r) => {
+    if (!isThb(r.premium_currency) || !(Number(r.premium ?? 0) > 0)) return;
+    const k = String(r.insurer ?? "").trim().toLowerCase();
+    const x = byInsurer.get(k) ?? { name: String(r.insurer ?? "").trim() || "-", value: 0, pols: [] };
+    x.value += Number(r.premium); x.pols.push(r); byInsurer.set(k, x);
+  });
+  const insurerRows: ShareRow[] = [...byInsurer.entries()].sort((a, b) => b[1].value - a[1].value)
+    .map(([k, x], i) => ({ key: k || "-", name: x.name, value: x.value, color: SHARE_COLORS[i % SHARE_COLORS.length], sub: `(${bookletCount(x.pols)} ฉบับ)` }));
+  const famAct = pol.filter((r) => r.status === "ACTIVE");
+  const mem = new Map<string, { premium: number; life: number; cv: number }>();
+  const memOf = (k: string) => { const x = mem.get(k) ?? { premium: 0, life: 0, cv: 0 }; mem.set(k, x); return x; };
+  famAct.forEach((r) => {
+    const k = (r.person_id as string | null) ?? "";            // ไม่มีผู้เอาประกัน = ประกันทรัพย์สิน
+    if (isThb(r.premium_currency)) memOf(k).premium += Number(r.premium ?? 0);
+    if (isLife(r.insurance_type) && isThb(r.insured_amount_currency)) memOf(k).life += Number(r.insured_amount ?? 0);
+  });
+  type Own = { person_id: string; ownership_percent: number; start_date: string; end_date: string | null; deleted_at: string | null };
+  (cvs ?? []).filter((a) => a.currency === "THB" && (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0).forEach((a) => {
+    const os = ((a.asset_ownerships ?? []) as Own[]).filter((o) => !o.deleted_at && o.start_date <= today && (!o.end_date || o.end_date >= today));
+    if (!os.length) { memOf("?").cv += Number(a.current_value); return; }
+    os.forEach((o) => { memOf(o.person_id).cv += (Number(a.current_value) * Number(o.ownership_percent)) / 100; });
+  });
+  const memberRows: MemberShareRow[] = [...mem.entries()].filter(([, x]) => x.premium > 0 || x.life > 0 || x.cv > 0)
+    .sort((a, b) => b[1].premium - a[1].premium || b[1].life - a[1].life || b[1].cv - a[1].cv)
+    .map(([k, x], i) => ({ key: k || "-", ...x, color: SHARE_COLORS[i % SHARE_COLORS.length], current: !!pv.personId && k === pv.personId,
+      name: k === "" ? "ประกันทรัพย์สิน" : k === "?" ? "ยังไม่ระบุเจ้าของ" : pname.get(k) ?? "สมาชิก" }));
+  const fxNote = (n: number) => (n > 0 ? <p className="mt-2 text-xs text-slate-500">ไม่รวมกรมธรรม์สกุลเงินอื่น {n} ฉบับ</p> : null);
+  const fxAct = act.filter((r) => !isThb(r.premium_currency)).length;
+  const fxFam = famAct.filter((r) => !isThb(r.premium_currency) || (isLife(r.insurance_type) && !isThb(r.insured_amount_currency))).length;
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
@@ -313,6 +350,13 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
             : <><span className="whitespace-nowrap">เบี้ยจ่ายแล้ว {money(premPaid, undefined, 0)}</span> · <span className="whitespace-nowrap">ได้คืน {money(backGot, undefined, 0)}</span>
                 <div className="text-slate-400">เฉพาะกรมธรรม์ที่มีเงินคืน {bookletCount(savings)} ฉบับ</div></>} />
       </section>
+      {(insurerRows.length > 0 || memberRows.length > 0) && (
+        <section className="grid gap-4 lg:grid-cols-2">
+          <ShareBox title={<>เบี้ยต่อปีตามบริษัทประกัน{pv.personId ? `ของ ${pv.personName}` : ""}</>} label="บริษัทประกัน" valueLabel="เบี้ยต่อปี (THB)"
+            rows={insurerRows} footer={fxNote(fxAct)} empty="ยังไม่มีเบี้ยของกรมธรรม์ที่มีผล" />
+          <MemberShareBox rows={memberRows} footer={fxNote(fxFam)} />
+        </section>
+      )}
       {fupRows.length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
           <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) · ค้าง {fupRows.length} รายการ</h2>
