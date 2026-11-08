@@ -26,7 +26,7 @@ const HEALTH_TYPES = COVERAGE_GROUPS.find(([g]) => g === "สุขภาพ")?.
 const NONE = <span className="text-xs text-slate-400">ยังไม่มี</span>;
 /** วงเงินของรายการเดียว (ยกเว้นเบี้ย = มีสิทธิ์ · ร่วมจ่าย = % · สูงสุด N วัน ต่อปี) */
 const one = (x: CovItem) => {
-  const extra = covExtra({ coverage_type: x.type, max_count: x.maxCount, count_period: x.period });
+  const extra = covExtra({ coverage_type: x.type, max_count: x.maxCount, count_period: x.period, label: x.label });
   return `${covAmount(x.type, x.limit, ccy(x.currency), 0)}${extra ? ` · ${extra}` : ""}`;
 };
 /** แถวของตาราง = หัวข้อ + คุ้มครองเฉพาะ + ชื่อ ("อื่น ๆ") */

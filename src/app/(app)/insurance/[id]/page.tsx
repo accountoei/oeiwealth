@@ -4,8 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_COUNT_UNIT, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
-  covAmount, covExtra, covName, coverageHasPeriod, deathCoverage, insCountedPaid, money, signedMoney, signedPct, thDate, todayBangkok,
+  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
+  covAmount, covCountUnit, covExtra, covName, coverageHasPeriod, deathCoverage, insCountedPaid, money, signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
 import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
 import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTable";
@@ -458,7 +458,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               <td className="pl-2 text-right">{canWrite && <RowActions table="insurance_coverages" id={c.id} paths={linePaths(pid)} canDelete={canDelete} fields={[
                 ...(c.coverage_type === "WAIVER" ? [] : [{ name: "limit_amount", label: c.coverage_type === "COPAY" ? "ร่วมจ่าย (%)" : "วงเงิน", type: "number" as const, value: c.limit_amount }]),
                 ...(c.coverage_type === "OTHER" ? [{ name: "label", label: "ชื่อความคุ้มครอง", value: c.label, width: "w-48" }] : []),
-                ...(COVERAGE_COUNT_UNIT[c.coverage_type] ? [{ name: "max_count", label: `สูงสุด (${COVERAGE_COUNT_UNIT[c.coverage_type]})`, type: "number" as const, value: c.max_count }] : []),
+                ...(covCountUnit(c.coverage_type, c.label) || c.max_count ? [{ name: "max_count", label: `สูงสุด (${covCountUnit(c.coverage_type, c.label) ?? "ครั้ง"})`, type: "number" as const, value: c.max_count }] : []),
                 ...(coverageHasPeriod(c.coverage_type) ? [{ name: "count_period", label: "รอบ", type: "select" as const, value: c.count_period,
                   options: [["", "ไม่ระบุ"] as [string, string], ...COVERAGE_PERIOD.filter(([v]) => periodAllowed(c.coverage_type, v, c.count_period))] }] : []),
                 { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>

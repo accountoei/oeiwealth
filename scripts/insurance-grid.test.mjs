@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import { addMonthsIso, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, sortGrid } from "../src/lib/insurance-grid.ts";
 import {
-  addableCovTypes, blankCovRow, blankKey, blankRider, covPayload, covRemoved, partText, patchCovRow, periodAllowed, riderPayload, rowsFromExisting, sortCovRows,
-  visibleCovTypes,
+  addableCovTypes, addablePresets, blankCovRow, blankKey, blankRider, covPayload, covRemoved, partText, patchCovRow, periodAllowed, presetCovRow, riderPayload,
+  rowsFromExisting, sortCovRows, visibleCovTypes,
 } from "../src/lib/insurance-coverage.ts";
 
 const R = (key, due, amount, extra = {}) => ({ key, due, amount, type: "", skipped: false, notes: "", ...extra });
@@ -211,6 +211,33 @@ assert.deepEqual(gridToLines([R("p", "2026-09-01", "100", { locked: "จ่า�
   rows = patchCovRow([], "ROOM_PER_DAY", "z", { count: "" });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].period, "");
+}
+
+// ประกันทรัพย์สิน: ปุ่มหัวข้อที่ตั้งชื่อไว้ = แถว "อื่น ๆ" + ชื่อ · ใส่แล้วปุ่มนั้นหาย · แก้ชื่อเป็นอย่างอื่น = ปุ่มกลับมา (ตกลง 8 พ.ย. 2026)
+{
+  const L = ["ทรัพย์สินเสียหาย / สูญหาย", "ความรับผิดส่วนแรก (ทรัพย์สิน)"];
+  const ded = presetCovRow(L[1]);
+  assert.equal(ded.type, "OTHER");
+  assert.equal(ded.label, L[1]);
+  assert.notEqual(ded.key, presetCovRow(L[1]).key);
+  assert.deepEqual(addablePresets(L, []), L);
+  assert.deepEqual(addablePresets(L, [ded]), [L[0]]);
+  assert.deepEqual(addablePresets(L, [{ ...ded, label: ` ${L[1]} ` }]), [L[0]]);
+  assert.deepEqual(addablePresets(L, [{ ...ded, label: "ค่าขนย้าย" }]), L);
+  // หัวข้อสุขภาพชื่อเดียวกันไม่นับ (คนละหัวข้อ)
+  assert.deepEqual(addablePresets(L, [{ ...blankCovRow("DEDUCTIBLE"), label: L[1] }]), L);
+  // บันทึกเป็น "อื่น ๆ" พร้อมชื่อ (ไม่ใช่ความรับผิดส่วนแรกของสุขภาพ)
+  const out = covPayload([{ ...ded, amount: "5,000", period: "PER_EVENT" }], (t) => t);
+  assert.deepEqual(out.errors, []);
+  assert.equal(out.rows[0].coverage_type, "OTHER");
+  assert.equal(out.rows[0].label, L[1]);
+  assert.equal(out.rows[0].count_period, "PER_EVENT");
+  assert.equal("preset" in out.rows[0], false);
+  // กดปุ่มแล้วยังไม่กรอก = แถวว่าง (ไม่เตือน · ไม่บันทึก) · กรอกช่องอื่นแต่ไม่มีวงเงิน = เตือนด้วยชื่อหัวข้อ
+  assert.deepEqual(covPayload([ded], (t) => t), { rows: [], errors: [] });
+  assert.deepEqual(covPayload([{ ...ded, period: "PER_EVENT" }], (t) => t).errors, [`${L[1]}: ใส่วงเงิน หรือกดลบแถวนี้`]);
+  // แก้ชื่อเป็นอย่างอื่น = นับว่ากรอกแล้ว
+  assert.equal(covPayload([{ ...ded, label: "ค่าขนย้าย" }], (t) => t).errors.length, 1);
 }
 
 console.log("insurance-grid: all tests passed");

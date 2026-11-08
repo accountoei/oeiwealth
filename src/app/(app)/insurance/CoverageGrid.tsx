@@ -6,10 +6,12 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { toast } from "@/components/Modal";
 import { saveCoverages, type ActionState } from "./actions";
 import {
-  COVERAGE_COUNT_UNIT, COVERAGE_FOR_TYPE, COVERAGE_GROUPS, COVERAGE_LABEL, COVERAGE_PERIOD, SMALL_BTN, SMALL_DEL_BTN, coverageHasPeriod, deathCoverage, thDate,
+  COVERAGE_FOR_TYPE, COVERAGE_GROUPS, COVERAGE_LABEL, COVERAGE_PERIOD, PROPERTY_COVERAGES, SMALL_BTN, SMALL_DEL_BTN, covCountUnit, coverageHasPeriod, deathCoverage,
+  propertyCoverage, thDate,
 } from "@/lib/format";
 import {
-  addableCovTypes, blankCovRow, blankKey, covPayload, covRemoved, partText, patchCovRow, periodAllowed, rowsFromExisting, sortCovRows, visibleCovTypes,
+  addableCovTypes, addablePresets, blankCovRow, blankKey, covPayload, covRemoved, partText, patchCovRow, periodAllowed, presetCovRow, rowsFromExisting, sortCovRows,
+  visibleCovTypes,
   type CovExisting, type CovRow,
 } from "@/lib/insurance-coverage";
 
@@ -28,19 +30,24 @@ const PLACEHOLDER: Record<string, string> = {
 /** ช่อง "คุ้มครองเฉพาะ" ของส่วนนั้น (ว่าง = ทั่วไป) · เฉพาะประกันสุขภาพ / อุบัติเหตุ */
 export const SCOPE_HINT = "ว่าง = ทั่วไป · เช่น มะเร็ง";
 export const hasScope = (insType: string) => insType === "HEALTH" || insType === "ACCIDENT";
+/** "แสดงทุกหัวข้อ" ใช้ได้ไหม (ประกันทรัพย์สิน = ไม่มี · หัวข้อคน เช่น ค่ารักษา / ความรับผิดส่วนแรกของสุขภาพ ไม่เกี่ยว · ตกลง 8 พ.ย. 2026) */
+export const canShowAll = (insType: string) => insType !== "PROPERTY";
+const PRESET_LABELS = PROPERTY_COVERAGES.map((x) => x.label);
 
 /**
  * ตารางความคุ้มครองของกรมธรรม์ 1 ส่วน (ตกลง 7 พ.ย. 2026 · ปรับ 8 พ.ย. 2026)
  *   ปกติ = แถวที่มี + ปุ่มเพิ่มหัวข้อมาตรฐานของประเภทนั้นที่ยังไม่ได้ใส่ · all ("แสดงทุกหัวข้อ") = แถวว่างครบทุกหัวข้อ
  *   สูงสุด = จำนวน + รอบ (ต่อครั้ง / ต่อปี / ตลอดสัญญา · เฉพาะรอบที่ใช้กับหัวข้อนั้นได้ · ใส่จำนวนแล้วเลือกรอบที่พบบ่อยให้ก่อน) · "อื่น ๆ" มีช่องชื่อ · แถวเสียชีวิตที่ไม่ได้ใส่ = ใช้ทุนประกัน
+ *   ประกันทรัพย์สิน: ปุ่มหัวข้อที่ตั้งชื่อไว้ให้ (PROPERTY_COVERAGES = "อื่น ๆ" + ชื่อ) + "อื่น ๆ" · ไม่มี "แสดงทุกหัวข้อ"
  */
 export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
   insType: string; rows: CovRow[]; setRows: (r: CovRow[]) => void; sum: number; currency: string; all: boolean;
 }) {
   const death = deathCoverage(insType);
+  const full = all && canShowAll(insType);
   const patch = (type: string, key: string, p: Partial<CovRow>) => setRows(patchCovRow(rows, type, key, p));
   // แสดงทุกหัวข้อ: หัวข้อละแถว (แถวว่างเพิ่มเป็นแถวจริงตอนพิมพ์) · ปกติ: เฉพาะแถวที่มี
-  const shown = all
+  const shown = full
     ? visibleCovTypes(ORDER, undefined, rows, true).flatMap((t) => {
       const list = rows.filter((r) => r.type === t);
       return list.length ? list : [blankCovRow(t, blankKey(t))];
@@ -51,7 +58,8 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
   // หัวกลุ่มเฉพาะกลุ่มที่มีหลายหัวข้อ (กลุ่มเดียวหัวข้อเดียว เช่น ชีวิต / ยกเว้นเบี้ย = ชื่อซ้ำ ไม่ต้องมีหัว)
   const shownTypes = [...new Set(shown.map((r) => r.type))];
   const groupSize = (g: string) => shownTypes.filter((x) => groupOf(x) === g).length;
-  const add = all ? ["OTHER"] : addableCovTypes(ORDER, COVERAGE_FOR_TYPE[insType], rows);
+  const add = full ? ["OTHER"] : addableCovTypes(ORDER, COVERAGE_FOR_TYPE[insType], rows);
+  const presets = insType === "PROPERTY" ? addablePresets(PRESET_LABELS, rows) : [];
   return (
     <div className="space-y-2">
       {shown.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ · กดหัวข้อด้านล่างเพื่อเพิ่ม (ไม่ใส่ = ไม่คุ้มครอง)</p> : (
@@ -67,14 +75,16 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
                 const prev = shown[i - 1];
                 const head = (!prev || groupOf(prev.type) !== groupOf(t)) && groupSize(groupOf(t)) > 1 ? groupOf(t) : null;
                 const first = !prev || prev.type !== t;
-                const cntUnit = COVERAGE_COUNT_UNIT[t];
+                // หน่วยของ "สูงสุด" (หัวข้อทรัพย์สินบางหัวข้อไม่มี · มีจำนวนค้างไว้แล้ว = ยังแสดงให้แก้ / ล้างได้)
+                const cntUnit = covCountUnit(t, r.label) ?? (r.count.trim() ? "ครั้ง" : undefined);
+                const prop = propertyCoverage(t, r.label);
                 return (
                   <Fragment key={r.key}>
                     {head && <tr><td colSpan={5} className="pb-1 pt-3 text-xs font-medium text-slate-500">{head}</td></tr>}
                     <tr className="align-top">
                       <td className="py-1 pr-2">
                         {t === "OTHER" ? (
-                          <input value={r.label} onChange={(e) => patch(t, r.key, { label: e.target.value })} placeholder="ชื่อ เช่น ค่ารถพยาบาล" maxLength={200}
+                          <input value={r.label} onChange={(e) => patch(t, r.key, { label: e.target.value })} placeholder={insType === "PROPERTY" ? "ชื่อ เช่น ค่าขนย้ายทรัพย์สิน" : "ชื่อ เช่น ค่ารถพยาบาล"} maxLength={200}
                             aria-label="ชื่อความคุ้มครอง (อื่น ๆ)" className={`${cell} placeholder:text-slate-400`} />
                         ) : first ? <span className="block py-1">{covLabel(t)}{unitOf(t) && <span className="text-xs text-slate-500"> {unitOf(t)}</span>}</span> : ""}
                       </td>
@@ -103,7 +113,7 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
                           </span>
                         )}
                       </td>
-                      <td className="px-1 py-1"><input value={r.notes} onChange={(e) => patch(t, r.key, { notes: e.target.value })} placeholder={PLACEHOLDER[t] ?? ""}
+                      <td className="px-1 py-1"><input value={r.notes} onChange={(e) => patch(t, r.key, { notes: e.target.value })} placeholder={prop?.hint ?? PLACEHOLDER[t] ?? ""}
                         className={`${cell} placeholder:text-slate-400`} /></td>
                       <td className="py-1 pl-1 text-right">
                         {real.has(r.key) && <button type="button" onClick={() => setRows(rows.filter((x) => x.key !== r.key))} className={SMALL_DEL_BTN}>ลบ</button>}
@@ -116,12 +126,15 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
           </table>
         </div>
       )}
-      {add.length > 0 && (
+      {add.length + presets.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {!all && <span className="text-xs text-slate-500">เพิ่มหัวข้อ:</span>}
+          {!full && <span className="text-xs text-slate-500">เพิ่มหัวข้อ:</span>}
+          {presets.map((l) => (
+            <button key={l} type="button" onClick={() => setRows([...rows, presetCovRow(l)])} className={SMALL_BTN}>+ {l}</button>
+          ))}
           {add.map((t) => (
             <button key={t} type="button" onClick={() => setRows([...rows, blankCovRow(t)])} className={SMALL_BTN}>
-              {all ? "+ เพิ่มบรรทัด (อื่น ๆ)" : `+ ${covLabel(t)}${unitOf(t) ? ` ${unitOf(t)}` : ""}`}</button>
+              {full ? "+ เพิ่มบรรทัด (อื่น ๆ)" : `+ ${covLabel(t)}${unitOf(t) ? ` ${unitOf(t)}` : ""}`}</button>
           ))}
         </div>
       )}
@@ -170,6 +183,7 @@ export function CoverageEditor({ parts, today }: { parts: CovPart[]; today: stri
     if (state.ok && handled.current !== state) { handled.current = state; toast(state.ok); setOpen(false); }
   }, [state, setOpen]);
   const any = parts.some((p) => p.existing.length > 0);
+  const allOk = parts.some((p) => canShowAll(p.insType));
   const reset = () => { setRows(init()); setScope(initScope()); setChecked(initChecked()); setCheckedDirty(false); setAll(false); };
   const trigger = <button type="button" onClick={() => { if (!open) reset(); setOpen(!open); }}
     className={activeCls(any ? obtn : btn)}>{any ? "แก้ความคุ้มครอง" : "+ ใส่ความคุ้มครอง"}</button>;
@@ -188,9 +202,10 @@ export function CoverageEditor({ parts, today }: { parts: CovPart[]; today: stri
       className="space-y-4 text-left">{cf.dialog}
       <div>
         <h3 className="font-medium text-slate-900">แก้ความคุ้มครอง{parts.length > 1 && " · ทั้งเล่ม"}</h3>
-        <p className="text-xs text-slate-500">ใส่เฉพาะที่กรมธรรม์คุ้มครอง (ไม่ใส่ = ไม่คุ้มครอง) · แถวเสียชีวิตที่ไม่ได้ใส่ = ใช้ทุนประกันของกรมธรรม์
-          · คุ้มครองเฉพาะ (เช่น มะเร็ง) = สรุปแยกไว้ ไม่บวกกับวงเงินทั่วไป · กดบันทึกครั้งเดียวทุกส่วน{" "}
-          <button type="button" onClick={() => setAll(!all)} className="text-blue-700 hover:underline">{all ? "แสดงเฉพาะที่มี" : "แสดงทุกหัวข้อ"}</button></p>
+        <p className="text-xs text-slate-500">ใส่เฉพาะที่กรมธรรม์คุ้มครอง (ไม่ใส่ = ไม่คุ้มครอง)
+          {allOk ? <> · แถวเสียชีวิตที่ไม่ได้ใส่ = ใช้ทุนประกันของกรมธรรม์ · คุ้มครองเฉพาะ (เช่น มะเร็ง) = สรุปแยกไว้ ไม่บวกกับวงเงินทั่วไป · กดบันทึกครั้งเดียวทุกส่วน{" "}
+            <button type="button" onClick={() => setAll(!all)} className="text-blue-700 hover:underline">{all ? "แสดงเฉพาะที่มี" : "แสดงทุกหัวข้อ"}</button></>
+            : " · หัวข้อของประกันทรัพย์สิน แยกจากความคุ้มครองของคน (ค่ารักษา / ความรับผิดส่วนแรกของประกันสุขภาพ)"}</p>
       </div>
       <CheckedOnField value={checked} onChange={(v) => { setChecked(v); setCheckedDirty(true); }} today={today}
         note={parts.length > 1 ? (dates.length > 1 && !checkedDirty ? "แต่ละส่วนตรวจไม่พร้อมกัน · แก้วันที่ = ใช้กับทุกส่วน" : "ใช้กับทุกส่วนของเล่ม") : undefined} />
