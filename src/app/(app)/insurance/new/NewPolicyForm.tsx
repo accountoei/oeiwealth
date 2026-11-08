@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
-import { SMALL_BTN, INS_TAX, INS_TYPE, numOrZero, thDate } from "@/lib/format";
+import { INS_TAX, INS_TYPE, numOrZero } from "@/lib/format";
 import { CheckedOnField, CoverageGrid, SCOPE_HINT, canShowAll, covLabel, hasScope } from "../CoverageGrid";
 import { covPayload, riderPayload, type CovRow, type RiderRow } from "@/lib/insurance-coverage";
 import { RiderFields } from "../RiderFields";
@@ -16,16 +16,12 @@ const label = "block text-sm text-slate-700";
 
 export default function NewPolicyForm(props: {
   persons: { id: string; name: string }[]; assets: { id: string; name: string }[];
-  goLive: string; openingDate: string; today: string; isSetup: boolean; isAdmin: boolean; initialType?: string; initialAsset?: string;
+  today: string; initialType?: string; initialAsset?: string;
   banks: { asset_id: string; name: string; currency: string; frequent?: boolean | null }[]; cards: { id: string; label: string; currency: string }[];
 }) {
-  const { persons, assets, goLive, openingDate, today, isSetup, isAdmin, initialType = "LIFE", initialAsset = "", banks, cards } = props;
+  const { persons, assets, today, initialType = "LIFE", initialAsset = "", banks, cards } = props;
   const [state, action, pending] = useActionState<ActionState, FormData>(createPolicy, {});
   const [type, setType] = useState(initialType);
-  const [hasCv, setHasCv] = useState(false);
-  const [opening, setOpening] = useState(isSetup);
-  // หลัง Go-live: ซ่อนตัวเลือก "มีอยู่ก่อน Go-live" (ไม่ติ๊ก) · ADMIN กดลิงก์เล็กเพื่อเพิ่มรายการที่ตกหล่น
-  const [late, setLate] = useState(false);
   const [rows, setRows] = useState([{ person_id: "", name: "", percent: "" }]);
   // ตารางความคุ้มครองมาตรฐาน (ตกลง 7 พ.ย. 2026) · หัวข้อตามประเภท · บันทึกพร้อมกรมธรรม์ในคำสั่งเดียว
   const [covRows, setCovRows] = useState<CovRow[]>([]);
@@ -83,7 +79,7 @@ export default function NewPolicyForm(props: {
           <PayDefaultSelect banks={banks} cards={cards} className={input} />
           <span className="mt-1 block text-xs text-slate-500">เลือกไว้ให้ตอนจ่ายเบี้ย · เปลี่ยนได้ทุกครั้ง</span>
         </label>
-        <label className={label}>หมายเหตุ {hasCv && opening && !isSetup && "(เหตุผล · จำเป็น)"}<input name="notes" required={hasCv && opening && !isSetup} className={input} /></label>
+        <label className={label}>หมายเหตุ<input name="notes" className={input} /></label>
       </section>
 
       {type !== "PROPERTY" && (
@@ -93,33 +89,6 @@ export default function NewPolicyForm(props: {
         </section>
       )}
 
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="has_cash_value" checked={hasCv} onChange={(e) => setHasCv(e.target.checked)} className="mt-1" />
-          <span><b>มีมูลค่าเวนคืน</b> (เช่น ประกันชีวิตสะสมทรัพย์) — นับมูลค่าเวนคืนเป็นสินทรัพย์ของครอบครัว</span>
-        </label>
-        {hasCv && (
-          <>
-            {!isSetup && isAdmin && !late && (
-              <button type="button" onClick={() => setLate(true)} className={`${SMALL_BTN} self-start justify-self-start`}>เพิ่มรายการที่ตกหล่นก่อน Go-live (ADMIN)</button>
-            )}
-            {(isSetup || late) && (
-              <label className="flex items-start gap-2 text-sm">
-                <input type="checkbox" name="is_opening" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="mt-1" />
-                <span>มีอยู่ก่อน Go-live ({thDate(goLive)}) — มูลค่าเวนคืน ณ สิ้นวัน {thDate(openingDate)} เป็นยอดตั้งต้น</span>
-              </label>
-            )}
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className={label}>มูลค่าเวนคืน *<input name="cash_value" required inputMode="decimal" className={input} /></label>
-              <label className={label}>ณ วันที่ *
-                {opening ? <><input type="hidden" name="cash_value_date" value={openingDate} /><input disabled value={thDate(openingDate)} className={`${input} bg-slate-50`} /></>
-                  : <input name="cash_value_date" type="date" required min={goLive} max={today} defaultValue={today} className={input} />}
-              </label>
-            </div>
-            <p className="text-xs text-slate-500">ใส่ยอดรวม มูลค่าเวนคืน + เงินปันผลสะสม · เจ้าของมูลค่าเวนคืน = ผู้เอาประกัน 100% (กรณีพิเศษแก้ได้ในหน้ากรมธรรม์)</p>
-          </>
-        )}
-      </section>
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">

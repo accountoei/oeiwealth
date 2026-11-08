@@ -2810,6 +2810,36 @@ SELECT t.ok((SELECT a.current_value = 41000 FROM public.insurance_policies i JOI
 SELECT t.ok((SELECT result = 'SUCCESS' AND (details->>'added')::int = 1 FROM public.system_job_runs WHERE job_type = 'INSURANCE_CV' ORDER BY id DESC LIMIT 1),
             'มูลค่าเวนคืนรายวัน: บันทึกผลงาน INSURANCE_CV');
 SELECT t.ok(public.server_sync_insurance_cash_values() = 0, 'มูลค่าเวนคืนรายวัน: รันซ้ำไม่ลงซ้ำ');
+-- งานประจำวันสร้างมูลค่าเวนคืนจากตารางให้ด้วย (8 พ.ย. 2026 · เลิกใช้ปุ่มติ๊ก "มีมูลค่าเวนคืน" ในฟอร์มเพิ่มกรมธรรม์)
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO tcv SELECT 'srv', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'สร้างตามตารางทดสอบ', 'currency', 'THB', 'premium', 20000,
+  'start_date', (current_date - interval '1 year' - interval '5 days')::date));
+INSERT INTO tcv SELECT 'srvlate', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'เบี้ยค้างทดสอบ', 'currency', 'THB', 'premium', 20000,
+  'start_date', (current_date - interval '1 year' - interval '5 days')::date));
+SELECT public.set_insurance_schedule((SELECT id FROM tcv WHERE k = 'srvlate'), 'PREMIUM',
+  jsonb_build_array(jsonb_build_object('due_date', current_date - 20, 'amount', 20000))) IS NOT NULL AS srvlate_sched;
+INSERT INTO public.insurance_cash_value_table(policy_id, policy_year, value_date, value, currency)
+SELECT id, 1, current_date - 5, 3000, 'THB' FROM tcv WHERE k IN ('srv', 'srvlate')
+UNION ALL SELECT id, 2, current_date + 360, 9000, 'THB' FROM tcv WHERE k IN ('srv', 'srvlate');
+SELECT id AS srvpol FROM tcv WHERE k = 'srv' \gset
+SELECT id AS srvlate FROM tcv WHERE k = 'srvlate' \gset
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok(public.server_sync_insurance_cash_values() = 1, 'มูลค่าเวนคืนรายวัน: ยังไม่มีมูลค่าเวนคืน + ปีแรกในตารางถึงวันแล้ว → สร้างให้ 1 กรมธรรม์');
+SELECT t.ok((SELECT i.has_cash_value AND a.asset_type = 'INSURANCE_CASH_VALUE' AND a.current_value = 3000 AND v.value = 3000
+                AND v.source = 'STATEMENT' AND NOT v.is_opening AND o.person_id = t.p('คุณแม่') AND o.ownership_percent = 100
+               FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+               JOIN public.asset_valuations v ON v.asset_id = a.id AND v.deleted_at IS NULL
+               JOIN public.asset_ownerships o ON o.asset_id = a.id
+              WHERE i.id = :'srvpol'),
+            'มูลค่าเวนคืนรายวัน: สร้างมูลค่าเวนคืน 3,000 ตามปีที่ 1 · เจ้าของ = ผู้เอาประกัน 100%');
+SELECT t.ok((SELECT cash_value_asset_id IS NULL AND NOT has_cash_value FROM public.insurance_policies WHERE id = :'srvlate'),
+            'มูลค่าเวนคืนรายวัน: เบี้ยก่อนวันครบปียังค้าง → ยังไม่สร้าง');
+SELECT t.ok((SELECT (details->>'created')::int = 1 AND (details->>'added')::int = 0 AND (details->>'errors')::int = 0
+               FROM public.system_job_runs WHERE job_type = 'INSURANCE_CV' ORDER BY id DESC LIMIT 1),
+            'มูลค่าเวนคืนรายวัน: บันทึกจำนวนที่สร้างใหม่ในผลงาน');
+SELECT t.ok(public.server_sync_insurance_cash_values() = 0, 'มูลค่าเวนคืนรายวัน: สร้างแล้วรันซ้ำไม่สร้างซ้ำ');
 SET ROLE authenticated;
 -- งวดก่อน Go-live = ประวัติ · ติ๊กไม่ได้จ่าย · ใส่งวดประวัติย้อนหลังได้แม้จ่ายงวดหลัง Go-live แล้ว (2 พ.ย. 2026)
 SELECT t.login('00000000-0000-0000-0000-00000000000e');

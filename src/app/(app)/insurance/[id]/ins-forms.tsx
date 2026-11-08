@@ -159,13 +159,13 @@ export function BenefitForm({ policyId, lineId, amount, currency, banks, persons
   ));
 }
 
-export function AddCashValueForm({ policyId, currency, today, goLive }: {
-  policyId: string; currency: string; today: string; goLive: string;
+export function AddCashValueForm({ policyId, currency, today, goLive, bare }: {
+  policyId: string; currency: string; today: string; goLive: string; /** ปุ่มในแถบบน (ไม่เว้นระยะด้านบน) */ bare?: boolean;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "sm" });
   const [date, setDate] = useState(today);
   const [state, action, pending] = useActionState<ActionState, FormData>(addCashValue, {});
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(`mt-2 ${sbtn}`)}>+ เพิ่มมูลค่าเวนคืน</button>;
+  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(bare ? obtn : `mt-2 ${sbtn}`)}>+ เพิ่มมูลค่าเวนคืน</button>;
   if (!open) return trigger;
   const opening = goLive !== "" && date !== "" && date < goLive;
   return present(trigger, (

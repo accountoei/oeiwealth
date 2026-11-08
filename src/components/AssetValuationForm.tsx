@@ -6,9 +6,9 @@ import Flash from "@/components/Flash";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 
-export default function AssetValuationForm({ assetId, currency, today, minDate, paths, methods, defaultValue, defaultNotes }: {
+export default function AssetValuationForm({ assetId, currency, today, minDate, paths, methods, defaultValue, defaultNotes, defaultDate }: {
   assetId: string; currency: string; today: string; minDate: string; paths: string[]; methods?: [string, string][];
-  defaultValue?: number; defaultNotes?: string;
+  defaultValue?: number; defaultNotes?: string; /** ค่าเริ่มต้นของ "ณ วันที่" (ไม่ใส่ = วันนี้) */ defaultDate?: string;
 }) {
   const [state, action, pending] = useActionState<RecState, FormData>(addAssetValuation, {});
   const opts = methods ?? [["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]];
@@ -17,7 +17,7 @@ export default function AssetValuationForm({ assetId, currency, today, minDate, 
       <input type="hidden" name="asset_id" value={assetId} />
       <input type="hidden" name="paths" value={paths.join(",")} />
       <label className="text-sm">มูลค่า ({currency})<input name="value" required inputMode="decimal" defaultValue={defaultValue != null ? defaultValue.toFixed(2) : undefined} className={`mt-1 block w-44 ${input}`} /></label>
-      <label className="text-sm">ณ วันที่<input name="valuation_date" type="date" required defaultValue={today} min={minDate} max={today} className={`mt-1 block ${input}`} /></label>
+      <label className="text-sm">ณ วันที่<input name="valuation_date" type="date" required defaultValue={defaultDate ?? today} min={minDate} max={today} className={`mt-1 block ${input}`} /></label>
       <label className="text-sm">วิธี
         <select name="valuation_method" defaultValue={opts[0][0]} className={`mt-1 block ${input}`}>
           {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
