@@ -101,6 +101,33 @@ export function runningNet(lines: FlowLine[], lumps: { key: string; date: string
   return { rows, breakEven, final: net };
 }
 
+/** เงินจริง 1 รายการ (แถวเงินจริงในตาราง) · key ส่งมาเอง */
+export type CashEvent = { key: string; kind: "PREMIUM" | "BENEFIT"; date: string; amount: number };
+
+/**
+ * สุทธิสะสมตามเงินจริง (ตกลง 8 พ.ย. 2026 · แถวเงินจริงวางตามวันที่จ่าย / รับจริง แบบเงินกู้)
+ *   งวดก่อน Go-live = เต็มงวด ณ วันครบกำหนด (ไม่มีเงินในระบบ) · เงินที่จ่าย / รับจริง = ณ วันที่จริง
+ *   งวดที่ยังค้าง (กรมธรรม์ยังมีผล) = ยอดค้าง ณ วันครบกำหนด (คาดการณ์) · งวดอื่น (จ่าย / รับแล้ว · ไม่ต้องจ่าย) = 0 ที่แถวงวด
+ *   วันเดียวกัน: แถวงวดก่อนแถวเงินจริง · เบี้ยก่อนผลประโยชน์ · เงินจริงตามลำดับที่ส่งมา
+ *   breakEven = แถวแรกที่สุทธิไม่ติดลบ และไม่ติดลบอีกจนจบ (null = ไม่ถึง)
+ */
+export function cashNet(lines: FlowLine[], cash: CashEvent[], active: boolean) {
+  const items = [
+    ...lines.map((l) => {
+      const open = active && OPEN.includes(l.status);
+      const left = Math.max(0, Number(l.amount) - Number(l.paid_amount));
+      const v = l.status === "HISTORY" ? Number(l.amount) : open ? left : 0;
+      return { key: l.id, date: l.due_date, kind: l.kind, no: l.installment_no, cash: 0, amt: sign(l.kind) * v, projected: open && left > 0.005 };
+    }),
+    ...cash.map((c, i) => ({ key: c.key, date: c.date, kind: c.kind as string, no: i, cash: 1, amt: sign(c.kind) * Number(c.amount), projected: false })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.cash - b.cash || flowOrder(a, b));
+  let net = 0;
+  const rows: NetRow[] = items.map((it) => { net += it.amt; return { key: it.key, date: it.date, net, projected: it.projected }; });
+  const lastNeg = rows.findLastIndex((r) => r.net < -0.005);
+  const breakEven = lastNeg >= 0 && lastNeg + 1 < rows.length ? rows[lastNeg + 1] : null;
+  return { rows, breakEven, final: net };
+}
+
 /** วันที่ที่ใช้คิดงวดค้าง: ครบกำหนดแล้วแต่ยังไม่จ่าย / รับ = วันนี้ */
 const laterOf = (a: string, b: string) => (a > b ? a : b);
 
