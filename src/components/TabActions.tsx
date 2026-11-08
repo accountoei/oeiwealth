@@ -21,7 +21,8 @@ export function TabActionsSlot() {
   // ขนาดปุ่มเท่ากันทุกเมนู: ปุ่ม / ลิงก์ในที่วางนี้ใช้ขนาดเดียวกับ ADD_BTN (ฟอร์มที่เปิดเป็น pop up อยู่นอกที่วางนี้ ไม่โดน)
   // ช่องเลือก (select) สูง 32px เท่าปุ่ม (1 พ.ย. 2026): เดิมสูง 41px ดันแถวแท็บให้สูงขึ้น → แท็บ Health / Tax / Donations
   // (มีช่องเลือกคน / ปี) แถบแท็บและเนื้อหาเลื่อนลง 3px · ระหว่างโหลดแท็บใหม่ (ที่วางว่าง) เลื่อนกลับขึ้น = เห็นแท็บขยับ
-  return <div ref={setSlot} className="ml-auto flex shrink-0 items-center gap-2 self-center pb-1 pl-3 empty:hidden [&_a]:!px-3 [&_a]:!py-1.5 [&_a]:!text-sm [&_button]:!px-3 [&_button]:!py-1.5 [&_button]:!text-sm [&_select]:!h-8 [&_select]:!py-0 [&_select]:!text-sm" />;
+  // max-w-full + flex-wrap (8 พ.ย. 2026): จอแคบ ปุ่มหลายปุ่ม (Income & Expenses มี 3 ปุ่ม) ตัดบรรทัดชิดขวา ไม่ล้นจอ
+  return <div ref={setSlot} className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2 self-center pb-1 pl-3 empty:hidden [&_a]:!px-3 [&_a]:!py-1.5 [&_a]:!text-sm [&_button]:!px-3 [&_button]:!py-1.5 [&_button]:!text-sm [&_select]:!h-8 [&_select]:!py-0 [&_select]:!text-sm" />;
 }
 
 export function TabActions({ children }: { children: ReactNode }) {
