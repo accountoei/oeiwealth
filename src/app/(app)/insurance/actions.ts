@@ -234,30 +234,33 @@ export async function receiveBenefit(_: ActionState, form: FormData): Promise<Ac
 export async function receiveClaim(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
   const claimId = str(form.get("claim_id"));
-  const amount = num(form.get("amount"));
   if (!claimId) return { error: "ไม่พบเคลม" };
-  if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
-  const bank = str(form.get("bank_asset_id"));
-  if (!bank) return { error: "กรุณาเลือกบัญชีที่รับเงิน" };
-  if (form.get("kind") === "REIMB") {
-    const exp = str(form.get("expense_item_id"));
-    if (!exp) return { error: "กรุณาเลือกค่าใช้จ่ายที่จ่ายไปก่อน" };
-    const { error } = await supabase.rpc("record_reimbursement", {
-      p_expense_item_id: exp, p_received_date: str(form.get("date")), p_amount: amount, p_received_to_asset_id: bank,
-      p_received_to_credit_card_id: null, p_notes: str(form.get("notes")), p_insurance_claim_id: claimId,
-    });
+  const kind = form.get("kind");
+  // ไม่ได้เงิน (ส่วนที่เหลือ): ยังไม่เคยได้ = ปฏิเสธ · ได้ไปบางส่วนแล้ว = ได้ไม่เต็ม (ฐานข้อมูลเลือกให้)
+  if (kind === "CLOSE") {
+    const { data, error } = await supabase.rpc("close_insurance_claim", { p_claim_id: claimId, p_notes: str(form.get("notes")) });
     if (error) return { error: friendlyError(error.message) };
     refresh();
     revalidatePath("/family/health");
-    return { ok: "บันทึกเงินคืนแล้ว · ยอดได้รับของเคลมอัปเดตแล้ว" };
+    return { ok: data === "SETTLED" ? "ปิดเคลมแล้ว · ได้ไม่เต็ม" : "บันทึกแล้ว · เคลมถูกปฏิเสธ" };
   }
+  const amount = num(form.get("amount"));
+  if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
+  const bank = str(form.get("bank_asset_id"));
+  if (!bank) return { error: "กรุณาเลือกบัญชีที่รับเงิน" };
+  const reimb = kind === "REIMB";
+  if (reimb && !str(form.get("expense_item_id"))) return { error: "กรุณาเลือกค่าใช้จ่ายที่จ่ายไปก่อน" };
+  // ทั้ง 2 แบบผ่านคำสั่งเดียว: ปิดเคลมเมื่อได้ไม่เต็ม / แก้ยอดเคลมเมื่อได้มากกว่า อยู่ในธุรกรรมเดียวกับเงินที่รับ
   const { error } = await supabase.rpc("receive_insurance_claim", { p: {
-    claim_id: claimId, date: str(form.get("date")), amount, bank_asset_id: bank, person_id: str(form.get("person_id")), notes: str(form.get("notes")),
+    claim_id: claimId, kind: reimb ? "REIMB" : "INCOME", expense_item_id: reimb ? str(form.get("expense_item_id")) : null,
+    date: str(form.get("date")), amount, bank_asset_id: bank, person_id: reimb ? null : str(form.get("person_id")), notes: str(form.get("notes")),
+    close: form.get("close") === "1", raise_claim: form.get("raise_claim") === "1",
   } });
   if (error) return { error: friendlyError(error.message) };
   refresh();
   revalidatePath("/family/health");
-  return { ok: "บันทึกรับเงินเคลมแล้ว (รายได้) · ยอดได้รับของเคลมอัปเดตแล้ว" };
+  const tail = form.get("close") === "1" ? " · ปิดเคลม (ได้ไม่เต็ม)" : form.get("raise_claim") === "1" ? " · แก้ยอดเคลมตามที่ได้รับแล้ว" : " · ยอดได้รับของเคลมอัปเดตแล้ว";
+  return { ok: (reimb ? "บันทึกเงินคืนแล้ว" : "บันทึกรับเงินเคลมแล้ว (รายได้)") + tail };
 }
 
 export async function addCoverage(_: ActionState, form: FormData): Promise<ActionState> {
