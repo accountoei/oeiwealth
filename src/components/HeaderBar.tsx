@@ -56,8 +56,9 @@ export function InfoTip({ children, label = "คำอธิบายหน้�
     <span className="relative inline-flex" onMouseEnter={(e) => show(e.currentTarget, true)} onMouseLeave={() => setOpen(false)}>
       <button type="button" aria-label={label} aria-expanded={open} onClick={(e) => show(e.currentTarget, !open)} onBlur={() => setOpen(false)}
         className="rounded-full p-0.5 text-slate-400 hover:text-slate-700"><Info className="h-4 w-4" /></button>
+      {/* whitespace-normal / text-left: กล่องไม่รับค่าจากที่วาง (หัวตารางที่ nowrap → ข้อความล้นกล่องทับตาราง · แก้ 8 พ.ย. 2026) */}
       {open && (
-        <span role="tooltip" style={{ left: shift }} className={`absolute top-full z-30 mt-1 w-[min(22rem,80vw)] rounded-lg border border-slate-200 bg-white p-3 text-xs font-normal leading-relaxed text-slate-600 shadow-lg`}>
+        <span role="tooltip" style={{ left: shift }} className={`absolute top-full z-30 mt-1 w-[min(22rem,80vw)] whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed text-slate-600 shadow-lg`}>
           {children}
         </span>
       )}

@@ -1,7 +1,7 @@
 // node scripts/insurance-flow.test.mjs — ทดสอบสุทธิสะสม / จุดคุ้มทุน / IRR ของกรมธรรม์ (src/lib/insurance-flow.ts · ตัวเลขสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { actualFlows, contractFlows, lineValue, policyYearAt, projectedFlows, runningNet, surrenderFlows, xirr } from "../src/lib/insurance-flow.ts";
+import { actualFlows, ageAt, contractFlows, cvBreakEven, lineValue, policyYearAt, projectedFlows, runningNet, surrenderFlows, xirr } from "../src/lib/insurance-flow.ts";
 
 const near = (a, b, eps = 1e-6) => assert.ok(a !== null && Math.abs(a - b) < eps, `${a} ≠ ${b}`);
 const npv = (flows, r) => {
@@ -98,5 +98,28 @@ assert.equal(policyYearAt("2017-07-20", "2017-07-19"), null);    // ก่อน
 assert.equal(policyYearAt(null, "2022-07-20"), null);
 assert.equal(policyYearAt("2020-02-29", "2021-02-28"), 0);       // เริ่ม 29 ก.พ. → ครบรอบปีปกติ 1 มี.ค.
 assert.equal(policyYearAt("2020-02-29", "2021-03-01"), 1);
+
+// อายุเต็มปี ณ วันนั้น
+assert.equal(ageAt("1980-05-10", "2022-05-09"), 41);
+assert.equal(ageAt("1980-05-10", "2022-05-10"), 42);
+assert.equal(ageAt(null, "2022-05-10"), null);
+
+// เวนคืนคุ้มทุน: ปีแรกที่มูลค่าเวนคืน ≥ เบี้ยสุทธิที่จ่ายก่อนวันนั้น (เบี้ยวันเดียวกันไม่นับ)
+{
+  // เบี้ยปีละ 1,000 × 3 งวด (2020–2022) · มูลค่าเวนคืนปีที่ 1–4
+  const net = [{ date: "2020-01-01", net: -1000 }, { date: "2021-01-01", net: -2000 }, { date: "2022-01-01", net: -3000 }];
+  const cv = [
+    { policy_year: 1, value_date: "2021-01-01", value: 500 },
+    { policy_year: 2, value_date: "2022-01-01", value: 2000 },   // จ่ายไปก่อนวันนั้น 2,000 (งวด 3 ครบวันเดียวกัน ไม่นับ) → คุ้มทุน
+    { policy_year: 3, value_date: "2023-01-01", value: 3100 },
+  ];
+  assert.equal(cvBreakEven(net, cv)?.policy_year, 2);
+  assert.equal(cvBreakEven(net, cv.map((r) => ({ ...r, value: r.value - 1 })))?.policy_year, 3);
+  assert.equal(cvBreakEven(net, [{ policy_year: 1, value_date: "2021-01-01", value: 999 }]), null);
+  // ได้เงินคืนจนสุทธิ ≥ 0 แล้ว = ไม่ต้องเวนคืนก็คุ้ม → ไม่ติดป้าย
+  assert.equal(cvBreakEven([{ date: "2020-01-01", net: -1000 }, { date: "2020-06-01", net: 500 }], [{ policy_year: 1, value_date: "2021-01-01", value: 100 }]), null);
+  // ยังไม่จ่ายอะไรก่อนวันนั้น = ไม่นับ
+  assert.equal(cvBreakEven(net, [{ policy_year: 0, value_date: "2019-01-01", value: 0 }]), null);
+}
 
 console.log("insurance-flow: all tests passed");

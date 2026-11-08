@@ -7,7 +7,7 @@ import {
   BENEFIT_TYPE_LABEL, CLAIM_CLS, CLAIM_DONE, CLAIM_OPEN, CLAIM_STATUS, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
   covAmount, covCountUnit, covExtra, covName, coverageHasPeriod, deathCoverage, insCountedPaid, money, signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
-import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
+import { contractFlows, cvBreakEven, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
 import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
 import { BenefitForm, BookletPayForm, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
@@ -123,7 +123,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     supabase.from("insurance_followups").select("id,policy_id,person_id,role,action,status,notes").in("policy_id", partIds).is("deleted_at", null).order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
-    supabase.from("persons").select("id,name").is("deleted_at", null).order("sort_order"),
+    supabase.from("persons").select("id,name,birth_date").is("deleted_at", null).order("sort_order"),
     supabase.from("insurance_cash_value_table").select("policy_year,value_date,value").eq("policy_id", id).is("deleted_at", null).order("policy_year"),
   ]);
   const lines = (linesRaw as Line[] | null) ?? [];
@@ -131,6 +131,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const benefits = lines.filter((x) => x.kind === "BENEFIT");
   const cards = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const allName = new Map((allPersons ?? []).map((x) => [x.id, x.name]));
+  // คอลัมน์อายุในตารางเบี้ย (ตกลง 8 พ.ย. 2026) · ไม่มีวันเกิด = ไม่แสดงคอลัมน์
+  const birthIso: string | null = (p.person_id && (allPersons ?? []).find((x) => x.id === p.person_id)?.birth_date) || null;
   const [{ data: linked }, { data: claimInc }, { data: pendExp }] = await claimQ;
   const incByClaim = new Map<string, NonNullable<typeof claimInc>>();
   (claimInc ?? []).forEach((r) => { if (r.insurance_claim_id) incByClaim.set(r.insurance_claim_id, [...(incByClaim.get(r.insurance_claim_id) ?? []), r]); });
@@ -311,6 +313,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const bookEdCurrent: BookCurrent[] = allPremiums.filter((x) => bookEdIds.includes(x.policy_id)).map((x) => ({ policy_id: x.policy_id, due_date: x.due_date,
     amount: Number(x.amount), notes: x.notes, skipped: x.skipped, locked: Number(x.paid_amount) > 0 ? `จ่ายแล้ว ${money(x.paid_amount)}` : null }));
   const showNet = !isProp && (allBenefits.length > 0 || lumps.length > 0);
+  // เวนคืนคุ้มทุน (ตกลง 8 พ.ย. 2026): ปีแรกที่มูลค่าเวนคืนตามสัญญา ≥ เบี้ยสุทธิที่จ่ายไปก่อนวันนั้น (ส่วนที่นับในสุทธิสะสมเท่านั้น)
+  const cvBE = isProp ? null : cvBreakEven(flow.rows, cvRows);
   const schedPrem = allPremiums.reduce((s2, x) => s2 + Number(x.amount), 0);
   const schedBen = allBenefits.reduce((s2, x) => s2 + Number(x.amount), 0);
   // จ่าย / รับแล้วของตาราง (ทั้งเล่ม เมื่อมีสัญญาเพิ่มเติม)
@@ -384,7 +388,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     const n = netOf.get(x.id);
     const paidAmt = Number(x.paid_amount);
     return {
-      key: x.id, kind: ben ? "BENEFIT" : "PREMIUM", date: x.due_date, notes: x.notes, amount: Number(x.amount),
+      key: x.id, kind: ben ? "BENEFIT" : "PREMIUM", date: x.due_date, notes: x.notes, amount: Number(x.amount), no: ben ? null : x.installment_no,
       // ช่องหมายเหตุ (ตกลง 8 พ.ย. 2026): ไม่ซ้ำกับคอลัมน์ปีที่ → เบี้ย = ว่าง (ส่วนของเล่มนำหน้าเมื่อไม่ใช่สัญญาหลัก) · ผลประโยชน์ = ชนิด
       label: [pid === id ? null : partName(pid), ben ? BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"] : null].filter(Boolean).join(" · "),
       statusText: ben && x.status === "PAID" ? "รับแล้ว" : ben && x.status === "SKIPPED" ? "ไม่ได้รับ" : st?.text ?? x.status, statusCls: st?.cls,
@@ -409,11 +413,14 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const amtNode = (x: SLine) => canWrite && x.status !== "PAID"
     ? <RowActions table="insurance_schedule_lines" id={x.id} paths={linePaths(x.policy_id)} canDelete={canDelete} fields={lineFields(x, false)} button={money(x.amount)} buttonClass={AMT} />
     : <span className="tabular-nums">{money(x.amount)}</span>;
+  /** สุทธิสะสม ณ วันนั้น = รายการล่าสุดที่ถึงวันนั้น (ไม่มี = undefined) */
+  const netAt = (d: string) => { let r: (typeof flow.rows)[number] | undefined; for (const x of flow.rows) { if (x.date <= d) r = x; else break; } return r; };
   const mergedRow = (due: string, xs: SLine[]): FlowRow => {
     xs.sort((a, b) => partOrder(a.policy_id) - partOrder(b.policy_id) || a.installment_no - b.installment_no);
-    // สุทธิสะสมของแถว = งวดสุดท้ายในวันนั้นที่นับในสุทธิสะสม (วันที่มีแต่สัญญาเพิ่มเติมแบบสุขภาพ = ว่าง)
+    // สุทธิสะสมของแถว = งวดสุดท้ายในวันนั้นที่นับในสุทธิสะสม
     const last = xs.filter((x) => netOf.has(x.id)).reduce<SLine | null>((a, b) => (!a || (flowPos.get(b.id) ?? 0) > (flowPos.get(a.id) ?? 0) ? b : a), null);
-    const n = last ? netOf.get(last.id) : undefined;
+    // วันที่มีแต่สัญญาเพิ่มเติมแบบสุขภาพ = สุทธิสะสมเท่าเดิม (ยกมาจากรายการล่าสุด · เทียบกับมูลค่าเวนคืนได้ทุกแถว)
+    const n = last ? netOf.get(last.id) : netAt(due);
     const sts = [...new Set(xs.map((x) => x.status))];
     const anyOpen = xs.some((x) => OPEN_ST.includes(x.status));
     const status = sts.length === 1 ? sts[0] : sts.includes("OVERDUE") ? "OVERDUE"
@@ -433,6 +440,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     });
     return {
       key: `d${due}`, kind: "PREMIUM", date: due, amount: xs.reduce((t, x) => t + Number(x.amount), 0), split,
+      // งวดที่ = ของสัญญาหลัก (วันที่มีแต่สัญญาเพิ่มเติม = ของส่วนแรก)
+      no: (xs.find((x) => x.policy_id === id) ?? xs[0]).installment_no,
       label: "",
       notes: xs.filter((x) => x.notes).map((x) => (xs.length > 1 ? `${partName(x.policy_id)}: ${x.notes}` : x.notes)).join(" · ") || null,
       statusText: st?.text ?? status, statusCls: st?.cls,
@@ -471,11 +480,13 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       : [];
     [...zeroYears, ...cvRows.map((r) => ({ ...r, zero: false }))].forEach((r) => {
       const cell = r.zero ? <span className="tabular-nums text-slate-400">{money(0)}</span> : cvCellOf(r);
+      const be = !r.zero && cvBE?.policy_year === r.policy_year ? { projected: r.value_date > today } : null;
       const hit = flowRows.find((x) => !x.lump && x.kind !== "CV" && x.date === r.value_date && x.cv == null);
-      if (hit) { hit.cv = cell; return; }
+      if (hit) { hit.cv = cell; hit.breakEvenCv = be; return; }
       const at = flowRows.findIndex((x) => x.date > r.value_date);
       flowRows.splice(at < 0 ? flowRows.length : at, 0, { key: `cvy${r.policy_year}`, kind: "CV", date: r.value_date,
-        label: startIso ? "" : `สิ้นปีกรมธรรม์ที่ ${r.policy_year}`, amount: 0, cv: cell, muted: r.value_date > today });
+        label: startIso ? "" : `สิ้นปีกรมธรรม์ที่ ${r.policy_year}`, amount: 0, cv: cell, muted: r.value_date > today,
+        net: showNet ? netAt(r.value_date)?.net ?? null : null, projected: netAt(r.value_date)?.projected, breakEvenCv: be });
     });
     if (flowRows.length === 0 && cvSubs.length > 0)
       flowRows.push({ key: "cvlog", kind: "CV", date: cvSubs[0].date, label: "ยอดที่ลงไว้ (ยังไม่มีตารางตามสัญญา)", amount: 0 });
@@ -839,8 +850,12 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             <div><dt className="text-xs text-slate-500">สุทธิถึงวันนี้</dt>
               <dd className={`tabular-nums ${flowNetToday >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>{signedMoney(flowNetToday, ccy)}</dd>
               {netSkip.length > 0 && <dd className="text-xs text-slate-500">ไม่นับเบี้ย{netSkip.join(" / ")}</dd>}</div>
+            {/* มีตารางมูลค่าเวนคืน = 2 บรรทัด: ถ้าเวนคืน (ปีแรกที่มูลค่าเวนคืนพอเบี้ยที่จ่าย) · ถ้าไม่เวนคืน (ผลประโยชน์รวม ≥ เบี้ยรวม) */}
             <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
-              <dd>{flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="text-xs text-slate-500"> (คาดการณ์)</span>}</span>
+              {cvBE && <dd className="text-sky-700"><span className="text-xs text-slate-500">ถ้าเวนคืน </span>ปีที่ {cvBE.policy_year} · {thDate(cvBE.value_date)}
+                {cvBE.value_date > today && <span className="whitespace-nowrap text-xs text-slate-500"> (คาดการณ์)</span>}</dd>}
+              <dd>{cvRows.length > 0 && <span className="text-xs text-slate-500">ถ้าไม่เวนคืน </span>}
+                {flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="whitespace-nowrap text-xs text-slate-500"> (คาดการณ์)</span>}</span>
                 : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>
             <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด{book && " (ทั้งเล่ม)"}: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
               {netSkip.length > 0 && ` · สุทธิสะสมและจุดคุ้มทุนไม่นับเบี้ย${netSkip.join(" / ")} (เบี้ยคุ้มครอง ไม่มีเงินคืน)`}
@@ -866,7 +881,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             </div>
           </div>
         )}
-        {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} parts={flowParts} showCv={showCvCol} startDate={startIso} />}
+        {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} parts={flowParts} showCv={showCvCol} startDate={startIso} birthDate={birthIso} />}
       </section>
     </div>
   );

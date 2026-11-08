@@ -21,6 +21,25 @@ export function policyYearAt(start: string | null | undefined, date: string): nu
   return date.slice(5, 10) < start.slice(5, 10) ? y - 1 : y;
 }
 
+/** อายุเต็มปี ณ วันนั้น (คอลัมน์อายุผู้เอาประกัน · ตกลง 8 พ.ย. 2026) · ไม่มีวันเกิด / ก่อนวันเกิด = null */
+export function ageAt(birth: string | null | undefined, date: string): number | null {
+  return policyYearAt(birth, date);
+}
+
+/**
+ * เวนคืนคุ้มทุน (ตกลง 8 พ.ย. 2026) = ปีแรกที่มูลค่าเวนคืนตามสัญญา ≥ เบี้ยสุทธิที่จ่ายไปก่อนวันนั้น
+ *   net = สุทธิสะสมเรียงตามวัน (runningNet().rows) · ไม่นับรายการวันเดียวกัน (เวนคืนวันครบรอบ = ไม่ต้องจ่ายเบี้ยงวดที่ครบวันนั้น)
+ *   สุทธิก่อนวันนั้น ≥ 0 อยู่แล้ว (คุ้มทุนโดยไม่ต้องเวนคืน) = ไม่นับ · ไม่ถึง = null
+ */
+export function cvBreakEven<T extends { policy_year: number; value: number; value_date: string }>(net: { date: string; net: number }[], cv: T[]): T | null {
+  for (const r of [...cv].sort((a, b) => a.policy_year - b.policy_year)) {
+    let before = 0;
+    for (const n of net) { if (n.date < r.value_date) before = n.net; else break; }
+    if (before < -0.005 && r.value + before >= -0.005) return r;
+  }
+  return null;
+}
+
 /** XIRR: อัตราผลตอบแทนต่อปี (0.0185 = 1.85%) · ต้องมีทั้งเงินออกและเงินเข้า · หาไม่ได้ = null */
 export function xirr(flows: Cash[]): number | null {
   const fs = flows.filter((f) => Number.isFinite(f.amount) && Math.abs(f.amount) > 0.005);
