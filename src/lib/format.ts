@@ -573,12 +573,29 @@ export const COVERAGE_FOR_TYPE: Record<string, string[]> = {
   ACCIDENT: ["ACCIDENT_DEATH", "ACCIDENT_DISMEMBER", "ACCIDENT_MEDICAL", "DISABILITY_INCOME", "HOSPITAL_CASH_PER_DAY", "OTHER"],
   HEALTH: ["IPD_ANNUAL", "IPD_PER_ADMIT", "ROOM_PER_DAY", "OPD_PER_VISIT", "OPD_ANNUAL", "HOSPITAL_CASH_PER_DAY", "DEDUCTIBLE", "COPAY",
     "CI_EARLY", "CRITICAL_ILLNESS", "WAIVER", "OTHER"],
-  PROPERTY: ["OTHER"],
+  PROPERTY: ["OTHER"], // + หัวข้อที่ตั้งชื่อไว้ให้ (PROPERTY_COVERAGES) · ไม่มี "แสดงทุกหัวข้อ"
 };
 /** หน่วยของ "สูงสุด" (ไม่มีในรายการ = หัวข้อนั้นไม่มีจำนวนสูงสุด) · รอบ (ต่อครั้ง / ต่อปี / ตลอดสัญญา) เลือกแยก (ตกลง 8 พ.ย. 2026) */
 export const COVERAGE_COUNT_UNIT: Record<string, string> = {
   ROOM_PER_DAY: "วัน", HOSPITAL_CASH_PER_DAY: "วัน", OPD_PER_VISIT: "ครั้ง", CI_EARLY: "ครั้ง", CRITICAL_ILLNESS: "ครั้ง", DISABILITY_INCOME: "งวด",
   OTHER: "ครั้ง",
+};
+/** หัวข้อของประกันทรัพย์สิน (บ้าน / รถ) = "อื่น ๆ" ที่ตั้งชื่อไว้ให้ (ตกลง 8 พ.ย. 2026)
+ *  ไม่ใช้หัวข้อหมวดสุขภาพ → ความรับผิดส่วนแรกของทรัพย์สินไม่ปนกับของประกันสุขภาพ (และไม่นับเป็น "มีประกันสุขภาพ")
+ *  unit = หน่วยของ "สูงสุด" (ไม่มี = ไม่มีจำนวนสูงสุด เลือกได้แค่รอบ) · hint = ตัวอย่างในช่องหมายเหตุ */
+export const PROPERTY_COVERAGES: { label: string; unit?: string; hint: string }[] = [
+  { label: "ทรัพย์สินเสียหาย / สูญหาย", hint: "ภัยที่คุ้มครอง เช่น ไฟไหม้ น้ำท่วม ภัยธรรมชาติ โจรกรรม" },
+  { label: "ความรับผิดต่อบุคคลภายนอก", hint: "บาดเจ็บ / เสียชีวิต / ทรัพย์สินของบุคคลภายนอกเสียหาย" },
+  { label: "ค่าที่พักชั่วคราว", unit: "วัน", hint: "ระหว่างซ่อมแซม · วงเงินต่อวัน หรือรวมทั้งหมด" },
+  { label: "ความรับผิดส่วนแรก (ทรัพย์สิน)", hint: "ส่วนที่เราจ่ายเองก่อนทุกครั้งที่เคลม" },
+];
+const PROPERTY_COV = new Map(PROPERTY_COVERAGES.map((x) => [x.label, x]));
+/** หัวข้อทรัพย์สินที่ตั้งชื่อไว้ให้ (ตามชื่อของแถว "อื่น ๆ") */
+export const propertyCoverage = (type: string, label?: string | null) => (type === "OTHER" && label ? PROPERTY_COV.get(label.trim()) : undefined);
+/** หน่วยของ "สูงสุด" ของแถว (หัวข้อทรัพย์สินที่ตั้งชื่อไว้ = ตามหัวข้อนั้น · ไม่มี = ไม่มีจำนวนสูงสุด) */
+export const covCountUnit = (type: string, label?: string | null): string | undefined => {
+  const prop = propertyCoverage(type, label);
+  return prop ? prop.unit : COVERAGE_COUNT_UNIT[type];
 };
 /** รอบของจำนวนสูงสุด / ความรับผิดส่วนแรก (insurance_coverages.count_period) */
 export const COVERAGE_PERIOD: [string, string][] = [["PER_EVENT", "ต่อครั้ง"], ["PER_YEAR", "ต่อปี"], ["PER_TERM", "ตลอดสัญญา"]];
@@ -598,10 +615,10 @@ export function covAmount(type: string, amount: number | string | null | undefin
   return money(amount, currency, digits);
 }
 /** ข้อความเล็กใต้วงเงิน: "สูงสุด 365 วัน ต่อปี" · รอบอย่างเดียว = "ต่อปี" (ความรับผิดส่วนแรก) · ไม่มี = "" */
-export function covExtra(c: { coverage_type: string; max_count?: number | null; count_period?: string | null }): string {
+export function covExtra(c: { coverage_type: string; max_count?: number | null; count_period?: string | null; label?: string | null }): string {
   const period = c.count_period ? COVERAGE_PERIOD_LABEL[c.count_period] ?? "" : "";
   if (!c.max_count) return period;
-  return [`สูงสุด ${c.max_count} ${COVERAGE_COUNT_UNIT[c.coverage_type] ?? "ครั้ง"}`, period].filter(Boolean).join(" ");
+  return [`สูงสุด ${c.max_count} ${covCountUnit(c.coverage_type, c.label) ?? "ครั้ง"}`, period].filter(Boolean).join(" ");
 }
 /** ความคุ้มครองที่วงเงินเป็น "ต่อปี" → หักยอดเคลมในปีนั้นเพื่อดูวงเงินคงเหลือ */
 export const COVERAGE_ANNUAL = ["IPD_ANNUAL", "OPD_ANNUAL"];

@@ -12,9 +12,11 @@ export type CovExisting = {
   id: string; coverage_type: string; limit_amount: number | string; max_count?: number | null; count_period?: string | null; label?: string | null;
   as_of_date?: string | null; notes?: string | null;
 };
-/** asOf = "ณ วันที่" เดิม (เลิกแสดงแล้ว · ส่งค่าเดิมกลับเพื่อไม่ให้แถวที่ไม่ได้แก้นับเป็นแก้) */
+/** asOf = "ณ วันที่" เดิม (เลิกแสดงแล้ว · ส่งค่าเดิมกลับเพื่อไม่ให้แถวที่ไม่ได้แก้นับเป็นแก้)
+ *  preset = ชื่อที่ตั้งไว้ให้ตอนกดปุ่มหัวข้อ (ประกันทรัพย์สิน · ชื่อนี้ไม่นับว่า "กรอกแล้ว") */
 export type CovRow = {
   key: string; id?: string; type: string; amount: string; count: string; period: string; label: string; notes: string; waiver: boolean; asOf: string;
+  preset?: string;
 };
 export type CovSave = {
   id?: string; coverage_type: string; limit_amount: number; max_count: number | null; count_period: string | null; label: string | null;
@@ -71,6 +73,11 @@ export function addableCovTypes(order: string[], forType: string[] | undefined, 
   return order.filter((t) => (!forType || forType.includes(t)) && (t === "OTHER" || !has.has(t)));
 }
 
+/** ปุ่มหัวข้อที่ตั้งชื่อไว้ให้ (ประกันทรัพย์สิน · แถว "อื่น ๆ" ชื่อนั้น) ที่ยังไม่ได้ใส่ */
+export const addablePresets = (labels: string[], rows: CovRow[]) => labels.filter((l) => !rows.some((r) => r.type === "OTHER" && r.label.trim() === l));
+/** แถว "อื่น ๆ" ที่ตั้งชื่อไว้แล้ว (กดปุ่มหัวข้อทรัพย์สิน) */
+export const presetCovRow = (label: string): CovRow => ({ ...blankCovRow("OTHER"), label, preset: label });
+
 /** แถวที่มี เรียงตามหัวข้อมาตรฐาน (ภายในหัวข้อเดียวกันตามลำดับที่เพิ่ม) */
 export const sortCovRows = (order: string[], rows: CovRow[]) =>
   rows.map((r, i) => ({ r, i, o: order.indexOf(r.type) < 0 ? order.length : order.indexOf(r.type) }))
@@ -91,10 +98,10 @@ export function covPayload(rows: CovRow[], label: (t: string) => string): { rows
   const errors: string[] = [];
   rows.forEach((r) => {
     const own = r.type === "OTHER" ? (r.label.trim() || r.notes.trim()) : "";
-    const name = label(r.type) + (own ? ` (${own})` : "");
+    const name = r.preset && r.label.trim() ? r.label.trim() : label(r.type) + (own ? ` (${own})` : "");
     if (!covFilled(r)) {
       // แถวเดิมที่ล้างวงเงิน (หรือเอาติ๊กออก) = ลบ (ถามยืนยันตอนบันทึก) · แถวใหม่ที่กรอกช่องอื่นไว้แต่ไม่มีวงเงิน = เตือน (กันข้อมูลหาย)
-      if (!r.id && (r.count.trim() || r.period || r.label.trim() || r.notes.trim()))
+      if (!r.id && (r.count.trim() || r.period || (r.label.trim() && r.label.trim() !== r.preset) || r.notes.trim()))
         errors.push(`${name}: ${r.type === "WAIVER" ? "ติ๊ก “มีสิทธิ์”" : "ใส่วงเงิน"} หรือกดลบแถวนี้`);
       return;
     }

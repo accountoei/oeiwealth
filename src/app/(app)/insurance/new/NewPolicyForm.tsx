@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
 import { SMALL_BTN, INS_TAX, INS_TYPE, numOrZero, thDate } from "@/lib/format";
-import { CheckedOnField, CoverageGrid, SCOPE_HINT, covLabel, hasScope } from "../CoverageGrid";
+import { CheckedOnField, CoverageGrid, SCOPE_HINT, canShowAll, covLabel, hasScope } from "../CoverageGrid";
 import { covPayload, riderPayload, type CovRow, type RiderRow } from "@/lib/insurance-coverage";
 import { RiderFields } from "../RiderFields";
 import { CurrencySelect } from "@/components/CurrencyContext";
@@ -124,7 +124,7 @@ export default function NewPolicyForm(props: {
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-medium text-slate-900">ความคุ้มครอง <span className="text-xs font-normal text-slate-500">ถ้ามี · ไม่ใส่ = ไม่คุ้มครอง · กรอกหรือแก้ภายหลังได้ที่หน้ากรมธรรม์</span></h2>
-          <button type="button" onClick={() => setCovAll(!covAll)} className="text-sm text-blue-700 hover:underline">{covAll ? "แสดงเฉพาะที่มี" : "แสดงทุกหัวข้อ"}</button>
+          {canShowAll(type) && <button type="button" onClick={() => setCovAll(!covAll)} className="text-sm text-blue-700 hover:underline">{covAll ? "แสดงเฉพาะที่มี" : "แสดงทุกหัวข้อ"}</button>}
         </div>
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <CheckedOnField value={checked} onChange={setChecked} today={today} note={riders.length > 0 && type !== "PROPERTY" ? "ใช้กับทุกส่วนของเล่ม" : undefined} />
