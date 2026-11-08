@@ -96,7 +96,7 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
                               <input value={r.count} onChange={(e) => patch(t, r.key, { count: e.target.value })} inputMode="numeric" aria-label="จำนวนสูงสุด"
                                 className={`${box} w-16 shrink-0 text-right`} /><span className="whitespace-nowrap text-xs text-slate-500">{cntUnit}</span></>}
                             <select value={r.period} onChange={(e) => patch(t, r.key, { period: e.target.value })} aria-label="รอบ"
-                              className={`${box} w-36 shrink-0`}>
+                              data-ph="" data-empty={r.period ? undefined : ""} className={`${box} w-36 shrink-0`}>
                               <option value="">เลือกรอบ</option>
                               {COVERAGE_PERIOD.filter(([v]) => periodAllowed(t, v, r.period)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                             </select>
