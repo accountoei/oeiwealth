@@ -10,7 +10,7 @@ import {
 import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
 import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { AddCashValueForm, BenefitForm, BookletPayForm, CashValueTableEditor, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
+import { BenefitForm, BookletPayForm, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
 import { CoverageEditor } from "../CoverageGrid";
 import { AddRiderButton } from "../RiderFields";
 import { PART_LABEL, bookletGroups, bookletKey, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
@@ -29,12 +29,17 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
-import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
+import CvTableEditor from "./CvTableEditor";
+import ScrollToId from "./ScrollToId";
 import { payDefaultValue } from "../PayDefaultSelect";
 import { InfoTip } from "@/components/HeaderBar";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
+/** เคลมที่ยังรอเงิน (ร่าง = ยังไม่ได้ยื่น ไม่นับ) */
+const CLAIM_OPEN = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID"];
+const CLAIM_CLS: Record<string, string> = { DRAFT: "bg-slate-100 text-slate-600", SUBMITTED: "bg-amber-50 text-amber-700", APPROVED: "bg-amber-50 text-amber-700",
+  PARTIALLY_PAID: "bg-amber-50 text-amber-700", PAID: "bg-emerald-50 text-emerald-700", REJECTED: "bg-red-50 text-red-700", CANCELLED: "bg-slate-100 text-slate-500" };
 type Line = { id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string; benefit_type: string | null;
   notes: string | null; paid_amount: number; remaining: number; status: string; skipped: boolean };
 /** งวดของส่วนใดส่วนหนึ่งในเล่ม (กรมธรรม์หลัก / สัญญาเพิ่มเติม) */
@@ -116,11 +121,16 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const allName = new Map((allPersons ?? []).map((x) => [x.id, x.name]));
   const claimIds = (claims ?? []).map((c) => c.id);
   const { data: linked } = claimIds.length
-    ? await supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,expense_items(description,date)")
+    ? await supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,received_to_asset_id,received_to_credit_card_id,expense_items(description,date)")
         .in("insurance_claim_id", claimIds).is("deleted_at", null).order("received_date")
     : { data: [] };
   const byClaim = new Map<string, NonNullable<typeof linked>>();
   (linked ?? []).forEach((r) => { if (r.insurance_claim_id) byClaim.set(r.insurance_claim_id, [...(byClaim.get(r.insurance_claim_id) ?? []), r]); });
+  // รอรับ = ยอดเคลม − ได้รับ ของเคลมที่ยื่นแล้วยังไม่จบ (แยกสกุลเงิน · ยังไม่นับเป็นรายได้ / ความมั่งคั่งสุทธิ)
+  const claimOpen = claims.filter((c) => CLAIM_OPEN.includes(c.status));
+  const waitBy = new Map<string, number>();
+  claimOpen.forEach((c) => { const w = Number(c.claimed_amount ?? 0) - Number(c.received_amount ?? 0); if (w > 0.005) waitBy.set(c.currency, (waitBy.get(c.currency) ?? 0) + w); });
+  const claimWait = [...waitBy];
   const canWrite = me.role !== "VIEWER";
   const canDelete = me.role === "ADMIN" || me.role === "EDITOR";
   const today = todayBangkok();
@@ -164,7 +174,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const backPct = premPaid > 0 ? ((benReceived + (cvNow ?? 0)) / premPaid) * 100 : 0;
   // กรมธรรม์ที่ควรมีมูลค่าเวนคืน (ชีวิต / บำนาญ หรือมีข้อมูลแล้ว) · กล่องแรกแสดงเฉพาะข้อมูลปัจจุบัน (ตกลง 8 พ.ย. 2026)
   const showCv = !!cvAsset || cvRows.length > 0 || !!p.has_cash_value || p.insurance_type === "LIFE" || p.insurance_type === "ANNUITY";
-  const cvTableCurrent = cvRows.map((r) => ({ ...r, value_date: startIso && addMonthsKeepDay(startIso, r.policy_year * 12) === r.value_date ? null : r.value_date }));
   const CV_SOURCE: Record<string, string> = { STATEMENT: "ตามหนังสือแจ้ง", USER: "บันทึกเอง", ACCOUNT_SETUP: "ยอดตั้งต้น" };
   const policyLabel = `เบี้ยประกัน ${p.insurer}${p.policy_no ? ` ${p.policy_no}` : ""}`;
   const activeOwners = (owners ?? []).filter((o: { end_date: string | null }) => !o.end_date) as { person_id: string; person_name: string; ownership_percent: number }[];
@@ -172,18 +181,40 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     b.person_id ? ((Array.isArray(b.persons) ? b.persons[0] : b.persons) as { name: string } | null)?.name ?? "-" : b.beneficiary_name;
   const benTotal = (bens ?? []).reduce((s, b) => s + Number(b.percentage), 0);
 
-  // มูลค่าเวนคืนอยู่ในตารางเบี้ยและผลประโยชน์ (แทนแท็บมูลค่าเวนคืน + ปุ่มในกล่องแรก · ตกลง 8 พ.ย. 2026)
-  //   ตามสัญญา = ช่องของแถวที่วันตรงกับสิ้นปีกรมธรรม์ · ปีที่ถึงแล้วแต่ยังไม่ได้ลง กดตัวเลข = ลงยอดของปีนั้น
-  //   ยอดที่ลงจริง = แถวย่อยสีฟ้า (กดแถว = แก้ / ลบ) · ปรับยอดวันอื่น (เช่น หนังสือแจ้งที่รวมเงินปันผลสะสม) = ปุ่ม "ปรับมูลค่าเวนคืน"
+  // มูลค่าเวนคืนอยู่ในตาราง "มูลค่าเวนคืน เบี้ยประกัน และผลประโยชน์" (ตกลง 8 พ.ย. 2026 · ไม่มีแท็บ / ปุ่มปรับมูลค่าเวนคืน / ปุ่มเพิ่มมูลค่าเวนคืน)
+  //   ตัวเลขตามสัญญาบอกสถานะ: จาง = ยังไม่ถึง · ขีดเส้นใต้ = ถึงแล้วยังไม่ได้ลง (กด = ลงยอดของปีนั้น) · สีฟ้า = ลงแล้ว (กด = แก้ยอดที่ลง เช่น รวมเงินปันผลตามหนังสือแจ้ง)
+  //   ยอดที่ลงตรงกับตารางของปีนั้น = ไม่มีแถวแยก · ยอดที่ไม่ตรง (หนังสือแจ้ง / ยอดตั้งต้น / แก้เอง) = แถวย่อยสีฟ้า (กดแถว = แก้ / ลบ)
   const goLive: string = family?.go_live_date ?? "";
   const CV_METHODS: [string, string][] = [["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]];
   const CV_LINK = "tabular-nums text-slate-900 underline decoration-dotted underline-offset-4 hover:text-blue-700";
+  const CV_POSTED = "tabular-nums font-medium text-sky-700 hover:underline";
   const cvNote = (y: number) => `ตามตารางมูลค่าเวนคืนในสัญญา · สิ้นปีกรมธรรม์ที่ ${y}`;
-  const cvValDates = new Set((cvVals ?? []).map((v) => v.valuation_date as string));
+  type CvVal = { id: string; valuation_date: string; value: number; source: string; notes: string | null };
+  const vals = (cvVals ?? []) as CvVal[];   // ใหม่ → เก่า
+  const cvByDate = [...cvRows].sort((a, b) => a.value_date.localeCompare(b.value_date));
+  /** ปีกรมธรรม์ที่มีผล ณ วันนั้น = ปีล่าสุดในตารางที่ถึงวันแล้ว */
+  const cvYearAt = (d: string) => cvByDate.filter((r) => r.value_date <= d).at(-1) ?? null;
+  const yearVals = new Map<number, CvVal[]>();   // ปี → ยอดที่ลงในช่วงปีนั้น
+  const coveredBy = new Map<number, CvVal>();     // ปี → ยอดที่ลงตรงกับตาราง (ล่าสุด)
+  vals.forEach((v) => {
+    const y = cvYearAt(v.valuation_date);
+    if (!y) return;
+    yearVals.set(y.policy_year, [...(yearVals.get(y.policy_year) ?? []), v]);
+    if (!coveredBy.has(y.policy_year) && Math.abs(Number(v.value) - y.value) < 0.005) coveredBy.set(y.policy_year, v);
+  });
+  const coveredIds = new Set([...coveredBy.values()].map((v) => v.id));
+  const postedYears = [...yearVals.keys()];
+  const cvActions = (v: CvVal, button?: string) => (
+    <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && vals.length > 1} button={button} buttonClass={button ? CV_POSTED : undefined}
+      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
+        { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />
+  );
   const cvCellOf = (r: { policy_year: number; value: number; value_date: string }) => {
     const txt = money(r.value);
     if (r.value_date > today) return <span className="text-slate-400">{txt}</span>;
-    if (!cvAsset || !canWrite || !policyActive || r.value_date < goLive || cvValDates.has(r.value_date)) return txt;
+    const hit = coveredBy.get(r.policy_year);
+    if (hit) return canWrite ? cvActions(hit, txt) : <span className="font-medium text-sky-700">{txt}</span>;
+    if (yearVals.has(r.policy_year) || !cvAsset || !canWrite || !policyActive || r.value_date < goLive) return txt;
     return (
       <ModalButton label={txt} title={`มูลค่าเวนคืน · สิ้นปีกรมธรรม์ที่ ${r.policy_year}`} className={CV_LINK}>
         <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={goLive} paths={paths} methods={CV_METHODS}
@@ -191,12 +222,10 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       </ModalButton>
     );
   };
-  const cvSubs: FlowSub[] = cvAsset ? (cvVals ?? []).map((v) => ({
-    key: `cv${v.id}`, kind: "CV" as const, date: v.valuation_date as string, amount: Number(v.value),
+  const cvSubs: FlowSub[] = cvAsset ? vals.filter((v) => !coveredIds.has(v.id)).map((v) => ({
+    key: `cv${v.id}`, kind: "CV" as const, date: v.valuation_date, amount: Number(v.value),
     text: v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes ?? (CV_SOURCE[v.source] ?? v.source),
-    actions: canWrite ? <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (cvVals ?? []).length > 1}
-      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
-        { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} /> : null,
+    actions: canWrite ? cvActions(v) : null,
   })) : [];
   const isProp = p.insurance_type === "PROPERTY";
   // จ่ายเบี้ยจาก (ค่าตั้งต้นของกรมธรรม์ · ตกลง 3 พ.ย. 2026) · สกุลเดียวกับที่ฐานข้อมูลตรวจ (เบี้ย → ทุนประกัน → THB)
@@ -207,14 +236,10 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const insuredHref = `/${insured?.asset_group === "ALTERNATIVE" ? "alternative" : "property"}/${p.asset_id}`;
   // แก้ / ลบเบี้ยที่จ่ายแล้ว → หน้าทรัพย์สินที่เอาประกันอัปเดตด้วย (เบี้ยนับเป็นค่าใช้จ่ายของทรัพย์สิน)
   const payPaths = [...paths, "/income-expenses", ...(insured ? [insuredHref, "/property"] : [])];
-  // หน้ากรมธรรม์เป็นแท็บ (ตกลง 3 พ.ย. 2026): ความคุ้มครอง (+ เคลม) · มูลค่าเวนคืน · เบี้ยและผลประโยชน์ · เปิดที่ความคุ้มครองเสมอ
-  //   รับผลประโยชน์ + ชำระเบี้ย รวมเป็นแท็บเดียว (ตกลง 4 พ.ย. 2026 · ลิงก์เดิม ?tab=premium / benefit เปิดแท็บนี้)
-  //   ประกันทรัพย์สิน: ชื่อแท็บ "ชำระเบี้ย" (ไม่มีผลประโยชน์) · แท็บมูลค่าเวนคืนเฉพาะที่มีมูลค่าเวนคืน
-  //   แท็บมูลค่าเวนคืนรวมเข้าแท็บเบี้ยและผลประโยชน์ (ตกลง 8 พ.ย. 2026 · ลิงก์เดิม ?tab=cv เปิดแท็บนี้)
-  const TABS: [string, string][] = [["coverage", "ความคุ้มครอง"], ["flow", isProp ? "ชำระเบี้ย" : "เบี้ยและผลประโยชน์"]];
-  const askTab = sp.tab === "premium" || sp.tab === "benefit" || sp.tab === "cv" ? "flow" : sp.tab;
-  const tab = TABS.some(([k]) => k === askTab) ? (askTab as string) : "coverage";
-  // แท็บ "เบี้ยและผลประโยชน์" (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย): ตารางเดียว · เงินจริงแทรกใต้งวด · สุทธิสะสม + จุดคุ้มทุน · IRR 3 ตัว
+  // หน้ากรมธรรม์หน้าเดียว ไม่มีแท็บ (ตกลง 8 พ.ย. 2026): มูลค่าเวนคืน + เอกสาร | รายละเอียด · เคลม | ความคุ้มครอง · ตารางเต็มความกว้างด้านล่าง
+  //   ลิงก์เดิม ?tab=flow / premium / benefit / cv = เลื่อนลงไปที่ตาราง
+  const toFlow = ["flow", "premium", "benefit", "cv"].includes(sp.tab ?? "");
+  // ตาราง "เบี้ยและผลประโยชน์" (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย): ตารางเดียว · เงินจริงแทรกใต้งวด · สุทธิสะสม + จุดคุ้มทุน · IRR 3 ตัว
   //   เล่มที่มีสัญญาเพิ่มเติม (หน้ารายการหลัก · ตกลง 6 พ.ย. 2026): เบี้ยแยกคอลัมน์ ชีวิต · สุขภาพ · รวมจ่าย · งวดวันเดียวกันรวมแถวเดียว
   //   สุทธิสะสม / คุ้มทุน คิดทั้งเล่ม · IRR ของรายการหลักเหมือนเดิม + ทั้งเล่ม
   const bookParts = (bookRes?.role.parts ?? []) as BookPol[];
@@ -432,9 +457,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     const virtual = !!k && sum > 0 && !list.some((c) => c.coverage_type === k);
     if (!virtual && list.length === 0) return null;
     return (
-      // คอลัมน์กว้างเท่ากันทุกส่วนของเล่ม (สัญญาหลัก / สัญญาเพิ่มเติม) → ตัวเลขตรงกันเป็นแนวเดียว
+      // คอลัมน์กว้างเท่ากันทุกส่วนของเล่ม (สัญญาหลัก / สัญญาเพิ่มเติม) → ตัวเลขตรงกันเป็นแนวเดียว · กล่องกว้าง 2 ใน 3 (คู่กับกล่องเคลม)
       <table className="w-full text-sm md:table-fixed">
-        <colgroup><col className="md:w-48" /><col className="md:w-64" /><col /><col className="md:w-28" /></colgroup>
+        <colgroup><col className="md:w-44" /><col className="md:w-56" /><col /><col className="md:w-20" /></colgroup>
         <tbody className="divide-y divide-slate-100">
           {virtual && k && (
             <SumCoverageRow policyId={pid} type={k} amount={sum} currency={sumCcy} canWrite={canWrite}>
@@ -489,6 +514,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
         </div>
       </div>
 
+      {/* หน้าเดียว ไม่มีแท็บ (ตกลง 8 พ.ย. 2026): แถวบน มูลค่าเวนคืน + เอกสาร | รายละเอียด · แถวกลาง เคลม | ความคุ้มครอง · ตารางเต็มความกว้างด้านล่าง */}
+      <div className="space-y-4">
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่าเวนคืน + เอกสาร */}
         <div className="flex flex-col gap-4">
@@ -506,7 +533,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             ) : (
               <>
                 <p className="mt-1 text-sm text-slate-500">{p.has_cash_value ? "ยังไม่มีมูลค่า" : "ไม่มี (ไม่นับเป็นสินทรัพย์)"}</p>
-                {showCv && !isProp && <p className="mt-1 text-xs text-slate-500">ใส่ตารางมูลค่าเวนคืนที่แท็บเบี้ยและผลประโยชน์ · ระบบสร้างและลงยอดให้เอง</p>}
+                {showCv && !isProp && <p className="mt-1 text-xs text-slate-500">ใส่ตารางมูลค่าเวนคืนที่ตารางด้านล่าง · ระบบสร้างและลงยอดให้เอง</p>}
               </>
             )}
             {cvRows.length > 0 && (
@@ -607,6 +634,86 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             } />
         </div>
       </section>
+      <section className="grid gap-4 md:grid-cols-3">
+        {/* เคลม (ตกลง 8 พ.ย. 2026): กล่องแคบ · 1 เคลม = 2 บรรทัด · รอรับ = ยอดเคลม − ได้รับ ของเคลมที่ยังไม่จบ · เงินคืนเข้าบัญชีไหน */}
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-medium text-slate-900">เคลม <InfoTip label="คำอธิบาย">ยื่นเคลม = ติดตามอย่างเดียว ยังไม่นับเป็นรายได้หรือความมั่งคั่งสุทธิ จนกว่าจะได้เงินจริง ·
+              จ่ายเองไปก่อนแล้วรอเคลม: ตั้งค่าใช้จ่ายนั้นเป็น &ldquo;ได้เงินคืน&rdquo; · ได้เงินแล้ว: Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน
+              แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; และบัญชีที่เงินเข้า · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลมอัปเดตให้เอง</InfoTip></h2>
+            {canWrite && policyActive && <ClaimForm policyId={id} currency={ccy} today={today}
+              parts={book ? bookParts.filter((x) => x.status === "ACTIVE").map((x) => ({ id: x.id, label: `${x.id === mainId ? "สัญญาหลัก" : "สัญญาเพิ่มเติม"} · ${typeLabel(x.id)}` })) : undefined}
+              coverages={[...(covs ?? []).map((c) => ({ ...c, policy_id: id })), ...(book?.covs ?? [])].map((c) => ({ id: c.id, policy_id: c.policy_id, coverage_type: c.coverage_type,
+                limit_amount: Number(c.limit_amount), label: c.label, part: book ? typeLabel(c.policy_id) : undefined }))} />}
+          </div>
+          {claimWait.length > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">รอรับ <b className="tabular-nums">{claimWait.map(([c, v]) => money(v, c)).join(" · ")}</b> · {claimOpen.length} เคลม</p>
+          )}
+          {claims.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีเคลม</p> : (
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {claims.map((c) => {
+                  const got = Number(c.received_amount ?? 0);
+                  const wait = CLAIM_OPEN.includes(c.status) ? Math.max(Number(c.claimed_amount ?? 0) - got, 0) : 0;
+                  return (
+                    <tr key={c.id} className="align-top">
+                      <td className="py-2">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span>{thDate(c.claim_date)}{book && <span className="text-slate-500"> · {typeLabel(c.policy_id)}</span>}</span>
+                          <span className="tabular-nums">{money(c.claimed_amount, c.currency)}</span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-slate-500">
+                          <span><span className={`rounded px-1.5 py-0.5 ${CLAIM_CLS[c.status] ?? "bg-slate-100 text-slate-600"}`}>{CSTATUS[c.status] ?? c.status}</span>
+                            {c.incident_date && <> · เกิดเหตุ {thDate(c.incident_date)}</>}</span>
+                          <span className="tabular-nums">{got > 0 && <>ได้รับ {money(got)}</>}{got > 0 && wait > 0 && " · "}{wait > 0 && <span className="text-amber-700">รอรับ {money(wait)}</span>}</span>
+                        </div>
+                        {(byClaim.get(c.id) ?? []).map((r) => {
+                          const e = (Array.isArray(r.expense_items) ? r.expense_items[0] : r.expense_items) as { description: string; date: string } | null;
+                          const to = r.received_to_asset_id ? `เข้า ${bankName.get(r.received_to_asset_id) ?? "บัญชี (ปิดแล้ว)"}`
+                            : r.received_to_credit_card_id ? `เข้าบัตร ${cardName.get(r.received_to_credit_card_id) ?? ""}` : null;
+                          return <div key={r.id} className="mt-0.5 text-xs text-emerald-700">รับคืน {thDate(r.received_date)} {money(r.amount, r.currency)}{to && ` · ${to}`}
+                            {e && <span className="text-slate-500"> · {e.description} ({thDate(e.date)})</span>}</div>;
+                        })}
+                        {c.notes && <div className="mt-0.5 text-xs text-slate-500">{c.notes}</div>}
+                        {canWrite && <RowActions table="insurance_claims" id={c.id} paths={paths} canDelete={canDelete} fields={[
+                          { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claim_date },
+                          { name: "claimed_amount", label: "ยอดเคลม", type: "number", value: c.claimed_amount },
+                          { name: "received_amount", label: "ได้รับ", type: "number", value: c.received_amount },
+                          { name: "status", label: "สถานะ", type: "select", value: c.status, options: CLAIM_STATUS },
+                          { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </section>
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
+            {canWrite && <CoverageEditor today={today} parts={(book ? bookParts : [p as BookPol]).map((x) => ({ id: x.id, label: book ? partHead(x.id) : null,
+              insType: x.insurance_type, sum: Number(x.insured_amount ?? 0), currency: x.insured_amount_currency ?? x.premium_currency ?? ccy,
+              existing: x.id === id ? (covs ?? []) : (book?.covs ?? []).filter((c) => c.policy_id === x.id),
+              scope: partOf(x.id).coverage_scope, checked: partOf(x.id).coverage_checked_on }))} />}
+          </div>
+          {book ? <h3 className="text-sm font-medium text-slate-800">{partHead(id)} <span className="ml-1">{partMeta(id)}</span></h3>
+            : !isProp && <p className="-mt-1">{partMeta(id)}</p>}
+          {covTable(id, p.insurance_type, Number(p.insured_amount ?? 0), p.insured_amount_currency ?? ccy, covs ?? [])
+            ?? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p>}
+          {others.map((o) => (
+            <div key={o.id} className="space-y-2 border-t border-slate-100 pt-3">
+              <h3 className="text-sm font-medium text-slate-800">{partHead(o.id)}
+                <span className="ml-2 text-xs font-normal text-slate-500">ทุน {money(o.insured_amount, o.insured_amount_currency ?? undefined, 0)} · เบี้ย {money(o.premium, o.premium_currency ?? undefined, 0)} / ปี</span>
+                <span className="ml-2">{partMeta(o.id)}</span>
+              </h3>
+              {covTable(o.id, o.insurance_type, Number(o.insured_amount ?? 0), o.insured_amount_currency ?? ccy, (book?.covs ?? []).filter((c) => c.policy_id === o.id))
+                ?? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง</p>}
+            </div>
+          ))}
+        </section>
+      </section>
+      </div>
 
       {(fups ?? []).length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
@@ -626,168 +733,94 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
         </section>
       )}
 
-      <TabsProvider initial={tab} defaultKey="coverage">
-        <div className="space-y-4">
-          <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
-          <TabPanel id="coverage" className="space-y-4">
-            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-medium text-slate-900">ความคุ้มครอง</h2>
-                {canWrite && <CoverageEditor today={today} parts={(book ? bookParts : [p as BookPol]).map((x) => ({ id: x.id, label: book ? partHead(x.id) : null,
-                  insType: x.insurance_type, sum: Number(x.insured_amount ?? 0), currency: x.insured_amount_currency ?? x.premium_currency ?? ccy,
-                  existing: x.id === id ? (covs ?? []) : (book?.covs ?? []).filter((c) => c.policy_id === x.id),
-                  scope: partOf(x.id).coverage_scope, checked: partOf(x.id).coverage_checked_on }))} />}
-              </div>
-              {book ? <h3 className="text-sm font-medium text-slate-800">{partHead(id)} <span className="ml-1">{partMeta(id)}</span></h3>
-                : !isProp && <p className="-mt-1">{partMeta(id)}</p>}
-              {covTable(id, p.insurance_type, Number(p.insured_amount ?? 0), p.insured_amount_currency ?? ccy, covs ?? [])
-                ?? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง (ใช้สรุปสิทธิ์รายคนในหน้า Insurance)</p>}
-              {others.map((o) => (
-                <div key={o.id} className="space-y-2 border-t border-slate-100 pt-3">
-                  <h3 className="text-sm font-medium text-slate-800">{partHead(o.id)}
-                    <span className="ml-2 text-xs font-normal text-slate-500">ทุน {money(o.insured_amount, o.insured_amount_currency ?? undefined, 0)} · เบี้ย {money(o.premium, o.premium_currency ?? undefined, 0)} / ปี</span>
-                    <span className="ml-2">{partMeta(o.id)}</span>
-                  </h3>
-                  {covTable(o.id, o.insurance_type, Number(o.insured_amount ?? 0), o.insured_amount_currency ?? ccy, (book?.covs ?? []).filter((c) => c.policy_id === o.id))
-                    ?? <p className="text-sm text-slate-500">ยังไม่ได้ใส่รายการความคุ้มครอง</p>}
+      <section id="flow" className="scroll-mt-20 space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+        {toFlow && <ScrollToId id="flow" />}
+        {/* ปุ่มหลายปุ่ม (ตาราง + มูลค่าเวนคืน · 8 พ.ย. 2026): หัวข้อซ้าย ปุ่มขวาขึ้นบรรทัดใหม่ได้ · คำอธิบายใต้หัวข้อเต็มความกว้าง */}
+        <ActionBar>
+          <div className="w-full space-y-0.5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h2 className="shrink-0 py-1 font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : showCv ? "มูลค่าเวนคืน เบี้ยประกัน และผลประโยชน์" : "เบี้ยประกันและผลประโยชน์"}{showIrr && <> <InfoTip label="คำอธิบาย">IRR = ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</InfoTip></>}</h2>
+            {canWrite && policyActive && <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
+            {canDelete && <>
+            <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} current={premiums} goLive={family?.go_live_date ?? null} part={book ? partName(id) : undefined}
+              defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />
+            {others.filter((o) => o.status === "ACTIVE").map((o) => {
+              const xs = allPremiums.filter((x) => x.policy_id === o.id);
+              return <InsScheduleEditor key={o.id} policyId={o.id} kind="PREMIUM" currency={o.premium_currency ?? ccy} current={xs} goLive={family?.go_live_date ?? null}
+                part={partName(o.id)} defaultAmount={Number(o.premium ?? 0)}
+                defaultFirstDue={lastDue(xs) ? addMonthsKeepDay(lastDue(xs) as string, 12) : (o.start_date ?? p.start_date ?? today)} />;
+            })}
+            {!isProp && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} current={benefits} goLive={family?.go_live_date ?? null}
+              defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
+            </>}
+            {/* มูลค่าเวนคืน (ตกลง 8 พ.ย. 2026): ปุ่มเดียว = แก้ตารางแบบเดียวกับตารางเบี้ย · ปรับยอดปีไหน กดตัวเลขสีฟ้าของปีนั้นในตาราง */}
+            {!isProp && showCv && canDelete && <CvTableEditor policyId={id} startDate={startIso} current={cvRows} postedYears={postedYears} today={today}
+              goLive={goLive || null} currency={cvAsset?.currency ?? ccy} />}
+            {!isProp && cvPending && <SyncCashValueButton policyId={id} />}
+            </div>}
+          </div>
+            {premiums.length > 0 ? (
+              <p className="text-sm text-slate-600">เบี้ย {premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด
+                {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
+                {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
+                {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
+            ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
+            {others.map((o) => {
+              const xs = allPremiums.filter((x) => x.policy_id === o.id);
+              return (
+                <p key={o.id} className="text-sm text-slate-600">
+                  สัญญาเพิ่มเติม · {typeLabel(o.id)}
+                  {xs.length > 0 ? <> · เบี้ย {xs.length} งวด · จ่ายถึงปี {lastYear(xs)} ({thDate(lastDue(xs))}) · เหลือ {leftCount(xs)} งวด</> : " · ยังไม่ได้ตั้งตารางเบี้ย"}
+                </p>
+              );
+            })}
+            {!isProp && (benefits.length > 0
+              ? <p className="text-sm text-slate-600">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</p>
+              : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กดปุ่ม &ldquo;รับเงินก้อน&rdquo; ด้านบน</p>)}
+            {!isProp && (cvRows.length > 0
+              ? <p className="text-sm text-slate-600">มูลค่าเวนคืนตามสัญญา {cvRows.length} ปี{cvDue ? ` · ล่าสุดปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy)}` : " · ยังไม่ถึงปีแรก"}
+                  {cvPending && <span className="text-amber-700"> · ปีที่ {cvDue?.policy_year} ยังไม่ได้ลง (เบี้ยก่อนหน้ายังค้าง หรือกด &ldquo;ลงมูลค่าตามตาราง&rdquo;)</span>}</p>
+              : showCv && <p className="text-sm text-slate-500">มูลค่าเวนคืน: ใส่ตารางตามสัญญาจากเล่มกรมธรรม์ (มูลค่าสิ้นปีกรมธรรม์) แล้วระบบสร้างและลงยอดให้เองทุกปี
+                  · เล่มที่ไม่มีตารางในสัญญา ใส่ยอดตามหนังสือแจ้งเป็นแถวในตารางเดียวกัน</p>)}
+            {cvAsset && !isProp && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
+          </div>
+        </ActionBar>
+        {showNet && (
+          <dl className="grid gap-x-6 gap-y-2 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div><dt className="text-xs text-slate-500">จ่ายเบี้ยแล้ว{book && " (ทั้งเล่ม)"}</dt><dd className="tabular-nums">{money(flowPremPaid, ccy)}</dd>
+              {book && <dd className="text-xs text-slate-500">{bookParts.map((x) => `${partName(x.id)} ${money(allPremiums.filter((l) => l.policy_id === x.id).reduce((t, l) => t + insCountedPaid(l), 0), undefined, 0)}`).join(" · ")}</dd>}</div>
+            <div><dt className="text-xs text-slate-500">รับผลประโยชน์แล้ว</dt><dd className="tabular-nums">{money(flowBenReceived, ccy)}</dd></div>
+            <div><dt className="text-xs text-slate-500">สุทธิถึงวันนี้</dt>
+              <dd className={`tabular-nums ${flowBenReceived - flowPremPaid >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>{signedMoney(flowBenReceived - flowPremPaid, ccy)}</dd></div>
+            <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
+              <dd>{flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="text-xs text-slate-500"> (คาดการณ์)</span>}</span>
+                : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>
+            <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด{book && " (ทั้งเล่ม)"}: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
+              {book && " · สุทธิสะสมและจุดคุ้มทุนคิดจากเบี้ยรวมทั้งเล่ม"}
+              {!flow.breakEven && allBenefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
+          </dl>
+        )}
+        {showIrr && (
+          <div className="space-y-1">
+            <div className="grid gap-2 sm:grid-cols-3">
+              {irrBoxes.map((b) => (
+                <div key={b.label} className="rounded-lg border border-slate-200 px-3 py-2">
+                  <div className="text-xs text-slate-500">IRR {b.label}</div>
+                  <div className={`text-lg font-semibold tabular-nums ${b.value == null ? "text-slate-400" : b.value < 0 ? "text-red-600" : "text-slate-900"}`}>
+                    {b.book !== undefined && <span className="mr-1 text-xs font-normal text-slate-500">{partName(id)}</span>}
+                    {b.value == null ? "–" : `${signedPct(b.value * 100)} / ปี`}</div>
+                  {b.book !== undefined && (
+                    <div className={`tabular-nums ${b.book == null ? "text-slate-400" : b.book < 0 ? "text-red-600" : "text-slate-900"}`}>
+                      <span className="mr-1 text-xs text-slate-500">ทั้งเล่ม</span>{b.book == null ? "–" : `${signedPct(b.book * 100)} / ปี`}</div>
+                  )}
+                  <div className="text-xs text-slate-500">{b.value == null ? b.why : b.sub}</div>
                 </div>
               ))}
-            </section>
-            <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-medium text-slate-900">เคลม <InfoTip label="คำอธิบาย">เมื่อได้เงินคืน: ไปที่ Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลม (จ่ายบางส่วน / จ่ายครบ) จะอัปเดตให้อัตโนมัติ</InfoTip></h2>
-                {canWrite && policyActive && <ClaimForm policyId={id} currency={ccy} today={today}
-                  parts={book ? bookParts.filter((x) => x.status === "ACTIVE").map((x) => ({ id: x.id, label: `${x.id === mainId ? "สัญญาหลัก" : "สัญญาเพิ่มเติม"} · ${typeLabel(x.id)}` })) : undefined}
-                  coverages={[...(covs ?? []).map((c) => ({ ...c, policy_id: id })), ...(book?.covs ?? [])].map((c) => ({ id: c.id, policy_id: c.policy_id, coverage_type: c.coverage_type,
-                    limit_amount: Number(c.limit_amount), label: c.label, part: book ? typeLabel(c.policy_id) : undefined }))} />}
-              </div>
-              {(claims ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีเคลม</p> : (
-                <table className="w-full text-sm">
-                  <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">ยื่นเคลม</th><th>เกิดเหตุ</th>{book && <th>ส่วน</th>}<th className="text-right">ยอดเคลม</th><th className="text-right">ได้รับ</th><th className="pl-4">สถานะ</th><th></th></tr></thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {(claims ?? []).map((c) => (
-                      <tr key={c.id} className="align-top">
-                        <td className="py-1.5">{thDate(c.claim_date)}</td><td>{thDate(c.incident_date)}</td>{book && <td>{typeLabel(c.policy_id)}</td>}
-                        <td className="text-right tabular-nums">{money(c.claimed_amount, c.currency)}</td>
-                        <td className="text-right tabular-nums">{c.received_amount != null ? money(c.received_amount) : "-"}</td>
-                        <td className="pl-4">{CSTATUS[c.status] ?? c.status}{c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}
-                          {(byClaim.get(c.id) ?? []).map((r) => {
-                            const e = (Array.isArray(r.expense_items) ? r.expense_items[0] : r.expense_items) as { description: string; date: string } | null;
-                            return <div key={r.id} className="text-xs text-emerald-700">รับคืน {thDate(r.received_date)} {money(r.amount, r.currency)}{e && ` · ${e.description} (${thDate(e.date)})`}</div>;
-                          })}
-                        </td>
-                        <td className="pl-2 text-right">
-                          {canWrite && <RowActions table="insurance_claims" id={c.id} paths={paths} canDelete={canDelete} fields={[
-                            { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claim_date },
-                            { name: "claimed_amount", label: "ยอดเคลม", type: "number", value: c.claimed_amount },
-                            { name: "received_amount", label: "ได้รับ", type: "number", value: c.received_amount },
-                            { name: "status", label: "สถานะ", type: "select", value: c.status, options: CLAIM_STATUS },
-                            { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-          </TabPanel>
-          <TabPanel id="flow">
-            <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-              {/* ปุ่มหลายปุ่ม (ตาราง + มูลค่าเวนคืน · 8 พ.ย. 2026): หัวข้อซ้าย ปุ่มขวาขึ้นบรรทัดใหม่ได้ · คำอธิบายใต้หัวข้อเต็มความกว้าง */}
-              <ActionBar>
-                <div className="w-full space-y-0.5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <h2 className="shrink-0 py-1 font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : "เบี้ยและผลประโยชน์"}{showIrr && <> <InfoTip label="คำอธิบาย">IRR = ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</InfoTip></>}</h2>
-                  {canWrite && policyActive && <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
-                  {canDelete && <>
-                  <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} current={premiums} goLive={family?.go_live_date ?? null} part={book ? partName(id) : undefined}
-                    defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />
-                  {others.filter((o) => o.status === "ACTIVE").map((o) => {
-                    const xs = allPremiums.filter((x) => x.policy_id === o.id);
-                    return <InsScheduleEditor key={o.id} policyId={o.id} kind="PREMIUM" currency={o.premium_currency ?? ccy} current={xs} goLive={family?.go_live_date ?? null}
-                      part={partName(o.id)} defaultAmount={Number(o.premium ?? 0)}
-                      defaultFirstDue={lastDue(xs) ? addMonthsKeepDay(lastDue(xs) as string, 12) : (o.start_date ?? p.start_date ?? today)} />;
-                  })}
-                  {!isProp && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} current={benefits} goLive={family?.go_live_date ?? null}
-                    defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
-                  </>}
-                  {/* มูลค่าเวนคืน (ย้ายมาจากแท็บมูลค่าเวนคืน · ตกลง 8 พ.ย. 2026) */}
-                  {!isProp && canDelete && <CashValueTableEditor policyId={id} startDate={startIso} current={cvTableCurrent} />}
-                  {!isProp && canDelete && !cvAsset && <AddCashValueForm policyId={id} currency={ccy} today={today} goLive={goLive} bare />}
-                  {!isProp && cvAsset && (
-                    <ModalButton label="ปรับมูลค่าเวนคืน" title="มูลค่าเวนคืน · ปรับมูลค่า (นับในความมั่งคั่งสุทธิ)">
-                      <p className="mb-2 text-xs text-slate-500">ตามหนังสือแจ้งจากบริษัทประกัน เช่น มูลค่าเวนคืน + เงินปันผลสะสม · ปีที่อยู่ในตารางตามสัญญา ระบบลงให้เองเมื่อถึงวันครบปีและจ่ายเบี้ยครบ</p>
-                      <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={goLive} paths={paths} methods={CV_METHODS} />
-                    </ModalButton>
-                  )}
-                  {!isProp && cvPending && <SyncCashValueButton policyId={id} />}
-                  </div>}
-                </div>
-                  {premiums.length > 0 ? (
-                    <p className="text-sm text-slate-600">เบี้ย {premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด
-                      {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
-                      {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
-                      {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
-                  ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
-                  {others.map((o) => {
-                    const xs = allPremiums.filter((x) => x.policy_id === o.id);
-                    return (
-                      <p key={o.id} className="text-sm text-slate-600">
-                        สัญญาเพิ่มเติม · {typeLabel(o.id)}
-                        {xs.length > 0 ? <> · เบี้ย {xs.length} งวด · จ่ายถึงปี {lastYear(xs)} ({thDate(lastDue(xs))}) · เหลือ {leftCount(xs)} งวด</> : " · ยังไม่ได้ตั้งตารางเบี้ย"}
-                      </p>
-                    );
-                  })}
-                  {!isProp && (benefits.length > 0
-                    ? <p className="text-sm text-slate-600">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</p>
-                    : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กดปุ่ม &ldquo;รับเงินก้อน&rdquo; ด้านบน</p>)}
-                  {!isProp && (cvRows.length > 0
-                    ? <p className="text-sm text-slate-600">มูลค่าเวนคืนตามสัญญา {cvRows.length} ปี{cvDue ? ` · ล่าสุดปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy)}` : " · ยังไม่ถึงปีแรก"}
-                        {cvPending && <span className="text-amber-700"> · ปีที่ {cvDue?.policy_year} ยังไม่ได้ลง (เบี้ยก่อนหน้ายังค้าง หรือกด &ldquo;ลงมูลค่าตามตาราง&rdquo;)</span>}</p>
-                    : showCv && <p className="text-sm text-slate-500">มูลค่าเวนคืน: ใส่ตารางตามสัญญาจากเล่มกรมธรรม์ (มูลค่าสิ้นปีกรมธรรม์) แล้วระบบสร้างและลงยอดให้เองทุกปี
-                        {cvAsset ? "" : " · เล่มที่ไม่มีตาราง ใช้ “+ เพิ่มมูลค่าเวนคืน” ตามหนังสือแจ้ง"}</p>)}
-                  {cvAsset && !isProp && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
-                </div>
-              </ActionBar>
-              {showNet && (
-                <dl className="grid gap-x-6 gap-y-2 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <div><dt className="text-xs text-slate-500">จ่ายเบี้ยแล้ว{book && " (ทั้งเล่ม)"}</dt><dd className="tabular-nums">{money(flowPremPaid, ccy)}</dd>
-                    {book && <dd className="text-xs text-slate-500">{bookParts.map((x) => `${partName(x.id)} ${money(allPremiums.filter((l) => l.policy_id === x.id).reduce((t, l) => t + insCountedPaid(l), 0), undefined, 0)}`).join(" · ")}</dd>}</div>
-                  <div><dt className="text-xs text-slate-500">รับผลประโยชน์แล้ว</dt><dd className="tabular-nums">{money(flowBenReceived, ccy)}</dd></div>
-                  <div><dt className="text-xs text-slate-500">สุทธิถึงวันนี้</dt>
-                    <dd className={`tabular-nums ${flowBenReceived - flowPremPaid >= -0.005 ? "text-emerald-700" : "text-red-700"}`}>{signedMoney(flowBenReceived - flowPremPaid, ccy)}</dd></div>
-                  <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
-                    <dd>{flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="text-xs text-slate-500"> (คาดการณ์)</span>}</span>
-                      : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>
-                  <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด{book && " (ทั้งเล่ม)"}: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
-                    {book && " · สุทธิสะสมและจุดคุ้มทุนคิดจากเบี้ยรวมทั้งเล่ม"}
-                    {!flow.breakEven && allBenefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
-                </dl>
-              )}
-              {showIrr && (
-                <div className="space-y-1">
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {irrBoxes.map((b) => (
-                      <div key={b.label} className="rounded-lg border border-slate-200 px-3 py-2">
-                        <div className="text-xs text-slate-500">IRR {b.label}</div>
-                        <div className={`text-lg font-semibold tabular-nums ${b.value == null ? "text-slate-400" : b.value < 0 ? "text-red-600" : "text-slate-900"}`}>
-                          {b.book !== undefined && <span className="mr-1 text-xs font-normal text-slate-500">{partName(id)}</span>}
-                          {b.value == null ? "–" : `${signedPct(b.value * 100)} / ปี`}</div>
-                        {b.book !== undefined && (
-                          <div className={`tabular-nums ${b.book == null ? "text-slate-400" : b.book < 0 ? "text-red-600" : "text-slate-900"}`}>
-                            <span className="mr-1 text-xs text-slate-500">ทั้งเล่ม</span>{b.book == null ? "–" : `${signedPct(b.book * 100)} / ปี`}</div>
-                        )}
-                        <div className="text-xs text-slate-500">{b.value == null ? b.why : b.sub}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} parts={flowParts} showCv={showCvCol} />}
-            </section>
-          </TabPanel>
-        </div>
-      </TabsProvider>
+            </div>
+          </div>
+        )}
+        {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} parts={flowParts} showCv={showCvCol} />}
+      </section>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useActionSlot } from "@/components/ActionBar";
 import { saveInsSchedule, type ActionState } from "../actions";
 import { generateAmountSchedule, parseAmountRows, parseAmountText, type AmountLine } from "@/lib/insurance-schedule";
 import { fillDown, gridNum, gridToLines, guessEvery, nextRow, sortGrid, type GridLine } from "@/lib/insurance-grid";
-import { SMALL_BTN, BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, BENEFIT_TYPE_LABEL, money, thDate } from "@/lib/format";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import Flash from "@/components/Flash";
 
@@ -118,7 +118,7 @@ export default function InsScheduleEditor({ policyId, kind, currency, current, g
         <div>
           <h3 className="font-medium text-slate-900">ตั้ง / แก้{label}</h3>
           <p className="text-xs text-slate-500">เริ่มจากตารางเดิม / สูตร / Excel แล้วแก้ในตารางทีละช่องได้ · ดูผลก่อนกดบันทึก ·
-            งวดที่{prem ? "จ่าย" : "รับ"}แล้วล็อกไว้ (แก้ที่แถวการ{prem ? "จ่าย" : "รับ"}ในแท็บเบี้ยและผลประโยชน์){goLive ? ` · งวดก่อน Go-live (${thDate(goLive)}) เป็นประวัติ นับว่า${prem ? "จ่าย" : "รับ"}แล้วโดยไม่มีเงินเข้า–ออก` : ""}</p>
+            งวดที่{prem ? "จ่าย" : "รับ"}แล้วล็อกไว้ (แก้ที่แถวการ{prem ? "จ่าย" : "รับ"}ในตารางของหน้ากรมธรรม์){goLive ? ` · งวดก่อน Go-live (${thDate(goLive)}) เป็นประวัติ นับว่า${prem ? "จ่าย" : "รับ"}แล้วโดยไม่มีเงินเข้า–ออก` : ""}</p>
         </div>
         <button type="button" data-close onClick={() => setOpen(false)} className="text-sm text-slate-500">ปิด</button>
       </div>
@@ -221,10 +221,10 @@ export default function InsScheduleEditor({ policyId, kind, currency, current, g
                   <td className="px-1 py-1 align-top"><input value={r.notes} onChange={(e) => patch(i, { notes: e.target.value })} maxLength={200}
                     aria-label={`หมายเหตุงวดที่ ${i + 1}`} className={cell} /></td>
                   <td className="whitespace-nowrap px-1 py-1 text-right align-top">
-                    <button type="button" onClick={() => insertAfter(i)} title="แทรกงวดต่อจากงวดนี้" className={link}>+ แทรก</button>
+                    <button type="button" onClick={() => insertAfter(i)} title="แทรกงวดต่อจากงวดนี้" className={`${SMALL_BTN} mr-1`}>+ แทรก</button>
                     {rows.slice(i + 1).some((x) => !x.locked) && <button type="button" onClick={() => setRows(fillDown(rows, i))}
                       title="ใช้ยอดนี้กับงวดถัดไปทั้งหมด (เช่น เบี้ยขึ้นตามอายุ)" className={link}>ยอดนี้ ↓</button>}
-                    <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} title="ลบงวดนี้" className="rounded px-1.5 py-1 text-xs text-red-600 hover:bg-red-50">✕</button>
+                    <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} title="ลบงวดนี้" className={`${SMALL_DEL_BTN} ml-1`}>ลบ</button>
                   </td>
                 </tr>
               ))}
