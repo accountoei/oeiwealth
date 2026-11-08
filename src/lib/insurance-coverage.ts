@@ -3,6 +3,7 @@
  *   ใช้ 2 ที่: ฟอร์มเพิ่มกรมธรรม์ · หน้าต่าง "แก้ความคุ้มครอง" ของหน้ากรมธรรม์ (ทุกส่วนของเล่มในครั้งเดียว)
  *   แสดงเฉพาะแถวที่มี + ปุ่มเพิ่มหัวข้อมาตรฐานที่ยังไม่ได้ใส่ · "แสดงทุกหัวข้อ" = แถวว่างครบทุกหัวข้อ (แบบเดิม)
  *   ต่อแถว: วงเงิน · สูงสุด (จำนวน + รอบ ต่อครั้ง / ต่อปี / ตลอดสัญญา) · ชื่อ (เฉพาะ "อื่น ๆ") · หมายเหตุ · ช่องว่าง = ไม่คุ้มครอง
+ *   รอบ: เฉพาะที่ใช้กับหัวข้อนั้นได้ (periodAllowed) · ใส่จำนวนแล้วเลือกรอบที่พบบ่อยให้ก่อน (PERIOD_DEFAULT)
  *   บันทึกด้วย set_insurance_coverages (แถวเดิมที่ล้างวงเงิน / กดลบ = ลบ · แถวที่ไม่เปลี่ยน = ไม่แตะ)
  *   ไฟล์นี้ไม่มี import (ทดสอบด้วย node scripts/insurance-grid.test.mjs)
  */
@@ -29,6 +30,18 @@ export const blankKey = (type: string) => `blank:${type}`;
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const PERIODS = ["PER_EVENT", "PER_YEAR", "PER_TERM"];
+/** รอบที่เลือกได้ของหัวข้อ (ไม่มีในรายการ = ได้ทุกรอบ) · OPD ต่อครั้ง / โรคร้ายแรง / ทุพพลภาพรายงวด ไม่มี "ต่อครั้ง" (ตกลง 8 พ.ย. 2026) */
+const PERIOD_ONLY: Record<string, string[]> = {
+  OPD_PER_VISIT: ["PER_YEAR", "PER_TERM"], CI_EARLY: ["PER_YEAR", "PER_TERM"], CRITICAL_ILLNESS: ["PER_YEAR", "PER_TERM"], DISABILITY_INCOME: ["PER_YEAR", "PER_TERM"],
+};
+/** รอบนี้เลือกได้ไหม (รอบที่บันทึกไว้แล้วยังแสดงเสมอ → ไม่หายเงียบ ๆ) */
+export const periodAllowed = (type: string, period: string, current?: string | null) =>
+  period === (current ?? "") || !PERIOD_ONLY[type] || PERIOD_ONLY[type].includes(period);
+/** รอบที่เลือกให้ก่อนเมื่อใส่จำนวนสูงสุด (ตกลง 8 พ.ย. 2026) */
+export const PERIOD_DEFAULT: Record<string, string> = {
+  ROOM_PER_DAY: "PER_EVENT", HOSPITAL_CASH_PER_DAY: "PER_EVENT", OPD_PER_VISIT: "PER_YEAR",
+  CI_EARLY: "PER_TERM", CRITICAL_ILLNESS: "PER_TERM", DISABILITY_INCOME: "PER_TERM",
+};
 const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 /** ตัวเลขจากช่อง (ตัดคอมมา / % ท้าย · ว่าง = NaN) */
 const num = (s: string) => { const t = s.replace(/,/g, "").replace(/%$/, "").trim(); return t === "" ? NaN : Number(t); };
@@ -65,7 +78,11 @@ export const sortCovRows = (order: string[], rows: CovRow[]) =>
 
 /** แก้ช่องของแถว · แถวว่างที่แสดงไว้ (blankKey) = เพิ่มเป็นแถวจริงตอนพิมพ์ตัวแรก */
 export function patchCovRow(rows: CovRow[], type: string, key: string, p: Partial<CovRow>): CovRow[] {
-  return rows.some((r) => r.key === key) ? rows.map((r) => (r.key === key ? { ...r, ...p } : r)) : [...rows, { ...blankCovRow(type, key), ...p }];
+  const cur = rows.find((r) => r.key === key) ?? blankCovRow(type, key);
+  const next = { ...cur, ...p };
+  // ใส่จำนวนสูงสุดครั้งแรกโดยยังไม่ได้เลือกรอบ → เลือกรอบที่พบบ่อยให้ก่อน (แก้ได้ · ล้างรอบแล้วแก้จำนวนต่อ = ไม่เลือกให้อีก)
+  if (p.count !== undefined && p.period === undefined && !cur.count.trim() && p.count.trim() && !cur.period && PERIOD_DEFAULT[type]) next.period = PERIOD_DEFAULT[type];
+  return rows.some((r) => r.key === key) ? rows.map((r) => (r.key === key ? next : r)) : [...rows, next];
 }
 
 /** ข้อมูลที่ส่งบันทึก + ข้อผิดพลาด (ชื่อหัวข้อจาก label) */
