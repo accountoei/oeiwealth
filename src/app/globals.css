@@ -92,6 +92,11 @@ input:focus, select:focus, textarea:focus {
   border-color: #1f5eff !important;
 }
 input::placeholder, textarea::placeholder { color: #8a94a6; }
+/* ช่องเลือกที่มีตัวเลือกว่างแบบคำตัวอย่าง (data-ph · เช่น "เลือกรอบ"): ยังไม่เลือก (data-empty) = สีเทา · ในรายการ ตัวเลือกว่างสีเทา ที่เหลือสีปกติ
+   ต้องอยู่นอก @layer: กฎ select ด้านบนทับ class text-* ของ Tailwind (ตกลง 8 พ.ย. 2026) */
+select[data-ph][data-empty] { color: #8a94a6; }
+select[data-ph] option { color: #0f172a; }
+select[data-ph] option[value=""] { color: #8a94a6; }
 input[inputmode="decimal"] { text-align: right; font-variant-numeric: tabular-nums; }
 /* เลขจำนวนเต็ม (ไร่ / งาน / ปี / วันที่ของเดือน) ชิดขวาเหมือนช่องเงิน · ยกเว้นช่องที่เป็นรหัส (ตกลง 29 ต.ค. 2026) */
 input[inputmode="numeric"]:not([name="card_last4"]):not([name="account_no"]):not([name="national_id"]):not([data-code]) { text-align: right; font-variant-numeric: tabular-nums; }
