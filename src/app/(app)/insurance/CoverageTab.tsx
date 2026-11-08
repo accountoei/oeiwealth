@@ -1,15 +1,20 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_GROUPS, COVERAGE_LABEL, COVERAGE_NOSUM, covAmount, covExtra, covName, money, thDate } from "@/lib/format";
+import { CLAIM_CLS, CLAIM_DONE, CLAIM_OPEN, CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_GROUPS, COVERAGE_LABEL, COVERAGE_NOSUM, covAmount, covExtra, covName, money, thDate } from "@/lib/format";
 import { StatBox } from "@/components/Boxes";
 import ModalButton from "@/components/ModalButton";
+import RowActions from "@/components/RowActions";
 import { InfoTip } from "@/components/HeaderBar";
 import { ShowAllBox, ShowAllButton } from "@/components/ShowAllToggle";
+import ClaimForm, { type ClaimCoverageOpt, type ClaimPolicyOpt } from "./[id]/ClaimForm";
+import ClaimReceiveForm, { type PendingExpense } from "./[id]/ClaimReceiveForm";
 
 /**
  * แท็บ "ความคุ้มครอง" หน้า Insurance (ตกลง 3 พ.ย. 2026 · แท็บท้ายสุด)
  *   ทั้งครอบครัว = ตาราง ประเภท × คน (ย้ายมาจากภาพรวม) · เลือกคน = แยกตามกรมธรรม์ + ใช้ปีนี้ / คงเหลือ / สิ้นสุด
- *   การ์ดสรุป · กล่องเตือน · เคลมปีนี้ · ปุ่มพิมพ์สรุปสำหรับโรงพยาบาล (/print/insurance)
+ *   การ์ดสรุป 4 กล่อง · เคลมปีนี้ · ปุ่มพิมพ์สรุปสำหรับโรงพยาบาล (/print/insurance)
+ *   (8 พ.ย. 2026: เหลือ 4 กล่องแบบหน้าอื่น · เลิกกล่อง "เรื่องที่ควรดู" → ยังไม่มีประกันสุขภาพ อยู่ใต้กล่องค่ารักษา
+ *    กล่องเคลม: ปุ่ม + บันทึกเคลม (เลือกกรมธรรม์) · กดแถว = แก้ไข / ลบ · ปุ่มบันทึกรับเงินต่อแถว · เคลมปีก่อนที่ยังรอรับแสดงด้วย)
  *   ทุนชีวิต / อุบัติเหตุ: กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองประเภทนั้น ใช้ทุนประกันของกรมธรรม์แทน
  *   แสดงเฉพาะหัวข้อที่มีอย่างน้อย 1 รายการ (กลุ่มที่ไม่มีเลยซ่อนหัวกลุ่ม) · "แสดงทุกหัวข้อ" = ครบตามตารางมาตรฐาน (ตกลง 8 พ.ย. 2026)
  *     ตารางทั้งครอบครัว: หัวข้อที่แสดง ช่องของคนที่ไม่มี = "ยังไม่มี" (ดูว่าใครยังขาดสิทธิ์ไหน)
@@ -20,7 +25,11 @@ export type CovPolicy = { id: string; name: string; type: string; personId: stri
 export type CovItem = { policyId: string; personId: string; type: string; limit: number; used: number; currency: string; notes: string | null; fromPolicy?: boolean;
   maxCount?: number | null; period?: string | null; label?: string | null; scope: string | null };
 export type CovClaim = { id: string; policyId: string; personId: string | null; coverageType: string | null; coverageLabel?: string | null; date: string | null; claimed: number; received: number;
-  currency: string; status: string; notes: string | null };
+  currency: string; status: string; notes: string | null; claimDate: string | null; claimedRaw: number | null; receivedRaw: number | null;
+  /** ยื่นในปีที่เลือก (ไม่ใช่เคลมปีก่อนที่ยังรอรับ) */ inYear: boolean };
+/** ข้อมูลของปุ่มบันทึกเคลม / บันทึกรับเงิน */
+export type ClaimKit = { policies: ClaimPolicyOpt[]; coverages: ClaimCoverageOpt[]; banks: { asset_id: string; name: string; currency: string; frequent?: boolean | null }[];
+  persons: { id: string; name: string }[]; expenses: (PendingExpense & { currency: string })[]; today: string; minDate: string | null; canDelete: boolean };
 
 const HEALTH_TYPES = COVERAGE_GROUPS.find(([g]) => g === "สุขภาพ")?.[1] ?? [];
 const NONE = <span className="text-xs text-slate-400">ยังไม่มี</span>;
@@ -54,10 +63,11 @@ const label = (k: string, scope?: string | null, name?: string | null) => <>{cov
   {scope && <span className="ml-1 rounded bg-violet-50 px-1.5 py-0.5 text-xs text-violet-700">เฉพาะ{scope}</span>}</>;
 const specName = (sp: Spec) => [covName(sp.type, sp.label), sp.scope && `เฉพาะ${sp.scope}`].filter(Boolean).join(" · ");
 
-export default function CoverageTab({ persons, personId, personName, policies, items, claims, year, printHref, canWrite, filter }: {
+export default function CoverageTab({ persons, personId, personName, policies, items, claims, year, printHref, canWrite, filter, kit }: {
   persons: { id: string; name: string }[]; personId: string; personName: string; policies: CovPolicy[]; items: CovItem[]; claims: CovClaim[];
   year: string; printHref: string; canWrite: boolean;
   /** ตัวกรองบริษัทประกัน (ต่อจากชื่อกล่อง) */ filter?: ReactNode;
+  kit: ClaimKit;
 }) {
   const pname = new Map(persons.map((p) => [p.id, p.name]));
   const policy = new Map(policies.map((p) => [p.id, p]));
@@ -69,17 +79,11 @@ export default function CoverageTab({ persons, personId, personName, policies, i
   const roomOf = (pid: string) => thb(of(pid), "ROOM_PER_DAY");
   const roomMax = personId ? roomOf(personId) : Math.max(0, ...persons.map((p) => roomOf(p.id)));
   const roomWho = personId ? "" : persons.find((p) => roomMax > 0 && roomOf(p.id) === roomMax)?.name ?? "";
-  const healthPremium = active.filter((p) => p.type === "HEALTH" && p.premiumCcy === "THB").reduce((t, p) => t + p.premium, 0);
   const who = personId ? personName : "ทั้งครอบครัว";
-
-  // กล่องเตือน (เฉพาะเรื่องความคุ้มครอง · เบี้ยเลยกำหนด / ใกล้ครบ ดูที่แท็บภาพรวม · ไม่มีเรื่อง = ไม่แสดงกล่อง)
-  // ประกันสุขภาพ / ชีวิตทั่วไป (สัญญาที่คุ้มครองเฉพาะโรค เช่น มะเร็ง ไม่นับ)
-  const noHealth = persons.filter((p) => !active.some((x) => x.personId === p.id && x.type === "HEALTH" && !x.scope)
-    && !of(p.id).some((x) => HEALTH_TYPES.includes(x.type) && !x.scope));
-  const noLife = persons.filter((p) => !of(p.id).some((x) => x.type === "LIFE" && !x.scope));
-  const highUse = mine.filter((x) => COVERAGE_ANNUAL.includes(x.type) && x.limit > 0 && x.used / x.limit >= 0.8);
-  const noCov = active.filter((p) => p.type === "HEALTH" && !p.hasCov);
-  const alerts = noHealth.length + noLife.length + highUse.length + noCov.length;
+  // มีประกันสุขภาพทั่วไป (สัญญาที่คุ้มครองเฉพาะโรค เช่น มะเร็ง ไม่นับ) → บรรทัดใต้กล่องค่ารักษา (แทนกล่อง "เรื่องที่ควรดู")
+  const hasHealth = persons.filter((p) => active.some((x) => x.personId === p.id && x.type === "HEALTH" && !x.scope)
+    || of(p.id).some((x) => HEALTH_TYPES.includes(x.type) && !x.scope)).length;
+  const healthSub = personId ? (hasHealth ? "มีประกันสุขภาพ" : "ยังไม่มีประกันสุขภาพ") : `มีประกันสุขภาพ ${hasHealth} จาก ${persons.length} คน`;
   const pol = (id: string) => <Link href={`/insurance/${id}`} className="font-medium hover:underline">{policy.get(id)?.name ?? "กรมธรรม์"}</Link>;
 
   // ตาราง: แถวตามหัวข้อมาตรฐาน (ทั่วไป) + แถวคุ้มครองเฉพาะ / "อื่น ๆ" ที่ตั้งชื่อ ที่มีจริงในมุมมองนี้
@@ -108,6 +112,11 @@ export default function CoverageTab({ persons, personId, personName, policies, i
     {policy.get(id)?.plan && <span className="text-xs text-slate-500"> · {policy.get(id)?.plan}</span>}</>;
   const myClaims = claims.filter((c) => c.personId && pname.has(c.personId));
   const live = (c: CovClaim) => !["REJECTED", "CANCELLED"].includes(c.status);
+  // กล่องเคลมปีนี้ (THB · ไม่นับปฏิเสธ / ยกเลิก) · รอรับ = ยอดเคลม − ได้รับ ของเคลมที่ยื่นแล้วยังไม่จบ (รวมปีก่อน)
+  const yearClaims = myClaims.filter((c) => c.inYear && live(c) && c.currency === "THB");
+  const waitOf = (c: CovClaim) => (CLAIM_OPEN.includes(c.status) ? Math.max(c.claimed - c.received, 0) : 0);
+  const waitThb = myClaims.filter((c) => c.currency === "THB").reduce((t, c) => t + waitOf(c), 0);
+  const older = myClaims.some((c) => !c.inYear);
 
   const detail = (xs: CovItem[], annual: boolean) => (
     <table className="w-full text-sm">
@@ -125,27 +134,15 @@ export default function CoverageTab({ persons, personId, personName, policies, i
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatBox label="ทุนประกันชีวิต (THB)" value={money(persons.reduce((t, p) => t + thb(of(p.id), "LIFE"), 0), undefined, 0)} sub={who} />
-        <StatBox label="ค่ารักษาผู้ป่วยใน ต่อปี (THB)" value={money(persons.reduce((t, p) => t + thb(of(p.id), "IPD_ANNUAL"), 0), undefined, 0)} sub={who} />
+      {/* กล่องสรุป 4 อัน แบบหน้าอื่น (ตกลง 8 พ.ย. 2026) · ทุนประกันชีวิต / เบี้ย ดูที่แท็บภาพรวม */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatBox label="ค่ารักษาผู้ป่วยใน ต่อปี (THB)" value={money(persons.reduce((t, p) => t + thb(of(p.id), "IPD_ANNUAL"), 0), undefined, 0)}
+          sub={healthSub} subClass={hasHealth < persons.length ? "text-amber-700" : undefined} />
         <StatBox label="ค่าห้อง ต่อวัน (THB)" value={money(roomMax, undefined, 0)} sub={personId ? personName : roomWho ? `สูงสุดรายคน · ${roomWho}` : "สูงสุดรายคน"} />
         <StatBox label="โรคร้ายแรง (THB)" value={money(persons.reduce((t, p) => t + thb(of(p.id), "CRITICAL_ILLNESS"), 0), undefined, 0)} sub={who} />
-        <StatBox label="เบี้ยประกันสุขภาพ ต่อปี (THB)" value={money(healthPremium, undefined, 0)} sub={`${active.filter((p) => p.type === "HEALTH").length} กรมธรรม์`} />
+        <StatBox label={`เคลมปี ${Number(year) + 543} (THB)`} value={money(yearClaims.reduce((t, c) => t + c.claimed, 0), undefined, 0)}
+          sub={<>ได้รับ {money(yearClaims.reduce((t, c) => t + c.received, 0), undefined, 0)}{waitThb > 0.005 && <> · <span className="text-amber-700">รอรับ {money(waitThb, undefined, 0)}</span></>}</>} />
       </section>
-
-      {alerts > 0 && (
-        <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm">
-          <h2 className="font-medium text-slate-900">เรื่องที่ควรดู</h2>
-          <ul className="list-disc space-y-1 pl-5">
-            {noCov.length > 0 && <li>กรมธรรม์สุขภาพที่ยังไม่ได้กรอกความคุ้มครอง ({noCov.length}): {noCov.map((p, i) => <span key={p.id}>{i > 0 && ", "}{pol(p.id)}</span>)}
-              <span className="text-xs text-slate-500"> · กรอกที่หน้ากรมธรรม์ → ความคุ้มครอง</span></li>}
-            {highUse.map((x, i) => <li key={`u${i}`}>{label(x.type, x.scope, x.label)} · {pname.get(x.personId)} ({pol(x.policyId)}) ใช้ไป {money(x.used, undefined, 0)} จาก {money(x.limit, undefined, 0)}
-              {" "}<span className={x.used >= x.limit ? "text-red-700" : "text-amber-800"}>({Math.round((x.used / x.limit) * 100)}%)</span></li>)}
-            {noHealth.length > 0 && <li>ยังไม่มีประกันสุขภาพ: {noHealth.map((p) => p.name).join(", ")}</li>}
-            {noLife.length > 0 && <li>ยังไม่มีทุนประกันชีวิต: {noLife.map((p) => p.name).join(", ")}</li>}
-          </ul>
-        </section>
-      )}
 
       {/* เลื่อนซ้าย-ขวาเฉพาะตาราง (หัวกล่อง / ปุ่มพิมพ์ / คำอธิบายอยู่กับที่) · ซ่อนหัวข้อที่ไม่มีใคร + ปุ่มแสดงทุกหัวข้อ */}
       <ShowAllBox className="rounded-xl border border-slate-200 bg-white">
@@ -238,33 +235,56 @@ export default function CoverageTab({ persons, personId, personName, policies, i
         )}
       </ShowAllBox>
 
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <h2 className="px-4 pt-4 font-medium text-slate-900">เคลมปี {Number(year) + 543} · {who}</h2>
-        <table className="mt-2 w-full min-w-[44rem] text-sm">
+      {/* เคลม (ตกลง 8 พ.ย. 2026): ปุ่ม + บันทึกเคลม มุมขวา · กดแถว = แก้ไข / ลบ · บันทึกรับเงินท้ายแถว · เคลมปีก่อนที่ยังรอรับแสดงต่อท้าย */}
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
+          <h2 className="font-medium text-slate-900">เคลมปี {Number(year) + 543} · {who}{older && <span className="text-xs font-normal text-slate-500"> (รวมเคลมปีก่อนที่ยังรอรับ)</span>}</h2>
+          {canWrite && kit.policies.length > 0 && <ClaimForm policies={kit.policies} coverages={kit.coverages} today={kit.today} />}
+        </div>
+        <div className="overflow-x-auto">
+        <table className="mt-2 w-full min-w-[48rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="px-4 py-2">วันที่</th><th className="px-4">ผู้เอาประกัน</th><th className="px-4">กรมธรรม์ / ความคุ้มครอง</th>
-              <th className="px-4 text-right">ยอดยื่น</th><th className="px-4 text-right">ได้รับ</th><th className="px-4">สถานะ</th></tr>
+              <th className="px-4 text-right">ยอดยื่น</th><th className="px-4 text-right">ได้รับ</th><th className="px-4">สถานะ</th><th className="px-4"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {myClaims.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">ยังไม่มีเคลมในปีนี้</td></tr>}
-            {myClaims.map((c) => (
-              <tr key={c.id} className={`align-top ${live(c) ? "" : "text-slate-400"}`}>
-                <td className="whitespace-nowrap px-4 py-2">{thDate(c.date)}</td>
-                <td className="px-4">{c.personId ? pname.get(c.personId) : "-"}</td>
-                <td className="px-4">{pol(c.policyId)}{c.coverageType && <span className="text-xs text-slate-500"> · {covName(c.coverageType, c.coverageLabel)}</span>}
-                  {c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}</td>
-                <td className="px-4 text-right tabular-nums">{money(c.claimed, c.currency !== "THB" ? c.currency : undefined)}</td>
-                <td className="px-4 text-right tabular-nums text-emerald-700">{c.received > 0 ? money(c.received, c.currency !== "THB" ? c.currency : undefined) : "-"}</td>
-                <td className="px-4 text-xs">{CLAIM[c.status] ?? c.status}</td>
-              </tr>
-            ))}
+            {myClaims.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">ยังไม่มีเคลมในปีนี้</td></tr>}
+            {myClaims.map((c) => {
+              const c2 = c.currency !== "THB" ? c.currency : undefined;
+              const wait = waitOf(c);
+              const rest = Math.round((c.claimed - c.received) * 100) / 100;   // ยอดที่ยังรับได้ (เคลมร่างก็บันทึกรับได้)
+              return (
+                <tr key={c.id} className={`align-top ${live(c) ? "" : "text-slate-400"}`}>
+                  <td className="whitespace-nowrap px-4 py-2">{thDate(c.date)}</td>
+                  <td className="px-4 py-2">{c.personId ? pname.get(c.personId) : "-"}</td>
+                  <td className="px-4 py-2">{pol(c.policyId)}{c.coverageType && <span className="text-xs text-slate-500"> · {covName(c.coverageType, c.coverageLabel)}</span>}
+                    {c.notes && <div className="text-xs text-slate-500">{c.notes}</div>}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{money(c.claimed, c2)}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">
+                    <span className="text-emerald-700">{c.received > 0 ? money(c.received, c2) : "-"}</span>
+                    {wait > 0.005 && <div className="text-xs text-amber-700">รอรับ {money(wait, c2)}</div>}</td>
+                  <td className="px-4 py-2 text-xs"><span className={`whitespace-nowrap rounded px-1.5 py-0.5 ${CLAIM_CLS[c.status] ?? "bg-slate-100 text-slate-600"}`}>{CLAIM[c.status] ?? c.status}</span></td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right">
+                    {canWrite && rest > 0.005 && !CLAIM_DONE.includes(c.status) && <ClaimReceiveForm claimId={c.id} claimDate={c.claimDate} currency={c.currency}
+                      claimed={c.claimed} wait={rest} banks={kit.banks} persons={kit.persons} today={kit.today} minDate={kit.minDate}
+                      expenses={kit.expenses.filter((e) => e.currency === c.currency)} />}
+                    {canWrite && <RowActions table="insurance_claims" id={c.id} paths={["/insurance", `/insurance/${c.policyId}`, "/family/health"]} canDelete={kit.canDelete} fields={[
+                      { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claimDate },
+                      { name: "claimed_amount", label: "ยอดเคลม", type: "number", value: c.claimedRaw },
+                      { name: "received_amount", label: "ได้รับ", type: "number", value: c.receivedRaw },
+                      { name: "status", label: "สถานะ", type: "select", value: c.status, options: CLAIM_STATUS },
+                      { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-40" }]} />}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           {myClaims.length > 0 && <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-medium"><tr><td colSpan={3} className="px-4 py-2">รวม (THB · ไม่นับปฏิเสธ / ยกเลิก)</td>
             <td className="px-4 text-right tabular-nums">{money(myClaims.filter((c) => live(c) && c.currency === "THB").reduce((t, c) => t + c.claimed, 0))}</td>
-            <td className="px-4 text-right tabular-nums text-emerald-700">{money(myClaims.filter((c) => live(c) && c.currency === "THB").reduce((t, c) => t + c.received, 0))}</td><td></td></tr></tfoot>}
+            <td className="px-4 text-right tabular-nums text-emerald-700">{money(myClaims.filter((c) => live(c) && c.currency === "THB").reduce((t, c) => t + c.received, 0))}</td><td colSpan={2}></td></tr></tfoot>}
         </table>
-        <p className="px-4 pb-3 pt-2 text-xs text-slate-500">บันทึกเคลม: บันทึกค่ารักษาเป็นค่าใช้จ่าย (ติ๊ก &ldquo;จะได้เงินคืน&rdquo;) แล้วกด &ldquo;บันทึกเงินคืน&rdquo; เลือก &ldquo;เคลมใหม่&rdquo; ตามความคุ้มครอง
-          {canWrite && <> · <Link href="/income-expenses?tab=expense" className="text-blue-700 hover:underline">ไปที่ค่าใช้จ่าย →</Link></>}</p>
+        </div>
+        <div className="h-3" />
       </section>
     </div>
   );

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, CLAIM_DONE, CLAIM_OPEN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -15,7 +15,7 @@ import MemberShareBox, { type MemberShareRow } from "./MemberShareBox";
 import UrlSelect from "@/components/UrlSelect";
 import { payDefaultValue } from "./PayDefaultSelect";
 import InsuranceBatch, { type BoxPolicy, type PayOpt, type YLine } from "./InsuranceBatch";
-import CoverageTab, { type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
+import CoverageTab, { type ClaimKit, type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
@@ -80,8 +80,12 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     ]);
     return { pays: p.data ?? [], bens: b.data ?? [] };
   });
+  // เคลมปีนี้ + เคลมปีก่อนที่ยังรอรับ (กล่องเคลมของแท็บความคุ้มครอง · ตกลง 8 พ.ย. 2026)
+  const claimQ = supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
+    .or(`and(claim_date.gte.${year}-01-01,claim_date.lte.${year}-12-31),and(status.in.(${CLAIM_OPEN.join(",")}),claim_date.lt.${year}-01-01),and(status.in.(${CLAIM_OPEN.join(",")}),claim_date.is.null)`)
+    .order("claim_date", { ascending: false }).then((r) => r);
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec] = await Promise.all([
+    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec, { data: pendExp }] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id,plan_name,coverage_scope")
       .order("status").order("insurer"),
@@ -89,8 +93,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("assets").select("id,current_value,currency,current_value_date,asset_ownerships(person_id,ownership_percent,start_date,end_date,deleted_at)")
       .eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
     supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count,count_period,label").is("deleted_at", null),
-    supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
-      .gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`).order("claim_date", { ascending: false }),
+    claimQ,
     supabase.from("insurance_followups").select("id,person_id,policy_id,role,action,status").is("deleted_at", null)
       .in("status", ["OPEN", "IN_PROGRESS"]).order("created_at"),
     linesQ,
@@ -103,6 +106,13 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     // รับเงินก้อนที่ไม่ผูกงวด ทุกปี → กล่อง "ได้คืนเทียบเบี้ย" (แบบหน้ากรมธรรม์)
     supabase.from("insurance_benefit_receipts").select("policy_id,amount,currency").is("line_id", null).is("undone_at", null).is("deleted_at", null),
     recQ,
+    // ค่าใช้จ่ายที่รอเงินคืน (ตัวเลือกของปุ่ม "บันทึกรับเงิน") · โหลดเมื่อมีเคลมที่ยังไม่จบ
+    (async () => {
+      const { data: cs } = await claimQ;
+      if (me.role === "VIEWER" || !(cs ?? []).some((c) => !CLAIM_DONE.includes(c.status))) return { data: null };
+      return await supabase.from("v_expense_reimbursement_status").select("expense_item_id,date,description,amount,currency,expected_reimbursement_amount,reimbursed_amount")
+        .eq("is_reimbursable", true).neq("reimbursement_status", "FULL").order("date", { ascending: false }).limit(100);
+    })(),
   ]);
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
@@ -274,7 +284,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   };
   // แท็บความคุ้มครอง (ตกลง 3 พ.ย. 2026): กรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ (ไม่นับปฏิเสธ / ยกเลิก)
   const usedByCov = new Map<string, number>();
-  (claims ?? []).filter((c) => c.coverage_id && !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
+  const inYear = (c: { claim_date: string | null }) => !!c.claim_date && c.claim_date.startsWith(year);
+  (claims ?? []).filter((c) => c.coverage_id && inYear(c) && !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
     usedByCov.set(c.coverage_id as string, (usedByCov.get(c.coverage_id as string) ?? 0) + Number(c.received_amount ?? c.claimed_amount ?? 0)));
   const activeAll = pol.filter((r) => r.status === "ACTIVE" && r.person_id);
   const activePerson = new Map(activeAll.map((r) => [r.id, r.person_id as string]));
@@ -301,7 +312,21 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const polIds = new Set(pol.map((r) => r.id));
   const covClaims: CovClaim[] = (claims ?? []).filter((c) => polIds.has(c.policy_id)).map((c) => ({ id: c.id, policyId: c.policy_id, personId: policyPerson.get(c.policy_id) ?? null,
     coverageType: c.coverage_id ? covByIdType.get(c.coverage_id) ?? null : null, coverageLabel: c.coverage_id ? covByIdLabel.get(c.coverage_id) ?? null : null, date: c.claim_date ?? c.incident_date, claimed: Number(c.claimed_amount ?? 0),
-    received: Number(c.received_amount ?? 0), currency: c.currency, status: c.status, notes: c.notes }));
+    received: Number(c.received_amount ?? 0), currency: c.currency, status: c.status, notes: c.notes,
+    claimDate: c.claim_date, claimedRaw: c.claimed_amount, receivedRaw: c.received_amount, inYear: inYear(c) }));
+  // ปุ่ม + บันทึกเคลม (เลือกกรมธรรม์ที่มีผลของสมาชิกในมุมมอง) + บันทึกรับเงิน
+  const claimPols = activeAll.filter((r) => pv.isPerson(r.person_id as string))
+    .sort((a, b) => (pname.get(a.person_id as string) ?? "").localeCompare(pname.get(b.person_id as string) ?? "", "th") || String(a.insurer).localeCompare(String(b.insurer), "th"));
+  const claimKit: ClaimKit = {
+    policies: claimPols.map((r) => ({ id: r.id, currency: r.insured_amount_currency ?? r.premium_currency ?? "THB",
+      label: `${pname.get(r.person_id as string) ?? "-"} · ${policyName.get(r.id) ?? "-"} · ${PART_LABEL[r.insurance_type] ?? TYPE[r.insurance_type] ?? r.insurance_type}${r.plan_name ? ` · ${r.plan_name}` : ""}` })),
+    coverages: (covs ?? []).filter((c) => claimPols.some((r) => r.id === c.policy_id))
+      .map((c) => ({ id: c.id, policy_id: c.policy_id, coverage_type: c.coverage_type, limit_amount: Number(c.limit_amount), label: c.label })),
+    banks: banks ?? [], persons: (persons ?? []).map((x) => ({ id: x.id, name: x.name })), today, minDate: goLive || null,
+    canDelete: me.role === "ADMIN" || me.role === "EDITOR",
+    expenses: (pendExp ?? []).map((e) => ({ id: e.expense_item_id as string, date: e.date as string, description: e.description as string, currency: e.currency as string,
+      remaining: Math.round((Number(e.expected_reimbursement_amount ?? e.amount) - Number(e.reimbursed_amount ?? 0)) * 100) / 100 })).filter((e) => e.remaining > 0.005),
+  };
   const covPersonsInView = pv.persons.filter((x) => pv.isPerson(x.id));
   // ตัวกรองบริษัทประกันของแต่ละแท็บ (เปลี่ยนแล้วอยู่แท็บเดิม · คงตัวกรองอื่นไว้)
   const insFilter = (t: string) => insurers.length < 2 && !iFilter ? null : (
@@ -337,7 +362,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
 
       <TabPanel id="coverage">
         <CoverageTab persons={covPersonsInView} personId={pv.personId} personName={pv.personName} policies={covPolicies} items={covItems} claims={covClaims}
-          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} filter={insFilter("coverage")} />
+          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} filter={insFilter("coverage")} kit={claimKit} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">

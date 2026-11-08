@@ -92,7 +92,8 @@ export async function saveBeneficiaries(_: ActionState, form: FormData): Promise
 
 export async function addClaim(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
-  const id = String(form.get("policy_id"));
+  const id = str(form.get("policy_id"));
+  if (!id) return { error: "กรุณาเลือกกรมธรรม์" };
   const { error } = await supabase.from("insurance_claims").insert({
     policy_id: id, incident_date: str(form.get("incident_date")), claim_date: str(form.get("claim_date")),
     claimed_amount: num(form.get("claimed_amount")), currency: str(form.get("currency")) ?? "THB",
@@ -100,6 +101,7 @@ export async function addClaim(_: ActionState, form: FormData): Promise<ActionSt
   });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/insurance", "layout");   // ทุกหน้ากรมธรรม์ (สัญญาเพิ่มเติมแสดงที่หน้ารายการหลักของเล่ม)
+  revalidatePath("/family/health");         // เคลมล่าสุดของสมาชิก
   return { ok: "บันทึกเคลมแล้ว" };
 }
 

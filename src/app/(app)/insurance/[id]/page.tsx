@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import {
-  BENEFIT_TYPE_LABEL, CLAIM_STATUS, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
+  BENEFIT_TYPE_LABEL, CLAIM_CLS, CLAIM_DONE, CLAIM_OPEN, CLAIM_STATUS, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
   covAmount, covCountUnit, covExtra, covName, coverageHasPeriod, deathCoverage, insCountedPaid, money, signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
 import { contractFlows, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
@@ -39,12 +39,6 @@ import { InfoTip } from "@/components/HeaderBar";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
-/** เคลมที่ยังรอเงิน (ร่าง = ยังไม่ได้ยื่น ไม่นับ) */
-const CLAIM_OPEN = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID"];
-/** เคลมที่จบแล้ว (ไม่มีปุ่มบันทึกรับเงิน) */
-const CLAIM_DONE = ["PAID", "REJECTED", "CANCELLED"];
-const CLAIM_CLS: Record<string, string> = { DRAFT: "bg-slate-100 text-slate-600", SUBMITTED: "bg-amber-50 text-amber-700", APPROVED: "bg-amber-50 text-amber-700",
-  PARTIALLY_PAID: "bg-amber-50 text-amber-700", PAID: "bg-emerald-50 text-emerald-700", REJECTED: "bg-red-50 text-red-700", CANCELLED: "bg-slate-100 text-slate-500" };
 type Line = { id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string; benefit_type: string | null;
   notes: string | null; paid_amount: number; remaining: number; status: string; skipped: boolean };
 /** งวดของส่วนใดส่วนหนึ่งในเล่ม (กรมธรรม์หลัก / สัญญาเพิ่มเติม) */

@@ -435,6 +435,13 @@ export const INS_TAX: Record<string, string> = {
 };
 export const INS_STATUS: [string, string][] = [["ACTIVE", "มีผล"], ["LAPSED", "ขาดอายุ"], ["SURRENDERED", "เวนคืนแล้ว"], ["MATURED", "ครบสัญญา"], ["CLAIMED", "เคลมจบแล้ว"], ["CANCELLED", "ยกเลิก"]];
 export const CLAIM_STATUS: [string, string][] = [["DRAFT", "ร่าง"], ["SUBMITTED", "ยื่นแล้ว"], ["APPROVED", "อนุมัติ"], ["PARTIALLY_PAID", "จ่ายบางส่วน"], ["PAID", "จ่ายครบ"], ["REJECTED", "ปฏิเสธ"], ["CANCELLED", "ยกเลิก"]];
+/** เคลมที่ยังรอเงิน (ร่าง = ยังไม่ได้ยื่น ไม่นับ) */
+export const CLAIM_OPEN = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID"];
+/** เคลมที่จบแล้ว (ไม่มีปุ่มบันทึกรับเงิน) */
+export const CLAIM_DONE = ["PAID", "REJECTED", "CANCELLED"];
+/** สีป้ายสถานะเคลม */
+export const CLAIM_CLS: Record<string, string> = { DRAFT: "bg-slate-100 text-slate-600", SUBMITTED: "bg-amber-50 text-amber-700", APPROVED: "bg-amber-50 text-amber-700",
+  PARTIALLY_PAID: "bg-amber-50 text-amber-700", PAID: "bg-emerald-50 text-emerald-700", REJECTED: "bg-red-50 text-red-700", CANCELLED: "bg-slate-100 text-slate-500" };
 
 export const COUPON_FREQ_LABEL: Record<string, string> = {
   MONTHLY: "รายเดือน", QUARTERLY: "รายไตรมาส", SEMI_ANNUAL: "ทุก 6 เดือน", ANNUAL: "รายปี", AT_MATURITY: "ตอนครบกำหนด", OTHER: "อื่น ๆ",
