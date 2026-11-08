@@ -1,7 +1,7 @@
 // node scripts/insurance-flow.test.mjs — ทดสอบสุทธิสะสม / จุดคุ้มทุน / IRR ของกรมธรรม์ (src/lib/insurance-flow.ts · ตัวเลขสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { actualFlows, contractFlows, lineValue, projectedFlows, runningNet, surrenderFlows, xirr } from "../src/lib/insurance-flow.ts";
+import { actualFlows, contractFlows, lineValue, policyYearAt, projectedFlows, runningNet, surrenderFlows, xirr } from "../src/lib/insurance-flow.ts";
 
 const near = (a, b, eps = 1e-6) => assert.ok(a !== null && Math.abs(a - b) < eps, `${a} ≠ ${b}`);
 const npv = (flows, r) => {
@@ -87,5 +87,16 @@ assert.ok(xirr(sur) < 0);                                              // ได
 const n2 = runningNet([L("p", "PREMIUM", 1, "2025-01-01", 1000, "PAID", 1000)], [{ key: "r1", date: "2026-01-01", amount: 1200 }], true);
 assert.equal(n2.breakEven.key, "r1");
 assert.equal(n2.final, 200);
+
+// ปีกรมธรรม์: วันเริ่มสัญญา = 0 · ครบรอบ = ปีถัดไป · ระหว่างปี = ปีที่ครบล่าสุด
+assert.equal(policyYearAt("2017-07-20", "2017-07-20"), 0);
+assert.equal(policyYearAt("2017-07-20", "2018-07-19"), 0);
+assert.equal(policyYearAt("2017-07-20", "2018-07-20"), 1);
+assert.equal(policyYearAt("2017-07-20", "2022-07-20"), 5);
+assert.equal(policyYearAt("2017-07-20", "2022-12-31"), 5);
+assert.equal(policyYearAt("2017-07-20", "2017-07-19"), null);    // ก่อนเริ่มสัญญา
+assert.equal(policyYearAt(null, "2022-07-20"), null);
+assert.equal(policyYearAt("2020-02-29", "2021-02-28"), 0);       // เริ่ม 29 ก.พ. → ครบรอบปีปกติ 1 มี.ค.
+assert.equal(policyYearAt("2020-02-29", "2021-03-01"), 1);
 
 console.log("insurance-flow: all tests passed");
