@@ -50,7 +50,7 @@ export function loadIeRef() {
         .is("deleted_at", null).order("name"),
       leaseQ,
       // ความคุ้มครองของกรมธรรม์ที่มีผล → "เคลมใหม่" ในฟอร์มบันทึกเงินคืน (สร้างเคลมให้เอง · ตกลง 2 พ.ย. 2026)
-      supabase.from("insurance_coverages").select("id,coverage_type,currency,insurance_policies!inner(insurer,policy_no,status,deleted_at,persons!insurance_policies_person_id_fkey(name))")
+      supabase.from("insurance_coverages").select("id,coverage_type,label,currency,insurance_policies!inner(insurer,policy_no,status,deleted_at,persons!insurance_policies_person_id_fkey(name))")
         .is("deleted_at", null).eq("insurance_policies.status", "ACTIVE").is("insurance_policies.deleted_at", null),
       // บัญชีเงินฝากในพอร์ต (ค่าใช้จ่าย / จ่ายบัตร / ตัดบัตรอัตโนมัติจากพอร์ต)
       queryPfCash(supabase),

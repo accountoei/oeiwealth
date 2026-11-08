@@ -5303,4 +5303,92 @@ SELECT t.ok(has_function_privilege('authenticated', 'public.create_insurance_boo
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz-covrework. ประกัน: ชื่อแบบ · คุ้มครองเฉพาะ · ตรวจกับกรมธรรม์เมื่อ · รอบของสูงสุด · ชื่อ "อื่น ๆ" (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+CREATE TEMP TABLE tcr(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tcr TO authenticated;
+SELECT t.ok((SELECT count(*) = 3 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'v_insurance_status'
+               AND column_name IN ('plan_name', 'coverage_scope', 'coverage_checked_on'))
+        AND (SELECT count(*) = 2 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'insurance_coverages'
+               AND column_name IN ('count_period', 'label')),
+            'ความคุ้มครอง: คอลัมน์ใหม่ครบ · v_insurance_status เห็นชื่อแบบ / คุ้มครองเฉพาะ / ตรวจเมื่อ');
+-- เล่มใหม่: ชื่อแบบ / คุ้มครองเฉพาะ ต่อส่วน · ตรวจกับกรมธรรม์เมื่อ = ทุกส่วนของเล่มใหม่ · รอบ + ชื่อ "อื่น ๆ" ไปกับความคุ้มครอง
+INSERT INTO tcr SELECT 'main', public.create_insurance_booklet(jsonb_build_object('insurance_type', 'LIFE', 'person_id', t.p('คุณพ่อ'),
+  'insurer', 'ประกันทดสอบแบบ', 'policy_no', 'CR-001', 'start_date', '2026-01-15', 'currency', 'THB', 'insured_amount', 500000, 'premium', 20000,
+  'plan_name', '  ชีวิตทดสอบ 20/90  ', 'coverage_checked_on', '2026-11-01',
+  'coverages', jsonb_build_array(jsonb_build_object('coverage_type', 'LIFE', 'limit_amount', 500000)),
+  'riders', jsonb_build_array(
+    jsonb_build_object('insurance_type', 'HEALTH', 'premium', 15000, 'plan_name', 'สุขภาพทดสอบ', 'coverages', jsonb_build_array(
+      jsonb_build_object('coverage_type', 'OPD_PER_VISIT', 'limit_amount', 1500, 'max_count', 30, 'count_period', 'PER_YEAR'),
+      jsonb_build_object('coverage_type', 'OTHER', 'limit_amount', 5000, 'label', 'ค่ารถพยาบาล', 'count_period', 'PER_EVENT'))),
+    jsonb_build_object('insurance_type', 'HEALTH', 'premium', 3000, 'plan_name', 'มะเร็งทดสอบ', 'coverage_scope', 'มะเร็ง', 'coverages', jsonb_build_array(
+      jsonb_build_object('coverage_type', 'IPD_ANNUAL', 'limit_amount', 1000000))))));
+INSERT INTO tcr SELECT 'health', id FROM public.insurance_policies WHERE policy_no = 'CR-001' AND plan_name = 'สุขภาพทดสอบ' AND deleted_at IS NULL;
+INSERT INTO tcr SELECT 'cancer', id FROM public.insurance_policies WHERE policy_no = 'CR-001' AND coverage_scope = 'มะเร็ง' AND deleted_at IS NULL;
+SELECT t.ok((SELECT plan_name = 'ชีวิตทดสอบ 20/90' AND coverage_scope IS NULL FROM public.insurance_policies WHERE id = (SELECT id FROM tcr WHERE k = 'main'))
+        AND (SELECT count(*) = 3 AND bool_and(coverage_checked_on = '2026-11-01') FROM public.insurance_policies WHERE policy_no = 'CR-001' AND deleted_at IS NULL)
+        AND (SELECT plan_name = 'มะเร็งทดสอบ' FROM public.insurance_policies WHERE id = (SELECT id FROM tcr WHERE k = 'cancer'))
+        AND (SELECT max_count = 30 AND count_period = 'PER_YEAR' FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcr WHERE k = 'health') AND coverage_type = 'OPD_PER_VISIT' AND deleted_at IS NULL)
+        AND (SELECT label = 'ค่ารถพยาบาล' AND count_period = 'PER_EVENT' FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcr WHERE k = 'health') AND coverage_type = 'OTHER' AND deleted_at IS NULL)
+        AND (SELECT coverage_scope = 'มะเร็ง' FROM public.v_insurance_status WHERE id = (SELECT id FROM tcr WHERE k = 'cancer')),
+            'เล่มใหม่: ชื่อแบบ / คุ้มครองเฉพาะ ต่อส่วน (ตัดช่องว่าง) · ตรวจเมื่อ ทุกส่วน · รอบของสูงสุด + ชื่อ "อื่น ๆ" เก็บครบ');
+-- บันทึกตาราง: ส่งคีย์ = ตั้ง (ว่าง = ล้าง) · ไม่ส่ง = ไม่แตะ
+SELECT t.ok(public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'main'), 'plan_name', 'ชีวิตทดสอบ 20/99', 'coverage_checked_on', '',
+    'rows', (SELECT jsonb_agg(jsonb_build_object('id', id, 'coverage_type', coverage_type, 'limit_amount', limit_amount)) FROM public.insurance_coverages
+              WHERE policy_id = (SELECT id FROM tcr WHERE k = 'main') AND deleted_at IS NULL)),
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'cancer'),
+    'rows', (SELECT jsonb_agg(jsonb_build_object('id', id, 'coverage_type', coverage_type, 'limit_amount', limit_amount)) FROM public.insurance_coverages
+              WHERE policy_id = (SELECT id FROM tcr WHERE k = 'cancer') AND deleted_at IS NULL))))) = 2,
+            'บันทึกตาราง: แก้ชื่อแบบ / ล้างวันตรวจ พร้อมความคุ้มครองในครั้งเดียว');
+SELECT t.ok((SELECT plan_name = 'ชีวิตทดสอบ 20/99' AND coverage_checked_on IS NULL FROM public.insurance_policies WHERE id = (SELECT id FROM tcr WHERE k = 'main'))
+        AND (SELECT plan_name = 'มะเร็งทดสอบ' AND coverage_scope = 'มะเร็ง' AND coverage_checked_on = '2026-11-01' FROM public.insurance_policies WHERE id = (SELECT id FROM tcr WHERE k = 'cancer')),
+            'บันทึกตาราง: ส่งคีย์ = ตั้ง (ว่าง = ล้าง) · ไม่ส่ง = ค่าเดิม');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'cancer'), 'rows', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'OTHER', 'limit_amount', 1000))))))$$,
+  'ใส่ชื่อความคุ้มครองของหัวข้อ', 'ความคุ้มครอง: "อื่น ๆ" ต้องมีชื่อ');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'cancer'), 'rows', jsonb_build_array(
+    jsonb_build_object('coverage_type', 'IPD_ANNUAL', 'limit_amount', 1000, 'count_period', 'PER_MONTH'))))))$$,
+  'insurance_coverages_count_period_check', 'ความคุ้มครอง: รอบต้องเป็น ต่อครั้ง / ต่อปี / ตลอดสัญญา');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'cancer'), 'plan_name', repeat('ก', 201), 'rows', '[]'::jsonb))))$$,
+  'insurance_policies_plan_name_check', 'ชื่อแบบ: ยาวเกิน 200 ตัวอักษรไม่ได้');
+SELECT t.ok((SELECT count(*) = 1 FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcr WHERE k = 'cancer') AND deleted_at IS NULL),
+            'บันทึกตาราง: ผิด = ไม่บันทึกเลย (แถวเดิมยังอยู่)');
+-- แก้รอบ / ชื่อ ของแถวเดิม
+SELECT t.ok(public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'health'),
+    'rows', (SELECT jsonb_agg(jsonb_build_object('id', id, 'coverage_type', coverage_type, 'limit_amount', limit_amount, 'max_count', max_count,
+                     'count_period', CASE WHEN coverage_type = 'OTHER' THEN 'PER_YEAR' ELSE count_period END,
+                     'label', CASE WHEN coverage_type = 'OTHER' THEN 'ค่ารถพยาบาลฉุกเฉิน' END))
+              FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcr WHERE k = 'health') AND deleted_at IS NULL))))) = 2,
+            'บันทึกตาราง: ส่งรอบ / ชื่อ "อื่น ๆ" ของแถวเดิม');
+SELECT t.ok((SELECT label = 'ค่ารถพยาบาลฉุกเฉิน' AND count_period = 'PER_YEAR' FROM public.insurance_coverages WHERE policy_id = (SELECT id FROM tcr WHERE k = 'health') AND coverage_type = 'OTHER' AND deleted_at IS NULL),
+            'บันทึกตาราง: แก้รอบ / ชื่อ "อื่น ๆ" ของแถวเดิมได้');
+-- สิทธิ์: CONTRIBUTOR ส่งชื่อแบบเดิม (ไม่เปลี่ยน) ผ่าน · เปลี่ยนชื่อแบบของกรมธรรม์คนอื่น = แจ้ง ไม่เงียบ
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.ok(public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'cancer'), 'plan_name', 'มะเร็งทดสอบ', 'coverage_scope', 'มะเร็ง', 'coverage_checked_on', '2026-11-01',
+    'rows', (SELECT jsonb_agg(jsonb_build_object('id', id, 'coverage_type', coverage_type, 'limit_amount', limit_amount)) FROM public.insurance_coverages
+              WHERE policy_id = (SELECT id FROM tcr WHERE k = 'cancer') AND deleted_at IS NULL))))) = 1,
+            'สิทธิ์: CONTRIBUTOR ส่งข้อมูลต่อส่วนเดิมที่ไม่ได้แก้ = ผ่าน');
+SELECT t.fails($$SELECT public.set_insurance_coverages(jsonb_build_object('policies', jsonb_build_array(
+  jsonb_build_object('policy_id', (SELECT id FROM tcr WHERE k = 'cancer'), 'plan_name', 'เปลี่ยนชื่อ',
+    'rows', (SELECT jsonb_agg(jsonb_build_object('id', id, 'coverage_type', coverage_type, 'limit_amount', limit_amount)) FROM public.insurance_coverages
+              WHERE policy_id = (SELECT id FROM tcr WHERE k = 'cancer') AND deleted_at IS NULL)))))$$,
+  'PERMISSION_DENIED', 'สิทธิ์: CONTRIBUTOR เปลี่ยนชื่อแบบของกรมธรรม์คนอื่นไม่ได้ (แจ้ง ไม่เงียบ)');
+-- เพิ่มในเล่มเดิม: ชื่อแบบ / คุ้มครองเฉพาะ / ตรวจเมื่อ ของส่วนใหม่
+SELECT t.ok(public.create_insurance_booklet(jsonb_build_object('main_id', (SELECT id FROM tcr WHERE k = 'main'),
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 2000, 'plan_name', 'โรคร้ายแรงทดสอบ', 'coverage_scope', 'โรคร้ายแรง',
+    'coverage_checked_on', '2026-11-05')))) = (SELECT id FROM tcr WHERE k = 'main'),
+            'เพิ่มในเล่มเดิม: CONTRIBUTOR เพิ่มส่วนที่มีชื่อแบบได้');
+SELECT t.ok((SELECT coverage_scope = 'โรคร้ายแรง' AND coverage_checked_on = '2026-11-05' AND payer_person_id IS NULL
+               FROM public.insurance_policies WHERE policy_no = 'CR-001' AND plan_name = 'โรคร้ายแรงทดสอบ' AND deleted_at IS NULL),
+            'เพิ่มในเล่มเดิม: ชื่อแบบ / คุ้มครองเฉพาะ / ตรวจเมื่อ ของส่วนใหม่ (CONTRIBUTOR)');
+RESET ROLE;
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'

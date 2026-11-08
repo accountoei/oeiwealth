@@ -34,6 +34,7 @@ function ridersFromForm(form: FormData): Record<string, unknown>[] | null {
     return {
       insurance_type: s(o.insurance_type), insured_amount: num(s(o.insured_amount)), premium: num(s(o.premium)),
       end_date: str(s(o.end_date)), notes: str(s(o.notes)), coverages: Array.isArray(o.coverages) ? o.coverages : [],
+      plan_name: str(s(o.plan_name)), coverage_scope: str(s(o.coverage_scope)),
     };
   });
 }
@@ -57,6 +58,7 @@ export async function createPolicy(_: ActionState, form: FormData): Promise<Acti
     cash_value: hasCv ? num(form.get("cash_value")) : null, cash_value_date: hasCv ? str(form.get("cash_value_date")) : null,
     owners: ownersFromForm(form), beneficiaries: bens(form), notes: str(form.get("notes")), coverages: covs,
     payer_person_id: str(form.get("payer_person_id")), paid_from_asset_id: pay.paid_from_asset_id, paid_from_credit_card_id: pay.paid_from_credit_card_id,
+    plan_name: str(form.get("plan_name")), coverage_scope: str(form.get("coverage_scope")), coverage_checked_on: str(form.get("coverage_checked_on")),
     riders,
   } });
   if (error) return { error: friendlyError(error.message) };
@@ -70,7 +72,10 @@ export async function addRiders(_: ActionState, form: FormData): Promise<ActionS
   const riders = ridersFromForm(form);
   if (!riders) return { error: "อ่านข้อมูลสัญญาเพิ่มเติมไม่ได้" };
   if (riders.length === 0) return { error: "ยังไม่ได้ใส่สัญญาเพิ่มเติม" };
-  const { error } = await supabase.rpc("create_insurance_booklet", { p: { main_id: str(form.get("main_id")), riders } });
+  // ตรวจกับกรมธรรม์เมื่อ (ช่องเดียวในหน้าต่าง) = ของทุกส่วนที่เพิ่ม
+  const checked = str(form.get("coverage_checked_on"));
+  const { error } = await supabase.rpc("create_insurance_booklet", { p: { main_id: str(form.get("main_id")),
+    riders: riders.map((r) => ({ ...r, coverage_checked_on: checked })) } });
   if (error) return { error: friendlyError(error.message) };
   refresh();
   revalidatePath("/family", "layout");   // สรุปสิทธิ์รักษาของสมาชิก
@@ -256,6 +261,8 @@ export async function updatePolicyInfo(_: ActionState, form: FormData): Promise<
   const supabase = await createClient();
   const id = String(form.get("policy_id"));
   const own: Record<string, unknown> = { end_date: str(form.get("end_date")), insured_amount: num(form.get("insured_amount")), premium: num(form.get("premium")), notes: str(form.get("notes")) };
+  // ชื่อแบบประกัน: ของแต่ละส่วน (ไม่เปลี่ยนตามสัญญาหลัก)
+  if (form.has("plan_name")) own.plan_name = str(form.get("plan_name"));
   // ประเภท (ชีวิต / บำนาญ / สุขภาพ / อุบัติเหตุ) แก้ได้ทีละส่วน · ประกันทรัพย์สินไม่มีช่องนี้ (ฐานข้อมูลกันไว้อีกชั้น)
   if (form.has("insurance_type")) own.insurance_type = str(form.get("insurance_type"));
   if (form.get("part") === "1") {

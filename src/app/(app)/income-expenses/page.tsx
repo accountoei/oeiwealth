@@ -26,7 +26,7 @@ import { HeaderFilters, PageInfo, InfoTip } from "@/components/HeaderBar";
 import { PaymentForm as LoanPaymentForm } from "../financial/loans/[id]/forms";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
 import { BenefitForm, PayPremiumForm } from "../insurance/[id]/ins-forms";
-import { BENEFIT_TYPE_LABEL, COVERAGE_LABEL, INS_SCHED_STATUS } from "@/lib/format";
+import { BENEFIT_TYPE_LABEL, INS_SCHED_STATUS, covName } from "@/lib/format";
 import { stripPending } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
 import { StatBox } from "@/components/Boxes";
@@ -98,7 +98,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const newClaims: Claim[] = (covRaw ?? []).map((c) => {
     const pol = one(c.insurance_policies as unknown as { insurer: string; policy_no: string | null; persons: unknown } | null);
     return { id: `new:${c.id}`, currency: c.currency, label: [pname(pol?.persons), pol?.insurer, pol?.policy_no,
-      COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type].filter(Boolean).join(" · ") };
+      covName(c.coverage_type, c.label)].filter(Boolean).join(" · ") };
   });
 
   type Cost = { utility_id: string; property_asset_id: string; property_name: string; utility_type: string; provider: string | null;

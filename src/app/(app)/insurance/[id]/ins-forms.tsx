@@ -200,7 +200,8 @@ export function AddCashValueForm({ policyId, currency, today, goLive }: {
 export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, currency, v, booklet, part }: {
   policyId: string; persons: Person[]; showInsured: boolean; banks: Bank[]; cards: Card[]; currency: string;
   v: { person_id: string | null; payer_person_id: string | null; insurer: string; policy_no: string | null; start_date: string | null;
-    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null; pay_default: string; insurance_type: string };
+    end_date: string | null; insured_amount: number | null; premium: number | null; notes: string | null; pay_default: string; insurance_type: string;
+    plan_name?: string | null };
   booklet?: boolean; part?: boolean;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updatePolicyInfo, {});
@@ -222,6 +223,8 @@ export function PolicyInfoForm({ policyId, persons, showInsured, banks, cards, c
           )}
         </label>
       )}
+      <label className="text-sm md:col-span-2">ชื่อแบบประกัน<input name="plan_name" maxLength={200} defaultValue={d(v.plan_name ?? null)} placeholder="ตามหน้ากรมธรรม์"
+        className={`${input} placeholder:text-slate-400`} /></label>
       {!part && <>
         <label className="text-sm">บริษัทประกัน<input name="insurer" required defaultValue={v.insurer} className={input} /></label>
         <label className="text-sm">เลขกรมธรรม์<input name="policy_no" defaultValue={d(v.policy_no)} className={input} data-plain /></label>

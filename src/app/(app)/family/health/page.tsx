@@ -34,7 +34,9 @@ async function loadFamily(supabase: Sb) {
       .order("checkup_date", { ascending: false }).then((r) => r.data ?? []),
     supabase.from("health_results").select("checkup_id,metric").not("abnormal_flag", "is", null).is("deleted_at", null).then((r) => r.data ?? []),
     (async () => {
-      const { data: pols } = await supabase.from("insurance_policies").select("id,person_id").eq("status", "ACTIVE").is("deleted_at", null).not("person_id", "is", null);
+      // สรุปทั้งครอบครัว = สิทธิ์ทั่วไป (สัญญาที่คุ้มครองเฉพาะโรค เช่น มะเร็ง ไม่บวกรวม · ตกลง 8 พ.ย. 2026)
+      const { data: pols } = await supabase.from("insurance_policies").select("id,person_id").eq("status", "ACTIVE").is("deleted_at", null).not("person_id", "is", null)
+        .is("coverage_scope", null);
       const owner = new Map((pols ?? []).map((x) => [x.id as string, x.person_id as string]));
       if (!owner.size) return [];
       const { data: covs } = await supabase.from("insurance_coverages").select("policy_id,coverage_type,limit_amount,currency")
@@ -141,7 +143,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       return { checkups, resultsRaw };
     })(),
     (async () => {
-      const { data: pols } = await supabase.from("insurance_policies").select("id,insurer,policy_no,end_date").eq("person_id", pid).eq("status", "ACTIVE").is("deleted_at", null);
+      const { data: pols } = await supabase.from("insurance_policies").select("id,insurer,policy_no,end_date,plan_name,coverage_scope").eq("person_id", pid).eq("status", "ACTIVE").is("deleted_at", null);
       const pids = (pols ?? []).map((x) => x.id);
       if (!pids.length) return { pols: pols ?? [], covs: [], claims: [] };
       const [{ data: covs }, { data: claims }] = await Promise.all([
@@ -153,7 +155,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
     })(),
   ]);
   if (!list.some((p) => p.id === pid)) redirect("/family/health");   // ลิงก์เก่า / คนที่ถูกลบ → ทั้งครอบครัว
-  const polName = new Map(pols.map((x) => [x.id, `${x.insurer}${x.policy_no ? ` · ${x.policy_no}` : ""}`]));
+  const polName = new Map(pols.map((x) => [x.id, [x.insurer, x.policy_no, x.plan_name].filter(Boolean).join(" · ")]));
+  const scopeOf = new Map(pols.map((x) => [x.id, x.coverage_scope as string | null]));
   const live = (c: { status: string }) => !["REJECTED", "CANCELLED"].includes(c.status);
   const usedOf = (covId: string) => claims.filter((c) => c.coverage_id === covId && live(c) && (c.claim_date ?? c.incident_date ?? "").startsWith(year))
     .reduce((t, c) => t + Number(c.received_amount ?? c.claimed_amount ?? 0), 0);
@@ -297,6 +300,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                     return (
                       <tr key={c.id} className="align-top">
                         <td className="py-1.5">{COVERAGE_LABEL[c.coverage_type]?.[0] ?? c.coverage_type}{COVERAGE_LABEL[c.coverage_type]?.[1] && <span className="text-xs text-slate-500"> {COVERAGE_LABEL[c.coverage_type][1]}</span>}
+                          {scopeOf.get(c.policy_id) && <span className="ml-1 rounded bg-violet-50 px-1.5 py-0.5 text-xs text-violet-700">เฉพาะ{scopeOf.get(c.policy_id)}</span>}
                           <div className="text-xs"><Link href={`/insurance/${c.policy_id}`} className="text-slate-500 hover:underline">{polName.get(c.policy_id)}</Link></div></td>
                         <td className="text-right tabular-nums">{money(c.limit_amount, c.currency, 0)}
                           {annual && used > 0 && <div className="text-xs text-slate-500">ใช้ปีนี้ {money(used, undefined, 0)} · เหลือ {money(Math.max(Number(c.limit_amount) - used, 0), undefined, 0)}</div>}</td>

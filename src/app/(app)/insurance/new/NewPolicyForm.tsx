@@ -5,9 +5,9 @@ import { useActionState, useState } from "react";
 import { createPolicy, type ActionState } from "../actions";
 import { BeneficiaryRows } from "../Beneficiaries";
 import { SMALL_BTN, INS_TAX, INS_TYPE, numOrZero, thDate } from "@/lib/format";
-import { CoverageGrid, covLabel, covTypesOf } from "../CoverageGrid";
+import { CheckedOnField, CoverageGrid, SCOPE_HINT, covLabel, hasScope } from "../CoverageGrid";
 import { covPayload, riderPayload, type CovRow, type RiderRow } from "@/lib/insurance-coverage";
-import { RiderFields, riderCovTypes } from "../RiderFields";
+import { RiderFields } from "../RiderFields";
 import { CurrencySelect } from "@/components/CurrencyContext";
 import PayDefaultSelect from "../PayDefaultSelect";
 
@@ -32,11 +32,12 @@ export default function NewPolicyForm(props: {
   const [covAll, setCovAll] = useState(false);
   const [sum, setSum] = useState(0);
   const [ccy, setCcy] = useState("THB");
-  const cov = covPayload(covRows, covTypesOf(type, covRows, covAll), covLabel);
+  const [checked, setChecked] = useState("");
+  const cov = covPayload(covRows, covLabel);
   // สัญญาเพิ่มเติม (ถ้ามี · ตกลง 7 พ.ย. 2026): บันทึกพร้อมสัญญาหลักทั้งเล่ม · ใช้ข้อมูลร่วมของสัญญาหลัก
   const [riders, setRiders] = useState<RiderRow[]>([]);
   const [policyNo, setPolicyNo] = useState("");
-  const rid = riderPayload(type === "PROPERTY" ? [] : riders, riderCovTypes(covAll), covLabel, policyNo);
+  const rid = riderPayload(type === "PROPERTY" ? [] : riders, covLabel, policyNo);
   const errors = [...cov.errors, ...rid.errors];
   return (
     <form action={action} className="space-y-6">
@@ -50,6 +51,7 @@ export default function NewPolicyForm(props: {
         </label>
         <label className={label}>บริษัทประกัน *<input name="insurer" required className={input} /></label>
         <label className={label}>เลขกรมธรรม์{riders.length > 0 && type !== "PROPERTY" && " *"}<input name="policy_no" value={policyNo} onChange={(e) => setPolicyNo(e.target.value)} className={input} /></label>
+        <label className={label}>ชื่อแบบประกัน<input name="plan_name" maxLength={200} placeholder="ตามหน้ากรมธรรม์" className={`${input} placeholder:text-slate-400`} /></label>
         {type === "PROPERTY" ? (
           <label className={label}>ทรัพย์สินที่เอาประกัน
             <select name="insured_asset_id" defaultValue={initialAsset} className={input}>
@@ -121,8 +123,15 @@ export default function NewPolicyForm(props: {
 
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-slate-900">ความคุ้มครอง <span className="text-xs font-normal text-slate-500">ถ้ามี · ช่องว่าง = ไม่คุ้มครอง · กรอกหรือแก้ภายหลังได้ที่หน้ากรมธรรม์</span></h2>
-          <button type="button" onClick={() => setCovAll(!covAll)} className="text-sm text-blue-700 hover:underline">{covAll ? "แสดงเฉพาะหัวข้อตามประเภท" : "แสดงทุกหัวข้อ"}</button>
+          <h2 className="font-medium text-slate-900">ความคุ้มครอง <span className="text-xs font-normal text-slate-500">ถ้ามี · ไม่ใส่ = ไม่คุ้มครอง · กรอกหรือแก้ภายหลังได้ที่หน้ากรมธรรม์</span></h2>
+          <button type="button" onClick={() => setCovAll(!covAll)} className="text-sm text-blue-700 hover:underline">{covAll ? "แสดงเฉพาะที่มี" : "แสดงทุกหัวข้อ"}</button>
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+          <CheckedOnField value={checked} onChange={setChecked} today={today} note={riders.length > 0 && type !== "PROPERTY" ? "ใช้กับทุกส่วนของเล่ม" : undefined} />
+          {hasScope(type) && (
+            <label className="flex items-center gap-2 whitespace-nowrap pb-1 text-sm text-slate-700">คุ้มครองเฉพาะ
+              <input name="coverage_scope" maxLength={100} placeholder={SCOPE_HINT} className="w-64 rounded border border-slate-300 px-2 py-1 text-sm placeholder:text-slate-400" /></label>
+          )}
         </div>
         <CoverageGrid insType={type} rows={covRows} setRows={setCovRows} sum={sum} currency={ccy} all={covAll} />
         <input type="hidden" name="coverages" value={JSON.stringify(cov.rows)} />

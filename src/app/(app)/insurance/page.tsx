@@ -82,11 +82,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: fups }, { data: allLines },
     { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: yearLumps }, { data: allLumps }, rec] = await Promise.all([
     loadPersonView(sp.p),
-    supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id")
+    supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id,plan_name,coverage_scope")
       .order("status").order("insurer"),
     supabase.from("persons").select("id,name").order("sort_order"),
     supabase.from("assets").select("id,current_value,currency,current_value_date").eq("asset_type", "INSURANCE_CASH_VALUE").is("deleted_at", null),
-    supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count").is("deleted_at", null),
+    supabase.from("insurance_coverages").select("id,policy_id,coverage_type,limit_amount,currency,notes,max_count,count_period,label").is("deleted_at", null),
     supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
       .gte("claim_date", `${year}-01-01`).lte("claim_date", `${year}-12-31`).order("claim_date", { ascending: false }),
     supabase.from("insurance_followups").select("id,person_id,policy_id,role,action,status").is("deleted_at", null)
@@ -251,24 +251,29 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     usedByCov.set(c.coverage_id as string, (usedByCov.get(c.coverage_id as string) ?? 0) + Number(c.received_amount ?? c.claimed_amount ?? 0)));
   const activeAll = pol.filter((r) => r.status === "ACTIVE" && r.person_id);
   const activePerson = new Map(activeAll.map((r) => [r.id, r.person_id as string]));
+  // คุ้มครองเฉพาะ (ต่อส่วนของเล่ม · ตกลง 8 พ.ย. 2026) → แถวแยกในแท็บความคุ้มครอง ไม่บวกกับวงเงินทั่วไป
+  const scopeOf = new Map(activeAll.map((r) => [r.id, (r.coverage_scope as string | null) ?? null]));
   const covRows = (covs ?? []).filter((c) => activePerson.has(c.policy_id));
   const covItems: CovItem[] = covRows.map((c) => ({ policyId: c.policy_id, personId: activePerson.get(c.policy_id) as string, type: c.coverage_type,
-    limit: Number(c.limit_amount), used: usedByCov.get(c.id) ?? 0, currency: c.currency, notes: c.notes, maxCount: c.max_count }));
+    limit: Number(c.limit_amount), used: usedByCov.get(c.id) ?? 0, currency: c.currency, notes: c.notes, maxCount: c.max_count,
+    period: c.count_period, label: c.label, scope: scopeOf.get(c.policy_id) ?? null }));
   // กรมธรรม์ชีวิต / อุบัติเหตุที่ยังไม่ได้กรอกความคุ้มครองประเภทนั้น → ใช้ทุนประกันของกรมธรรม์
   activeAll.forEach((r) => {
     const k = deathCoverage(r.insurance_type);
     if (!k || Number(r.insured_amount ?? 0) <= 0 || covRows.some((c) => c.policy_id === r.id && c.coverage_type === k)) return;
     covItems.push({ policyId: r.id, personId: r.person_id as string, type: k, limit: Number(r.insured_amount), used: 0,
-      currency: r.insured_amount_currency ?? "THB", notes: null, fromPolicy: true });
+      currency: r.insured_amount_currency ?? "THB", notes: null, fromPolicy: true, scope: scopeOf.get(r.id) ?? null });
   });
   const covPolicies: CovPolicy[] = activeAll.map((r) => ({ id: r.id, name: policyName.get(r.id) ?? "-", type: r.insurance_type, personId: r.person_id,
     endDate: r.end_date, expiring: r.derived_status === "EXPIRING_SOON", expired: r.derived_status === "EXPIRED",
-    premium: Number(r.premium ?? 0), premiumCcy: r.premium_currency ?? "THB", hasCov: covRows.some((c) => c.policy_id === r.id) }));
+    premium: Number(r.premium ?? 0), premiumCcy: r.premium_currency ?? "THB", hasCov: covRows.some((c) => c.policy_id === r.id),
+    plan: r.plan_name ?? null, scope: r.coverage_scope ?? null }));
   const covByIdType = new Map((covs ?? []).map((c) => [c.id, c.coverage_type as string]));
+  const covByIdLabel = new Map((covs ?? []).map((c) => [c.id, c.label as string | null]));
   const policyPerson = new Map((data ?? []).map((r) => [r.id, r.person_id as string | null]));
   const polIds = new Set(pol.map((r) => r.id));
   const covClaims: CovClaim[] = (claims ?? []).filter((c) => polIds.has(c.policy_id)).map((c) => ({ id: c.id, policyId: c.policy_id, personId: policyPerson.get(c.policy_id) ?? null,
-    coverageType: c.coverage_id ? covByIdType.get(c.coverage_id) ?? null : null, date: c.claim_date ?? c.incident_date, claimed: Number(c.claimed_amount ?? 0),
+    coverageType: c.coverage_id ? covByIdType.get(c.coverage_id) ?? null : null, coverageLabel: c.coverage_id ? covByIdLabel.get(c.coverage_id) ?? null : null, date: c.claim_date ?? c.incident_date, claimed: Number(c.claimed_amount ?? 0),
     received: Number(c.received_amount ?? 0), currency: c.currency, status: c.status, notes: c.notes }));
   const covPersonsInView = pv.persons.filter((x) => pv.isPerson(x.id));
   // ตัวกรองบริษัทประกันของแต่ละแท็บ (เปลี่ยนแล้วอยู่แท็บเดิม · คงตัวกรองอื่นไว้)
