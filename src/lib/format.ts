@@ -574,10 +574,18 @@ export const COVERAGE_FOR_TYPE: Record<string, string[]> = {
     "CI_EARLY", "CRITICAL_ILLNESS", "WAIVER", "OTHER"],
   PROPERTY: ["OTHER"],
 };
-/** หน่วยของ "สูงสุด" (ไม่มีในรายการ = หัวข้อนั้นไม่มีจำนวนสูงสุด) */
+/** หน่วยของ "สูงสุด" (ไม่มีในรายการ = หัวข้อนั้นไม่มีจำนวนสูงสุด) · รอบ (ต่อครั้ง / ต่อปี / ตลอดสัญญา) เลือกแยก (ตกลง 8 พ.ย. 2026) */
 export const COVERAGE_COUNT_UNIT: Record<string, string> = {
-  ROOM_PER_DAY: "วัน", HOSPITAL_CASH_PER_DAY: "วัน", OPD_PER_VISIT: "ครั้ง/ปี", CI_EARLY: "ครั้ง", CRITICAL_ILLNESS: "ครั้ง", DISABILITY_INCOME: "งวด",
+  ROOM_PER_DAY: "วัน", HOSPITAL_CASH_PER_DAY: "วัน", OPD_PER_VISIT: "ครั้ง", CI_EARLY: "ครั้ง", CRITICAL_ILLNESS: "ครั้ง", DISABILITY_INCOME: "งวด",
+  OTHER: "ครั้ง",
 };
+/** รอบของจำนวนสูงสุด / ความรับผิดส่วนแรก (insurance_coverages.count_period) */
+export const COVERAGE_PERIOD: [string, string][] = [["PER_EVENT", "ต่อครั้ง"], ["PER_YEAR", "ต่อปี"], ["PER_TERM", "ตลอดสัญญา"]];
+const COVERAGE_PERIOD_LABEL: Record<string, string> = Object.fromEntries(COVERAGE_PERIOD);
+/** หัวข้อที่มีรอบได้: มีจำนวนสูงสุด + ความรับผิดส่วนแรก (รอบอย่างเดียว) */
+export const coverageHasPeriod = (type: string) => !!COVERAGE_COUNT_UNIT[type] || type === "DEDUCTIBLE";
+/** ชื่อความคุ้มครองที่แสดง: "อื่น ๆ" ที่ตั้งชื่อไว้ = ชื่อนั้น */
+export const covName = (type: string, label?: string | null) => (type === "OTHER" && label?.trim() ? label.trim() : COVERAGE_LABEL[type]?.[0] ?? type);
 /** หัวข้อที่รวมยอดข้ามกรมธรรม์ไม่ได้ (แสดงทีละรายการ) */
 export const COVERAGE_NOSUM = ["DEDUCTIBLE", "COPAY", "WAIVER"];
 /** แถวเสียชีวิตที่ใช้ทุนประกันแทนเมื่อยังไม่ได้กรอก (ไม่คัดลอกยอด · ตกลง 6 พ.ย. 2026) */
@@ -588,10 +596,11 @@ export function covAmount(type: string, amount: number | string | null | undefin
   if (type === "COPAY") return `${Number(amount ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
   return money(amount, currency, digits);
 }
-/** ข้อความเล็กใต้วงเงิน: สูงสุด N วัน · ณ วันที่ */
-export function covExtra(c: { coverage_type: string; max_count?: number | null; as_of_date?: string | null }): string {
-  return [c.max_count ? `สูงสุด ${c.max_count} ${COVERAGE_COUNT_UNIT[c.coverage_type] ?? "ครั้ง"}` : "", c.as_of_date ? `ณ ${thDate(c.as_of_date)}` : ""]
-    .filter(Boolean).join(" · ");
+/** ข้อความเล็กใต้วงเงิน: "สูงสุด 365 วัน ต่อปี" · รอบอย่างเดียว = "ต่อปี" (ความรับผิดส่วนแรก) · ไม่มี = "" */
+export function covExtra(c: { coverage_type: string; max_count?: number | null; count_period?: string | null }): string {
+  const period = c.count_period ? COVERAGE_PERIOD_LABEL[c.count_period] ?? "" : "";
+  if (!c.max_count) return period;
+  return [`สูงสุด ${c.max_count} ${COVERAGE_COUNT_UNIT[c.coverage_type] ?? "ครั้ง"}`, period].filter(Boolean).join(" ");
 }
 /** ความคุ้มครองที่วงเงินเป็น "ต่อปี" → หักยอดเคลมในปีนั้นเพื่อดูวงเงินคงเหลือ */
 export const COVERAGE_ANNUAL = ["IPD_ANNUAL", "OPD_ANNUAL"];

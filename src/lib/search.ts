@@ -83,9 +83,9 @@ function sources(q: string, full: boolean): Source[] {
     { q: (sb, like, n) => sb.from("liabilities").select("id,name,lender,notes").is("deleted_at", null)
         .or(ors(like, full ? ["name", "lender", "notes"] : ["name", "lender"])).limit(n),
       hit: (l) => ({ group: "หนี้สิน", label: l.name, sub: l.lender ?? undefined, href: `/liabilities/${l.id}` }) },
-    { q: (sb, like, n) => sb.from("insurance_policies").select("id,insurer,policy_no,notes").is("deleted_at", null)
-        .or(ors(like, full ? ["insurer", "policy_no", "notes"] : ["insurer", "policy_no"])).limit(n),
-      hit: (p) => ({ group: "ประกัน", label: p.insurer, sub: p.policy_no ?? undefined, href: `/insurance/${p.id}` }) },
+    { q: (sb, like, n) => sb.from("insurance_policies").select("id,insurer,policy_no,plan_name,notes").is("deleted_at", null)
+        .or(ors(like, full ? ["insurer", "policy_no", "plan_name", "notes"] : ["insurer", "policy_no", "plan_name"])).limit(n),
+      hit: (p) => ({ group: "ประกัน", label: p.insurer, sub: [p.policy_no, p.plan_name].filter(Boolean).join(" · ") || undefined, href: `/insurance/${p.id}` }) },
     { q: (sb, like, n) => sb.from("persons").select("id,name,nickname,full_name_th,full_name_en,phone,email,occupation,workplace,job_title,notes").is("deleted_at", null)
         .or(ors(like, full ? ["name", "nickname", "full_name_th", "full_name_en", "phone", "email", "occupation", "workplace", "job_title", "notes"] : ["name", "nickname"])).limit(n),
       hit: (p) => ({ group: "สมาชิก", label: p.name, sub: full ? snip(q, p.full_name_th, p.full_name_en, p.nickname, p.occupation, p.workplace, p.job_title, p.notes) : undefined,
@@ -145,8 +145,9 @@ function sources(q: string, full: boolean): Source[] {
       } },
     { q: (sb, like, n) => sb.from("insurance_beneficiaries").select("policy_id,beneficiary_name,insurance_policies(insurer)").is("deleted_at", null).ilike("beneficiary_name", like).limit(n),
       hit: (b) => ({ group: "ประกัน", label: assetOf(b.insurance_policies)?.insurer ?? "กรมธรรม์", sub: `ผู้รับประโยชน์ ${b.beneficiary_name}`, href: `/insurance/${b.policy_id}` }) },
-    { q: (sb, like, n) => sb.from("insurance_coverages").select("policy_id,notes,insurance_policies(insurer)").is("deleted_at", null).ilike("notes", like).limit(n),
-      hit: (c) => ({ group: "ประกัน", label: assetOf(c.insurance_policies)?.insurer ?? "กรมธรรม์", sub: snip(q, c.notes), href: `/insurance/${c.policy_id}` }) },
+    { q: (sb, like, n) => sb.from("insurance_coverages").select("policy_id,label,notes,insurance_policies(insurer)").is("deleted_at", null)
+        .or(ors(like, ["label", "notes"])).limit(n),
+      hit: (c) => ({ group: "ประกัน", label: assetOf(c.insurance_policies)?.insurer ?? "กรมธรรม์", sub: snip(q, c.label, c.notes), href: `/insurance/${c.policy_id}` }) },
     { q: (sb, like, n) => sb.from("insurance_claims").select("policy_id,notes,insurance_policies(insurer)").is("deleted_at", null).ilike("notes", like).limit(n),
       hit: (c) => ({ group: "ประกัน", label: assetOf(c.insurance_policies)?.insurer ?? "กรมธรรม์", sub: snip(q, c.notes), href: `/insurance/${c.policy_id}` }) },
     { q: (sb, like, n) => sb.from("health_checkups").select("person_id,checkup_date,hospital,package_name,notes,persons(name)").is("deleted_at", null)

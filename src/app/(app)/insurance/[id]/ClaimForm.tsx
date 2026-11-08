@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useActionSlot } from "@/components/ActionBar";
 import { addClaim, type ActionState } from "../actions";
-import { CLAIM_STATUS, COVERAGE_LABEL } from "@/lib/format";
+import { CLAIM_STATUS, COVERAGE_LABEL, covName } from "@/lib/format";
 import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
@@ -11,7 +11,7 @@ const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 te
 /** บันทึกเคลม · เล่มที่มีสัญญาเพิ่มเติม (parts) = เลือกส่วนของเล่ม · เลือกความคุ้มครองแล้วส่วนเปลี่ยนตามให้ (ตกลง 7 พ.ย. 2026) */
 export default function ClaimForm({ policyId, currency, today, coverages = [], parts }: {
   policyId: string; currency: string; today: string; parts?: { id: string; label: string }[];
-  coverages?: { id: string; coverage_type: string; limit_amount: number; policy_id?: string; part?: string }[];
+  coverages?: { id: string; coverage_type: string; limit_amount: number; policy_id?: string; part?: string; label?: string | null }[];
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(addClaim, {});
@@ -44,7 +44,7 @@ export default function ClaimForm({ policyId, currency, today, coverages = [], p
           <label className="text-sm">เคลมจากความคุ้มครอง
             <select name="coverage_id" value={cov} onChange={(e) => setCov(e.target.value)} className={input}>
               <option value="">— ไม่ระบุ —</option>
-              {covList.map((c) => <option key={c.id} value={c.id}>{COVERAGE_LABEL[c.coverage_type]?.join(" ") ?? c.coverage_type}</option>)}
+              {covList.map((c) => <option key={c.id} value={c.id}>{c.coverage_type === "OTHER" ? covName(c.coverage_type, c.label) : COVERAGE_LABEL[c.coverage_type]?.join(" ").trim() ?? c.coverage_type}</option>)}
             </select>
           </label>
         )}
