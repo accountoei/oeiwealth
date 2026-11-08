@@ -35,13 +35,18 @@ export type FlowRow = {
   split?: Record<string, ReactNode>;
   /** มูลค่าเวนคืนตามสัญญา ณ สิ้นปีกรมธรรม์ที่ตรงกับวันของแถว (ตกลง 8 พ.ย. 2026) */
   cv?: ReactNode;
+  /** ยอดที่แสดงแทน money(amount) เช่น กดเพื่อแก้งวด (แถวที่รวมเบี้ยกับผลประโยชน์ = กดยอด ไม่ใช่กดแถว) */
+  amt?: ReactNode;
+  /** ผลประโยชน์ที่ครบวันเดียวกับงวดเบี้ย = แถวเดียวกัน (ตกลง 8 พ.ย. 2026): ยอดในช่องรับผลประโยชน์ + ป้ายสถานะที่ 2 */
+  also?: { amount: ReactNode; statusText?: string; statusCls?: string; progress?: string | null };
 };
 
 /**
  * ตารางเบี้ยและผลประโยชน์ของกรมธรรม์ (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย)
  *   ตัวกรอง ทั้งหมด / เบี้ย / ผลประโยชน์ · สุทธิสะสมแสดงเฉพาะ "ทั้งหมด" · เปิดหน้าแล้วตาราง (เลื่อนในกล่อง) ไปงวดแรกที่ค้าง
  *   คอลัมน์แรก = ปีที่ (ปีกรมธรรม์ที่ครบรอบแล้ว · วันเริ่มสัญญา = 0) แทนป้ายเบี้ย / ผลประโยชน์ / เวนคืน · ข้อความของแถวอยู่ในช่องหมายเหตุท้ายตาราง (ตกลง 8 พ.ย. 2026)
- *   ตามด้วย อายุ (ผู้เอาประกัน · มีวันเกิดเท่านั้น) · งวดที่ · วันที่ครบกำหนด · แถวย่อย: ป้ายคร่อม 3 ช่องแรก ข้อความใช้ช่องว่างตั้งแต่สุทธิสะสมถึงหมายเหตุ
+ *   ตามด้วย อายุ (ผู้เอาประกัน · มีวันเกิดเท่านั้น) · งวดที่ · วันที่ครบกำหนด · แถวย่อย: ป้ายคร่อม 3 ช่องแรก ข้อความใช้ช่องว่างตั้งแต่สุทธิสะสมถึงท้ายตาราง
+ *   เบี้ยกับผลประโยชน์ที่ครบวันเดียวกัน = แถวเดียว (ป้ายสถานะ 2 อัน · ตกลง 8 พ.ย. 2026)
  */
 export default function FlowTable({ rows, showNet, currency, parts, showCv, startDate, birthDate }: {
   rows: FlowRow[]; showNet: boolean; currency: string; parts?: FlowPart[];
@@ -50,27 +55,30 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
   /** คอลัมน์มูลค่าเวนคืน (ตามสัญญา + ยอดที่ลงจริงเป็นแถวย่อย · แทนแท็บมูลค่าเวนคืน · ตกลง 8 พ.ย. 2026) */ showCv?: boolean;
 }) {
   const nPrem = rows.filter((r) => r.kind === "PREMIUM").length;
-  const nBen = rows.filter((r) => r.kind === "BENEFIT").length;
+  const isBen = (r: FlowRow) => r.kind === "BENEFIT" || !!r.also;
+  const nBen = rows.filter(isBen).length;
   const hasCv = (r: FlowRow) => r.cv != null || (r.cash ?? []).some((c) => c.kind === "CV");
   const nCv = showCv ? rows.filter(hasCv).length : 0;
   const [f, setF] = useState<"all" | "PREMIUM" | "BENEFIT" | "CV">("all");
-  const shown = f === "all" ? rows : f === "CV" ? rows.filter(hasCv) : rows.filter((r) => r.kind === f);
+  const shown = f === "all" ? rows : f === "CV" ? rows.filter(hasCv) : f === "BENEFIT" ? rows.filter(isBen) : rows.filter((r) => r.kind === f);
   const net = showNet && f === "all";
   // แถวย่อย: กรองมูลค่าเวนคืน = เฉพาะยอดที่ลงแล้ว · กรองเบี้ย / ผลประโยชน์ = ไม่แสดงยอดมูลค่าเวนคืน
   const subsOf = (r: FlowRow) => (r.cash ?? []).filter((c) => f === "all" || (f === "CV") === (c.kind === "CV"));
-  const nParts = parts?.length ?? 0;
   const showAge = !!birthDate;
   const lead = showAge ? 3 : 2;
-  const cols = (net ? 9 : 8) + (showAge ? 1 : 0) + nParts + (showCv ? 1 : 0);
-  // กว้างขั้นต่ำ (px ตาม colgroup + หมายเหตุ 3rem): เล่ม 2 ส่วน + มูลค่าเวนคืน = 64rem พอดี iPad แนวนอน
-  const minW = (showAge ? 36 : 0) + 48 + 44 + 104 + (parts ? 88 * (nParts + 1) : 96) + 96 + (net ? 104 : 0) + (showCv ? 96 : 0) + 96 + 88 + 48;
+  // ความกว้างคอลัมน์ (px · ตกลง 8 พ.ย. 2026): ทุกช่องกว้างคงที่ = กว้างขั้นต่ำ · จอกว้างกว่านี้ ส่วนที่เหลือแบ่งให้ทุกช่องตามสัดส่วน
+  //   (เดิมช่องหมายเหตุรับไปทั้งหมด ด้านขวาเลยโล่ง) · ปุ่มของแถวอยู่ในช่องหมายเหตุ (ชิดขวา) · ช่องสุดท้ายแคบ = เครื่องหมาย › ของแถวที่กดแก้ได้
+  //   เล่ม 2 ส่วน + อายุ + สุทธิสะสม + มูลค่าเวนคืน รวม 1,024 px พอดี iPad แนวนอน
+  const widths = [44, ...(showAge ? [36] : []), 44, 96, ...(parts ? [...parts.map(() => 84), 84] : [92]), 92, ...(net ? [100] : []), ...(showCv ? [92] : []), 120, 132, 16];
+  const cols = widths.length;
+  const minW = widths.reduce((a, b) => a + b, 0);
   // ช่องสถานะ: มีคอลัมน์มูลค่าเวนคืน = ชิดซ้ายขึ้น (ตารางแคบลง)
   const sPad = showCv ? "pl-2" : "pl-4";
   // คอลัมน์เบี้ย: ปกติ = "จ่ายเบี้ย" ช่องเดียว · เล่มที่มีสัญญาเพิ่มเติม = ทีละส่วน + "รวมจ่าย"
   const premCells = (r: FlowRow) => parts
     ? <>{parts.map((p) => <td key={p.key} className="py-2 text-right tabular-nums">{r.kind === "PREMIUM" ? r.split?.[p.key] ?? "" : ""}</td>)}
         <td className="py-2 text-right font-medium tabular-nums">{r.kind === "PREMIUM" ? money(r.amount) : ""}</td></>
-    : <td className="py-2 text-right tabular-nums">{r.kind === "PREMIUM" ? money(r.amount) : ""}</td>;
+    : <td className="py-2 text-right tabular-nums">{r.kind === "PREMIUM" ? r.amt ?? money(r.amount) : ""}</td>;
   const blankPrem = parts ? <>{parts.map((p) => <td key={p.key} />)}<td /></> : <td />;
   const subPrem = (c: FlowSub) => {
     const v = c.kind === "PAY" ? money(c.amount) : "";
@@ -105,8 +113,12 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
     <td className="py-2 tabular-nums">{r.no ?? ""}</td>
   </>;
   const beTag = (text: string, cls: string) => <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs text-white ${cls}`}>{text}</span>;
-  const noteCell = (main: ReactNode, sub?: string | null) => (
-    <td className="py-2 pl-2">{main}{sub && <div className={`text-xs ${main ? "text-slate-400" : "text-slate-500"}`}>{sub}</div>}</td>
+  const stTag = (text: string, cls?: string) => <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${cls ?? ""}`}>{text}</span>;
+  // ข้อความในช่องหมายเหตุ + ปุ่มของแถว (ชิดขวา · ข้อความยาว = ปุ่มลงบรรทัดถัดไป · ปุ่มไม่ล้นจนตารางเลื่อนข้าง)
+  const withActs = (body: ReactNode, acts?: ReactNode) => acts
+    ? <div className="flex flex-wrap items-start gap-x-2 gap-y-1"><div>{body}</div><div className="ml-auto flex flex-col items-end gap-1">{acts}</div></div> : body;
+  const noteCell = (main: ReactNode, sub?: string | null, acts?: ReactNode) => (
+    <td className="py-2 pl-2">{withActs(<>{main}{sub && <div className={`text-xs ${main ? "text-slate-400" : "text-slate-500"}`}>{sub}</div>}</>, acts)}</td>
   );
   const cvCell = (r: FlowRow) => showCv && <td className="py-2 text-right tabular-nums">{r.cv}</td>;
   const netCell = (r: FlowRow) => (
@@ -125,19 +137,13 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
         </div>
       )}
       <div ref={box} className="max-h-[40rem] overflow-auto">
-        {/* ช่องหมายเหตุรับพื้นที่ที่เหลือ (ขึ้นบรรทัดใหม่ได้) · ช่องอื่นกว้างคงที่ ให้เล่ม 2 ส่วน + มูลค่าเวนคืนพอดี iPad แนวนอน (64rem) */}
         <table style={{ minWidth: `${minW / 16}rem` }} className="w-full table-fixed text-sm [&_.text-right]:whitespace-nowrap [&_.text-right]:pl-2">
-          <colgroup>
-            <col className="w-12" />{showAge && <col className="w-9" />}<col className="w-11" /><col className="w-26" />
-            {parts ? <>{parts.map((p) => <col key={p.key} className="w-22" />)}<col className="w-22" /></> : <col className="w-24" />}
-            <col className="w-24" />{net && <col className="w-26" />}{showCv && <col className="w-24" />}
-            <col className="w-24" /><col /><col className="w-22" />
-          </colgroup>
+          <colgroup>{widths.map((w, i) => <col key={i} style={{ width: `${w / 16}rem` }} />)}</colgroup>
           <thead className="sticky top-0 z-10 bg-white text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100">
               <th className="whitespace-nowrap py-1.5 pl-1">ปีที่ <InfoTip label="คำอธิบาย">ปีที่ = ปีกรมธรรม์ที่ครบรอบแล้ว (วันเริ่มสัญญา = ปีที่ 0 จ่ายเบี้ยงวดที่ 1 · ครบรอบปีที่ N = สิ้นปีกรมธรรม์ที่ N ตามตารางในเล่ม และจ่ายเบี้ยงวดที่ N + 1) ·
         {showAge && " อายุ = อายุเต็มปีของผู้เอาประกัน ณ วันที่ของแถว (ตามวันเกิดในหน้า Family · ในเล่มอาจนับต่างไป 1 ปี) ·"} งวดที่ = งวดเบี้ยของสัญญาหลัก ·
-        แถวสีเทาอ่อน = เบี้ยที่จ่ายจริง · แถวสีเขียว = เงินที่รับจริง{net && " · สุทธิสะสมตัวจาง = คาดการณ์ตามตาราง (งวดที่ยังไม่ถึง)"}
+        เบี้ยกับผลประโยชน์ที่ครบวันเดียวกัน = แถวเดียว (กดยอดเพื่อแก้งวดนั้น) · แถวสีเทาอ่อน = เบี้ยที่จ่ายจริง · แถวสีเขียว = เงินที่รับจริง{net && " · สุทธิสะสมตัวจาง = คาดการณ์ตามตาราง (งวดที่ยังไม่ถึง)"}
         {showCv && " · เวนคืนคุ้มทุน = ปีแรกที่มูลค่าเวนคืนตามสัญญา ≥ เบี้ยสุทธิที่จ่ายไปก่อนวันนั้น (ไม่นับเบี้ยงวดที่ครบวันเดียวกัน เพราะถ้าเวนคืนก็ไม่ต้องจ่ายงวดนั้น) · คุ้มทุน = ผลประโยชน์ที่รับรวม ≥ เบี้ยรวม โดยไม่เวนคืน"}
         {showCv && " · มูลค่าเวนคืน = ตามสัญญา ณ สิ้นปีกรมธรรม์: ตัวจาง = ยังไม่ถึง · ขีดเส้นใต้ = ถึงแล้วยังไม่ได้ลง (กดเพื่อลงยอดของปีนั้น) · สีฟ้า = ลงแล้ว (กดเพื่อแก้ยอด เช่น รวมเงินปันผลตามหนังสือแจ้ง) · ยอดที่ลงไม่ตรงกับตาราง = แถวย่อยสีฟ้า (กดแถวเพื่อแก้ / ลบ)"} ·
         แก้ / ลบการจ่ายที่แถวนั้น (ลบแล้วงวดกลับเป็น &ldquo;รอ&rdquo;) · ยกเลิกการรับได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน</InfoTip></th>
@@ -148,7 +154,7 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
               <th className="text-right">รับผลประโยชน์</th>
               {net && <th className="text-right" title="ผลประโยชน์ − เบี้ย นับรวมตั้งแต่งวดแรกถึงแถวนั้น · ตัวจาง = คาดการณ์ตามตาราง">สุทธิสะสม</th>}
               {showCv && <th className="text-right" title="ตามสัญญา ณ สิ้นปีกรมธรรม์ · ตัวจาง = ยังไม่ถึง · ขีดเส้นใต้ = ถึงแล้วยังไม่ได้ลง · สีฟ้า = ลงแล้ว · แถวย่อยสีฟ้า = ยอดที่ลงไม่ตรงกับตาราง">มูลค่าเวนคืน</th>}
-              <th className={sPad}>สถานะ</th><th className="pl-2">หมายเหตุ</th><th></th>
+              <th className={sPad}>สถานะ</th><th className="pl-2">หมายเหตุ</th><th />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -162,8 +168,7 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
                 {net && netCell(r)}
                 {cvCell(r)}
                 <td className={`py-2 ${sPad}`}>{r.breakEven && beTag("คุ้มทุน", "bg-emerald-600")}</td>
-                {noteCell(r.lump.text, r.lump.detail)}
-                <td className="py-2 pl-2 text-right">{r.actions}</td>
+                {noteCell(r.lump.text, r.lump.detail, r.actions)}<td />
               </tr>
             ) : (
               <Fragment key={r.key}>
@@ -171,20 +176,21 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
                   {leadCells(r)}
                   <td className="whitespace-nowrap py-2">{thDate(r.date)}</td>
                   {premCells(r)}
-                  <td className="py-2 text-right tabular-nums">{r.kind === "BENEFIT" ? money(r.amount) : ""}</td>
+                  <td className="py-2 text-right tabular-nums">{r.kind === "BENEFIT" ? r.amt ?? money(r.amount) : r.also?.amount ?? ""}</td>
                   {net && netCell(r)}
                   {cvCell(r)}
+                  {/* ป้ายคุ้มทุนอยู่ข้างสถานะ (ไม่มีคำว่าคาดการณ์ · สุทธิสะสมตัวจาง + กล่องจุดคุ้มทุนบอกแล้ว · ตกลง 8 พ.ย. 2026) */}
                   <td className={`py-2 ${sPad}`}>
                     <div className="flex flex-wrap gap-1">
-                      {r.statusText && <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${r.statusCls ?? ""}`}>{r.statusText}</span>}
+                      {r.statusText && stTag(r.statusText, r.statusCls)}
+                      {r.also?.statusText && r.also.statusText !== r.statusText && stTag(r.also.statusText, r.also.statusCls)}
                       {r.breakEvenCv && beTag("เวนคืนคุ้มทุน", "bg-sky-600")}
                       {r.breakEven && beTag("คุ้มทุน", "bg-emerald-600")}
-                      {((r.breakEven && r.projected) || r.breakEvenCv?.projected) && <span className="text-[11px] text-slate-500">คาดการณ์</span>}
                     </div>
                     {r.progress && <div className="text-xs text-slate-500">{r.progress}</div>}
+                    {r.also?.progress && <div className="text-xs text-slate-500">{r.also.progress}</div>}
                   </td>
-                  {noteCell(r.label, r.notes)}
-                  <td className="py-2 pl-2 text-right">{r.actions}</td>
+                  {noteCell(r.label, r.notes, r.actions)}<td />
                 </tr>
                 {subsOf(r).map((c) => (
                   <tr key={c.key} className={`align-top text-xs ${c.kind === "RECV" ? "bg-emerald-50/40" : c.kind === "CV" ? "bg-sky-50/50" : "bg-slate-50/70"}`}>
@@ -192,11 +198,10 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv, star
                     <td className="whitespace-nowrap py-1.5 text-sm text-slate-700">{thDate(c.date)}</td>
                     {c.kind === "CV" ? blankPrem : subPrem(c)}
                     <td className="py-1.5 text-right text-sm tabular-nums text-emerald-700">{c.kind === "RECV" ? money(c.amount) : ""}</td>
-                    {/* ข้อความแถวย่อย (จ่ายจาก… / รับเข้า…) ใช้ช่องว่างตั้งแต่สุทธิสะสมถึงหมายเหตุ · มูลค่าเวนคืนที่ลง = ยอดอยู่ในคอลัมน์ของมัน */}
+                    {/* ข้อความแถวย่อย (จ่ายจาก… / รับเข้า…) ใช้ช่องว่างตั้งแต่สุทธิสะสมถึงท้ายตาราง (ปุ่มชิดขวา) · มูลค่าเวนคืนที่ลง = ยอดอยู่ในคอลัมน์ของมัน */}
                     {c.kind === "CV" && <>{net && <td />}<td className="py-1.5 text-right text-sm tabular-nums text-sky-800">{money(c.amount)}</td></>}
                     <td colSpan={2 + (c.kind === "CV" ? 0 : (net ? 1 : 0) + (showCv ? 1 : 0))} className="py-1.5 pl-2 text-slate-600">
-                      {c.text}{c.detail && <div className="text-slate-400">{c.detail}</div>}</td>
-                    <td className="py-1.5 pl-2 text-right">{c.actions}</td>
+                      {withActs(<>{c.text}{c.detail && <div className="text-slate-400">{c.detail}</div>}</>, c.actions)}</td><td />
                   </tr>
                 ))}
               </Fragment>
