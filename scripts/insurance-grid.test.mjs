@@ -1,7 +1,7 @@
 // node scripts/insurance-grid.test.mjs — ทดสอบตารางเบี้ย / ผลประโยชน์ที่แก้ทีละช่อง (src/lib/insurance-grid.ts · ตัวเลขสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { addMonthsIso, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, sortGrid } from "../src/lib/insurance-grid.ts";
+import { addMonthsIso, cvAutoDate, cvGridToLines, cvNextRow, cvSetYear, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, sortCvGrid, sortGrid } from "../src/lib/insurance-grid.ts";
 import {
   addableCovTypes, addablePresets, blankCovRow, blankKey, blankRider, covPayload, covRemoved, partText, patchCovRow, periodAllowed, presetCovRow, riderPayload,
   rowsFromExisting, sortCovRows, visibleCovTypes,
@@ -238,6 +238,34 @@ assert.deepEqual(gridToLines([R("p", "2026-09-01", "100", { locked: "จ่า�
   assert.deepEqual(covPayload([{ ...ded, period: "PER_EVENT" }], (t) => t).errors, [`${L[1]}: ใส่วงเงิน หรือกดลบแถวนี้`]);
   // แก้ชื่อเป็นอย่างอื่น = นับว่ากรอกแล้ว
   assert.equal(covPayload([{ ...ded, label: "ค่าขนย้าย" }], (t) => t).errors.length, 1);
+}
+
+// ตารางมูลค่าเวนคืนแบบแก้ทีละช่อง (8 พ.ย. 2026)
+{
+  const S = "2017-07-20";
+  assert.equal(cvAutoDate(S, 1), "2018-07-20");
+  assert.equal(cvAutoDate(S, 9), "2026-07-20");
+  assert.equal(cvAutoDate(null, 3), null);
+  assert.equal(cvAutoDate(S, 0), null);
+  const C = (key, year, date, value) => ({ key, year, date, value });
+  // วันครบรอบไม่ส่ง · วันที่ใส่เอง (หนังสือแจ้ง) ส่ง · แถวว่างข้าม · เรียงตามปี
+  const r = cvGridToLines([C("a", "2", "2019-07-20", "1,100"), C("b", "1", "2018-07-20", "400.004"), C("c", "", "", ""), C("d", "9", "2026-10-12", "6500")], S);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.lines, [{ policy_year: 1, value: 400 }, { policy_year: 2, value: 1100 }, { policy_year: 9, value: 6500, value_date: "2026-10-12" }]);
+  // ปีซ้ำ / ปีผิด / มูลค่าติดลบ / ไม่มีวันเริ่มสัญญา
+  assert.match(cvGridToLines([C("a", "1", "", "1"), C("b", "1", "", "2")], S).errors[0], /ซ้ำ/);
+  assert.match(cvGridToLines([C("a", "0", "", "1")], S).errors[0], /1–120/);
+  assert.match(cvGridToLines([C("a", "3", "", "-5")], S).errors[0], /ไม่ติดลบ/);
+  assert.match(cvGridToLines([C("a", "3", "", "5")], null).errors[0], /วันที่/);
+  assert.deepEqual(cvGridToLines([C("a", "3", "2020-01-01", "5")], null).lines, [{ policy_year: 3, value: 5, value_date: "2020-01-01" }]);
+  // แก้ปี: วันครบรอบเลื่อนตาม · วันที่ใส่เองคงไว้
+  assert.equal(cvSetYear(C("a", "2", "2019-07-20", "1"), "3", S).date, "2020-07-20");
+  assert.equal(cvSetYear(C("a", "2", "2019-09-30", "1"), "3", S).date, "2019-09-30");
+  // แถวถัดไป
+  assert.deepEqual(cvNextRow(C("a", "4", "2021-07-20", "1"), "n", S), { key: "n", year: "5", date: "2022-07-20", value: "" });
+  assert.equal(cvNextRow(C("a", "4", "2021-09-30", "1"), "n", S).date, "2022-09-30");
+  assert.deepEqual(cvNextRow(undefined, "n", S), { key: "n", year: "1", date: "2018-07-20", value: "" });
+  assert.deepEqual(sortCvGrid([C("a", "3", "", ""), C("b", "", "", ""), C("c", "1", "", "")]).map((x) => x.key), ["c", "a", "b"]);
 }
 
 console.log("insurance-grid: all tests passed");

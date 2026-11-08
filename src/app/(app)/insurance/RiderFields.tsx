@@ -84,7 +84,7 @@ export function AddRiderButton({ mainId, policyNo, currency, className, today }:
       <div>
         <h3 className="font-medium text-slate-900">เพิ่มสัญญาเพิ่มเติม</h3>
         <p className="text-xs text-slate-500">ใช้บริษัท · เลขกรมธรรม์ · ผู้เอาประกัน · ผู้จ่ายเบี้ย · จ่ายเบี้ยจาก · วันเริ่มคุ้มครอง ของสัญญาหลัก
-          · ตั้งงวดเบี้ยของส่วนใหม่ได้ที่แท็บ &ldquo;เบี้ยและผลประโยชน์&rdquo; หลังบันทึก{(policyNo ?? "").trim() && <>{" "}
+          · ตั้งงวดเบี้ยของส่วนใหม่ได้ที่ตารางเบี้ยในหน้ากรมธรรม์หลังบันทึก{(policyNo ?? "").trim() && <>{" "}
           <button type="button" onClick={() => setAll(!all)} className="text-blue-700 hover:underline">{all ? "แสดงเฉพาะที่มี" : "แสดงทุกหัวข้อ"}</button></>}</p>
       </div>
       {!(policyNo ?? "").trim() ? (

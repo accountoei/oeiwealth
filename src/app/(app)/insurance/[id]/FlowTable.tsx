@@ -33,7 +33,7 @@ export type FlowRow = {
 
 /**
  * ตารางเบี้ยและผลประโยชน์ของกรมธรรม์ (ตกลง 4 พ.ย. 2026 · แทนแท็บรับผลประโยชน์ + ชำระเบี้ย)
- *   ตัวกรอง ทั้งหมด / เบี้ย / ผลประโยชน์ · สุทธิสะสมแสดงเฉพาะ "ทั้งหมด" · เปิดแท็บแล้วเลื่อนไปงวดแรกที่ค้าง
+ *   ตัวกรอง ทั้งหมด / เบี้ย / ผลประโยชน์ · สุทธิสะสมแสดงเฉพาะ "ทั้งหมด" · เปิดหน้าแล้วตาราง (เลื่อนในกล่อง) ไปงวดแรกที่ค้าง
  */
 export default function FlowTable({ rows, showNet, currency, parts, showCv }: {
   rows: FlowRow[]; showNet: boolean; currency: string; parts?: FlowPart[];
@@ -65,7 +65,7 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv }: {
     return <>{parts.map((p) => <td key={p.key} className="py-1.5 text-right text-sm tabular-nums text-slate-700">{p.key === col ? v : ""}</td>)}<td /></>;
   };
   const box = useRef<HTMLDivElement>(null);
-  // แท็บซ่อนอยู่ตอนโหลด (ขนาด 0) → รอจนแสดงจริงแล้วค่อยเลื่อนครั้งเดียว
+  // ตารางยังไม่มีขนาดตอนโหลด (ขนาด 0) → รอจนแสดงจริงแล้วค่อยเลื่อนในกล่องครั้งเดียว (ไม่เลื่อนทั้งหน้า)
   useEffect(() => {
     const el = box.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -113,13 +113,13 @@ export default function FlowTable({ rows, showNet, currency, parts, showCv }: {
           <thead className="sticky top-0 z-10 bg-white text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100">
               <th className="py-1.5"> <InfoTip label="คำอธิบาย">แถวสีเทาอ่อน = เบี้ยที่จ่ายจริง · แถวสีเขียว = เงินที่รับจริง{net && " · สุทธิสะสมตัวจาง = คาดการณ์ตามตาราง (งวดที่ยังไม่ถึง)"}
-        {showCv && " · มูลค่าเวนคืน = ตามสัญญา ณ สิ้นปีกรมธรรม์ (ตัวจาง = ยังไม่ถึง · กดตัวเลขเพื่อลงยอดของปีนั้น) · แถวสีฟ้า = ยอดที่ลงจริง (กดแถวเพื่อแก้)"} ·
+        {showCv && " · มูลค่าเวนคืน = ตามสัญญา ณ สิ้นปีกรมธรรม์: ตัวจาง = ยังไม่ถึง · ขีดเส้นใต้ = ถึงแล้วยังไม่ได้ลง (กดเพื่อลงยอดของปีนั้น) · สีฟ้า = ลงแล้ว (กดเพื่อแก้ยอด เช่น รวมเงินปันผลตามหนังสือแจ้ง) · ยอดที่ลงไม่ตรงกับตาราง = แถวย่อยสีฟ้า (กดแถวเพื่อแก้ / ลบ)"} ·
         แก้ / ลบการจ่ายที่แถวนั้น (ลบแล้วงวดกลับเป็น &ldquo;รอ&rdquo;) · ยกเลิกการรับได้จากรายการล่าสุดก่อน · งวดที่ปิดแล้วต้อง Reopen ก่อน</InfoTip></th><th>ครบกำหนด / วันที่</th><th>รายการ</th>
               {parts ? <>{parts.map((p) => <th key={p.key} className="text-right" title={`เบี้ย${p.label}`}>{p.label}</th>)}<th className="text-right" title="เบี้ยรวมทั้งเล่มของงวดนั้น">รวมจ่าย</th></>
                 : <th className="text-right">จ่ายเบี้ย</th>}
               <th className="text-right">รับผลประโยชน์</th>
               {net && <th className="text-right" title="ผลประโยชน์ − เบี้ย นับรวมตั้งแต่งวดแรกถึงแถวนั้น · ตัวจาง = คาดการณ์ตามตาราง">สุทธิสะสม</th>}
-              {showCv && <th className="text-right" title="ตามสัญญา ณ สิ้นปีกรมธรรม์ · ตัวจาง = ยังไม่ถึง · แถวสีฟ้า = ยอดที่ลงจริง">มูลค่าเวนคืน</th>}
+              {showCv && <th className="text-right" title="ตามสัญญา ณ สิ้นปีกรมธรรม์ · ตัวจาง = ยังไม่ถึง · ขีดเส้นใต้ = ถึงแล้วยังไม่ได้ลง · สีฟ้า = ลงแล้ว · แถวย่อยสีฟ้า = ยอดที่ลงไม่ตรงกับตาราง">มูลค่าเวนคืน</th>}
               <th className={sPad}>สถานะ</th><th></th>
             </tr>
           </thead>
