@@ -565,11 +565,12 @@ export const COVERAGE_GROUPS: [string, string[]][] = [
   ["ยกเว้นเบี้ย", ["WAIVER"]],
   ["อื่น ๆ", ["OTHER"]],
 ];
-/** หัวข้อที่ตารางกรอกแสดงตามประเภทกรมธรรม์ (กด "แสดงทุกหัวข้อ" ดูที่เหลือได้) */
+/** หัวข้อที่ตารางกรอกแสดงตามประเภทกรมธรรม์ (กด "แสดงทุกหัวข้อ" ดูที่เหลือได้)
+ *  ปรับ 8 พ.ย. 2026: ชีวิตเพิ่มโรคร้ายแรง (แบบที่จ่ายโรคร้ายแรงล่วงหน้าจากทุน) · อุบัติเหตุไม่มีทุพพลภาพ (เงินก้อน) เพราะซ้ำกับ "สูญเสียอวัยวะ / ทุพพลภาพจากอุบัติเหตุ" */
 export const COVERAGE_FOR_TYPE: Record<string, string[]> = {
-  LIFE: ["LIFE", "DISABILITY", "DISABILITY_INCOME", "WAIVER", "OTHER"],
+  LIFE: ["LIFE", "CI_EARLY", "CRITICAL_ILLNESS", "DISABILITY", "DISABILITY_INCOME", "WAIVER", "OTHER"],
   ANNUITY: ["LIFE", "WAIVER", "OTHER"],
-  ACCIDENT: ["ACCIDENT_DEATH", "ACCIDENT_DISMEMBER", "ACCIDENT_MEDICAL", "DISABILITY", "DISABILITY_INCOME", "HOSPITAL_CASH_PER_DAY", "OTHER"],
+  ACCIDENT: ["ACCIDENT_DEATH", "ACCIDENT_DISMEMBER", "ACCIDENT_MEDICAL", "DISABILITY_INCOME", "HOSPITAL_CASH_PER_DAY", "OTHER"],
   HEALTH: ["IPD_ANNUAL", "IPD_PER_ADMIT", "ROOM_PER_DAY", "OPD_PER_VISIT", "OPD_ANNUAL", "HOSPITAL_CASH_PER_DAY", "DEDUCTIBLE", "COPAY",
     "CI_EARLY", "CRITICAL_ILLNESS", "WAIVER", "OTHER"],
   PROPERTY: ["OTHER"],
