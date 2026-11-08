@@ -161,26 +161,29 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     + savings.reduce((t, r) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
       return t + (c && c.currency === "THB" ? Number(c.current_value ?? 0) : 0); }, 0);
   const backPct = premPaid > 0 ? (backGot / premPaid) * 100 : null;
-  // กล่องสัดส่วน (ตกลง 8 พ.ย. 2026 · แบบแรก) · THB เหมือนกล่องสรุปด้านบน
-  //   ซ้าย = เบี้ยต่อปีตามบริษัทประกัน (ตามตัวกรองคน + บริษัท) · ขวา = ตามสมาชิกครอบครัว (ทั้งครอบครัวแบบหน้า Alternative · ตามตัวกรองบริษัท)
+  // กล่องสัดส่วน (ตกลง 8 พ.ย. 2026) · THB เหมือนกล่องสรุปด้านบน · ไม่ใช้เบี้ย (เบี้ยเปลี่ยนทุกปีตามกรมธรรม์ · เจ้าของ 8 พ.ย. 2026)
+  //   ซ้าย = มูลค่าเวนคืนตามบริษัทประกัน (ตามตัวกรองคน × สัดส่วนเจ้าของ + บริษัท → รวมเท่ากล่อง "มูลค่าเวนคืน" ด้านบน)
+  //   ขวา = ตามสมาชิกครอบครัว: ทุนประกันชีวิต · มูลค่าเวนคืน (ทั้งครอบครัวแบบหน้า Alternative · ตามตัวกรองบริษัท)
   const isThb = (c: string | null) => (c ?? "THB") === "THB";
   const isLife = (t: string) => t === "LIFE" || t === "ANNUITY";
-  const byInsurer = new Map<string, { name: string; value: number; pols: typeof act }>();
-  act.forEach((r) => {
-    if (!isThb(r.premium_currency) || !(Number(r.premium ?? 0) > 0)) return;
-    const k = String(r.insurer ?? "").trim().toLowerCase();
-    const x = byInsurer.get(k) ?? { name: String(r.insurer ?? "").trim() || "-", value: 0, pols: [] };
-    x.value += Number(r.premium); x.pols.push(r); byInsurer.set(k, x);
+  const polsOfCv = new Map<string, typeof pol>();
+  pol.forEach((r) => { if (r.cash_value_asset_id) polsOfCv.set(r.cash_value_asset_id, [...(polsOfCv.get(r.cash_value_asset_id) ?? []), r]); });
+  const cvShown = (cvs ?? []).filter((a) => pv.showAsset(a.id) && (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0);
+  const byInsurer = new Map<string, { name: string; value: number; pols: typeof pol }>();
+  cvShown.filter((a) => a.currency === "THB").forEach((a) => {
+    const ps = polsOfCv.get(a.id) ?? [];
+    const name = String(ps[0]?.insurer ?? "").trim();
+    const k = name.toLowerCase();
+    const x = byInsurer.get(k) ?? { name: name || "ไม่ระบุบริษัท", value: 0, pols: [] };
+    x.value += Number(a.current_value) * pv.assetShare(a.id); x.pols.push(...ps); byInsurer.set(k, x);
   });
-  const insurerRows: ShareRow[] = [...byInsurer.entries()].sort((a, b) => b[1].value - a[1].value)
-    .map(([k, x], i) => ({ key: k || "-", name: x.name, value: x.value, color: SHARE_COLORS[i % SHARE_COLORS.length], sub: `(${bookletCount(x.pols)} ฉบับ)` }));
+  const insurerRows: ShareRow[] = [...byInsurer.entries()].filter(([, x]) => x.value > 0).sort((a, b) => b[1].value - a[1].value)
+    .map(([k, x], i) => ({ key: k || "-", name: x.name, value: x.value, color: SHARE_COLORS[i % SHARE_COLORS.length], sub: x.pols.length ? `(${bookletCount(x.pols)} ฉบับ)` : undefined }));
   const famAct = pol.filter((r) => r.status === "ACTIVE");
-  const mem = new Map<string, { premium: number; life: number; cv: number }>();
-  const memOf = (k: string) => { const x = mem.get(k) ?? { premium: 0, life: 0, cv: 0 }; mem.set(k, x); return x; };
+  const mem = new Map<string, { life: number; cv: number }>();
+  const memOf = (k: string) => { const x = mem.get(k) ?? { life: 0, cv: 0 }; mem.set(k, x); return x; };
   famAct.forEach((r) => {
-    const k = (r.person_id as string | null) ?? "";            // ไม่มีผู้เอาประกัน = ประกันทรัพย์สิน
-    if (isThb(r.premium_currency)) memOf(k).premium += Number(r.premium ?? 0);
-    if (isLife(r.insurance_type) && isThb(r.insured_amount_currency)) memOf(k).life += Number(r.insured_amount ?? 0);
+    if (r.person_id && isLife(r.insurance_type) && isThb(r.insured_amount_currency)) memOf(r.person_id).life += Number(r.insured_amount ?? 0);
   });
   type Own = { person_id: string; ownership_percent: number; start_date: string; end_date: string | null; deleted_at: string | null };
   (cvs ?? []).filter((a) => a.currency === "THB" && (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0).forEach((a) => {
@@ -188,13 +191,16 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     if (!os.length) { memOf("?").cv += Number(a.current_value); return; }
     os.forEach((o) => { memOf(o.person_id).cv += (Number(a.current_value) * Number(o.ownership_percent)) / 100; });
   });
-  const memberRows: MemberShareRow[] = [...mem.entries()].filter(([, x]) => x.premium > 0 || x.life > 0 || x.cv > 0)
-    .sort((a, b) => b[1].premium - a[1].premium || b[1].life - a[1].life || b[1].cv - a[1].cv)
-    .map(([k, x], i) => ({ key: k || "-", ...x, color: SHARE_COLORS[i % SHARE_COLORS.length], current: !!pv.personId && k === pv.personId,
-      name: k === "" ? "ประกันทรัพย์สิน" : k === "?" ? "ยังไม่ระบุเจ้าของ" : pname.get(k) ?? "สมาชิก" }));
+  const memberRows: MemberShareRow[] = [...mem.entries()].filter(([, x]) => x.life > 0 || x.cv > 0)
+    .sort((a, b) => b[1].life - a[1].life || b[1].cv - a[1].cv)
+    .map(([k, x], i) => ({ key: k, ...x, color: SHARE_COLORS[i % SHARE_COLORS.length], current: !!pv.personId && k === pv.personId,
+      name: k === "?" ? "ยังไม่ระบุเจ้าของ" : pname.get(k) ?? "สมาชิก" }));
   const fxNote = (n: number) => (n > 0 ? <p className="mt-2 text-xs text-slate-500">ไม่รวมกรมธรรม์สกุลเงินอื่น {n} ฉบับ</p> : null);
-  const fxAct = act.filter((r) => !isThb(r.premium_currency)).length;
-  const fxFam = famAct.filter((r) => !isThb(r.premium_currency) || (isLife(r.insurance_type) && !isThb(r.insured_amount_currency))).length;
+  //   กรมธรรม์สกุลเงินอื่นที่ไม่ได้นับ (มูลค่าเวนคืน / ทุนประกันไม่ใช่บาท) → บรรทัดเล็กใต้กล่อง
+  const fxCvIds = new Set((cvs ?? []).filter((a) => !isThb(a.currency) && Number(a.current_value ?? 0) > 0).map((a) => a.id));
+  const isFxCv = (r: (typeof pol)[number]) => !!r.cash_value_asset_id && fxCvIds.has(r.cash_value_asset_id);
+  const fxCv = bookletCount(pol.filter((r) => isFxCv(r) && pv.showAsset(r.cash_value_asset_id as string)));
+  const fxFam = bookletCount(famAct.filter((r) => isFxCv(r) || (isLife(r.insurance_type) && !isThb(r.insured_amount_currency))));
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
     return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
@@ -352,8 +358,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       </section>
       {(insurerRows.length > 0 || memberRows.length > 0) && (
         <section className="grid gap-4 lg:grid-cols-2">
-          <ShareBox title={<>เบี้ยต่อปีตามบริษัทประกัน{pv.personId ? `ของ ${pv.personName}` : ""}</>} label="บริษัทประกัน" valueLabel="เบี้ยต่อปี (THB)"
-            rows={insurerRows} footer={fxNote(fxAct)} empty="ยังไม่มีเบี้ยของกรมธรรม์ที่มีผล" />
+          <ShareBox title={<>มูลค่าเวนคืนตามบริษัทประกัน{pv.personId ? ` ส่วนของ ${pv.personName}` : ""}</>} label="บริษัทประกัน" valueLabel="มูลค่าเวนคืน (THB)"
+            rows={insurerRows} footer={fxNote(fxCv)} empty="ยังไม่มีมูลค่าเวนคืน" />
           <MemberShareBox rows={memberRows} footer={fxNote(fxFam)} />
         </section>
       )}
