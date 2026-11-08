@@ -5528,13 +5528,74 @@ SELECT t.ok((SELECT received_amount = 0 AND status = 'SUBMITTED' FROM public.ins
 UPDATE public.insurance_claims SET status = 'REJECTED' WHERE id = (SELECT id FROM tbs WHERE k = 'claim');
 SELECT t.fails($$SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 100,
   'bank_asset_id', t.a('KBank ออมทรัพย์')))$$, 'ปฏิเสธ', 'รับเงินเคลม: เคลมที่ถูกปฏิเสธรับเงินไม่ได้');
+
+-- รับไม่ครบ → ยังรอรับ / ได้ไม่เต็ม (ปิดเคลม) · ถูกปฏิเสธ · ได้มากกว่ายอดเคลม → แก้ยอดเคลม (20261108140000)
+CREATE OR REPLACE FUNCTION pg_temp.rc(p_k text, p_amount numeric, p_extra jsonb DEFAULT '{}') RETURNS uuid LANGUAGE sql AS $f$
+  SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = p_k), 'date', current_date, 'amount', p_amount,
+    'bank_asset_id', t.a('KBank ออมทรัพย์')) || p_extra) $f$;
+CREATE OR REPLACE FUNCTION pg_temp.cl(p_k text) RETURNS public.insurance_claims LANGUAGE sql AS $f$
+  SELECT * FROM public.insurance_claims WHERE id = (SELECT id FROM tbs WHERE k = p_k) $f$;
+WITH n AS (INSERT INTO public.insurance_claims(policy_id, claim_date, incident_date, claimed_amount, currency, status, notes)
+           SELECT (SELECT id FROM tbs WHERE k = 'rider'), current_date - 2, current_date - 4, x.amt, 'THB', 'SUBMITTED', x.k
+             FROM (VALUES ('ck_short', 3000), ('ck_rej', 2000), ('ck_over', 1000), ('ck_reimb', 500)) x(k, amt) RETURNING id, notes)
+INSERT INTO tbs SELECT notes, id FROM n;
+SELECT pg_temp.rc('ck_short', 1000, '{"close": true}') IS NOT NULL AS ck1;
+SELECT t.ok((SELECT received_amount = 1000 AND status = 'SETTLED' FROM pg_temp.cl('ck_short')),
+            'รับไม่ครบ: เลือกได้ไม่เต็ม → ปิดเคลม (SETTLED) · ได้รับ 1,000');
+SELECT t.fails($$SELECT pg_temp.rc('ck_short', 100)$$, 'ปิดแล้ว', 'รับไม่ครบ: เคลมที่ปิดแล้วบันทึกรับเพิ่มไม่ได้');
+UPDATE public.income_transactions SET deleted_at = now() WHERE insurance_claim_id = (SELECT id FROM tbs WHERE k = 'ck_short') AND deleted_at IS NULL;
+SELECT t.ok((SELECT received_amount = 0 AND status = 'SUBMITTED' FROM pg_temp.cl('ck_short')),
+            'รับไม่ครบ: ลบเงินที่ผูก → ได้ไม่เต็ม กลับเป็นยื่นแล้ว');
+SELECT pg_temp.rc('ck_short', 1200) IS NOT NULL AS ck2;
+SELECT t.ok((SELECT received_amount = 1200 AND status = 'PARTIALLY_PAID' FROM pg_temp.cl('ck_short')),
+            'รับไม่ครบ: ไม่เลือกปิด = ยังรอรับส่วนที่เหลือ (จ่ายบางส่วน)');
+SELECT t.ok(public.close_insurance_claim((SELECT id FROM tbs WHERE k = 'ck_short'), 'บริษัทตัดค่าห้องส่วนเกิน') = 'SETTLED'
+        AND (SELECT status = 'SETTLED' AND received_amount = 1200 AND notes = 'ck_short · บริษัทตัดค่าห้องส่วนเกิน' FROM pg_temp.cl('ck_short')),
+            'ปิดเคลม: ได้ไปบางส่วนแล้ว → ได้ไม่เต็ม · ต่อหมายเหตุ');
+SELECT t.ok(public.close_insurance_claim((SELECT id FROM tbs WHERE k = 'ck_rej')) = 'REJECTED'
+        AND (SELECT status = 'REJECTED' AND coalesce(received_amount, 0) = 0 AND notes = 'ck_rej' FROM pg_temp.cl('ck_rej')),
+            'ปิดเคลม: ยังไม่ได้เงิน → ถูกปฏิเสธ');
+SELECT t.fails($$SELECT public.close_insurance_claim((SELECT id FROM tbs WHERE k = 'ck_rej'))$$, 'จบแล้ว', 'ปิดเคลม: เคลมที่จบแล้วปิดซ้ำไม่ได้');
+SELECT t.fails($$SELECT pg_temp.rc('ck_over', 1500)$$, 'เกินยอดเคลม', 'ได้มากกว่ายอดเคลม: ไม่ยืนยัน = ไม่บันทึก');
+SELECT pg_temp.rc('ck_over', 1500, '{"raise_claim": true}') IS NOT NULL AS ck3;
+SELECT t.ok((SELECT claimed_amount = 1500 AND received_amount = 1500 AND status = 'PAID' FROM pg_temp.cl('ck_over')),
+            'ได้มากกว่ายอดเคลม: ยืนยัน → ยอดเคลมเป็น 1,500 · จ่ายครบ');
+SELECT public.add_expense(jsonb_build_object('date', current_date - 4, 'description', 'ค่ารักษาจ่ายก่อนทดสอบ 2', 'amount', 800,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'is_reimbursable', true)) AS ck_exp \gset
+SELECT t.fails($$SELECT pg_temp.rc('ck_reimb', 300, '{"kind": "REIMB"}')$$, 'เลือกค่าใช้จ่าย', 'เงินคืนผ่านเคลม: ต้องเลือกค่าใช้จ่าย');
+SELECT t.fails(format($$SELECT pg_temp.rc('ck_reimb', 900, jsonb_build_object('kind', 'REIMB', 'expense_item_id', %L, 'raise_claim', true))$$, :'ck_exp'),
+  'เกินยอดค้างรับ', 'เงินคืนผ่านเคลม: เกินยอดค่าใช้จ่ายที่รอคืน = ไม่บันทึก');
+SELECT t.ok((SELECT claimed_amount = 500 AND coalesce(received_amount, 0) = 0 AND status = 'SUBMITTED' FROM pg_temp.cl('ck_reimb')),
+            'เงินคืนผ่านเคลม: ไม่บันทึก = ยอดเคลมไม่ถูกแก้ (ธุรกรรมเดียว)');
+SELECT pg_temp.rc('ck_reimb', 800, jsonb_build_object('kind', 'REIMB', 'expense_item_id', :'ck_exp', 'raise_claim', true)) AS ck_rb \gset
+SELECT t.ok((SELECT claimed_amount = 800 AND received_amount = 800 AND status = 'PAID' FROM pg_temp.cl('ck_reimb'))
+        AND (SELECT expense_item_id = :'ck_exp' AND insurance_claim_id = (SELECT id FROM tbs WHERE k = 'ck_reimb') AND received_to_asset_id = t.a('KBank ออมทรัพย์')
+               FROM public.expense_reimbursements WHERE id = :'ck_rb'),
+            'เงินคืนผ่านเคลม: เงินคืนค่าใช้จ่ายผูกเคลม · ยอดเคลมแก้เป็น 800 · จ่ายครบ');
+SELECT t.fails($$SELECT pg_temp.rc('ck_short', 10, '{"kind": "X"}')$$, 'ประเภทเงิน', 'รับเงินเคลม: ประเภทเงินที่รับไม่ถูกต้อง');
+UPDATE public.insurance_claims SET status = 'SUBMITTED' WHERE id = (SELECT id FROM tbs WHERE k = 'ck_rej');
 -- สิทธิ์
 SELECT t.login('00000000-0000-0000-0000-00000000000c');
 SELECT t.fails($$SELECT public.set_insurance_booklet_schedule(jsonb_build_array(pg_temp.bsp('main', 'ชีวิต', '[]'::jsonb)))$$,
   'PERMISSION_DENIED', 'ตารางเบี้ยทั้งเล่ม: CONTRIBUTOR ทำไม่ได้');
+SELECT t.fails($$SELECT public.close_insurance_claim((SELECT id FROM tbs WHERE k = 'ck_rej'))$$,
+  'PERMISSION_DENIED', 'ปิดเคลม: CONTRIBUTOR ปิดเคลมที่คนอื่นบันทึก (เกิน 24 ชม. / ไม่ใช่ของตัวเอง) ไม่ได้ · แจ้ง ไม่เงียบ');
+SELECT t.fails($$SELECT pg_temp.rc('ck_rej', 2500, '{"raise_claim": true}')$$,
+  'PERMISSION_DENIED', 'ได้มากกว่ายอดเคลม: CONTRIBUTOR แก้ยอดเคลมของคนอื่นไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT claimed_amount = 2000 AND status = 'SUBMITTED' AND NOT EXISTS (SELECT 1 FROM public.income_transactions i WHERE i.insurance_claim_id = c.id)
+               FROM pg_temp.cl('ck_rej') c),
+            'ได้มากกว่ายอดเคลม: แก้ยอดเคลมไม่ได้ = ไม่บันทึกรายได้ด้วย');
 SELECT t.login('00000000-0000-0000-0000-00000000000f');
 SELECT t.fails($$SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 100,
   'bank_asset_id', t.a('KBank ออมทรัพย์')))$$, 'PERMISSION_DENIED', 'รับเงินเคลม: VIEWER ทำไม่ได้');
+SELECT t.fails($$SELECT public.close_insurance_claim((SELECT id FROM tbs WHERE k = 'ck_rej'))$$, 'PERMISSION_DENIED', 'ปิดเคลม: VIEWER ทำไม่ได้');
+SELECT t.ok(has_function_privilege('authenticated', 'public.close_insurance_claim(uuid,text)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.close_insurance_claim(uuid,text)', 'EXECUTE')
+        AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.close_insurance_claim(uuid,text)'::regprocedure)
+        AND (SELECT proconfig @> ARRAY['search_path=""'] FROM pg_proc WHERE oid = 'public.close_insurance_claim(uuid,text)'::regprocedure)
+        AND (SELECT pg_get_constraintdef(oid) LIKE '%SETTLED%' FROM pg_constraint WHERE conname = 'insurance_claims_status_check'),
+            'ปิดเคลม: anon เรียกไม่ได้ · SECURITY INVOKER + search_path ว่าง · สถานะ SETTLED อยู่ในเงื่อนไข');
 SELECT t.ok(has_function_privilege('authenticated', 'public.set_insurance_booklet_schedule(jsonb)', 'EXECUTE')
         AND NOT has_function_privilege('anon', 'public.set_insurance_booklet_schedule(jsonb)', 'EXECUTE')
         AND has_function_privilege('authenticated', 'public.receive_insurance_claim(jsonb)', 'EXECUTE')
