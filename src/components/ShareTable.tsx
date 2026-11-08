@@ -10,11 +10,11 @@ export type ShareRow = { key: string; name: string; value: number; color: string
  *   Bank Accounts · Investments · Business · Alternative · Property
  *   ชื่อ · แถบ · มูลค่า (THB) · สัดส่วน · หัวตารางพื้นเทาอ่อน
  */
-export default function ShareTable({ label, rows, total }: { label: string; rows: ShareRow[]; total: number }) {
+export default function ShareTable({ label, rows, total, valueLabel = "มูลค่า (THB)" }: { label: string; rows: ShareRow[]; total: number; /** หัวคอลัมน์ยอด เช่น เบี้ยต่อปี (THB) */ valueLabel?: string }) {
   return (
     <table className="w-full text-sm">
       <thead className="bg-slate-50 text-left text-xs text-slate-500">
-        <tr><th className="px-3 py-2">{label}</th><th className="px-3"></th><th className="px-3 text-right">มูลค่า (THB)</th><th className="px-3 text-right">สัดส่วน</th></tr>
+        <tr><th className="px-3 py-2">{label}</th><th className="px-3"></th><th className="whitespace-nowrap px-3 text-right">{valueLabel}</th><th className="px-3 text-right">สัดส่วน</th></tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {rows.map((r) => {
@@ -35,9 +35,9 @@ export default function ShareTable({ label, rows, total }: { label: string; rows
 }
 
 /** กล่องสรุป 1 ใบ: หัวข้อ (THB Equivalent) + บรรทัดใต้หัวข้อ (ถ้ามี) + ตารางสัดส่วน · total ไม่ใส่ = รวมจากแถว */
-export function ShareBox({ title, aside, sub, label, rows, total, children, footer, className, empty = "ยังไม่มีข้อมูล" }: {
+export function ShareBox({ title, aside, sub, label, valueLabel, rows, total, children, footer, className, empty = "ยังไม่มีข้อมูล" }: {
   title: ReactNode; /** ข้อความเล็กชิดขวาบรรทัดเดียวกับหัวข้อ (เช่น ประเมินล่าสุด …) */ aside?: ReactNode;
-  sub?: ReactNode; label: string; rows: ShareRow[]; total?: number;
+  sub?: ReactNode; label: string; valueLabel?: string; rows: ShareRow[]; total?: number;
   /** ใส่ระหว่างหัวข้อกับตาราง (เช่น แถบสัดส่วนรวม) */ children?: ReactNode;
   footer?: ReactNode; /** เช่น flex-1 = ยืดให้ขอบล่างเท่ากล่องข้าง ๆ */ className?: string; empty?: string;
 }) {
@@ -53,7 +53,7 @@ export function ShareBox({ title, aside, sub, label, rows, total, children, foot
       {sub && <p className="text-xs text-slate-500">{sub}</p>}
       {children}
       {rows.length === 0 ? <p className="mt-3 text-sm text-slate-500">{empty}</p>
-        : <div className="mt-3 overflow-x-auto"><ShareTable label={label} total={sum} rows={rows} /></div>}
+        : <div className="mt-3 overflow-x-auto"><ShareTable label={label} valueLabel={valueLabel} total={sum} rows={rows} /></div>}
       {footer}
     </section>
   );
