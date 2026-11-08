@@ -2782,10 +2782,11 @@ SELECT t.ok((SELECT (r->'sync'->>'added')::int = 0 FROM public.set_insurance_cas
                jsonb_build_object('policy_year', 1, 'value', 10000, 'value_date', current_date - 30),
                jsonb_build_object('policy_year', 2, 'value', 26000, 'value_date', current_date - 10))) r),
             'แก้ตาราง → ไม่ลงซ้ำ');
-SELECT t.ok((SELECT a.current_value = 25000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+-- ตกลง 8 พ.ย. 2026: ยอดที่ระบบลงตามตาราง (ยังเท่าตารางเดิม · ยังไม่ปิดงวด) ขยับตามตารางใหม่ (เดิม: ไม่ทับ)
+SELECT t.ok((SELECT a.current_value = 26000 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
                   WHERE i.id = (SELECT id FROM tcv WHERE k = 'pol'))
             AND (SELECT count(*) = 2 FROM public.insurance_cash_value_table WHERE policy_id = (SELECT id FROM tcv WHERE k = 'pol') AND deleted_at IS NULL),
-            'แก้ตาราง → แทนทั้งตาราง · ไม่ทับมูลค่าเวนคืนที่ลงแล้ว');
+            'แก้ตาราง → แทนทั้งตาราง · ยอดปีที่ 2 ที่ระบบลงไว้ขยับเป็น 26,000 ตามตารางใหม่');
 SELECT t.fails($$SELECT public.set_insurance_cash_value_table((SELECT id FROM tcv WHERE k = 'pol'),
   '[{"policy_year":1,"value":1},{"policy_year":1,"value":2}]')$$, 'ปีกรมธรรม์ซ้ำ', 'ปีกรมธรรม์ซ้ำไม่ได้');
 INSERT INTO tcv SELECT 'nostart', public.create_insurance_policy(jsonb_build_object(
@@ -5418,6 +5419,132 @@ SELECT t.ok(public.create_insurance_booklet(jsonb_build_object('main_id', (SELEC
 SELECT t.ok((SELECT coverage_scope = 'โรคร้ายแรง' AND coverage_checked_on = '2026-11-05' AND payer_person_id IS NULL
                FROM public.insurance_policies WHERE policy_no = 'CR-001' AND plan_name = 'โรคร้ายแรงทดสอบ' AND deleted_at IS NULL),
             'เพิ่มในเล่มเดิม: ชื่อแบบ / คุ้มครองเฉพาะ / ตรวจเมื่อ ของส่วนใหม่ (CONTRIBUTOR)');
+RESET ROLE;
+ROLLBACK;
+
+\echo '== 13zz-bookcv. ประกัน: ตารางเบี้ยทั้งเล่ม · มูลค่าเวนคืนขยับตามตาราง · เงินเคลมเป็นรายได้ผูกเคลม (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE tbs(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tbs TO authenticated;
+INSERT INTO tbs SELECT 'main', public.create_insurance_booklet(jsonb_build_object('insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'),
+  'insurer', 'ประกันทดสอบตารางเล่ม', 'policy_no', 'BS-001', 'start_date', (current_date - interval '1 year')::date, 'currency', 'THB', 'premium', 10000,
+  'riders', jsonb_build_array(jsonb_build_object('insurance_type', 'HEALTH', 'premium', 5000))));
+INSERT INTO tbs SELECT 'rider', id FROM public.insurance_policies WHERE policy_no = 'BS-001' AND insurance_type = 'HEALTH' AND deleted_at IS NULL;
+INSERT INTO tbs SELECT 'other', public.create_insurance_policy(jsonb_build_object('insurance_type', 'HEALTH', 'person_id', t.p('คุณแม่'),
+  'insurer', 'ประกันทดสอบตารางเล่ม', 'policy_no', 'BS-002', 'currency', 'THB', 'premium', 500));
+CREATE OR REPLACE FUNCTION pg_temp.bsp(p_k text, p_label text, p_lines jsonb) RETURNS jsonb LANGUAGE sql AS $f$
+  SELECT jsonb_build_object('policy_id', (SELECT id FROM tbs WHERE k = p_k), 'label', p_label, 'lines', p_lines) $f$;
+CREATE OR REPLACE FUNCTION pg_temp.bsl(p_days int, p_amount numeric) RETURNS jsonb LANGUAGE sql AS $f$
+  SELECT jsonb_build_object('due_date', current_date + p_days, 'amount', p_amount) $f$;
+CREATE OR REPLACE FUNCTION pg_temp.bsum(p_k text) RETURNS numeric LANGUAGE sql AS $f$
+  SELECT coalesce(sum(amount), 0) FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM tbs WHERE k = p_k) AND kind = 'PREMIUM' AND deleted_at IS NULL $f$;
+SELECT t.ok(public.set_insurance_booklet_schedule(jsonb_build_array(
+  pg_temp.bsp('main', 'ชีวิต', jsonb_build_array(pg_temp.bsl(-5, 10000), pg_temp.bsl(360, 10000))),
+  pg_temp.bsp('rider', 'สุขภาพ', jsonb_build_array(pg_temp.bsl(-5, 5000), pg_temp.bsl(360, 5500))))) = 4,
+            'ตารางเบี้ยทั้งเล่ม: ชีวิต + สุขภาพ 4 งวดในคำสั่งเดียว');
+SELECT t.ok(pg_temp.bsum('main') = 20000 AND pg_temp.bsum('rider') = 10500, 'ตารางเบี้ยทั้งเล่ม: ยอดแต่ละส่วนตามที่ส่ง');
+-- ผิดส่วนเดียว = ไม่บันทึกเลย (สุขภาพถูก · ชีวิตผิด → สุขภาพไม่เปลี่ยน) · ข้อความบอกส่วน
+SELECT t.fails($$SELECT public.set_insurance_booklet_schedule(jsonb_build_array(
+  pg_temp.bsp('rider', 'สุขภาพ', jsonb_build_array(pg_temp.bsl(-5, 6000))),
+  pg_temp.bsp('main', 'ชีวิต', jsonb_build_array(pg_temp.bsl(-5, 0)))))$$,
+  'ชีวิต: ทุกงวดต้องมีวันที่', 'ตารางเบี้ยทั้งเล่ม: ส่วนที่ผิดบอกชื่อส่วน');
+SELECT t.ok(pg_temp.bsum('rider') = 10500 AND pg_temp.bsum('main') = 20000, 'ตารางเบี้ยทั้งเล่ม: ผิดส่วนเดียว = ไม่บันทึกเลย (สุขภาพยังเหมือนเดิม)');
+SELECT t.fails($$SELECT public.set_insurance_booklet_schedule(jsonb_build_array(
+  pg_temp.bsp('main', 'ชีวิต', '[]'::jsonb), pg_temp.bsp('other', 'อื่น', '[]'::jsonb)))$$,
+  'เล่มเดียวกัน', 'ตารางเบี้ยทั้งเล่ม: กรมธรรม์คนละเล่มรวมกันไม่ได้');
+SELECT t.fails($$SELECT public.set_insurance_booklet_schedule(jsonb_build_array(
+  pg_temp.bsp('main', 'ชีวิต', '[]'::jsonb), pg_temp.bsp('main', 'ชีวิต', '[]'::jsonb)))$$,
+  'ซ้ำกัน', 'ตารางเบี้ยทั้งเล่ม: ส่วนซ้ำไม่ได้');
+SELECT t.fails($$SELECT public.set_insurance_booklet_schedule('[]'::jsonb)$$, 'อ่านตารางเบี้ยไม่ได้', 'ตารางเบี้ยทั้งเล่ม: ว่าง = อ่านไม่ได้');
+-- งวดที่จ่ายแล้วเก็บไว้ · งวดที่ยังไม่จ่ายแทนทั้งชุด
+SELECT public.add_expense(jsonb_build_object('date', current_date, 'description', 'เบี้ยชีวิตทดสอบเล่ม', 'amount', 10000, 'paid_from_asset_id', t.a('KBank ออมทรัพย์'),
+  'insurance_schedule_line_id', (SELECT id FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM tbs WHERE k = 'main')
+                                    AND due_date = current_date - 5 AND deleted_at IS NULL))) IS NOT NULL AS bs_paid;
+SELECT t.ok(public.set_insurance_booklet_schedule(jsonb_build_array(
+  pg_temp.bsp('main', 'ชีวิต', jsonb_build_array(pg_temp.bsl(360, 11000))),
+  pg_temp.bsp('rider', 'สุขภาพ', jsonb_build_array(pg_temp.bsl(-5, 5000), pg_temp.bsl(360, 5200), pg_temp.bsl(725, 5400))))) = 4,
+            'ตารางเบี้ยทั้งเล่ม: บันทึกใหม่ 4 งวด (ชีวิต 1 · สุขภาพ 3)');
+SELECT t.ok(pg_temp.bsum('main') = 21000 AND pg_temp.bsum('rider') = 15600,
+            'ตารางเบี้ยทั้งเล่ม: งวดที่จ่ายแล้วเก็บไว้ · ส่วนที่ไม่มีงวดจ่ายแล้วแทนทั้งชุด');
+SELECT t.fails($$SELECT public.set_insurance_booklet_schedule(jsonb_build_array(pg_temp.bsp('main', 'ชีวิต', jsonb_build_array(pg_temp.bsl(-10, 10000)))))$$,
+  'ชีวิต: งวดแรกต้องอยู่หลังงวดที่มีการชำระแล้ว', 'ตารางเบี้ยทั้งเล่ม: งวดใหม่ก่อนงวดที่จ่ายแล้วไม่ได้ (บอกส่วน)');
+
+-- มูลค่าเวนคืน: แก้ตารางแล้วยอดที่ระบบลงขยับตาม · ยอดที่แก้เองไม่ถูกทับ
+INSERT INTO tbs SELECT 'cv', public.create_insurance_policy(jsonb_build_object('insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'),
+  'insurer', 'สะสมทรัพย์ขยับตาม', 'currency', 'THB', 'premium', 1000, 'start_date', (current_date - interval '1 year' - interval '20 days')::date));
+SELECT t.ok((SELECT (r->'sync'->>'created')::boolean FROM public.set_insurance_cash_value_table((SELECT id FROM tbs WHERE k = 'cv'),
+  jsonb_build_array(jsonb_build_object('policy_year', 1, 'value', 1000), jsonb_build_object('policy_year', 2, 'value', 2000))) r),
+            'ขยับตามตาราง: ตั้งตาราง → สร้างมูลค่าเวนคืนปีที่ 1 = 1,000');
+SELECT t.ok((SELECT (r->>'updated')::int = 1 AND (r->'sync'->>'added')::int = 0 FROM public.set_insurance_cash_value_table((SELECT id FROM tbs WHERE k = 'cv'),
+  jsonb_build_array(jsonb_build_object('policy_year', 1, 'value', 1200), jsonb_build_object('policy_year', 2, 'value', 2000))) r),
+            'ขยับตามตาราง: แก้ปีที่ 1 เป็น 1,200 → ปรับยอดที่ลงไว้ 1 ปี');
+SELECT t.ok((SELECT a.current_value = 1200 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = (SELECT id FROM tbs WHERE k = 'cv'))
+        AND (SELECT count(*) = 1 FROM public.asset_valuations v JOIN public.insurance_policies i ON i.cash_value_asset_id = v.asset_id
+              WHERE i.id = (SELECT id FROM tbs WHERE k = 'cv') AND v.deleted_at IS NULL),
+            'ขยับตามตาราง: มูลค่าเวนคืนเป็น 1,200 · แก้รายการเดิม (ไม่เพิ่มรายการใหม่)');
+UPDATE public.asset_valuations SET value = 1500
+ WHERE asset_id = (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id = (SELECT id FROM tbs WHERE k = 'cv')) AND deleted_at IS NULL;
+SELECT t.ok((SELECT (r->>'updated')::int = 0 FROM public.set_insurance_cash_value_table((SELECT id FROM tbs WHERE k = 'cv'),
+  jsonb_build_array(jsonb_build_object('policy_year', 1, 'value', 1300), jsonb_build_object('policy_year', 2, 'value', 2000))) r),
+            'ขยับตามตาราง: ยอดที่แก้เองไม่นับเป็นยอดตามตาราง (ปรับ 0 ปี)');
+SELECT t.ok((SELECT a.current_value = 1500 FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = (SELECT id FROM tbs WHERE k = 'cv')),
+            'ขยับตามตาราง: ยอดที่แก้เอง (เช่น รวมเงินปันผล) ไม่ถูกทับ');
+
+-- เงินเคลม: รายได้ผูกเคลม + เงินคืนค่าใช้จ่าย → ยอดได้รับ / สถานะ
+INSERT INTO public.insurance_claims(policy_id, claim_date, incident_date, claimed_amount, currency, status)
+VALUES ((SELECT id FROM tbs WHERE k = 'rider'), current_date - 3, current_date - 6, 3000, 'THB', 'SUBMITTED');
+INSERT INTO tbs SELECT 'claim', id FROM public.insurance_claims WHERE policy_id = (SELECT id FROM tbs WHERE k = 'rider') AND deleted_at IS NULL;
+SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 1000,
+  'bank_asset_id', t.a('KBank ออมทรัพย์'), 'notes', 'ค่าชดเชยนอน รพ.')) AS bs_inc \gset
+SELECT t.ok((SELECT income_type = 'INSURANCE_BENEFIT' AND amount = 1000 AND person_id = t.p('คุณแม่') AND received_to_asset_id = t.a('KBank ออมทรัพย์')
+                    AND insurance_claim_id = (SELECT id FROM tbs WHERE k = 'claim') AND notes LIKE 'เงินเคลมประกัน ประกันทดสอบตารางเล่ม BS-001%ค่าชดเชยนอน รพ.'
+               FROM public.income_transactions WHERE id = :'bs_inc')
+        AND (SELECT count(*) = 1 FROM public.cash_movements m WHERE m.source_entity_type = 'INCOME' AND m.source_entity_id = :'bs_inc'
+               AND m.to_asset_id = t.a('KBank ออมทรัพย์') AND m.amount = 1000 AND m.deleted_at IS NULL),
+            'รับเงินเคลม: รายได้ผลประโยชน์ประกันของผู้เอาประกัน · เงินเข้าบัญชี · ผูกเคลม');
+SELECT t.ok((SELECT received_amount = 1000 AND status = 'PARTIALLY_PAID' FROM public.insurance_claims WHERE id = (SELECT id FROM tbs WHERE k = 'claim')),
+            'รับเงินเคลม: ยอดได้รับ 1,000 · สถานะจ่ายบางส่วน');
+SELECT public.add_expense(jsonb_build_object('date', current_date - 6, 'description', 'ค่ารักษาจ่ายก่อนทดสอบ', 'amount', 1500,
+  'paid_from_asset_id', t.a('KBank ออมทรัพย์'), 'is_reimbursable', true)) AS bs_exp \gset
+SELECT public.record_reimbursement(:'bs_exp', current_date, 1500, t.a('KBank ออมทรัพย์'), NULL, NULL, (SELECT id FROM tbs WHERE k = 'claim')) IS NOT NULL AS bs_rb;
+SELECT t.ok((SELECT received_amount = 2500 AND status = 'PARTIALLY_PAID' FROM public.insurance_claims WHERE id = (SELECT id FROM tbs WHERE k = 'claim')),
+            'รับเงินเคลม: เงินคืนค่าใช้จ่าย + รายได้ = ได้รับ 2,500');
+SELECT t.fails($$SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 600,
+  'bank_asset_id', t.a('KBank ออมทรัพย์')))$$, 'เกินยอดเคลม', 'รับเงินเคลม: เกินยอดเคลมไม่ได้');
+SELECT t.fails($$UPDATE public.insurance_claims SET received_amount = 9 WHERE id = (SELECT id FROM tbs WHERE k = 'claim')$$,
+  'CACHE_FIELD', 'รับเงินเคลม: มีเงินผูกแล้ว แก้ยอดได้รับเองไม่ได้');
+SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 500,
+  'bank_asset_id', t.a('KBank ออมทรัพย์'))) IS NOT NULL AS bs_inc2;
+SELECT t.ok((SELECT received_amount = 3000 AND status = 'PAID' FROM public.insurance_claims WHERE id = (SELECT id FROM tbs WHERE k = 'claim')),
+            'รับเงินเคลม: ครบยอดเคลม → จ่ายครบ');
+UPDATE public.income_transactions SET deleted_at = now() WHERE id = :'bs_inc';
+SELECT t.ok((SELECT received_amount = 2000 AND status = 'PARTIALLY_PAID' FROM public.insurance_claims WHERE id = (SELECT id FROM tbs WHERE k = 'claim')),
+            'รับเงินเคลม: ลบรายได้ที่ผูก → ยอดได้รับ / สถานะคำนวณใหม่');
+UPDATE public.income_transactions SET deleted_at = now() WHERE insurance_claim_id = (SELECT id FROM tbs WHERE k = 'claim') AND deleted_at IS NULL;
+UPDATE public.expense_reimbursements SET deleted_at = now() WHERE insurance_claim_id = (SELECT id FROM tbs WHERE k = 'claim') AND deleted_at IS NULL;
+SELECT t.ok((SELECT received_amount = 0 AND status = 'SUBMITTED' FROM public.insurance_claims WHERE id = (SELECT id FROM tbs WHERE k = 'claim')),
+            'รับเงินเคลม: ยกเลิกเงินที่ผูกหมด → ได้รับ 0 · สถานะกลับเป็นยื่นแล้ว');
+UPDATE public.insurance_claims SET status = 'REJECTED' WHERE id = (SELECT id FROM tbs WHERE k = 'claim');
+SELECT t.fails($$SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 100,
+  'bank_asset_id', t.a('KBank ออมทรัพย์')))$$, 'ปฏิเสธ', 'รับเงินเคลม: เคลมที่ถูกปฏิเสธรับเงินไม่ได้');
+-- สิทธิ์
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.set_insurance_booklet_schedule(jsonb_build_array(pg_temp.bsp('main', 'ชีวิต', '[]'::jsonb)))$$,
+  'PERMISSION_DENIED', 'ตารางเบี้ยทั้งเล่ม: CONTRIBUTOR ทำไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.receive_insurance_claim(jsonb_build_object('claim_id', (SELECT id FROM tbs WHERE k = 'claim'), 'date', current_date, 'amount', 100,
+  'bank_asset_id', t.a('KBank ออมทรัพย์')))$$, 'PERMISSION_DENIED', 'รับเงินเคลม: VIEWER ทำไม่ได้');
+SELECT t.ok(has_function_privilege('authenticated', 'public.set_insurance_booklet_schedule(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.set_insurance_booklet_schedule(jsonb)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.receive_insurance_claim(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.receive_insurance_claim(jsonb)', 'EXECUTE')
+        AND NOT (SELECT bool_or(prosecdef) FROM pg_proc WHERE oid IN ('public.set_insurance_booklet_schedule(jsonb)'::regprocedure, 'public.receive_insurance_claim(jsonb)'::regprocedure))
+        AND (SELECT bool_and(proconfig @> ARRAY['search_path=""']) FROM pg_proc
+              WHERE oid IN ('public.set_insurance_booklet_schedule(jsonb)'::regprocedure, 'public.receive_insurance_claim(jsonb)'::regprocedure,
+                            'private.tg_income_claim_sync()'::regprocedure, 'private.refresh_claim(uuid)'::regprocedure))
+        AND NOT has_function_privilege('authenticated', 'private.tg_income_claim_sync()', 'EXECUTE'),
+            'ตารางเบี้ยทั้งเล่ม / รับเงินเคลม: anon เรียกไม่ได้ · SECURITY INVOKER + search_path ว่าง');
 RESET ROLE;
 ROLLBACK;
 
