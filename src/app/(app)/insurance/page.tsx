@@ -13,7 +13,6 @@ import { StatBox } from "@/components/Boxes";
 import UrlSelect from "@/components/UrlSelect";
 import { payDefaultValue } from "./PayDefaultSelect";
 import InsuranceBatch, { type BoxPolicy, type PayOpt, type YLine } from "./InsuranceBatch";
-import CashValueBatch, { type CvRow } from "./CashValueBatch";
 import CoverageTab, { type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { premiumPaymentFields } from "@/lib/source-edit";
@@ -24,8 +23,8 @@ import { PART_LABEL, bookletCount, bookletGroups, bookletOrder, bookletRole, par
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
-// ความคุ้มครองต่อจากภาพรวม (ตกลง 3 พ.ย. 2026 · เดิมอยู่ท้ายสุด)
-const TABS = [["overview", "ภาพรวม"], ["coverage", "ความคุ้มครอง"], ["update", "อัปเดตมูลค่าเวนคืน"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
+// ความคุ้มครองต่อจากภาพรวม (ตกลง 3 พ.ย. 2026 · เดิมอยู่ท้ายสุด) · เลิกแท็บอัปเดตมูลค่าเวนคืน (8 พ.ย. 2026 · ลงตามตารางเองทุกวัน · ปรับรายเล่มที่หน้ากรมธรรม์)
+const TABS = [["overview", "ภาพรวม"], ["coverage", "ความคุ้มครอง"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
 
 export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; s?: string; yb?: string; yp?: string; tab?: string; m?: string; i?: string }> }) {
   const sp = await searchParams;
@@ -80,7 +79,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     return { pays: p.data ?? [], bens: b.data ?? [] };
   });
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }, { data: cvTable }, { data: yearLumps }, { data: allLumps }, rec] = await Promise.all([
+    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id,plan_name,coverage_scope")
       .order("status").order("insurer"),
@@ -95,8 +94,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("families").select("go_live_date").maybeSingle(),
-    supabase.from("insurance_cash_value_table").select("policy_id,policy_year,value_date,value").is("deleted_at", null).lte("value_date", today)
-      .order("value_date"),
     // รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือกของแท็บรับ → แสดงใต้ชื่อกรมธรรม์
     supabase.from("insurance_benefit_receipts").select("id,policy_id,receipt_date,amount,currency,outcome").is("line_id", null)
       .gte("receipt_date", `${yBen}-01-01`).lte("receipt_date", `${yBen}-12-31`).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
@@ -232,19 +229,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       && (l.status === "OVERDUE" || (l.status === "PARTIAL" && l.due_date < today)) && Number(l.remaining) > 0);
     return { count: late.length, amount: late.reduce((t, l) => t + Number(l.remaining), 0) };
   };
-  const actRows = rows.filter((r) => r.status === "ACTIVE");
-  // แท็บอัปเดตมูลค่าเวนคืน: กรมธรรม์ที่มีผลและมีมูลค่าเวนคืน / ตารางตามสัญญา · ปีล่าสุดที่ถึงวันแล้ว · ยังไม่ได้ลง (เงื่อนไขเดียวกับ sync_insurance_cash_value)
-  const dueOf = new Map<string, { year: number; value: number; date: string }>();
-  (cvTable ?? []).forEach((c) => dueOf.set(c.policy_id, { year: Number(c.policy_year), value: Number(c.value), date: c.value_date as string }));
-  const cvRows: CvRow[] = actRows.filter((r) => r.has_cash_value || r.cash_value_asset_id || dueOf.has(r.id)).map((r) => {
-    const a = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : undefined;
-    const due = dueOf.get(r.id) ?? null;
-    const pending = !!due && (!a ? true : due.date >= goLive && (!a.current_value_date || due.date > a.current_value_date));
-    const premiumDue = !!due && lineList.some((l) => l.policy_id === r.id && l.kind === "PREMIUM" && l.due_date < due.date && l.status !== "PAID");
-    return { policyId: r.id, assetId: a?.id ?? null, name: policyName.get(r.id) ?? "-", person: r.person_id ? pname.get(r.person_id) ?? null : null,
-      currency: a?.currency ?? r.insured_amount_currency ?? "THB", value: a?.current_value == null ? null : Number(a.current_value), date: a?.current_value_date ?? null,
-      due, pending, premiumDue, factor: a && a.currency === "THB" ? pv.assetShare(a.id) : 0 };
-  });
   // แท็บความคุ้มครอง (ตกลง 3 พ.ย. 2026): กรมธรรม์ที่มีผลตามผู้เอาประกัน · วงเงินต่อปีหักยอดเคลมปีนี้ (ไม่นับปฏิเสธ / ยกเลิก)
   const usedByCov = new Map<string, number>();
   (claims ?? []).filter((c) => c.coverage_id && !["REJECTED", "CANCELLED"].includes(c.status)).forEach((c) =>
@@ -306,11 +290,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       <TabPanel id="premium" className="space-y-4">
         <InsuranceBatch key={`p${ym}${yPrem}${lineList.length}`} kind="PREMIUM" year={yPrem} years={yearsOf("PREMIUM")} hrefOf={yHrefOf("premium")} policies={boxOf("PREMIUM")} filter={insFilter("premium")} late={lateOf("PREMIUM")}
           pays={[...bankPays, ...cardPays]} today={today} defaultDate={defaultDate} soon={soon} minDate={goLive} canWrite={canWrite} />
-      </TabPanel>
-
-      <TabPanel id="update">
-        <CashValueBatch key={`u${cvRows.map((r) => `${r.policyId}${r.date}`).join("")}`} rows={cvRows} today={today} minDate={goLive} canWrite={canWrite} canCreate={canOrder} filter={insFilter("update")}
-          shareNote={pv.personId ? `ยอดรวมท้ายตาราง = ส่วนของ ${pv.personName} ตามสัดส่วนเจ้าของ (มูลค่าในแถว = ทั้งกรมธรรม์)` : null} />
       </TabPanel>
 
       <TabPanel id="coverage">
