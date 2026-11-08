@@ -1,7 +1,7 @@
 // node scripts/insurance-flow.test.mjs — ทดสอบสุทธิสะสม / จุดคุ้มทุน / IRR ของกรมธรรม์ (src/lib/insurance-flow.ts · ตัวเลขสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { actualFlows, ageAt, contractFlows, cvBreakEven, lineValue, policyYearAt, projectedFlows, runningNet, surrenderFlows, xirr } from "../src/lib/insurance-flow.ts";
+import { actualFlows, ageAt, cashNet, contractFlows, cvBreakEven, lineValue, policyYearAt, projectedFlows, runningNet, surrenderFlows, xirr } from "../src/lib/insurance-flow.ts";
 
 const near = (a, b, eps = 1e-6) => assert.ok(a !== null && Math.abs(a - b) < eps, `${a} ≠ ${b}`);
 const npv = (flows, r) => {
@@ -120,6 +120,26 @@ assert.equal(ageAt(null, "2022-05-10"), null);
   assert.equal(cvBreakEven([{ date: "2020-01-01", net: -1000 }, { date: "2020-06-01", net: 500 }], [{ policy_year: 1, value_date: "2021-01-01", value: 100 }]), null);
   // ยังไม่จ่ายอะไรก่อนวันนั้น = ไม่นับ
   assert.equal(cvBreakEven(net, [{ policy_year: 0, value_date: "2019-01-01", value: 0 }]), null);
+}
+
+// สุทธิสะสมตามเงินจริง (ตกลง 8 พ.ย. 2026): เงินจริงวางตามวันที่จ่าย / รับจริง · งวดค้าง = ยอดค้าง ณ วันครบกำหนด (คาดการณ์)
+{
+  const lines = [
+    L("h1", "PREMIUM", 1, "2024-07-20", 1000, "HISTORY"),             // ก่อน Go-live = เต็มงวด ณ วันครบกำหนด
+    L("p2", "PREMIUM", 2, "2025-07-20", 1000, "PAID", 1000),          // จ่ายจริงวันที่ 2025-08-13 (แถวเงินจริง)
+    L("b1", "BENEFIT", 1, "2026-01-01", 3000, "PARTIAL", 2000),       // รับก่อน 2,000 (2025-11-08) · ค้าง 1,000
+    L("p3", "PREMIUM", 3, "2026-07-20", 1000, "PENDING"),
+  ];
+  const cash = [{ key: "e1", kind: "PREMIUM", date: "2025-08-13", amount: 1000 }, { key: "r1", kind: "BENEFIT", date: "2025-11-08", amount: 2000 }];
+  const n = cashNet(lines, cash, true);
+  assert.deepEqual(n.rows.map((r) => [r.key, r.net, r.projected]), [
+    ["h1", -1000, false], ["p2", -1000, false], ["e1", -2000, false], ["r1", 0, false], ["b1", 1000, true], ["p3", 0, true]]);
+  assert.equal(n.breakEven.key, "r1");
+  // วันเดียวกัน: แถวงวดก่อนแถวเงินจริง
+  const same = cashNet([L("p", "PREMIUM", 1, "2025-01-01", 500, "PAID", 500)], [{ key: "e", kind: "PREMIUM", date: "2025-01-01", amount: 500 }], true);
+  assert.deepEqual(same.rows.map((r) => [r.key, r.net]), [["p", 0], ["e", -500]]);
+  // กรมธรรม์จบแล้ว: งวดค้างไม่นับ
+  assert.deepEqual(cashNet([L("x", "PREMIUM", 1, "2030-01-01", 700)], [], false).rows.map((r) => [r.net, r.projected]), [[0, false]]);
 }
 
 console.log("insurance-flow: all tests passed");

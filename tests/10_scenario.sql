@@ -5609,4 +5609,91 @@ SELECT t.ok(has_function_privilege('authenticated', 'public.set_insurance_bookle
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz30. ตารางเบี้ยและผลประโยชน์ (หน้ากรมธรรม์): รับผลประโยชน์ตามงวดหลายงวด · แก้รายการรับล่าสุด'
+-- ไม่ใช้ BEGIN: ทุกคำสั่งคนละธุรกรรม (เวลาบันทึกมูลค่าเวนคืนต่างกันเหมือนกดบันทึกจริงทีละครั้ง)
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE trb(k text PRIMARY KEY, id uuid);
+GRANT ALL ON trb TO authenticated;
+INSERT INTO trb SELECT 'cv', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ประกันทดสอบรับหลายงวด', 'policy_no', 'RB-001',
+  'premium', 10000, 'currency', 'THB', 'has_cash_value', true, 'cash_value', 5000, 'cash_value_date', current_date - 10,
+  'owners', jsonb_build_array(jsonb_build_object('person_id', t.p('คุณแม่'), 'percent', 100))));
+INSERT INTO trb SELECT 'nocv', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ประกันทดสอบรับหลายงวด', 'policy_no', 'RB-002', 'premium', 10000, 'currency', 'THB'));
+SELECT public.set_insurance_schedule((SELECT id FROM trb WHERE k = 'cv'), 'BENEFIT', jsonb_build_array(
+  jsonb_build_object('due_date', current_date - 3, 'amount', 2000, 'benefit_type', 'CASH_BACK'),
+  jsonb_build_object('due_date', current_date - 2, 'amount', 2000, 'benefit_type', 'CASH_BACK'),
+  jsonb_build_object('due_date', current_date + 300, 'amount', 50000, 'benefit_type', 'MATURITY'))) AS rb1;
+SELECT public.set_insurance_schedule((SELECT id FROM trb WHERE k = 'nocv'), 'BENEFIT', jsonb_build_array(
+  jsonb_build_object('due_date', current_date - 3, 'amount', 1000, 'benefit_type', 'CASH_BACK'),
+  jsonb_build_object('due_date', current_date - 2, 'amount', 1500, 'benefit_type', 'MATURITY'))) AS rb2;
+CREATE OR REPLACE FUNCTION pg_temp.bl(p_k text, p_no int) RETURNS uuid LANGUAGE sql AS $f$
+  SELECT id FROM public.insurance_schedule_lines WHERE policy_id = (SELECT id FROM trb WHERE k = p_k) AND kind = 'BENEFIT'
+     AND installment_no = p_no AND deleted_at IS NULL $f$;
+CREATE OR REPLACE FUNCTION pg_temp.brow(p_k text, p_no int, p_amt numeric) RETURNS jsonb LANGUAGE sql AS $f$
+  SELECT jsonb_build_object('policy_id', (SELECT id FROM trb WHERE k = p_k), 'line_id', pg_temp.bl(p_k, p_no), 'label', 'งวดที่ ' || p_no, 'amount', p_amt) $f$;
+CREATE OR REPLACE FUNCTION pg_temp.cvv() RETURNS numeric LANGUAGE sql AS $f$
+  SELECT current_value FROM public.assets WHERE id = (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id = (SELECT id FROM trb WHERE k = 'cv')) $f$;
+CREATE OR REPLACE FUNCTION pg_temp.lastrc(p_k text) RETURNS public.insurance_benefit_receipts LANGUAGE sql AS $f$
+  SELECT * FROM public.insurance_benefit_receipts WHERE policy_id = (SELECT id FROM trb WHERE k = p_k) AND undone_at IS NULL AND deleted_at IS NULL
+   ORDER BY receipt_date DESC, created_at DESC LIMIT 1 $f$;
+-- ไม่มีมูลค่าเวนคืน: หลายงวดในครั้งเดียว · ปิดกรมธรรม์ที่งวดสุดท้าย
+SELECT t.fails($$SELECT public.receive_insurance_benefits(jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'),
+  'rows', jsonb_build_array(pg_temp.brow('nocv', 1, 1000), pg_temp.brow('nocv', 2, 0))))$$, 'งวดที่ 2 · กรุณาใส่ยอด', 'รับหลายงวด: งวดที่ 2 ไม่มียอด → แจ้งชื่องวด');
+SELECT t.ok((SELECT count(*) = 0 FROM public.insurance_benefit_receipts WHERE policy_id = (SELECT id FROM trb WHERE k = 'nocv')),
+            'รับหลายงวด: ผิดงวดเดียว = ไม่บันทึกเลย');
+SELECT t.ok(public.receive_insurance_benefits(jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'), 'outcome', 'MATURED',
+  'notes', 'รับรวมทดสอบ', 'rows', jsonb_build_array(pg_temp.brow('nocv', 1, 1000), pg_temp.brow('nocv', 2, 1500)))) = 2, 'รับหลายงวด: บันทึก 2 งวด');
+SELECT t.ok((SELECT bool_and(status = 'PAID') FROM public.v_insurance_schedule_status WHERE policy_id = (SELECT id FROM trb WHERE k = 'nocv') AND kind = 'BENEFIT')
+        AND (SELECT status = 'MATURED' FROM public.insurance_policies WHERE id = (SELECT id FROM trb WHERE k = 'nocv'))
+        AND (SELECT count(*) = 1 FROM public.insurance_benefit_receipts WHERE policy_id = (SELECT id FROM trb WHERE k = 'nocv') AND outcome = 'MATURED'
+               AND line_id = pg_temp.bl('nocv', 2))
+        AND (SELECT sum(amount) = 2500 AND bool_and(notes LIKE '%รับรวมทดสอบ') FROM public.income_transactions
+              WHERE insurance_schedule_line_id IN (pg_temp.bl('nocv', 1), pg_temp.bl('nocv', 2)) AND deleted_at IS NULL),
+            'รับหลายงวด: รับแล้วทั้ง 2 งวด · ปิดกรมธรรม์ตอนงวดสุดท้าย · ไม่มีมูลค่าเวนคืน = รายได้ทั้งหมด');
+-- มีมูลค่าเวนคืน 5,000: ถอนได้ครั้งละ 1 งวดต่อกรมธรรม์ (2 ยอดวันเดียวกันในคำสั่งเดียว = เลือกยอดล่าสุดไม่ได้แน่นอน)
+SELECT t.fails($$SELECT public.receive_insurance_benefits(jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'),
+  'rows', jsonb_build_array(pg_temp.brow('cv', 1, 2000), pg_temp.brow('cv', 2, 2000))))$$, 'ครั้งละ 1 งวด', 'รับหลายงวด: ถอนมูลค่าเวนคืน 2 งวดในครั้งเดียวไม่ได้');
+SELECT t.fails($$SELECT public.batch_receive_insurance_benefits(jsonb_build_array(
+  pg_temp.brow('cv', 1, 2000) || jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์')),
+  pg_temp.brow('cv', 2, 2000) || jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'))))$$,
+  'ครั้งละ 1 งวด', 'แท็บรับผลประโยชน์ทั้งชุด: กติกาเดียวกัน');
+SELECT t.ok(public.receive_insurance_benefits(jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'),
+  'rows', jsonb_build_array(pg_temp.brow('cv', 1, 2000)))) = 1 AND pg_temp.cvv() = 3000, 'รับงวดที่ 1: ถอนจากมูลค่าเวนคืน (เหลือ 3,000)');
+SELECT t.ok(public.receive_insurance_benefits(jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'),
+  'rows', jsonb_build_array(pg_temp.brow('cv', 2, 2000)))) = 1 AND pg_temp.cvv() = 1000, 'รับงวดที่ 2 (อีกครั้ง): เหลือ 1,000');
+-- แก้รายการรับล่าสุด = ยกเลิกของเดิม + บันทึกใหม่ (งวดเดิม)
+SELECT (pg_temp.lastrc('cv')).id AS rb_last \gset
+SELECT t.fails(format($$SELECT public.edit_insurance_benefit_receipt(%L, '{"amount": 1}')$$,
+  (SELECT id FROM public.insurance_benefit_receipts WHERE line_id = pg_temp.bl('cv', 1) AND undone_at IS NULL)), 'เฉพาะรายการรับล่าสุด', 'แก้รายการรับ: รายการก่อนหน้าแก้ไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails(format($$SELECT public.edit_insurance_benefit_receipt(%L, '{"amount": 1}')$$, :'rb_last'), 'PERMISSION_DENIED', 'แก้รายการรับ: CONTRIBUTOR ทำไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((public.edit_insurance_benefit_receipt(:'rb_last', jsonb_build_object('amount', 1500, 'notes', 'แก้ยอดทดสอบ'))->>'cash_value_part')::numeric = 1500,
+            'แก้รายการรับ: ยอด 2,000 → 1,500 ถอนจากมูลค่าเวนคืนทั้งหมด');
+SELECT t.ok((SELECT undone_at IS NOT NULL FROM public.insurance_benefit_receipts WHERE id = :'rb_last')
+        AND (SELECT amount = 1500 AND line_id = pg_temp.bl('cv', 2) AND notes = 'แก้ยอดทดสอบ' AND receipt_date = current_date FROM pg_temp.lastrc('cv'))
+        AND (SELECT paid_amount = 1500 AND remaining = 500 FROM public.v_insurance_schedule_status WHERE id = pg_temp.bl('cv', 2))
+        AND pg_temp.cvv() = 1500,
+            'แก้รายการรับ: ของเดิมถูกยกเลิก · รายการใหม่ผูกงวดเดิม · งวดเหลือค้าง 500 · มูลค่าเวนคืน 3,000 − 1,500 = 1,500');
+SELECT t.fails(format($$SELECT public.edit_insurance_benefit_receipt(%L, '{"amount": 1}')$$, :'rb_last'), 'ยกเลิกไปแล้ว', 'แก้รายการรับ: รายการที่ยกเลิกแล้วแก้ไม่ได้');
+SELECT t.fails(format($$SELECT public.edit_insurance_benefit_receipt(%L, '{"amount": 0}')$$, (pg_temp.lastrc('cv')).id), 'กรุณาใส่ยอด',
+  'แก้รายการรับ: ยอด 0 → ไม่บันทึก');
+SELECT t.ok((SELECT amount = 1500 FROM pg_temp.lastrc('cv')) AND pg_temp.cvv() = 1500, 'แก้รายการรับ: ผิด = ของเดิมยังอยู่ (คำสั่งเดียว)');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.receive_insurance_benefits(jsonb_build_object('date', current_date, 'bank_asset_id', t.a('KBank ออมทรัพย์'),
+  'rows', jsonb_build_array(pg_temp.brow('cv', 3, 1))))$$, 'PERMISSION_DENIED', 'รับหลายงวด: VIEWER ทำไม่ได้');
+SELECT t.ok(has_function_privilege('authenticated', 'public.receive_insurance_benefits(jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.receive_insurance_benefits(jsonb)', 'EXECUTE')
+        AND has_function_privilege('authenticated', 'public.edit_insurance_benefit_receipt(uuid,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'public.edit_insurance_benefit_receipt(uuid,jsonb)', 'EXECUTE')
+        AND NOT has_function_privilege('anon', 'private.benefit_rows_cv_clash(jsonb,date)', 'EXECUTE')
+        AND NOT (SELECT bool_or(prosecdef) FROM pg_proc WHERE oid IN ('public.receive_insurance_benefits(jsonb)'::regprocedure,
+              'public.edit_insurance_benefit_receipt(uuid,jsonb)'::regprocedure, 'private.benefit_rows_cv_clash(jsonb,date)'::regprocedure))
+        AND (SELECT bool_and(proconfig @> ARRAY['search_path=""']) FROM pg_proc WHERE oid IN ('public.receive_insurance_benefits(jsonb)'::regprocedure,
+              'public.edit_insurance_benefit_receipt(uuid,jsonb)'::regprocedure, 'private.benefit_rows_cv_clash(jsonb,date)'::regprocedure,
+              'public.batch_receive_insurance_benefits(jsonb)'::regprocedure)),
+            'รับหลายงวด / แก้รายการรับ: anon เรียกไม่ได้ · SECURITY INVOKER + search_path ว่าง');
+RESET ROLE;
+
 \echo 'ALL SCENARIO TESTS PASSED'

@@ -378,9 +378,9 @@ export async function batchPremiums(_: ActionState, form: FormData): Promise<Act
 }
 
 /**
- * หน้ากรมธรรม์หลัก: จ่ายเบี้ยทั้งเล่มของงวดเดียวกัน (ชีวิต + สัญญาเพิ่มเติม) ในครั้งเดียว (ตกลง 6 พ.ย. 2026)
- *   บัญชี / บัตร = คำสั่งเดียว (ผิดส่วนเดียว = ไม่บันทึกเลย) + ผูกเป็นชุด → หน้าบัญชี / บัตรแสดงยอดรวมแถวเดียว
- *   เงินสด = บันทึกทีละส่วน (ไม่มีเงินออกจากบัญชีให้ผูก)
+ * หน้ากรมธรรม์: ปุ่ม "บันทึกจ่าย" เหนือตาราง (ตกลง 8 พ.ย. 2026 · แบบเงินกู้) — หลายงวด / ทุกส่วนของเล่มในครั้งเดียว
+ *   บัญชี / บัตร = คำสั่งเดียว (ผิดงวดเดียว = ไม่บันทึกเลย) + ผูกเป็นชุด (เล่มเดียวกัน) → หน้าบัญชี / บัตรแสดงยอดรวมแถวเดียว
+ *   เงินสด = บันทึกทีละงวด (ไม่มีเงินออกจากบัญชีให้ผูก)
  */
 export async function payBooklet(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
@@ -389,7 +389,7 @@ export async function payBooklet(_: ActionState, form: FormData): Promise<Action
   if (!rows) return { error: BAD_ROWS_ERROR };
   if (!date) return { error: "กรุณาเลือกวันที่จ่าย" };
   const parts = rows.map((r) => ({ ...r, num: amountOrNull(r.amount) })).filter((r) => plainNumber(r.amount) !== "");
-  if (!parts.length) return { error: "กรุณาใส่ยอดอย่างน้อย 1 ส่วน" };
+  if (!parts.length) return { error: "กรุณาใส่ยอดอย่างน้อย 1 งวด" };
   if (!parts.every((r) => isPositive(r.num))) return { error: "ยอดที่จ่ายต้องเป็นตัวเลขมากกว่า 0" };
   const pay = endpointFromForm(form);
   if (pay.kind !== "cash" && !pay.id) return { error: "กรุณาเลือกบัญชี / บัตรที่จ่าย" };
@@ -417,11 +417,48 @@ export async function payBooklet(_: ActionState, form: FormData): Promise<Action
       ...(pay.kind === "bank" ? { paid_from_asset_id: pay.id } : { paid_from_credit_card_id: pay.id }),
       insurance_schedule_line_id: r.line_id, related_asset_id: assets.get(r.policy_id) ?? null, notes, group: str(form.get("group")),
     })) });
-    if (error) return { error: notSaved("ทั้งเล่ม", friendlyError(error.message)) };
+    if (error) return { error: notSaved("ทุกงวด", friendlyError(error.message)) };
   }
   refreshBatch(parts);
   refreshAssets(assets.values());
-  return { ok: `บันทึกจ่ายเบี้ยแล้ว ${parts.length} ส่วน · รวม ${fmt(total)}` };
+  return { ok: `บันทึกจ่ายเบี้ยแล้ว ${parts.length} งวด · รวม ${fmt(total)}` };
+}
+
+/**
+ * หน้ากรมธรรม์: ปุ่ม "บันทึกรับ" → รับผลประโยชน์ตามงวด (ตกลง 8 พ.ย. 2026 · แบบเงินกู้)
+ *   หลายงวดในครั้งเดียว วัน / บัญชีเดียวกัน · ผิดงวดเดียว = ไม่บันทึกเลย · ปิดกรมธรรม์ = ตอนรับงวดสุดท้าย
+ */
+export async function receiveLines(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const date = str(form.get("date"));
+  const rows = readRows<{ policy_id: string; line_id: string; label: string; amount: string }>(form);
+  if (!rows) return { error: BAD_ROWS_ERROR };
+  if (!date) return { error: "กรุณาเลือกวันที่ได้รับ" };
+  const parts = rows.filter((r) => plainNumber(r.amount) !== "").map((r) => ({ policy_id: r.policy_id, line_id: r.line_id, label: r.label, amount: amountOrNull(r.amount) }));
+  if (!parts.length) return { error: "กรุณาใส่ยอดอย่างน้อย 1 งวด" };
+  if (!parts.every((r) => isPositive(r.amount))) return { error: "ยอดที่ได้รับต้องเป็นตัวเลขมากกว่า 0" };
+  const { error } = await supabase.rpc("receive_insurance_benefits", { p: {
+    date, bank_asset_id: str(form.get("bank_asset_id")), outcome: str(form.get("outcome")), person_id: str(form.get("person_id")), notes: str(form.get("notes")),
+    use_cash_value: !form.has("use_cash_value") || form.getAll("use_cash_value").includes("on"), rows: parts,
+  } });
+  if (error) return { error: notSaved("ทุกงวด", friendlyError(error.message)) };
+  refreshBatch(parts);
+  const total = parts.reduce((t, r) => t + Number(r.amount), 0);
+  return { ok: `บันทึกรับผลประโยชน์แล้ว ${parts.length} งวด · รวม ${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` };
+}
+
+/** กดแถวรับล่าสุด → แก้ (ยกเลิกของเดิม + บันทึกใหม่ในคำสั่งเดียว · งวด / ผลของการรับคงเดิม · ตกลง 8 พ.ย. 2026) */
+export async function editBenefitReceipt(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const amount = num(form.get("amount"));
+  if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
+  const { error } = await supabase.rpc("edit_insurance_benefit_receipt", { p_receipt_id: String(form.get("receipt_id")), p: {
+    date: str(form.get("date")), amount, bank_asset_id: str(form.get("bank_asset_id")), notes: str(form.get("notes")) ?? "",
+    use_cash_value: !form.has("use_cash_value") || form.getAll("use_cash_value").includes("on"),
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  refresh();
+  return { ok: "แก้รายการรับแล้ว" };
 }
 
 /** แท็บ "บันทึกรับผลประโยชน์": หลายงวด หลายกรมธรรม์ → ถอนจากมูลค่าเวนคืนก่อน ส่วนเกินเป็นรายได้ */

@@ -7,10 +7,11 @@ import {
   BENEFIT_TYPE_LABEL, CLAIM_CLS, CLAIM_DONE, CLAIM_OPEN, CLAIM_STATUS, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
   covAmount, covCountUnit, covExtra, covName, coverageHasPeriod, deathCoverage, insCountedPaid, money, signedMoney, signedPct, thDate, todayBangkok,
 } from "@/lib/format";
-import { contractFlows, cvBreakEven, projectedFlows, runningNet, surrenderFlows, xirr, type FlowCash } from "@/lib/insurance-flow";
+import { cashNet, contractFlows, cvBreakEven, projectedFlows, surrenderFlows, xirr, type CashEvent, type FlowCash } from "@/lib/insurance-flow";
 import FlowTable, { type FlowPart, type FlowRow, type FlowSub } from "./FlowTable";
 import { addMonthsKeepDay } from "@/lib/loan-schedule";
-import { BenefitForm, BookletPayForm, PayPremiumForm, PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
+import { PolicyInfoForm, SumCoverageRow, SyncCashValueButton } from "./ins-forms";
+import { PayLinesForm, ReceiptEdit, ReceiveForm, type OpenLine } from "./FlowRecord";
 import { CoverageEditor } from "../CoverageGrid";
 import { AddRiderButton } from "../RiderFields";
 import { PART_LABEL, bookletGroups, bookletKey, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
@@ -20,7 +21,6 @@ import EditToggle from "@/components/EditToggle";
 import BeneficiaryEditor from "../Beneficiaries";
 import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
-import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect, { WithStatus } from "@/components/StatusSelect";
 import AssetValuationForm from "@/components/AssetValuationForm";
@@ -50,7 +50,7 @@ const BOOK_COLS = "id,insurance_type,insurer,policy_no,insured_amount,insured_am
 /** ความคุ้มครอง (ตกลง 8 พ.ย. 2026: รอบของสูงสุด · ชื่อ "อื่น ๆ" · ณ วันที่รายแถวเลิกแสดง แต่ยังส่งค่าเดิมกลับตอนบันทึกทั้งตาราง) */
 const COV_COLS = "id,coverage_type,limit_amount,currency,notes,max_count,count_period,label,as_of_date";
 const LINE_COLS = "id,kind,installment_no,due_date,amount,currency,benefit_type,notes,paid_amount,remaining,status,skipped";
-const PAY_COLS = "id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes";
+const PAY_COLS = "id,date,amount,currency,paid_from_asset_id,paid_from_credit_card_id,insurance_schedule_line_id,notes,created_at,payment_group_id";
 const RECV_COLS = "id,line_id,receipt_date,amount,currency,bank_asset_id,cash_value_part,income_part,outcome,notes,created_at";
 /** ลำดับหัวข้อความคุ้มครองมาตรฐาน */
 const COV_ORDER = Object.keys(COVERAGE_LABEL);
@@ -180,8 +180,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const cvRows = (cvTable ?? []).map((r) => ({ policy_year: Number(r.policy_year), value: Number(r.value), value_date: r.value_date as string }));
   const cvDue = cvRows.filter((r) => r.value_date <= today).at(-1) ?? null;
   const cvPending = !!cvDue && policyActive && (!cvAsset || !cvAsset.current_value_date || cvDue.value_date > cvAsset.current_value_date);
-  const cvCtx = cvAsset ? { assetId: cvAsset.id, currency: cvAsset.currency, current: cvAsset.current_value == null ? null : Number(cvAsset.current_value),
-    minDate: family?.go_live_date ?? "", paths, suggest: cvDue ? { value: cvDue.value, year: cvDue.policy_year, date: cvDue.value_date } : null } : null;
   const startIso: string | null = p.start_date ?? null;
   // สรุปกรมธรรม์: ได้คืน = (ผลประโยชน์ที่รับ + มูลค่าเวนคืนปัจจุบัน) ÷ เบี้ยที่จ่ายรวม
   const cvNow = cvAsset && cvAsset.current_value != null && cvAsset.currency === ccy ? Number(cvAsset.current_value) : null;
@@ -289,16 +287,45 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const allReceipts = [...(receipts ?? []).map((r) => ({ ...r, policy_id: id })), ...(book?.receipts ?? [])];
   const allPays = [...(premPays ?? []), ...(book?.pays ?? [])];
   const lumps = allReceipts.filter((r) => !r.line_id);
-  const lumpFlow = (rs: typeof lumps) => rs.map((r) => ({ key: r.id as string, date: r.receipt_date as string, amount: Number(r.amount) }));
   /** ส่วนที่นับในสุทธิสะสม / คุ้มทุน: สัญญาหลัก + สัญญาเพิ่มเติมแบบชีวิต / บำนาญ */
   const inNet = (pid: string) => pid === id || ["LIFE", "ANNUITY"].includes(polOf.get(pid)?.insurance_type ?? "");
   const netSkip = book ? [...new Set(bookParts.filter((x) => !inNet(x.id)).map((x) => partName(x.id)))] : [];
-  const flow = runningNet(allLines.filter((x) => inNet(x.policy_id)), lumpFlow(lumps.filter((r) => inNet(r.policy_id as string))), policyActive);
+  // เงินจริง = แถวของตัวเอง ตามวันที่จ่าย / รับจริง (ตกลง 8 พ.ย. 2026 · แบบเงินกู้)
+  //   จ่ายเบี้ย = ชุดการจ่าย (จ่ายพร้อมกันจากบัญชี / บัตรเดียวกัน = 1 แถว · เงินสด / ไม่มีชุด = แถวละรายการ) · รับ = แถวละรายการ
+  type Pay = (typeof allPays)[number];
+  type Receipt = (typeof allReceipts)[number];
+  const lineOf = new Map(allLines.map((x) => [x.id, x]));
+  const payLine = (e: Pay) => lineOf.get(e.insurance_schedule_line_id as string);
+  const payPid = (e: Pay) => payLine(e)?.policy_id ?? id;
+  const payGroups = new Map<string, Pay[]>();
+  allPays.forEach((e) => { const k = `${e.payment_group_id ?? e.id}|${e.date}`; payGroups.set(k, [...(payGroups.get(k) ?? []), e]); });
+  const payEvs = [...payGroups.values()].map((items) => ({ key: `pay${items[0].id}`, date: items[0].date as string,
+    at: items.map((e) => String(e.created_at ?? "")).sort().at(-1) ?? "",
+    items: [...items].sort((a, b) => partOrder(payPid(a)) - partOrder(payPid(b)) || (payLine(a)?.installment_no ?? 0) - (payLine(b)?.installment_no ?? 0)) }));
+  const recvEvs = allReceipts.map((r) => ({ key: `rc${r.id}`, date: r.receipt_date as string, at: String(r.created_at ?? ""), r }));
+  /** เงินจริงเรียงเก่า → ใหม่ (วันเดียวกัน = ตามเวลาที่บันทึก) · keep = ส่วนที่นับยอด (ส่วนอื่น = 0 แต่ยังมีแถว) */
+  const cashEvents = (keep: (pid: string) => boolean): CashEvent[] => [
+    ...payEvs.map((ev) => ({ key: ev.key, kind: "PREMIUM" as const, date: ev.date, at: ev.at,
+      amount: ev.items.filter((e) => keep(payPid(e))).reduce((t, e) => t + Number(e.amount), 0) })),
+    ...recvEvs.map((ev) => ({ key: ev.key, kind: "BENEFIT" as const, date: ev.date, at: ev.at, amount: keep(ev.r.policy_id) ? Number(ev.r.amount) : 0 })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.at.localeCompare(b.at));
+  // สุทธิสะสม = เงินจริง ณ วันที่จ่าย / รับ + งวดก่อน Go-live (เต็มงวด) + งวดที่ยังค้าง (คาดการณ์ ณ วันครบกำหนด)
+  const flow = cashNet(allLines.filter((x) => inNet(x.policy_id)), cashEvents(inNet), policyActive);
   const netOf = new Map(flow.rows.map((r) => [r.key, r]));
-  // ลำดับแถวในตาราง = ทุกส่วนของเล่ม (รวมส่วนที่ไม่นับในสุทธิสะสม)
-  const flowPos = new Map(runningNet(allLines, lumpFlow(lumps), policyActive).rows.map((r, i) => [r.key, i]));
+  // ลำดับแถวในตาราง = ทุกส่วนของเล่ม (รวมส่วนที่ไม่นับในสุทธิสะสม) · วันเดียวกัน: งวดก่อนเงินจริง · เบี้ยก่อนผลประโยชน์
+  const flowPos = new Map(cashNet(allLines, cashEvents(() => true), policyActive).rows.map((r, i) => [r.key, i]));
   const allBenefits = allLines.filter((x) => x.kind === "BENEFIT");
   const allPremiums = allLines.filter((x) => x.kind === "PREMIUM");
+  // งวดที่ยังค้างของทุกส่วนในเล่ม → ปุ่ม "บันทึกรับ" / "บันทึกจ่าย" เหนือตาราง (เรียงวันครบกำหนด → ส่วน)
+  //   ผลประโยชน์ของสัญญาหลักที่มีมูลค่าเวนคืน > 0 = ถอนจากมูลค่าเวนคืนได้ครั้งละ 1 งวด
+  const openOf = (xs: SLine[], ben: boolean): OpenLine[] => xs.filter((x) => INS_OPEN.includes(x.status) && Number(x.remaining) > 0.005)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date) || partOrder(a.policy_id) - partOrder(b.policy_id) || a.installment_no - b.installment_no)
+    .map((x) => ({ policyId: x.policy_id, lineId: x.id, part: book ? partName(x.policy_id) : null,
+      label: ben ? BENEFIT_TYPE_LABEL[x.benefit_type ?? "OTHER"] ?? "ผลประโยชน์" : payLabel(x.policy_id, x.installment_no),
+      no: ben ? null : x.installment_no, due: x.due_date, remaining: Number(x.remaining), currency: x.currency,
+      cv: ben && x.policy_id === id && Number(cvAsset?.current_value ?? 0) > 0.005 }));
+  const openPrem = openOf(allPremiums, false);
+  const openBen = openOf(allBenefits, true);
   // แก้ตารางเบี้ยทั้งเล่ม: สัญญาหลักก่อน แล้วสัญญาเพิ่มเติมที่ยังมีผล · ชื่อคอลัมน์ซ้ำ (สัญญาเพิ่มเติมประเภทเดียวกันหลายฉบับ) ต่อชื่อแบบ / เลข
   const bookEdIds = book ? [id, ...others.filter((o) => o.status === "ACTIVE").map((o) => o.id)] : [];
   const bookEd: BookletPart[] = bookEdIds.map((pid) => {
@@ -351,16 +378,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       book: bookIrr(() => xirr(surrenderFlows(allLines, bookCash, today, cvFlow))),
       sub: `เงินจริงถึงวันนี้ + มูลค่าเวนคืน ${money(cvFlow, undefined, 0)} (${thDate(cvAsset?.current_value_date)})`, why: irrWhy ?? "ยังไม่ได้จ่ายเบี้ย" }] : []),
   ];
-  // เงินจริงแทรกใต้งวด (เก่า → ใหม่) · ยกเลิกการรับ: รายการล่าสุดของกรมธรรม์นั้น หรือรายการที่ไม่ได้ปิดกรมธรรม์
-  const payBy = new Map<string, typeof allPays>();
-  [...allPays].reverse().forEach((e) => { const k = e.insurance_schedule_line_id as string; payBy.set(k, [...(payBy.get(k) ?? []), e]); });
-  const recvBy = new Map<string, typeof allReceipts>();
-  [...allReceipts].reverse().forEach((r) => { if (r.line_id) recvBy.set(r.line_id, [...(recvBy.get(r.line_id) ?? []), r]); });
-  const latestRecv = new Map<string, string>();
-  allReceipts.forEach((r) => { if (!latestRecv.has(r.policy_id)) latestRecv.set(r.policy_id, r.id as string); });   // ใหม่ → เก่า ต่อกรมธรรม์
-  type Receipt = (typeof allReceipts)[number];
-  const undo = (r: Receipt) => canDelete && (latestRecv.get(r.policy_id) === r.id || !r.outcome) ? <UndoButton kind="BENEFIT" id={r.id} paths={linePaths(r.policy_id)}
-    confirmText={`ยกเลิกการรับ ${money(r.amount, r.currency)} วันที่ ${thDate(r.receipt_date)} ทั้งก้อน?${r.outcome ? "\nกรมธรรม์และมูลค่าเวนคืนจะกลับเป็นสถานะก่อนรับ" : ""}`} /> : null;
   const recvDetail = (r: Receipt) => [Number(r.cash_value_part) > 0 ? `จากมูลค่าเวนคืน ${money(r.cash_value_part)}` : null,
     Number(r.income_part) > 0 ? `รายได้ ${money(r.income_part)}` : null, r.notes].filter(Boolean).join(" · ") || null;
   const recvText = (r: Receipt, first: string) => [r.outcome ? OUTCOME[r.outcome] ?? r.outcome : first, r.bank_asset_id ? `เข้า ${bankName.get(r.bank_asset_id) ?? "บัญชี"}` : null].filter(Boolean).join(" · ");
@@ -371,15 +388,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     ...(Number(x.paid_amount) === 0 ? [{ name: "skipped", label: ben ? "ได้รับจริงไหม" : "จ่ายจริงไหม", type: "select" as const, value: x.skipped ? "true" : "false",
       options: [["false", ben ? "ได้รับ / รอรับ" : "จ่าย / รอจ่าย"], ["true", ben ? "ไม่ได้รับ" : "ไม่ได้จ่าย"]] as [string, string][] }] : []),
     { name: "notes", label: "หมายเหตุ", value: x.notes, width: "w-40" }];
+  // ข้อความแถวจ่ายจริง (ป้าย "จ่าย" อยู่หน้าข้อความ): จาก บัญชี / บัตร · เงินสด
   const payFrom = (e: (typeof allPays)[number]) =>
-    `จ่ายจาก ${e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}`;
-  const payRows = (x: SLine, prefix = ""): FlowSub[] => (payBy.get(x.id) ?? []).map((e) => ({ key: e.id, kind: "PAY" as const, date: e.date, amount: Number(e.amount),
-    detail: e.notes, part: partKey(x.policy_id), text: `${prefix}${payFrom(e)}`,
-    actions: canWrite ? <RowActions table="expense_items" id={e.id} paths={payPathsOf(x.policy_id)} canDelete={canDelete} fields={premiumPaymentFields(e)} /> : null }));
-  const payForm = (x: SLine) => (
-    <PayPremiumForm policyId={x.policy_id} lineId={x.id} amount={Number(x.remaining)} label={payLabel(x.policy_id, x.installment_no)} currency={x.currency}
-      banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId} defaultPay={payDefault} today={today} cashValue={x.policy_id === id ? cvCtx : null} />
-  );
+    e.paid_from_asset_id ? `จาก ${bankName.get(e.paid_from_asset_id) ?? "บัญชี"}` : e.paid_from_credit_card_id ? `จากบัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด";
   // แถวที่รวมเบี้ยกับผลประโยชน์ของวันเดียวกัน: ป้ายบอกฝั่ง (รอจ่าย / รอรับ …) · สถานะอื่นบอกฝั่งอยู่แล้ว (จ่ายแล้ว / รับแล้ว · ไม่ได้จ่าย / ไม่ได้รับ)
   const SIDE: Record<string, [string, string]> = { PENDING: ["รอจ่าย", "รอรับ"], OVERDUE: ["ค้างจ่าย", "ค้างรับ"], PARTIAL: ["จ่ายบางส่วน", "รับบางส่วน"] };
   const sideText = (status: string, ben: boolean, text: string) => SIDE[status]?.[ben ? 1 : 0] ?? text;
@@ -405,16 +416,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
         ? `${ben ? "รับ" : "จ่าย"}แล้ว ${money(paidAmt)}${x.status === "PARTIAL" ? ` · ค้าง ${money(x.remaining)}` : ""}` : null,
       muted: ["PAID", "CLOSED", "SKIPPED", "HISTORY"].includes(x.status), next: x.id === firstOpen,
       net: showNet ? n?.net ?? null : null, projected: n?.projected, breakEven: showNet && flow.breakEven?.key === x.id,
-      actions: <>
-        {canWrite && INS_OPEN.includes(x.status) && (ben
-          ? <BenefitForm policyId={pid} lineId={x.id} amount={Number(x.remaining)} currency={x.currency} banks={banks ?? []} persons={persons ?? []}
-              hasCashValue={pid === id && !!cvAsset} cashValue={pid === id ? cvAsset?.current_value : null} today={today} small canClose={canDelete} />
-          : payForm(x))}
-        {canWrite && x.status !== "PAID" && !merged && <div className="mt-1"><RowActions table="insurance_schedule_lines" id={x.id} paths={linePaths(pid)} canDelete={canDelete} fields={lineFields(x, ben)} /></div>}
-      </>,
-      cash: ben
-        ? (recvBy.get(x.id) ?? []).map((r) => ({ key: r.id, kind: "RECV" as const, date: r.receipt_date, text: recvText(r, "รับ"), detail: recvDetail(r), amount: Number(r.amount), actions: undo(r) }))
-        : payRows(x),
+      // กดแถวงวด = แก้ / ลบงวด (บันทึกจ่าย / รับ = ปุ่มเหนือตาราง · ตกลง 8 พ.ย. 2026)
+      actions: canWrite && x.status !== "PAID" && !merged
+        ? <RowActions table="insurance_schedule_lines" id={x.id} paths={linePaths(pid)} canDelete={canDelete} fields={lineFields(x, ben)} /> : null,
     };
   };
   // เล่มที่มีสัญญาเพิ่มเติม: งวดเบี้ยที่ครบวันเดียวกันรวมแถวเดียว · กดยอดของส่วนไหน = แก้งวดของส่วนนั้น · ค้าง ≥ 2 ส่วน = จ่ายทั้งเล่มในครั้งเดียว
@@ -434,7 +438,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     const st = INS_SCHED_STATUS[status];
     const paidAmt = xs.reduce((t, x) => t + Number(x.paid_amount), 0);
     const left = xs.filter((x) => OPEN_ST.includes(x.status)).reduce((t, x) => t + Number(x.remaining), 0);
-    const open = xs.filter((x) => OPEN_ST.includes(x.status) && Number(x.remaining) > 0.005);
     const split: Record<string, ReactNode> = {};
     (flowParts ?? []).forEach((fp) => {
       const mine = xs.filter((x) => partKey(x.policy_id) === fp.key);
@@ -454,19 +457,57 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       progress: status === "PARTIAL" || (status === "CLOSED" && paidAmt > 0) ? `จ่ายแล้ว ${money(paidAmt)}${status === "PARTIAL" ? ` · ค้าง ${money(left)}` : ""}` : null,
       muted: xs.every((x) => ["PAID", "CLOSED", "SKIPPED", "HISTORY"].includes(x.status)), next: xs.some((x) => x.id === firstOpen),
       net: showNet ? n?.net ?? null : null, projected: n?.projected, breakEven: showNet && xs.some((x) => flow.breakEven?.key === x.id),
-      actions: canWrite && open.length > 0 ? (open.length > 1
-        ? <BookletPayForm group={book?.role.key ?? ""} banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId} defaultPay={payDefault} today={today}
-            parts={open.map((x) => ({ policyId: x.policy_id, lineId: x.id, part: partName(x.policy_id), label: payLabel(x.policy_id, x.installment_no),
-              amount: Number(x.remaining), currency: x.currency }))} />
-        : payForm(open[0])) : null,
-      cash: xs.flatMap((x) => payRows(x, manyRiders && x.policy_id !== id ? `${typeLabel(x.policy_id)} · ` : "")).sort((a, b) => a.date.localeCompare(b.date)),
     };
   };
   const byDue = new Map<string, SLine[]>();
   allPremiums.forEach((x) => byDue.set(x.due_date, [...(byDue.get(x.due_date) ?? []), x]));
-  const lumpRow = (r: Receipt): FlowRow => ({ key: r.id, kind: "BENEFIT", date: r.receipt_date, label: "", amount: Number(r.amount),
-    lump: { text: `${r.policy_id === id ? "" : `${partName(r.policy_id)} · `}${recvText(r, "รับเงินก้อน")}`, detail: recvDetail(r) },
-    net: showNet ? netOf.get(r.id)?.net ?? null : null, breakEven: flow.breakEven?.key === r.id, actions: undo(r) });
+  // แถวเงินจริง (ตกลง 8 พ.ย. 2026 · แบบเงินกู้): แก้ / ลบได้เฉพาะรายการล่าสุดของแต่ละฝั่ง (จ่าย / รับ) · รายการเก่าผิด = ลบย้อนจากรายการล่าสุด
+  const latestOf = (xs: { key: string; date: string; at: string }[]) => [...xs].sort((a, b) => b.date.localeCompare(a.date) || b.at.localeCompare(a.at))[0]?.key;
+  const latestPay = latestOf(payEvs);
+  const latestRecv = latestOf(recvEvs);
+  const payEdit = (e: Pay, button?: string) => <RowActions table="expense_items" id={e.id} paths={payPathsOf(payPid(e))} canDelete={canDelete}
+    fields={premiumPaymentFields(e)} button={button} buttonClass={button ? AMT : undefined} />;
+  const payRow = (ev: (typeof payEvs)[number]): FlowRow => {
+    const edit = canWrite && ev.key === latestPay;
+    const one = ev.items.length === 1;
+    const ls = ev.items.map(payLine).filter((x): x is SLine => !!x);
+    const mainLs = ls.filter((x) => x.policy_id === id);
+    const ns = [...new Set((mainLs.length ? mainLs : ls).map((x) => x.installment_no))].sort((a, b) => a - b);
+    const split: Record<string, ReactNode> = {};
+    (flowParts ?? []).forEach((fp) => {
+      const mine = ev.items.filter((e) => partKey(payPid(e)) === fp.key);
+      if (mine.length) split[fp.key] = money(mine.reduce((t, e) => t + Number(e.amount), 0));
+    });
+    // หลายงวด / หลายส่วนในชุดเดียว = ยอดของแต่ละรายการ (รายการล่าสุด: กดยอดเพื่อแก้ / ลบรายการนั้น) · รายการเดียว = กดแถว
+    const itemText = (e: Pay) => [book ? partName(payPid(e)) : null, payLine(e) ? `งวดที่ ${payLine(e)?.installment_no}` : null].filter(Boolean).join(" ");
+    const notes = [...new Set(ev.items.map((e) => e.notes as string | null).filter(Boolean))];
+    const detail = one
+      ? [book && payPid(ev.items[0]) !== id ? partName(payPid(ev.items[0])) : null, ...notes].filter(Boolean).join(" · ") || null
+      : <>{ev.items.map((e, i) => <span key={e.id}>{i > 0 && " · "}<span className="whitespace-nowrap">{itemText(e)} {edit ? payEdit(e, money(e.amount)) : money(e.amount)}</span></span>)}
+          {notes.length > 0 && <div>{notes.join(" · ")}</div>}</>;
+    return {
+      key: ev.key, kind: "PREMIUM", date: ev.date, label: "", amount: ev.items.reduce((t, e) => t + Number(e.amount), 0),
+      no: ns.length > 1 && ns.every((x, i) => i === 0 || x === ns[i - 1] + 1) ? `${ns[0]}–${ns.at(-1)}` : ns.join(", ") || null,
+      split: flowParts ? split : undefined,
+      money: { kind: "PAY", text: payFrom(ev.items[0]), detail },
+      net: showNet ? netOf.get(ev.key)?.net ?? null : null, breakEven: showNet && flow.breakEven?.key === ev.key,
+      actions: edit && one ? payEdit(ev.items[0]) : null,
+    };
+  };
+  const recvRow = (r: Receipt): FlowRow => {
+    const ln = r.line_id ? lineOf.get(r.line_id) : undefined;
+    const key = `rc${r.id}`;
+    return {
+      key, kind: "BENEFIT", date: r.receipt_date, label: "", amount: Number(r.amount),
+      money: { kind: "RECV", text: `${r.policy_id === id ? "" : `${partName(r.policy_id)} · `}${recvText(r, ln ? BENEFIT_TYPE_LABEL[ln.benefit_type ?? "OTHER"] : "รับเงินก้อน")}`,
+        // รับก่อน / หลังวันครบกำหนด → บอกงวดที่รับ (เช่น รับเงินครบสัญญาบางส่วนก่อนครบ)
+        detail: [ln && ln.due_date !== r.receipt_date ? `งวดครบ ${thDate(ln.due_date)}` : null, recvDetail(r)].filter(Boolean).join(" · ") || null },
+      net: showNet ? netOf.get(key)?.net ?? null : null, breakEven: showNet && flow.breakEven?.key === key,
+      actions: canDelete && key === latestRecv ? <ReceiptEdit r={{ id: r.id, date: r.receipt_date, amount: Number(r.amount), bank_asset_id: r.bank_asset_id,
+        notes: r.notes, outcome: r.outcome, cash_value_part: Number(r.cash_value_part ?? 0) }} currency={r.currency} banks={banks ?? []}
+        hasCashValue={r.policy_id === id && !!cvAsset} paths={linePaths(r.policy_id)} /> : null,
+    };
+  };
   const pos = (k: string) => flowPos.get(k) ?? 0;
   // ผลประโยชน์ที่ครบวันเดียวกับงวดเบี้ย → แถวเดียวกัน (ตกลง 8 พ.ย. 2026 · วันละ 1 รายการ · วันอื่นในปีเดียวกันยังแยกแถว)
   const benOn = new Map<string, SLine>();
@@ -485,7 +526,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       net: br.net ?? row.net, projected: br.net != null ? br.projected : row.projected, breakEven: row.breakEven || br.breakEven,
       muted: row.muted && br.muted, next: row.next || br.next,
       actions: row.actions || br.actions ? <>{row.actions}{br.actions}</> : null,
-      cash: [...(row.cash ?? []), ...(br.cash ?? [])].sort((a, c) => a.date.localeCompare(c.date)),
     };
   };
   const flowRows: FlowRow[] = ([
@@ -493,7 +533,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       ? [...byDue].map(([due, xs]): [number, FlowRow] => [Math.min(...xs.map((x) => pos(x.id))), premRow(due, (m) => mergedRow(due, xs, m))])
       : allPremiums.map((x): [number, FlowRow] => [pos(x.id), premRow(x.due_date, (m) => lineRow(x, m))])),
     ...allBenefits.filter((x) => !benUsed.has(x.id)).map((x): [number, FlowRow] => [pos(x.id), lineRow(x)]),
-    ...lumps.map((r): [number, FlowRow] => [pos(r.id), lumpRow(r)]),
+    ...payEvs.map((ev): [number, FlowRow] => [pos(ev.key), payRow(ev)]),
+    ...recvEvs.map((ev): [number, FlowRow] => [pos(ev.key), recvRow(ev.r)]),
   ] as [number, FlowRow][]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   // มูลค่าเวนคืนในตาราง (ตกลง 8 พ.ย. 2026): ตามสัญญา → ช่องของแถวเบี้ย / ผลประโยชน์ที่วันตรงกัน (ไม่มี = แถวมูลค่าเวนคืนอย่างเดียว)
   //   ยอดที่ลงจริง → แถวย่อยใต้แถวล่าสุดที่ถึงวันนั้น
@@ -507,7 +548,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     [...zeroYears, ...cvRows.map((r) => ({ ...r, zero: false }))].forEach((r) => {
       const cell = r.zero ? <span className="tabular-nums text-slate-400">{money(0)}</span> : cvCellOf(r);
       const be = !r.zero && cvBE?.policy_year === r.policy_year ? { projected: r.value_date > today } : null;
-      const hit = flowRows.find((x) => !x.lump && x.kind !== "CV" && x.date === r.value_date && x.cv == null);
+      const hit = flowRows.find((x) => !x.money && x.kind !== "CV" && x.date === r.value_date && x.cv == null);
       if (hit) { hit.cv = cell; hit.breakEvenCv = be; return; }
       const at = flowRows.findIndex((x) => x.date > r.value_date);
       flowRows.splice(at < 0 ? flowRows.length : at, 0, { key: `cvy${r.policy_year}`, kind: "CV", date: r.value_date,
@@ -583,8 +624,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
           </div>
           {canWrite && policyActive && !isProp && (
             <ActionBar>
-              <BenefitForm policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
-                cashValue={cvAsset?.current_value} today={today} button="รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม)" canClose={canDelete} />
               <AddRiderButton mainId={id} policyNo={p.policy_no} currency={ccy} today={today} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50" />
             </ActionBar>
           )}
@@ -840,6 +879,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             {!isProp && showCv && canDelete && <CvTableEditor policyId={id} startDate={startIso} current={cvRows} postedYears={postedYears} today={today}
               goLive={goLive || null} currency={cvAsset?.currency ?? ccy} />}
             {!isProp && cvPending && <SyncCashValueButton policyId={id} />}
+            {/* บันทึกรับ + บันทึกจ่าย คู่กัน (ตกลง 8 พ.ย. 2026 · แบบเงินกู้ แทนปุ่มรายแถว): เลือกวันที่ → เติมงวดที่ครบถึงวันนั้น ทุกส่วนของเล่ม */}
+            {!isProp && <ReceiveForm lines={openBen} policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
+              cashValue={cvAsset?.current_value} today={today} canClose={canDelete} minDate={goLive || null} />}
+            <PayLinesForm lines={openPrem} group={bookletKey(p) ?? ""} banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId}
+              defaultPay={payDefault} today={today} minDate={goLive || null} />
             </div>}
           </div>
             {premiums.length > 0 ? (
@@ -859,7 +903,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             })}
             {!isProp && (benefits.length > 0
               ? <p className="text-sm text-slate-600">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</p>
-              : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กดปุ่ม &ldquo;รับเงินก้อน&rdquo; ด้านบน</p>)}
+              : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กด &ldquo;บันทึกรับ&rdquo; → รับเงินก้อน</p>)}
             {!isProp && (cvRows.length > 0
               ? <p className="text-sm text-slate-600">มูลค่าเวนคืนตามสัญญา {cvRows.length} ปี{cvDue ? ` · ล่าสุดปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy)}` : " · ยังไม่ถึงปีแรก"}
                   {cvPending && <span className="text-amber-700"> · ปีที่ {cvDue?.policy_year} ยังไม่ได้ลง (เบี้ยก่อนหน้ายังค้าง หรือกด &ldquo;ลงมูลค่าตามตาราง&rdquo;)</span>}</p>
@@ -907,7 +951,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             </div>
           </div>
         )}
-        {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} currency={ccy} parts={flowParts} showCv={showCvCol} startDate={startIso} birthDate={birthIso} />}
+        {flowRows.length > 0 && <FlowTable rows={flowRows} showNet={showNet} parts={flowParts} showCv={showCvCol} startDate={startIso} birthDate={birthIso} />}
       </section>
     </div>
   );
