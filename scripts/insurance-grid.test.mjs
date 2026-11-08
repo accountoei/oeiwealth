@@ -1,7 +1,11 @@
 // node scripts/insurance-grid.test.mjs — ทดสอบตารางเบี้ย / ผลประโยชน์ที่แก้ทีละช่อง (src/lib/insurance-grid.ts · ตัวเลขสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { addMonthsIso, cvAutoDate, cvGridToLines, cvNextRow, cvSetYear, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, sortCvGrid, sortGrid } from "../src/lib/insurance-grid.ts";
+import {
+  addMonthsIso, bookEmpty, bookFillDown, bookLocked, bookNextRow, bookNotes, bookSetNotes, bookPut, bookRows, bookSetCell, bookSetSkipped, bookSkipped, bookToParts, bookTotal, bookEvery,
+  cvAutoDate, cvGridToLines, cvNextRow, cvSetYear, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, parseBookTable, sortCvGrid, sortGrid,
+} from "../src/lib/insurance-grid.ts";
+import { toIsoDate, toNum } from "../src/lib/loan-schedule.ts";
 import {
   addableCovTypes, addablePresets, blankCovRow, blankKey, blankRider, covPayload, covRemoved, partText, patchCovRow, periodAllowed, presetCovRow, riderPayload,
   rowsFromExisting, sortCovRows, visibleCovTypes,
@@ -266,6 +270,94 @@ assert.deepEqual(gridToLines([R("p", "2026-09-01", "100", { locked: "จ่า�
   assert.equal(cvNextRow(C("a", "4", "2021-09-30", "1"), "n", S).date, "2022-09-30");
   assert.deepEqual(cvNextRow(undefined, "n", S), { key: "n", year: "1", date: "2018-07-20", value: "" });
   assert.deepEqual(sortCvGrid([C("a", "3", "", ""), C("b", "", "", ""), C("c", "1", "", "")]).map((x) => x.key), ["c", "a", "b"]);
+}
+
+
+// ---------------------------------------------------------------- ตารางเบี้ยทั้งเล่ม (ตกลง 8 พ.ย. 2026)
+{
+  let n = 0; const nk = () => `b${++n}`;
+  const parts = [{ id: "L", label: "ชีวิต" }, { id: "H", label: "สุขภาพ" }];
+  const cur = [
+    { policy_id: "L", due_date: "2026-07-20", amount: 1402, notes: null, skipped: false, locked: "จ่ายแล้ว 1,402.00" },
+    { policy_id: "H", due_date: "2026-07-20", amount: 730, notes: "หมายเหตุเดิม", skipped: false, locked: null },
+    { policy_id: "L", due_date: "2027-07-20", amount: 1402, notes: null, skipped: false, locked: null },
+    { policy_id: "H", due_date: "2027-07-20", amount: 730, notes: null, skipped: true, locked: null },
+    { policy_id: "H", due_date: "2028-07-20", amount: 800, notes: null, skipped: false, locked: null },
+  ];
+  let rows = bookRows(cur, nk);
+  assert.equal(rows.length, 3, "วันเดียวกันรวมแถวเดียว");
+  assert.equal(rows[0].cells.L.locked, "จ่ายแล้ว 1,402.00");
+  assert.ok(bookLocked(rows[0]) && !bookLocked(rows[1]));
+  assert.equal(bookTotal(rows[0]), 2132);
+  assert.equal(bookTotal(rows[1]), 1402, "ช่องที่ติ๊กไม่ได้จ่ายไม่นับในรวม");
+  assert.ok(!bookSkipped(rows[1]), "ติ๊กบางช่อง = ไม่นับว่าทั้งแถว");
+  assert.equal(rows[2].cells.L, undefined, "ส่วนที่ไม่มีงวดวันนั้น = ไม่มีช่อง");
+  // บันทึก: ช่องที่จ่ายแล้วไม่ส่ง · หมายเหตุ / ไม่ได้จ่าย ต่อช่องคงไว้
+  let r = bookToParts(rows, parts, "2026-10-01");
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.parts[0].lines, [{ due_date: "2027-07-20", amount: 1402 }]);
+  assert.deepEqual(r.parts[1].lines, [
+    { due_date: "2026-07-20", amount: 730, notes: "หมายเหตุเดิม" }, { due_date: "2027-07-20", amount: 730, skipped: true }, { due_date: "2028-07-20", amount: 800 }]);
+  assert.equal(r.count, 4);
+  // แก้ช่อง · ช่องที่จ่ายแล้วแก้ไม่ได้ · ยอดว่าง = ไม่มีงวด
+  rows = bookSetCell(rows, 0, "L", "9");
+  assert.equal(rows[0].cells.L.amount, "1402.00", "ช่องที่จ่ายแล้วแก้ไม่ได้");
+  rows = bookSetCell(rows, 2, "L", "1,500");
+  assert.equal(bookToParts(rows, parts, null).parts[0].lines.at(-1).amount, 1500, "ส่วนที่ไม่มีงวด ใส่ยอดในคอลัมน์ได้");
+  rows = bookSetCell(rows, 2, "L", "");
+  assert.equal(bookToParts(rows, parts, null).parts[0].lines.length, 1);
+  // ติ๊กทั้งแถว
+  rows = bookSetSkipped(rows, 1, true);
+  assert.ok(bookSkipped(rows[1]) && rows[1].cells.L.skipped && rows[1].cells.H.skipped);
+  rows = bookSetSkipped(rows, 0, true);
+  assert.equal(rows[0].cells.L.skipped, false, "ติ๊กทั้งแถวไม่แตะช่องที่จ่ายแล้ว");
+  rows = bookSetSkipped(rows, 1, false);
+  // หมายเหตุของแถว = ทุกช่องที่ยังแก้ได้ · ช่องที่จ่ายแล้วไม่แตะ
+  rows = bookSetNotes(rows, 1, "เลื่อนจ่าย");
+  assert.equal(bookNotes(rows[1]), "เลื่อนจ่าย");
+  assert.ok(rows[1].cells.L.notes === "เลื่อนจ่าย" && rows[1].cells.H.notes === "เลื่อนจ่าย");
+  const lockedNote = rows[0].cells.L.notes;
+  rows = bookSetNotes(rows, 0, "x");
+  assert.equal(rows[0].cells.L.notes, lockedNote, "หมายเหตุช่องที่จ่ายแล้วไม่แตะ");
+  rows = bookSetNotes(rows, 0, lockedNote);
+  rows = bookSetNotes(rows, 1, "");
+  // แถวใหม่ต่อท้าย: + รอบเดิม (12 เดือน) · ยอดทุกส่วนเท่าแถวเดิม
+  assert.equal(bookEvery(rows), 12);
+  const nr = bookNextRow(rows[1], 12, "x", "2030-01-01", ["L", "H"]);
+  assert.equal(nr.due, "2028-07-20");
+  assert.deepEqual(Object.keys(nr.cells).sort(), ["H", "L"]);
+  assert.equal(bookNextRow(undefined, 12, "y", "2030-01-01", ["L"]).due, "2030-01-01");
+  // ยอดนี้ ↓
+  const fd = bookFillDown(rows, 1);
+  assert.equal(fd[2].cells.L.amount, "1402.00", "ยอดนี้ ↓ เติมส่วนที่แถวล่างยังไม่มี");
+  assert.equal(fd[2].cells.H.amount, "730.00");
+  assert.equal(bookFillDown(rows, 0)[1].cells.L.amount, "1402.00");
+  // ตรวจ: แถวว่าง · วันซ้ำ · ยอดผิด · งวดก่อนงวดที่จ่ายแล้ว
+  const bad = [...rows, { key: "e", due: "2029-07-20", cells: {} }, { key: "d", due: "2027-07-20", cells: { L: { amount: "5", skipped: false, notes: "" } } }];
+  const be = bookToParts(bad, parts, null).errors;
+  assert.ok(be.some((e) => e.includes("ใส่ยอดอย่างน้อย 1 ส่วน")) && be.some((e) => e.includes("วันซ้ำกับแถวที่ 2")), be.join(" | "));
+  assert.ok(bookEmpty({ key: "e", due: "", cells: { L: { amount: " ", skipped: false, notes: "" } } }));
+  const neg = bookSetCell(rows, 2, "H", "-1");
+  assert.ok(bookToParts(neg, parts, null).errors.some((e) => e.includes("แถวที่ 3 · สุขภาพ: ยอดต้องเป็นตัวเลข")));
+  const early = [...rows, { key: "z", due: "2026-01-20", cells: { L: { amount: "1", skipped: false, notes: "" } } }];
+  assert.ok(bookToParts(early, parts, "2025-01-01").errors.some((e) => e.includes("ชีวิต") && e.includes("ต้องอยู่หลังงวดที่ชำระแล้ว")));
+  assert.deepEqual(bookToParts(early, parts, "2026-10-01").errors.filter((e) => e.includes("ต้องอยู่หลัง")), [], "ก่อน Go-live = ประวัติ ใส่ย้อนหลังได้");
+  // สูตร / Excel ลงคอลัมน์
+  let put = bookPut(rows, ["L"], [{ due: "2028-07-20", amounts: [1500] }, { due: "2029-07-20", amounts: [1500] }], "replace", nk);
+  assert.equal(put.length, 4, "แทนเฉพาะส่วนชีวิต · แถวว่างหาย · วันใหม่เพิ่มแถว");
+  assert.equal(put[0].cells.L.locked, "จ่ายแล้ว 1,402.00", "แทน: ช่องที่จ่ายแล้วคงไว้");
+  assert.equal(put[1].cells.L, undefined, "แทน: ชีวิตปี 2570 ที่ยังไม่จ่ายถูกล้าง");
+  assert.equal(put[1].cells.H.amount, "730.00", "แทน: ส่วนที่ไม่มีข้อมูลมาไม่แตะ");
+  assert.equal(put[2].cells.L.amount, "1500.00");
+  put = bookPut(rows, ["L", "H"], [{ due: "2027-07-20", amounts: [null, 999] }], "add", nk);
+  assert.equal(put[1].cells.H.amount, "999.00");
+  assert.equal(put[1].cells.L.amount, "1402.00", "เพิ่ม: ยอดว่างไม่ทับ");
+  // อ่านตารางหลายคอลัมน์
+  const pt = parseBookTable([["วันครบกำหนด", "ชีวิต", "สุขภาพ"], ["20/07/2570", "1,402.00", "730"], ["2028-07-20", "-", "800"], ["2029-07-20", "", ""], ["2030-07-20", "abc", ""]],
+    2, toIsoDate, toNum);
+  assert.deepEqual(pt.data, [{ due: "2027-07-20", amounts: [1402, 730] }, { due: "2028-07-20", amounts: [null, 800] }]);
+  assert.ok(pt.errors.some((e) => e.includes("แถว 5: ยอดไม่ใช่ตัวเลข")), pt.errors.join(" | "));
+  assert.deepEqual(parseBookTable([["2028-07-20", "-5", "1"]], 2, toIsoDate, toNum).errors, ["แถว 1: ยอดติดลบ"]);
 }
 
 console.log("insurance-grid: all tests passed");

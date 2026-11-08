@@ -30,6 +30,9 @@ import { ActionBar } from "@/components/ActionBar";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { DetailItem as Item } from "@/components/Boxes";
 import CvTableEditor from "./CvTableEditor";
+import BookletScheduleEditor, { type BookletPart } from "./BookletScheduleEditor";
+import type { BookCurrent } from "@/lib/insurance-grid";
+import ClaimReceiveForm from "./ClaimReceiveForm";
 import ScrollToId from "./ScrollToId";
 import { payDefaultValue } from "../PayDefaultSelect";
 import { InfoTip } from "@/components/HeaderBar";
@@ -38,6 +41,8 @@ const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
 /** เคลมที่ยังรอเงิน (ร่าง = ยังไม่ได้ยื่น ไม่นับ) */
 const CLAIM_OPEN = ["SUBMITTED", "APPROVED", "PARTIALLY_PAID"];
+/** เคลมที่จบแล้ว (ไม่มีปุ่มบันทึกรับเงิน) */
+const CLAIM_DONE = ["PAID", "REJECTED", "CANCELLED"];
 const CLAIM_CLS: Record<string, string> = { DRAFT: "bg-slate-100 text-slate-600", SUBMITTED: "bg-amber-50 text-amber-700", APPROVED: "bg-amber-50 text-amber-700",
   PARTIALLY_PAID: "bg-amber-50 text-amber-700", PAID: "bg-emerald-50 text-emerald-700", REJECTED: "bg-red-50 text-red-700", CANCELLED: "bg-slate-100 text-slate-500" };
 type Line = { id: string; kind: string; installment_no: number; due_date: string; amount: number; currency: string; benefit_type: string | null;
@@ -104,6 +109,19 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const partIds = [id, ...(bookRes?.role.parts ?? []).filter((x) => x.id !== id).map((x) => x.id)];
   const claims = [...(mainClaims ?? []).map((c) => ({ ...c, policy_id: id as string })), ...(bookRes?.claims ?? [])]
     .sort((a, b) => String(b.claim_date ?? "").localeCompare(String(a.claim_date ?? "")));
+  const claimIds = (claims ?? []).map((c) => c.id);
+  // (เริ่มพร้อมชุดถัดไป ไม่รอรอบแยก) เงินที่ได้รับของเคลม: เงินคืนค่าใช้จ่าย + รายได้ที่ผูกเคลม · ค่าใช้จ่ายที่รอเงินคืน (ตัวเลือกของปุ่ม "บันทึกรับเงิน" · ตกลง 8 พ.ย. 2026)
+  const hasOpenClaim = claims.some((c) => !CLAIM_DONE.includes(c.status));
+  const claimQ = claimIds.length ? Promise.all([
+    supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,received_to_asset_id,received_to_credit_card_id,expense_items(description,date)")
+      .in("insurance_claim_id", claimIds).is("deleted_at", null).order("received_date"),
+    supabase.from("income_transactions").select("id,insurance_claim_id,date,amount,currency,received_to_asset_id")
+      .in("insurance_claim_id", claimIds).is("deleted_at", null).order("date"),
+    hasOpenClaim && me.role !== "VIEWER"
+      ? supabase.from("v_expense_reimbursement_status").select("expense_item_id,date,description,amount,currency,expected_reimbursement_amount,reimbursed_amount")
+        .eq("is_reimbursable", true).neq("reimbursement_status", "FULL").order("date", { ascending: false }).limit(100)
+      : Promise.resolve({ data: null }),
+  ]) : Promise.resolve([{ data: [] }, { data: [] }, { data: null }] as const);
   const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
     supabase.from("v_insurance_schedule_status").select(LINE_COLS)
       .eq("policy_id", id).order("due_date").order("installment_no"),
@@ -119,11 +137,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const benefits = lines.filter((x) => x.kind === "BENEFIT");
   const cards = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const allName = new Map((allPersons ?? []).map((x) => [x.id, x.name]));
-  const claimIds = (claims ?? []).map((c) => c.id);
-  const { data: linked } = claimIds.length
-    ? await supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,received_to_asset_id,received_to_credit_card_id,expense_items(description,date)")
-        .in("insurance_claim_id", claimIds).is("deleted_at", null).order("received_date")
-    : { data: [] };
+  const [{ data: linked }, { data: claimInc }, { data: pendExp }] = await claimQ;
+  const incByClaim = new Map<string, NonNullable<typeof claimInc>>();
+  (claimInc ?? []).forEach((r) => { if (r.insurance_claim_id) incByClaim.set(r.insurance_claim_id, [...(incByClaim.get(r.insurance_claim_id) ?? []), r]); });
+  const pendingExp = (pendExp ?? []).map((e) => ({ id: e.expense_item_id as string, date: e.date as string, description: e.description as string, currency: e.currency as string,
+    remaining: Math.round((Number(e.expected_reimbursement_amount ?? e.amount) - Number(e.reimbursed_amount ?? 0)) * 100) / 100 })).filter((e) => e.remaining > 0.005);
   const byClaim = new Map<string, NonNullable<typeof linked>>();
   (linked ?? []).forEach((r) => { if (r.insurance_claim_id) byClaim.set(r.insurance_claim_id, [...(byClaim.get(r.insurance_claim_id) ?? []), r]); });
   // รอรับ = ยอดเคลม − ได้รับ ของเคลมที่ยื่นแล้วยังไม่จบ (แยกสกุลเงิน · ยังไม่นับเป็นรายได้ / ความมั่งคั่งสุทธิ)
@@ -279,6 +297,19 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const flowPos = new Map(flow.rows.map((r, i) => [r.key, i]));
   const allBenefits = allLines.filter((x) => x.kind === "BENEFIT");
   const allPremiums = allLines.filter((x) => x.kind === "PREMIUM");
+  // แก้ตารางเบี้ยทั้งเล่ม: สัญญาหลักก่อน แล้วสัญญาเพิ่มเติมที่ยังมีผล · ชื่อคอลัมน์ซ้ำ (สัญญาเพิ่มเติมประเภทเดียวกันหลายฉบับ) ต่อชื่อแบบ / เลข
+  const bookEdIds = book ? [id, ...others.filter((o) => o.status === "ACTIVE").map((o) => o.id)] : [];
+  const bookEd: BookletPart[] = bookEdIds.map((pid) => {
+    const o = pid === id ? p : polOf.get(pid);
+    const xs = allPremiums.filter((x) => x.policy_id === pid);
+    const name = partName(pid);
+    const same = bookEdIds.filter((q) => partName(q) === name);
+    const plan = partOf(pid).plan_name;
+    return { id: pid, label: same.length < 2 ? name : plan ? `${name} · ${plan}` : `${name} ${same.indexOf(pid) + 1}`, currency: o?.premium_currency ?? ccy,
+      defaultAmount: Number(o?.premium ?? 0), defaultFirstDue: lastDue(xs) ? addMonthsKeepDay(lastDue(xs) as string, 12) : (o?.start_date ?? p.start_date ?? today) };
+  });
+  const bookEdCurrent: BookCurrent[] = allPremiums.filter((x) => bookEdIds.includes(x.policy_id)).map((x) => ({ policy_id: x.policy_id, due_date: x.due_date,
+    amount: Number(x.amount), notes: x.notes, skipped: x.skipped, locked: Number(x.paid_amount) > 0 ? `จ่ายแล้ว ${money(x.paid_amount)}` : null }));
   const showNet = !isProp && (allBenefits.length > 0 || lumps.length > 0);
   const schedPrem = allPremiums.reduce((s2, x) => s2 + Number(x.amount), 0);
   const schedBen = allBenefits.reduce((s2, x) => s2 + Number(x.amount), 0);
@@ -639,8 +670,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-medium text-slate-900">เคลม <InfoTip label="คำอธิบาย">ยื่นเคลม = ติดตามอย่างเดียว ยังไม่นับเป็นรายได้หรือความมั่งคั่งสุทธิ จนกว่าจะได้เงินจริง ·
-              จ่ายเองไปก่อนแล้วรอเคลม: ตั้งค่าใช้จ่ายนั้นเป็น &ldquo;ได้เงินคืน&rdquo; · ได้เงินแล้ว: Income &amp; Expenses → ค่าใช้จ่ายที่ตั้ง &ldquo;ได้เงินคืน&rdquo; → บันทึกเงินคืน
-              แล้วเลือก &ldquo;จากเคลมประกัน&rdquo; และบัญชีที่เงินเข้า · ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลมอัปเดตให้เอง</InfoTip></h2>
+              ได้เงินแล้วกด &ldquo;บันทึกรับเงิน&rdquo; ที่เคลมนั้น: (1) เงินคืนค่าใช้จ่ายที่จ่ายเองไปก่อน (ต้องตั้งค่าใช้จ่ายนั้นเป็น &ldquo;ได้เงินคืน&rdquo; ไว้) = ลดค่าใช้จ่าย ไม่ใช่รายได้ ·
+              (2) เงินชดเชย / สินไหม = รายได้ &ldquo;ผลประโยชน์ประกัน&rdquo; · ทั้ง 2 แบบเข้าบัญชีที่เลือก ยอด &ldquo;ได้รับ&rdquo; และสถานะเคลมอัปเดตให้เอง ·
+              แก้ / ลบเงินที่รับแล้วที่ Income &amp; Expenses</InfoTip></h2>
             {canWrite && policyActive && <ClaimForm policyId={id} currency={ccy} today={today}
               parts={book ? bookParts.filter((x) => x.status === "ACTIVE").map((x) => ({ id: x.id, label: `${x.id === mainId ? "สัญญาหลัก" : "สัญญาเพิ่มเติม"} · ${typeLabel(x.id)}` })) : undefined}
               coverages={[...(covs ?? []).map((c) => ({ ...c, policy_id: id })), ...(book?.covs ?? [])].map((c) => ({ id: c.id, policy_id: c.policy_id, coverage_type: c.coverage_type,
@@ -655,6 +687,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 {claims.map((c) => {
                   const got = Number(c.received_amount ?? 0);
                   const wait = CLAIM_OPEN.includes(c.status) ? Math.max(Number(c.claimed_amount ?? 0) - got, 0) : 0;
+                  const rest = Number(c.claimed_amount ?? 0) - got;   // ยอดที่ยังรับได้ (เคลมร่างก็บันทึกรับได้)
                   return (
                     <tr key={c.id} className="align-top">
                       <td className="py-2">
@@ -665,7 +698,12 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                         <div className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-slate-500">
                           <span><span className={`rounded px-1.5 py-0.5 ${CLAIM_CLS[c.status] ?? "bg-slate-100 text-slate-600"}`}>{CSTATUS[c.status] ?? c.status}</span>
                             {c.incident_date && <> · เกิดเหตุ {thDate(c.incident_date)}</>}</span>
-                          <span className="tabular-nums">{got > 0 && <>ได้รับ {money(got)}</>}{got > 0 && wait > 0 && " · "}{wait > 0 && <span className="text-amber-700">รอรับ {money(wait)}</span>}</span>
+                          <span className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                            <span className="tabular-nums">{got > 0 && <>ได้รับ {money(got)}</>}{got > 0 && wait > 0 && " · "}{wait > 0 && <span className="text-amber-700">รอรับ {money(wait)}</span>}</span>
+                            {canWrite && rest > 0.005 && !CLAIM_DONE.includes(c.status) && <ClaimReceiveForm claimId={c.id} claimDate={c.claim_date} currency={c.currency}
+                              claimed={Number(c.claimed_amount ?? 0)} wait={Math.round(rest * 100) / 100} banks={banks ?? []} persons={persons ?? []} today={today} minDate={goLive || null}
+                              expenses={pendingExp.filter((e) => e.currency === c.currency)} />}
+                          </span>
                         </div>
                         {(byClaim.get(c.id) ?? []).map((r) => {
                           const e = (Array.isArray(r.expense_items) ? r.expense_items[0] : r.expense_items) as { description: string; date: string } | null;
@@ -674,6 +712,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                           return <div key={r.id} className="mt-0.5 text-xs text-emerald-700">รับคืน {thDate(r.received_date)} {money(r.amount, r.currency)}{to && ` · ${to}`}
                             {e && <span className="text-slate-500"> · {e.description} ({thDate(e.date)})</span>}</div>;
                         })}
+                        {(incByClaim.get(c.id) ?? []).map((r) => <div key={r.id} className="mt-0.5 text-xs text-emerald-700">รับเงินเคลม {thDate(r.date)} {money(r.amount, r.currency)}
+                          {r.received_to_asset_id && ` · เข้า ${bankName.get(r.received_to_asset_id) ?? "บัญชี (ปิดแล้ว)"}`}<span className="text-slate-500"> · รายได้</span></div>)}
                         {c.notes && <div className="mt-0.5 text-xs text-slate-500">{c.notes}</div>}
                         {canWrite && <RowActions table="insurance_claims" id={c.id} paths={paths} canDelete={canDelete} fields={[
                           { name: "claim_date", label: "ยื่นเคลม", type: "date", value: c.claim_date },
@@ -742,14 +782,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             <h2 className="shrink-0 py-1 font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : showCv ? "มูลค่าเวนคืน เบี้ยประกัน และผลประโยชน์" : "เบี้ยประกันและผลประโยชน์"}{showIrr && <> <InfoTip label="คำอธิบาย">IRR = ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</InfoTip></>}</h2>
             {canWrite && policyActive && <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
             {canDelete && <>
-            <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} current={premiums} goLive={family?.go_live_date ?? null} part={book ? partName(id) : undefined}
-              defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />
-            {others.filter((o) => o.status === "ACTIVE").map((o) => {
-              const xs = allPremiums.filter((x) => x.policy_id === o.id);
-              return <InsScheduleEditor key={o.id} policyId={o.id} kind="PREMIUM" currency={o.premium_currency ?? ccy} current={xs} goLive={family?.go_live_date ?? null}
-                part={partName(o.id)} defaultAmount={Number(o.premium ?? 0)}
-                defaultFirstDue={lastDue(xs) ? addMonthsKeepDay(lastDue(xs) as string, 12) : (o.start_date ?? p.start_date ?? today)} />;
-            })}
+            {/* เล่มที่มีสัญญาเพิ่มเติม (ตกลง 8 พ.ย. 2026): ปุ่มเดียว "แก้ตารางเบี้ย" ทั้งเล่ม · คอลัมน์ละส่วน + รวม · บันทึกพร้อมกัน */}
+            {bookEd.length > 1
+              ? <BookletScheduleEditor parts={bookEd} current={bookEdCurrent} goLive={family?.go_live_date ?? null} />
+              : <InsScheduleEditor policyId={id} kind="PREMIUM" currency={ccy} current={premiums} goLive={family?.go_live_date ?? null}
+                defaultAmount={Number(p.premium ?? 0)} defaultFirstDue={lastDue(premiums) ? addMonthsKeepDay(lastDue(premiums) as string, 12) : (p.start_date ?? today)} />}
             {!isProp && <InsScheduleEditor policyId={id} kind="BENEFIT" currency={ccy} current={benefits} goLive={family?.go_live_date ?? null}
               defaultFirstDue={p.start_date ? addMonthsKeepDay(p.start_date, 24) : today} />}
             </>}

@@ -138,6 +138,21 @@ export async function saveInsSchedule(_: ActionState, form: FormData): Promise<A
   return { ok: lines.length ? `บันทึกตาราง ${data} งวดแล้ว` : "ลบงวดที่ยังไม่ชำระแล้ว" };
 }
 
+/**
+ * ตารางเบี้ยทั้งเล่ม (สัญญาหลัก + สัญญาเพิ่มเติม · ตกลง 8 พ.ย. 2026): ทุกส่วนบันทึกพร้อมกัน · ผิดส่วนเดียว = ไม่บันทึกเลย
+ *   parts = [{ policy_id, label, lines }] · lines ว่าง = ลบงวดที่ยังไม่ชำระของส่วนนั้น
+ */
+export async function saveBookletSchedule(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  let parts: unknown;
+  try { parts = JSON.parse(String(form.get("parts") ?? "[]")); } catch { return { error: "อ่านตารางไม่ได้" }; }
+  if (!Array.isArray(parts) || parts.length === 0) return { error: "อ่านตารางไม่ได้" };
+  const { data, error } = await supabase.rpc("set_insurance_booklet_schedule", { p_parts: parts });
+  if (error) return { error: notSaved("ทุกส่วน", friendlyError(error.message)) };
+  refresh();
+  return { ok: `บันทึกตารางเบี้ยทั้งเล่ม ${data} งวดแล้ว` };
+}
+
 /** จ่ายเบี้ยตามงวด → ค่าใช้จ่ายหมวด "ประกัน" ผูกงวด */
 export async function payPremium(_: PayState, form: FormData): Promise<PayState> {
   const supabase = await createClient();
@@ -175,8 +190,10 @@ export async function saveCashValueTable(_: ActionState, form: FormData): Promis
   const { data, error } = await supabase.rpc("set_insurance_cash_value_table", { p_policy_id: id, p_lines: lines });
   if (error) return { error: friendlyError(error.message) };
   refresh();
-  const r = data as { count: number; sync: CvSync } | null;
-  return { ok: lines.length === 0 ? "ล้างตารางแล้ว" : `บันทึกตาราง ${r?.count ?? lines.length} ปีแล้ว${cvMsg(r?.sync)}` };
+  const r = data as { count: number; updated?: number; sync: CvSync } | null;
+  // ยอดที่ระบบลงตามตารางเดิม (ยังไม่ปิดงวด) ขยับตามตารางใหม่ (ตกลง 8 พ.ย. 2026)
+  const upd = r?.updated ? ` · ปรับยอดที่ลงไว้ตามตารางใหม่ ${r.updated} ปี` : "";
+  return { ok: lines.length === 0 ? "ล้างตารางแล้ว" : `บันทึกตาราง ${r?.count ?? lines.length} ปีแล้ว${upd}${cvMsg(r?.sync)}` };
 }
 
 /** ปุ่ม "ลงมูลค่าตามตาราง" (ปีที่ถึงวันแล้ว แต่ยังไม่ได้ลง เช่น จ่ายเบี้ยครบแล้ว) */
@@ -204,6 +221,41 @@ export async function receiveBenefit(_: ActionState, form: FormData): Promise<Ac
   const r = data as { cash_value_part: number; income_part: number } | null;
   const fmt = (n: number) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return { ok: r ? `บันทึกแล้ว · จากมูลค่าเวนคืน ${fmt(r.cash_value_part)} · รายได้ ${fmt(r.income_part)}` : "บันทึกแล้ว" };
+}
+
+/**
+ * บันทึกรับเงินเคลม (ตกลง 8 พ.ย. 2026 · ปุ่มต่อเคลมในกล่องเคลม)
+ *   REIMB = เงินคืนค่าใช้จ่ายที่จ่ายไปก่อน (ลดค่าใช้จ่ายนั้น ไม่ใช่รายได้ · record_reimbursement ผูกเคลม)
+ *   INCOME = เงินสินไหม / ค่าชดเชย เข้าบัญชี (รายได้ผลประโยชน์ประกัน ผูกเคลม · receive_insurance_claim)
+ *   ยอดได้รับ / สถานะเคลม ฐานข้อมูลคำนวณให้เอง
+ */
+export async function receiveClaim(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const claimId = str(form.get("claim_id"));
+  const amount = num(form.get("amount"));
+  if (!claimId) return { error: "ไม่พบเคลม" };
+  if (amount == null || Number.isNaN(amount) || amount <= 0) return { error: "กรุณาใส่ยอดที่ได้รับ" };
+  const bank = str(form.get("bank_asset_id"));
+  if (!bank) return { error: "กรุณาเลือกบัญชีที่รับเงิน" };
+  if (form.get("kind") === "REIMB") {
+    const exp = str(form.get("expense_item_id"));
+    if (!exp) return { error: "กรุณาเลือกค่าใช้จ่ายที่จ่ายไปก่อน" };
+    const { error } = await supabase.rpc("record_reimbursement", {
+      p_expense_item_id: exp, p_received_date: str(form.get("date")), p_amount: amount, p_received_to_asset_id: bank,
+      p_received_to_credit_card_id: null, p_notes: str(form.get("notes")), p_insurance_claim_id: claimId,
+    });
+    if (error) return { error: friendlyError(error.message) };
+    refresh();
+    revalidatePath("/family/health");
+    return { ok: "บันทึกเงินคืนแล้ว · ยอดได้รับของเคลมอัปเดตแล้ว" };
+  }
+  const { error } = await supabase.rpc("receive_insurance_claim", { p: {
+    claim_id: claimId, date: str(form.get("date")), amount, bank_asset_id: bank, person_id: str(form.get("person_id")), notes: str(form.get("notes")),
+  } });
+  if (error) return { error: friendlyError(error.message) };
+  refresh();
+  revalidatePath("/family/health");
+  return { ok: "บันทึกรับเงินเคลมแล้ว (รายได้) · ยอดได้รับของเคลมอัปเดตแล้ว" };
 }
 
 export async function addCoverage(_: ActionState, form: FormData): Promise<ActionState> {
