@@ -9,11 +9,12 @@ import {
   COVERAGE_COUNT_UNIT, COVERAGE_FOR_TYPE, COVERAGE_GROUPS, COVERAGE_LABEL, COVERAGE_PERIOD, SMALL_BTN, SMALL_DEL_BTN, coverageHasPeriod, deathCoverage, thDate,
 } from "@/lib/format";
 import {
-  addableCovTypes, blankCovRow, blankKey, covPayload, covRemoved, partText, patchCovRow, rowsFromExisting, sortCovRows, visibleCovTypes,
+  addableCovTypes, blankCovRow, blankKey, covPayload, covRemoved, partText, patchCovRow, periodAllowed, rowsFromExisting, sortCovRows, visibleCovTypes,
   type CovExisting, type CovRow,
 } from "@/lib/insurance-coverage";
 
-const cell = "w-full rounded border border-slate-300 px-2 py-1 text-sm";
+const box = "rounded border border-slate-300 px-2 py-1 text-sm";
+const cell = `w-full ${box}`;
 const input = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50";
@@ -31,7 +32,7 @@ export const hasScope = (insType: string) => insType === "HEALTH" || insType ===
 /**
  * ตารางความคุ้มครองของกรมธรรม์ 1 ส่วน (ตกลง 7 พ.ย. 2026 · ปรับ 8 พ.ย. 2026)
  *   ปกติ = แถวที่มี + ปุ่มเพิ่มหัวข้อมาตรฐานของประเภทนั้นที่ยังไม่ได้ใส่ · all ("แสดงทุกหัวข้อ") = แถวว่างครบทุกหัวข้อ
- *   สูงสุด = จำนวน + รอบ (ต่อครั้ง / ต่อปี / ตลอดสัญญา) · "อื่น ๆ" มีช่องชื่อ · แถวเสียชีวิตที่ไม่ได้ใส่ = ใช้ทุนประกัน
+ *   สูงสุด = จำนวน + รอบ (ต่อครั้ง / ต่อปี / ตลอดสัญญา · เฉพาะรอบที่ใช้กับหัวข้อนั้นได้ · ใส่จำนวนแล้วเลือกรอบที่พบบ่อยให้ก่อน) · "อื่น ๆ" มีช่องชื่อ · แถวเสียชีวิตที่ไม่ได้ใส่ = ใช้ทุนประกัน
  */
 export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
   insType: string; rows: CovRow[]; setRows: (r: CovRow[]) => void; sum: number; currency: string; all: boolean;
@@ -55,9 +56,9 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
     <div className="space-y-2">
       {shown.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ · กดหัวข้อด้านล่างเพื่อเพิ่ม (ไม่ใส่ = ไม่คุ้มครอง)</p> : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[48rem] text-sm">
+          <table className="w-full min-w-[50rem] text-sm">
             <thead className="text-left text-xs text-slate-500">
-              <tr><th className="w-64 py-1">หัวข้อ</th><th className="w-44 px-1">วงเงิน ({currency})</th><th className="w-60 px-1">สูงสุด / รอบ</th>
+              <tr><th className="w-64 py-1">หัวข้อ</th><th className="w-44 px-1">วงเงิน ({currency})</th><th className="w-72 px-1">สูงสุด / รอบ</th>
                 <th className="px-1">หมายเหตุ</th><th className="w-12"></th></tr>
             </thead>
             <tbody>
@@ -91,11 +92,13 @@ export function CoverageGrid({ insType, rows, setRows, sum, currency, all }: {
                       <td className="px-1 py-1">
                         {coverageHasPeriod(t) && (
                           <span className="flex items-center gap-1">
-                            {cntUnit && <><input value={r.count} onChange={(e) => patch(t, r.key, { count: e.target.value })} inputMode="numeric" aria-label="จำนวนสูงสุด"
-                              className={`${cell} w-14 text-right`} /><span className="whitespace-nowrap text-xs text-slate-500">{cntUnit}</span></>}
-                            <select value={r.period} onChange={(e) => patch(t, r.key, { period: e.target.value })} aria-label="รอบ" className={`${cell} w-32`}>
-                              <option value="">{cntUnit ? "รอบ" : "ไม่ระบุรอบ"}</option>
-                              {COVERAGE_PERIOD.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                            {cntUnit && <><span className="whitespace-nowrap text-xs text-slate-500">สูงสุด</span>
+                              <input value={r.count} onChange={(e) => patch(t, r.key, { count: e.target.value })} inputMode="numeric" aria-label="จำนวนสูงสุด"
+                                className={`${box} w-16 shrink-0 text-right`} /><span className="whitespace-nowrap text-xs text-slate-500">{cntUnit}</span></>}
+                            <select value={r.period} onChange={(e) => patch(t, r.key, { period: e.target.value })} aria-label="รอบ"
+                              className={`${box} w-36 shrink-0`}>
+                              <option value="">เลือกรอบ</option>
+                              {COVERAGE_PERIOD.filter(([v]) => periodAllowed(t, v, r.period)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                             </select>
                           </span>
                         )}

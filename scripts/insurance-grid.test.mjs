@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { addMonthsIso, fillDown, gridNum, gridToLines, guessEvery, monthsBetween, nextRow, sortGrid } from "../src/lib/insurance-grid.ts";
 import {
-  addableCovTypes, blankCovRow, blankKey, blankRider, covPayload, covRemoved, partText, patchCovRow, riderPayload, rowsFromExisting, sortCovRows, visibleCovTypes,
+  addableCovTypes, blankCovRow, blankKey, blankRider, covPayload, covRemoved, partText, patchCovRow, periodAllowed, riderPayload, rowsFromExisting, sortCovRows,
+  visibleCovTypes,
 } from "../src/lib/insurance-coverage.ts";
 
 const R = (key, due, amount, extra = {}) => ({ key, due, amount, type: "", skipped: false, notes: "", ...extra });
@@ -161,6 +162,55 @@ assert.deepEqual(gridToLines([R("p", "2026-09-01", "100", { locked: "จ่า�
   assert.match(bad.errors[2], /^สัญญาเพิ่มเติม 2: ทุนประกันต้องเป็นตัวเลข/);
   assert.match(bad.errors[3], /^สัญญาเพิ่มเติม 2: เบี้ยต้องเป็นตัวเลข/);
   assert.match(bad.errors[4], /^สัญญาเพิ่มเติม 3 · อื่น ๆ \(ทันตกรรม\): ใส่วงเงิน/);
+}
+
+// รอบของสูงสุด: เฉพาะที่ใช้กับหัวข้อนั้นได้ · ใส่จำนวนแล้วเลือกรอบที่พบบ่อยให้ก่อน (ตกลง 8 พ.ย. 2026)
+{
+  // OPD ต่อครั้ง / โรคร้ายแรง / ทุพพลภาพรายงวด ไม่มี "ต่อครั้ง" · ค่าห้อง / ความรับผิดส่วนแรก / อื่น ๆ ได้ทุกรอบ
+  for (const t of ["OPD_PER_VISIT", "CI_EARLY", "CRITICAL_ILLNESS", "DISABILITY_INCOME"]) {
+    assert.equal(periodAllowed(t, "PER_EVENT"), false, t);
+    assert.equal(periodAllowed(t, "PER_YEAR"), true, t);
+    assert.equal(periodAllowed(t, "PER_TERM"), true, t);
+  }
+  for (const t of ["ROOM_PER_DAY", "HOSPITAL_CASH_PER_DAY", "DEDUCTIBLE", "OTHER"])
+    for (const v of ["PER_EVENT", "PER_YEAR", "PER_TERM"]) assert.equal(periodAllowed(t, v), true, `${t} ${v}`);
+  // รอบที่บันทึกไว้แล้วยังแสดง (ไม่หายเงียบ ๆ)
+  assert.equal(periodAllowed("OPD_PER_VISIT", "PER_EVENT", "PER_EVENT"), true);
+  assert.equal(periodAllowed("OPD_PER_VISIT", "PER_EVENT", null), false);
+
+  // ใส่จำนวนครั้งแรก → รอบที่พบบ่อย
+  const first = (t, def) => {
+    const rows = patchCovRow([], t, blankKey(t), { count: "4" });
+    assert.equal(rows[0].period, def, t);
+  };
+  first("ROOM_PER_DAY", "PER_EVENT");
+  first("HOSPITAL_CASH_PER_DAY", "PER_EVENT");
+  first("OPD_PER_VISIT", "PER_YEAR");
+  first("CI_EARLY", "PER_TERM");
+  first("CRITICAL_ILLNESS", "PER_TERM");
+  first("DISABILITY_INCOME", "PER_TERM");
+  first("OTHER", "");   // อื่น ๆ ไม่เลือกให้
+  // พิมพ์ต่อ (4 → 45) ไม่เปลี่ยนรอบที่เลือกเอง
+  let rows = patchCovRow([], "ROOM_PER_DAY", "r", { count: "4" });
+  rows = patchCovRow(rows, "ROOM_PER_DAY", "r", { period: "PER_YEAR" });
+  rows = patchCovRow(rows, "ROOM_PER_DAY", "r", { count: "45" });
+  assert.equal(rows[0].period, "PER_YEAR");
+  // ล้างรอบแล้วแก้จำนวน = ไม่เลือกให้อีก
+  rows = patchCovRow(rows, "ROOM_PER_DAY", "r", { period: "" });
+  rows = patchCovRow(rows, "ROOM_PER_DAY", "r", { count: "30" });
+  assert.equal(rows[0].period, "");
+  // เลือกรอบไว้ก่อนใส่จำนวน = คงรอบเดิม
+  rows = patchCovRow([], "OPD_PER_VISIT", "o", { period: "PER_TERM" });
+  rows = patchCovRow(rows, "OPD_PER_VISIT", "o", { count: "30" });
+  assert.equal(rows[0].period, "PER_TERM");
+  // แถวเดิมที่มีจำนวนอยู่แล้ว (ไม่มีรอบ) แก้จำนวน = ไม่เลือกให้
+  rows = rowsFromExisting([{ id: "x", coverage_type: "ROOM_PER_DAY", limit_amount: 4000, max_count: 45, count_period: null, notes: null }]);
+  rows = patchCovRow(rows, "ROOM_PER_DAY", rows[0].key, { count: "60" });
+  assert.equal(rows[0].period, "");
+  // ล้างจำนวน = ไม่แตะรอบ · ไม่สร้างแถวซ้ำ
+  rows = patchCovRow([], "ROOM_PER_DAY", "z", { count: "" });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].period, "");
 }
 
 console.log("insurance-grid: all tests passed");

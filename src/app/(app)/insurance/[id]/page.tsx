@@ -14,6 +14,7 @@ import { AddCashValueForm, BenefitForm, BookletPayForm, CashValueTableEditor, Pa
 import { CoverageEditor } from "../CoverageGrid";
 import { AddRiderButton } from "../RiderFields";
 import { PART_LABEL, bookletGroups, bookletKey, bookletRole, type BookletPolicy } from "@/lib/insurance-booklet";
+import { periodAllowed } from "@/lib/insurance-coverage";
 import InsScheduleEditor from "./InsScheduleEditor";
 import EditToggle from "@/components/EditToggle";
 import BeneficiaryEditor from "../Beneficiaries";
@@ -459,7 +460,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 ...(c.coverage_type === "OTHER" ? [{ name: "label", label: "ชื่อความคุ้มครอง", value: c.label, width: "w-48" }] : []),
                 ...(COVERAGE_COUNT_UNIT[c.coverage_type] ? [{ name: "max_count", label: `สูงสุด (${COVERAGE_COUNT_UNIT[c.coverage_type]})`, type: "number" as const, value: c.max_count }] : []),
                 ...(coverageHasPeriod(c.coverage_type) ? [{ name: "count_period", label: "รอบ", type: "select" as const, value: c.count_period,
-                  options: [["", "ไม่ระบุ"] as [string, string], ...COVERAGE_PERIOD] }] : []),
+                  options: [["", "ไม่ระบุ"] as [string, string], ...COVERAGE_PERIOD.filter(([v]) => periodAllowed(c.coverage_type, v, c.count_period))] }] : []),
                 { name: "notes", label: "หมายเหตุ", value: c.notes, width: "w-48" }]} />}</td>
             </tr>
           ))}
