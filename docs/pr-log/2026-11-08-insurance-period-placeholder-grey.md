@@ -1,4 +1,4 @@
-# ประกัน: "เลือกรอบ" เป็นสีเทา
+# #376 · ประกัน: "เลือกรอบ" เป็นสีเทา
 
 - วันที่: 8 พ.ย. 2026 · branch `fix/insurance-period-placeholder-grey`
 - SQL: ไม่มี · Edge Function: ไม่มี
