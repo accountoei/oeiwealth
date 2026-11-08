@@ -10,6 +10,17 @@
 
 export type Cash = { date: string; amount: number };
 
+/**
+ * ปีกรมธรรม์ของวันนั้น (ตกลง 8 พ.ย. 2026) = จำนวนปีที่ครบรอบแล้ว นับจากวันเริ่มสัญญา
+ *   วันเริ่มสัญญา = ปีที่ 0 (จ่ายเบี้ยงวดที่ 1) · ครบรอบปีที่ N = สิ้นปีกรมธรรม์ที่ N ตามตารางมูลค่าเวนคืน / เงินคืนในเล่ม (และจ่ายเบี้ยงวดที่ N + 1)
+ *   ระหว่างปี = ปีที่ครบรอบล่าสุด · ก่อนวันเริ่มสัญญา / ไม่มีวันเริ่มสัญญา = null
+ */
+export function policyYearAt(start: string | null | undefined, date: string): number | null {
+  if (!start || date < start) return null;
+  const y = Number(date.slice(0, 4)) - Number(start.slice(0, 4));
+  return date.slice(5, 10) < start.slice(5, 10) ? y - 1 : y;
+}
+
 /** XIRR: อัตราผลตอบแทนต่อปี (0.0185 = 1.85%) · ต้องมีทั้งเงินออกและเงินเข้า · หาไม่ได้ = null */
 export function xirr(flows: Cash[]): number | null {
   const fs = flows.filter((f) => Number.isFinite(f.amount) && Math.abs(f.amount) > 0.005);

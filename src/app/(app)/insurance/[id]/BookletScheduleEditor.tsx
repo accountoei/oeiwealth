@@ -15,6 +15,8 @@ import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const cell = "w-full rounded border border-slate-300 px-2 py-1 text-sm";
+/** ป้าย "ก่อน Go-live" ในช่องหมายเหตุ */
+const PRE_TAG = "shrink-0 whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50";
 const link = "rounded px-1.5 py-1 text-xs text-blue-700 hover:bg-blue-50";
@@ -189,12 +191,12 @@ export default function BookletScheduleEditor({ parts, current, goLive }: { part
             {lockedCells > 0 && ` · ล็อก ${lockedCells} งวด`}{pre > 0 && ` · ก่อน Go-live ${pre} แถว`}</span>
         </div>
         <div className="max-h-[28rem] overflow-auto">
-          <table className="w-full text-sm" style={{ minWidth: `${40 + parts.length * 8}rem` }}>
+          <table className="w-full text-sm" style={{ minWidth: `${44 + parts.length * 7}rem` }}>
             <thead className="sticky top-0 z-10 bg-white text-left text-xs text-slate-500">
               <tr><th className="w-10 py-1">งวด</th><th className="w-36">ครบกำหนด</th>
-                {parts.map((p) => <th key={p.id} className="w-32 pr-2 text-right">{p.label}{oneCcy ? "" : ` (${p.currency})`}</th>)}
+                {parts.map((p) => <th key={p.id} className="w-28 pr-2 text-right">{p.label}{oneCcy ? "" : ` (${p.currency})`}</th>)}
                 {oneCcy && parts.length > 1 && <th className="w-28 pr-2 text-right">รวม</th>}
-                <th className="w-20 text-center">ไม่ได้จ่าย</th><th className="min-w-[8rem]">หมายเหตุ</th><th className="w-40"></th></tr>
+                <th className="w-20 text-center">ไม่ได้จ่าย</th><th className="min-w-[12rem]">หมายเหตุ</th><th className="w-40"></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((r, i) => {
@@ -208,7 +210,6 @@ export default function BookletScheduleEditor({ parts, current, goLive }: { part
                       {lk ? <span className="block py-1">{thDate(r.due)}</span>
                         : <input type="date" value={r.due} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, due: e.target.value } : x)))}
                           onBlur={() => setRows(sortBook(rows))} aria-label={`วันครบกำหนดแถวที่ ${i + 1}`} className={cell} />}
-                      {goLive && !lk && r.due && r.due < goLive && <span className="text-[11px] text-slate-500">ก่อน Go-live</span>}
                     </td>
                     {parts.map((p) => {
                       const c = r.cells[p.id];
@@ -225,8 +226,11 @@ export default function BookletScheduleEditor({ parts, current, goLive }: { part
                       {free && <input type="checkbox" checked={skip} onChange={(e) => setRows(bookSetSkipped(rows, i, e.target.checked))}
                         aria-label={`ไม่ได้จ่ายแถวที่ ${i + 1}`} className="mt-2" />}</td>
                     <td className="px-1 py-1 align-top">
-                      {free ? <input value={bookNotes(r)} onChange={(e) => setRows(bookSetNotes(rows, i, e.target.value))} maxLength={200}
-                        aria-label={`หมายเหตุแถวที่ ${i + 1}`} className={cell} />
+                      {/* ก่อน Go-live = ป้ายในช่องหมายเหตุ บรรทัดเดียวกับช่องกรอก (แสดงอย่างเดียว ไม่บันทึก · ตกลง 8 พ.ย. 2026) */}
+                      {free ? <div className="flex items-center gap-2">
+                        {goLive && !lk && r.due && r.due < goLive && <span className={PRE_TAG}>ก่อน Go-live</span>}
+                        <input value={bookNotes(r)} onChange={(e) => setRows(bookSetNotes(rows, i, e.target.value))} maxLength={200}
+                          aria-label={`หมายเหตุแถวที่ ${i + 1}`} className={`${cell} min-w-0 flex-1`} /></div>
                         : <span className="block py-1 text-xs">{Object.values(r.cells).map((c) => c.notes).filter(Boolean).join(" · ")}</span>}
                     </td>
                     <td className="whitespace-nowrap px-1 py-1 text-right align-top">

@@ -11,6 +11,8 @@ import Flash from "@/components/Flash";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const cell = "w-full rounded border border-slate-300 px-2 py-1 text-sm";
+/** ป้าย "ก่อน Go-live" ในช่องหมายเหตุ */
+const PRE_TAG = "shrink-0 whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 const obtn = "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50";
 const link = "rounded px-1.5 py-1 text-xs text-blue-700 hover:bg-blue-50";
@@ -211,15 +213,17 @@ export default function InsScheduleEditor({ policyId, kind, currency, current, g
                   <td className="px-1 py-1">
                     <input type="date" value={r.due} onChange={(e) => patch(i, { due: e.target.value })} onBlur={() => setRows(sortGrid(rows))}
                       aria-label={`วันครบกำหนดงวดที่ ${i + 1}`} className={cell} />
-                    {goLive && r.due && r.due < goLive && <span className="text-[11px] text-slate-500">ก่อน Go-live</span>}
                   </td>
                   <td className="px-1 py-1 align-top"><input value={r.amount} onChange={(e) => patch(i, { amount: e.target.value })} inputMode="decimal"
                     aria-label={`ยอดงวดที่ ${i + 1}`} className={`${cell} text-right tabular-nums ${r.skipped ? "line-through" : ""}`} /></td>
                   {!prem && <td className="px-1 py-1 align-top">{typeSelect(r.type || "OTHER", (v) => patch(i, { type: v }), cell)}</td>}
                   <td className="px-1 py-1 text-center align-top"><input type="checkbox" checked={r.skipped} onChange={(e) => patch(i, { skipped: e.target.checked })}
                     aria-label={`${prem ? "ไม่ได้จ่าย" : "ไม่ได้รับ"}งวดที่ ${i + 1}`} className="mt-2" /></td>
-                  <td className="px-1 py-1 align-top"><input value={r.notes} onChange={(e) => patch(i, { notes: e.target.value })} maxLength={200}
-                    aria-label={`หมายเหตุงวดที่ ${i + 1}`} className={cell} /></td>
+                  {/* ก่อน Go-live = ป้ายในช่องหมายเหตุ บรรทัดเดียวกับช่องกรอก (แสดงอย่างเดียว ไม่บันทึก · ตกลง 8 พ.ย. 2026) */}
+                  <td className="px-1 py-1 align-top"><div className="flex items-center gap-2">
+                    {goLive && r.due && r.due < goLive && <span className={PRE_TAG}>ก่อน Go-live</span>}
+                    <input value={r.notes} onChange={(e) => patch(i, { notes: e.target.value })} maxLength={200}
+                      aria-label={`หมายเหตุงวดที่ ${i + 1}`} className={`${cell} min-w-0 flex-1`} /></div></td>
                   <td className="whitespace-nowrap px-1 py-1 text-right align-top">
                     <button type="button" onClick={() => insertAfter(i)} title="แทรกงวดต่อจากงวดนี้" className={`${SMALL_BTN} mr-1`}>+ แทรก</button>
                     {rows.slice(i + 1).some((x) => !x.locked) && <button type="button" onClick={() => setRows(fillDown(rows, i))}
