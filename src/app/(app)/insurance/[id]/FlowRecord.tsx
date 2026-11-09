@@ -286,13 +286,17 @@ function LumpReceive({ policyId, currency, banks, persons, hasCashValue, cashVal
   );
 }
 
-/** ปุ่ม "บันทึกรับ" เหนือตาราง: 2 แบบในหน้าต่างเดียว — รับผลประโยชน์ตามงวด / รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม) */
-export function ReceiveForm({ lines, policyId, currency, banks, persons, hasCashValue, cashValue, today, canClose, minDate }: {
+/**
+ * ปุ่ม "บันทึกรับ" เหนือตาราง: 2 แบบในหน้าต่างเดียว — รับผลประโยชน์ตามงวด / รับเงินก้อน (ครบสัญญา / เวนคืน / สินไหม)
+ *   closed = กรมธรรม์ปิดแล้ว (ครบสัญญา / เวนคืน / เคลมจบ / ยกเลิก · ตกลง 9 พ.ย. 2026) → ปุ่มจาง · ขาดอายุยังรับได้ (เช่น เวนคืนภายหลัง)
+ */
+export function ReceiveForm({ lines, policyId, currency, banks, persons, hasCashValue, cashValue, today, canClose, minDate, closed }: {
   lines: OpenLine[]; policyId: string; currency: string; banks: Bank[]; persons: Person[];
-  hasCashValue: boolean; cashValue?: number | null; today: string; canClose: boolean; minDate?: string | null;
+  hasCashValue: boolean; cashValue?: number | null; today: string; canClose: boolean; minDate?: string | null; closed?: string | null;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "md" });
   const [mode, setMode] = useState<"lines" | "lump">(lines.length ? "lines" : "lump");
+  if (closed) return <button type="button" disabled title={`กรมธรรม์ปิดแล้ว (${closed}) · ถ้าบันทึกผิด กดแถว "รับ" ล่าสุดแล้ว "ลบรายการนี้" กรมธรรม์จะกลับเป็นสถานะเดิม`} className={btn}>บันทึกรับ</button>;
   const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(btn)}>บันทึกรับ</button>;
   if (!open) return trigger;
   const common = { currency, banks, persons, hasCashValue, cashValue, today, canClose, minDate };

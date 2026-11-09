@@ -881,7 +881,8 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             {!isProp && cvPending && <SyncCashValueButton policyId={id} />}
             {/* บันทึกรับ + บันทึกจ่าย คู่กัน (ตกลง 8 พ.ย. 2026 · แบบเงินกู้ แทนปุ่มรายแถว): เลือกวันที่ → เติมงวดที่ครบถึงวันนั้น ทุกส่วนของเล่ม */}
             {!isProp && <ReceiveForm lines={openBen} policyId={id} currency={ccy} banks={banks ?? []} persons={persons ?? []} hasCashValue={!!cvAsset}
-              cashValue={cvAsset?.current_value} today={today} canClose={canDelete} minDate={goLive || null} />}
+              cashValue={cvAsset?.current_value} today={today} canClose={canDelete} minDate={goLive || null}
+              closed={["MATURED", "SURRENDERED", "CLAIMED", "CANCELLED"].includes(p.status) ? Object.fromEntries(INS_STATUS)[p.status] : null} />}
             <PayLinesForm lines={openPrem} group={bookletKey(p) ?? ""} banks={banks ?? []} cards={cards} persons={persons ?? []} defaultPerson={payerId}
               defaultPay={payDefault} today={today} minDate={goLive || null} />
             </div>}
