@@ -1,4 +1,4 @@
-# Bank Accounts / I&E: money-in/out rows missing (fix #415) + search by account last 4 (no SQL)
+# #419 · Bank Accounts / I&E: money-in/out rows missing (fix #415) + search by account last 4 (no SQL)
 
 ## What changed
 - **Fix:** `MOVE_SELECT` (`income-expenses/entry-kit.tsx`) embedded `property_leases(property_asset_id)`, a column that does not exist.
