@@ -5857,6 +5857,32 @@ SELECT t.ok((SELECT bool_and(g.status <> 'NOT_REQUIRED') FROM private.go_live_re
               WHERE g.entity_id IN (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id IN (:'jobpol', :'btnpol', :'oldpol'))),
             'หน้าเตรียม Go-live: มูลค่าเวนคืนทั้ง 3 ไม่ขึ้น "ไม่ต้องมี"');
 SELECT t.fails($$SELECT private.repair_cv_opening()$$, 'permission denied', 'ซ่อมมูลค่าเวนคืน: ผู้ใช้เรียกเองไม่ได้');
+-- ใส่ยอดเองลงวันที่หลัง Go-live ทั้งที่เป็นยอดของปีที่ครบก่อน Go-live (9 พ.ย. 2026)
+INSERT INTO tgl SELECT 'late', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ใส่เองหลังโกไลฟ์', 'currency', 'THB', 'premium', 2000,
+  'start_date', (:'gl'::date - interval '9 years' - interval '40 days')::date));
+SELECT id AS latepol FROM tgl WHERE k = 'late' \gset
+INSERT INTO public.insurance_cash_value_table(policy_id, policy_year, value_date, value, currency) VALUES
+  (:'latepol', 8, (:'gl'::date - interval '1 year' - interval '40 days')::date, 5500, 'THB'),
+  (:'latepol', 9, :'gl'::date - 40, 6500, 'THB');
+SELECT public.add_insurance_cash_value(:'latepol', jsonb_build_object('value', 6500, 'valuation_date', :'gl'::date + 11,
+  'notes', 'สิ้นปีกรมธรรม์ที่ 9 ตามเล่ม')) IS NOT NULL AS late_created;
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok(private.repair_cv_late_opening() = 1, 'ซ่อมยอดใส่เองหลัง Go-live: 1 รายการ');
+SELECT t.ok((SELECT a.acquisition_date IS NULL AND a.current_value = 6500
+                AND (SELECT count(*) FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL) = 1
+                AND EXISTS (SELECT 1 FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL
+                             AND v.is_opening AND v.value = 6500 AND v.valuation_date = :'gl'::date - 1 AND v.notes = 'สิ้นปีกรมธรรม์ที่ 9 ตามเล่ม')
+                AND EXISTS (SELECT 1 FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NOT NULL AND v.valuation_date = :'gl'::date + 11)
+                AND o.start_date = :'gl'::date - 1
+               FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+               JOIN public.asset_ownerships o ON o.asset_id = a.id WHERE i.id = :'latepol'),
+            'ซ่อมยอดใส่เองหลัง Go-live: ยอดตั้งต้น 6,500 ณ วันก่อน Go-live · ยอดเดิมลบแบบ soft delete · เริ่มถือครองวันเดียวกัน');
+SELECT t.ok(private.repair_cv_late_opening() = 0, 'ซ่อมยอดใส่เองหลัง Go-live: รันซ้ำไม่ซ่อมซ้ำ');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT g.status <> 'NOT_REQUIRED' FROM private.go_live_readiness((SELECT id FROM public.families)) g
+              WHERE g.entity_id = (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id = :'latepol')),
+            'ซ่อมยอดใส่เองหลัง Go-live: หน้าเตรียม Go-live ไม่ขึ้น "ไม่ต้องมี"');
 RESET ROLE;
 ROLLBACK;
 
