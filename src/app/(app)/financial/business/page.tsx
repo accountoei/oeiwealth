@@ -186,8 +186,11 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
               <MonthChange pct={changePct(totalFam, valuePrev)} prev={valuePrev} />
               <div>{held.length} กิจการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</div>
             </>} />
-          <StatBox label="มูลค่าเทียบเงินลงทุน" value={withCost.length ? signedMoney(gainAmt, "THB") : "-"} valueClass={signTone(gainAmt)}
-            sub={withCost.length ? <>{gainPct != null && <span className={`font-semibold ${signTone(gainAmt)}`}>{signedPct(gainPct)}</span>} · เงินลงทุน {money(gain.cost)}
+          {/* ตกลง 9 พ.ย. 2026: เงินลงทุนเป็นตัวใหญ่ · มูลค่าเทียบเงินลงทุนอยู่ด้านล่าง */}
+          <StatBox label="เงินลงทุนรวม" value={withCost.length ? money(gain.cost, "THB") : "-"}
+            sub={withCost.length ? <>
+              <div>มูลค่าเทียบเงินลงทุน <span className={signTone(gainAmt)}>{signedMoney(gainAmt, "THB")}</span>
+                {gainPct != null && <> (<span className={`font-semibold ${signTone(gainAmt)}`}>{signedPct(gainPct)}</span>)</>}</div>
               {withCost.length < held.length && <div>ไม่รวม {held.length - withCost.length} กิจการที่ไม่มีเงินลงทุน</div>}</> : "ยังไม่มีเงินลงทุน"} />
           <StatBox label={`เงินปันผลรับ ปี ${Number(ym.slice(0, 4)) + 543}`} value={plusMoney(totals.div, "THB")} valueClass={signTone(totals.div)}
             sub={<>
