@@ -3,6 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { replaceSameDay } from "@/lib/same-day";
 import { friendlyError, numOrNull as num, strOrNull as str, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, TAX_ERROR, isPositive, isValidTax, notSaved, readRows } from "@/lib/batch-entry";
 
@@ -79,10 +80,12 @@ export async function updateBalance(_: ActionState, form: FormData): Promise<Act
     p_settle: true,                                     // ลงก้อนเสมอ (ไม่มีช่องติ๊กแล้ว)
   });
   if (error) return { error: friendlyError(error.message) };
+  const warn = await replaceSameDay(supabase, [assetId], str(form.get("valuation_date")));
   revalidatePath(`/financial/cash/${assetId}`);
   revalidatePath("/financial/cash");
   revalidatePath("/income-expenses");
   revalidatePath("/settings/month-closing");
+  if (warn) return { error: warn };
   const r = data as { difference: number | null; lump: number | null; history_only?: boolean; merged?: boolean } | null;
   const f = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const base = "บันทึกยอดคงเหลือแล้ว";

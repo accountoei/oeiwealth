@@ -3,6 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { replaceSameDay } from "@/lib/same-day";
 import { friendlyError, ownersFromForm } from "@/lib/format";
 
 export type RecState = { error?: string; ok?: string };
@@ -229,6 +230,8 @@ export async function addAssetValuation(_: RecState, form: FormData): Promise<Re
     notes: String(form.get("notes") ?? "").trim() || null,
   });
   if (error) return { error: friendlyError(error.message) };
+  const warn = await replaceSameDay(supabase, [String(form.get("asset_id"))], String(form.get("valuation_date")));
   refresh(form);
+  if (warn) return { error: warn };
   return { ok: "บันทึกมูลค่าแล้ว" };
 }

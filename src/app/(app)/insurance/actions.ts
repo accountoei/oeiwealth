@@ -3,6 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { replaceSameDay } from "@/lib/same-day";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { bankId, cardId, endpointFromForm, paidFromColumns, parseEndpoint } from "@/lib/money-endpoint";
 import { BAD_ROWS_ERROR, amountOrNull, isPositive, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
@@ -219,7 +220,9 @@ export async function saveCashValue(_: ActionState, form: FormData): Promise<Act
     : await supabase.from("asset_valuations").insert({ ...row, asset_id: String(form.get("asset_id")), valuation_method: method,
         source: method === "STATEMENT" ? "STATEMENT" : "USER" });
   if (error) return { error: friendlyError(error.message) };
+  const warn = id ? null : await replaceSameDay(supabase, [String(form.get("asset_id"))], date);
   refresh();
+  if (warn) return { error: warn };
   return { ok: id ? "แก้มูลค่าเวนคืนแล้ว" : "บันทึกมูลค่าเวนคืนแล้ว" };
 }
 
