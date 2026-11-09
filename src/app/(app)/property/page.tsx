@@ -489,15 +489,15 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         {/* 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าทรัพย์สินรวม · รายได้ + ประมาณค่าเช่าทั้งปี · ค่าใช้จ่าย + ประมาณค่าใช้จ่ายประจำทั้งปี
               · รายได้สุทธิ + ทั้งปี (ยอดจริง) + % ต่อปีของกลุ่มปล่อยเช่า */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatBox label={<>{pv.personId ? `มูลค่าทรัพย์สินส่วนของ ${pv.personName}` : "มูลค่าทรัพย์สินรวม"} (THB Equivalent)</>} value={money(totalValue, "THB")}
+          <StatBox label={<>{pv.personId ? `มูลค่าอสังหาริมทรัพย์ส่วนของ ${pv.personName}` : "มูลค่าอสังหาริมทรัพย์รวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalValue, "THB")}
             sub={`${active.length} รายการ`} />
-          <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
+          <StatBox label={`รายได้จากอสังหาฯ ${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
             sub={<>
               <div>{incMonth.length} รายการ</div>
               <div className={EST}>ประมาณค่าเช่าทั้งปี <span className="font-medium text-emerald-700">{plusMoney(annualRent, "THB")}</span></div>
               <div className="text-slate-400">{leaseCount ? `สัญญาที่มีผล ${leaseCount} สัญญา × 12 เดือน` : "ยังไม่มีสัญญาเช่าที่มีผล"}</div>
             </>} />
-          <StatBox label={`ค่าใช้จ่ายทรัพย์สิน${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700"
+          <StatBox label={`ค่าใช้จ่ายอสังหาฯ ${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700"
             sub={<>
               <div>{expRows.length} รายการ</div>
               <div className={EST}>ประมาณค่าใช้จ่ายประจำทั้งปี <span className="font-medium text-red-700">{minusMoney(annualCost, "THB")}</span></div>
@@ -513,7 +513,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                   <InfoTip label="วิธีคิดรายได้สุทธิทั้งปี">
                     ทั้งปี = รายได้ − ค่าใช้จ่ายที่บันทึกจริง ตั้งแต่ ม.ค. ถึงเดือนที่เลือก
                     {span.fillMonths > 0 && <> · ปีที่เริ่มใช้ระบบ เดือนก่อน Go-live ประมาณให้: รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น (ไม่รวมค่าใช้จ่ายครั้งเดียว)</>}
-                    {" "}· % ต่อปี = รายได้ − ค่าใช้จ่ายของทรัพย์สินกลุ่มปล่อยเช่า ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มปล่อยเช่า ({money(rentalValue, "THB")})
+                    {" "}· % ต่อปี = รายได้ − ค่าใช้จ่ายของอสังหาฯ กลุ่มปล่อยเช่า ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มปล่อยเช่า ({money(rentalValue, "THB")})
                   </InfoTip>
                 </div>
               )}
@@ -521,9 +521,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         </section>
         <section className="grid gap-4 lg:grid-cols-2">
           {/* ตารางสัดส่วนชุดเดียวกับทุกหน้า (ShareBox · ตกลง 7 พ.ย. 2026) · ยอดรวม / จำนวนรายการอยู่กล่องบนแล้ว */}
-          <ShareBox title="มูลค่าตามประเภท" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}
+          <ShareBox title="มูลค่าอสังหาฯ ตามประเภท" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}
             aside={latestDate ? `ประเมินล่าสุด ${thDate(latestDate)}` : undefined} />
-          <ShareBox title="มูลค่าตามการใช้งาน" label="การใช้งาน" total={totalValue} rows={shareRows(usageRows)}>
+          <ShareBox title="มูลค่าอสังหาฯ ตามการใช้งาน" label="การใช้งาน" total={totalValue} rows={shareRows(usageRows)}>
             {totalValue > 0 && (
               <div className="mt-3 flex h-6 overflow-hidden rounded-md text-[11px] font-medium text-white">
                 {usageRows.filter((r) => r.value > 0).map((r) => {

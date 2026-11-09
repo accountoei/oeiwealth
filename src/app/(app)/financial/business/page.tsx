@@ -129,7 +129,6 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     val: rows.reduce((t, r) => t + (myValue(r) ?? 0), 0),
     div: rows.reduce((t, r) => t + (divOf.get(r.asset_id) ?? 0), 0),
   };
-  const who = pv.personId ? pv.personName : "ครอบครัว";
 
   // กล่องสรุป 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าธุรกิจรวม · มูลค่าเทียบเงินลงทุน · เงินปันผลปีนี้ · ประเมินมูลค่า
   const held = rows.filter((r) => r.status === "ACTIVE");
@@ -201,10 +200,10 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       )}
       {totalFam > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <ShareBox title={<>สัดส่วนมูลค่าธุรกิจของ{who}</>} label="กิจการ" total={totalFam}
+          <ShareBox title={<>มูลค่าธุรกิจตามกิจการ{pv.personId ? ` ส่วนของ ${pv.personName}` : ""}</>} label="กิจการ" total={totalFam}
             rows={[...active].sort((a, b) => (myValue(b) ?? 0) - (myValue(a) ?? 0))
               .map((r) => ({ key: r.asset_id, name: r.assets.name, value: myValue(r) ?? 0, color: color.get(r.asset_id) ?? COLORS[0] }))} />
-          <ShareBox title="มูลค่าตามสมาชิกครอบครัว" label="สมาชิกครอบครัว" total={totalAll}
+          <ShareBox title="มูลค่าธุรกิจตามสมาชิกครอบครัว" label="สมาชิกครอบครัว" total={totalAll}
             rows={personRows.map(([pid, v], i) => ({ key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[i % COLORS.length] }))} />
         </section>
       )}

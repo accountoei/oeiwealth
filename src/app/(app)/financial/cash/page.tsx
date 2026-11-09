@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, ACCOUNT_TYPE_LABEL, INCOME_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, ACCOUNT_TYPE_LABEL, CCY_COLORS, INCOME_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
@@ -30,7 +30,6 @@ const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update",
 const TYPE_COLORS = ["#2563eb", "#7c3aed", "#059669", "#f59e0b", "#94a3b8"];
 const BANK_COLORS = ["#2563eb", "#f59e0b", "#059669", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#ea580c", "#475569"];
 const PERSON_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#84cc16"];
-const CCY_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899"];
 
 type Sp = Promise<{ tab?: string; m?: string; p?: string; d?: string; order?: string }>;
 

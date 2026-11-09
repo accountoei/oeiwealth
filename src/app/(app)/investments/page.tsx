@@ -113,8 +113,11 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // บาทรายตัว = ชุดเดียวกับ Net Worth (อัตรา ณ วันนี้จากฐานข้อมูล)
   const thb = (h: { value_thb: number | null }) => Number(h.value_thb ?? 0);
   const total = list.reduce((s, p) => s + Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0), 0);
-  const cash = holdings.filter((h) => h.holding_type === "CASH").reduce((s, h) => s + thb(h), 0)
-    + list.reduce((s, p) => s + Number(p.in_transit_thb ?? 0), 0);
+  const transit = list.reduce((s, p) => s + Number(p.in_transit_thb ?? 0), 0);
+  const cash = holdings.filter((h) => h.holding_type === "CASH").reduce((s, h) => s + thb(h), 0) + transit;
+  // กล่องเงินฝากในพอร์ต (ตกลง 9 พ.ย. 2026): % ของมูลค่าลงทุนรวม · รอใส่ยอด (ถ้ามี) หรือจำนวนพอร์ตที่มีเงินฝาก
+  const cashPfCount = new Set([...holdings.filter((h) => h.holding_type === "CASH" && Math.abs(thb(h)) > 0.005).map((h) => h.portfolio_asset_id),
+    ...list.filter((p) => Number(p.in_transit_thb ?? 0) > 0.005).map((p) => p.asset_id)]).size;
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   // รายได้ปีนี้ (ม.ค. → เดือนที่เลือก) / เดือนที่เลือก (ตกลง 9 พ.ย. 2026)
   const mStart = `${ym}-01`, mEnd = monthRange(ym).end, yStart = `${ym.slice(0, 4)}-01-01`;
@@ -196,14 +199,18 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
               {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว <span className={closedPl < -0.005 ? "text-red-700" : closedPl > 0.005 ? "text-emerald-700" : ""}>{signedMoney(closedPl, "THB", 0)}</span></div>}
             </>} />
         )}
-        <StatBox label="เงินฝากในพอร์ต (รวมเงินโอนรอใส่ยอด)" value={money(cash, "THB", 0)} />
+        <StatBox label="เงินฝากในพอร์ต" value={money(cash, "THB", 0)}
+          sub={<>
+            {total > 0.005 && <div><span className="font-semibold">{((cash * 100) / total).toFixed(1)}%</span> ของมูลค่าลงทุนรวม</div>}
+            <div>{transit > 0.005 ? `รวมเงินโอนรอใส่ยอด ${money(transit, "THB", 0)}` : `อยู่ใน ${cashPfCount} พอร์ต`}</div>
+          </>} />
       </section>
 
       {allocTotal > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <ShareBox title={`สัดส่วนตามประเภท${pv.personId ? `ของ ${pv.personName}` : ""}`} label="ประเภท" total={allocTotal}
+          <ShareBox title={`มูลค่าลงทุนตามประเภท${pv.personId ? ` ส่วนของ ${pv.personName}` : ""}`} label="ประเภท" total={allocTotal}
             rows={share(byType, (k) => HOLDING_TYPE_LABEL[k] ?? k)} />
-          <ShareBox title="สัดส่วนตามสกุลเงิน" label="สกุลเงิน" total={allocTotal} rows={share(byCcy, (k) => k, 3)} />
+          <ShareBox title="มูลค่าลงทุนตามสกุลเงิน" label="สกุลเงิน" total={allocTotal} rows={share(byCcy, (k) => k, 3)} />
         </section>
       )}
 

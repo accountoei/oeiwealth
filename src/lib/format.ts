@@ -367,6 +367,8 @@ export function qty(value: number | string | null | undefined): string {
   return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 4 });
 }
 
+/** สีจุดของรายการแยกตามสกุลเงิน (กล่องยอดรวมของ Bank Accounts / Liabilities) */
+export const CCY_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899"];
 export const INCOME_TYPE_LABEL: Record<string, string> = {
   SALARY: "เงินเดือน", BONUS: "โบนัส", INTEREST: "ดอกเบี้ย", DIVIDEND: "ปันผล", COUPON: "Coupon", RENT: "ค่าเช่า",
   LOAN_INTEREST: "ดอกเบี้ยเงินให้กู้", BUSINESS_DIVIDEND: "ปันผลกิจการ", INSURANCE_BENEFIT: "ผลประโยชน์ประกัน", OTHER: "รายได้อื่น",
