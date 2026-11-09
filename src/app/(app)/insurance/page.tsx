@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, CLAIM_DONE, CLAIM_OPEN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, CLAIM_DONE, CLAIM_OPEN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, plusMoney, signTone, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -104,7 +104,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("insurance_benefit_receipts").select("id,policy_id,receipt_date,amount,currency,outcome").is("line_id", null)
       .gte("receipt_date", `${yBen}-01-01`).lte("receipt_date", `${yBen}-12-31`).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
     // รับเงินก้อนที่ไม่ผูกงวด ทุกปี → กล่อง "ได้คืนเทียบเบี้ย" (แบบหน้ากรมธรรม์)
-    supabase.from("insurance_benefit_receipts").select("policy_id,amount,currency").is("line_id", null).is("undone_at", null).is("deleted_at", null),
+    supabase.from("insurance_benefit_receipts").select("policy_id,amount,currency,receipt_date").is("line_id", null).is("undone_at", null).is("deleted_at", null),
     recQ,
     // ค่าใช้จ่ายที่รอเงินคืน (ตัวเลือกของปุ่ม "บันทึกรับเงิน") · โหลดเมื่อมีเคลมที่ยังไม่จบ
     (async () => {
@@ -152,7 +152,6 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   //   ทุนประกันชีวิต = ชีวิต + บำนาญ (สุขภาพใช้วงเงิน · ส่วนใหญ่เป็นเบี้ยทิ้ง → ไม่รวม) · อุบัติเหตุ = เสียชีวิตจากอุบัติเหตุเพิ่มอีก
   const lifeTotal = sumThb((r) => (r.insurance_type === "LIFE" || r.insurance_type === "ANNUITY" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
   const accidentTotal = sumThb((r) => (r.insurance_type === "ACCIDENT" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
-  const premiumTotal = sumThb((r) => r.premium, (r) => r.premium_currency);
   const overdueTotal = mineRows.reduce((t, r) => t + (overduePremium.get(r.id) ?? 0), 0);
   //   ปีนี้ยังต้องจ่าย = เบี้ยงวดที่ยังจ่ายไม่ครบ ครบกำหนดไม่เกินสิ้นปีนี้ (รวมงวดเลยกำหนด)
   const premLeftYear = lineList.filter((l) => l.kind === "PREMIUM" && activeIds.has(l.policy_id) && l.currency === "THB"
@@ -171,6 +170,18 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     + savings.reduce((t, r) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
       return t + (c && c.currency === "THB" ? Number(c.current_value ?? 0) : 0); }, 0);
   const backPct = premPaid > 0 ? (backGot / premPaid) * 100 : null;
+  // กล่อง 3–4 (ตกลง 9 พ.ย. 2026): ผลประโยชน์ / เบี้ย ของปีนี้ (ตามวันครบกำหนดของงวด · THB) · เบี้ยแต่ละปีไม่เท่ากัน
+  const mineIds = new Set(mineRows.map((r) => r.id));
+  const lineInYear = (l: YLine) => l.currency === "THB" && l.due_date >= `${year}-01-01` && l.due_date <= `${year}-12-31`;
+  const benLines = lineList.filter((l) => l.kind === "BENEFIT" && mineIds.has(l.policy_id) && lineInYear(l));
+  const lumpYear = (allLumps ?? []).filter((b) => b.currency === "THB" && mineIds.has(b.policy_id) && String(b.receipt_date ?? "").startsWith(year))
+    .reduce((t, b) => t + Number(b.amount), 0);
+  const benGotYear = benLines.reduce((t, l) => t + insCountedPaid(l), 0) + lumpYear;
+  const benPlanYear = benLines.reduce((t, l) => t + Number(l.amount ?? 0), 0) + lumpYear;
+  const premLines = lineList.filter((l) => l.kind === "PREMIUM" && activeIds.has(l.policy_id) && lineInYear(l));
+  const premYear = premLines.reduce((t, l) => t + Number(l.amount ?? 0), 0);
+  const premPaidYear = premLines.reduce((t, l) => t + insCountedPaid(l), 0);
+  const yearBE = Number(year) + 543;
   // กล่องสัดส่วน (ตกลง 8 พ.ย. 2026) · THB เหมือนกล่องสรุปด้านบน · ไม่ใช้เบี้ย (เบี้ยเปลี่ยนทุกปีตามกรมธรรม์ · เจ้าของ 8 พ.ย. 2026)
   //   ซ้าย = มูลค่าเวนคืนตามบริษัทประกัน (ตามตัวกรองคน × สัดส่วนเจ้าของ + บริษัท → รวมเท่ากล่อง "มูลค่าเวนคืน" ด้านบน)
   //   ขวา = ตามสมาชิกครอบครัว: ทุนประกันชีวิต · มูลค่าเวนคืน (ทั้งครอบครัวแบบหน้า Alternative · ตามตัวกรองบริษัท)
@@ -372,14 +383,19 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           sub={`กรมธรรม์ที่มีผล ${bookletCount(act)} ฉบับ`} />
         <StatBox label="ทุนประกันชีวิตรวม (THB)" value={money(lifeTotal, "THB", 0)}
           sub={accidentTotal > 0 ? `เสียชีวิตจากอุบัติเหตุ เพิ่มอีก ${money(accidentTotal, undefined, 0)}` : "ชีวิต + บำนาญ · สุขภาพดูวงเงินที่แท็บความคุ้มครอง"} />
-        <StatBox label="เบี้ยรวมต่อปี (THB)" value={money(premiumTotal, "THB", 0)} sub={`ปีนี้ยังต้องจ่าย ${money(premLeftYear, undefined, 0)}`}>
-          {overdueTotal > 0 && <div className="mt-1 text-xs text-red-600">เลยกำหนด {overdueTotal} งวด</div>}
-        </StatBox>
-        <StatBox label="ได้คืนเทียบเบี้ย" value={backPct == null ? "-" : `${backPct.toFixed(0)}%`} valueClass={backPct != null && backPct >= 100 ? "text-emerald-700" : undefined}
-          sub={backPct == null
-            ? (withBack.length === 0 ? "ไม่มีกรมธรรม์ที่มีมูลค่าเวนคืน / เงินคืน" : "ยังไม่มีเบี้ยที่จ่ายแล้วของกรมธรรม์ที่มีเงินคืน")
-            : <><span className="whitespace-nowrap">เบี้ยจ่ายแล้ว {money(premPaid, undefined, 0)}</span> · <span className="whitespace-nowrap">ได้คืน {money(backGot, undefined, 0)}</span>
-                <div className="text-slate-400">เฉพาะกรมธรรม์ที่มีเงินคืน {bookletCount(savings)} ฉบับ</div></>} />
+        <StatBox label={`ผลประโยชน์ที่รับ ปี ${yearBE} (THB)`} value={plusMoney(benGotYear, "THB")} valueClass={signTone(benGotYear)}
+          sub={<>
+            <div>ทั้งปีตามตาราง {money(benPlanYear, undefined, 0)}</div>
+            {backPct != null
+              ? <div>ได้คืนเทียบเบี้ย <span className={`font-semibold ${backPct >= 100 ? "text-emerald-700" : ""}`}>{backPct.toFixed(0)}%</span>
+                  <span className="text-slate-400"> (เบี้ยจ่ายแล้ว {money(premPaid, undefined, 0)} · ได้คืน {money(backGot, undefined, 0)})</span></div>
+              : <div className="text-slate-400">{withBack.length === 0 ? "ไม่มีกรมธรรม์ที่มีมูลค่าเวนคืน / เงินคืน" : "ยังไม่มีเบี้ยที่จ่ายแล้วของกรมธรรม์ที่มีเงินคืน"}</div>}
+          </>} />
+        <StatBox label={`เบี้ยประกัน ปี ${yearBE} (THB)`} value={money(premYear, "THB", 0)}
+          sub={<>
+            <div>จ่ายแล้ว {money(premPaidYear, undefined, 0)} · ยังต้องจ่าย {money(premLeftYear, undefined, 0)}</div>
+            {overdueTotal > 0 && <div className="text-red-600">เลยกำหนด {overdueTotal} งวด</div>}
+          </>} />
       </section>
       {(insurerRows.length > 0 || memberRows.length > 0) && (
         <section className="grid gap-4 lg:grid-cols-2">

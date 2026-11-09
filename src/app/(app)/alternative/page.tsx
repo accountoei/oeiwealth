@@ -41,7 +41,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const today = todayBangkok();
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : today.slice(0, 7);
   const { start: mStart, end: mEnd } = monthRange(ym);
-  const [sortMap, { data, error }, { data: owners }, { data: fx }, { data: banks }, { data: family }, { data: yearInc }, valuePrev] = await Promise.all([
+  const [sortMap, { data, error }, { data: owners }, { data: fx }, { data: banks }, { data: family }, { data: yearInc }, valuePrev, { data: tradeRaw }] = await Promise.all([
     loadSortMap("assets"),
     supabase.from("alternative_asset_details")
       .select("id,asset_id,category_id,quantity,unit,purity_pct,auto_price,brand,model,storage_location,asset_categories(id,category_name,category_code,default_unit),assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,deleted_at)")
@@ -54,6 +54,9 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
     supabase.from("income_transactions").select("asset_id,date,base_amount").eq("income_type", "OTHER").eq("pending_split", false)
       .not("asset_id", "is", null).gte("date", `${ym.slice(0, 4)}-01-01`).lte("date", mEnd).is("deleted_at", null),
     prevMonthValue(today, pv.personId, "ALTERNATIVE"),
+    // ซื้อ / ขาย ตั้งแต่ต้นปีถึงสิ้นเดือนที่เลือก (กล่องสุดท้าย · ตกลง 9 พ.ย. 2026) · กรองเฉพาะสินทรัพย์อื่นด้านล่าง
+    supabase.from("cash_movements").select("movement_type,from_asset_id,to_asset_id,amount,currency,metadata").in("movement_type", ["ASSET_PURCHASE", "ASSET_SALE"])
+      .gte("movement_date", `${ym.slice(0, 4)}-01-01`).lte("movement_date", mEnd).is("deleted_at", null),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => (v == null ? null : Number(v) * (rate.get(c) ?? 0));
@@ -99,7 +102,14 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
   const incOf = (list: typeof incRows) => list.reduce((t, i) => t + Number(i.base_amount ?? 0) * share(i.asset_id as string), 0);
   const incYear = incOf(incRows), incMonth = incOf(incRows.filter((i) => i.date >= mStart));
   const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(mStart);
-  const oldest = held.map((r) => r.assets.current_value_date ?? "").sort()[0] ?? null;
+  type TM = { movement_type: string; from_asset_id: string | null; to_asset_id: string | null; amount: number; currency: string; metadata: { sale_price?: number; gain?: number | null } | null };
+  const trades = ((tradeRaw ?? []) as TM[]).map((m) => ({ ...m, alt: m.movement_type === "ASSET_PURCHASE" ? m.to_asset_id : m.from_asset_id }))
+    .filter((m) => !!m.alt && altIds.has(m.alt));
+  const tradeThb = (v: number | null | undefined, m: { currency: string; alt: string | null }) => (thb(v ?? 0, m.currency) ?? 0) * share(m.alt as string);
+  const buyYear = trades.filter((m) => m.movement_type === "ASSET_PURCHASE").reduce((t, m) => t + tradeThb(m.amount, m), 0);
+  const sells = trades.filter((m) => m.movement_type === "ASSET_SALE");
+  const sellYear = sells.reduce((t, m) => t + tradeThb(m.metadata?.sale_price ?? Number(m.amount) + Number(m.metadata?.gain ?? 0), m), 0);
+  const sellGain = sells.reduce((t, m) => t + tradeThb(m.metadata?.gain ?? 0, m), 0);
   const staleN = held.filter((r) => !r.assets.current_value_date || r.assets.current_value_date < old).length;
   const href = (c?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (c) q.set("c", c); const s = q.toString(); return `/alternative${s ? `?${s}` : ""}`; };
   const num = "px-3 py-3 align-top text-right tabular-nums";
@@ -128,7 +138,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
     <div className="space-y-6">
       <PageInfo>ทอง เครื่องประดับ นาฬิกา ของสะสม คริปโต และอื่น ๆ</PageInfo>
       <HeaderFilters><PersonFilter persons={pv.persons} value={pv.personId} /><MonthPicker months={months} value={ym} /></HeaderFilters>
-      {me.role !== "VIEWER" && <TabActions><Link href="/alternative/new" className={ADD_BTN}>+ เพิ่มทรัพย์สิน</Link></TabActions>}
+      {me.role !== "VIEWER" && <TabActions><Link href="/alternative/new" className={ADD_BTN}>+ เพิ่มสินทรัพย์อื่น</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <div className="border-b border-slate-200"><TabNav tabs={TABS} /></div>
 
@@ -149,14 +159,22 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
             sub={<>
               <MonthChange pct={changePct(totalMine, valuePrev)} prev={valuePrev} />
               <div>{held.length} รายการ{autoN ? ` · ทองราคาอัตโนมัติ ${autoN}` : ""}</div>
+              {staleN > 0 && <div className="text-red-700">{staleN} รายการเกิน 90 วันยังไม่อัปเดตมูลค่า</div>}
             </>} />
-          <StatBox label="กำไร / ขาดทุนที่ยังไม่ขาย" value={withCost.length ? signedMoney(gainAmt, "THB") : "-"} valueClass={signTone(gainAmt)}
-            sub={withCost.length ? <>{gainPct != null && <span className={`font-semibold ${signTone(gainAmt)}`}>{signedPct(gainPct)}</span>} · ราคาทุน {money(gain.cost)}
+          {/* ตกลง 9 พ.ย. 2026 (แบบเดียวกับ Private Business): ราคาทุนเป็นตัวใหญ่ · กำไร / ขาดทุนที่ยังไม่ขายอยู่ด้านล่าง */}
+          <StatBox label="ราคาทุนรวม" value={withCost.length ? money(gain.cost, "THB") : "-"}
+            sub={withCost.length ? <>
+              <div>กำไร / ขาดทุนที่ยังไม่ขาย <span className={signTone(gainAmt)}>{signedMoney(gainAmt, "THB")}</span>
+                {gainPct != null && <> (<span className={`font-semibold ${signTone(gainAmt)}`}>{signedPct(gainPct)}</span>)</>}</div>
               {withCost.length < held.length && <div>ไม่รวม {held.length - withCost.length} รายการที่ไม่มีราคาทุน</div>}</> : "ยังไม่มีราคาทุน"} />
           <StatBox label={`ผลตอบแทนที่รับแล้ว ปี ${Number(ym.slice(0, 4)) + 543}`} value={plusMoney(incYear, "THB")} valueClass={signTone(incYear)}
             sub={<><div>ม.ค. – {thMonth(mStart)} · ก่อนภาษี</div><div>{mLabel} {plusMoney(incMonth)}</div></>} />
-          <StatBox label="อัปเดตมูลค่า (เก่าสุด)" value={oldest ? thDate(oldest) : "-"}
-            sub={staleN ? `${staleN} รายการเกิน 90 วันยังไม่อัปเดต` : "✓ อัปเดตครบภายใน 90 วัน"} subClass={staleN ? "text-red-700" : "text-emerald-700"} />
+          <StatBox label={`ซื้อ / ขาย ปี ${Number(ym.slice(0, 4)) + 543}`} value={money(buyYear - sellYear, "THB")}
+            sub={<>
+              <div>ลงทุนสุทธิ (ซื้อ − ขาย) · ม.ค. – {thMonth(mStart)}</div>
+              <div>ซื้อ {money(buyYear, undefined, 0)} · ขาย {money(sellYear, undefined, 0)}</div>
+              {sells.length > 0 && <div>กำไรจากการขาย <span className={signTone(sellGain)}>{signedMoney(sellGain, "THB")}</span></div>}
+            </>} />
         </section>
       )}
 

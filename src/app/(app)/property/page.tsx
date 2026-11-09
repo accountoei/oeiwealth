@@ -19,7 +19,8 @@ import RowActions from "@/components/RowActions";
 import ExpenseBatch, { type CostRow, type OtherCost, type PayOpt } from "./ExpenseBatch";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { TabNav, TabPanel, TabsProvider } from "../income-expenses/tabs";
-import { StatBox } from "@/components/Boxes";
+import { MonthChange, StatBox } from "@/components/Boxes";
+import { changePct, prevMonthValue } from "@/lib/month-change";
 import ValueBatch, { type ValueRow } from "./ValueBatch";
 import { compName, type Component } from "./components";
 import type { MarketValuation } from "./MarketValuationForm";
@@ -93,9 +94,10 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   };
   // ดึงข้อมูลเป็น 2 รอบ (30 ต.ค. 2026) — เดิมรอทีละชุดต่อกันราว 9 ทอด → ช้ามากเมื่อ Supabase เพิ่งตื่น
   //   รอบแรก = ทุกชุดที่ไม่ต้องรอใคร · รอบสอง = ชุดที่ต้องใช้รายชื่อทรัพย์สิน (ชุดที่ต้องรอกันอีกทอดอยู่ในวงเล็บของตัวเอง)
+  const pvQ = loadPersonView(sp.p);
   const [pv, [{ data, error }, { data: leases }, { data: fx }, { data: family }, sortMap, { data: rentTrack }, { data: costTrack },
-    { data: bankRows }, { data: cardRows }], [{ data: rentToRows }, { data: chargeRaw }]] = await Promise.all([
-    loadPersonView(sp.p),
+    { data: bankRows }, { data: cardRows }], [{ data: rentToRows }, { data: chargeRaw }], valuePrev, { data: debtRaw }] = await Promise.all([
+    pvQ,
     Promise.all([
       supabase.from("property_details")
         .select("id,asset_id,property_type,usage_type,vacant_since,location_group,land_area_sq_wa,latitude,longitude,address,assets!inner(name,currency,current_value,current_value_date,status,acquisition_cost,acquisition_date,deleted_at)")
@@ -121,6 +123,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       supabase.from("property_leases").select("id,rent_to_asset_id,utilities_billing").is("deleted_at", null),
       supabase.from("v_lease_utility_charges").select("id,lease_id,property_asset_id,name,cost_period,description,amount,currency,kind").eq("status", "PENDING").order("cost_period"),
     ]),
+    // กล่องแรก (ตกลง 9 พ.ย. 2026): % จากสิ้นเดือนก่อน · หนี้ที่ผูกกับอสังหาฯ (liabilities.linked_asset_id)
+    pvQ.then((v) => prevMonthValue(today, v.personId, "PROPERTY")),
+    supabase.from("liabilities").select("linked_asset_id,outstanding_amount,currency").not("linked_asset_id", "is", null).eq("status", "ACTIVE").is("deleted_at", null),
   ]);
   const allProps = (data as unknown as Prop[] | null) ?? [];
   const ids = allProps.map((p) => p.asset_id);
@@ -212,6 +217,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const valueOf = (p: Prop) => (p.assets.current_value == null ? null : thb(p.assets.current_value, p.assets.currency) * share(p.asset_id));
   const active = props.filter((p) => p.assets.status === "ACTIVE");
   const totalValue = active.reduce((t, p) => t + (valueOf(p) ?? 0), 0);
+  const activeIds = new Set(active.map((p) => p.asset_id));
+  const debtTotal = ((debtRaw ?? []) as { linked_asset_id: string; outstanding_amount: number | null; currency: string }[])
+    .filter((l) => activeIds.has(l.linked_asset_id)).reduce((t, l) => t + thb(l.outstanding_amount, l.currency) * share(l.linked_asset_id), 0);
   const latestDate = active.map((p) => p.assets.current_value_date ?? "").sort().at(-1) || null;
   const pct = (v: number, t: number) => (t > 0 ? (v * 100) / t : 0);
 
@@ -441,7 +449,6 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const leaseCount = props.reduce((t, p) => t + (byProp.get(p.asset_id) ?? []).filter((l) => l.lease_status !== "UPCOMING" && PER_MONTHS[l.payment_frequency]).length, 0);
   const annualRent = props.reduce((t, p) => t + monthlyRent(p.asset_id), 0) * 12;
   // ประมาณค่าใช้จ่ายประจำทั้งปี = ยอดที่ตั้งไว้ในค่าใช้จ่ายประจำ × จำนวนงวดต่อปี (ไม่รวมค่าใช้จ่ายครั้งเดียว · ตกลง 7 พ.ย. 2026)
-  const activeIds = new Set(active.map((p) => p.asset_id));
   const recurring = ((utils ?? []) as Util[]).map((u) => ({ ...u, asset: utilProp.get(u.id) ?? "" }))
     .filter((u) => u.active && !u.deleted_at && u.expected_amount != null && !!PERIODS_PER_YEAR[u.frequency ?? ""] && activeIds.has(u.asset));
   const utilCost = (u: (typeof recurring)[number], periods: number) => thb(u.expected_amount, u.currency) * periods * share(u.asset);
@@ -462,6 +469,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   };
   const netYear = netYearOf(() => true);
   const rentalIds = new Set(active.filter((p) => USAGE_GROUP[p.usage_type] === "RENTAL").map((p) => p.asset_id));
+  const rentalN = rentalIds.size;
+  const leasedN = [...rentalIds].filter((id) => (byProp.get(id) ?? []).some((l) => l.lease_status !== "UPCOMING")).length;
   const rentalValue = active.filter((p) => rentalIds.has(p.asset_id)).reduce((t, p) => t + (valueOf(p) ?? 0), 0);
   const rentalPct = rentalValue > 0 ? ((netYearOf((a) => rentalIds.has(a)) * 12) / span.months / rentalValue) * 100 : null;
   const monthSpan = (to: number) => `ม.ค.${to > 1 ? `–${TH_MONTHS[to - 1]}` : ""}`;
@@ -481,7 +490,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         <PersonFilter persons={pv.persons} value={pv.personId} />
         <MonthPicker months={months} value={ym} />
       </HeaderFilters>
-      {me.role !== "VIEWER" && <TabActions><Link href="/property/new" className={ADD_BTN}>+ เพิ่มทรัพย์สิน</Link></TabActions>}
+      {me.role !== "VIEWER" && <TabActions><Link href="/property/new" className={ADD_BTN}>+ เพิ่มอสังหาริมทรัพย์</Link></TabActions>}
       {error && <p className="text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {error.message}</p>}
       <TabNav tabs={TABS} />
 
@@ -490,7 +499,11 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
               · รายได้สุทธิ + ทั้งปี (ยอดจริง) + % ต่อปีของกลุ่มปล่อยเช่า */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatBox label={<>{pv.personId ? `มูลค่าอสังหาริมทรัพย์ส่วนของ ${pv.personName}` : "มูลค่าอสังหาริมทรัพย์รวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalValue, "THB")}
-            sub={`${active.length} รายการ`} />
+            sub={<>
+              <MonthChange pct={changePct(totalValue, valuePrev)} prev={valuePrev} />
+              <div>{active.length} รายการ{rentalN ? ` · ปล่อยเช่า ${rentalN} (มีสัญญา ${leasedN})` : ""}</div>
+              {debtTotal > 0.005 && <div>หนี้ที่ผูกไว้ <span className="text-red-700">{money(debtTotal, "THB", 0)}</span> · สุทธิหลังหักหนี้ {money(totalValue - debtTotal, "THB", 0)}</div>}
+            </>} />
           <StatBox label={`รายได้จากอสังหาฯ ${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
             sub={<>
               <div>{incMonth.length} รายการ</div>
