@@ -3,9 +3,12 @@ import type { ReactNode } from "react";
 import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import { INCOME_TYPE_LABEL, MOVE_LABEL, money, thDate } from "@/lib/format";
-import { assetIncomeFields, businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { assetIncomeFields, businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, portfolioTxFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { splitMoves } from "@/lib/split-moves";
-import { stripPending } from "@/lib/ledger";
+import { sourceMeta, stripPending } from "@/lib/ledger";
+import PropertyPaymentForm from "../property/PropertyPaymentForm";
+import { ReceiptEdit } from "../insurance/[id]/FlowRecord";
+import type { KitExtras, KitReceipt } from "./kit-extras";
 import { PART_LABEL as INS_PART_LABEL, partRank } from "@/lib/insurance-booklet";
 import type { ExpHint } from "@/lib/category-hints";
 import { EntryEditor, type Bank, type Card, type Liab } from "./forms";
@@ -28,7 +31,7 @@ import type { PfCash } from "@/lib/pf-cash";
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
 export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
 export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)";
-export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata";
+export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata,lease:property_leases!cash_movements_related_lease_id_fkey(property_asset_id)";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -41,12 +44,14 @@ export type ExpFull = ExpRec & { full_amount: number };
 export type Move = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
   to_credit_card_id: string | null; to_liability_id: string | null; amount: number; currency: string; base_amount?: number | null; counter_amount: number | null;
   counter_currency: string | null; counter_fee?: number | null; cash_holding_id?: string | null; fee: number | null; is_derived: boolean; description: string | null; movement_group_id?: string | null;
-  source_entity_type?: string | null; source_entity_id?: string | null; metadata?: unknown; parts?: Move[] };
+  source_entity_type?: string | null; source_entity_id?: string | null; metadata?: unknown; parts?: Move[];
+  /** เงินประกันการเช่า → ทรัพย์สินของสัญญา (ลิงก์ไปแก้ที่สัญญา) */ lease?: unknown };
 
 // เงินประกันการเช่า (รับ / คืน) แก้ที่สัญญาเท่านั้น (ตกลง 6 พ.ย. 2026 · ฐานข้อมูลกัน) → DEPOSIT_NOTE ใต้รายการ
 export const EDITABLE_MOVES = ["TRANSFER", "FX_EXCHANGE", "CARD_PAYMENT", "LIABILITY_PAYMENT", "OTHER_IN", "OTHER_OUT",
   "INVESTMENT_OUT", "INVESTMENT_IN", "LOAN_DISBURSEMENT"];
 const DEPOSIT_MOVES = ["SECURITY_DEPOSIT_IN", "SECURITY_DEPOSIT_OUT"];
+const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
 const NAME_LINK = "cursor-pointer underline decoration-slate-300 underline-offset-2 hover:text-blue-700 hover:decoration-blue-400";
 export const SPLIT_BTN = "rounded-md border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100";
 const ASSET_PREFIX: Record<string, string> = { LOAN_RECEIVABLE: "เงินให้กู้", INVESTMENT_PORTFOLIO: "พอร์ต", INSURANCE_CASH_VALUE: "มูลค่าเวนคืน" };
@@ -90,7 +95,9 @@ export type KitCtx = {
   moves: Move[];
   incById: Map<string, IncRec>; expById: Map<string, ExpRec>;
   /** ชื่อทรัพย์สินอื่นในรายการเงิน (เงินให้กู้ / พอร์ต / มูลค่าเวนคืน) */
-  otherAssets: { id: string; name: string; asset_type: string }[];
+  otherAssets: { id: string; name: string; asset_type: string; asset_group?: string | null }[];
+  /** ข้อมูลของแถวที่มาจากหน้าอื่น (รับเงินประกัน · แถวของ Property · รายการในพอร์ต) → ฟอร์มของหน้าต้นทาง (kit-extras.ts) */
+  extras?: KitExtras;
   /** หน้า Income & Expenses: ลิงก์สลับแท็บในหน้า · หน้าบัญชี: ไม่มี */
   tabLinks: boolean;
   /** บ้าน / ที่ดิน ให้เลือกตอนแก้ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค */
@@ -117,6 +124,32 @@ export function makeEntryKit(c: KitCtx) {
   const bankIds = new Set(banks.map((b) => b.asset_id));
   const fromCloseout = (id: string) => !!c.closeoutIds?.has(id);
   const placeOf = (id: string | null) => (id ? name.get(id) ?? otherName.get(id) ?? "ทรัพย์สิน" : "ภายนอก");
+
+  // แถวที่มาจากหน้าอื่น → ฟอร์มของหน้าต้นทาง (ตกลง 9 พ.ย. 2026) · ข้อมูลจาก kit-extras.ts
+  const assetById = new Map(c.otherAssets.map((a) => [a.id, a]));
+  const rcByMove = new Map((c.extras?.receipts ?? []).filter((r) => r.movement_id).map((r) => [r.movement_id as string, r]));
+  const rcByIncome = new Map((c.extras?.receipts ?? []).filter((r) => r.income_id).map((r) => [r.income_id as string, r]));
+  const compsOf = (assetId: string) => (c.extras?.comps ?? []).filter((x) => x.asset_id === assetId).map(({ id, label, type }) => ({ id, label, type }));
+  const itxById = new Map((c.extras?.itxs ?? []).map((t) => [t.id, t]));
+  type AssetMeta = { policy_id?: string; part_sale?: boolean; share_sale?: boolean; share_buy?: boolean; add_value?: boolean; component_id?: string };
+  /** ซื้อ / ขายทรัพย์สิน → หน้าของทรัพย์สินนั้น (ถอนมูลค่าเวนคืน → หน้ากรมธรรม์) */
+  const assetLink = (m: Move): { href: string; label: string } | null => {
+    const meta = (m.metadata ?? {}) as AssetMeta;
+    if (meta.policy_id) return { href: `/insurance/${meta.policy_id}?tab=flow`, label: "กรมธรรม์" };
+    const id = m.movement_type === "ASSET_PURCHASE" ? m.to_asset_id : m.from_asset_id;
+    if (!id) return null;
+    const a = assetById.get(id);
+    if (a?.asset_type === "PRIVATE_BUSINESS") return { href: `/financial/business/${id}`, label: "กิจการ" };
+    if (a?.asset_group === "PROPERTY") return { href: `/property/${id}`, label: "Property" };
+    if (a?.asset_group === "ALTERNATIVE") return { href: `/alternative/${id}`, label: "Alternative" };
+    return { href: `/a/${id}`, label: "ทรัพย์สิน" };
+  };
+  /** รับเงินประกัน (ถอนมูลค่าเวนคืน / ผลประโยชน์ส่วนที่เป็นรายได้) → หน้าต่างแก้รายการรับแบบหน้ากรมธรรม์
+   *  แก้ / ลบได้เฉพาะรายการรับล่าสุดของกรมธรรม์ และ ADMIN / EDITOR (เหมือนหน้ากรมธรรม์) · อื่น ๆ = ลิงก์ไปหน้ากรมธรรม์ */
+  const receiptEdit = (r: KitReceipt | undefined): ReactNode => (r && r.latest && canWrite && canDelete ? (
+    <ReceiptEdit r={{ id: r.id, date: r.receipt_date, amount: r.amount, bank_asset_id: r.bank_asset_id, notes: r.notes, outcome: r.outcome,
+      cash_value_part: r.cash_value_part }} currency={r.currency} banks={banks} hasCashValue={r.has_cv}
+      paths={[...PATHS, `/insurance/${r.policy_id}`, "/insurance"]} />) : null);
 
   // รายการที่สร้างจากหน้าอื่น → หน้าต้นทาง (null = บันทึกที่หน้า Income & Expenses)
   const incSource = (i: IncRec): { href: string; label: string } | null => {
@@ -229,6 +262,9 @@ export function makeEntryKit(c: KitCtx) {
   /** แก้ไข / ลบ รายได้ · button = ปุ่มเดียว (ช่องสถานะ) · ไม่ใส่ = กดที่แถว */
   const incEdit = (i: IncFull, button?: string): ReactNode => {
     if (!canWrite || i.pending_split || fromCloseout(i.id)) return null;
+    // รับเงินประกัน (ส่วนที่เกินมูลค่าเวนคืน = รายได้) → หน้าต่างแก้รายการรับแบบหน้ากรมธรรม์ (กดที่แถวเท่านั้น)
+    const rc = rcByIncome.get(i.id);
+    if (rc) return button ? null : receiptEdit(rc);
     const src = incSource(i);
     // รายได้จากพอร์ต (ปันผล / ดอกเบี้ย / คูปอง) → แก้รายการในพอร์ตที่สร้างรายได้นี้ (ช่องเดียวกับหน้าพอร์ต)
     const tx = i.source_transaction_id ? one(i.src_tx as Rec | Rec[] | null) : null;
@@ -339,6 +375,57 @@ export function makeEntryKit(c: KitCtx) {
     );
   };
 
+  const dateField = (m: Move) => ({ name: "movement_date", label: "วันที่", type: "date" as const, value: m.movement_date });
+  /** ซื้อ / ขายทรัพย์สิน → ฟอร์มเดียวกับหน้าทรัพย์สิน (ตกลง 9 พ.ย. 2026)
+   *   Property จ่ายซื้อ / จ่ายเพิ่ม = ฟอร์มรายการจ่าย (แถวของ Property) · Alternative = วันที่ / ยอด / รายละเอียด · ขาย = ลบได้อย่างเดียว (เหมือนหน้าทรัพย์สิน)
+   *   กิจการ = วันที่ / ยอด (เหมือนหน้ากิจการ) · ซื้อ / ขายหุ้น · ขายบางส่วน → ลิงก์ (แก้ / ยกเลิกที่หน้าต้นทาง)
+   *   ถอนมูลค่าเวนคืน → หน้าต่างแก้รายการรับเงินประกัน */
+  const assetMoveEdit = (m: Move): ReactNode => {
+    if (!canWrite || m.is_derived) return null;
+    const meta = (m.metadata ?? {}) as AssetMeta;
+    if (meta.policy_id) return receiptEdit(rcByMove.get(m.id));
+    if (meta.share_sale || meta.share_buy || meta.part_sale) return null;
+    const assetId = m.movement_type === "ASSET_PURCHASE" ? m.to_asset_id : m.from_asset_id;
+    const a = assetId ? assetById.get(assetId) : undefined;
+    const src = assetLink(m);
+    const paths = [...PATHS, ...(src ? [src.href.split("?")[0]] : []), "/property", "/alternative", "/financial/business"];
+    const amt = { name: "amount", label: "จำนวน", type: "number" as const, value: m.amount };
+    if (a?.asset_type === "PRIVATE_BUSINESS") return <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete} fields={[dateField(m), amt]} />;
+    if (m.movement_type === "ASSET_SALE") return canDelete ? (
+      <RowActions table="cash_movements" id={m.id} paths={paths} canEdit={false} canDelete
+        deleteNote="ลบเฉพาะเงินขายที่เข้าบัญชี — สถานะ / มูลค่าราคาขาย ต้องแก้เองที่หน้าทรัพย์สิน" fields={[]} />) : null;
+    const editor = a?.asset_group === "PROPERTY" && assetId ? (
+      <PropertyPaymentForm assetId={assetId} currency={m.currency} paths={paths} addedValue={meta.add_value === true} components={compsOf(assetId)}
+        m={{ id: m.id, movement_date: m.movement_date, amount: Number(m.amount), description: m.description, component_id: meta.component_id ?? null }} />) : undefined;
+    return (
+      <RowActions table="cash_movements" id={m.id} paths={paths} canDelete={canDelete} editor={editor}
+        fields={[dateField(m), amt, { name: "description", label: "รายละเอียด", value: m.description, width: "w-40" }]} />
+    );
+  };
+  /** รับคืนเงินต้นอย่างเดียว (ไม่มีดอกเบี้ยคู่) → ช่องเดียวกับหน้า Loans */
+  const principalEdit = (m: Move): ReactNode => (canWrite ? (
+    <RowActions table="cash_movements" id={m.id} paths={[...PATHS, m.from_asset_id ? `/financial/loans/${m.from_asset_id}` : "/financial/loans", "/financial/loans"]}
+      canDelete={canDelete} fields={[dateField(m), { name: "amount", label: "เงินต้น", type: "number", value: m.amount }]} />) : null);
+  /** ซื้อ / ขาย / ไถ่ถอนในพอร์ตที่ตัด / เข้าบัญชีธนาคารตรง → ช่องเดียวกับตารางรายการในหน้าพอร์ต */
+  const itxEdit = (m: Move): ReactNode => {
+    const t = m.source_entity_id ? itxById.get(m.source_entity_id) : undefined;
+    if (!canWrite || !t || t.cash_movement_id || t.source_expense_item_id) return null;
+    const pf = m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id;
+    return (
+      <RowActions table="investment_transactions" id={t.id} paths={[...PATHS, pf ? `/investments/${pf}` : "/investments", "/investments"]} canDelete={canDelete}
+        deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม" fields={portfolioTxFields(t, true)} />
+    );
+  };
+  /** ฝั่งผู้กู้ของเงินกู้ภายในครอบครัว → แก้รายการฝั่งผู้ให้กู้ (ฝั่งผู้กู้เปลี่ยนตาม) · ไม่อยู่ในรายการของหน้านี้ = ลิงก์ */
+  const mergedByPart = new Map(mergeGroups(c.moves).filter((x) => x.parts).flatMap((x) => (x.parts ?? []).map((p) => [p.id, x] as [string, Move])));
+  const borrowerEdit = (m: Move): ReactNode => {
+    const src = m.source_entity_id ? moveById.get(m.source_entity_id) : undefined;
+    if (!src) return null;
+    if (src.movement_type === "LOAN_DISBURSEMENT") return moveEdit(src);
+    if (src.movement_type === "LOAN_PRINCIPAL_RECEIPT") { const g = mergedByPart.get(src.id); return g ? pairEdit(g) : principalEdit(src); }
+    return null;
+  };
+
   /** แถวของตารางเงินเข้า–ออก · withActions = กดที่แถวเพื่อแก้ไข / แยกก้อน */
   // เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน (ค่าใช้จ่ายมี payment_group_id ตรงกับชุดของเงินออก) → รวมเป็นแถวเดียว
   const premOf = (m: Move) => (m.is_derived && m.source_entity_type === "EXPENSE" && m.source_entity_id ? c.expById.get(m.source_entity_id) : undefined);
@@ -360,7 +447,13 @@ export function makeEntryKit(c: KitCtx) {
       const mainLine = ps.find((q) => q.l)?.l ?? null;
       const pol = one(mainLine?.pol ?? null);
       detail = pol ? `เบี้ยประกัน ${pol.insurer.trim()}${pol.policy_no ? ` ${pol.policy_no}` : ""} · ทั้งเล่ม` : m.description;
-      breakdown = <div className="text-xs text-slate-500">{ps.map(({ x, l }, i) => `${INS_PART_LABEL[typeOf(l)] ?? `ส่วนที่ ${i + 1}`} ${money(x.amount)}`).join(" + ")}</div>;
+      // ยอดของแต่ละส่วน: กดที่ยอดเพื่อแก้ / ลบรายการนั้น (แบบหน้ากรมธรรม์)
+      breakdown = <div className="text-xs text-slate-500">{ps.map(({ x, l }, i) => {
+        const e = premOf(x);
+        return <span key={x.id}>{i > 0 && " + "}{INS_PART_LABEL[typeOf(l)] ?? `ส่วนที่ ${i + 1}`}{" "}
+          {withActions && canWrite && e ? <RowActions table="expense_items" id={e.id} paths={[...PATHS, l ? `/insurance/${l.policy_id}` : "/insurance", "/insurance"]}
+            canDelete={canDelete} fields={premiumPaymentFields(e as { date: string; amount: number; notes: string | null })} button={money(x.amount)} buttonClass={AMT} /> : money(x.amount)}</span>;
+      })}</div>;
       link = mainLine ? { href: `/insurance/${mainLine.policy_id}?tab=flow`, label: "กรมธรรม์ (แก้ทีละส่วน)" } : null;
     } else if (m.parts) {
       type = "รับชำระเงินให้กู้";
@@ -391,6 +484,22 @@ export function makeEntryKit(c: KitCtx) {
     } else if (m.is_derived) {
       link = null;
     }
+    // แก้ที่นี่ไม่ได้ / มาจากหน้าอื่น → กดชื่อไปหน้าต้นทาง (ตกลง 9 พ.ย. 2026)
+    if (!link && !m.parts && !m.is_derived) {
+      if (m.movement_type === "ASSET_PURCHASE" || m.movement_type === "ASSET_SALE") link = assetLink(m);
+      else if (m.movement_type === "LOAN_PRINCIPAL_RECEIPT" && m.from_asset_id) link = { href: `/financial/loans/${m.from_asset_id}`, label: "เงินให้กู้" };
+      else if (m.movement_type === "LOAN_DISBURSEMENT" && m.to_asset_id) link = { href: `/financial/loans/${m.to_asset_id}`, label: "เงินให้กู้" };
+      else if (DEPOSIT_MOVES.includes(m.movement_type)) {
+        const pa = one(m.lease as { property_asset_id: string } | { property_asset_id: string }[] | null)?.property_asset_id;
+        link = { href: pa ? `/property/${pa}` : "/property", label: "สัญญาเช่า" };
+        // ข้อความเดิมในฐานข้อมูล "รับเงินประกัน · ผู้เช่า" → แสดงเต็มคำ (ไม่สับสนกับเงินประกันชีวิต)
+        if (typeof detail === "string") detail = detail.replace(/^(รับ|คืน)เงินประกัน(?!การเช่า)/, "$1เงินประกันการเช่า");
+      }
+    }
+    // ป้ายตามเมนูต้นทาง (ซื้อ / ขาย Property · เงินประกัน · ซื้อหลักทรัพย์ · เงินกู้ภายใน ฯลฯ)
+    const srcAsset = m.movement_type === "ASSET_PURCHASE" ? m.to_asset_id : m.movement_type === "ASSET_SALE" ? m.from_asset_id : null;
+    const source = m.parts ? null : sourceMeta(m, srcAsset ? assetById.get(srcAsset) : null);
+    if (source) type = source.label;
     const counter = m.counter_amount != null ? Number(m.counter_amount) : Number(m.amount);
     const inc = m.is_derived && m.source_entity_type === "INCOME" && m.source_entity_id ? c.incById.get(m.source_entity_id) : undefined;
     const exp = m.is_derived && m.source_entity_type === "EXPENSE" && m.source_entity_id ? c.expById.get(m.source_entity_id) : undefined;
@@ -399,7 +508,7 @@ export function makeEntryKit(c: KitCtx) {
       key: m.id, date: m.movement_date, type, typeCls: m.movement_type === "REIMBURSEMENT_IN" ? "text-sky-700" : undefined,
       kind: m.movement_type, merged: !!m.parts && !premSet, fee: Number(m.fee ?? 0),
       metaOpts: { incomeType: inc?.income_type ?? null, incomeSubtype: inc?.income_subtype ?? null,
-        expenseCategory: exp?.expense_category ?? null, pending: !!(inc?.pending_split || exp?.pending_split) },
+        expenseCategory: exp?.expense_category ?? null, pending: !!(inc?.pending_split || exp?.pending_split), source },
       fromLabel: placeOf(m.from_asset_id),
       toLabel: m.to_credit_card_id ? `บัตร ${placeOf(m.to_credit_card_id)}` : m.to_liability_id ? placeOf(m.to_liability_id) : placeOf(m.to_asset_id),
       fromBank: m.from_asset_id && bankIds.has(m.from_asset_id) ? m.from_asset_id : null,
@@ -423,6 +532,11 @@ export function makeEntryKit(c: KitCtx) {
         : withActions && m.parts ? pairEdit(m)
         // เงินเข้าบัญชีจากปันผล / ดอกเบี้ย / คูปองในพอร์ต → แก้รายการในพอร์ต
         : withActions && txInc ? incEdit(full(txInc))
+        // ซื้อ / ขายทรัพย์สิน · ถอนมูลค่าเวนคืน · รับคืนเงินต้นอย่างเดียว · ซื้อ / ขายในพอร์ตผ่านบัญชี · ฝั่งผู้กู้ภายใน → ฟอร์มของหน้าต้นทาง
+        : withActions && !m.parts && (m.movement_type === "ASSET_PURCHASE" || m.movement_type === "ASSET_SALE") ? assetMoveEdit(m)
+        : withActions && !m.parts && !m.is_derived && m.movement_type === "LOAN_PRINCIPAL_RECEIPT" ? principalEdit(m)
+        : withActions && m.is_derived && m.source_entity_type === "INVESTMENT_TX" ? itxEdit(m)
+        : withActions && m.is_derived && m.source_entity_type === "CASH_MOVEMENT" ? borrowerEdit(m)
         // เงินเข้า–ออกจากรายได้ / ค่าใช้จ่าย → กดที่แถว: แก้ไข (ฟอร์มชุดเดียวกับแท็บรายได้ / ค่าใช้จ่าย) หรือแยกก้อนรอแยก
         //   แก้ที่นี่ไม่ได้ (ซื้อ / ขายในพอร์ต / เงินประกัน / ฝั่งผู้กู้ ฯลฯ) → แถวกดไม่ได้ · กดชื่อไปหน้าต้นทาง
         : withActions && inc && !m.parts ? (inc.pending_split ? incSplit(full(inc), true) : incEdit(full(inc)))

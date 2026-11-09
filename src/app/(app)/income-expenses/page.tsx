@@ -67,7 +67,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const { banksRaw, cardsRaw, liabRaw, persons, fx, templates, claimsRaw, utilRows, cardBalRaw, rexpTplRaw, leaseRaw, covRaw, pfCash, propRows,
     leaseProps, expCatAll, incSubAll, expHints } = ref;
   const { incomes, expected, month, items, reimbStatus, reimbs, moves, costRows, loanRows, insRows, rexpRows, pfCardPays, openRaw, valuations,
-    moveAssets } = mon;
+    moveAssets, kitExtras } = mon;
   const incShare = new Map((incShares ?? []).map((r) => [r.income_id as string, r]));
   const expShare = new Map((expShares ?? []).map((r) => [r.expense_item_id as string, r]));
   // หมวดค่าใช้จ่าย / ประเภทย่อยรายได้อื่น (ตั้งค่าเองในแท็บ "ตั้งค่า") · จำนวนรายการที่ใช้แต่ละหมวดนับไว้ใน page-data.ts
@@ -190,7 +190,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const leases = ((leaseRaw as Lease[] | null) ?? []).filter((l) => pv.showAsset(l.property_asset_id));
   // ชื่อทรัพย์สินอื่น: ถามทุกทรัพย์สินในรายการของเดือนไว้แล้ว (page-data.ts) · ใช้เฉพาะที่ไม่ใช่บัญชี / บัตร / หนี้ (เหมือนเดิม)
   const otherSet = new Set(otherIds);
-  const otherAssets = ((moveAssets ?? []) as { id: string; name: string; asset_type: string }[]).filter((a) => otherSet.has(a.id));
+  const otherAssets = ((moveAssets ?? []) as { id: string; name: string; asset_type: string; asset_group?: string | null }[]).filter((a) => otherSet.has(a.id));
   // บัตรตัดบัญชีอัตโนมัติ: งวดของเดือนนี้ที่ยังไม่มีรายการจ่ายบัตร → ถึงวันครบชำระแล้ว = "รอยืนยัน" · ยังไม่ถึง = "จะตัด"
   const lastDay = Number(end.slice(8, 10));
   const autopay = (cardsRaw ?? [])
@@ -215,7 +215,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   // ชุดคำสั่งกลาง (แก้ไข / ลบ / แยกก้อน / แถวเงินเข้า–ออก) — ใช้ร่วมกับหน้ารายละเอียดบัญชี
   const kit = makeEntryKit({ ym, personId: pv.personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons: persons ?? [],
     pfCash, incSubs, expCats, expHints, moves: (moves ?? []) as Move[], incById, expById, otherAssets,
-    tabLinks: true, properties, closeoutIds: new Set(ref.closeoutIds) });
+    tabLinks: true, properties, closeoutIds: new Set(ref.closeoutIds), extras: kitExtras ?? undefined });
   const { incSource, expSource, incEdit, expEdit, incSplit, expSplit, closeoutNote } = kit;
   const moveRows = (withActions: boolean): MoveRow[] => kit.buildMoveRows(moveList as Move[], withActions);
   const bankOpts = banks.map((b) => ({ id: b.asset_id, name: b.name }));

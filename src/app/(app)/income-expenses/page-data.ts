@@ -2,6 +2,7 @@ import { cachedLoad } from "@/lib/data-cache";
 import { buildHints } from "@/lib/category-hints";
 import { queryPfCash } from "@/lib/pf-cash";
 import { INC_SELECT, MOVE_SELECT, closeoutIdSet } from "./entry-kit";
+import { loadKitExtras } from "./kit-extras";
 
 /**
  * ข้อมูลหน้า Income & Expenses (5 พ.ย. 2026)
@@ -97,9 +98,10 @@ export function loadIeMonth(start: string, end: string) {
     const movesQ = supabase.from("cash_movements").select(MOVE_SELECT)
       .is("deleted_at", null).gte("movement_date", start).lte("movement_date", end)
       .order("movement_date", { ascending: false }).order("created_at", { ascending: false }).then((r) => r);
+    const incQ = supabase.from("income_transactions").select(INC_SELECT)
+      .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }).then((r) => r);
     const res = await Promise.all([
-      supabase.from("income_transactions").select(INC_SELECT)
-        .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
+      incQ,
       // รายได้ที่คาดไว้ (ค่าเช่า / รายได้ประจำ): งวดเดือนนี้ + ที่เลยกำหนดจากเดือนก่อน (ตกลง 5 พ.ย. 2026)
       // + งวดเดือนก่อนที่ครบกำหนดในเดือนนี้ (ค่าเช่าจ่ายหลังสิ้นรอบ, 6 พ.ย. 2026)
       supabase.from("v_expected_income").select("*")
@@ -142,15 +144,21 @@ export function loadIeMonth(start: string, end: string) {
       movesQ.then(async ({ data }) => {
         const ids = [...new Set(((data ?? []) as { from_asset_id: string | null; to_asset_id: string | null }[])
           .flatMap((m) => [m.from_asset_id, m.to_asset_id]).filter((x): x is string => !!x))];
-        return ids.length ? await supabase.from("assets").select("id,name,asset_type").in("id", ids) : none();
+        return ids.length ? await supabase.from("assets").select("id,name,asset_type,asset_group").in("id", ids) : none();
+      }),
+      // กดแถวที่มาจากหน้าอื่น → ฟอร์มของหน้าต้นทาง (รับเงินประกัน · จ่ายซื้อ Property · ซื้อ / ขายในพอร์ต) · kit-extras.ts
+      Promise.all([movesQ, incQ]).then(async ([m, i]) => {
+        if (m.error || i.error) return { data: null, error: m.error ?? i.error };
+        try { return { data: await loadKitExtras(supabase, (m.data ?? []) as never[], (i.data ?? []) as never[]), error: null }; }
+        catch (e) { return { data: null, error: e as Error }; }
       }),
     ]);
     const [{ data: incomes }, { data: expected }, { data: month }, { data: items }, { data: reimbStatus }, { data: reimbs }, { data: moves },
       { data: costRows }, { data: loanRows }, { data: insRows }, { data: rexpRows }, { data: pfCardPays }, { data: openRaw }, { data: valuations },
-      { data: moveAssets }] = res;
+      { data: moveAssets }, { data: kitExtras }] = res;
     return {
       complete: res.every((r) => !r.error),
-      value: { incomes, expected, month, items, reimbStatus, reimbs, moves, costRows, loanRows, insRows, rexpRows, pfCardPays, openRaw, valuations, moveAssets },
+      value: { incomes, expected, month, items, reimbStatus, reimbs, moves, costRows, loanRows, insRows, rexpRows, pfCardPays, openRaw, valuations, moveAssets, kitExtras },
     };
   });
 }
