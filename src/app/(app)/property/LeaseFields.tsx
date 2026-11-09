@@ -24,7 +24,8 @@ const num = (v: string) => Number(v.replace(/,/g, "")) || 0;
 
 /**
  * ช่องกรอกสัญญาเช่า (ชื่อ input ขึ้นต้นด้วย lease_)
- *   อายุสัญญา (ปี / เดือน) ↔ วันสิ้นสุด คำนวณให้กันทั้งสองทาง · เงินประกัน = ค่าเช่า × จำนวนเดือน (แก้ยอดเองได้)
+ *   อายุสัญญา (ปี / เดือน) ↔ วันสิ้นสุด คำนวณให้กันทั้งสองทาง · เงินประกัน = ค่าเช่าต่อเดือน × จำนวนเดือน (แก้ยอดเองได้)
+ *     ค่าเช่ารายไตรมาส / รายปี → ต่อเดือน = ค่าเช่า ÷ 3 / ÷ 12 (ตกลง 9 พ.ย. 2026 · เดิมคูณทั้งก้อน → รายปีได้เงินประกันหลายปี)
  *   ต่อสัญญา: เลือกสัญญาเดิม → ดึงผู้เช่า ค่าเช่า บัญชี รายละเอียดสัญญามาให้ · เริ่มวันถัดจากสัญญาเดิม อายุเท่าเดิม
  *     ยกเงินประกันได้เฉพาะตอนต่อสัญญา และยกจากฉบับที่เลือกเท่านั้น (สัญญาใหม่กรอกเอง = ไม่ยก · ตกลง 6 พ.ย. 2026)
  *   งวดแรก: แสดงตัวอย่างตามวันเริ่ม / วันจ่าย / วิธีคิดวันเศษ (สูตรจริง = private.lease_cycles)
@@ -80,7 +81,9 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
   const first = step && start && num(rent) > 0 ? firstRentCycle(start, num(dueDay) || null, num(rent), basis, step, timing) : null;
   const effRecv = carried ? start : (recvDate || start);
   const beforeGoLive = !!effRecv && effRecv < goLive;
-  const autoDeposit = num(rent) * num(depMonths);
+  // ค่าเช่าต่อเดือน × จำนวนเดือน (ปัดเป็นสตางค์)
+  const perMonth = step ? num(rent) / step : num(rent);
+  const autoDeposit = Math.round(perMonth * num(depMonths) * 100) / 100;
   const depShown = deposit ?? (autoDeposit > 0 ? money(autoDeposit) : "");
   const extra = num(depShown) - (carried?.deposit ?? 0);
 
@@ -195,13 +198,13 @@ function Inner({ p, banks, goLive, currency, carryOptions, defaultStart, detail 
           <label className={label}>จำนวนเดือนที่วางประกัน
             <input name="lease_deposit_months" inputMode="decimal" data-money="off" value={depMonths}
               onChange={(e) => { setDepMonths(e.target.value); setDeposit(null); }} className={input} />
-            <span className="mt-1 block text-xs text-slate-500">เปลี่ยนเดือน → คำนวณยอดใหม่จากค่าเช่า</span>
+            <span className="mt-1 block text-xs text-slate-500">เปลี่ยนเดือน → คำนวณยอดใหม่จากค่าเช่า{step > 1 ? ` (ต่อเดือน = ค่าเช่า ÷ ${step})` : ""}</span>
           </label>
           <label className={label}>เงินประกันทั้งหมดของสัญญานี้
             <input name="lease_security_deposit" inputMode="decimal" value={depShown} onChange={(e) => setDeposit(e.target.value)}
               placeholder={carried ? `เดิม ${money(carried.deposit)}` : "ไม่มี = เว้นว่าง"} required={!!carried} className={input} />
             {deposit != null && autoDeposit > 0 && num(deposit) !== autoDeposit && (
-              <button type="button" onClick={() => setDeposit(null)} className="mt-1 text-xs text-blue-700 hover:underline">ใช้ค่าเช่า × {depMonths} เดือน = {money(autoDeposit)}</button>
+              <button type="button" onClick={() => setDeposit(null)} className="mt-1 text-xs text-blue-700 hover:underline">ใช้ค่าเช่า{step > 1 ? `ต่อเดือน ${money(perMonth)}` : ""} × {depMonths} เดือน = {money(autoDeposit)}</button>
             )}
           </label>
           {!carried && (
