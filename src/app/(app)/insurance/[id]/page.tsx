@@ -874,7 +874,31 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
         <ActionBar>
           <div className="w-full space-y-0.5">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <h2 className="shrink-0 py-1 font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : showCv ? "มูลค่าเวนคืน เบี้ยประกัน และผลประโยชน์" : "เบี้ยประกันและผลประโยชน์"}{showIrr && <> <InfoTip label="คำอธิบาย">IRR = ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</InfoTip></>}</h2>
+            <h2 className="shrink-0 py-1 font-medium text-slate-900">{isProp ? "ตารางเบี้ย" : showCv ? "มูลค่าเวนคืน เบี้ยประกัน และผลประโยชน์" : "เบี้ยประกันและผลประโยชน์"}{" "}<InfoTip label="คำอธิบาย">
+            {premiums.length > 0 ? (
+              <span className="block">เบี้ย {premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด
+                {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
+                {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</span>
+            ) : <span className="block">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</span>}
+            {others.map((o) => {
+              const xs = allPremiums.filter((x) => x.policy_id === o.id);
+              return (
+                <span key={o.id} className="block">
+                  สัญญาเพิ่มเติม · {typeLabel(o.id)}
+                  {xs.length > 0 ? <> · เบี้ย {xs.length} งวด · จ่ายถึงปี {lastYear(xs)} ({thDate(lastDue(xs))}) · เหลือ {leftCount(xs)} งวด</> : " · ยังไม่ได้ตั้งตารางเบี้ย"}
+                </span>
+              );
+            })}
+            {!isProp && (benefits.length > 0
+              ? <span className="block">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</span>
+              : <span className="block">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กด &ldquo;บันทึกรับ&rdquo; → รับเงินก้อน</span>)}
+            {!isProp && (cvRows.length > 0
+              ? <span className="block">มูลค่าเวนคืนตามสัญญา {cvRows.length} ปี{cvDue ? ` · ล่าสุดปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy)}` : " · ยังไม่ถึงปีแรก"}</span>
+              : showCv && <span className="block">มูลค่าเวนคืน: ใส่ตารางตามสัญญาจากเล่มกรมธรรม์ (มูลค่าสิ้นปีกรมธรรม์) แล้วระบบสร้างและลงยอดให้เองทุกปี
+                  · เล่มที่ไม่มีตารางในสัญญา ใส่ยอดตามหนังสือแจ้งเป็นแถวในตารางเดียวกัน</span>)}
+            {cvAsset && !isProp && <span className="block">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</span>}
+            {showIrr && <span className="block">IRR = ผลตอบแทนต่อปีคิดตามวันที่จริงของแต่ละรายการ (XIRR) · ยังไม่รวมภาษีที่ลดหย่อนได้จากเบี้ย</span>}
+            </InfoTip></h2>
             {canWrite && policyActive && <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
             {canDelete && <>
             {/* เล่มที่มีสัญญาเพิ่มเติม (ตกลง 8 พ.ย. 2026): ปุ่มเดียว "แก้ตารางเบี้ย" ทั้งเล่ม · คอลัมน์ละส่วน + รวม · บันทึกพร้อมกัน */}
@@ -897,30 +921,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               defaultPay={payDefault} today={today} minDate={goLive || null} />
             </div>}
           </div>
-            {premiums.length > 0 ? (
-              <p className="text-sm text-slate-600">เบี้ย {premiums.length} งวด · จ่ายถึงปี {lastYear(premiums)} ({thDate(lastDue(premiums))}) · เหลือ {leftCount(premiums)} งวด
-                {premNext && <> · งวดถัดไป {thDate(premNext.due_date)} {money(premNext.remaining)}</>}
-                {premOverdue.length > 0 && <span className="text-red-600"> · เลยกำหนด {premOverdue.length} งวด</span>}
-                {payerId && <> · ผู้จ่าย {allName.get(payerId)}</>}</p>
-            ) : <p className="text-sm text-slate-500">ยังไม่ได้ตั้งตารางเบี้ย — ตั้งแล้วจะขึ้นใน Income &amp; Expenses → ค่าใช้จ่ายที่ต้องจ่าย</p>}
-            {others.map((o) => {
-              const xs = allPremiums.filter((x) => x.policy_id === o.id);
-              return (
-                <p key={o.id} className="text-sm text-slate-600">
-                  สัญญาเพิ่มเติม · {typeLabel(o.id)}
-                  {xs.length > 0 ? <> · เบี้ย {xs.length} งวด · จ่ายถึงปี {lastYear(xs)} ({thDate(lastDue(xs))}) · เหลือ {leftCount(xs)} งวด</> : " · ยังไม่ได้ตั้งตารางเบี้ย"}
-                </p>
-              );
-            })}
-            {!isProp && (benefits.length > 0
-              ? <p className="text-sm text-slate-600">ผลประโยชน์ {benefits.length} งวด · รับถึงปี {lastYear(benefits)} ({thDate(lastDue(benefits))}) · เหลือ {leftCount(benefits)} งวด</p>
-              : <p className="text-sm text-slate-500">ผลประโยชน์รายงวด (เงินคืน / บำนาญ / ครบสัญญา) ตั้งเป็นตาราง · ก้อนเดียวที่ไม่อยู่ในตาราง (เวนคืน / สินไหม) กด &ldquo;บันทึกรับ&rdquo; → รับเงินก้อน</p>)}
-            {!isProp && (cvRows.length > 0
-              ? <p className="text-sm text-slate-600">มูลค่าเวนคืนตามสัญญา {cvRows.length} ปี{cvDue ? ` · ล่าสุดปีที่ ${cvDue.policy_year} (${thDate(cvDue.value_date)}) ${money(cvDue.value, ccy)}` : " · ยังไม่ถึงปีแรก"}
-                  {cvPending && <span className="text-amber-700"> · ปีที่ {cvDue?.policy_year} ยังไม่ได้ลง (เบี้ยก่อนหน้ายังค้าง หรือกด &ldquo;ลงมูลค่าตามตาราง&rdquo;)</span>}</p>
-              : showCv && <p className="text-sm text-slate-500">มูลค่าเวนคืน: ใส่ตารางตามสัญญาจากเล่มกรมธรรม์ (มูลค่าสิ้นปีกรมธรรม์) แล้วระบบสร้างและลงยอดให้เองทุกปี
-                  · เล่มที่ไม่มีตารางในสัญญา ใส่ยอดตามหนังสือแจ้งเป็นแถวในตารางเดียวกัน</p>)}
-            {cvAsset && !isProp && <p className="text-xs text-slate-500">มีมูลค่าเวนคืน: เงินที่รับถอนจากมูลค่าเวนคืนก่อน ส่วนที่เกินนับเป็นรายได้</p>}
+            {/* สรุปตาราง + คำอธิบาย อยู่ใน ⓘ ข้างหัวข้อ (ตกลง 9 พ.ย. 2026 · เดิม 4 บรรทัดใต้หัวข้อ) · เหลือบรรทัดเตือนเมื่อมีเรื่องต้องทำ */}
+            {(premOverdue.length > 0 || cvPending) && <p className="text-sm">
+              {premOverdue.length > 0 && <span className="text-red-600">เบี้ยเลยกำหนด {premOverdue.length} งวด</span>}
+              {premOverdue.length > 0 && cvPending && " · "}
+              {cvPending && <span className="text-amber-700">มูลค่าเวนคืนปีที่ {cvDue?.policy_year} ยังไม่ได้ลง (เบี้ยก่อนหน้ายังค้าง หรือกด &ldquo;ลงมูลค่าตามตาราง&rdquo;)</span>}</p>}
           </div>
         </ActionBar>
         {showNet && (

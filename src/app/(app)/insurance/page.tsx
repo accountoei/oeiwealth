@@ -10,7 +10,7 @@ import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
-import { StatBox } from "@/components/Boxes";
+import { CcyBreakdown, StatBox } from "@/components/Boxes";
 import { ShareBox, SHARE_COLORS, type ShareRow } from "@/components/ShareTable";
 import MemberShareBox, { type MemberShareRow } from "./MemberShareBox";
 import UrlSelect from "@/components/UrlSelect";
@@ -86,7 +86,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     .or(`and(claim_date.gte.${year}-01-01,claim_date.lte.${year}-12-31),and(status.in.(${CLAIM_OPEN.join(",")}),claim_date.lt.${year}-01-01),and(status.in.(${CLAIM_OPEN.join(",")}),claim_date.is.null)`)
     .order("claim_date", { ascending: false }).then((r) => r);
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec, { data: pendExp }] = await Promise.all([
+    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec, { data: pendExp }, { data: fx }] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id,plan_name,coverage_scope")
       .order("status").order("insurer"),
@@ -114,7 +114,15 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       return await supabase.from("v_expense_reimbursement_status").select("expense_item_id,date,description,amount,currency,expected_reimbursement_amount,reimbursed_amount")
         .eq("is_reimbursable", true).neq("reimbursement_status", "FULL").order("date", { ascending: false }).limit(100);
     })(),
+    supabase.from("v_fx_status").select("currency,rate_to_thb"),
   ]);
+  // สกุลเงินอื่น → บาทด้วยอัตราล่าสุด (THB Equivalent · แบบหน้า Bank Accounts · ตกลง 9 พ.ย. 2026) · ยอดแยกตามสกุลแสดงใต้กล่อง
+  const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
+  const toThb = (v: number | string | null | undefined, c: string | null | undefined) => Number(v ?? 0) * (rate.get(c ?? "THB") ?? 0);
+  type ByCcy = Map<string, number>;
+  const addCcy = (m: ByCcy, c: string | null | undefined, v: number) => { if (Math.abs(v) > 0.005) m.set(c ?? "THB", (m.get(c ?? "THB") ?? 0) + v); return m; };
+  const thbOf = (m: ByCcy) => [...m].reduce((t, [c, v]) => t + toThb(v, c), 0);
+  const ccyItems = (m: ByCcy) => [...m].map(([ccy, amount]) => ({ ccy, amount, thb: toThb(amount, ccy) }));
   const pname = new Map((persons ?? []).map((p) => [p.id, p.name]));
   const cv = new Map((cvs ?? []).map((a) => [a.id, a]));
   // ตัวกรองบริษัทประกัน (?i= · ใช้กับทุกแท็บ · ตกลง 6 พ.ย. 2026)
@@ -143,31 +151,36 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const policyName = new Map((data ?? []).map((r) => [r.id, `${r.insurer}${r.policy_no ? ` · ${r.policy_no}` : ""}`]));
   const fupRows = (fups ?? []).filter((f) => pv.isPerson(f.person_id) || rows.some((r) => r.id === f.policy_id));
   const cvOfPol = new Set(pol.map((r) => r.cash_value_asset_id).filter(Boolean));
-  const cvTotal = (cvs ?? []).filter((a) => pv.showAsset(a.id) && (!iFilter || cvOfPol.has(a.id)))
-    .reduce((s, a) => s + (a.currency === "THB" ? Number(a.current_value ?? 0) * pv.assetShare(a.id) : 0), 0);
+  const cvByCcy: ByCcy = new Map();
+  (cvs ?? []).filter((a) => pv.showAsset(a.id) && (!iFilter || cvOfPol.has(a.id)))
+    .forEach((a) => addCcy(cvByCcy, a.currency, Number(a.current_value ?? 0) * pv.assetShare(a.id)));
+  const cvTotal = thbOf(cvByCcy);
   // กล่องสรุปด้านบน (ตกลง 7 พ.ย. 2026 · กรมธรรม์ที่มีผล · THB)
   const act = mineRows.filter((r) => r.status === "ACTIVE");
   const activeIds = new Set(act.map((r) => r.id));
-  const sumThb = (f: (r: (typeof act)[number]) => number | null, ccyOf: (r: (typeof act)[number]) => string | null) =>
-    act.reduce((t, r) => t + ((ccyOf(r) ?? "THB") === "THB" ? Number(f(r) ?? 0) : 0), 0);
+  const sumByCcy = (f: (r: (typeof act)[number]) => number | null, ccyOf: (r: (typeof act)[number]) => string | null) =>
+    act.reduce((m, r) => addCcy(m, ccyOf(r), Number(f(r) ?? 0)), new Map() as ByCcy);
   //   ทุนประกันชีวิต = ชีวิต + บำนาญ (สุขภาพใช้วงเงิน · ส่วนใหญ่เป็นเบี้ยทิ้ง → ไม่รวม) · อุบัติเหตุ = เสียชีวิตจากอุบัติเหตุเพิ่มอีก
-  const lifeTotal = sumThb((r) => (r.insurance_type === "LIFE" || r.insurance_type === "ANNUITY" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
-  const accidentTotal = sumThb((r) => (r.insurance_type === "ACCIDENT" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
+  const lifeByCcy = sumByCcy((r) => (r.insurance_type === "LIFE" || r.insurance_type === "ANNUITY" ? r.insured_amount : 0), (r) => r.insured_amount_currency);
+  const lifeTotal = thbOf(lifeByCcy);
+  const accidentTotal = thbOf(sumByCcy((r) => (r.insurance_type === "ACCIDENT" ? r.insured_amount : 0), (r) => r.insured_amount_currency));
   const overdueTotal = mineRows.reduce((t, r) => t + (overduePremium.get(r.id) ?? 0), 0);
   //   ปีนี้ยังต้องจ่าย = เบี้ยงวดที่ยังจ่ายไม่ครบ ครบกำหนดไม่เกินสิ้นปีนี้ (รวมงวดเลยกำหนด)
-  const premLeftYear = lineList.filter((l) => l.kind === "PREMIUM" && activeIds.has(l.policy_id) && l.currency === "THB"
-    && INS_OPEN.includes(l.status) && l.due_date <= `${year}-12-31`).reduce((t, l) => t + Number(l.remaining ?? 0), 0);
+  const premLeftYear = lineList.filter((l) => l.kind === "PREMIUM" && activeIds.has(l.policy_id)
+    && INS_OPEN.includes(l.status) && l.due_date <= `${year}-12-31`).reduce((t, l) => t + toThb(l.remaining, l.currency), 0);
   // กล่อง 3–4 (ตกลง 9 พ.ย. 2026): ผลประโยชน์ / เบี้ย ของปีนี้ (ตามวันครบกำหนดของงวด · THB) · เบี้ยแต่ละปีไม่เท่ากัน
   const mineIds = new Set(mineRows.map((r) => r.id));
-  const lineInYear = (l: YLine) => l.currency === "THB" && l.due_date >= `${year}-01-01` && l.due_date <= `${year}-12-31`;
+  const lineInYear = (l: YLine) => l.due_date >= `${year}-01-01` && l.due_date <= `${year}-12-31`;
   const benLines = lineList.filter((l) => l.kind === "BENEFIT" && mineIds.has(l.policy_id) && lineInYear(l));
-  const lumpYear = (allLumps ?? []).filter((b) => b.currency === "THB" && mineIds.has(b.policy_id) && String(b.receipt_date ?? "").startsWith(year))
-    .reduce((t, b) => t + Number(b.amount), 0);
-  const benGotYear = benLines.reduce((t, l) => t + insCountedPaid(l), 0) + lumpYear;
-  const benPlanYear = benLines.reduce((t, l) => t + Number(l.amount ?? 0), 0) + lumpYear;
+  const lumps = (allLumps ?? []).filter((b) => mineIds.has(b.policy_id) && String(b.receipt_date ?? "").startsWith(year));
+  const lumpYear = lumps.reduce((t, b) => t + toThb(b.amount, b.currency), 0);
+  const benGotYear = benLines.reduce((t, l) => t + toThb(insCountedPaid(l), l.currency), 0) + lumpYear;
+  const benByCcy = lumps.reduce((m, b) => addCcy(m, b.currency, Number(b.amount)), benLines.reduce((m, l) => addCcy(m, l.currency, Number(l.amount ?? 0)), new Map() as ByCcy));
+  const benPlanYear = thbOf(benByCcy);
   const premLines = lineList.filter((l) => l.kind === "PREMIUM" && activeIds.has(l.policy_id) && lineInYear(l));
-  const premYear = premLines.reduce((t, l) => t + Number(l.amount ?? 0), 0);
-  const premPaidYear = premLines.reduce((t, l) => t + insCountedPaid(l), 0);
+  const premByCcy = premLines.reduce((m, l) => addCcy(m, l.currency, Number(l.amount ?? 0)), new Map() as ByCcy);
+  const premYear = thbOf(premByCcy);
+  const premPaidYear = premLines.reduce((t, l) => t + toThb(insCountedPaid(l), l.currency), 0);
   //   กล่องผลประโยชน์ (ตกลง 9 พ.ย. 2026): ตัวใหญ่ = ทั้งปีตามตาราง · รับแล้ว · รอรับ · ค้างรับ (ทุกปี) · % = รับแล้วเทียบเบี้ยที่จ่ายปีนี้
   //   (% ตั้งแต่เริ่มกรมธรรม์ดูที่หน้ากรมธรรม์แต่ละฉบับ)
   const benLeftYear = Math.max(benPlanYear - benGotYear, 0);
@@ -177,45 +190,48 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   // กล่องสัดส่วน (ตกลง 8 พ.ย. 2026) · THB เหมือนกล่องสรุปด้านบน · ไม่ใช้เบี้ย (เบี้ยเปลี่ยนทุกปีตามกรมธรรม์ · เจ้าของ 8 พ.ย. 2026)
   //   ซ้าย = มูลค่าเวนคืนตามบริษัทประกัน (ตามตัวกรองคน × สัดส่วนเจ้าของ + บริษัท → รวมเท่ากล่อง "มูลค่าเวนคืน" ด้านบน)
   //   ขวา = ตามสมาชิกครอบครัว: ทุนประกันชีวิต · มูลค่าเวนคืน (ทั้งครอบครัวแบบหน้า Alternative · ตามตัวกรองบริษัท)
-  const isThb = (c: string | null) => (c ?? "THB") === "THB";
   const isLife = (t: string) => t === "LIFE" || t === "ANNUITY";
   const polsOfCv = new Map<string, typeof pol>();
   pol.forEach((r) => { if (r.cash_value_asset_id) polsOfCv.set(r.cash_value_asset_id, [...(polsOfCv.get(r.cash_value_asset_id) ?? []), r]); });
   const cvShown = (cvs ?? []).filter((a) => pv.showAsset(a.id) && (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0);
-  const byInsurer = new Map<string, { name: string; value: number; pols: typeof pol }>();
-  cvShown.filter((a) => a.currency === "THB").forEach((a) => {
+  const byInsurer = new Map<string, { name: string; value: number; pols: typeof pol; fx: ByCcy }>();
+  cvShown.forEach((a) => {
     const ps = polsOfCv.get(a.id) ?? [];
     const name = String(ps[0]?.insurer ?? "").trim();
     const k = name.toLowerCase();
-    const x = byInsurer.get(k) ?? { name: name || "ไม่ระบุบริษัท", value: 0, pols: [] };
-    x.value += Number(a.current_value) * pv.assetShare(a.id); x.pols.push(...ps); byInsurer.set(k, x);
+    const x = byInsurer.get(k) ?? { name: name || "ไม่ระบุบริษัท", value: 0, pols: [] as typeof pol, fx: new Map() as ByCcy };
+    const own = Number(a.current_value) * pv.assetShare(a.id);
+    x.value += toThb(own, a.currency); x.pols.push(...ps); byInsurer.set(k, x);
+    if (a.currency !== "THB") addCcy(x.fx, a.currency, own);
   });
   const insurerRows: ShareRow[] = [...byInsurer.entries()].filter(([, x]) => x.value > 0).sort((a, b) => b[1].value - a[1].value)
-    .map(([k, x], i) => ({ key: k || "-", name: x.name, value: x.value, color: SHARE_COLORS[i % SHARE_COLORS.length], sub: x.pols.length ? `(${bookletCount(x.pols)} ฉบับ)` : undefined }));
+    .map(([k, x], i) => ({ key: k || "-", name: x.name, value: x.value, color: SHARE_COLORS[i % SHARE_COLORS.length],
+      sub: [x.pols.length ? `(${bookletCount(x.pols)} ฉบับ)` : "", ...[...x.fx].map(([c, v]) => `${c} ${money(v, undefined, 0)}`)].filter(Boolean).join(" · ") || undefined }));
   const famAct = pol.filter((r) => r.status === "ACTIVE");
   const mem = new Map<string, { life: number; cv: number }>();
   const memOf = (k: string) => { const x = mem.get(k) ?? { life: 0, cv: 0 }; mem.set(k, x); return x; };
+  const famLifeByCcy: ByCcy = new Map(), famCvByCcy: ByCcy = new Map();
   famAct.forEach((r) => {
-    if (r.person_id && isLife(r.insurance_type) && isThb(r.insured_amount_currency)) memOf(r.person_id).life += Number(r.insured_amount ?? 0);
+    if (!r.person_id || !isLife(r.insurance_type)) return;
+    memOf(r.person_id).life += toThb(r.insured_amount, r.insured_amount_currency);
+    addCcy(famLifeByCcy, r.insured_amount_currency, Number(r.insured_amount ?? 0));
   });
   type Own = { person_id: string; ownership_percent: number; start_date: string; end_date: string | null; deleted_at: string | null };
-  (cvs ?? []).filter((a) => a.currency === "THB" && (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0).forEach((a) => {
+  (cvs ?? []).filter((a) => (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0).forEach((a) => {
     const os = ((a.asset_ownerships ?? []) as Own[]).filter((o) => !o.deleted_at && o.start_date <= today && (!o.end_date || o.end_date >= today));
-    if (!os.length) { memOf("?").cv += Number(a.current_value); return; }
-    os.forEach((o) => { memOf(o.person_id).cv += (Number(a.current_value) * Number(o.ownership_percent)) / 100; });
+    const v = toThb(a.current_value, a.currency);
+    addCcy(famCvByCcy, a.currency, Number(a.current_value));
+    if (!os.length) { memOf("?").cv += v; return; }
+    os.forEach((o) => { memOf(o.person_id).cv += (v * Number(o.ownership_percent)) / 100; });
   });
   const memberRows: MemberShareRow[] = [...mem.entries()].filter(([, x]) => x.life > 0 || x.cv > 0)
     .sort((a, b) => b[1].life - a[1].life || b[1].cv - a[1].cv)
     .map(([k, x], i) => ({ key: k, ...x, color: SHARE_COLORS[i % SHARE_COLORS.length], current: !!pv.personId && k === pv.personId,
       name: k === "?" ? "ยังไม่ระบุเจ้าของ" : pname.get(k) ?? "สมาชิก" }));
-  const fxNote = (n: number) => (n > 0 ? <p className="mt-2 text-xs text-slate-500">ไม่รวมกรมธรรม์สกุลเงินอื่น {n} ฉบับ</p> : null);
+
   //   กรมธรรม์สกุลเงินอื่นที่ไม่ได้นับ (มูลค่าเวนคืน / ทุนประกันไม่ใช่บาท) → บรรทัดเล็กใต้กล่อง
-  const fxCvIds = new Set((cvs ?? []).filter((a) => !isThb(a.currency) && Number(a.current_value ?? 0) > 0).map((a) => a.id));
-  const isFxCv = (r: (typeof pol)[number]) => !!r.cash_value_asset_id && fxCvIds.has(r.cash_value_asset_id);
-  const fxCv = bookletCount(pol.filter((r) => isFxCv(r) && pv.showAsset(r.cash_value_asset_id as string)));
-  const fxFam = bookletCount(famAct.filter((r) => isFxCv(r) || (isLife(r.insurance_type) && !isThb(r.insured_amount_currency))));
   const cvOf = (r: (typeof rows)[number]) => { const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
-    return c && c.currency === "THB" && c.current_value != null ? Number(c.current_value) * pv.assetShare(c.id) : 0; };
+    return c && c.current_value != null ? toThb(c.current_value, c.currency) * pv.assetShare(c.id) : 0; };
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
   const cardPays: PayOpt[] = (cards ?? []).map((c) => ({ value: endpointValue({ kind: "card", id: c.id }),
     label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency }));
@@ -365,33 +381,40 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
 
       <TabPanel id="coverage">
         <CoverageTab persons={covPersonsInView} personId={pv.personId} personName={pv.personName} policies={covPolicies} items={covItems} claims={covClaims}
-          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} filter={insFilter("coverage")} kit={claimKit} />
+          year={year} printHref={`/print/insurance${pv.personId ? `?p=${pv.personId}` : ""}`} canWrite={canWrite} filter={insFilter("coverage")} kit={claimKit}
+          rates={Object.fromEntries(rate)} />
       </TabPanel>
 
       <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* กล่องสรุป 4 อัน (ตกลง 9 พ.ย. 2026): มูลค่าเวนคืน · ทุนประกันชีวิต · ผลประโยชน์ปีนี้ · เบี้ยปีนี้ */}
         <StatBox label={<>{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(cvTotal, "THB", 0)}
-          sub={`กรมธรรม์ที่มีผล ${bookletCount(act)} ฉบับ`} />
-        <StatBox label="ทุนประกันชีวิตรวม (THB)" value={money(lifeTotal, "THB", 0)}
-          sub={accidentTotal > 0 ? `เสียชีวิตจากอุบัติเหตุ เพิ่มอีก ${money(accidentTotal, undefined, 0)}` : "ชีวิต + บำนาญ · สุขภาพดูวงเงินที่แท็บความคุ้มครอง"} />
-        <StatBox label={`ผลประโยชน์ที่รับ ปี ${yearBE} (THB)`} value={money(benPlanYear, "THB", 0)}
+          sub={`กรมธรรม์ที่มีผล ${bookletCount(act)} ฉบับ`}><CcyBreakdown items={ccyItems(cvByCcy)} /></StatBox>
+        <StatBox label="ทุนประกันชีวิตรวม (THB Equivalent)" value={money(lifeTotal, "THB", 0)}
+          sub={accidentTotal > 0 ? `เสียชีวิตจากอุบัติเหตุ เพิ่มอีก ${money(accidentTotal, undefined, 0)}` : "ชีวิต + บำนาญ · สุขภาพดูวงเงินที่แท็บความคุ้มครอง"}>
+          <CcyBreakdown items={ccyItems(lifeByCcy)} /></StatBox>
+        <StatBox label={`ผลประโยชน์ที่รับ ปี ${yearBE} (THB Equivalent)`} value={money(benPlanYear, "THB", 0)}
           sub={<>
             <div>รับแล้ว {money(benGotYear, undefined, 0)} · รอรับ {money(benLeftYear, undefined, 0)}</div>
             {benPct != null && <div>รับแล้วเทียบเบี้ยที่จ่ายปีนี้ <span className="font-semibold">{benPct.toFixed(0)}%</span></div>}
             {benOverdue > 0 && <div className="text-red-600">ค้างรับ {benOverdue} งวด</div>}
-          </>} />
-        <StatBox label={`เบี้ยประกัน ปี ${yearBE} (THB)`} value={money(premYear, "THB", 0)}
+          </>}><CcyBreakdown items={ccyItems(benByCcy)} /></StatBox>
+        <StatBox label={`เบี้ยประกัน ปี ${yearBE} (THB Equivalent)`} value={money(premYear, "THB", 0)}
           sub={<>
             <div>จ่ายแล้ว {money(premPaidYear, undefined, 0)} · ยังต้องจ่าย {money(premLeftYear, undefined, 0)}</div>
             {overdueTotal > 0 && <div className="text-red-600">เลยกำหนด {overdueTotal} งวด</div>}
-          </>} />
+          </>}><CcyBreakdown items={ccyItems(premByCcy)} /></StatBox>
       </section>
       {(insurerRows.length > 0 || memberRows.length > 0) && (
         <section className="grid gap-4 lg:grid-cols-2">
           <ShareBox title={<>มูลค่าเวนคืนตามบริษัทประกัน{pv.personId ? ` ส่วนของ ${pv.personName}` : ""}</>} label="บริษัทประกัน" valueLabel="มูลค่าเวนคืน (THB)"
-            rows={insurerRows} footer={fxNote(fxCv)} empty="ยังไม่มีมูลค่าเวนคืน" />
-          <MemberShareBox rows={memberRows} footer={fxNote(fxFam)} />
+            rows={insurerRows} footer={<CcyBreakdown items={ccyItems(cvByCcy)} title="แยกตามสกุลเงิน" />} empty="ยังไม่มีมูลค่าเวนคืน" />
+          <MemberShareBox rows={memberRows} footer={(
+            <div className="grid gap-x-6 sm:grid-cols-2">
+              <CcyBreakdown items={ccyItems(famLifeByCcy)} title="ทุนประกันชีวิต แยกตามสกุลเงิน" />
+              <CcyBreakdown items={ccyItems(famCvByCcy)} title="มูลค่าเวนคืน แยกตามสกุลเงิน" />
+            </div>
+          )} />
         </section>
       )}
       {fupRows.length > 0 && (
@@ -417,9 +440,9 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           <UrlSelect label="สถานะ" value={sFilter} options={[{ value: "all", label: "ทั้งหมด", href: fHref(tFilter, "all") },
             ...statuses.map((k) => ({ value: k, label: STATUS[k] ?? k, href: fHref(tFilter, k) }))]} />
           {listRows.length > 0 && (() => {
-            // ทุนประกันชีวิต = นิยามเดียวกับกล่องด้านบน (ชีวิต + บำนาญ · มีผล · THB) ตามตัวกรอง (ตกลง 9 พ.ย. 2026 · แทนเบี้ย)
-            const life = listRows.filter((r) => r.status === "ACTIVE" && (r.insurance_type === "LIFE" || r.insurance_type === "ANNUITY")
-              && (r.insured_amount_currency ?? "THB") === "THB").reduce((t, r) => t + Number(r.insured_amount ?? 0), 0);
+            // ทุนประกันชีวิต = นิยามเดียวกับกล่องด้านบน (ชีวิต + บำนาญ · มีผล · THB Equivalent) ตามตัวกรอง (ตกลง 9 พ.ย. 2026 · แทนเบี้ย)
+            const life = listRows.filter((r) => r.status === "ACTIVE" && (r.insurance_type === "LIFE" || r.insurance_type === "ANNUITY"))
+              .reduce((t, r) => t + toThb(r.insured_amount, r.insured_amount_currency), 0);
             const cvSum = listRows.reduce((t, r) => t + cvOf(r), 0);
             return (
               <span className="ml-auto text-right text-sm text-slate-700">

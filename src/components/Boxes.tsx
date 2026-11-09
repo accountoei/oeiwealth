@@ -37,6 +37,27 @@ export function StatBox({ label, value, unit, sub, subClass, valueClass, flag, s
   );
 }
 
+/**
+ * ยอดแยกตามสกุลเงินใต้ตัวเลข THB Equivalent (แบบหน้า Bank Accounts · ตกลง 9 พ.ย. 2026)
+ *   แสดงเมื่อมีสกุลอื่นเท่านั้น (มีแต่บาท = ไม่แสดง) · THB ก่อน · สกุลอื่นมี ≈ บาทบรรทัดใต้
+ */
+export function CcyBreakdown({ items, title }: { items: { ccy: string; amount: number; thb: number }[]; title?: ReactNode }) {
+  const xs = items.filter((x) => Math.abs(x.amount) > 0.005).sort((a, b) => (a.ccy === "THB" ? -1 : b.ccy === "THB" ? 1 : b.thb - a.thb));
+  if (!xs.some((x) => x.ccy !== "THB")) return null;
+  return (
+    <ul className="mt-2 space-y-0.5 text-xs">
+      {title && <li className="text-left text-slate-500">{title}</li>}
+      {xs.map((x) => (
+        <li key={x.ccy} className="flex items-baseline justify-between gap-2">
+          <span className="text-slate-500">{x.ccy}</span>
+          <span className="text-right tabular-nums text-slate-700">{money(x.amount, undefined, 0)}
+            {x.ccy !== "THB" && <span className="block text-slate-400">≈ {money(x.thb, "THB", 0)}</span>}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** บรรทัด "▲ x.x% จากเดือนก่อน (ยอดเดือนก่อน)" ในกล่องแรกของหน้ารายการ (ตกลง 7 พ.ย. 2026) · pct = null → ไม่มีข้อมูลเดือนก่อน */
 export function MonthChange({ pct, prev }: { pct: number | null; prev: number }) {
   if (pct == null) return <div className="text-slate-400">ไม่มีข้อมูลเดือนก่อน</div>;
