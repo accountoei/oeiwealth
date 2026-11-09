@@ -12,7 +12,8 @@ const fmtBaht = (v: number) => `${baht(v)} บาท`;
  * วาดตามความกว้างจริงของกล่อง (ไม่ย่อทั้งภาพ) → ตัวหนังสือแกนขนาดเท่าเดิมทุกจอ (เดิมบนมือถือเหลือ ~4–5px)
  * ชี้ (เมาส์) / แตะ (มือถือ) / ปุ่มลูกศร (คีย์บอร์ด) → กล่องค่าของจุดที่ใกล้ที่สุด
  * ตกลง 3 พ.ย. 2026: กราฟสูงเต็มกล่อง (กล่องยืดเท่ากล่องข้าง ๆ ในแถวเดียวกัน) → ไม่มีที่ว่างใต้คำอธิบายสี · ต่ำสุดตามความสูงจอแบบเดิม
- * ตกลง 1 พ.ย. 2026: ไม่ระบายพื้นใต้เส้น (แกนไม่เริ่มที่ 0 → พื้นทำให้ดูเปลี่ยนมากเกินจริง) · บอกยอดเปลี่ยนทั้งช่วงเป็นตัวเลขแทน · แกนซ้ายฝั่งเดียว 5 ขีด
+ * ตกลง 1 พ.ย. 2026: ไม่ระบายพื้นใต้เส้น (แกนไม่เริ่มที่ 0 → พื้นทำให้ดูเปลี่ยนมากเกินจริง) · บอกยอดเปลี่ยนทั้งช่วงเป็นตัวเลขแทน · 5 ขีด
+ * ตกลง 9 พ.ย. 2026: ตัวเลขแกนทั้งซ้ายและขวา (มือถือซ้ายอย่างเดียว)
  */
 export default function TrendChart({ points, selected }: { points: TrendPoint[]; selected: number }) {
   const box = useRef<HTMLDivElement>(null);
@@ -40,7 +41,8 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
   // กล่องสูงกว่านั้น (กล่องข้าง ๆ ยาวกว่า) → กราฟยืดเต็มที่ว่าง (3 พ.ย. 2026)
   const minH = vh ? Math.round(Math.min(280, Math.max(150, vh * 0.21))) : narrow ? 180 : 200;
   const H = Math.max(minH, boxH);
-  const L = narrow ? 56 : 64, R = 16, T = 12, B = 28;
+  // แกนตัวเลขซ้าย + ขวา (9 พ.ย. 2026) · มือถือ (< 480px) แกนซ้ายอย่างเดียว
+  const L = narrow ? 56 : 64, R = narrow ? 16 : 64, T = 12, B = 28;
   const vs = points.map((p) => p.v);
   let lo = Math.min(...vs), hi = Math.max(...vs);
   const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
@@ -98,6 +100,7 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
           <g key={i}>
             <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e6ecf7" strokeWidth={1} strokeDasharray="3 4" />
             <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize={12} fill="#4b5567">{fmt(t)}</text>
+            {!narrow && <text x={W - R + 8} y={y(t) + 4} textAnchor="start" fontSize={12} fill="#4b5567">{fmt(t)}</text>}
           </g>
         ))}
         <path d={path} fill="none" stroke="#1f5eff" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />

@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { baht } from "@/lib/format";
 
+const TREND = "#334155";
+/** ตัวอย่างเส้นประในคำอธิบายสี / กล่องค่า */
+function TrendSwatch({ light }: { light?: boolean }) {
+  return <svg width="18" height="6" aria-hidden className="shrink-0"><line x1="0" x2="18" y1="3" y2="3" stroke={light ? "#cbd5e1" : TREND} strokeWidth="2" strokeDasharray="5 3" /></svg>;
+}
+
 export type BarSeries = { key: string; label: string; color: string; values: (number | null)[];
   /** สีของยอดติดลบ (กราฟกำไร / ขาดทุน ชุดเดียว) */ negColor?: string };
 
@@ -11,11 +17,14 @@ export type BarSeries = { key: string; label: string; color: string; values: (nu
  *   หลายชุด = แท่งซ้อน (ยอดบวกซ้อนขึ้น · ยอดติดลบซ้อนลงใต้เส้น 0)
  *   วาดตามความกว้างจริงของกล่อง → ตัวหนังสือแกนขนาดเท่าเดิมทุกจอ · ปีเยอะบนจอแคบ = ป้ายปีเว้นระยะ
  *   ชี้ (เมาส์) / แตะ (มือถือ) / ปุ่มลูกศร (คีย์บอร์ด) → กล่องค่าของปีนั้น (ทุกชุด + รวม + เหตุการณ์)
+ *   9 พ.ย. 2026: แกนตัวเลขซ้าย + ขวา (ยกเว้นมือถือ) · เส้นแนวโน้มประ (trend) เช่น เฉลี่ย 3 ปี
  */
-export default function BarChartYears({ years, series, height = 220, total = true, events = {}, title }: {
+export default function BarChartYears({ years, series, height = 220, total = true, events = {}, title, trend, trendLabel = "เฉลี่ย 3 ปี" }: {
   years: number[]; series: BarSeries[]; height?: number; total?: boolean;
   /** ป้ายเหตุการณ์ของปี (ค.ศ.) เช่น "OEI เปิด" → ▲ ใต้แท่ง + ในกล่องค่า */ events?: Record<number, string[]>;
   title: string;
+  /** เส้นแนวโน้ม (ค่าต่อปี ตรงกับ years · null = เว้นช่วง) เช่น ค่าเฉลี่ย 3 ปีของยอดรวม → เส้นประบนแท่ง (9 พ.ย. 2026) */
+  trend?: (number | null)[]; trendLabel?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
@@ -32,13 +41,15 @@ export default function BarChartYears({ years, series, height = 220, total = tru
   const W = w || 720;
   const narrow = W < 520;
   const H = height;
-  const L = narrow ? 44 : 56, R = narrow ? 16 : 8, T = 10;
+  // แกนตัวเลขทั้งซ้ายและขวา (9 พ.ย. 2026) · มือถือ (< 520px) แกนซ้ายอย่างเดียว ให้แท่งกว้างพอดู
+  const L = narrow ? 44 : 56, R = narrow ? 16 : 52, T = 10;
   const hasEvents = Object.keys(events).length > 0;
   const B = hasEvents ? 34 : 24;
   const n = years.length;
   const up = years.map((_, i) => series.reduce((t, s) => t + Math.max(0, s.values[i] ?? 0), 0));
   const down = years.map((_, i) => series.reduce((t, s) => t + Math.min(0, s.values[i] ?? 0), 0));
-  const rawHi = Math.max(0, ...up), rawLo = Math.min(0, ...down);
+  const tv = (trend ?? []).filter((v): v is number => v != null);
+  const rawHi = Math.max(0, ...up, ...tv), rawLo = Math.min(0, ...down, ...tv);
   // ขีดแกน "สวย" (1 · 2 · 2.5 · 5 × 10^n) ประมาณ 4 ช่อง
   const span = rawHi - rawLo || 1;
   const mag = 10 ** Math.floor(Math.log10(span / 4));
@@ -72,6 +83,9 @@ export default function BarChartYears({ years, series, height = 220, total = tru
     e.preventDefault();
     setActive(Math.min(n - 1, Math.max(0, next)));
   };
+  // เส้นแนวโน้ม: ต่อจุดปีที่มีค่า · ปีที่เป็น null = ตัดเส้น
+  let trendPath = "";
+  trend?.forEach((v, i) => { if (v == null) return; trendPath += `${i > 0 && trend[i - 1] != null ? "L" : "M"}${cx(i).toFixed(1)},${y(v).toFixed(1)} `; });
   const colorOf = (s: BarSeries, v: number) => (v < 0 && s.negColor ? s.negColor : s.color);
   const sumAt = (i: number) => series.reduce((t, s) => t + (s.values[i] ?? 0), 0);
 
@@ -87,6 +101,7 @@ export default function BarChartYears({ years, series, height = 220, total = tru
             <g key={t}>
               <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke={t === 0 ? "#94a3b8" : "#e6ecf7"} strokeWidth={1} strokeDasharray={t === 0 ? undefined : "3 4"} />
               <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#4b5567">{fmt(t)}</text>
+              {!narrow && <text x={W - R + 6} y={y(t) + 4} textAnchor="start" fontSize={11} fill="#4b5567">{fmt(t)}</text>}
             </g>
           ))}
           {active != null && <rect x={L + band * active} y={T} width={band} height={H - T - B} fill="#eef4ff" />}
@@ -108,6 +123,8 @@ export default function BarChartYears({ years, series, height = 220, total = tru
               </g>
             );
           })}
+          {trendPath && <path d={trendPath} fill="none" stroke={TREND} strokeWidth={1.75} strokeDasharray="5 4" strokeLinejoin="round" />}
+          {trend?.map((v, i) => v != null && <circle key={i} cx={cx(i)} cy={y(v)} r={i === active ? 3.5 : 2.5} fill={TREND} />)}
         </svg>
         {active != null && w > 0 && (
           <div role="status" className="pointer-events-none absolute top-0 z-10 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs text-white shadow-lg"
@@ -120,13 +137,16 @@ export default function BarChartYears({ years, series, height = 220, total = tru
               </div>
             ))}
             {total && series.length > 1 && <div className="mt-0.5 flex justify-between gap-4 border-t border-slate-700 pt-0.5 font-semibold"><span>รวม</span><span className="tabular-nums">{baht(sumAt(active))}</span></div>}
+            {trend?.[active] != null && <div className="flex items-center justify-between gap-4 text-slate-300">
+              <span className="flex items-center gap-1.5"><TrendSwatch light />{trendLabel}</span><span className="tabular-nums">{baht(trend[active]!)}</span></div>}
             {events[years[active]]?.map((t) => <div key={t} className="text-amber-300">▲ {t}</div>)}
           </div>
         )}
       </div>
-      {series.length > 1 && (
+      {(series.length > 1 || tv.length > 0) && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-          {series.map((s) => <span key={s.key} className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>)}
+          {series.length > 1 && series.map((s) => <span key={s.key} className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>)}
+          {tv.length > 0 && <span className="flex items-center gap-1.5"><TrendSwatch />{trendLabel}{series.length > 1 ? " (ยอดรวม)" : ""}</span>}
         </div>
       )}
     </div>

@@ -157,14 +157,26 @@ const DOM = "#2563eb", FOR = "#7dd3fc", PROFIT = "#059669", LOSS = "#dc2626";
 export type CoSeries = { key: string; label: string; color: string; revenue: (number | null)[]; profit: (number | null)[] };
 
 /** กราฟรายได้ (แท่งซ้อน ในประเทศ + ต่างประเทศ · กลุ่ม: สลับเป็นแยกตามบริษัทได้) + กราฟกำไร (ขาดทุน) แกนปีเดียวกัน */
+/** ค่าเฉลี่ยเคลื่อนที่ 3 ปี (ปีนั้น + 2 ปีก่อนหน้า) · ขาดปีใดปีหนึ่ง = null */
+function movingAvg(v: (number | null)[], k = 3): (number | null)[] {
+  return v.map((_, i) => {
+    if (i < k - 1) return null;
+    const w = v.slice(i - k + 1, i + 1);
+    return w.every((x) => x != null) ? (w as number[]).reduce((t, x) => t + x, 0) / k : null;
+  });
+}
+
 export function ResultsCharts(all: {
   years: number[]; domestic: (number | null)[]; foreign: (number | null)[]; profit: (number | null)[];
   /** มี = ภาพรวมกลุ่ม (ปุ่มสลับ "แยกตามบริษัท") */ companies?: CoSeries[]; events?: Record<number, string[]>;
 }) {
   const [by, setBy] = useState<"origin" | "company">("origin");
-  const range = useContext(RangeCtx);
+  const { range, trend } = useContext(ViewCtx);
   const n = range && all.years.length > range ? range : all.years.length;
   const cut = <T,>(a: T[]) => a.slice(a.length - n);
+  // เส้นเฉลี่ย 3 ปี: คิดจากทุกปีก่อนตัดช่วง (ปีแรกของช่วงยังเฉลี่ยกับปีก่อนหน้าได้) · ต้องมีครบ 3 ปีติดกัน
+  const revTotal = all.years.map((_, i) => (all.domestic[i] == null && all.foreign[i] == null ? null : (all.domestic[i] ?? 0) + (all.foreign[i] ?? 0)));
+  const revAvg = trend ? cut(movingAvg(revTotal)) : undefined, proAvg = trend ? cut(movingAvg(all.profit)) : undefined;
   const years = cut(all.years), domestic = cut(all.domestic), foreign = cut(all.foreign), profit = cut(all.profit), events = all.events;
   const companies = all.companies?.map((c) => ({ ...c, revenue: cut(c.revenue), profit: cut(c.profit) }))
     .filter((c) => c.revenue.some((v) => v != null) || c.profit.some((v) => v != null));
@@ -184,11 +196,11 @@ export function ResultsCharts(all: {
       {companies && companies.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">แสดงรายได้ {tab("origin", "ในประเทศ / ต่างประเทศ")}{tab("company", "แยกตามบริษัท")}</div>}
       <div>
         <h3 className="mb-1 text-sm font-medium text-slate-700">รายได้ (บาท)</h3>
-        <BarChartYears title="รายได้" years={years} series={rev} events={events} />
+        <BarChartYears title="รายได้" years={years} series={rev} events={events} trend={revAvg} />
       </div>
       <div>
         <h3 className="mb-1 text-sm font-medium text-slate-700">กำไร (ขาดทุน) (บาท)</h3>
-        <BarChartYears title="กำไร (ขาดทุน)" years={years} series={pro} height={170} total={split} />
+        <BarChartYears title="กำไร (ขาดทุน)" years={years} series={pro} height={170} total={split} trend={proAvg} />
       </div>
     </div>
   );
@@ -212,18 +224,21 @@ export function FixedYearSelect({ years, value }: { years: number[]; value: numb
    ResultsView ครอบกราฟ + ตาราง: เลือก 3 / 5 / 10 ปี / ทั้งหมด (ค่าเริ่มต้น 10) · หน่วย ล้านบาท / บาท
    ตารางเป็น server component → ซ่อนแถว / สลับหน่วยด้วย data-r / data-u ของกล่องนี้ (group/v) */
 export type Range = 3 | 5 | 10 | 0;
-const RangeCtx = createContext<Range>(10);
+/** ช่วงปี + เส้นเฉลี่ย 3 ปี (เปิด / ปิด · 9 พ.ย. 2026) ที่กราฟใช้ */
+const ViewCtx = createContext<{ range: Range; trend: boolean }>({ range: 10, trend: true });
 
-export function ResultsView({ children, years }: { children: React.ReactNode; /** จำนวนปีที่มีข้อมูล (ซ่อนปุ่มที่ไม่จำเป็น) */ years: number }) {
+export function ResultsView({ children, years, charts }: { children: React.ReactNode; /** จำนวนปีที่มีข้อมูล (ซ่อนปุ่มที่ไม่จำเป็น) */ years: number;
+  /** มีกราฟ → แสดงปุ่มเส้นเฉลี่ย 3 ปี */ charts?: boolean }) {
   const [r, setR] = useState<Range>(10);
   const [u, setU] = useState<"m" | "b">("m");
+  const [t, setT] = useState(true);
   const seg = <T,>(cur: T, v: T, l: string, set: (v: T) => void) => (
     <button key={l} type="button" onClick={() => set(v)} aria-pressed={cur === v}
       className={`px-2.5 py-1 text-xs ${cur === v ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}>{l}</button>
   );
   const ranges = ([[3, "3 ปี"], [5, "5 ปี"], [10, "10 ปี"]] as [Range, string][]).filter(([n]) => n < years);
   return (
-    <RangeCtx.Provider value={r}>
+    <ViewCtx.Provider value={{ range: r, trend: t }}>
       <div className="group/v space-y-4" data-r={years <= r || r === 0 ? "all" : r} data-u={u}>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
           {ranges.length > 0 && <span className="flex items-center gap-2">ช่วง
@@ -234,9 +249,13 @@ export function ResultsView({ children, years }: { children: React.ReactNode; /*
             <span className="inline-flex divide-x divide-slate-300 overflow-hidden rounded-md border border-slate-300">
               {seg(u, "m" as const, "ล้านบาท", setU)}{seg(u, "b" as const, "บาท", setU)}
             </span></span>
+          {charts && years >= 3 && <span className="flex items-center gap-2">เส้นเฉลี่ย 3 ปี
+            <span className="inline-flex divide-x divide-slate-300 overflow-hidden rounded-md border border-slate-300">
+              {seg(t, true, "แสดง", setT)}{seg(t, false, "ซ่อน", setT)}
+            </span></span>}
         </div>
         {children}
       </div>
-    </RangeCtx.Provider>
+    </ViewCtx.Provider>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import IntentLink from "@/components/IntentLink";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { ADD_BTN, addDays, money, monthOptions, monthRange, plusMoney, qty, signedMoney, signedPct, signTone, thDate, thMonth, todayBangkok } from "@/lib/format";
@@ -184,6 +185,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const grp = groupYears(fin);
   const gLast = grp.at(-1), gPrev = grp.at(-2);
   const gFixed = [...grp].reverse().find((r) => r.hasFixed);
+  const coName = new Map(groupCos.map((c) => [c.key, c.name]));
   const chg = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || !b ? null : ((a - b) * 100) / Math.abs(b));
   const profitChg = chg(gLast?.net_profit, gPrev?.net_profit), revChg = chg(gLast?.revenue, gPrev?.revenue);
   const minDate = family?.system_status === "SETUP" ? "" : family?.go_live_date ?? "";
@@ -219,7 +221,9 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
               <div>{mLabel} {plusMoney(divMonth)}{divPct != null && <> · คิดเป็น <span className="font-semibold">{divPct.toFixed(2)}%</span> ของเงินลงทุน</>}</div>
             </>} />
           <StatBox label={<>{gLast ? `กำไร (ขาดทุน) ปี ${gLast.fiscal_year + 543}` : "ผลประกอบการ"} · ทั้งกลุ่ม (100%)
-              {gLast && gLast.audit_status !== "AUDITED" && <span className="ml-1 rounded bg-amber-50 px-1 text-amber-700">Pre-audit</span>}</>}
+              {gLast && gLast.audit_status !== "AUDITED" && <span className="ml-1 rounded bg-amber-50 px-1 text-amber-700"
+                title={`ยังไม่ตรวจสอบ: ${(gLast.pendingIds ?? []).map((k) => coName.get(k) ?? "").filter(Boolean).join(", ")}`}>
+                Pre-audit{(gLast.auditN ?? 0) > 1 ? ` ${(gLast.auditN ?? 0) - (gLast.auditOk ?? 0)} จาก ${gLast.auditN} บริษัท` : ""}</span>}</>}
             value={gLast?.net_profit != null ? money(gLast.net_profit, "THB") : "-"} valueClass={gLast?.net_profit != null && gLast.net_profit < 0 ? "text-red-700" : undefined}
             sub={!gLast ? "ยังไม่มีข้อมูล · ใส่ได้ที่หน้าของแต่ละกิจการ" : <>
               <div>รายได้รวม {money(gLast.revenue, "THB")}{gLast.marginPct != null && <> · กำไร <span className={gLast.marginPct < 0 ? "text-red-700" : ""}>{gLast.marginPct.toFixed(1)}%</span></>}</div>
@@ -269,7 +273,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
                       {ordering && <MoveButtons table="assets" id={r.asset_id} paths={paths} {...neighbors(rows, i, (x) => x.asset_id)} />}
                       <BusinessBadge logo={r.logo_data} name={r.assets.name} color={color.get(r.asset_id) ?? COLORS[0]} />
                       <div className="min-w-0">
-                        <Link href={`/financial/business/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</Link>
+                        <IntentLink href={`/financial/business/${r.asset_id}`} className="font-medium text-slate-900 hover:underline">{r.assets.name}</IntentLink>
                         <div className="truncate text-xs text-slate-500">{r.company_name}</div>
                         {(r.business_type || r.status !== "ACTIVE") && <div className="truncate text-xs text-slate-400">{[r.business_type, r.status !== "ACTIVE" ? "ไม่ได้ถือแล้ว" : null].filter(Boolean).join(" · ")}</div>}
                       </div>
