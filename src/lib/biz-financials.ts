@@ -83,3 +83,13 @@ export function groupYears(rows: FinYear[]): FinCalc[] {
   });
   return calcYears(merged);
 }
+
+/**
+ * ส่วนของผู้ถือหุ้น ณ สิ้นปี (ตกลง 9 พ.ย. 2026): ตัวเลขที่กรอกในปีนั้น ถ้ามี · ไม่มี = ทุน (หุ้นทั้งหมด × ราคาพาร์) + กำไรสะสมจากตาราง (รวมสำรองแล้ว)
+ *   ใช้คิด "มูลค่าตามงบการเงิน" = ส่วนของผู้ถือหุ้น × % ที่ครอบครัวถือ
+ */
+export function bookEquity(r: FinCalc | undefined, capital: number | null): { equity: number; entered: boolean } | null {
+  if (!r) return null;
+  if (r.equity != null) return { equity: r.equity, entered: true };
+  return capital == null ? null : { equity: capital + r.retained, entered: false };
+}

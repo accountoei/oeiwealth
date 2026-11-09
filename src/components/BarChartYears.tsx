@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 import { baht } from "@/lib/format";
 
 const TREND = "#334155";
-/** ตัวอย่างเส้นประในคำอธิบายสี / กล่องค่า */
-function TrendSwatch({ light }: { light?: boolean }) {
+/** ตัวอย่างเส้นประในคำอธิบายสี / กล่องค่า (ใช้วางมุมขวาของหัวกราฟได้ · trendLegend={false}) */
+export function TrendSwatch({ light }: { light?: boolean }) {
   return <svg width="18" height="6" aria-hidden className="shrink-0"><line x1="0" x2="18" y1="3" y2="3" stroke={light ? "#cbd5e1" : TREND} strokeWidth="2" strokeDasharray="5 3" /></svg>;
 }
 
@@ -19,12 +19,13 @@ export type BarSeries = { key: string; label: string; color: string; values: (nu
  *   ชี้ (เมาส์) / แตะ (มือถือ) / ปุ่มลูกศร (คีย์บอร์ด) → กล่องค่าของปีนั้น (ทุกชุด + รวม + เหตุการณ์)
  *   9 พ.ย. 2026: แกนตัวเลขซ้าย + ขวา (ยกเว้นมือถือ) · เส้นแนวโน้มประ (trend) เช่น เฉลี่ย 3 ปี
  */
-export default function BarChartYears({ years, series, height = 220, total = true, events = {}, title, trend, trendLabel = "เฉลี่ย 3 ปี" }: {
+export default function BarChartYears({ years, series, height = 220, total = true, events = {}, title, trend, trendLabel = "เฉลี่ย 3 ปี", trendLegend = true }: {
   years: number[]; series: BarSeries[]; height?: number; total?: boolean;
   /** ป้ายเหตุการณ์ของปี (ค.ศ.) เช่น "OEI เปิด" → ▲ ใต้แท่ง + ในกล่องค่า */ events?: Record<number, string[]>;
   title: string;
   /** เส้นแนวโน้ม (ค่าต่อปี ตรงกับ years · null = เว้นช่วง) เช่น ค่าเฉลี่ย 3 ปีของยอดรวม → เส้นประบนแท่ง (9 พ.ย. 2026) */
   trend?: (number | null)[]; trendLabel?: string;
+  /** false = ไม่ใส่ป้ายเส้นใต้กราฟ (วางเองที่หัวกราฟ หรือไม่มีป้าย · ชี้ที่ปียังเห็นค่าในกล่องค่า) */ trendLegend?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
@@ -49,6 +50,7 @@ export default function BarChartYears({ years, series, height = 220, total = tru
   const up = years.map((_, i) => series.reduce((t, s) => t + Math.max(0, s.values[i] ?? 0), 0));
   const down = years.map((_, i) => series.reduce((t, s) => t + Math.min(0, s.values[i] ?? 0), 0));
   const tv = (trend ?? []).filter((v): v is number => v != null);
+  const showTrend = trendLegend && tv.length > 0;
   const rawHi = Math.max(0, ...up, ...tv), rawLo = Math.min(0, ...down, ...tv);
   // ขีดแกน "สวย" (1 · 2 · 2.5 · 5 × 10^n) ประมาณ 4 ช่อง
   const span = rawHi - rawLo || 1;
@@ -143,10 +145,10 @@ export default function BarChartYears({ years, series, height = 220, total = tru
           </div>
         )}
       </div>
-      {(series.length > 1 || tv.length > 0) && (
+      {(series.length > 1 || showTrend) && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
           {series.length > 1 && series.map((s) => <span key={s.key} className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />{s.label}</span>)}
-          {tv.length > 0 && <span className="flex items-center gap-1.5"><TrendSwatch />{trendLabel}{series.length > 1 ? " (ยอดรวม)" : ""}</span>}
+          {showTrend && <span className="flex items-center gap-1.5"><TrendSwatch />{trendLabel}{series.length > 1 ? " (ยอดรวม)" : ""}</span>}
         </div>
       )}
     </div>

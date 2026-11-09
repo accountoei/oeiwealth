@@ -42,7 +42,7 @@ export function AuditTag({ r, names, className = "ml-1" }: { r: FinCalc; names?:
     {many ? `ตรวจแล้ว ${r.auditOk}/${r.auditN}` : AUDIT_LABEL[r.audit_status] ?? r.audit_status}</span>;
 }
 
-/** ตารางรายปี (ใช้ร่วม: บริษัทเดียว / ทั้งกลุ่ม) · 1 ปี = 1 บรรทัด · หัวตารางเป็นกลุ่ม · edit = ใส่ปุ่มแก้ในแถว (กดแถว)
+/** ตารางรายปี (ใช้ร่วม: บริษัทเดียว / ทั้งกลุ่ม) · 1 ปี = 1 บรรทัด · หัวตาราง 2 บรรทัด (ช่องปีบอกหน่วย · 9 พ.ย. 2026) · edit = ใส่ปุ่มแก้ในแถว (กดแถว)
  *  ต้องอยู่ใน ResultsView (ช่วงปี + หน่วย) */
 export function FinTable({ rows, edit, names }: { rows: FinCalc[]; edit?: (r: FinCalc) => React.ReactNode;
   /** ภาพรวมกลุ่ม: ชื่อบริษัทตามรหัส (บอกว่าบริษัทไหนงบยังไม่ตรวจ) */ names?: Record<string, string> }) {
@@ -56,7 +56,8 @@ export function FinTable({ rows, edit, names }: { rows: FinCalc[]; edit?: (r: Fi
       <table className="w-full min-w-[60rem] text-sm">
         <thead className="bg-slate-50 text-xs text-slate-500">
           <tr>
-            <th rowSpan={2} className="px-2 py-1.5 text-left align-bottom font-medium">ปี</th>
+            <th rowSpan={2} className="whitespace-nowrap px-2 py-1.5 text-left align-bottom font-medium">ปีบัญชี
+              <div className="text-[11px] font-normal text-slate-400">หน่วย: <Unit /></div></th>
             {grp("รายได้", 5)}{grp("กำไร", 4)}{grp("พนักงาน", 2)}
           </tr>
           <tr>
@@ -64,7 +65,6 @@ export function FinTable({ rows, edit, names }: { rows: FinCalc[]; edit?: (r: Fi
             {th("กำไร (ขาดทุน)", "text-right border-l border-slate-200")}{th("% กำไร")}{th("ภาษีเงินได้")}{th("กำไรสะสม")}
             {th("คน", "text-right border-l border-slate-200")}{th("รายได้ / คน")}
           </tr>
-          <tr><th colSpan={12} className="px-2 pb-1 text-right text-[11px] font-normal text-slate-400">หน่วย: <Unit /> · คน = รวมผู้บริหาร</th></tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {list.map((r, i) => (
@@ -162,7 +162,7 @@ export default function FinResults({ owner, rows: raw, canWrite, canDelete, valu
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-medium text-slate-900">ผลประกอบการ <InfoTip label="คำอธิบาย">ตัวเลขของทั้งบริษัท (100%) ตามงบการเงิน · ข้อมูลดูอย่างเดียว ไม่ลงรายได้ / ไม่นับในความมั่งคั่งสุทธิ · กำไรสะสม = กำไรรวมทุกปีที่บันทึก − ปันผลที่บริษัทจ่ายรวม · กดแถวเพื่อแก้ไข</InfoTip></h2>
+        <h2 className="font-medium text-slate-900">ผลประกอบการ <InfoTip label="คำอธิบาย">ตัวเลขของทั้งบริษัท (100%) ตามงบการเงิน · ข้อมูลดูอย่างเดียว ไม่ลงรายได้ / ไม่นับในความมั่งคั่งสุทธิ · กำไรสะสม = กำไรรวมทุกปีที่บันทึก − ปันผลที่บริษัทจ่ายรวม · คน = รวมผู้บริหาร · กดแถวเพื่อแก้ไข</InfoTip></h2>
         {canWrite && <ModalButton label="+ เพิ่มปี" title="เพิ่มผลประกอบการ" size="lg" primary>
           <FinYearForm owner={owner} nextYear={last ? last.fiscal_year + 1 : new Date().getFullYear() - 1} />
         </ModalButton>}

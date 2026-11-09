@@ -43,7 +43,7 @@ export default function GroupResults({ companies, fy, canWrite }: { companies: G
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 font-medium text-slate-900">ผลประกอบการทั้งกลุ่ม <InfoTip label="คำอธิบาย">รวมตัวเลขทั้งบริษัท (100%) ของทุกบริษัทในแต่ละปี รวมบริษัทที่ปิดแล้วในปีที่ยังเปิดอยู่ · ไม่คูณ % ที่ครอบครัวถือ · ไม่เปลี่ยนตามสมาชิกที่เลือก · ▲ = ปีที่บริษัทเปิด / ปิด</InfoTip></h2>
+        <h2 className="mb-3 font-medium text-slate-900">ผลประกอบการทั้งกลุ่ม <InfoTip label="คำอธิบาย">รวมตัวเลขทั้งบริษัท (100%) ของทุกบริษัทในแต่ละปี รวมบริษัทที่ปิดแล้วในปีที่ยังเปิดอยู่ · ไม่คูณ % ที่ครอบครัวถือ · ไม่เปลี่ยนตามสมาชิกที่เลือก · ▲ = ปีที่บริษัทเปิด / ปิด · คน = รวมผู้บริหาร</InfoTip></h2>
         {group.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล · ใส่ผลประกอบการได้ที่หน้าของแต่ละกิจการ (กล่อง &ldquo;ผลประกอบการ&rdquo;)</p> : (
           <ResultsView years={group.length} charts>
             <ResultsCharts years={years} domestic={cd.domestic} foreign={cd.foreign} profit={cd.profit} companies={series} events={events} />

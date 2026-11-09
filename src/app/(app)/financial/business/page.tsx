@@ -19,7 +19,7 @@ import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { businessDividendFields } from "@/lib/source-edit";
 import GroupResults, { type GroupCo } from "./GroupResults";
-import { FIN_COLS, groupYears, toFinYears } from "@/lib/biz-financials";
+import { FIN_COLS, bookEquity, calcYears, groupYears, toFinYears } from "@/lib/biz-financials";
 
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["results", "ผลประกอบการ"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"]];
 
@@ -152,12 +152,20 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   // ---------------------------------------------------------------- แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
   type DivRow = { id: string; asset_id: string; person_id: string | null; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
   const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name]));
+  const fin = toFinYears(finRows);
+  // มูลค่าตามงบการเงิน (ส่วนของครอบครัว · ปีล่าสุดที่บันทึก) = ส่วนของผู้ถือหุ้น × % ที่ครอบครัวถือ (9 พ.ย. 2026)
+  const bookOf = (r: Row): BizRow["book"] => {
+    const last = calcYears(fin.filter((f) => f.asset_id === r.asset_id)).at(-1);
+    const eq = bookEquity(last, regCapital(r)), pct = famPct(r);
+    return !last || !eq || pct == null ? null : { value: Math.round(eq.equity * pct) / 100, year: last.fiscal_year, entered: eq.entered, pct };
+  };
   const batchRows: BizRow[] = rows.filter((r) => r.status === "ACTIVE").map((r) => {
     const os = nowOwn.filter((o) => o.asset_id === r.asset_id);
     const bySh = os.length > 0 && os.every((o) => o.shares != null);
     const tot = os.reduce((t, o) => t + Number(bySh ? o.shares : o.ownership_percent), 0);
     return { id: r.asset_id, name: r.assets.name, currency: r.assets.currency,
       value: r.assets.current_value == null ? null : Number(r.assets.current_value), valueDate: r.assets.current_value_date,
+      cost: r.investment_cost == null ? null : Number(r.investment_cost), book: bookOf(r),
       holders: os.map((o) => ({ personId: o.person_id, name: nameOf.get(o.person_id) ?? "สมาชิก", shares: o.shares == null ? null : Number(o.shares),
         pct: bySh ? (tot > 0 ? (Number(o.shares) * 100) / tot : 0) : Number(o.ownership_percent),
         // ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง) → กดเพื่อแก้ / ลบ (ฟอร์มเดียวกับประวัติในหน้ากิจการ · ตกลง 28 ต.ค. 2026)
@@ -171,7 +179,6 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     owners: ((bankOwners ?? []) as { asset_id: string; person_id: string; end_date: string | null }[]).filter((o) => o.asset_id === b.asset_id && !o.end_date).map((o) => o.person_id),
   }));
   // ---------------------------------------------------------------- แท็บ "ผลประกอบการ" (ทั้งกลุ่ม · ไม่เปลี่ยนตามสมาชิกที่เลือก)
-  const fin = toFinYears(finRows);
   const PAST_COLORS = ["#94a3b8", "#cbd5e1", "#64748b", "#475569"];
   const groupCos: GroupCo[] = [
     ...bySort(all, (r) => r.asset_id, sortMap).map((r) => ({ key: r.asset_id, name: r.assets.name, href: `/financial/business/${r.asset_id}`,
