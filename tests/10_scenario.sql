@@ -5886,4 +5886,22 @@ SELECT t.ok((SELECT g.status <> 'NOT_REQUIRED' FROM private.go_live_readiness((S
 RESET ROLE;
 ROLLBACK;
 
+
+\echo '== 13zz99. ปุ่มคำนวณยอดสิ้นเดือนใหม่บน Dashboard (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.refresh_month_auto_now()$$, 'PERMISSION_DENIED', 'ปุ่มคำนวณยอดสิ้นเดือน: VIEWER กดไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails($$SELECT public.refresh_month_auto_now()$$, 'PERMISSION_DENIED', 'ปุ่มคำนวณยอดสิ้นเดือน: CONTRIBUTOR กดไม่ได้');
+SELECT t.fails($$SELECT public.server_refresh_month_auto()$$, 'permission denied', 'ปุ่มคำนวณยอดสิ้นเดือน: งานประจำคืนยังเรียกตรงไม่ได้');
+RESET ROLE; SELECT coalesce(max(id), 0) AS jobs_before FROM public.system_job_runs \gset
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((public.refresh_month_auto_now() ->> 'months')::int >= 1, 'ปุ่มคำนวณยอดสิ้นเดือน: EDITOR กดแล้วคำนวณเดือนที่จบแล้ว');
+RESET ROLE;
+SELECT t.ok((SELECT count(*) FROM public.system_job_runs WHERE id > :jobs_before AND result = 'SUCCESS'
+              AND job_type IN ('INSURANCE_CV', 'MONTH_AUTO')) = 2,
+            'ปุ่มคำนวณยอดสิ้นเดือน: บันทึกผล 2 งาน (มูลค่าเวนคืน + ยอดสิ้นเดือน) → แคชหน้าเว็บล้างเอง');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.refresh_month_auto_now()', 'EXECUTE'), 'ปุ่มคำนวณยอดสิ้นเดือน: anon เรียกไม่ได้');
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'

@@ -8,6 +8,7 @@ import DashboardFilters from "@/components/DashboardFilters";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { ChangeDetail, PopupBox, type Bridge } from "./DashDetail";
 import TrendChart from "./TrendChart";
+import MonthAutoRefreshButton from "./MonthAutoRefreshButton";
 
 type Preview = {
   as_of: string; financial: number; investment: number; property: number; alternative: number;
@@ -174,11 +175,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <ChartBody start={start} isCurrent={isCurrent} personId={personId} from={rangeStart(range, today)} />
           </Suspense>
           {/* คำอธิบายจุดบนกราฟ (legend) ไว้ใต้กราฟ · ตัวเล็ก */}
-          <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-slate-500">
+          <div className="mt-1 flex flex-wrap items-end gap-x-4 gap-y-1 text-xs text-slate-500">
             {/* จุดทึบ = ยอดที่ล็อกแล้ว (ยอดตั้งต้น / เดือนที่ปิดแล้ว) · จุดกลวง = ยอดสิ้นเดือนอัตโนมัติ (คำนวณใหม่ทุกคืนจนกว่าจะปิดเดือน) และวันนี้ (ตกลง 2 พ.ย. 2026) */}
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />ยอดตั้งต้น / ปิดเดือนแล้ว</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-blue-600 bg-white" />ยังไม่ปิดงวด (ข้อมูลอาจเปลี่ยนแปลงได้)</span>
-          </p>
+            {/* มุมขวาล่าง: คำนวณจุดสิ้นเดือนที่ยังไม่ปิดใหม่ทันที (ADMIN / EDITOR · 9 พ.ย. 2026) */}
+            {(me.role === "ADMIN" || me.role === "EDITOR") && <MonthAutoRefreshButton />}
+          </div>
         </div>
 
         <div className="grid gap-4">{/* grid → กล่องยืดสูงเท่ากล่องกราฟ */}
