@@ -17,10 +17,18 @@ const n = (s: string) => Number(s.replace(/,/g, "")) || 0;
 const blank = (): Line => ({ description: "", amount: "", cat: "", person_id: "", move: "", to: "" });   // หมวด / ประเภท ต้องเลือกเอง
 
 /** แยกรายการรอแยกรายละเอียด → หลายบรรทัด · ยอดรวมต้องไม่เกินก้อน (ส่วนที่เหลือยังรอแยก) */
-export default function SplitForm({ kind, id, amount, currency, persons, categories = [], moves = [], personDefault = "ตามเจ้าของบัญชี / บัตร", label = "แยกรายการ", hints = [], rowClick = false, buttonCls }: {
+/** หน้า Income & Expenses (ตกลง 9 พ.ย. 2026): แต่ละบรรทัดเลือกได้ 4 แบบ รายได้ · ค่าใช้จ่าย · โอนเข้าบัญชี · โอนออกบัญชี
+ *   opposite = เลือกฝั่งตรงข้ามของก้อนได้ (ก้อนบัญชีธนาคาร / บัตร) · transfers = บัญชีให้เลือกตอนโอน (ก้อนบัญชีธนาคารเท่านั้น)
+ *   ฝั่งตรงข้ามเพิ่มยอดที่ต้องแยก: ก้อนรายได้ 10,000 = รายได้ 12,000 − ค่าใช้จ่าย 2,000 */
+export type SplitSides = { opposite: boolean; transfers: { id: string; name: string }[] };
+const OPP = "OPP";
+
+export default function SplitForm({ kind, id, amount, currency, persons, categories = [], moves = [], sides, personDefault = "ตามเจ้าของบัญชี / บัตร", label = "แยกรายการ", hints = [], rowClick = false, buttonCls }: {
   kind: "EXPENSE" | "INCOME"; id: string; amount: number; currency: string; persons: { id: string; name: string }[]; categories?: string[];
   /** บรรทัดแบบเคลื่อนเงินที่ก้อนนี้แยกได้ (ไม่มี = แยกเป็นรายได้ / ค่าใช้จ่ายอย่างเดียว) */
   moves?: SplitMove[];
+  /** แบบ 4 ตัวเลือก (หน้า Income & Expenses) · ใส่แล้วไม่ใช้ moves */
+  sides?: SplitSides;
   /** ข้อความของ "ไม่ระบุคน" */
   personDefault?: string;
   label?: string;
@@ -32,6 +40,20 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   buttonCls?: string;
 }) {
   const income = kind === "INCOME";
+  const oppKind = income ? "EXPENSE" : "INCOME";
+  const sameXfer = income ? "TRANSFER_IN" : "TRANSFER_OUT";
+  // แบบ 4 ตัวเลือก: ค่าของช่อง move = "" (ฝั่งเดียวกับก้อน) · OPP (ฝั่งตรงข้าม) · TRANSFER_IN / TRANSFER_OUT
+  const sideOpts: { value: string; label: string }[] = sides ? [
+    { value: income ? "" : OPP, label: "รายได้" }, { value: income ? OPP : "", label: "ค่าใช้จ่าย" },
+    ...(sides.transfers.length ? [{ value: "TRANSFER_IN", label: "โอนเข้าบัญชี" }, { value: "TRANSFER_OUT", label: "โอนออกบัญชี" }] : []),
+  ].filter((o) => sides.opposite || o.value === "" || o.value === sameXfer) : [];
+  const isXfer = (l: Line) => l.move === "TRANSFER_IN" || l.move === "TRANSFER_OUT";
+  /** บรรทัดนี้เป็นรายได้ / ค่าใช้จ่ายแบบไหน (null = เคลื่อนเงิน) */
+  const lineKind = (l: Line) => (l.move === "" ? kind : l.move === OPP ? oppKind : null);
+  /** + = ฝั่งเดียวกับก้อน (หักจากยอดรอแยก) · − = ฝั่งตรงข้าม (เพิ่มยอดที่ต้องแยก) */
+  /** ใช้ทั้งสองแบบ: รายได้ / ค่าใช้จ่ายของบรรทัด · null = เคลื่อนเงิน */
+  const lk = (l: Line): "INCOME" | "EXPENSE" | null => (sides ? lineKind(l) : l.move ? null : kind);
+  const sign = (l: Line) => (sides && (l.move === OPP || (isXfer(l) && l.move !== sameXfer)) ? -1 : 1);
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([blank()]);
   const [state, action, pending] = useActionState<ActionState, FormData>(splitPending, {});
@@ -45,45 +67,51 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
   if (rowClick && !isOpen) return row.render(null);
   if (state.ok && !isOpen) return <Flash on={state} as="p" className="text-xs text-emerald-700" />;
   if (!isOpen) return <button type="button" onClick={() => setOpen(true)} className={buttonCls ?? "rounded-md border border-blue-600 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50"}>{label}</button>;
-  const sum = lines.reduce((t, l) => t + n(l.amount), 0);
+  const sum = lines.reduce((t, l) => t + sign(l) * n(l.amount), 0);
   const left = Math.round((amount - sum) * 100) / 100;
-  // เกินยอดก้อนได้เฉพาะส่วนที่เป็นเงินโอน → ส่วนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน (กติกาจริงอยู่ใน public.split_lump)
-  const fixedSum = lines.filter((l) => l.move !== "TRANSFER").reduce((t, l) => t + n(l.amount), 0);
-  const hasXfer = lines.some((l) => l.move === "TRANSFER" && n(l.amount) > 0);
+  // เกินยอดก้อนได้เฉพาะส่วนที่เป็นเงินโอน (ทิศเดียวกับก้อน) → ส่วนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน (กติกาจริงอยู่ใน public.split_lump)
+  const sameDirXfer = (l: Line) => (sides ? l.move === sameXfer : l.move === "TRANSFER");
+  const fixedSum = lines.filter((l) => !sameDirXfer(l)).reduce((t, l) => t + sign(l) * n(l.amount), 0);
+  const hasXfer = lines.some((l) => sameDirXfer(l) && n(l.amount) > 0);
   const overOk = left < 0 && hasXfer && fixedSum <= amount + 0.005;
-  const missingCat = lines.some((l) => !l.move && (l.description.trim() || l.amount.trim()) && !l.cat.trim());
-  const missingTo = lines.some((l) => l.move && l.amount.trim() && !l.to);
+  const isItem = (l: Line) => (sides ? lineKind(l) !== null : !l.move);
+  const missingCat = lines.some((l) => isItem(l) && (l.description.trim() || l.amount.trim()) && !l.cat.trim());
+  const missingTo = lines.some((l) => !isItem(l) && l.amount.trim() && !l.to);
   const moveOf = (l: Line) => moves.find((m) => m.value === l.move);
   const set = (i: number, patch: Partial<Line>) => setLines(lines.map((l, k) => (k === i ? { ...l, ...patch } : l)));
   const body = (<>
     <form ref={box} action={action} className="space-y-2 text-left" data-no-row-click>
-      {!income && hints.length > 0 && <datalist id={`split-hints-${id}`}>{hints.slice(0, 300).map((h) => <option key={h.d} value={h.d} />)}</datalist>}
+      {hints.length > 0 && <datalist id={`split-hints-${id}`}>{hints.slice(0, 300).map((h) => <option key={h.d} value={h.d} />)}</datalist>}
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="lines" value={JSON.stringify(lines.map((l) => (l.move
+      <input type="hidden" name="lines" value={JSON.stringify(lines.map((l) => (!isItem(l)
         ? { move: l.move, target: l.to, description: l.description, amount: l.amount }
-        : { description: l.description, amount: l.amount, person_id: l.person_id,
-            ...(income ? { income_type: l.cat } : { expense_category: l.cat }) })))} />
+        : { ...(sides ? { kind: lineKind(l) } : {}), description: l.description, amount: l.amount, person_id: l.person_id,
+            ...((sides ? lineKind(l) : kind) === "INCOME" ? { income_type: l.cat } : { expense_category: l.cat }) })))} />
       {lines.map((l, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
-          {moves.length > 0 && (
+          {sides ? sideOpts.length > 1 && (
+            <select value={l.move} onChange={(e) => set(i, { move: e.target.value, to: "", cat: "", auto: false })} className={small}>
+              {sideOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : moves.length > 0 && (
             <select value={l.move} onChange={(e) => set(i, { move: e.target.value, to: "" })} className={small}>
               <option value="">{income ? "รายได้" : "ค่าใช้จ่าย"}</option>
               {moves.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           )}
-          <input value={l.description} list={!income && hints.length ? `split-hints-${id}` : undefined} autoComplete="off"
+          <input value={l.description} list={lk(l) === "EXPENSE" && hints.length ? `split-hints-${id}` : undefined} autoComplete="off"
             onChange={(e) => {
               // หมวดที่ระบบเดาไว้ (ยังไม่ได้เลือกเอง) เปลี่ยนตามรายละเอียดได้เรื่อย ๆ
-              const h = !income && !l.move && (!l.cat || l.auto) ? findHint(hints.filter((x) => categories.includes(x.c)), e.target.value) : null;
+              const h = lk(l) === "EXPENSE" && (!l.cat || l.auto) ? findHint(hints.filter((x) => categories.includes(x.c)), e.target.value) : null;
               set(i, { description: e.target.value, ...(h ? { cat: h.c, auto: true } : {}) });
-            }} placeholder={l.move ? "รายละเอียด (ไม่บังคับ)" : "รายละเอียด"} className={`min-w-40 flex-1 ${small}`} />
-          {l.move ? (
+            }} placeholder={lk(l) ? "รายละเอียด" : "รายละเอียด (ไม่บังคับ)"} className={`min-w-40 flex-1 ${small}`} />
+          {!lk(l) ? (
             <select value={l.to} onChange={(e) => set(i, { to: e.target.value })} className={`${small} ${l.to ? "" : "border-amber-400 text-slate-500"}`}>
-              <option value="">{moveOf(l)?.pick ?? "— เลือก —"}</option>
-              {(moveOf(l)?.targets ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              <option value="">{sides ? (l.move === "TRANSFER_IN" ? "— โอนมาจากบัญชี —" : "— โอนไปบัญชี —") : moveOf(l)?.pick ?? "— เลือก —"}</option>
+              {(sides ? sides.transfers : moveOf(l)?.targets ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
-          ) : income ? (
+          ) : lk(l) === "INCOME" ? (
             <select value={l.cat} onChange={(e) => set(i, { cat: e.target.value, auto: false })} className={`${small} ${l.cat ? "" : "border-amber-400 text-slate-500"}`}>
               <option value="">— เลือกประเภท —</option>
               {Object.entries(INCOME_TYPE_LABEL).filter(([v]) => !["DIVIDEND", "COUPON", "RENT", "INSURANCE_BENEFIT"].includes(v))
@@ -95,7 +123,7 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
-          {!l.move && (
+          {lk(l) && (
             <select value={l.person_id} onChange={(e) => set(i, { person_id: e.target.value })} className={small}>
               <option value="">{personDefault}</option>
               {persons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -107,8 +135,8 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
       ))}
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <button type="button" onClick={() => setLines([...lines, blank()])} className={SMALL_BTN}>+ เพิ่มบรรทัด</button>
-        {missingCat && <span className="text-amber-700">เลือก{income ? "ประเภท" : "หมวด"}ให้ทุกบรรทัดก่อนบันทึก</span>}
-        {missingTo && <span className="text-amber-700">เลือกบัญชี / บัตร / หนี้ ของบรรทัดเคลื่อนเงินก่อนบันทึก</span>}
+        {missingCat && <span className="text-amber-700">เลือก{sides ? "ประเภท / หมวด" : income ? "ประเภท" : "หมวด"}ให้ทุกบรรทัดก่อนบันทึก</span>}
+        {missingTo && <span className="text-amber-700">เลือก{sides ? "บัญชีของบรรทัดเงินโอน" : "บัญชี / บัตร / หนี้ ของบรรทัดเคลื่อนเงิน"}ก่อนบันทึก</span>}
         <span>แยกแล้ว {money(sum, currency)} · {left < 0
           ? overOk
             ? <b className="text-amber-700">โอนเกิน {money(-left, currency)} → เป็น{income ? "ค่าใช้จ่าย" : "รายได้"}รอแยกในบัญชีเดียวกัน</b>
@@ -122,7 +150,10 @@ export default function SplitForm({ kind, id, amount, currency, persons, categor
       </div>
       {state.error && <p className="text-xs text-red-600">{state.error}</p>}
       <p className="text-xs text-slate-500">ยอดรวมไม่เกินก้อน (ยกเว้นเงินโอน: ส่วนที่โอนเกินเป็นก้อนรอแยกฝั่งตรงข้ามในบัญชีเดียวกัน) · ส่วนที่ไม่ได้แยกยังเป็น &ldquo;รอแยก&rdquo; · ทำได้แม้ปิดงวดแล้ว (ความมั่งคั่งสุทธิไม่เปลี่ยน)
-        {moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
+        {sides?.opposite && <> · {income ? "ค่าใช้จ่าย / โอนออก" : "รายได้ / โอนเข้า"} (ฝั่งตรงข้าม) เพิ่มยอดที่ต้องแยก เช่น ก้อน{income ? "รายได้" : "ค่าใช้จ่าย"} 10,000 = {income ? "รายได้ 12,000 หักค่าใช้จ่าย 2,000" : "ค่าใช้จ่าย 12,000 หักรายได้ 2,000"}</>}
+        {sides && sides.transfers.length > 0 && <> · เงินโอนบันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}
+        {sides && <> · จ่ายบัตร / จ่ายหนี้ ให้บันทึกที่หน้าบัตร / หนี้สิน (ก้อนรอแยกปรับเอง)</>}
+        {!sides && moves.length > 0 && <> · {moves.map((m) => m.label).join(" / ")} บันทึกเป็นรายการเคลื่อนเงินวันเดียวกับก้อน (แก้ / ลบได้ที่กล่องเงินเข้า–ออกในภาพรวม · งวดที่ปิดแล้วต้อง Reopen ก่อน)</>}</p>
     </form>
     <Flash on={state} as="p" className="text-sm text-emerald-700" />
   </>);

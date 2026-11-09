@@ -2485,6 +2485,63 @@ SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE pending_split AND d
             'โอนเกิน: ก้อนของบัญชีในเดือนนั้นมีฝั่งเดียว แถวเดียว');
 RESET ROLE;
 SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีโอนเกิน'), '2026-09-20') = 4000, 'โอนเกิน: ยอดบัญชียังตรง Statement 4,000');
+-- แยกก้อนเป็นฝั่งตรงข้ามได้ (9 พ.ย. 2026): ก้อนรายได้ → ค่าใช้จ่าย / โอนออก · ก้อนค่าใช้จ่าย → รายได้ / โอนเข้า
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.create_bank_account('บัญชีสองฝั่ง', 'ทดสอบ', 'THB', 5000, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
+  jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS bs0;
+SELECT (public.update_bank_statement(t.a('บัญชีสองฝั่ง'), '2026-09-20', 6000))->>'lump' AS bs1;
+SELECT t.ok(public.split_lump('INCOME', (SELECT id FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีสองฝั่ง')),
+  jsonb_build_array(jsonb_build_object('description','เงินเดือนสองฝั่ง','amount','1,300','income_type','SALARY'),
+                    jsonb_build_object('kind','EXPENSE','description','ค่าธรรมเนียมสองฝั่ง','amount',200,'expense_category','ทั่วไป'),
+                    jsonb_build_object('move','TRANSFER_OUT','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',100))) = 0,
+            'สองฝั่ง: ก้อนรายได้ 1,000 = รายได้ 1,300 − ค่าใช้จ่าย 200 − โอนออก 100 → ก้อนหมด');
+SELECT t.ok((SELECT amount FROM public.income_transactions WHERE notes = 'เงินเดือนสองฝั่ง' AND deleted_at IS NULL AND NOT pending_split) = 1300
+            AND (SELECT amount FROM public.expense_items WHERE description = 'ค่าธรรมเนียมสองฝั่ง' AND deleted_at IS NULL AND NOT pending_split
+                   AND paid_from_asset_id = t.a('บัญชีสองฝั่ง') AND date = '2026-09-20') = 200
+            AND (SELECT amount FROM public.cash_movements WHERE deleted_at IS NULL AND movement_type = 'TRANSFER'
+                   AND from_asset_id = t.a('บัญชีสองฝั่ง') AND to_asset_id = t.a('บัญชีจ่ายหนี้ลด')) = 100
+            AND NOT EXISTS (SELECT 1 FROM public.income_transactions WHERE pending_split AND deleted_at IS NULL AND received_to_asset_id = t.a('บัญชีสองฝั่ง'))
+            AND NOT EXISTS (SELECT 1 FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีสองฝั่ง')),
+            'สองฝั่ง: รายได้ 1,300 · ค่าใช้จ่าย 200 (บัญชีเดียวกับก้อน) · โอนออก 100 · ไม่มีก้อนเหลือทั้งสองฝั่ง');
+SELECT (public.update_bank_statement(t.a('บัญชีสองฝั่ง'), '2026-09-25', 5500))->>'lump' AS bs2;
+SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีสองฝั่ง')),
+  jsonb_build_array(jsonb_build_object('description','ค่าของเกิน','amount',900,'expense_category','ทั่วไป'),
+                    jsonb_build_object('kind','INCOME','description','เงินคืนเกิน','amount',100,'income_type','OTHER')))$$,
+  'มากกว่ายอดรอแยก', 'สองฝั่ง: ก้อนค่าใช้จ่าย 500 แยก ค่าใช้จ่าย 900 − รายได้ 100 = 800 เกินก้อนไม่ได้');
+SELECT t.ok(public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีสองฝั่ง')),
+  jsonb_build_array(jsonb_build_object('description','ค่าของสองฝั่ง','amount',600,'expense_category','ทั่วไป'),
+                    jsonb_build_object('move','TRANSFER_IN','target', t.a('บัญชีจ่ายหนี้ลด'),'amount',150))) = 50,
+            'สองฝั่ง: ก้อนค่าใช้จ่าย 500 แยก ค่าใช้จ่าย 600 − โอนเข้า 150 = 450 → เหลือรอแยก 50');
+SELECT t.ok((SELECT amount FROM public.cash_movements WHERE deleted_at IS NULL AND movement_type = 'TRANSFER'
+               AND from_asset_id = t.a('บัญชีจ่ายหนี้ลด') AND to_asset_id = t.a('บัญชีสองฝั่ง')) = 150
+            AND (SELECT amount FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีสองฝั่ง')) = 50,
+            'สองฝั่ง: โอนเข้า 150 จากบัญชีอื่น · ก้อนค่าใช้จ่ายเหลือ 50');
+SELECT t.ok(public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL AND paid_from_asset_id = t.a('บัญชีสองฝั่ง')),
+  jsonb_build_array(jsonb_build_object('kind','INCOME','description','ดอกเบี้ยสองฝั่ง','amount',30,'income_type','INTEREST'))) = 80,
+            'สองฝั่ง: แยกรายได้อย่างเดียวจากก้อนค่าใช้จ่าย 50 → ก้อนเพิ่มเป็น 80 (ยังรอแยก)');
+RESET ROLE;
+SELECT t.ok(private.bank_calculated_balance(t.a('บัญชีสองฝั่ง'), '2026-09-25') = 5500, 'สองฝั่ง: ยอดบัญชียังตรง Statement 5,500');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+-- บัตร: ก้อนค่าใช้จ่าย → ค่าใช้จ่าย + รายได้ (เงินคืนเข้าบัตร)
+INSERT INTO public.credit_cards(person_id, issuer, card_name, card_last4, outstanding_balance, balance_date)
+  VALUES (t.p('คุณพ่อ'), 'ทดสอบ', 'สองฝั่ง', '7744', 5000, '2026-08-31');
+SELECT (public.update_card_statement((SELECT id FROM public.credit_cards WHERE card_last4 = '7744'), '2026-09-20', 5600))->>'lump' AS bs3;
+SELECT t.ok(public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+    AND paid_from_credit_card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7744')),
+  jsonb_build_array(jsonb_build_object('description','ซื้อของบัตรสองฝั่ง','amount',700,'expense_category','ทั่วไป'),
+                    jsonb_build_object('kind','INCOME','description','เงินคืนบัตรสองฝั่ง','amount',100,'income_type','OTHER'))) = 0,
+            'สองฝั่ง (บัตร): ก้อน 600 = ค่าใช้จ่าย 700 − เงินคืนเข้าบัตร 100 → ก้อนหมด');
+SELECT t.ok((SELECT received_to_credit_card_id FROM public.income_transactions WHERE notes = 'เงินคืนบัตรสองฝั่ง' AND deleted_at IS NULL)
+              = (SELECT id FROM public.credit_cards WHERE card_last4 = '7744')
+            AND (SELECT current_balance FROM public.v_card_balances WHERE card_id = (SELECT id FROM public.credit_cards WHERE card_last4 = '7744')) = 5600,
+            'สองฝั่ง (บัตร): เงินคืนเข้าบัตรเดียวกับก้อน · ยอดบัตรยังตรง Statement 5,600');
+-- หนี้: ฝั่งตรงข้ามไม่ได้
+SELECT t.fails($$SELECT public.split_lump('EXPENSE', (SELECT id FROM public.expense_items WHERE pending_split AND deleted_at IS NULL
+    AND liability_id = (SELECT id FROM public.liabilities WHERE name = 'หนี้ก้อนกลับ') LIMIT 1),
+  jsonb_build_array(jsonb_build_object('kind','INCOME','description','x','amount',10,'income_type','OTHER')))$$,
+  'ฝั่งตรงข้าม', 'สองฝั่ง: ก้อนของหนี้แยกเป็นฝั่งตรงข้ามไม่ได้');
+RESET ROLE;
+
 SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
 SELECT public.create_bank_account('บัญชีติดลบทดสอบ', 'ทดสอบ', 'THB', 100, '2026-08-31', false, 'SAVING', NULL, NULL, NULL, NULL,
   jsonb_build_array(jsonb_build_object('person_id', t.p('คุณพ่อ'), 'percent', 100)), NULL, NULL) IS NOT NULL AS ng0;
