@@ -1,4 +1,4 @@
-# ปุ่ม "คำนวณยอดสิ้นเดือนใหม่" บนกราฟ Dashboard
+# #412 · ปุ่ม "คำนวณยอดสิ้นเดือนใหม่" บนกราฟ Dashboard
 
 - วันที่: 9 พ.ย. 2026 · branch `feat/month-auto-refresh-button`
 - SQL: `supabase/migrations/20261109100000_month_auto_refresh_button.sql` (ฟังก์ชันใหม่ `public.refresh_month_auto_now()` ฟังก์ชันเดียว · ไม่แก้ / ไม่ลบข้อมูล)
