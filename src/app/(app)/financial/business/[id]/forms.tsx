@@ -58,7 +58,7 @@ export function DividendForm({ assetId, banks, today, minDate }: { assetId: stri
 /** แก้รายละเอียดธุรกิจ (ชื่อรายการ · ข้อมูลบริษัท · หุ้น · เงินลงทุน · หมายเหตุ) */
 export function BusinessInfoForm({ assetId, byShares, v }: {
   assetId: string; byShares: boolean;
-  v: { name: string; logo_data: string | null; company_name: string; registration_no: string | null; business_type: string | null; address: string | null; phone: string | null; total_shares: number | null; par_value: number | null;
+  v: { name: string; logo_data: string | null; company_name: string; registration_no: string | null; business_type: string | null; established_date: string | null; address: string | null; phone: string | null; total_shares: number | null; par_value: number | null;
     shares_owned: number | null; company_ownership_percent: number | null; investment_cost: number | null; notes: string | null };
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateBusinessInfo, {});
@@ -70,6 +70,7 @@ export function BusinessInfoForm({ assetId, byShares, v }: {
       <label className="text-sm md:col-span-2">ชื่อบริษัท *<input name="company_name" required defaultValue={v.company_name} className={input} /></label>
       <label className="text-sm">เลขทะเบียน<input name="registration_no" defaultValue={v.registration_no ?? ""} className={input} /></label>
       <label className="text-sm">ประเภทกิจการ<input name="business_type" defaultValue={v.business_type ?? ""} className={input} /></label>
+      <label className="text-sm">วันที่จัดตั้งบริษัท<input name="established_date" type="date" defaultValue={v.established_date ?? ""} className={input} /></label>
       <label className="text-sm">เบอร์โทรกิจการ<input name="phone" type="tel" maxLength={50} defaultValue={v.phone ?? ""} className={input} /></label>
       <label className="text-sm md:col-span-3">ที่อยู่กิจการ<textarea name="address" rows={2} maxLength={500} defaultValue={v.address ?? ""} className={input} /></label>
       <label className="text-sm">เงินลงทุน<input name="investment_cost" inputMode="decimal" defaultValue={dv(v.investment_cost)} className={input} /></label>

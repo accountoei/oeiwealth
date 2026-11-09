@@ -65,6 +65,7 @@ export async function updateBusinessInfo(_: ActionState, form: FormData): Promis
     company_name: str(form.get("company_name")),
     registration_no: str(form.get("registration_no")),
     business_type: str(form.get("business_type")),
+    established_date: str(form.get("established_date")),
     address: str(form.get("address")),
     phone: str(form.get("phone")),
     total_shares: num(form.get("total_shares")),
@@ -149,4 +150,82 @@ export async function batchValues(_: ActionState, form: FormData): Promise<Actio
   if (error) return { error: notSaved("ทุกกิจการ", friendlyError(error.message)) };
   new Set(clean.map((r) => r.asset_id)).forEach((id) => revalidatePath(`/financial/business/${id}`));
   return done("", `บันทึกมูลค่าแล้ว ${data} กิจการ`);
+}
+
+/* ---------------------------------------------------------------- ผลประกอบการรายปี (ตกลง 9 พ.ย. 2026)
+   ข้อมูลดูอย่างเดียว: ไม่สร้างรายได้ / เงินเข้าออก · ตัวเลขทั้งบริษัท 100% · กิจการ (asset_id) หรือบริษัทที่ปิดแล้ว (past_business_id) */
+function finDone(form: FormData, msg: string): ActionState {
+  const asset = str(form.get("asset_id")), past = str(form.get("past_business_id"));
+  ["/financial/business", asset ? `/financial/business/${asset}` : null, past ? `/financial/business/past/${past}` : null]
+    .forEach((p) => p && revalidatePath(p));
+  return { ok: msg };
+}
+
+const FIN_NUMS = ["revenue_domestic", "revenue_foreign", "employees", "executives", "corporate_tax", "net_profit", "dividends_paid", "equity",
+  "land_value", "building_cost", "building_depreciation", "equipment_cost", "equipment_depreciation"] as const;
+
+export async function saveFinancialYear(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = str(form.get("id"));
+  const asset = str(form.get("asset_id")), past = str(form.get("past_business_id"));
+  const beYear = Number(String(form.get("fiscal_year_be") ?? "").replace(/,/g, ""));
+  if (!Number.isInteger(beYear) || beYear < 2443 || beYear > 2743) return { error: "กรุณาใส่ปีบัญชีเป็น พ.ศ. เช่น 2568" };
+  const row: Record<string, unknown> = { fiscal_year: beYear - 543, audit_status: str(form.get("audit_status")) ?? "AUDITED", notes: str(form.get("notes")) };
+  for (const k of FIN_NUMS) {
+    // ช่องภาษีชื่อ income_tax ในฟอร์ม (ชื่อที่มีคำว่า "rate" ช่องตัวเลขจะไม่เติม .00)
+    const v = num(form.get(k === "corporate_tax" ? "income_tax" : k));
+    if (v != null && Number.isNaN(v)) return { error: "กรุณาใส่ตัวเลขให้ถูกต้อง" };
+    row[k] = v;
+  }
+  if (row.revenue_domestic == null && row.revenue_foreign == null && row.net_profit == null) return { error: "กรุณาใส่รายได้ หรือ กำไร (ขาดทุน)" };
+  if (row.employees != null && !Number.isInteger(row.employees)) return { error: "จำนวนพนักงานต้องเป็นจำนวนเต็ม" };
+  if (row.executives != null && !Number.isInteger(row.executives)) return { error: "จำนวนผู้บริหารต้องเป็นจำนวนเต็ม" };
+  if (!id) { row.asset_id = asset; row.past_business_id = past; }
+  const { data, error } = id
+    ? await supabase.from("business_financial_years").update(row).eq("id", id).select("id")
+    : await supabase.from("business_financial_years").insert(row).select("id");
+  if (error) return { error: /bfy_(asset|past)_year_uq/.test(error.message) ? `ปี ${beYear} มีข้อมูลแล้ว — กดแถวของปีนั้นเพื่อแก้ไข` : friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  return finDone(form, `บันทึกผลประกอบการปี ${beYear} แล้ว`);
+}
+
+export async function deleteFinancialYear(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("business_financial_years").update({ deleted_at: new Date().toISOString() })
+    .eq("id", String(form.get("id"))).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์ลบรายการนี้" };
+  return finDone(form, "ลบผลประกอบการปีนี้แล้ว");
+}
+
+/** บริษัทที่ปิดแล้ว (เก็บเป็นประวัติ · ไม่ใช่ทรัพย์สิน) */
+export async function savePastBusiness(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = str(form.get("id"));
+  const name = str(form.get("name"));
+  if (!name) return { error: "กรุณาใส่ชื่อย่อบริษัท" };
+  const row = { name, company_name: str(form.get("company_name")), established_date: str(form.get("established_date")),
+    closed_date: str(form.get("closed_date")), notes: str(form.get("notes")) };
+  const { data, error } = id
+    ? await supabase.from("past_businesses").update(row).eq("id", id).select("id")
+    : await supabase.from("past_businesses").insert(row).select("id");
+  if (error) return { error: /past_businesses_dates_ck/.test(error.message) ? "วันที่ปิดต้องไม่ก่อนวันที่จัดตั้ง" : friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์แก้ไขรายการนี้" };
+  revalidatePath("/financial/business");
+  if (id) { revalidatePath(`/financial/business/past/${id}`); return { ok: "บันทึกแล้ว" }; }
+  redirect(`/financial/business/past/${data[0].id}`);
+}
+
+/** ลบบริษัทที่ปิดแล้ว + ผลประกอบการทุกปีของบริษัทนั้น (soft delete · ADMIN / EDITOR) */
+export async function deletePastBusiness(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("id"));
+  const now = new Date().toISOString();
+  const { error: e1 } = await supabase.from("business_financial_years").update({ deleted_at: now }).eq("past_business_id", id).is("deleted_at", null);
+  if (e1) return { error: friendlyError(e1.message) };
+  const { data, error } = await supabase.from("past_businesses").update({ deleted_at: now }).eq("id", id).select("id");
+  if (error) return { error: friendlyError(error.message) };
+  if (!data?.length) return { error: "คุณไม่มีสิทธิ์ลบรายการนี้" };
+  revalidatePath("/financial/business");
+  redirect("/financial/business?tab=results");
 }
