@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, ACCOUNT_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, ACCOUNT_TYPE_LABEL, INCOME_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
@@ -15,7 +15,7 @@ import AccountsTable, { type AccountRow } from "./AccountsTable";
 import BatchUpdate, { type BatchRow } from "./BatchUpdate";
 import InterestBatch, { type InterestRow } from "./InterestBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
-import { FLOW_LABEL, INCOME_KEYS, OTHER_KEYS, SPEND_KEYS, flowCount, flowSum, monthFlows, type Move } from "./flows";
+import { FLOW_LABEL, INCOME_KEYS, OTHER_KEYS, SPEND_KEYS, flowCount, flowSum, incomeLines, monthFlows, type Move } from "./flows";
 import FlowCard from "./FlowCard";
 import { assetIncomeFields } from "@/lib/source-edit";
 
@@ -51,8 +51,10 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const ordering = canOrder && sp.order === "1";
   const paths = ["/financial/cash"];
 
+  const movesQ = supabase.from("cash_movements").select("movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency,source_entity_id")
+    .gte("movement_date", start).lte("movement_date", asOf).is("deleted_at", null).limit(10000).then((r) => r);
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
-    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }] = await Promise.all([
+    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }, { data: incTypes }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date,overdraft_limit").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
@@ -70,8 +72,15 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     supabase.from("cash_movements").select("to_credit_card_id").eq("movement_type", "CARD_PAYMENT")
       .gte("movement_date", `${today.slice(0, 7)}-01`).lte("movement_date", today).is("deleted_at", null),
     // เงินเข้า–ออกของเดือน แยกตามประเภท (การ์ดรายรับ / รายจ่าย / รายการอื่นๆ) · ช่วงวันเดียวกับ bank_month_summary
-    supabase.from("cash_movements").select("movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency")
-      .gte("movement_date", start).lte("movement_date", asOf).is("deleted_at", null).limit(10000),
+    movesQ,
+    // ประเภทรายได้ของรายรับเดือนนี้ (การ์ดรายรับแยกตามประเภท) · ต่อจาก movesQ ใน Promise.all เดียวกัน
+    (async (): Promise<{ data: { id: string; income_type: string }[] }> => {
+      const { data } = await movesQ;
+      const ids = [...new Set(((data as Move[] | null) ?? []).filter((m) => m.movement_type === "INCOME" && m.source_entity_id).map((m) => m.source_entity_id as string))];
+      if (!ids.length) return { data: [] };
+      const r = await supabase.from("income_transactions").select("id,income_type").in("id", ids);
+      return { data: (r.data ?? []) as { id: string; income_type: string }[] };
+    })(),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
@@ -99,7 +108,8 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const totalNow = tot(sum, (s) => pos(s.balance));
   const totalPrev = tot(prevSum, (s) => pos(s.balance));
   const flow = monthFlows((monthMoves as Move[] | null) ?? [], new Set(((accounts as Acc[] | null) ?? []).map((a) => a.asset_id)),
-    new Map(active.map((a) => [a.asset_id, (v: number) => thb(v, a.currency) * share(a.asset_id)])));
+    new Map(active.map((a) => [a.asset_id, (v: number) => thb(v, a.currency) * share(a.asset_id)])),
+    new Map((incTypes ?? []).map((r) => [r.id, r.income_type])));
   const pct = (a: number, b: number) => (Math.abs(b) < 0.005 ? null : ((a - b) / Math.abs(b)) * 100);
   const byCcy = [...active.reduce((m, a) => m.set(a.currency, (m.get(a.currency) ?? 0) + pos(sum.get(a.asset_id)?.balance) * share(a.asset_id)),
     new Map<string, number>())].filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => thb(b[1], b[0]) - thb(a[1], a[0]));
@@ -228,7 +238,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             )}
           </div>
           <FlowCard title={`รายรับเข้าบัญชี${mName}`} total={flowSum(flow, INCOME_KEYS)} count={flowCount(flow, INCOME_KEYS)} href={movesHref}
-            lines={flow.n.get("REIMB") ? INCOME_KEYS.map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0]) : []} />
+            lines={incomeLines(flow, INCOME_TYPE_LABEL)} />
           <FlowCard title={`รายจ่ายจากบัญชี${mName}`} total={flowSum(flow, SPEND_KEYS)} count={flowCount(flow, SPEND_KEYS)} href={movesHref}
             lines={SPEND_KEYS.filter((k) => k !== "FEE" || flow.n.get(k)).map((k) => [FLOW_LABEL[k], flow.amt.get(k) ?? 0])} />
           <FlowCard title={`รายการอื่นๆ ${mName.trim()}`} total={flowSum(flow, OTHER_KEYS)} count={flowCount(flow, OTHER_KEYS)} href={movesHref}

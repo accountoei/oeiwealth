@@ -4,7 +4,7 @@
 //   รายรับ − รายจ่าย + รายการอื่นๆ (สุทธิ) = เงินเข้า − เงินออก ของ bank_month_summary
 
 export type Move = { movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
-  amount: number; fee: number | null; counter_amount: number | null; counter_currency: string | null };
+  amount: number; fee: number | null; counter_amount: number | null; counter_currency: string | null; source_entity_id?: string | null };
 
 /** บรรทัดในการ์ด · in = เงินเข้า (+) / out = เงินออก (−) */
 export type FlowKey =
@@ -34,14 +34,16 @@ const OUT_KEY: Record<string, FlowKey> = {
 };
 const IS_IN = (k: FlowKey) => ["INCOME", "REIMB", "INV_IN", "LOAN_IN", "ASSET_IN", "DEP_IN", "FX_IN", "OTHER_IN"].includes(k);
 
-export type Flows = { amt: Map<FlowKey, number>; n: Map<FlowKey, number> };
+/** inc = รายรับ (INCOME) แยกตามประเภทรายได้ (income_type) · ไม่รู้ประเภท → OTHER */
+export type Flows = { amt: Map<FlowKey, number>; n: Map<FlowKey, number>; inc: Map<string, { amt: number; n: number }> };
 
 /**
  * รวมยอดตามประเภท · banks = บัญชีเงินฝากทั้งหมด (ใช้ดูว่าเป็นโอนระหว่างบัญชีของครอบครัวหรือไม่)
  * shown = บัญชีที่แสดงอยู่ → ฟังก์ชันแปลงยอดสกุลบัญชีเป็นบาท × สัดส่วนของคนที่เลือก
  */
-export function monthFlows(moves: Move[], banks: Set<string>, shown: Map<string, (v: number) => number>): Flows {
-  const amt = new Map<FlowKey, number>(), n = new Map<FlowKey, number>();
+export function monthFlows(moves: Move[], banks: Set<string>, shown: Map<string, (v: number) => number>,
+  incType: Map<string, string> = new Map()): Flows {
+  const amt = new Map<FlowKey, number>(), n = new Map<FlowKey, number>(), inc = new Map<string, { amt: number; n: number }>();
   const add = (k: FlowKey, v: number) => {
     amt.set(k, (amt.get(k) ?? 0) + (IS_IN(k) ? v : -v));
     n.set(k, (n.get(k) ?? 0) + 1);
@@ -51,14 +53,32 @@ export function monthFlows(moves: Move[], banks: Set<string>, shown: Map<string,
     const toBank = m.to_asset_id ? shown.get(m.to_asset_id) : undefined;
     const fromBank = m.from_asset_id ? shown.get(m.from_asset_id) : undefined;
     if (toBank && !internal) {
-      add(IN_KEY[m.movement_type] ?? "OTHER_IN", toBank(m.counter_currency ? Number(m.counter_amount ?? 0) : Number(m.amount)));
+      const v = toBank(m.counter_currency ? Number(m.counter_amount ?? 0) : Number(m.amount));
+      add(IN_KEY[m.movement_type] ?? "OTHER_IN", v);
+      if (m.movement_type === "INCOME") {
+        const t = (m.source_entity_id && incType.get(m.source_entity_id)) || "OTHER", x = inc.get(t) ?? { amt: 0, n: 0 };
+        inc.set(t, { amt: x.amt + v, n: x.n + 1 });
+      }
     }
     if (fromBank) {
       if (internal) { if (Number(m.fee ?? 0) > 0) add("FEE", fromBank(Number(m.fee))); }
       else add(OUT_KEY[m.movement_type] ?? "OTHER_OUT", fromBank(Number(m.amount) + Number(m.fee ?? 0)));
     }
   }
-  return { amt, n };
+  return { amt, n, inc };
+}
+
+/**
+ * บรรทัดการ์ดรายรับ (ตกลง 9 พ.ย. 2026): ประเภทรายได้ที่มีรายการ เรียงยอดมาก → น้อย · เกิน max บรรทัด → รวมที่เหลือเป็น "อื่นๆ (n ประเภท)"
+ * เงินเบิกคืน (ไม่ใช่รายได้) อยู่บรรทัดสุดท้ายเสมอ (ถ้ามี)
+ */
+export function incomeLines(f: Flows, label: Record<string, string>, max = 6): [string, number][] {
+  const rows = [...f.inc].sort((a, b) => b[1].amt - a[1].amt).map(([t, x]) => [label[t] ?? t, x.amt] as [string, number]);
+  const out = rows.length > max
+    ? [...rows.slice(0, max - 1), [`อื่นๆ (${rows.length - max + 1} ประเภท)`, rows.slice(max - 1).reduce((t, r) => t + r[1], 0)] as [string, number]]
+    : rows;
+  if (f.n.get("REIMB")) out.push([FLOW_LABEL.REIMB, f.amt.get("REIMB") ?? 0]);
+  return out;
 }
 
 /** รวมยอด (มีเครื่องหมาย: เข้า +, ออก −) และจำนวนรายการของกลุ่มบรรทัด */
