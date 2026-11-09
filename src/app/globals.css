@@ -133,3 +133,15 @@ tr[data-row-panel-row]:hover :is([data-amt], [data-amt-auto]) { color: var(--col
 /* บรรทัดที่เปิดมาจากช่องค้นหา (RowHighlight) — เหลืองจาง ๆ แล้วค่อย ๆ หาย */
 @keyframes row-hl { 0%, 40% { background-color: #fef08a; } 100% { background-color: transparent; } }
 .row-hl > td { animation: row-hl 3s ease-out; }
+
+/* แผนที่ดาวเทียมของทรัพย์สิน (PropertyMap) — หมุดเรืองแสง + ป้ายชื่อพื้นเข้มบนภาพดาวเทียม (ตกลง 9 พ.ย. 2026) */
+.pm-pin-wrap { background: none; border: 0; }
+.pm-pin { display: block; width: 18px; height: 18px; border-radius: 9999px; background: var(--pm); border: 3px solid #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--pm) 35%, transparent), 0 2px 6px rgb(0 0 0 / 0.5); }
+.leaflet-tooltip.pm-label { background: rgb(15 23 42 / 0.82); color: #fff; border: 0; border-radius: 6px; box-shadow: none;
+  padding: 2px 8px; font-size: 12px; font-weight: 500; }
+.leaflet-tooltip.pm-label::before { display: none; }
+.pm-pop { font-size: 13px; line-height: 1.5; color: #334155; }
+.pm-pop b { color: #0f172a; }
+.pm-links { display: flex; gap: 12px; margin-top: 6px; }
+.pm-links a { color: #1d4ed8; }
