@@ -1,4 +1,4 @@
-# #? · Income & Expenses: แถบแท็บไม่ล้นจอบน iPad แนวตั้ง / มือถือ
+# #413 · Income & Expenses: แถบแท็บไม่ล้นจอบน iPad แนวตั้ง / มือถือ
 
 - วันที่: 9 พ.ย. 2026 · branch `ui/ie-tabnav-ipad`
 - SQL: ไม่มี SQL
