@@ -3,6 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { replaceSameDay } from "@/lib/same-day";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
@@ -88,8 +89,10 @@ export async function addGoldValuation(_: ActionState, form: FormData): Promise<
     p_method: str(form.get("valuation_method")) ?? "LATEST_TRANSACTION", p_notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
+  const warn = await replaceSameDay(supabase, [id], str(form.get("valuation_date")));
   revalidatePath("/alternative");
   revalidatePath(`/alternative/${id}`);
+  if (warn) return { error: warn };
   return { ok: `บันทึกมูลค่า ${Number(data).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาทแล้ว` };
 }
 
@@ -142,7 +145,9 @@ export async function batchAltValues(_: ActionState, form: FormData): Promise<Ac
     asset_id: r.asset_id, valuation_date: date, value: r.value, valuation_method: method, source: method === "APPRAISAL" ? "APPRAISAL" : "USER",
   })));
   if (error) return { error: notSaved("ทุกรายการ", friendlyError(error.message)) };
+  const warn = await replaceSameDay(supabase, clean.map((r) => r.asset_id), date);
   revalidatePath("/alternative", "layout");
   revalidatePath("/");
+  if (warn) return { error: warn };
   return { ok: `บันทึกมูลค่าแล้ว ${clean.length} รายการ` };
 }

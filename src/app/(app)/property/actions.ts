@@ -3,6 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { replaceSameDay } from "@/lib/same-day";
 import { friendlyError, HOME_CATEGORY, money, numOrNull as num, ownersFromForm, parseSalvage, sqwaFromForm, strOrNull as str, type FormState } from "@/lib/format";
 import { requireAppUser } from "@/lib/auth";
 import { payFromForm, recordAssetPurchase } from "@/lib/asset-pay";
@@ -242,7 +243,9 @@ export async function savePropertyValuation(_: ActionState, form: FormData): Pro
     p_notes: str(form.get("notes")), p_parts: parts,
   });
   if (error) return { error: friendlyError(error.message) };
+  const warn = await replaceSameDay(supabase, [id], str(form.get("valuation_date")));
   revalidateProperty(id);
+  if (warn) return { error: warn };
   return { ok: "บันทึกมูลค่าแล้ว" };
 }
 
@@ -257,7 +260,9 @@ export async function addValuation(_: ActionState, form: FormData): Promise<Acti
     source: method === "APPRAISAL" ? "APPRAISAL" : "USER", notes: str(form.get("notes")),
   });
   if (error) return { error: friendlyError(error.message) };
+  const warn = await replaceSameDay(supabase, [id], str(form.get("valuation_date")));
   revalidateProperty(id);
+  if (warn) return { error: warn };
   return { ok: "บันทึกมูลค่าแล้ว" };
 }
 

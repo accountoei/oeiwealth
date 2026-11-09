@@ -3,6 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { replaceSameDay } from "@/lib/same-day";
 import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, todayBangkok, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
@@ -160,7 +161,9 @@ export async function batchValues(_: ActionState, form: FormData): Promise<Actio
     if (res.error) return { error: notSaved("ทุกกิจการ", friendlyError(res.error.message)) };
     data = res.data as number;
   }
+  const warn = await replaceSameDay(supabase, clean.map((r) => r.asset_id), date);
   new Set(clean.map((r) => r.asset_id)).forEach((id) => revalidatePath(`/financial/business/${id}`));
+  if (warn) return { error: warn };
   return done("", `บันทึกมูลค่าแล้ว ${data} กิจการ`);
 }
 

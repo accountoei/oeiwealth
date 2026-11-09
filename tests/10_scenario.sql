@@ -5904,4 +5904,54 @@ SELECT t.ok((SELECT count(*) FROM public.system_job_runs WHERE id > :jobs_before
 SELECT t.ok(NOT has_function_privilege('anon', 'public.refresh_month_auto_now()', 'EXECUTE'), 'ปุ่มคำนวณยอดสิ้นเดือน: anon เรียกไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz999. อัปเดตยอดซ้ำวันเดิม = แทนแถวเดิม (9 พ.ย. 2026 · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.update_bank_statement(t.a('KBank ออมทรัพย์'), current_date, 500000) IS NOT NULL AS b1;
+SELECT t.ok(public.replace_same_day_valuation(t.a('KBank ออมทรัพย์'), current_date) = 0, 'ยอดซ้ำวันเดิม: ครั้งแรกของวันไม่มีอะไรให้แทน');
+RESET ROLE; SET session_replication_role = replica; UPDATE public.asset_valuations SET created_at = created_at - interval '1 minute' WHERE asset_id = t.a('KBank ออมทรัพย์') AND valuation_date = current_date AND deleted_at IS NULL; SET session_replication_role = origin;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.update_bank_statement(t.a('KBank ออมทรัพย์'), current_date, 480000) IS NOT NULL AS b2;
+SELECT t.ok(public.replace_same_day_valuation(t.a('KBank ออมทรัพย์'), current_date) = 1, 'ยอดซ้ำวันเดิม: อัปเดตยอดธนาคารครั้งที่ 2 แทนแถวเดิม 1 แถว');
+RESET ROLE;
+SELECT t.ok((SELECT count(*) FROM public.asset_valuations WHERE asset_id = t.a('KBank ออมทรัพย์') AND valuation_date = current_date AND deleted_at IS NULL) = 1
+            AND (SELECT current_value FROM public.assets WHERE id = t.a('KBank ออมทรัพย์')) = 480000
+            AND EXISTS (SELECT 1 FROM public.asset_valuations WHERE asset_id = t.a('KBank ออมทรัพย์') AND valuation_date = current_date
+                         AND value = 500000 AND deleted_at IS NOT NULL AND deleted_by IS NOT NULL),
+            'ยอดซ้ำวันเดิม: เหลือแถวเดียว = ยอดล่าสุด · แถวเดิมลบแบบ soft delete (รู้ว่าใครลบ)');
+-- คนอื่นบันทึกแถวล่าสุด → ผู้เรียกลบไม่ได้
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+RESET ROLE; SET session_replication_role = replica; UPDATE public.asset_valuations SET created_at = created_at - interval '1 minute' WHERE asset_id = t.a('KBank ออมทรัพย์') AND valuation_date = current_date AND deleted_at IS NULL; SET session_replication_role = origin;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.update_bank_statement(t.a('KBank ออมทรัพย์'), current_date, 470000) IS NOT NULL AS b3;
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok(public.replace_same_day_valuation(t.a('KBank ออมทรัพย์'), current_date) = 0, 'ยอดซ้ำวันเดิม: แถวล่าสุดเป็นของคนอื่น → ไม่ลบอะไร');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails($$SELECT public.replace_same_day_valuation(t.a('KBank ออมทรัพย์'), current_date)$$, 'PERMISSION_DENIED', 'ยอดซ้ำวันเดิม: VIEWER เรียกไม่ได้');
+-- มูลค่าทรัพย์สิน: ยอดตั้งต้น / แถวจ่ายเพิ่ม (ผูกรายการ) ไม่ถูกแทน
+SELECT t.login('00000000-0000-0000-0000-00000000000e');
+RESET ROLE;
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source, notes, source_movement_id)
+SELECT t.a('บ้าน A'), current_date, 1, 'BOOK_VALUE', 'USER', 'จ่ายเพิ่ม ทดสอบ', id FROM public.cash_movements WHERE deleted_at IS NULL LIMIT 1;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source)
+VALUES (t.a('บ้าน A'), current_date, 2, 'USER_ESTIMATE', 'USER'), (t.a('บ้าน A'), current_date, 3, 'USER_ESTIMATE', 'USER');
+RESET ROLE;
+SET session_replication_role = replica;
+UPDATE public.asset_valuations SET created_at = created_at - interval '1 second' * (4 - value)
+ WHERE asset_id = t.a('บ้าน A') AND valuation_date = current_date AND deleted_at IS NULL AND value IN (1, 2, 3);
+SET session_replication_role = origin;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, valuation_method, source)
+VALUES (t.a('บ้าน A'), current_date, 4, 'USER_ESTIMATE', 'USER');
+SELECT t.ok(public.replace_same_day_valuation(t.a('บ้าน A'), current_date) = 2, 'ยอดซ้ำวันเดิม: มูลค่าบ้านแทนแถวประเมินเดิม 2 แถว');
+RESET ROLE;
+SELECT t.ok((SELECT array_agg(value::int ORDER BY value) FROM public.asset_valuations
+              WHERE asset_id = t.a('บ้าน A') AND valuation_date = current_date AND deleted_at IS NULL) = ARRAY[1, 4],
+            'ยอดซ้ำวันเดิม: แถวจ่ายเพิ่มที่ผูกรายการยังอยู่ · เหลือแถวประเมินล่าสุดแถวเดียว');
+SELECT t.ok(NOT has_function_privilege('anon', 'public.replace_same_day_valuation(uuid, date)', 'EXECUTE')
+            AND NOT has_function_privilege('authenticated', 'private.drop_same_day_before(uuid)', 'EXECUTE'),
+            'ยอดซ้ำวันเดิม: anon เรียกไม่ได้ · ฟังก์ชันลบภายในเรียกตรงไม่ได้');
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'
