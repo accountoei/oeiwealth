@@ -70,6 +70,14 @@ function sources(q: string, full: boolean): Source[] {
       // ประกันที่มีมูลค่าเงินสด = แสดงจากกรมธรรม์แทน
       hit: (a) => a.asset_type === "INSURANCE_CASH_VALUE" ? null : { group: assetGroup(a.asset_group, a.asset_type), label: a.name,
         sub: a.status !== "ACTIVE" ? STATUS[a.status] ?? a.status : full ? snip(q, a.notes) : undefined, href: `/a/${a.id}` } },
+    // เลขบัญชี 4 ตัวท้าย (ตกลง 9 พ.ย. 2026 · เลขเต็มยังเข้ารหัสอยู่ ค้นไม่ได้) · ซ้ำกับผลจากชื่อ = แสดงครั้งเดียว
+    { q: (sb, like, n) => sb.from("bank_accounts").select("asset_id,account_no_last4,assets(name,asset_group,asset_type,status)").is("deleted_at", null)
+        .ilike("account_no_last4", like).limit(n),
+      hit: (b) => {
+        const a = assetOf(b.assets);
+        return a ? { group: assetGroup(a.asset_group, a.asset_type), label: a.name,
+          sub: a.status !== "ACTIVE" ? STATUS[a.status] ?? a.status : `•••• ${b.account_no_last4}`, href: `/a/${b.asset_id}` } : null;
+      } },
     { q: (sb, like, n) => sb.from("investment_holdings").select("id,name,symbol,notes,purpose,investment_portfolios(asset_id,assets(name))").is("deleted_at", null)
         .or(ors(like, full ? ["name", "symbol", "notes", "purpose"] : ["name", "symbol"])).limit(n),
       hit: (h) => {
