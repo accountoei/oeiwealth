@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct } from "@/lib/format";
+import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct, thMonth } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -67,9 +67,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     Promise.all([pvQ, familyQ]).then(async ([v, { data: f }]) => {
       const since = f?.go_live_date || "1900-01-01";
       return v.personId
-        ? await supabase.from("v_income_by_person").select("base_amount:base_amount_share").eq("person_id", v.personId)
+        ? await supabase.from("v_income_by_person").select("base_amount:base_amount_share,date").eq("person_id", v.personId)
             .eq("is_investment_income", true).gte("date", since)
-        : await supabase.from("income_transactions").select("base_amount")
+        : await supabase.from("income_transactions").select("base_amount,date")
             .not("source_transaction_id", "is", null).is("deleted_at", null).gte("date", since);
     }),
     // ผลตอบแทนรายพอร์ต (คำนวณหนัก · ทุกพอร์ตทุกครั้งที่เปิด) → จำผลไว้จนมีการบันทึก / ราคาอัตโนมัติเข้า (เพดาน 1 ชั่วโมง · src/lib/data-cache.ts)
@@ -116,6 +116,12 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const cash = holdings.filter((h) => h.holding_type === "CASH").reduce((s, h) => s + thb(h), 0)
     + list.reduce((s, p) => s + Number(p.in_transit_thb ?? 0), 0);
   const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
+  // รายได้ปีนี้ (ม.ค. → เดือนที่เลือก) / เดือนที่เลือก (ตกลง 9 พ.ย. 2026)
+  const mStart = `${ym}-01`, mEnd = monthRange(ym).end, yStart = `${ym.slice(0, 4)}-01-01`;
+  const incomeIn = (a: string, b: string) => (income ?? []).filter((i) => String(i.date) >= a && String(i.date) <= b)
+    .reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
+  const incomeYear = incomeIn(yStart, mEnd), incomeMonth = incomeIn(mStart, mEnd);
+  const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(mStart);
   const byType = new Map<string, number>();
   holdings.forEach((h) => byType.set(h.holding_type, (byType.get(h.holding_type) ?? 0) + thb(h)));
   const byCcy = new Map<string, number>();
@@ -180,7 +186,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
             <MonthChange pct={changePct(total, totalPrev)} prev={totalPrev} />
             <div>พอร์ตที่เปิด {openCount} พอร์ต{closedCount ? ` · ปิดแล้ว ${closedCount}` : ""}</div>
           </>} />
-        <StatBox label="รายได้ลงทุนตั้งแต่ Go-live" value={money(incomeThb, "THB", 0)} sub="ปันผล · ดอกเบี้ย · Coupon (ก่อนภาษี)" />
+        <StatBox label={<>รายได้ลงทุนตั้งแต่ Go-live <span className="text-slate-400">· ปันผล ดอกเบี้ย Coupon (ก่อนภาษี)</span></>} value={money(incomeThb, "THB", 0)}
+          sub={<><div>ปีนี้ (ม.ค. – {thMonth(mStart)}) {money(incomeYear, "THB", 0)}</div><div>{mLabel} {money(incomeMonth, "THB", 0)}</div></>} />
         {allInv.length > 0 && (
           <StatBox label="เงินลงทุนสุทธิ (พอร์ตที่เปิด)" value={money(invOpen, "THB", 0)}
             sub={<>
