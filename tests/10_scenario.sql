@@ -5696,4 +5696,46 @@ SELECT t.ok(has_function_privilege('authenticated', 'public.receive_insurance_be
             'รับหลายงวด / แก้รายการรับ: anon เรียกไม่ได้ · SECURITY INVOKER + search_path ว่าง');
 RESET ROLE;
 
+\echo '== ผลประกอบการ Private Business (9 พ.ย. 2026)'
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT asset_id AS bfy_asset FROM public.private_business_details WHERE company_name = 'บริษัท ทดสอบหุ้น จำกัด' \gset
+UPDATE public.private_business_details SET established_date = '2001-04-12' WHERE asset_id = :'bfy_asset';
+SELECT t.ok((SELECT established_date = '2001-04-12' FROM public.private_business_details WHERE asset_id = :'bfy_asset'), 'ผลประกอบการ: ใส่วันที่จัดตั้งบริษัทได้');
+INSERT INTO public.business_financial_years(asset_id, fiscal_year, revenue_domestic, revenue_foreign, employees, executives, corporate_tax, net_profit, dividends_paid,
+  land_value, building_cost, building_depreciation, equipment_cost, equipment_depreciation, audit_status)
+VALUES (:'bfy_asset', 1995, 1000, 200, 10, 2, 5, -50, 0, NULL, NULL, NULL, NULL, NULL, 'AUDITED'),
+       (:'bfy_asset', 1996, 1500, 0, 12, 2, 10, 120, 40, 300, 500, 100, 800, 600, 'PRE_AUDIT');
+SELECT t.ok((SELECT count(*) = 2 FROM public.business_financial_years WHERE asset_id = :'bfy_asset' AND deleted_at IS NULL),
+            'ผลประกอบการ: ใส่ปีก่อน Go-live ได้ (ข้อมูลดูอย่างเดียว ไม่ล็อกตามงวด)');
+SELECT t.fails(format($$INSERT INTO public.business_financial_years(asset_id, fiscal_year, net_profit) VALUES (%L, 1996, 1)$$, :'bfy_asset'),
+  'bfy_asset_year_uq', 'ผลประกอบการ: ปีละ 1 แถวต่อบริษัท');
+SELECT t.fails(format($$INSERT INTO public.business_financial_years(asset_id, fiscal_year) VALUES (%L, 1997)$$, t.a('KBank ออมทรัพย์')),
+  'เฉพาะกิจการ', 'ผลประกอบการ: ทรัพย์สินที่ไม่ใช่กิจการ ใส่ไม่ได้');
+SELECT t.fails($$INSERT INTO public.business_financial_years(fiscal_year) VALUES (1997)$$, 'bfy_one_company_ck', 'ผลประกอบการ: ต้องผูกกับบริษัท 1 แห่ง');
+SELECT t.fails(format($$INSERT INTO public.business_financial_years(asset_id, fiscal_year, employees, executives) VALUES (%L, 1998, 2, 3)$$, :'bfy_asset'),
+  'bfy_executives_ck', 'ผลประกอบการ: ผู้บริหารเกินจำนวนพนักงานไม่ได้');
+-- บริษัทที่ปิดแล้ว (ไม่ใช่ทรัพย์สิน)
+INSERT INTO public.past_businesses(name, company_name, established_date, closed_date) VALUES ('PAST', 'บริษัท ทดสอบปิดแล้ว จำกัด', '2006-01-01', '2012-12-31');
+SELECT id AS bfy_past FROM public.past_businesses WHERE name = 'PAST' \gset
+INSERT INTO public.business_financial_years(past_business_id, fiscal_year, revenue_domestic, net_profit) VALUES (:'bfy_past', 2006, 4102, -42354);
+SELECT t.ok((SELECT count(*) = 1 FROM public.business_financial_years WHERE past_business_id = :'bfy_past'), 'บริษัทที่ปิดแล้ว: เก็บผลประกอบการได้');
+SELECT t.fails($$INSERT INTO public.past_businesses(name, established_date, closed_date) VALUES ('X', '2010-01-01', '2009-01-01')$$,
+  'past_businesses_dates_ck', 'บริษัทที่ปิดแล้ว: วันปิดก่อนวันจัดตั้งไม่ได้');
+-- ลบ = soft delete · ลบแล้วใส่ปีเดิมใหม่ได้
+UPDATE public.business_financial_years SET deleted_at = now() WHERE asset_id = :'bfy_asset' AND fiscal_year = 1995;
+INSERT INTO public.business_financial_years(asset_id, fiscal_year, net_profit) VALUES (:'bfy_asset', 1995, -40);
+SELECT t.ok((SELECT count(*) = 2 FROM public.business_financial_years WHERE asset_id = :'bfy_asset' AND deleted_at IS NULL), 'ผลประกอบการ: ลบแล้วใส่ปีเดิมใหม่ได้');
+SELECT t.fails(format($$DELETE FROM public.business_financial_years WHERE asset_id = %L$$, :'bfy_asset'), '', 'ผลประกอบการ: ลบจริงไม่ได้ (soft delete เท่านั้น)');
+-- สิทธิ์: VIEWER อ่านได้แต่เขียนไม่ได้ · anon ไม่เห็น
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.ok((SELECT count(*) = 3 FROM public.business_financial_years WHERE deleted_at IS NULL) AND (SELECT count(*) = 1 FROM public.past_businesses),
+            'ผลประกอบการ: VIEWER อ่านได้');
+SELECT t.fails(format($$INSERT INTO public.business_financial_years(asset_id, fiscal_year) VALUES (%L, 1999)$$, :'bfy_asset'), 'row-level security',
+  'ผลประกอบการ: VIEWER เพิ่มไม่ได้');
+SELECT t.fails($$INSERT INTO public.past_businesses(name) VALUES ('V')$$, 'row-level security', 'บริษัทที่ปิดแล้ว: VIEWER เพิ่มไม่ได้');
+SELECT t.ok(NOT has_table_privilege('anon', 'public.business_financial_years', 'SELECT') AND NOT has_table_privilege('anon', 'public.past_businesses', 'SELECT')
+        AND (SELECT bool_and(relrowsecurity) FROM pg_class WHERE oid IN ('public.business_financial_years'::regclass, 'public.past_businesses'::regclass)),
+            'ผลประกอบการ: RLS เปิด · anon อ่านไม่ได้');
+RESET ROLE;
+
 \echo 'ALL SCENARIO TESTS PASSED'

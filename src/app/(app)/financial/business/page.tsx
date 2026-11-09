@@ -17,17 +17,19 @@ import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { businessDividendFields } from "@/lib/source-edit";
+import GroupResults, { type GroupCo } from "./GroupResults";
+import { FIN_COLS, toFinYears } from "@/lib/biz-financials";
 
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"], ["results", "ผลประกอบการ"]];
 
 type Row = { id: string; asset_id: string; company_name: string; logo_data: string | null; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null; par_value: number | null; investment_cost: number | null;
-  status: string; assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null } };
+  status: string; established_date: string | null; assets: { name: string; currency: string; current_value: number | null; current_value_date: string | null } };
 type Own = { asset_id: string; person_id: string; ownership_percent: number; shares: number | null; cost_per_share: number | null; start_date: string; end_date: string | null };
 
 const COLORS = ["#2563eb", "#7c3aed", "#f43f5e", "#f59e0b", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899", "#14b8a6", "#64748b"];
 
-export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string; m?: string }> }) {
+export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string; m?: string; fy?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
@@ -44,14 +46,14 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
   const yearStart = `${ym.slice(0, 4)}-01-01`;
   const divEnd = defaultDate;
   const { data, error } = await supabase.from("private_business_details")
-    .select("id,asset_id,company_name,logo_data,business_type,company_ownership_percent,total_shares,shares_owned,par_value,investment_cost,status,assets!inner(name,currency,current_value,current_value_date,deleted_at)")
+    .select("id,asset_id,company_name,logo_data,business_type,company_ownership_percent,total_shares,shares_owned,par_value,investment_cost,status,established_date,assets!inner(name,currency,current_value,current_value_date,deleted_at)")
     .is("deleted_at", null).is("assets.deleted_at", null).order("created_at");
   const all = (data as unknown as Row[] | null) ?? [];
   const ids = all.map((r) => r.asset_id);
   const none = Promise.resolve({ data: [] as never[] });
   const canWrite = me.role !== "VIEWER";
   const tab = TABS.some(([k]) => k === sp.tab) ? (sp.tab as string) : "overview";
-  const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }, valuePrev] = await Promise.all([
+  const [{ data: owners }, { data: divs }, { data: divShares }, { data: bankAccs }, { data: bankOwners }, { data: family }, { data: people }, valuePrev, { data: finRows }, { data: pastCos }] = await Promise.all([
     ids.length ? supabase.from("asset_ownerships").select("asset_id,person_id,ownership_percent,shares,cost_per_share,start_date,end_date").in("asset_id", ids).is("deleted_at", null) : none,
     ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount,person_id,date,amount,tax,notes,currency").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
       .gte("date", yearStart).lte("date", divEnd).is("deleted_at", null) : none,
@@ -61,6 +63,8 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null),
     prevMonthValue(today, pv.personId, "BUSINESS"),
+    supabase.from("business_financial_years").select(FIN_COLS).is("deleted_at", null),
+    supabase.from("past_businesses").select("id,name,established_date,closed_date").is("deleted_at", null).order("established_date"),
   ]);
   const rowsBase = bySort(all.filter((r) => pv.showAsset(r.asset_id)), (r) => r.asset_id, sortMap);
   const color = new Map(all.map((r, i) => [r.asset_id, COLORS[i % COLORS.length]]));
@@ -166,6 +170,17 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     id: b.asset_id, name: b.name, currency: b.currency,
     owners: ((bankOwners ?? []) as { asset_id: string; person_id: string; end_date: string | null }[]).filter((o) => o.asset_id === b.asset_id && !o.end_date).map((o) => o.person_id),
   }));
+  // ---------------------------------------------------------------- แท็บ "ผลประกอบการ" (ทั้งกลุ่ม · ไม่เปลี่ยนตามสมาชิกที่เลือก)
+  const fin = toFinYears(finRows);
+  const PAST_COLORS = ["#94a3b8", "#cbd5e1", "#64748b", "#475569"];
+  const groupCos: GroupCo[] = [
+    ...bySort(all, (r) => r.asset_id, sortMap).map((r) => ({ key: r.asset_id, name: r.assets.name, href: `/financial/business/${r.asset_id}`,
+      color: color.get(r.asset_id) ?? COLORS[0], established: r.established_date, closed: null, past: false, inactive: r.status !== "ACTIVE",
+      rows: fin.filter((f) => f.asset_id === r.asset_id) })),
+    ...((pastCos ?? []) as { id: string; name: string; established_date: string | null; closed_date: string | null }[]).map((c, i) => ({
+      key: c.id, name: c.name, href: `/financial/business/past/${c.id}`, color: PAST_COLORS[i % PAST_COLORS.length],
+      established: c.established_date, closed: c.closed_date, past: true, inactive: true, rows: fin.filter((f) => f.past_business_id === c.id) })),
+  ];
   const minDate = family?.system_status === "SETUP" ? "" : family?.go_live_date ?? "";
   const months = monthOptions(family?.go_live_date, today, 0, ym);
 
@@ -283,6 +298,9 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       </TabPanel>
       <TabPanel id="record">
         <BusinessBatch key={`d${ym}`} part="dividend" rows={batchRows} banks={bizBanks} today={today} defaultDate={defaultDate} minDate={minDate} canWrite={canWrite} />
+      </TabPanel>
+      <TabPanel id="results">
+        <GroupResults companies={groupCos} fy={sp.fy ? Number(sp.fy) : undefined} canWrite={canWrite} />
       </TabPanel>
     </div>
     </TabsProvider>
