@@ -1,4 +1,4 @@
-# #PR · แยกก้อนรอแยกเป็นฝั่งตรงข้ามได้ + เหลือ 4 ตัวเลือก (Income & Expenses)
+# #416 · แยกก้อนรอแยกเป็นฝั่งตรงข้ามได้ + เหลือ 4 ตัวเลือก (Income & Expenses)
 
 - วันที่: 9 พ.ย. 2026 · branch `feat/ie-split-both-sides`
 - SQL: `supabase/migrations/20261109233000_split_lump_both_sides.sql` (ฟังก์ชัน `public.split_lump` อย่างเดียว · ไม่แก้ข้อมูล · รันซ้ำได้) · prosrc md5 (local) `434a58406750111fea46d45cec4e864d`
