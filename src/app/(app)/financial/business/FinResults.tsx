@@ -34,9 +34,18 @@ export function rangeCls(i: number) {
   return [i >= 3 ? "group-data-[r=3]/v:hidden" : "", i >= 5 ? "group-data-[r=5]/v:hidden" : "", i >= 10 ? "group-data-[r=10]/v:hidden" : ""].join(" ");
 }
 
+/** ป้ายสถานะงบ: บริษัทเดียว = ชื่อสถานะ · ทั้งกลุ่ม = "ตรวจแล้ว 4/6" (ชี้ดูบริษัทที่ยังไม่ตรวจ · 9 พ.ย. 2026) */
+export function AuditTag({ r, names, className = "ml-1" }: { r: FinCalc; names?: Record<string, string>; className?: string }) {
+  const many = r.auditN != null && r.auditN > 1;
+  const who = (r.pendingIds ?? []).map((k) => names?.[k] ?? "").filter(Boolean).join(", ");
+  return <span className={`${className} rounded bg-amber-50 px-1 text-[11px] font-normal whitespace-nowrap text-amber-700`} title={who ? `ยังไม่ตรวจสอบ: ${who}` : undefined}>
+    {many ? `ตรวจแล้ว ${r.auditOk}/${r.auditN}` : AUDIT_LABEL[r.audit_status] ?? r.audit_status}</span>;
+}
+
 /** ตารางรายปี (ใช้ร่วม: บริษัทเดียว / ทั้งกลุ่ม) · 1 ปี = 1 บรรทัด · หัวตารางเป็นกลุ่ม · edit = ใส่ปุ่มแก้ในแถว (กดแถว)
  *  ต้องอยู่ใน ResultsView (ช่วงปี + หน่วย) */
-export function FinTable({ rows, edit }: { rows: FinCalc[]; edit?: (r: FinCalc) => React.ReactNode }) {
+export function FinTable({ rows, edit, names }: { rows: FinCalc[]; edit?: (r: FinCalc) => React.ReactNode;
+  /** ภาพรวมกลุ่ม: ชื่อบริษัทตามรหัส (บอกว่าบริษัทไหนงบยังไม่ตรวจ) */ names?: Record<string, string> }) {
   const th = (l: React.ReactNode, cls = "text-right") => <th className={`whitespace-nowrap px-2 py-1.5 font-medium ${cls}`}>{l}</th>;
   const grp = (l: string, n: number) => <th colSpan={n} className="border-l border-slate-200 px-2 pt-2 pb-0.5 text-center font-semibold text-slate-600">{l}</th>;
   const td = "whitespace-nowrap px-2 py-2 text-right tabular-nums";
@@ -62,7 +71,7 @@ export function FinTable({ rows, edit }: { rows: FinCalc[]; edit?: (r: FinCalc) 
             <tr key={r.id} className={rangeCls(i)}>
               <td className="whitespace-nowrap px-2 py-2">
                 <span className="font-medium">{r.fiscal_year + 543}</span>
-                {r.audit_status !== "AUDITED" && <span className="ml-1 rounded bg-amber-50 px-1 text-[11px] text-amber-700">{AUDIT_LABEL[r.audit_status] ?? r.audit_status}</span>}
+                {r.audit_status !== "AUDITED" && <AuditTag r={r} names={names} />}
                 {r.notes && <span className="ml-1 inline-block max-w-28 truncate align-bottom text-xs text-slate-500" title={r.notes}>{r.notes}</span>}
                 {edit?.(r)}
               </td>
@@ -159,7 +168,7 @@ export default function FinResults({ owner, rows: raw, canWrite, canDelete, valu
         </ModalButton>}
       </div>
       {rows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล{canWrite && " · กด “+ เพิ่มปี”"}</p> : (
-        <ResultsView years={rows.length}>
+        <ResultsView years={rows.length} charts>
           <ResultsCharts years={years} domestic={cd.domestic} foreign={cd.foreign} profit={cd.profit} events={events} />
           <FinTable rows={rows} edit={canWrite ? (r) => <FinYearEdit owner={owner} row={raw.find((x) => x.id === r.id)!} canDelete={canDelete} value={value} /> : undefined} />
           {fixed && (

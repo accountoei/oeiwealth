@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import IntentLink from "@/components/IntentLink";
 import { Fragment, useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { money, qty, thDate, signedMoney, signedPct } from "@/lib/format";
@@ -85,7 +85,7 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
             {rows.map((r) => (
               <Fragment key={r.id}>
                 <tr className="border-t border-slate-200 bg-slate-50/60">
-                  <td className="px-3 py-2"><Link href={`/financial/business/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link>
+                  <td className="px-3 py-2"><IntentLink href={`/financial/business/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</IntentLink>
                     <span className="ml-2 text-xs text-slate-400">{r.currency}</span></td>
                   <td className="px-3 text-right text-xs text-slate-500">{r.holders.some((h) => h.shares != null) ? `${qty(r.holders.reduce((s, h) => s + (h.shares ?? 0), 0))} หุ้น` : ""}</td>
                   {canWrite && <td colSpan={4} className="px-3 py-2">
@@ -175,7 +175,7 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
               const diff = has && r.value != null ? n(v) - r.value : null;
               return (
                 <tr key={r.id} className={has ? "bg-blue-50/40" : ""}>
-                  <td className="px-3 py-2"><Link href={`/financial/business/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</Link></td>
+                  <td className="px-3 py-2"><IntentLink href={`/financial/business/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</IntentLink></td>
                   <td className="px-3 text-right tabular-nums">{r.value != null ? money(r.value, r.currency) : "-"}
                     <div className="text-xs text-slate-400">{r.valueDate ? `ณ ${thDate(r.valueDate)}` : "ยังไม่มีมูลค่า"}</div></td>
                   {canWrite && <>

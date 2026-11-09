@@ -8,6 +8,8 @@ export type FinYear = {
   land_value: number | null; building_cost: number | null; building_depreciation: number | null;
   equipment_cost: number | null; equipment_depreciation: number | null;
   audit_status: string; notes: string | null;
+  /** เฉพาะแถวรวมทั้งกลุ่ม (groupYears): จำนวนบริษัทที่มีข้อมูลปีนั้น · ที่งบตรวจสอบแล้ว · รหัสบริษัทที่ยังไม่ตรวจ (asset_id / past_business_id) */
+  auditN?: number; auditOk?: number; pendingIds?: string[];
 };
 
 export const FIN_COLS = "id,asset_id,past_business_id,fiscal_year,revenue_domestic,revenue_foreign,employees,executives,corporate_tax,net_profit,dividends_paid,equity,"
@@ -72,7 +74,11 @@ export function groupYears(rows: FinYear[]): FinCalc[] {
   const merged: FinYear[] = [...byYear.entries()].map(([y, xs]) => {
     const o: Record<string, unknown> = { id: `g${y}`, asset_id: null, past_business_id: null, fiscal_year: y, audit_status: "AUDITED", notes: null };
     for (const k of numKeys) o[k] = sum(xs, k);
-    o.audit_status = xs.some((x) => x.audit_status !== "AUDITED") ? "PRE_AUDIT" : "AUDITED";
+    const pending = xs.filter((x) => x.audit_status !== "AUDITED");
+    o.audit_status = pending.length ? "PRE_AUDIT" : "AUDITED";
+    // สถานะงบแต่ละบริษัทไม่เท่ากัน (9 พ.ย. 2026) → เก็บจำนวนไว้แสดง "ตรวจแล้ว 4/6"
+    o.auditN = xs.length; o.auditOk = xs.length - pending.length;
+    o.pendingIds = pending.map((x) => (x.asset_id ?? x.past_business_id) as string);
     return o as unknown as FinYear;
   });
   return calcYears(merged);
