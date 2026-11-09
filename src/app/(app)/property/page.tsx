@@ -491,13 +491,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatBox label={<>{pv.personId ? `มูลค่าอสังหาริมทรัพย์ส่วนของ ${pv.personName}` : "มูลค่าอสังหาริมทรัพย์รวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalValue, "THB")}
             sub={`${active.length} รายการ`} />
-          <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
+          <StatBox label={`รายได้จากอสังหาฯ ${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
             sub={<>
               <div>{incMonth.length} รายการ</div>
               <div className={EST}>ประมาณค่าเช่าทั้งปี <span className="font-medium text-emerald-700">{plusMoney(annualRent, "THB")}</span></div>
               <div className="text-slate-400">{leaseCount ? `สัญญาที่มีผล ${leaseCount} สัญญา × 12 เดือน` : "ยังไม่มีสัญญาเช่าที่มีผล"}</div>
             </>} />
-          <StatBox label={`ค่าใช้จ่ายทรัพย์สิน${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700"
+          <StatBox label={`ค่าใช้จ่ายอสังหาฯ ${mLabel}`} value={minusMoney(expTotal, "THB")} valueClass="text-red-700"
             sub={<>
               <div>{expRows.length} รายการ</div>
               <div className={EST}>ประมาณค่าใช้จ่ายประจำทั้งปี <span className="font-medium text-red-700">{minusMoney(annualCost, "THB")}</span></div>
@@ -513,7 +513,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                   <InfoTip label="วิธีคิดรายได้สุทธิทั้งปี">
                     ทั้งปี = รายได้ − ค่าใช้จ่ายที่บันทึกจริง ตั้งแต่ ม.ค. ถึงเดือนที่เลือก
                     {span.fillMonths > 0 && <> · ปีที่เริ่มใช้ระบบ เดือนก่อน Go-live ประมาณให้: รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น (ไม่รวมค่าใช้จ่ายครั้งเดียว)</>}
-                    {" "}· % ต่อปี = รายได้ − ค่าใช้จ่ายของทรัพย์สินกลุ่มปล่อยเช่า ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มปล่อยเช่า ({money(rentalValue, "THB")})
+                    {" "}· % ต่อปี = รายได้ − ค่าใช้จ่ายของอสังหาฯ กลุ่มปล่อยเช่า ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มปล่อยเช่า ({money(rentalValue, "THB")})
                   </InfoTip>
                 </div>
               )}
