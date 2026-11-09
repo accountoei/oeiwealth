@@ -2,13 +2,13 @@ import { money, signedPct } from "@/lib/format";
 import { AUDIT_LABEL, calcYears, type FinCalc, type FinYear } from "@/lib/biz-financials";
 import ModalButton from "@/components/ModalButton";
 import { InfoTip } from "@/components/HeaderBar";
-import { FinYearEdit, FinYearForm, ResultsCharts, ShowAllRows, type FinOwner, type ValueHelp } from "./results";
+import { FinYearEdit, FinYearForm, ResultsCharts, ResultsView, type FinOwner, type ValueHelp } from "./results";
 
 // ผลประกอบการ (ตกลง 9 พ.ย. 2026): กราฟ + ตารางรายปี + สินทรัพย์ถาวร — ใช้ในหน้ากิจการ / บริษัทที่ปิดแล้ว / ภาพรวมกลุ่ม
 //   ตัวเลขทั้งบริษัท 100% · ปีล่าสุดอยู่บนในตาราง · กราฟเรียงปีน้อย → มาก (ปีที่ไม่มีข้อมูล = ช่องว่าง)
 
 const red = (v: number | null) => (v != null && v < -0.005 ? "text-red-700" : "");
-const m0 = (v: number | null | undefined) => (v == null ? "-" : money(v));
+const m0 = (v: number | null | undefined) => <M v={v} />;
 const pctTxt = (v: number | null, signed = false) => (v == null ? "-" : signed ? signedPct(v, 1) : `${v.toFixed(1)}%`);
 
 /** ช่วงปีต่อเนื่อง จากปีแรกถึงปีล่าสุดที่มีข้อมูล */
@@ -19,48 +19,69 @@ export function yearSpan(rows: { fiscal_year: number }[]): number[] {
   return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
 }
 
-/** ตารางรายปี (ใช้ร่วม: บริษัทเดียว / ทั้งกลุ่ม) · edit = ใส่ปุ่มแก้ในแถว (กดแถว) */
+/** ยอดเงินในตาราง: ล้านบาท (ค่าเริ่มต้น) / บาท ตามปุ่มหน่วยของ ResultsView (data-u ของกล่อง group/v) */
+export function M({ v }: { v: number | null | undefined }) {
+  if (v == null) return <>-</>;
+  return <><span className="group-data-[u=b]/v:hidden">{(v / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+    <span className="hidden group-data-[u=b]/v:inline">{money(v)}</span></>;
+}
+/** หน่วยที่หัวตาราง */
+export function Unit() {
+  return <><span className="group-data-[u=b]/v:hidden">ล้านบาท</span><span className="hidden group-data-[u=b]/v:inline">บาท</span></>;
+}
+/** แถวลำดับที่ i (0 = ปีล่าสุด) ซ่อนตามช่วงที่เลือก (data-r ของ ResultsView) */
+export function rangeCls(i: number) {
+  return [i >= 3 ? "group-data-[r=3]/v:hidden" : "", i >= 5 ? "group-data-[r=5]/v:hidden" : "", i >= 10 ? "group-data-[r=10]/v:hidden" : ""].join(" ");
+}
+
+/** ตารางรายปี (ใช้ร่วม: บริษัทเดียว / ทั้งกลุ่ม) · 1 ปี = 1 บรรทัด · หัวตารางเป็นกลุ่ม · edit = ใส่ปุ่มแก้ในแถว (กดแถว)
+ *  ต้องอยู่ใน ResultsView (ช่วงปี + หน่วย) */
 export function FinTable({ rows, edit }: { rows: FinCalc[]; edit?: (r: FinCalc) => React.ReactNode }) {
-  const th = (l: React.ReactNode, cls = "text-right") => <th className={`whitespace-nowrap px-2 py-2 font-medium ${cls}`}>{l}</th>;
-  const td = "whitespace-nowrap px-2 py-1.5 text-right tabular-nums";
+  const th = (l: React.ReactNode, cls = "text-right") => <th className={`whitespace-nowrap px-2 py-1.5 font-medium ${cls}`}>{l}</th>;
+  const grp = (l: string, n: number) => <th colSpan={n} className="border-l border-slate-200 px-2 pt-2 pb-0.5 text-center font-semibold text-slate-600">{l}</th>;
+  const td = "whitespace-nowrap px-2 py-2 text-right tabular-nums";
+  const sep = "border-l border-slate-100";
   const list = [...rows].reverse();
-  const SHOWN = 10;
   return (
-    <ShowAllRows total={list.length} shown={SHOWN}>
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[68rem] text-sm">
+      <table className="w-full min-w-[60rem] text-sm">
         <thead className="bg-slate-50 text-xs text-slate-500">
           <tr>
-            {th("ปี", "text-left")}{th("รายได้ในประเทศ")}{th("รายได้ต่างประเทศ")}{th("รายได้รวม")}{th("% โต")}
-            {th("กำไร (ขาดทุน)")}{th("% กำไร")}{th("ภาษีเงินได้")}{th("จ่ายปันผล")}{th("กำไรสะสม")}{th("พนักงาน")}{th("รายได้ / คน / ปี")}
+            <th rowSpan={2} className="px-2 py-1.5 text-left align-bottom font-medium">ปี</th>
+            {grp("รายได้", 5)}{grp("กำไร", 4)}{grp("พนักงาน", 2)}
           </tr>
+          <tr>
+            {th("ในประเทศ", `text-right border-l border-slate-200`)}{th("ต่างประเทศ")}{th("% ตปท.")}{th("รวม")}{th("% โต")}
+            {th("กำไร (ขาดทุน)", "text-right border-l border-slate-200")}{th("% กำไร")}{th("ภาษีเงินได้")}{th("กำไรสะสม")}
+            {th("คน", "text-right border-l border-slate-200")}{th("รายได้ / คน")}
+          </tr>
+          <tr><th colSpan={12} className="px-2 pb-1 text-right text-[11px] font-normal text-slate-400">หน่วย: <Unit /> · คน = รวมผู้บริหาร</th></tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {list.map((r, i) => (
-            <tr key={r.id} className={`align-top ${i >= SHOWN ? "group-data-[all=false]:hidden" : ""}`}>
-              <td className="whitespace-nowrap px-2 py-1.5">
+            <tr key={r.id} className={rangeCls(i)}>
+              <td className="whitespace-nowrap px-2 py-2">
                 <span className="font-medium">{r.fiscal_year + 543}</span>
                 {r.audit_status !== "AUDITED" && <span className="ml-1 rounded bg-amber-50 px-1 text-[11px] text-amber-700">{AUDIT_LABEL[r.audit_status] ?? r.audit_status}</span>}
-                {r.notes && <div className="max-w-40 truncate text-xs text-slate-500" title={r.notes}>{r.notes}</div>}
+                {r.notes && <span className="ml-1 inline-block max-w-28 truncate align-bottom text-xs text-slate-500" title={r.notes}>{r.notes}</span>}
                 {edit?.(r)}
               </td>
-              <td className={td}>{m0(r.revenue_domestic)}</td>
-              <td className={td}>{m0(r.revenue_foreign)}{r.foreignPct != null && r.foreignPct > 0 && <div className="text-xs text-slate-500">{pctTxt(r.foreignPct)}</div>}</td>
-              <td className={`${td} font-medium`}>{money(r.revenue)}</td>
+              <td className={`${td} ${sep}`}><M v={r.revenue_domestic} /></td>
+              <td className={td}><M v={r.revenue_foreign} /></td>
+              <td className={`${td} text-slate-500`}>{r.foreignPct ? pctTxt(r.foreignPct) : "-"}</td>
+              <td className={`${td} font-medium`}><M v={r.revenue} /></td>
               <td className={`${td} ${red(r.growthPct)}`}>{pctTxt(r.growthPct, true)}</td>
-              <td className={`${td} font-medium ${red(r.net_profit)}`}>{m0(r.net_profit)}</td>
+              <td className={`${td} ${sep} font-medium ${red(r.net_profit)}`}><M v={r.net_profit} /></td>
               <td className={`${td} ${red(r.marginPct)}`}>{pctTxt(r.marginPct)}</td>
-              <td className={td}>{m0(r.corporate_tax)}</td>
-              <td className={td}>{r.dividends_paid ? money(r.dividends_paid) : "-"}</td>
-              <td className={`${td} ${red(r.retained)}`}>{money(r.retained)}</td>
-              <td className={td}>{r.employees ?? "-"}{r.executives ? <div className="text-xs text-slate-500">ผู้บริหาร {r.executives}</div> : null}</td>
-              <td className={td}>{r.revPerHead != null ? money(r.revPerHead) : "-"}</td>
+              <td className={td}><M v={r.corporate_tax} /></td>
+              <td className={`${td} ${red(r.retained)}`}><M v={r.retained} /></td>
+              <td className={`${td} ${sep}`} title={r.executives ? `ผู้บริหาร ${r.executives} คน · พนักงาน ${r.staff ?? "-"} คน` : undefined}>{r.employees ?? "-"}</td>
+              <td className={td}><M v={r.revPerHead} /></td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-    </ShowAllRows>
   );
 }
 
@@ -138,17 +159,17 @@ export default function FinResults({ owner, rows: raw, canWrite, canDelete, valu
         </ModalButton>}
       </div>
       {rows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล{canWrite && " · กด “+ เพิ่มปี”"}</p> : (
-        <div className="space-y-6">
+        <ResultsView years={rows.length}>
           <ResultsCharts years={years} domestic={cd.domestic} foreign={cd.foreign} profit={cd.profit} events={events} />
           <FinTable rows={rows} edit={canWrite ? (r) => <FinYearEdit owner={owner} row={raw.find((x) => x.id === r.id)!} canDelete={canDelete} value={value} /> : undefined} />
           {fixed && (
             <div>
               <h3 className="mb-2 text-sm font-medium text-slate-800">สินทรัพย์ถาวร ณ 31 ธ.ค. {fixed.fiscal_year + 543}
-                {fixedYears.length > 1 && <span className="font-normal text-slate-500"> · ปีอื่นดูได้ในแถวของปีนั้น</span>}</h3>
+                <span className="font-normal text-slate-500"> · หน่วย: <Unit />{fixedYears.length > 1 && " · ปีอื่นดูได้ในแถวของปีนั้น"}</span></h3>
               <FixedAssetTable rows={[{ key: fixed.id, name: null, r: fixed }]} />
             </div>
           )}
-        </div>
+        </ResultsView>
       )}
     </section>
   );
