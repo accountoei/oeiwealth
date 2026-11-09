@@ -5,6 +5,9 @@ import { cachedData } from "@/lib/data-cache";
 import { addDays, money, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { monthToClose } from "@/lib/closing";
 
+/** เตือนล่วงหน้า: รายการรอรับ / รอจ่ายที่ครบกำหนดภายในกี่วัน (เจ้าของ 9 พ.ย. 2026) */
+const DUE_SOON_DAYS = 7;
+
 export type AttentionItem = { text: string; href: string; tone: "red" | "amber" | "slate" };
 
 /** งานที่ต้องทำ ณ วันนี้ (หน้า "สิ่งที่ต้องทำ" + ตัวเลขที่ปุ่มกระดิ่งแถบบน) — ปิดเดือนอยู่บนสุด · cache() → ใน 1 คำขอคำนวณครั้งเดียว */
@@ -23,7 +26,9 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   const today = todayBangkok();
   const { data: family } = await supabase.from("families").select("system_status").maybeSingle();
   const isSetup = family?.system_status === "SETUP";
-  const [{ data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }, { data: pendH }, { data: pendG }] = await Promise.all([
+  const soonTo = addDays(today, DUE_SOON_DAYS);
+  const [{ data: readiness }, { data: fx }, { data: expected }, { data: liabs }, { data: holds }, { data: leases }, { data: insOverdue }, { data: fups }, { data: bankBal }, { data: bankAcc }, { data: pendH }, { data: pendG },
+    { data: loanDue }, { data: recExpLate }, { data: propCostLate }, { data: incSoon }, { data: insSoon }, { data: recExpSoon }, { data: propCostSoon }] = await Promise.all([
     isSetup ? supabase.from("v_go_live_readiness").select("status") : Promise.resolve({ data: null }),
     supabase.from("v_fx_status").select("currency,latest_rate_date,is_stale"),
     supabase.from("v_expected_income").select("name,income_period,status,source_type,in_grace").eq("status", "OVERDUE"),
@@ -38,6 +43,18 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
     // ราคาอัตโนมัติรอยืนยัน (ครั้งแรก / ต่างเกิน 20%)
     supabase.from("investment_holdings").select("id,name,portfolio_id,investment_portfolios(asset_id)").not("price_pending", "is", null).is("deleted_at", null),
     supabase.from("alternative_asset_details").select("asset_id").not("price_pending", "is", null).is("deleted_at", null),
+    // รอรับ / รอจ่าย (เจ้าของ 9 พ.ย. 2026): เลยกำหนด = แดง · ครบกำหนดภายใน 7 วัน = เทา
+    //   งวดเงินให้กู้: เลยกำหนด (เกินวันผ่อนผัน) / ครบแล้วอยู่ในวันผ่อนผัน (DUE) / ครบภายใน 7 วัน
+    supabase.from("v_loan_schedule_status").select("status,due_date")
+      .or(`status.in.(OVERDUE,DUE),and(status.in.(PENDING,PARTIAL),due_date.gte.${today},due_date.lte.${soonTo})`),
+    supabase.from("v_recurring_expense_tracking").select("template_id").eq("status", "OVERDUE"),
+    supabase.from("v_property_cost_tracking").select("utility_id").eq("status", "OVERDUE"),
+    supabase.from("v_expected_income").select("source_type").eq("status", "PENDING").gte("due_date", today).lte("due_date", soonTo),
+    // ประกัน: ผลประโยชน์เลยกำหนด (เบี้ยเลยกำหนดอยู่ใน insOverdue แล้ว) + ครบภายใน 7 วันทั้งเบี้ยและผลประโยชน์
+    supabase.from("v_insurance_schedule_status").select("kind,status,due_date")
+      .in("status", ["PENDING", "PARTIAL"]).gte("due_date", today).lte("due_date", soonTo),
+    supabase.from("v_recurring_expense_tracking").select("template_id").eq("status", "PENDING").gte("due_date", today).lte("due_date", soonTo),
+    supabase.from("v_property_cost_tracking").select("utility_id").eq("status", "PENDING").gte("due_date", today).lte("due_date", soonTo),
   ]);
 
   // งานที่ต้องทำ (Attention) — ปิดเดือนอยู่บนสุด
@@ -66,6 +83,15 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   if ((fups ?? []).length) attention.push({ text: `กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) ${(fups ?? []).length} รายการ`, href: "/insurance", tone: "red" });
   const premOver = (insOverdue ?? []).filter((x) => x.kind === "PREMIUM").length;
   if (premOver) attention.push({ text: `เบี้ยประกันเลยกำหนด ${premOver} งวด`, href: "/income-expenses?tab=expense", tone: "red" });
+  const benOver = (insOverdue ?? []).filter((x) => x.kind !== "PREMIUM").length;
+  if (benOver) attention.push({ text: `ผลประโยชน์ประกันเลยกำหนด ยังไม่ได้รับ ${benOver} งวด`, href: "/insurance?tab=benefit", tone: "red" });
+  const loans = (loanDue ?? []) as { status: string; due_date: string }[];
+  const loanOver = loans.filter((x) => x.status === "OVERDUE").length;
+  const loanGrace = loans.filter((x) => x.status === "DUE").length;
+  if (loanOver) attention.push({ text: `งวดเงินให้กู้เลยกำหนด (เกินวันผ่อนผัน) ${loanOver} งวด`, href: "/financial/loans?tab=monthly", tone: "red" });
+  if (loanGrace) attention.push({ text: `งวดเงินให้กู้ครบกำหนด ยังไม่ได้รับ (อยู่ในวันผ่อนผัน) ${loanGrace} งวด`, href: "/financial/loans?tab=monthly", tone: "amber" });
+  if ((recExpLate ?? []).length) attention.push({ text: `ค่าใช้จ่ายประจำเลยกำหนด ยังไม่ได้จ่าย ${(recExpLate ?? []).length} รายการ`, href: "/income-expenses?tab=expense", tone: "red" });
+  if ((propCostLate ?? []).length) attention.push({ text: `ค่าใช้จ่ายอสังหาฯ เลยกำหนด ยังไม่ได้จ่าย ${(propCostLate ?? []).length} รายการ`, href: "/property?tab=expense", tone: "red" });
   // ค่าเช่า: ภายในวันผ่อนผัน = ส้ม · เกินวันผ่อนผัน = แดง (เจ้าของ 6 พ.ย. 2026) · รายได้ประจำอื่นยังเป็นส้ม
   const rentLate = (expected ?? []).filter((x) => x.source_type === "LEASE");
   const rentRed = rentLate.filter((x) => !x.in_grace).length;
@@ -87,6 +113,19 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   const maturityTo = addDays(today, 60);
   (holds ?? []).filter((x) => x.maturity_date && x.maturity_date >= today && x.maturity_date <= maturityTo).forEach((x) =>
     attention.push({ text: `${x.name} ครบกำหนด ${thDate(x.maturity_date)}`, href: `/investments/${x.portfolio_asset_id}`, tone: "slate" }));
+  // ครบกำหนดภายใน 7 วัน (ยังไม่ถึงกำหนด · เทา) — บรรทัดละประเภท ไปที่แท็บบันทึกรับ / จ่ายของหน้านั้น
+  const soon = (n: number, what: string, unit: string, href: string) => {
+    if (n) attention.push({ text: `${what}ครบกำหนดภายใน ${DUE_SOON_DAYS} วัน ${n} ${unit}`, href, tone: "slate" });
+  };
+  const inc = (incSoon ?? []) as { source_type: string }[];
+  soon(inc.filter((x) => x.source_type === "LEASE").length, "ค่าเช่า", "งวด", "/property?tab=income");
+  soon(inc.filter((x) => x.source_type !== "LEASE").length, "รายได้ประจำ", "รายการ", "/income-expenses?tab=income");
+  soon(loans.filter((x) => x.status === "PENDING" || x.status === "PARTIAL").length, "งวดเงินให้กู้", "งวด", "/financial/loans?tab=monthly");
+  const ins = (insSoon ?? []) as { kind: string }[];
+  soon(ins.filter((x) => x.kind !== "PREMIUM").length, "ผลประโยชน์ประกัน", "งวด", "/insurance?tab=benefit");
+  soon(ins.filter((x) => x.kind === "PREMIUM").length, "เบี้ยประกัน", "งวด", "/insurance?tab=premium");
+  soon((recExpSoon ?? []).length, "ค่าใช้จ่ายประจำ", "รายการ", "/income-expenses?tab=expense");
+  soon((propCostSoon ?? []).length, "ค่าใช้จ่ายอสังหาฯ ", "รายการ", "/property?tab=expense");
   (leases ?? []).forEach((l) => attention.push({ text: `สัญญาเช่า ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} หมด ${thDate(l.end_date)}`, href: `/property/${l.property_asset_id}`, tone: "slate" }));
 
   return attention;
