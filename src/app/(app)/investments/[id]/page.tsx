@@ -15,6 +15,7 @@ import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import NetInvestedBox from "./NetInvestedBox";
 import { netInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
+import { portfolioTxFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { CurrencyScope } from "@/components/CurrencyContext";
@@ -506,15 +507,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                             {canWrite && !t.cash_movement_id && !t.source_expense_item_id && (
                               <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
                                 deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-                                fields={[
-                                  ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
-                                  ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date }] : []),
-                                  ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
-                                  ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-                                  ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
-                                  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT", "PAYMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
-                                  ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
-                                  { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
+                                fields={portfolioTxFields(t, !!bank)} />
                             )}
                           </td>
                           <td className="text-right tabular-nums text-slate-600">

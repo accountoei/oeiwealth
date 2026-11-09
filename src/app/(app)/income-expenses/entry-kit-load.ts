@@ -3,6 +3,7 @@ import { buildHints } from "@/lib/category-hints";
 import type { Bank, Card, Liab } from "./forms";
 import { EXP_SELECT, INC_SELECT, closeoutIdSet, type KitCtx, type Move } from "./entry-kit";
 import { loadPfCash } from "@/lib/pf-cash";
+import { loadKitExtras } from "./kit-extras";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
 
@@ -34,14 +35,15 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   // รายได้ที่แถวอื่นอ้างถึง: ปันผล / ดอกเบี้ยในพอร์ตที่เข้าบัญชีนี้ (แก้รายการในพอร์ต) · ดอกเบี้ยเงินกู้ภายในของผู้ให้กู้ (แก้จากฝั่งผู้กู้)
   const txIds = [...new Set(moves.filter((m) => m.source_entity_type === "INVESTMENT_TX" && m.source_entity_id).map((m) => m.source_entity_id as string))];
   const ilIds = [...new Set((exps ?? []).map((e) => e.internal_loan_income_id as string | null).filter((x): x is string => !!x))];
-  const [{ data: txIncs }, { data: ilIncs }] = await Promise.all([
+  const [{ data: txIncs }, { data: ilIncs }, extras] = await Promise.all([
     txIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("source_transaction_id", txIds).is("deleted_at", null) : none,
     ilIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("id", ilIds) : none,
+    loadKitExtras(supabase, moves, (incs ?? []) as never[]).catch(() => undefined),
   ]);
   const banks = (banksRaw as Bank[] | null) ?? [];
   const bankSet = new Set(banks.map((b) => b.asset_id));
   const otherIds = [...new Set(moves.flatMap((m) => [m.from_asset_id, m.to_asset_id]).filter((x): x is string => !!x && !bankSet.has(x)))];
-  const { data: others } = otherIds.length ? await supabase.from("assets").select("id,name,asset_type").in("id", otherIds) : { data: [] };
+  const { data: others } = otherIds.length ? await supabase.from("assets").select("id,name,asset_type,asset_group").in("id", otherIds) : { data: [] };
   const cur = new Map((cardBal ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
   const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: cur.get(c.id) ?? Number(c.outstanding_balance),
     label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
@@ -51,7 +53,8 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
     ...base, banks, cards, pfCash, liabs: (liabRaw as Liab[] | null) ?? [], persons: persons ?? [], incSubs, expCats,
     expHints: buildHints(hintRows ?? [], expCats), moves,
     incById: new Map([...(incs ?? []), ...(txIncs ?? []), ...(ilIncs ?? [])].map((i) => [i.id as string, i])), expById: new Map((exps ?? []).map((i) => [i.id as string, i])),
-    otherAssets: (others ?? []) as { id: string; name: string; asset_type: string }[], tabLinks: false,
+    otherAssets: (others ?? []) as { id: string; name: string; asset_type: string; asset_group?: string | null }[], tabLinks: false,
+    extras,
     closeoutIds: closeoutIdSet(closeouts),
   };
 }

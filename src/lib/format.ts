@@ -377,7 +377,7 @@ export const MOVE_LABEL: Record<string, string> = {
   INCOME: "รายได้", EXPENSE: "ค่าใช้จ่าย", TRANSFER: "โอนระหว่างบัญชี", FX_EXCHANGE: "แลกเงิน", INVESTMENT_OUT: "โอนเข้าพอร์ต",
   INVESTMENT_IN: "รับจากพอร์ต", LOAN_DISBURSEMENT: "ให้กู้", LOAN_PRINCIPAL_RECEIPT: "รับชำระเงินกู้",
   ASSET_PURCHASE: "ซื้อทรัพย์สิน", ASSET_SALE: "ขายทรัพย์สิน", CARD_PAYMENT: "จ่ายบัตรเครดิต",
-  LIABILITY_PAYMENT: "จ่ายหนี้", SECURITY_DEPOSIT_IN: "รับเงินประกัน", SECURITY_DEPOSIT_OUT: "คืนเงินประกัน",
+  LIABILITY_PAYMENT: "จ่ายหนี้", SECURITY_DEPOSIT_IN: "รับเงินประกันการเช่า", SECURITY_DEPOSIT_OUT: "คืนเงินประกันการเช่า",
   REIMBURSEMENT_IN: "เงินคืน (ไม่ใช่รายได้)", OTHER_IN: "เงินเข้าอื่น ๆ", OTHER_OUT: "เงินออกอื่น ๆ",
 };
 /** "2026-10" → ช่วงวันที่ของเดือน */

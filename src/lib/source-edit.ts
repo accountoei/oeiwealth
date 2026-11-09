@@ -66,3 +66,19 @@ export const assetIncomeFields = (r: IncRow): FieldSpec[] => [
   { name: "tax", label: "ภาษีหัก ณ ที่จ่าย", type: "number", value: r.tax ?? null },
   { name: "notes", label: "หมายเหตุ", value: r.notes ?? null, width: "w-48" },
 ];
+
+// ---------------------------------------------------------------- รายการในพอร์ต
+type ItxRow = { transaction_type: string; transaction_date: string; settlement_date?: string | null; quantity?: number | string | null;
+  price?: number | string | null; amount: number | string; fee?: number | string | null; tax?: number | string | null; notes?: string | null };
+
+/** รายการในพอร์ต (หน้าพอร์ต → ตารางรายการ) · bank = ตัด / เข้าบัญชีธนาคารตรง (มีวันชำระ) */
+export const portfolioTxFields = (t: ItxRow, bank: boolean): FieldSpec[] => [
+  ...(t.transaction_type === "OPENING_BALANCE" ? [] : [{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date }]),
+  ...(bank ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: t.settlement_date ?? null }] : []),
+  ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
+  ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
+  ...(["BUY", "SELL", "OPENING_BALANCE"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
+  ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT", "PAYMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee ?? null }]),
+  ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax ?? null }] : []),
+  { name: "notes", label: "หมายเหตุ", value: t.notes ?? null, width: "w-40" },
+];

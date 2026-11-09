@@ -16,7 +16,8 @@ export type MoveRow = {
   extra?: ReactNode; detail: ReactNode; sub?: ReactNode; actions?: ReactNode; typeCls?: string;
   kind: string; merged?: boolean;
   pendingHref?: string;                                            // ป้าย "รอแยกรายละเอียด" → ลิงก์ไปที่แยกรายการ
-  metaOpts?: { incomeType: string | null; incomeSubtype: string | null; expenseCategory: string | null; pending: boolean };
+  metaOpts?: { incomeType: string | null; incomeSubtype: string | null; expenseCategory: string | null; pending: boolean;
+    /** ป้ายตามเมนูต้นทาง (ledger.ts sourceMeta) */ source?: MoveMeta | null };
 };
 /** ยอดตาม Statement ของบัญชี (ใช้เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ) */
 export type StmtRow = { key: string; date: string; value: number; label: string };

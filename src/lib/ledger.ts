@@ -10,7 +10,10 @@ export type MoveMeta = { label: string; tone: Tone; category: string; pending?: 
 
 export function moveMeta(type: string, dir: "in" | "out" | "move", o: {
   incomeType?: string | null; incomeSubtype?: string | null; expenseCategory?: string | null; pending?: boolean; merged?: boolean;
+  /** ป้ายตามเมนูต้นทาง (ซื้อ / ขาย Property · Alternative · กิจการ · เงินประกัน · หลักทรัพย์ · เงินกู้ภายใน) — ดู sourceMeta */
+  source?: MoveMeta | null;
 } = {}): MoveMeta {
+  if (o.source) return o.source;
   if (o.merged) return { label: "รับชำระเงินกู้", tone: "indigo", category: "เงินให้กู้" };
   switch (type) {
     case "INCOME":
@@ -34,8 +37,9 @@ export function moveMeta(type: string, dir: "in" | "out" | "move", o: {
     case "ASSET_PURCHASE": return { label: "ซื้อทรัพย์สิน", tone: "indigo", category: "ทรัพย์สิน" };
     case "ASSET_SALE": return { label: "ขายทรัพย์สิน", tone: "indigo", category: "ทรัพย์สิน" };
     case "REIMBURSEMENT_IN": return { label: "เงินคืน", tone: "sky", category: "เงินคืนค่าใช้จ่าย" };
-    case "SECURITY_DEPOSIT_IN": return { label: "รับเงินประกัน", tone: "slate", category: "เงินประกันการเช่า" };
-    case "SECURITY_DEPOSIT_OUT": return { label: "คืนเงินประกัน", tone: "slate", category: "เงินประกันการเช่า" };
+    // "เงินประกันการเช่า" เต็มคำ — ไม่ให้สับสนกับเงินประกันชีวิต / มูลค่าเวนคืน (ตกลง 9 พ.ย. 2026)
+    case "SECURITY_DEPOSIT_IN": return { label: "รับเงินประกันการเช่า", tone: "slate", category: "เงินประกันการเช่า" };
+    case "SECURITY_DEPOSIT_OUT": return { label: "คืนเงินประกันการเช่า", tone: "slate", category: "เงินประกันการเช่า" };
     case "OTHER_IN": return { label: "เงินเข้าอื่น", tone: "green", category: "อื่น ๆ" };
     case "OTHER_OUT": return { label: "เงินออกอื่น", tone: "red", category: "อื่น ๆ" };
     // เงินฝากในพอร์ต (รายการลงทุนที่มีผลกับเงินสดของบัญชี)
@@ -57,6 +61,38 @@ export function moveMeta(type: string, dir: "in" | "out" | "move", o: {
     case "ITX_PAYMENT": return { label: "จ่ายออก", tone: "red", category: "อื่น ๆ" };
     default: return { label: type, tone: "slate", category: "-" };
   }
+}
+
+/**
+ * ป้ายตามเมนูต้นทาง (ตกลง 9 พ.ย. 2026) · null = ใช้ป้ายตามประเภทรายการ (moveMeta)
+ *   ซื้อ / ขายทรัพย์สิน → ตามกลุ่มทรัพย์สิน (Property · Alternative · กิจการ) · ถอนมูลค่าเวนคืน = เงินประกัน (ไม่ใช่รายได้)
+ *   รายการในพอร์ตที่ตัด / เข้าบัญชีตรง = ซื้อ / ขายหลักทรัพย์ (ต่างจากการโอนเงินเข้า / ออกพอร์ต)
+ *   ฝั่งผู้กู้ของเงินกู้ภายในครอบครัว = รับ / ชำระเงินกู้ภายใน (ไม่ใช่เงินเข้า / ออกอื่น)
+ */
+export function sourceMeta(m: { movement_type: string; is_derived: boolean; source_entity_type?: string | null },
+  asset: { asset_type: string; asset_group?: string | null } | null | undefined): MoveMeta | null {
+  const t = asset?.asset_type, g = asset?.asset_group;
+  const grp = t === "PRIVATE_BUSINESS" ? "BUSINESS" : t === "INSURANCE_CASH_VALUE" ? "INSURANCE" : g === "PROPERTY" ? "PROPERTY" : g === "ALTERNATIVE" ? "ALTERNATIVE" : null;
+  if (m.movement_type === "ASSET_PURCHASE" && !m.is_derived) {
+    if (grp === "PROPERTY") return { label: "ซื้อ Property", tone: "indigo", category: "Property" };
+    if (grp === "ALTERNATIVE") return { label: "ซื้อ Alternative", tone: "indigo", category: "Alternative" };
+    if (grp === "BUSINESS") return { label: "ลงทุนเพิ่มในกิจการ", tone: "indigo", category: "Private Business" };
+  }
+  if (m.movement_type === "ASSET_SALE" && !m.is_derived) {
+    if (grp === "INSURANCE") return { label: "เงินประกัน", tone: "sky", category: "ประกัน (ถอนมูลค่าเวนคืน)" };
+    if (grp === "PROPERTY") return { label: "ขาย Property", tone: "indigo", category: "Property" };
+    if (grp === "ALTERNATIVE") return { label: "ขาย Alternative", tone: "indigo", category: "Alternative" };
+    if (grp === "BUSINESS") return { label: "ขายหุ้นกิจการ", tone: "indigo", category: "Private Business" };
+  }
+  if (m.is_derived && m.source_entity_type === "INVESTMENT_TX") {
+    if (m.movement_type === "INVESTMENT_OUT") return { label: "ซื้อหลักทรัพย์", tone: "indigo", category: "ลงทุน" };
+    if (m.movement_type === "INVESTMENT_IN") return { label: "ขาย / ไถ่ถอนหลักทรัพย์", tone: "indigo", category: "ลงทุน" };
+  }
+  if (m.is_derived && m.source_entity_type === "CASH_MOVEMENT") {
+    if (m.movement_type === "OTHER_IN") return { label: "รับเงินกู้ภายใน", tone: "indigo", category: "เงินกู้ภายในครอบครัว" };
+    if (m.movement_type === "OTHER_OUT") return { label: "ชำระเงินกู้ภายใน", tone: "indigo", category: "เงินกู้ภายในครอบครัว" };
+  }
+  return null;
 }
 
 export const TONE_CLS: Record<Tone, string> = {
