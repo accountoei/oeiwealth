@@ -7,6 +7,18 @@ import { InfoTip } from "@/components/HeaderBar";
 
 /** แถวย่อย: มูลค่าเวนคืนที่ลงจริงแต่ไม่ตรงกับตาราง (แสดงในคอลัมน์มูลค่าเวนคืน · กดแถวเพื่อแก้ / ลบ) */
 export type FlowSub = { key: string; kind: "CV"; date: string; text: string; detail?: string | null; amount: number; actions?: ReactNode };
+/**
+ * หมายเหตุของแถว = บรรทัดเดียว ตัดท้ายด้วย … · กดเพื่อขยาย / ย่อ (ตกลง 9 พ.ย. 2026 · iPad ไม่มีชี้เมาส์ จึงใช้กด)
+ *   บนคอมฯ ชี้เมาส์เห็นข้อความเต็ม (title) · ข้อความสั้นแสดงเหมือนเดิม · ปุ่ม → กดแล้วไม่เปิดหน้าต่างแก้ของแถว
+ */
+function Clamp({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <button type="button" onClick={() => setOpen(!open)} title={open ? undefined : text} aria-expanded={open}
+      className={`block w-full max-w-[22rem] text-left ${open ? "whitespace-normal break-words" : "truncate"}`}>{text}</button>
+  );
+}
+
 /** เล่มที่มีสัญญาเพิ่มเติม (ตกลง 6 พ.ย. 2026): คอลัมน์เบี้ยต่อส่วน (ชีวิต · สุขภาพ / สัญญาเพิ่มเติม) แล้วตามด้วย "รวมจ่าย" */
 export type FlowPart = { key: string; label: string };
 
@@ -112,7 +124,7 @@ export default function FlowTable({ rows, showNet, parts, showCv, startDate, bir
   const withActs = (body: ReactNode, acts?: ReactNode) => acts
     ? <div className="flex flex-wrap items-start gap-x-2 gap-y-1"><div>{body}</div><div className="ml-auto flex flex-col items-end gap-1">{acts}</div></div> : body;
   const noteCell = (main: ReactNode, sub?: string | null, acts?: ReactNode) => (
-    <td className="py-2 pl-2">{withActs(<>{main}{sub && <div className={`text-xs ${main ? "text-slate-400" : "text-slate-500"}`}>{sub}</div>}</>, acts)}</td>
+    <td className="py-2 pl-2">{withActs(<>{main}{sub && <div className={`text-xs ${main ? "text-slate-400" : "text-slate-500"}`}><Clamp text={sub} /></div>}</>, acts)}</td>
   );
   const cvCell = (r: FlowRow) => showCv && <td className="py-2 text-right tabular-nums">{r.cv}</td>;
   const netCell = (r: FlowRow) => (
@@ -199,7 +211,7 @@ export default function FlowTable({ rows, showNet, parts, showCv, startDate, bir
                     {blankPrem}<td />{net && <td />}
                     <td className="py-1.5 text-right text-sm tabular-nums text-sky-800">{money(c.amount)}</td>
                     <td colSpan={2} className="py-1.5 pl-2 text-slate-600">
-                      {withActs(<>{c.text}{c.detail && <div className="text-slate-400">{c.detail}</div>}</>, c.actions)}</td><td />
+                      {withActs(<><Clamp text={c.text} />{c.detail && <div className="text-slate-400">{c.detail}</div>}</>, c.actions)}</td><td />
                   </tr>
                 ))}
               </Fragment>

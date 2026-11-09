@@ -36,8 +36,10 @@ const NONE = <span className="text-xs text-slate-400">ยังไม่มี</
 /** วงเงินของรายการเดียว (ยกเว้นเบี้ย = มีสิทธิ์ · ร่วมจ่าย = % · สูงสุด N วัน ต่อปี) */
 const one = (x: CovItem) => {
   const extra = covExtra({ coverage_type: x.type, max_count: x.maxCount, count_period: x.period, label: x.label });
-  return `${covAmount(x.type, x.limit, ccy(x.currency), 0)}${extra ? ` · ${extra}` : ""}`;
+  return `${noLimit(x.type, x.limit) ? "มี" : covAmount(x.type, x.limit, ccy(x.currency), 0)}${extra ? ` · ${extra}` : ""}`;
 };
+/** "อื่น ๆ" ที่ไม่มีวงเงิน (เช่น สิทธิ์รับเงินล่วงหน้า) = "มี" แทน 0.00 (ตกลง 9 พ.ย. 2026) */
+const noLimit = (type: string, limit: number) => type === "OTHER" && Math.abs(limit) < 0.005;
 /** แถวของตาราง = หัวข้อ + คุ้มครองเฉพาะ + ชื่อ ("อื่น ๆ") */
 type Spec = { key: string; type: string; scope: string | null; label: string | null };
 const specKey = (type: string, scope: string | null, label: string | null) => `${type}|${scope ?? ""}|${type === "OTHER" ? label ?? "" : ""}`;
@@ -63,14 +65,21 @@ const label = (k: string, scope?: string | null, name?: string | null) => <>{cov
   {scope && <span className="ml-1 rounded bg-violet-50 px-1.5 py-0.5 text-xs text-violet-700">เฉพาะ{scope}</span>}</>;
 const specName = (sp: Spec) => [covName(sp.type, sp.label), sp.scope && `เฉพาะ${sp.scope}`].filter(Boolean).join(" · ");
 
-export default function CoverageTab({ persons, personId, personName, policies, items, claims, year, printHref, canWrite, filter, kit }: {
+export default function CoverageTab({ persons, personId, personName, policies, items, claims, year, printHref, canWrite, filter, kit, rates }: {
   persons: { id: string; name: string }[]; personId: string; personName: string; policies: CovPolicy[]; items: CovItem[]; claims: CovClaim[];
   year: string; printHref: string; canWrite: boolean;
+  /** อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย) · ยอดในตารางเป็นบาท (THB Equivalent) · กดดูสกุลจริง (ตกลง 9 พ.ย. 2026) */ rates: Record<string, number>;
   /** ตัวกรองบริษัทประกัน (ต่อจากชื่อกล่อง) */ filter?: ReactNode;
   kit: ClaimKit;
 }) {
   const pname = new Map(persons.map((p) => [p.id, p.name]));
   const policy = new Map(policies.map((p) => [p.id, p]));
+  // ยอดรวมในตารางเป็นบาท: สกุลอื่นแปลงด้วยอัตราล่าสุด + บรรทัดเล็ก "รวม USD" · ไม่มีอัตรา = แสดงแยกสกุลแบบเดิม
+  const toThb = (v: number, c: string) => (c === "THB" ? v : v * (rates[c] ?? NaN));
+  const fxOf = (xs: CovItem[]) => [...new Set(xs.map((x) => x.currency).filter((c) => c !== "THB"))];
+  const convertible = (xs: CovItem[]) => xs.every((x) => x.currency === "THB" || rates[x.currency] != null);
+  const sumThb = (xs: CovItem[], f: (x: CovItem) => number) => xs.reduce((t, x) => t + toThb(f(x), x.currency), 0);
+  const rateNote = (xs: CovItem[]) => fxOf(xs).filter((c) => rates[c] != null).map((c) => `1 ${c} = ${money(rates[c], undefined, 4)} บาท`).join(" · ");
   const active = policies.filter((p) => p.personId && pname.has(p.personId));
   const mine = items.filter((x) => pname.has(x.personId));
   const of = (pid: string) => mine.filter((x) => x.personId === pid);
@@ -125,10 +134,12 @@ export default function CoverageTab({ persons, personId, personName, policies, i
         {xs.map((it, n) => (
           <tr key={n} className="align-top"><td className="py-1.5">{polText(it.policyId)}
             {(it.notes || it.fromPolicy) && <div className="text-xs text-slate-500">{it.fromPolicy ? "ทุนประกันของกรมธรรม์" : it.notes}</div>}</td>
-            <td className="text-right tabular-nums">{one(it)}</td>
+            <td className="text-right tabular-nums">{one(it)}
+              {it.currency !== "THB" && rates[it.currency] != null && !noLimit(it.type, it.limit) && <div className="text-xs text-slate-400">≈ {money(toThb(it.limit, it.currency), "THB", 0)}</div>}</td>
             {annual && <td className="text-right tabular-nums">{it.used > 0 ? money(it.used, undefined, 0) : "-"}</td>}</tr>
         ))}
       </tbody>
+      {rateNote(xs) && <tfoot><tr><td colSpan={annual ? 3 : 2} className="pt-2 text-xs text-slate-500">อัตราแลกเปลี่ยนล่าสุด {rateNote(xs)}</td></tr></tfoot>}
     </table>
   );
 
@@ -169,6 +180,9 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                     <tr key={sp.key} className={`font-medium ${rowCls(sp)}`}>
                       <td className="px-4 py-2">{label(k, sp.scope, sp.label)}</td>
                       <td className="px-4 text-right tabular-nums">{xs.length === 0 ? NONE : COVERAGE_NOSUM.includes(k) ? ""
+                        : xs.every((x) => noLimit(x.type, x.limit)) ? "มี"
+                        : fxOf(xs).length > 0 && convertible(xs)
+                          ? <>{money(sumThb(xs, (x) => x.limit), undefined, 0)}<div className="text-xs font-normal text-slate-400">รวม {fxOf(xs).join(" · ")}</div></>
                         : byCcy(xs.map((x) => ({ amount: x.limit, currency: x.currency }))).map(([c, v]) => <div key={c}>{money(v, ccy(c), 0)}</div>)}</td>
                       <td className="px-4 text-right tabular-nums">{annual && xs.length > 0 ? money(xs.reduce((t, x) => t + x.used, 0), undefined, 0) : ""}</td>
                       <td className="px-4 text-right tabular-nums">{annual && xs.length > 0 ? money(xs.reduce((t, x) => t + Math.max(x.limit - x.used, 0), 0), undefined, 0) : ""}</td>
@@ -214,14 +228,21 @@ export default function CoverageTab({ persons, personId, personName, policies, i
                             <ModalButton label={xs.length === 1 ? one(xs[0]) : `${xs.length} กรมธรรม์`} title={`${specName(sp)} · ${p.name}`} className={LINK}>{detail(xs, false)}</ModalButton>
                           </td>
                         );
-                        const lim = xs.filter((x) => x.currency === "THB").reduce((t, x) => t + x.limit, 0);
-                        const used = xs.reduce((t, x) => t + x.used, 0);
+                        const conv = convertible(xs);
+                        const lim = conv ? sumThb(xs, (x) => x.limit) : xs.filter((x) => x.currency === "THB").reduce((t, x) => t + x.limit, 0);
+                        const used = conv ? sumThb(xs, (x) => x.used) : xs.reduce((t, x) => t + x.used, 0);
+                        const fx = fxOf(xs);
+                        const title = `${specName(sp)} · ${p.name}`;
+                        const sub = [xs.length > 1 ? `${xs.length} กรมธรรม์` : "", fx.length > 0 && conv ? `รวม ${fx.join(" · ")}` : ""].filter(Boolean).join(" · ");
                         return (
                           <td key={p.id} className="px-4 py-2 text-right">
-                            {byCcy(xs.map((x) => ({ amount: x.limit, currency: x.currency }))).map(([c, v]) => (
-                              <div key={c}><ModalButton label={money(v, ccy(c), 0)} title={`${specName(sp)} · ${p.name}`} className={LINK}>{detail(xs, annual)}</ModalButton></div>
-                            ))}
-                            {xs.length > 1 && <div className="text-xs text-slate-400">{xs.length} กรมธรรม์</div>}
+                            {xs.every((x) => noLimit(x.type, x.limit))
+                              ? <ModalButton label="มี" title={title} className={LINK}>{detail(xs, annual)}</ModalButton>
+                              : conv ? <ModalButton label={money(lim, undefined, 0)} title={title} className={LINK}>{detail(xs, annual)}</ModalButton>
+                              : byCcy(xs.map((x) => ({ amount: x.limit, currency: x.currency }))).map(([c, v]) => (
+                                <div key={c}><ModalButton label={money(v, ccy(c), 0)} title={title} className={LINK}>{detail(xs, annual)}</ModalButton></div>
+                              ))}
+                            {sub && <div className="text-xs text-slate-400">{sub}</div>}
                             {annual && used > 0 && <div className={`text-xs ${lim > 0 && used / lim >= 0.8 ? "text-red-700" : "text-slate-500"}`}>เหลือ {money(Math.max(lim - used, 0), undefined, 0)}</div>}
                           </td>
                         );
