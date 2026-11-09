@@ -5793,4 +5793,71 @@ SELECT t.ok((SELECT value = 45000 AND bonus_part = 5000 FROM public.asset_valuat
 RESET ROLE;
 ROLLBACK;
 
+\echo '== 13zz9. ประกัน: มูลค่าเวนคืนครั้งแรก มีปีครบก่อน Go-live → ยอดตั้งต้น · ซ่อมรายการที่สร้างผิด (9 พ.ย. 2026 · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+-- จำลองช่วงตั้งระบบ (SETUP · ยังไม่ปิดงวด) — ข้าม Trigger เฉพาะตอนเตรียมข้อมูล
+SET session_replication_role = replica;
+UPDATE public.net_worth_snapshots SET deleted_at = now() WHERE status = 'FINAL' AND deleted_at IS NULL;
+UPDATE public.families SET system_status = 'SETUP';
+SET session_replication_role = origin;
+SELECT go_live_date AS gl FROM public.families \gset
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE tgl(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tgl TO authenticated;
+INSERT INTO tgl SELECT 'job', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ครบปีหลังโกไลฟ์', 'currency', 'THB', 'premium', 2000,
+  'start_date', (:'gl'::date - interval '9 years' + interval '11 days')::date));
+INSERT INTO tgl SELECT 'btn', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'ปุ่มลงยอดหลังโกไลฟ์', 'currency', 'THB', 'premium', 2000,
+  'start_date', (:'gl'::date - interval '9 years' + interval '11 days')::date));
+INSERT INTO tgl SELECT 'old', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'สร้างผิดแบบเดิม', 'currency', 'THB', 'premium', 2000,
+  'start_date', (:'gl'::date - interval '9 years' + interval '11 days')::date));
+-- ปีที่ 8 ครบก่อน Go-live (5,500) · ปีที่ 9 ครบหลัง Go-live (6,500 · ถึงวันแล้ว)
+INSERT INTO public.insurance_cash_value_table(policy_id, policy_year, value_date, value, currency)
+SELECT id, 8, (:'gl'::date - interval '1 year' + interval '11 days')::date, 5500, 'THB' FROM tgl
+UNION ALL SELECT id, 9, :'gl'::date + 11, 6500, 'THB' FROM tgl;
+SELECT id AS jobpol FROM tgl WHERE k = 'job' \gset
+SELECT id AS btnpol FROM tgl WHERE k = 'btn' \gset
+SELECT id AS oldpol FROM tgl WHERE k = 'old' \gset
+-- แบบเดิม (ก่อนแก้): สร้างจากปีที่ 9 = "ได้มาหลัง Go-live" ไม่มียอดตั้งต้น
+SELECT public.add_insurance_cash_value(:'oldpol', jsonb_build_object('value', 6500, 'valuation_date', :'gl'::date + 11,
+  'notes', 'ตามตารางมูลค่าเวนคืนในสัญญา · สิ้นปีกรมธรรม์ที่ 9')) IS NOT NULL AS old_created;
+-- ปุ่มลงยอด → ยอดตั้งต้นปีที่ 8 + ปีที่ 9 ต่อในครั้งเดียว
+SELECT t.ok((SELECT (r->>'created')::boolean AND (r->>'added')::int = 2 AND (r->>'value')::numeric = 6500
+               FROM public.sync_insurance_cash_value(:'btnpol') r),
+            'มูลค่าเวนคืนครั้งแรก (ปุ่ม): ยอดตั้งต้นปีที่ 8 + ลงปีที่ 9 ต่อ (2 ยอด)');
+SELECT t.ok((SELECT a.acquisition_date IS NULL AND a.current_value = 6500
+                AND EXISTS (SELECT 1 FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL
+                             AND v.is_opening AND v.value = 5500 AND v.valuation_date < :'gl'::date)
+               FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = :'btnpol'),
+            'มูลค่าเวนคืนครั้งแรก (ปุ่ม): ไม่ใช่ "ได้มาหลัง Go-live" · ยอดตั้งต้น 5,500 · ปัจจุบัน 6,500');
+-- งานประจำวัน → เหมือนกัน
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT public.server_sync_insurance_cash_values() >= 2 AS job_ran;
+SELECT t.ok((SELECT a.acquisition_date IS NULL AND a.current_value = 6500
+                AND (SELECT count(*) FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL) = 2
+                AND EXISTS (SELECT 1 FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL
+                             AND v.is_opening AND v.value = 5500 AND v.source = 'OPENING')
+               FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id WHERE i.id = :'jobpol'),
+            'มูลค่าเวนคืนรายวัน: มีปีครบก่อน Go-live → ยอดตั้งต้น 5,500 แล้วลงปีที่ 9 ต่อ (6,500)');
+-- ซ่อมรายการที่สร้างผิด
+SELECT t.ok(private.repair_cv_opening() = 1, 'ซ่อมมูลค่าเวนคืน: รายการที่สร้างผิด 1 รายการ');
+SELECT t.ok((SELECT a.acquisition_date IS NULL AND a.current_value = 6500 AND o.start_date < :'gl'::date
+                AND EXISTS (SELECT 1 FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL
+                             AND v.is_opening AND v.value = 5500)
+                AND EXISTS (SELECT 1 FROM public.asset_valuations v WHERE v.asset_id = a.id AND v.deleted_at IS NULL
+                             AND NOT v.is_opening AND v.value = 6500 AND v.valuation_date = :'gl'::date + 11)
+               FROM public.insurance_policies i JOIN public.assets a ON a.id = i.cash_value_asset_id
+               JOIN public.asset_ownerships o ON o.asset_id = a.id WHERE i.id = :'oldpol'),
+            'ซ่อมมูลค่าเวนคืน: เพิ่มยอดตั้งต้น 5,500 · ล้างวันที่ได้มา · เริ่มถือครองก่อน Go-live · ยอด 6,500 เดิมยังอยู่');
+SELECT t.ok(private.repair_cv_opening() = 0, 'ซ่อมมูลค่าเวนคืน: รันซ้ำไม่ซ่อมซ้ำ');
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.ok((SELECT bool_and(g.status <> 'NOT_REQUIRED') FROM private.go_live_readiness((SELECT id FROM public.families)) g
+              WHERE g.entity_id IN (SELECT cash_value_asset_id FROM public.insurance_policies WHERE id IN (:'jobpol', :'btnpol', :'oldpol'))),
+            'หน้าเตรียม Go-live: มูลค่าเวนคืนทั้ง 3 ไม่ขึ้น "ไม่ต้องมี"');
+SELECT t.fails($$SELECT private.repair_cv_opening()$$, 'permission denied', 'ซ่อมมูลค่าเวนคืน: ผู้ใช้เรียกเองไม่ได้');
+RESET ROLE;
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'
