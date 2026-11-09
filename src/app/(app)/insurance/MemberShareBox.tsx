@@ -1,25 +1,25 @@
-import type { ReactNode } from "react";
 import { money } from "@/lib/format";
 
 /** 1 แถว = 1 สมาชิก (หรือ "ยังไม่ระบุเจ้าของ" ของมูลค่าเวนคืน) · ยอดเป็นบาท */
 export type MemberShareRow = { key: string; name: string; color: string; life: number; cv: number; current?: boolean };
 
-const COLS = [["life", "ทุนประกันชีวิต"], ["cv", "มูลค่าเวนคืน"]] as const;
+const COLS = [["cv", "มูลค่าเวนคืน"], ["life", "ทุนประกันชีวิต"]] as const;
 
 /**
  * กล่อง "ตามสมาชิกครอบครัว" ของหน้ารวม Insurance (ตกลง 8 พ.ย. 2026)
  *   ทุนประกันชีวิต (ชีวิต + บำนาญ) ตามผู้เอาประกัน · มูลค่าเวนคืนตามเจ้าของ (× สัดส่วน)
+ *   มูลค่าเวนคืนก่อน ทุนประกันตามหลัง · % ตัวหนา · ไม่มีส่วนแยกตามสกุลเงิน (ตกลง 9 พ.ย. 2026)
  *   ไม่มีเบี้ยต่อปี (เบี้ยเปลี่ยนทุกปีตามกรมธรรม์) · สัดส่วนของคอลัมน์อยู่ข้างตัวเลข · แถวล่าง = รวม
  *   ทั้งครอบครัวเสมอ (แบบหน้า Alternative) · คนที่เลือกในตัวกรองเน้นสี
  */
-export default function MemberShareBox({ rows, footer }: { rows: MemberShareRow[]; footer?: ReactNode }) {
+export default function MemberShareBox({ rows }: { rows: MemberShareRow[] }) {
   const total = { life: 0, cv: 0 };
   rows.forEach((r) => { total.life += r.life; total.cv += r.cv; });
   const pct = (v: number, t: number) => (t > 0 ? `${((v * 100) / t).toFixed(1)}%` : "");
   return (
     <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
       <h2 className="font-medium text-slate-900">มูลค่าเวนคืนตามสมาชิกครอบครัว <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>
-      <p className="text-xs text-slate-500">ทุนประกัน ตามผู้เอาประกัน · มูลค่าเวนคืน ตามเจ้าของ</p>
+      <p className="text-xs text-slate-500">มูลค่าเวนคืน ตามเจ้าของ · ทุนประกัน ตามผู้เอาประกัน</p>
       {rows.length === 0 ? <p className="mt-3 text-sm text-slate-500">ยังไม่มีข้อมูล</p> : (
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
@@ -38,7 +38,7 @@ export default function MemberShareBox({ rows, footer }: { rows: MemberShareRow[
                   <td className="whitespace-nowrap py-2 pl-3 pr-2"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: r.color }} />{r.name}</td>
                   {COLS.map(([k]) => r[k] > 0 ? [
                     <td key={k} className="whitespace-nowrap pl-2 pr-1 text-right tabular-nums">{money(r[k], undefined, 0)}</td>,
-                    <td key={`${k}%`} className="whitespace-nowrap pl-1 pr-2 text-right text-xs tabular-nums text-slate-500">{pct(r[k], total[k])}</td>,
+                    <td key={`${k}%`} className="whitespace-nowrap pl-1 pr-2 text-right font-semibold tabular-nums">{pct(r[k], total[k])}</td>,
                   ] : [
                     <td key={k} className="pl-2 pr-1 text-right text-slate-400">-</td>,
                     <td key={`${k}%`} />,
@@ -58,7 +58,6 @@ export default function MemberShareBox({ rows, footer }: { rows: MemberShareRow[
           </table>
         </div>
       )}
-      {footer}
     </section>
   );
 }

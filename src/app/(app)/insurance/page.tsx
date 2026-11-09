@@ -210,22 +210,19 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const famAct = pol.filter((r) => r.status === "ACTIVE");
   const mem = new Map<string, { life: number; cv: number }>();
   const memOf = (k: string) => { const x = mem.get(k) ?? { life: 0, cv: 0 }; mem.set(k, x); return x; };
-  const famLifeByCcy: ByCcy = new Map(), famCvByCcy: ByCcy = new Map();
   famAct.forEach((r) => {
     if (!r.person_id || !isLife(r.insurance_type)) return;
     memOf(r.person_id).life += toThb(r.insured_amount, r.insured_amount_currency);
-    addCcy(famLifeByCcy, r.insured_amount_currency, Number(r.insured_amount ?? 0));
   });
   type Own = { person_id: string; ownership_percent: number; start_date: string; end_date: string | null; deleted_at: string | null };
   (cvs ?? []).filter((a) => (!iFilter || cvOfPol.has(a.id)) && Number(a.current_value ?? 0) > 0).forEach((a) => {
     const os = ((a.asset_ownerships ?? []) as Own[]).filter((o) => !o.deleted_at && o.start_date <= today && (!o.end_date || o.end_date >= today));
     const v = toThb(a.current_value, a.currency);
-    addCcy(famCvByCcy, a.currency, Number(a.current_value));
     if (!os.length) { memOf("?").cv += v; return; }
     os.forEach((o) => { memOf(o.person_id).cv += (v * Number(o.ownership_percent)) / 100; });
   });
   const memberRows: MemberShareRow[] = [...mem.entries()].filter(([, x]) => x.life > 0 || x.cv > 0)
-    .sort((a, b) => b[1].life - a[1].life || b[1].cv - a[1].cv)
+    .sort((a, b) => b[1].cv - a[1].cv || b[1].life - a[1].life)
     .map(([k, x], i) => ({ key: k, ...x, color: SHARE_COLORS[i % SHARE_COLORS.length], current: !!pv.personId && k === pv.personId,
       name: k === "?" ? "ยังไม่ระบุเจ้าของ" : pname.get(k) ?? "สมาชิก" }));
 
@@ -408,13 +405,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       {(insurerRows.length > 0 || memberRows.length > 0) && (
         <section className="grid gap-4 lg:grid-cols-2">
           <ShareBox title={<>มูลค่าเวนคืนตามบริษัทประกัน{pv.personId ? ` ส่วนของ ${pv.personName}` : ""}</>} label="บริษัทประกัน" valueLabel="มูลค่าเวนคืน (THB)"
-            rows={insurerRows} footer={<CcyBreakdown items={ccyItems(cvByCcy)} title="แยกตามสกุลเงิน" />} empty="ยังไม่มีมูลค่าเวนคืน" />
-          <MemberShareBox rows={memberRows} footer={(
-            <div className="grid gap-x-6 sm:grid-cols-2">
-              <CcyBreakdown items={ccyItems(famLifeByCcy)} title="ทุนประกันชีวิต แยกตามสกุลเงิน" />
-              <CcyBreakdown items={ccyItems(famCvByCcy)} title="มูลค่าเวนคืน แยกตามสกุลเงิน" />
-            </div>
-          )} />
+            rows={insurerRows} boldPct empty="ยังไม่มีมูลค่าเวนคืน" />
+          <MemberShareBox rows={memberRows} />
         </section>
       )}
       {fupRows.length > 0 && (
