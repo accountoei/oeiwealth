@@ -7,6 +7,9 @@ import { InfoTip } from "@/components/HeaderBar";
 
 /** แถวย่อย: มูลค่าเวนคืนที่ลงจริงแต่ไม่ตรงกับตาราง (แสดงในคอลัมน์มูลค่าเวนคืน · กดแถวเพื่อแก้ / ลบ) */
 export type FlowSub = { key: string; kind: "CV"; date: string; text: string; detail?: string | null; amount: number; actions?: ReactNode };
+/** ช่องหมายเหตุกว้างอย่างน้อย (px) */
+const NOTE_MIN = 96;
+
 /**
  * หมายเหตุของแถว = บรรทัดเดียว ตัดท้ายด้วย … · กดเพื่อขยาย / ย่อ (ตกลง 9 พ.ย. 2026 · iPad ไม่มีชี้เมาส์ จึงใช้กด)
  *   บนคอมฯ ชี้เมาส์เห็นข้อความเต็ม (title) · ข้อความสั้นแสดงเหมือนเดิม · ปุ่ม → กดแล้วไม่เปิดหน้าต่างแก้ของแถว
@@ -15,7 +18,7 @@ function Clamp({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   return (
     <button type="button" onClick={() => setOpen(!open)} title={open ? undefined : text} aria-expanded={open}
-      className={`block w-full max-w-[22rem] text-left ${open ? "whitespace-normal break-words" : "truncate"}`}>{text}</button>
+      className={`block w-full text-left ${open ? "whitespace-normal break-words" : "truncate"}`}>{text}</button>
   );
 }
 
@@ -78,12 +81,12 @@ export default function FlowTable({ rows, showNet, parts, showCv, startDate, bir
   const subsOf = (r: FlowRow) => (f === "all" || f === "CV" ? r.cash ?? [] : []);
   const showAge = !!birthDate;
   const lead = showAge ? 3 : 2;
-  // ความกว้างคอลัมน์ (px · ตกลง 8 พ.ย. 2026): ทุกช่องกว้างคงที่ = กว้างขั้นต่ำ · จอกว้างกว่านี้ ส่วนที่เหลือแบ่งให้ทุกช่องตามสัดส่วน
-  //   (เดิมช่องหมายเหตุรับไปทั้งหมด ด้านขวาเลยโล่ง) · ปุ่มของแถวอยู่ในช่องหมายเหตุ (ชิดขวา) · ช่องสุดท้ายแคบ = เครื่องหมาย › ของแถวที่กดแก้ได้
-  //   เล่ม 2 ส่วน + อายุ + สุทธิสะสม + มูลค่าเวนคืน รวม 1,024 px พอดี iPad แนวนอน
-  const widths = [44, ...(showAge ? [36] : []), 44, 96, ...(parts ? [...parts.map(() => 84), 84] : [92]), 92, ...(net ? [100] : []), ...(showCv ? [92] : []), 120, 132, 16];
+  // ความกว้างคอลัมน์ (px): ทุกช่องกว้างคงที่ = กว้างขั้นต่ำ · ช่องหมายเหตุ (null) รับส่วนที่เหลือ — ข้อความยาวตัด … บรรทัดเดียว
+  //   (ตกลง 9 พ.ย. 2026 · เดิม 8 พ.ย. แบ่งส่วนที่เหลือให้ทุกช่องตามสัดส่วน) · ช่องสุดท้ายแคบ = เครื่องหมาย › ของแถวที่กดแก้ได้
+  //   ตารางทั่วไป ~700 px = ไม่ต้องเลื่อนซ้าย-ขวาบน iPad · เล่ม 2 ส่วน + อายุ + สุทธิสะสม + มูลค่าเวนคืน ~950 px
+  const widths: (number | null)[] = [46, ...(showAge ? [36] : []), 40, 88, ...(parts ? [...parts.map(() => 84), 84] : [92]), 92, ...(net ? [100] : []), ...(showCv ? [92] : []), 108, null, 16];
   const cols = widths.length;
-  const minW = widths.reduce((a, b) => a + b, 0);
+  const minW = widths.reduce<number>((a, b) => a + (b ?? NOTE_MIN), 0);
   // ช่องสถานะ: มีคอลัมน์มูลค่าเวนคืน = ชิดซ้ายขึ้น (ตารางแคบลง)
   const sPad = showCv ? "pl-2" : "pl-4";
   // คอลัมน์เบี้ย: ปกติ = "จ่ายเบี้ย" ช่องเดียว · เล่มที่มีสัญญาเพิ่มเติม = ทีละส่วน + "รวมจ่าย"
@@ -122,7 +125,7 @@ export default function FlowTable({ rows, showNet, parts, showCv, startDate, bir
   const stTag = (text: string, cls?: string) => <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${cls ?? ""}`}>{text}</span>;
   // ข้อความในช่องหมายเหตุ + ปุ่มของแถว (ชิดขวา · ข้อความยาว = ปุ่มลงบรรทัดถัดไป · ปุ่มไม่ล้นจนตารางเลื่อนข้าง)
   const withActs = (body: ReactNode, acts?: ReactNode) => acts
-    ? <div className="flex flex-wrap items-start gap-x-2 gap-y-1"><div>{body}</div><div className="ml-auto flex flex-col items-end gap-1">{acts}</div></div> : body;
+    ? <div className="flex flex-wrap items-start gap-x-2 gap-y-1"><div className="min-w-0 flex-1 basis-24">{body}</div><div className="ml-auto flex flex-col items-end gap-1">{acts}</div></div> : body;
   const noteCell = (main: ReactNode, sub?: string | null, acts?: ReactNode) => (
     <td className="py-2 pl-2">{withActs(<>{main}{sub && <div className={`text-xs ${main ? "text-slate-400" : "text-slate-500"}`}><Clamp text={sub} /></div>}</>, acts)}</td>
   );
@@ -144,7 +147,7 @@ export default function FlowTable({ rows, showNet, parts, showCv, startDate, bir
       )}
       <div ref={box} className="max-h-[40rem] overflow-auto">
         <table style={{ minWidth: `${minW / 16}rem` }} className="w-full table-fixed text-sm [&_.text-right]:whitespace-nowrap [&_.text-right]:pl-2">
-          <colgroup>{widths.map((w, i) => <col key={i} style={{ width: `${w / 16}rem` }} />)}</colgroup>
+          <colgroup>{widths.map((w, i) => <col key={i} style={w == null ? undefined : { width: `${w / 16}rem` }} />)}</colgroup>
           <thead className="sticky top-0 z-10 bg-white text-left text-xs text-slate-500">
             <tr className="border-b border-slate-100">
               <th className="whitespace-nowrap py-1.5 pl-1">ปีที่ <InfoTip label="คำอธิบาย">ปีที่ = ปีกรมธรรม์ที่ครบรอบแล้ว (วันเริ่มสัญญา = ปีที่ 0 จ่ายเบี้ยงวดที่ 1 · ครบรอบปีที่ N = สิ้นปีกรมธรรม์ที่ N ตามตารางในเล่ม และจ่ายเบี้ยงวดที่ N + 1) ·
