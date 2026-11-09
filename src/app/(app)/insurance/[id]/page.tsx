@@ -346,7 +346,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   });
   const bookEdCurrent: BookCurrent[] = allPremiums.filter((x) => bookEdIds.includes(x.policy_id)).map((x) => ({ policy_id: x.policy_id, due_date: x.due_date,
     amount: Number(x.amount), notes: x.notes, skipped: x.skipped, locked: Number(x.paid_amount) > 0 ? `จ่ายแล้ว ${money(x.paid_amount)}` : null }));
-  const showNet = !isProp && (allBenefits.length > 0 || lumps.length > 0);
+  // ไม่มีตารางผลประโยชน์แต่มีตารางมูลค่าเวนคืน (เช่น Manulife) ก็แสดงกล่องสรุป + สุทธิสะสม + จุดคุ้มทุนถ้าเวนคืน (ตกลง 9 พ.ย. 2026)
+  const hasBen = allBenefits.length > 0 || lumps.length > 0;
+  const showNet = !isProp && (hasBen || cvRows.length > 0);
   // เวนคืนคุ้มทุน (ตกลง 8 พ.ย. 2026): ปีแรกที่มูลค่าเวนคืนตามสัญญา ≥ เบี้ยสุทธิที่จ่ายไปก่อนวันนั้น (ส่วนที่นับในสุทธิสะสมเท่านั้น)
   const cvBE = isProp ? null : cvBreakEven(flow.rows, cvRows);
   const schedPrem = allPremiums.reduce((s2, x) => s2 + Number(x.amount), 0);
@@ -940,12 +942,13 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
             <div><dt className="text-xs text-slate-500">จุดคุ้มทุน</dt>
               {cvBE && <dd className="text-sky-700"><span className="text-xs text-slate-500">ถ้าเวนคืน </span>ปีที่ {cvBE.policy_year} · {thDate(cvBE.value_date)}
                 {cvBE.value_date > today && <span className="whitespace-nowrap text-xs text-slate-500"> (คาดการณ์)</span>}</dd>}
-              <dd>{cvRows.length > 0 && <span className="text-xs text-slate-500">ถ้าไม่เวนคืน </span>}
+              {hasBen && <dd>{cvRows.length > 0 && <span className="text-xs text-slate-500">ถ้าไม่เวนคืน </span>}
                 {flow.breakEven ? <span className="text-emerald-700">{thDate(flow.breakEven.date)}{flow.breakEven.projected && <span className="whitespace-nowrap text-xs text-slate-500"> (คาดการณ์)</span>}</span>
-                : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd></div>
+                : <span className="text-slate-500">ไม่ถึงตามตาราง{flow.final < -0.005 && <span className="text-xs"> · ขาด {money(-flow.final)}</span>}</span>}</dd>}
+              {!hasBen && !cvBE && <dd className="text-slate-500">มูลค่าเวนคืนไม่ถึงเบี้ยที่จ่ายตามตาราง</dd>}</div>
             <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-500">ตามตารางทั้งหมด{book && " (ทั้งเล่ม)"}: เบี้ย {money(schedPrem, ccy)} · ผลประโยชน์ {money(schedBen, ccy)}
               {netSkip.length > 0 && ` · สุทธิสะสมและจุดคุ้มทุนไม่นับเบี้ย${netSkip.join(" / ")} (เบี้ยคุ้มครอง ไม่มีเงินคืน)`}
-              {!flow.breakEven && allBenefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
+              {hasBen && !flow.breakEven && allBenefits.every((x) => x.benefit_type !== "MATURITY") && " · ถ้ามีเงินครบสัญญา ใส่ในตารางผลประโยชน์ (ชนิด ครบสัญญา) เพื่อให้เห็นจุดคุ้มทุน"}</div>
           </dl>
         )}
         {showIrr && (

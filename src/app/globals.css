@@ -115,6 +115,9 @@ a.underline, button.underline { text-underline-offset: 3px; }
 
 /* หน้าพิมพ์ (สัญญาเงินกู้ ฯลฯ): กระดาษ A4 · ขอบบน-ล่าง 14 มม. ซ้าย-ขวา 16 มม. */
 @page { size: A4; margin: 14mm 16mm; }
+/* ยอดเงินในแถวที่กดได้ = ขีดเส้นประ แบบเดียวกับตัวเลขที่กดได้ในตาราง (ตกลง 9 พ.ย. 2026 · RowPanel ใส่ data-amt-auto ให้เอง) */
+tr[data-row-panel-row] :is([data-amt], [data-amt-auto]) { text-decoration-line: underline; text-decoration-style: dotted; text-underline-offset: 4px; }
+tr[data-row-panel-row]:hover :is([data-amt], [data-amt-auto]) { color: var(--color-blue-700, #1d4ed8); }
 /* แถวตารางที่กดเพื่อแก้ไข / ลบได้ (RowPanel) — จอสัมผัสไม่มีการชี้เมาส์ให้แถวเปลี่ยนสี จึงใส่ › ท้ายแถว (ตกลง 5 พ.ย. 2026) */
 @media (hover: none) {
   tr[data-row-panel-row] > td:last-child::after { content: "›"; margin-left: 0.375rem; color: var(--color-slate-400, #94a3b8); }
