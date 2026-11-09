@@ -106,7 +106,7 @@ export function FixedAssetTable({ rows, named }: { rows: { key: string; name: Re
           <tr>
             {many && <th className="px-2 py-2" />}{th("ที่ดิน")}
             <th colSpan={3} className="border-l border-slate-200 px-2 py-1 text-center font-medium">อาคาร / สิ่งปลูกสร้าง</th>
-            <th colSpan={3} className="border-l border-slate-200 px-2 py-1 text-center font-medium">ยานพาหนะ / เครื่องจักร / อุปกรณ์</th>
+            <th colSpan={3} className="border-l border-slate-200 px-2 py-1 text-center font-medium">เครื่องจักร / อุปกรณ์ / ยานพาหนะ</th>
             <th colSpan={3} className="border-l border-slate-200 px-2 py-1 text-center font-medium">รวมสินทรัพย์ถาวร</th>
           </tr>
           <tr>

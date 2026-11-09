@@ -20,6 +20,7 @@ export type FinOwner = { assetId?: string; pastId?: string };
 /** ปุ่ม "ใช้เป็นมูลค่า" (ส่วนของผู้ถือหุ้น × % ที่ครอบครัวถือ → มูลค่าตามบัญชี ณ 31 ธ.ค.) */
 export type ValueHelp = { assetId: string; currency: string; pct: number; today: string; minDate: string; paths: string[] };
 
+const grpHead = "mb-1 truncate border-b border-slate-100 pb-1 text-xs font-medium text-slate-600";
 function Num({ name, label, v, plain }: { name: string; label: string; v: number | null | undefined; plain?: boolean }) {
   return <label className="text-sm">{label}
     <input name={name} inputMode={plain ? "numeric" : "decimal"} {...(plain ? { "data-plain": true } : {})} defaultValue={dv(v)} className={input} /></label>;
@@ -57,7 +58,7 @@ export function FinYearForm({ owner, row, nextYear, canDelete, value }: {
         </div>
         <fieldset className="rounded-lg border border-slate-200 p-3">
           <legend className="px-1 text-sm font-medium text-slate-700">ผลประกอบการ (บาท)</legend>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid items-end gap-3 md:grid-cols-4">
             <Num name="revenue_domestic" label="รายได้ในประเทศ" v={row?.revenue_domestic} />
             <Num name="revenue_foreign" label="รายได้ต่างประเทศ" v={row?.revenue_foreign} />
             <Num name="net_profit" label="กำไร (ขาดทุน) สุทธิ" v={row?.net_profit} />
@@ -71,12 +72,19 @@ export function FinYearForm({ owner, row, nextYear, canDelete, value }: {
         </fieldset>
         <fieldset className="rounded-lg border border-slate-200 p-3">
           <legend className="px-1 text-sm font-medium text-slate-700">สินทรัพย์ถาวร ณ 31 ธ.ค. (ไม่บังคับ)</legend>
-          <div className="grid gap-3 md:grid-cols-5">
-            <Num name="land_value" label="ที่ดิน" v={row?.land_value} />
-            <Num name="building_cost" label="อาคาร · มูลค่า" v={row?.building_cost} />
-            <Num name="building_depreciation" label="อาคาร · ค่าเสื่อมสะสม" v={row?.building_depreciation} />
-            <Num name="equipment_cost" label="ยานพาหนะ / เครื่องจักร · มูลค่า" v={row?.equipment_cost} />
-            <Num name="equipment_depreciation" label="ยานพาหนะ / เครื่องจักร · ค่าเสื่อมสะสม" v={row?.equipment_depreciation} />
+          {/* 3 กลุ่ม: หัวกลุ่ม + ช่อง "มูลค่า / ค่าเสื่อมสะสม" (ป้ายสั้น → ช่องไม่ตกบรรทัด · 9 พ.ย. 2026) · 5 ช่องในแถวเดียวเฉพาะจอ ≥ 1024 (ช่องกว้างพอสำหรับหลักร้อยล้าน) */}
+          <div className="grid gap-3 lg:grid-cols-5">
+            <div><div className={grpHead}>ที่ดิน</div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1"><Num name="land_value" label="มูลค่า" v={row?.land_value} /></div></div>
+            <div className="lg:col-span-2"><div className={grpHead}>อาคาร / สิ่งปลูกสร้าง</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Num name="building_cost" label="มูลค่า" v={row?.building_cost} />
+                <Num name="building_depreciation" label="ค่าเสื่อมสะสม" v={row?.building_depreciation} />
+              </div></div>
+            <div className="lg:col-span-2"><div className={grpHead}>เครื่องจักร / อุปกรณ์ / ยานพาหนะ</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Num name="equipment_cost" label="มูลค่า" v={row?.equipment_cost} />
+                <Num name="equipment_depreciation" label="ค่าเสื่อมสะสม" v={row?.equipment_depreciation} />
+              </div></div>
           </div>
         </fieldset>
         <div className="flex flex-wrap items-center gap-3">
