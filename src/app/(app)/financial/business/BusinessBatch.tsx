@@ -8,23 +8,27 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave, TaxAll } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, TaxAll } from "@/components/BatchSave";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
   /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
-export type BizRow = { id: string; name: string; currency: string; value: number | null; valueDate: string | null; holders: BizHolder[] };
+export type BizRow = { id: string; name: string; currency: string; value: number | null; valueDate: string | null; holders: BizHolder[];
+  /** เงินลงทุนรวม (ส่วนของครอบครัว) */ cost?: number | null;
+  /** มูลค่าตามงบการเงิน (ส่วนของครอบครัว) ปีล่าสุดที่บันทึก · entered = กรอกส่วนของผู้ถือหุ้นเอง (ไม่ใช่ ทุน + กำไรสะสม) */
+  book?: { value: number; year: number; entered: boolean; pct: number } | null };
 export type BizBank = { id: string; name: string; currency: string; owners: string[] };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
 const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const TAX_RATE = 0.1;
-const METHODS: [string, string][] = [["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]];
+const pctText = (p: number) => p.toLocaleString("en-US", { maximumFractionDigits: 2 });
+const METHODS: [string, string][] = [["BOOK_VALUE", "มูลค่าตามบัญชี"], ["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]];
 
 /**
  * แท็บ "อัปเดตมูลค่า" (part="value") / "บันทึกรับเงินปันผล" (part="dividend") ของหน้า Private Business (แยกแท็บ 6 พ.ย. 2026) — กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกทั้งชุด)
  *   ปันผล: 1 แถว = ผู้ถือหุ้น 1 คน → เข้าบัญชีของคนนั้น · รายได้เป็นของคนนั้น · ใส่ "ปันผลต่อหุ้น" แล้วคิดยอดรายคนให้
- *   มูลค่า: 1 แถว = 1 กิจการ · วันที่ / วิธีประเมินเดียวทั้งชุด
+ *   มูลค่า: 1 แถว = 1 กิจการ · วันที่ / วิธีประเมินเดียวทั้งชุด · "กรอกตามงบการเงิน" เติมมูลค่าตามบัญชี (ส่วนของผู้ถือหุ้น × % ที่ถือ · 9 พ.ย. 2026)
  */
 export default function BusinessBatch({ part, rows, banks, today, defaultDate = today, minDate, canWrite }: {
   part: "dividend" | "value"; rows: BizRow[]; banks: BizBank[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
@@ -140,20 +144,34 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
   const router = useRouter();
   const cf = useConfirmSubmit();
   const [date, setDate] = useState(defaultDate);
-  const [method, setMethod] = useState(METHODS[0][0]);
+  const [method, setMethod] = useState("USER_ESTIMATE");
   const [vals, setVals] = useState<Record<string, string>>({});
+  // แถวที่เติมด้วย "กรอกตามงบการเงิน" (ค่าที่เติม) → แนบหมายเหตุที่มาให้ เฉพาะแถวที่ยังไม่ได้แก้ตัวเลข
+  const [filled, setFilled] = useState<Record<string, string>>({});
   const [state, action, pending] = useActionState<ActionState, FormData>(batchValues, {});
-  useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
+  useEffect(() => { if (state.ok) { setVals({}); setFilled({}); setMethod("USER_ESTIMATE"); router.refresh(); } }, [state, router]);
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim());
+  const withBook = rows.filter((r) => r.book);
+  const bookNote = (r: BizRow) => r.book && vals[r.id] === filled[r.id]
+    ? `ตามงบการเงินปี ${r.book.year + 543} · ${r.book.entered ? "ส่วนของผู้ถือหุ้น" : "ทุน + กำไรสะสม"} × ${pctText(r.book.pct)}%` : "";
+  const fillBook = () => {
+    const f = Object.fromEntries(withBook.map((r) => [r.id, fmt(r.book!.value)]));
+    setVals({ ...vals, ...f }); setFilled(f); setMethod("BOOK_VALUE");
+  };
+  // ล้างแล้วกลับเป็น "ประมาณเอง" → ยอดที่พิมพ์เองจะไม่ถูกติดป้ายมูลค่าตามบัญชีโดยไม่ตั้งใจ
+  const clear = () => { setVals({}); setFilled({}); setMethod("USER_ESTIMATE"); };
   const onSubmit = cf.guard(`บันทึกมูลค่า ${chosen.length} กิจการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
 
   return (
     <section className="space-y-3">
       {cf.dialog}
-      <BatchBar title={<>อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ</InfoTip></>}>
+      <BatchBar title={<>อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ
+        <br />มูลค่าตามงบการเงิน = ส่วนของผู้ถือหุ้นปีล่าสุดที่บันทึกในผลประกอบการ (ทุนจดทะเบียน + กำไรสะสม หรือยอดที่กรอกเอง) × สัดส่วนที่ครอบครัวถือ · &ldquo;กรอกตามงบการเงิน&rdquo; เติมให้ทุกแถว (วิธีประเมิน = มูลค่าตามบัญชี) ตรวจ / แก้ได้ก่อนกดบันทึก</InfoTip></>}
+        fill={canWrite && <FillAll label="กรอกตามงบการเงิน" onClick={fillBook} disabled={withBook.length === 0} />}>
         {canWrite && (
-          <BatchSave action={action} onSubmit={onSubmit} fields={{ date, method, rows: JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] }))) }}
-            count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
+          <BatchSave action={action} onSubmit={onSubmit}
+            fields={{ date, method, rows: JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id], notes: bookNote(r) }))) }}
+            count={chosen.length} pending={pending} onClear={clear} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}>
             <label className="flex items-center gap-2">วิธีประเมิน
               <select value={method} onChange={(e) => setMethod(e.target.value)} className={small}>
@@ -164,9 +182,10 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
         )}
       </BatchBar>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[40rem] text-sm">
+        <table className="w-full min-w-[56rem] text-sm">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr><th className="px-3 py-2">กิจการ</th><th className="w-48 px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <><th className="w-52 px-3 text-right">มูลค่าใหม่</th><th className="w-56 px-3 text-right">เปลี่ยนแปลง</th></>}</tr>
+            <tr><th className="px-3 py-2">กิจการ</th><th className="w-44 px-3 text-right">เงินลงทุนรวม</th><th className="w-48 px-3 text-right">มูลค่าตามงบการเงิน</th>
+              <th className="w-44 px-3 text-right">มูลค่าล่าสุด</th>{canWrite && <><th className="w-48 px-3 text-right">มูลค่าใหม่</th><th className="w-52 px-3 text-right">เปลี่ยนแปลง</th></>}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => {
@@ -176,7 +195,10 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
               return (
                 <tr key={r.id} className={has ? "bg-blue-50/40" : ""}>
                   <td className="px-3 py-2"><IntentLink href={`/financial/business/${r.id}`} className="font-medium text-slate-900 hover:underline">{r.name}</IntentLink></td>
-                  <td className="px-3 text-right tabular-nums">{r.value != null ? money(r.value, r.currency) : "-"}
+                  <td className="whitespace-nowrap px-3 text-right tabular-nums">{r.cost != null ? money(r.cost, r.currency) : "-"}</td>
+                  <td className="whitespace-nowrap px-3 text-right tabular-nums">{r.book ? <>{money(r.book.value, r.currency)}
+                    <div className="text-xs text-slate-400">งบปี {r.book.year + 543} · ถือ {pctText(r.book.pct)}%</div></> : "-"}</td>
+                  <td className="whitespace-nowrap px-3 text-right tabular-nums">{r.value != null ? money(r.value, r.currency) : "-"}
                     <div className="text-xs text-slate-400">{r.valueDate ? `ณ ${thDate(r.valueDate)}` : "ยังไม่มีมูลค่า"}</div></td>
                   {canWrite && <>
                     <td className="px-3 text-right"><input inputMode="decimal" value={v} placeholder={r.currency} aria-label={`มูลค่าใหม่ ${r.name}`}

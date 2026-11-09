@@ -60,10 +60,11 @@ export function FilterSelect({ label, value, onChange, options, allLabel = "ท�
 }
 
 /** "ใส่ยอดทุกแถว" — ชื่อเดียวกันทุกหน้า · ต่อจากตัวกรองทางซ้าย · ไม่มีแถวให้เติม = สีจาง (ไม่หาย ปุ่มไม่ขยับ) */
-export function FillAll({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+export function FillAll({ onClick, disabled, label = "ใส่ยอดทุกแถว" }: { onClick: () => void; disabled?: boolean;
+  /** ตัวช่วยเติมแบบอื่นในตำแหน่งเดียวกัน (เช่น "กรอกตามงบการเงิน" แท็บอัปเดตมูลค่า Private Business) */ label?: string }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      className="text-sm text-blue-700 hover:underline disabled:cursor-default disabled:text-slate-300 disabled:no-underline">ใส่ยอดทุกแถว</button>
+      className="text-sm text-blue-700 hover:underline disabled:cursor-default disabled:text-slate-300 disabled:no-underline">{label}</button>
   );
 }
 

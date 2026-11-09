@@ -7,7 +7,7 @@ import { AUDIT_LABEL, type FinYear } from "@/lib/biz-financials";
 import { useRowPanel } from "@/components/RowPanel";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import AssetValuationForm from "@/components/AssetValuationForm";
-import BarChartYears, { type BarSeries } from "@/components/BarChartYears";
+import BarChartYears, { TrendSwatch, type BarSeries } from "@/components/BarChartYears";
 import Flash from "@/components/Flash";
 import { deleteFinancialYear, deletePastBusiness, saveFinancialYear, savePastBusiness, type ActionState } from "./actions";
 
@@ -203,12 +203,16 @@ export function ResultsCharts(all: {
     <div className="space-y-4">
       {companies && companies.length > 0 && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">แสดงรายได้ {tab("origin", "ในประเทศ / ต่างประเทศ")}{tab("company", "แยกตามบริษัท")}</div>}
       <div>
-        <h3 className="mb-1 text-sm font-medium text-slate-700">รายได้ (บาท)</h3>
-        <BarChartYears title="รายได้" years={years} series={rev} events={events} trend={revAvg} />
+        {/* ป้ายเส้นเฉลี่ยมุมขวาบรรทัดเดียวกับชื่อกราฟรายได้ · กราฟกำไรมีเส้นแต่ไม่มีป้าย (ตกลง 9 พ.ย. 2026) */}
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <h3 className="text-sm font-medium text-slate-700">รายได้ (บาท)</h3>
+          {revAvg?.some((v) => v != null) && <span className="flex items-center gap-1.5 text-xs text-slate-600"><TrendSwatch />เฉลี่ย 3 ปี{rev.length > 1 ? " (ยอดรวม)" : ""}</span>}
+        </div>
+        <BarChartYears title="รายได้" years={years} series={rev} events={events} trend={revAvg} trendLegend={false} />
       </div>
       <div>
         <h3 className="mb-1 text-sm font-medium text-slate-700">กำไร (ขาดทุน) (บาท)</h3>
-        <BarChartYears title="กำไร (ขาดทุน)" years={years} series={pro} height={170} total={split} trend={proAvg} />
+        <BarChartYears title="กำไร (ขาดทุน)" years={years} series={pro} height={170} total={split} trend={proAvg} trendLegend={false} />
       </div>
     </div>
   );

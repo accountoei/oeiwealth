@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, type FormState } from "@/lib/format";
+import { friendlyError, numOrNull as num, ownersFromForm, strOrNull as str, todayBangkok, type FormState } from "@/lib/format";
 import { BAD_ROWS_ERROR, TAX_ERROR, amountOrNull, isPositive, isValidTax, notSaved, plainNumber, readRows } from "@/lib/batch-entry";
 
 export type ActionState = FormState;
@@ -140,14 +140,26 @@ export async function batchValues(_: ActionState, form: FormData): Promise<Actio
   const supabase = await createClient();
   const date = str(form.get("date"));
   const method = str(form.get("method")) ?? "USER_ESTIMATE";
-  const rows = readRows<{ asset_id: string; value: string }>(form);
+  const rows = readRows<{ asset_id: string; value: string; notes?: string }>(form);
   if (!rows) return { error: BAD_ROWS_ERROR };
-  const clean = rows.map((r) => ({ asset_id: r.asset_id, date, method, value: Number(plainNumber(r.value)) }));
+  const clean = rows.map((r) => ({ asset_id: r.asset_id, date, method, value: Number(plainNumber(r.value)), notes: (r.notes ?? "").trim() }));
   if (!date) return { error: "กรุณาเลือกวันที่ประเมิน" };
   if (!clean.length) return { error: "กรุณากรอกมูลค่าอย่างน้อย 1 กิจการ" };
   if (clean.some((r) => Number.isNaN(r.value) || r.value < 0)) return { error: "มูลค่าต้องเป็นตัวเลข (ไม่ติดลบ) ทุกแถวที่กรอก" };
-  const { data, error } = await supabase.rpc("batch_record_business_values", { p_rows: clean });
-  if (error) return { error: notSaved("ทุกกิจการ", friendlyError(error.message)) };
+  let data: number | null = null;
+  if (method === "BOOK_VALUE") {
+    // มูลค่าตามบัญชี (กรอกตามงบการเงิน · 9 พ.ย. 2026): ฟังก์ชันชุดเดิมรับเฉพาะ 3 วิธี → เพิ่มทีละชุดด้วยคำสั่งเดียว (ผิดแถวเดียว = ไม่บันทึกทั้งชุด)
+    //   กติกาเดิมในฐานข้อมูล (ปิดงวด / Go-live / สิทธิ์) ทำงานเหมือนบันทึกทีละรายการ
+    if (date > todayBangkok()) return { error: "วันที่ประเมินเป็นวันในอนาคตไม่ได้" };
+    const { error } = await supabase.from("asset_valuations").insert(clean.map((r) => ({
+      asset_id: r.asset_id, valuation_date: date, value: r.value, valuation_method: "BOOK_VALUE", source: "USER", notes: r.notes || null })));
+    if (error) return { error: notSaved("ทุกกิจการ", friendlyError(error.message)) };
+    data = clean.length;
+  } else {
+    const res = await supabase.rpc("batch_record_business_values", { p_rows: clean });
+    if (res.error) return { error: notSaved("ทุกกิจการ", friendlyError(res.error.message)) };
+    data = res.data as number;
+  }
   new Set(clean.map((r) => r.asset_id)).forEach((id) => revalidatePath(`/financial/business/${id}`));
   return done("", `บันทึกมูลค่าแล้ว ${data} กิจการ`);
 }
