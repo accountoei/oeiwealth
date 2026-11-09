@@ -30,7 +30,7 @@ import type { PfCash } from "@/lib/pf-cash";
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
 export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
 export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)";
-export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata,lease:property_leases!cash_movements_related_lease_id_fkey(property_asset_id)";
+export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata,lease:property_leases!cash_movements_related_lease_id_fkey(pd:property_details!property_leases_property_id_fkey(asset_id))";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -494,7 +494,9 @@ export function makeEntryKit(c: KitCtx) {
       else if (m.movement_type === "LOAN_PRINCIPAL_RECEIPT" && m.from_asset_id) link = { href: `/financial/loans/${m.from_asset_id}`, label: "เงินให้กู้" };
       else if (m.movement_type === "LOAN_DISBURSEMENT" && m.to_asset_id) link = { href: `/financial/loans/${m.to_asset_id}`, label: "เงินให้กู้" };
       else if (DEPOSIT_MOVES.includes(m.movement_type)) {
-        const pa = one(m.lease as { property_asset_id: string } | { property_asset_id: string }[] | null)?.property_asset_id;
+        // สัญญาเช่า → property_details → asset_id (property_leases ไม่มีคอลัมน์ property_asset_id)
+        type PD = { asset_id: string };
+        const pa = one(one(m.lease as { pd: PD | PD[] | null } | { pd: PD | PD[] | null }[] | null)?.pd ?? null)?.asset_id;
         link = { href: pa ? `/property/${pa}` : "/property", label: "สัญญาเช่า" };
         // ข้อความเดิมในฐานข้อมูล "รับเงินประกัน · ผู้เช่า" → แสดงเต็มคำ (ไม่สับสนกับเงินประกันชีวิต)
         if (typeof detail === "string") detail = detail.replace(/^(รับ|คืน)เงินประกัน(?!การเช่า)/, "$1เงินประกันการเช่า");
