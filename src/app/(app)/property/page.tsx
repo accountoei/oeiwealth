@@ -489,7 +489,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         {/* 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าทรัพย์สินรวม · รายได้ + ประมาณค่าเช่าทั้งปี · ค่าใช้จ่าย + ประมาณค่าใช้จ่ายประจำทั้งปี
               · รายได้สุทธิ + ทั้งปี (ยอดจริง) + % ต่อปีของกลุ่มปล่อยเช่า */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatBox label={<>{pv.personId ? `มูลค่าทรัพย์สินส่วนของ ${pv.personName}` : "มูลค่าทรัพย์สินรวม"} (THB Equivalent)</>} value={money(totalValue, "THB")}
+          <StatBox label={<>{pv.personId ? `มูลค่าอสังหาริมทรัพย์ส่วนของ ${pv.personName}` : "มูลค่าอสังหาริมทรัพย์รวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalValue, "THB")}
             sub={`${active.length} รายการ`} />
           <StatBox label={`รายได้จากทรัพย์สิน${mLabel}`} value={plusMoney(incTotal, "THB")} valueClass="text-emerald-700"
             sub={<>
@@ -521,9 +521,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
         </section>
         <section className="grid gap-4 lg:grid-cols-2">
           {/* ตารางสัดส่วนชุดเดียวกับทุกหน้า (ShareBox · ตกลง 7 พ.ย. 2026) · ยอดรวม / จำนวนรายการอยู่กล่องบนแล้ว */}
-          <ShareBox title="มูลค่าตามประเภท" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}
+          <ShareBox title="มูลค่าอสังหาฯ ตามประเภท" label="ประเภท" total={totalValue} rows={shareRows(typeRows)}
             aside={latestDate ? `ประเมินล่าสุด ${thDate(latestDate)}` : undefined} />
-          <ShareBox title="มูลค่าตามการใช้งาน" label="การใช้งาน" total={totalValue} rows={shareRows(usageRows)}>
+          <ShareBox title="มูลค่าอสังหาฯ ตามการใช้งาน" label="การใช้งาน" total={totalValue} rows={shareRows(usageRows)}>
             {totalValue > 0 && (
               <div className="mt-3 flex h-6 overflow-hidden rounded-md text-[11px] font-medium text-white">
                 {usageRows.filter((r) => r.value > 0).map((r) => {

@@ -368,7 +368,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
       <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* กล่องสรุป 4 อัน (ตกลง 7 พ.ย. 2026): มูลค่าเวนคืน (+ จำนวนกรมธรรม์) · ทุนประกันชีวิต · เบี้ยต่อปี (+ ปีนี้ยังต้องจ่าย) · ได้คืนเทียบเบี้ย */}
-        <StatBox label={<>{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB)</>} value={money(cvTotal, "THB", 0)}
+        <StatBox label={<>{pv.personId ? `มูลค่าเวนคืนส่วนของ ${pv.personName}` : "มูลค่าเวนคืนรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(cvTotal, "THB", 0)}
           sub={`กรมธรรม์ที่มีผล ${bookletCount(act)} ฉบับ`} />
         <StatBox label="ทุนประกันชีวิตรวม (THB)" value={money(lifeTotal, "THB", 0)}
           sub={accidentTotal > 0 ? `เสียชีวิตจากอุบัติเหตุ เพิ่มอีก ${money(accidentTotal, undefined, 0)}` : "ชีวิต + บำนาญ · สุขภาพดูวงเงินที่แท็บความคุ้มครอง"} />

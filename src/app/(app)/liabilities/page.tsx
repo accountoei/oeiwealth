@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, LIABILITY_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, CCY_COLORS, LIABILITY_TYPE_LABEL, money, monthOptions, monthRange, thDate, todayBangkok } from "@/lib/format";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -42,7 +42,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
   const canOrder = me.role === "ADMIN" || me.role === "EDITOR";
   const ordering = canOrder ? sp.order ?? "" : "";        // "1" = เงินกู้ · "cards" = บัตร
   const paths = ["/liabilities"];
-  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }, { data: inRaw }] = await Promise.all([
+  const [pv, { data, error }, loanOrder, { data: cardsRaw }, { data: cardBal }, { data: family }, { data: banksRaw }, { data: odRaw }, { data: balRaw }, { data: inRaw }, { data: fx }] = await Promise.all([
     loadPersonView(sp.p, { liabilities: true }),
     supabase.from("v_liabilities_all").select("*").order("liability_source").order("name"),
     loadSortMap("liabilities"),
@@ -56,6 +56,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
     // เงินกู้ภายในครอบครัว: สมาชิกเป็นผู้กู้ของ Loans Receivable → หนี้สินของผู้กู้ (Net Worth นับให้ · ตกลง 2 พ.ย. 2026)
     supabase.from("loan_details").select("asset_id,borrower_person_id,outstanding_principal,status,assets!loan_details_asset_id_fkey(name,currency),persons(name)")
       .not("borrower_person_id", "is", null).is("deleted_at", null),
+    supabase.from("v_fx_status").select("currency,rate_to_thb"),
   ]);
   // มุมมองรายบุคคล: เฉพาะหนี้ที่คนนั้นมีส่วน · ยอด × สัดส่วน (เงินกู้ตามผู้รับผิดชอบ · บัตรตามเจ้าของบัตร · เงินประกันตามเจ้าของทรัพย์)
   const all = ((data as Row[] | null) ?? []).filter((r) => pv.showLiability(r.source_id))
@@ -79,6 +80,11 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       return { ...o, bal, limit: Number(o.overdraft_limit) * share, used: Math.max(-(bal ?? 0), 0) * share };
     });
   ods.forEach((o) => { if (o.used > 0) totals.set(o.currency, (totals.get(o.currency) ?? 0) + o.used); });
+  // กล่องแรก (ตกลง 9 พ.ย. 2026): ยอดเดียวเป็นบาท (อัตราล่าสุด) + แยกตามสกุลเงิน แบบกล่องยอดเงินฝากรวมของ Bank Accounts
+  const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
+  const toThb = (v: number, c: string) => v * (rate.get(c) ?? 0);
+  const debtByCcy = [...totals].filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => toThb(b[1], b[0]) - toThb(a[1], a[0]));
+  const debtThb = debtByCcy.reduce((t, [c, v]) => t + toThb(v, c), 0);
   const odUsed = ods.reduce((t, o) => t + (o.currency === "THB" ? o.used : 0), 0);
   const odLimit = ods.reduce((t, o) => t + (o.currency === "THB" ? o.limit : 0), 0);
   // เงินกู้ (ตามลำดับที่ตั้งไว้) → เงินประกันการเช่า
@@ -193,10 +199,20 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       <TabPanel id="overview" className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">{pv.personId ? `หนี้ส่วนของ ${pv.personName}` : "หนี้สินรวม"}</div>
-          {[...totals.entries()].length === 0 ? <div className="mt-1 text-xl font-semibold tabular-nums">{money(0, "THB")}</div>
-            : [...totals.entries()].map(([ccy, v]) => <div key={ccy} className="mt-1 text-xl font-semibold tabular-nums text-red-700">{money(v, ccy)}</div>)}
-          <div className="text-xs text-slate-500">เงินกู้ + บัตรเครดิต + เงินประกันการเช่า{ods.length > 0 ? " + O/D" : ""}</div>
+          <div className="text-xs text-slate-500">{pv.personId ? `หนี้สินส่วนของ ${pv.personName}` : "หนี้สินรวม"} (THB Equivalent) · ถึงวันนี้</div>
+          <div className={`mt-1 text-xl font-semibold tabular-nums ${debtThb > 0.005 ? "text-red-700" : ""}`}>{money(debtThb, "THB")}</div>
+          <div className="mt-1 text-xs text-slate-500">เงินกู้ + บัตรเครดิต + เงินประกันการเช่า{ods.length > 0 ? " + O/D" : ""}</div>
+          {debtByCcy.some(([c]) => c !== "THB") && <p className="mt-1 text-xs text-slate-400">ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</p>}
+          {debtByCcy.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs">
+              {debtByCcy.map(([c, v], i) => (
+                <li key={c} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: CCY_COLORS[i % CCY_COLORS.length] }} />{c}</span>
+                  <span className="tabular-nums text-slate-700">{money(v)}{c !== "THB" && <span className="ml-1 text-slate-400">({money(toThb(v, c), "THB")})</span>}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
           <div className="text-xs text-slate-500">เงินกู้ ({loans.length} รายการ)</div>

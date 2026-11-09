@@ -205,7 +205,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
       {/* ============================================================ ภาพรวม */}
       <TabPanel id="overview">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatBox label={<>{pv.personId ? `เงินต้นคงเหลือส่วนของ ${pv.personName}` : "เงินต้นคงเหลือรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(gTotal, "THB")}
+        <StatBox label={<>{pv.personId ? `เงินให้กู้คงเหลือส่วนของ ${pv.personName}` : "เงินให้กู้คงเหลือรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(gTotal, "THB")}
           sub={<>
             <MonthChange pct={changePct(gTotal, valuePrev)} prev={valuePrev} />
             <div>สัญญาที่เปิด {open.length} สัญญา{closedN ? ` · ปิดแล้ว ${closedN}` : ""}</div>
@@ -230,7 +230,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 font-medium text-slate-900">สรุปเงินต้นคงเหลือตามสถานะ <span className="text-xs font-normal text-slate-500">(THB)</span> <InfoTip label="คำอธิบาย">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ในความมั่งคั่งสุทธิ
+          <h2 className="mb-3 font-medium text-slate-900">เงินให้กู้คงเหลือตามสถานะ <span className="text-xs font-normal text-slate-500">(THB)</span> <InfoTip label="คำอธิบาย">ไม่รวมสัญญาที่ปิดแล้ว (รับคืนครบ) · ตัดหนี้สูญมีมูลค่า 0 ในความมั่งคั่งสุทธิ
             {riskTotal > 0.005 && " · ส่วนที่มีความเสี่ยงไม่ได้คืนยังนับในความมั่งคั่งสุทธิจนกว่าจะตัดหนี้สูญ"}</InfoTip></h2>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">

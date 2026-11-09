@@ -18,7 +18,7 @@ export default function MemberShareBox({ rows, footer }: { rows: MemberShareRow[
   const pct = (v: number, t: number) => (t > 0 ? `${((v * 100) / t).toFixed(1)}%` : "");
   return (
     <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="font-medium text-slate-900">ตามสมาชิกครอบครัว <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>
+      <h2 className="font-medium text-slate-900">มูลค่าเวนคืนตามสมาชิกครอบครัว <span className="text-xs font-normal text-slate-500">(THB Equivalent)</span></h2>
       <p className="text-xs text-slate-500">ทุนประกัน ตามผู้เอาประกัน · มูลค่าเวนคืน ตามเจ้าของ</p>
       {rows.length === 0 ? <p className="mt-3 text-sm text-slate-500">ยังไม่มีข้อมูล</p> : (
         <div className="mt-3 overflow-x-auto">

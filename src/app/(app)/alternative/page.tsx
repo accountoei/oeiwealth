@@ -145,7 +145,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
 
       {held.length > 0 && (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatBox label={<>{pv.personId ? `มูลค่าสินทรัพย์ทางเลือกส่วนของ ${pv.personName}` : "มูลค่าสินทรัพย์ทางเลือกรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalMine, "THB")}
+          <StatBox label={<>{pv.personId ? `มูลค่าสินทรัพย์อื่นส่วนของ ${pv.personName}` : "มูลค่าสินทรัพย์อื่นรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(totalMine, "THB")}
             sub={<>
               <MonthChange pct={changePct(totalMine, valuePrev)} prev={valuePrev} />
               <div>{held.length} รายการ{autoN ? ` · ทองราคาอัตโนมัติ ${autoN}` : ""}</div>
@@ -162,10 +162,10 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
 
       {totalMine > 0 && (
         <section className="grid gap-4 md:grid-cols-2">
-          <ShareBox title={<>สัดส่วนมูลค่าตามหมวด{pv.personId ? `ของ ${pv.personName}` : ""}</>} 
+          <ShareBox title={<>มูลค่าสินทรัพย์อื่นตามหมวด{pv.personId ? ` ส่วนของ ${pv.personName}` : ""}</>} 
             label="หมวด" total={totalMine} rows={[...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({
               key: k, name: `${cats.find(([c]) => c === k)?.[1] ?? "-"} (${active.filter((r) => r.category_id === k).length})`, value: v, color: color.get(k) ?? COLORS[0] }))} />
-          <ShareBox title="มูลค่าตามสมาชิกครอบครัว"
+          <ShareBox title="มูลค่าสินทรัพย์อื่นตามสมาชิกครอบครัว"
             label="สมาชิกครอบครัว" total={totalFam} rows={[...byPerson.entries()].sort((a, b) => b[1] - a[1]).map(([pid, v], i) => ({
               key: pid, name: personName.get(pid) ?? "สมาชิก", value: v, color: COLORS[(i + 1) % COLORS.length] }))} />
         </section>
