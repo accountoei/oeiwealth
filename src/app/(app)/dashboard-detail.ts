@@ -2,7 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { INCOME_TYPE_LABEL, monthRange, todayBangkok } from "@/lib/format";
+import { INCOME_TYPE_LABEL, friendlyError, monthRange, todayBangkok, type FormState } from "@/lib/format";
+import { revalidatePath } from "@/lib/revalidate";
 
 // รายละเอียดของกล่องบน Dashboard (โหลดตอนกดเปิด pop up เท่านั้น → หน้า Dashboard ไม่ช้าลง)
 //   flows  = รายได้ตามประเภท · ค่าใช้จ่ายตามหมวด · รายได้ลงทุนตามพอร์ต · 10 รายการค่าใช้จ่ายสูงสุด
@@ -135,4 +136,15 @@ export async function loadInvestmentGain(start: string, personId: string): Promi
   const { data, error } = await (await createClient()).rpc("month_investment_gain", { p_month: start, p_person: personId || null });
   if (error) return { error: error.message };
   return (data ?? null) as InvestmentGain | null;
+}
+
+/** ปุ่ม "คำนวณยอดสิ้นเดือนใหม่" (ADMIN / EDITOR · 9 พ.ย. 2026) = งานเช้า 07:30 ทันที
+ *  ลงมูลค่าเวนคืนประกันตามตาราง → คำนวณยอดสิ้นเดือนที่ยังไม่ปิดใหม่ (SQL 20261109100000 · เดือนที่ปิดแล้วไม่แตะ) */
+export async function refreshMonthAutoNow(): Promise<FormState> {
+  await requireAppUser();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("refresh_month_auto_now");
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/");
+  return { ok: "คำนวณยอดสิ้นเดือนใหม่แล้ว" };
 }
