@@ -90,7 +90,45 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const divYear = divs.filter((i) => i.date >= `${today.slice(0, 4)}-01-01`).reduce((t, i) => t + Number(i.amount), 0);
   const est = d.established_date as string | null;
   const events: Record<number, string[]> = est ? { [Number(est.slice(0, 4))]: [`${a.name} จัดตั้ง ${thDate(est)}`] } : {};
-  const divHistory = (incomes ?? []).length === 0 && (moves ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
+  // ปันผลรายปี (ตกลง 9 พ.ย. 2026 รอบ 2): บริษัทจ่าย (จากผลประกอบการ) · ส่วนของครอบครัว ≈ × % ที่ถือตอนนี้ · บันทึกรับแล้ว (รายได้ปันผล)
+  const fin = toFinYears(finRows);
+  const paidBy = new Map(fin.filter((r) => r.dividends_paid).map((r) => [r.fiscal_year, r.dividends_paid as number]));
+  const gotBy = new Map<number, number>();
+  divs.filter((i) => i.currency === a.currency).forEach((i) => { const y = Number(i.date.slice(0, 4)); gotBy.set(y, (gotBy.get(y) ?? 0) + Number(i.amount)); });
+  const divYears = [...new Set([...paidBy.keys(), ...gotBy.keys()])].sort((x, y) => y - x);
+  const sumOf = (m: Map<number, number>) => [...m.values()].reduce((t, v) => t + v, 0);
+  const divYearly = divYears.length === 0 ? null : (
+    <div className="mb-5">
+      <h3 className="mb-1 text-sm font-medium text-slate-800">ปันผลรายปี <InfoTip label="คำอธิบาย">บริษัทจ่าย = ปันผลที่บริษัทจ่ายทั้งหมดในปีนั้น (จากกล่องผลประกอบการ) · ส่วนของครอบครัว ≈ คิดจาก % ที่ถือตอนนี้ ({fmtPct(companyPct)}) ปีก่อน ๆ ที่ถือไม่เท่านี้จะไม่ตรง · บันทึกรับแล้ว = ปันผลที่บันทึกเป็นรายได้ในระบบ (ก่อนภาษี)</InfoTip></h3>
+      <div className="max-h-80 overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500">
+            <tr><th className="px-2 py-1.5 text-left font-medium">ปี</th><th className="px-2 py-1.5 text-right font-medium">บริษัทจ่าย (ทั้งบริษัท)</th>
+              <th className="px-2 py-1.5 text-right font-medium">ส่วนของครอบครัว ≈</th><th className="px-2 py-1.5 text-right font-medium">บันทึกรับแล้ว</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {divYears.map((y) => {
+              const paid = paidBy.get(y), got = gotBy.get(y);
+              return (
+                <tr key={y}>
+                  <td className="px-2 py-1.5">{y + 543}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{paid != null ? money(paid, a.currency) : "-"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">{paid != null && companyPct != null ? money((paid * companyPct) / 100, a.currency) : "-"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">{got != null ? money(got, a.currency) : "-"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-medium">
+            <tr><td className="px-2 py-1.5">รวม</td><td className="px-2 py-1.5 text-right tabular-nums">{money(sumOf(paidBy), a.currency)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{companyPct != null ? money((sumOf(paidBy) * companyPct) / 100, a.currency) : "-"}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(sumOf(gotBy), a.currency)}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+  const divList = (incomes ?? []).length === 0 && (moves ?? []).length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (
             <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
               {(incomes ?? []).map((i) => (
                 <tr key={i.id}>
@@ -109,6 +147,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
               ))}
             </tbody></table>
           );
+  const divHistory = <>{divYearly}{divYearly && <h3 className="mb-1 text-sm font-medium text-slate-800">รายการที่บันทึก</h3>}{divList}</>;
   return (
     <div className="space-y-6">
       <div>
@@ -274,7 +313,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
       )}
 
       {stale && a.status === "ACTIVE" && <p className="text-xs font-medium text-amber-700">มูลค่าล่าสุดเกิน 1 ปีแล้ว ({thDate(a.current_value_date)}) · กด &ldquo;อัปเดตมูลค่า&rdquo; ในกล่องมูลค่า</p>}
-      <FinResults owner={{ assetId: id }} rows={toFinYears(finRows)} canWrite={canWrite} canDelete={canDelete} events={events}
+      <FinResults owner={{ assetId: id }} rows={fin} canWrite={canWrite} canDelete={canDelete} events={events}
         value={canWrite && a.status === "ACTIVE" && companyPct != null ? { assetId: id, currency: a.currency, pct: companyPct, today, minDate: goLive, paths } : undefined} />
     </div>
   );

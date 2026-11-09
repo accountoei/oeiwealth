@@ -4,7 +4,7 @@ import { calcYears, groupYears, type FinYear } from "@/lib/biz-financials";
 import ModalButton from "@/components/ModalButton";
 import { InfoTip } from "@/components/HeaderBar";
 import { FinTable, FixedAssetTable, chartData, yearSpan } from "./FinResults";
-import { FixedYearSelect, PastBusinessForm, ResultsCharts } from "./results";
+import { FixedYearSelect, PastBusinessForm, ResultsCharts, ResultsView } from "./results";
 
 export type GroupCo = { key: string; name: string; href: string; color: string; established: string | null; closed: string | null;
   /** ปิดแล้ว = บริษัทในประวัติ */ past: boolean; inactive: boolean; rows: FinYear[] };
@@ -44,10 +44,10 @@ export default function GroupResults({ companies, fy, canWrite }: { companies: G
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-3 font-medium text-slate-900">ผลประกอบการทั้งกลุ่ม <InfoTip label="คำอธิบาย">รวมตัวเลขทั้งบริษัท (100%) ของทุกบริษัทในแต่ละปี รวมบริษัทที่ปิดแล้วในปีที่ยังเปิดอยู่ · ไม่คูณ % ที่ครอบครัวถือ · ไม่เปลี่ยนตามสมาชิกที่เลือก · ▲ = ปีที่บริษัทเปิด / ปิด</InfoTip></h2>
         {group.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล · ใส่ผลประกอบการได้ที่หน้าของแต่ละกิจการ (กล่อง &ldquo;ผลประกอบการ&rdquo;)</p> : (
-          <div className="space-y-6">
+          <ResultsView years={group.length}>
             <ResultsCharts years={years} domestic={cd.domestic} foreign={cd.foreign} profit={cd.profit} companies={series} events={events} />
             <FinTable rows={group} />
-          </div>
+          </ResultsView>
         )}
       </section>
 
@@ -91,7 +91,7 @@ export default function GroupResults({ companies, fy, canWrite }: { companies: G
             <h2 className="font-medium text-slate-900">สินทรัพย์ถาวรของกลุ่ม</h2>
             <FixedYearSelect years={fixedYears} value={fyear} />
           </div>
-          <FixedAssetTable rows={fixedRows} named />
+          <ResultsView years={0}><FixedAssetTable rows={fixedRows} named /></ResultsView>
         </section>
       )}
     </div>

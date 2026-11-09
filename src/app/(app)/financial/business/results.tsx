@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { createContext, useActionState, useContext, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { money } from "@/lib/format";
 import { AUDIT_LABEL, type FinYear } from "@/lib/biz-financials";
@@ -157,11 +157,17 @@ const DOM = "#2563eb", FOR = "#7dd3fc", PROFIT = "#059669", LOSS = "#dc2626";
 export type CoSeries = { key: string; label: string; color: string; revenue: (number | null)[]; profit: (number | null)[] };
 
 /** กราฟรายได้ (แท่งซ้อน ในประเทศ + ต่างประเทศ · กลุ่ม: สลับเป็นแยกตามบริษัทได้) + กราฟกำไร (ขาดทุน) แกนปีเดียวกัน */
-export function ResultsCharts({ years, domestic, foreign, profit, companies, events }: {
+export function ResultsCharts(all: {
   years: number[]; domestic: (number | null)[]; foreign: (number | null)[]; profit: (number | null)[];
   /** มี = ภาพรวมกลุ่ม (ปุ่มสลับ "แยกตามบริษัท") */ companies?: CoSeries[]; events?: Record<number, string[]>;
 }) {
   const [by, setBy] = useState<"origin" | "company">("origin");
+  const range = useContext(RangeCtx);
+  const n = range && all.years.length > range ? range : all.years.length;
+  const cut = <T,>(a: T[]) => a.slice(a.length - n);
+  const years = cut(all.years), domestic = cut(all.domestic), foreign = cut(all.foreign), profit = cut(all.profit), events = all.events;
+  const companies = all.companies?.map((c) => ({ ...c, revenue: cut(c.revenue), profit: cut(c.profit) }))
+    .filter((c) => c.revenue.some((v) => v != null) || c.profit.some((v) => v != null));
   const split = by === "company" && companies && companies.length > 0;
   const rev: BarSeries[] = split
     ? companies!.map((c) => ({ key: c.key, label: c.label, color: c.color, values: c.revenue }))
@@ -202,16 +208,35 @@ export function FixedYearSelect({ years, value }: { years: number[]; value: numb
 }
 
 
-/** ตารางยาว: แสดง 10 ปีล่าสุดก่อน · ปุ่ม "ดูทั้งหมด" (แถวที่เกินใส่ class group-data-[all=false]:hidden) */
-export function ShowAllRows({ total, shown, children }: { total: number; shown: number; children: React.ReactNode }) {
-  const [all, setAll] = useState(false);
+/* ---------------------------------------------------------------- ช่วงปี + หน่วย (ตกลง 9 พ.ย. 2026 รอบ 2)
+   ResultsView ครอบกราฟ + ตาราง: เลือก 3 / 5 / 10 ปี / ทั้งหมด (ค่าเริ่มต้น 10) · หน่วย ล้านบาท / บาท
+   ตารางเป็น server component → ซ่อนแถว / สลับหน่วยด้วย data-r / data-u ของกล่องนี้ (group/v) */
+export type Range = 3 | 5 | 10 | 0;
+const RangeCtx = createContext<Range>(10);
+
+export function ResultsView({ children, years }: { children: React.ReactNode; /** จำนวนปีที่มีข้อมูล (ซ่อนปุ่มที่ไม่จำเป็น) */ years: number }) {
+  const [r, setR] = useState<Range>(10);
+  const [u, setU] = useState<"m" | "b">("m");
+  const seg = <T,>(cur: T, v: T, l: string, set: (v: T) => void) => (
+    <button key={l} type="button" onClick={() => set(v)} aria-pressed={cur === v}
+      className={`px-2.5 py-1 text-xs ${cur === v ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}>{l}</button>
+  );
+  const ranges = ([[3, "3 ปี"], [5, "5 ปี"], [10, "10 ปี"]] as [Range, string][]).filter(([n]) => n < years);
   return (
-    <div className="group" data-all={all}>
-      {children}
-      {total > shown && (
-        <button type="button" onClick={() => setAll(!all)} className="mt-2 text-sm text-blue-700 hover:underline">
-          {all ? "แสดงเฉพาะ 10 ปีล่าสุด" : `ดูทั้งหมด (${total} ปี)`}</button>
-      )}
-    </div>
+    <RangeCtx.Provider value={r}>
+      <div className="group/v space-y-4" data-r={years <= r || r === 0 ? "all" : r} data-u={u}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
+          {ranges.length > 0 && <span className="flex items-center gap-2">ช่วง
+            <span className="inline-flex divide-x divide-slate-300 overflow-hidden rounded-md border border-slate-300">
+              {ranges.map(([n, l]) => seg(r, n, l, setR))}{seg(r, 0 as Range, `ทั้งหมด (${years} ปี)`, setR)}
+            </span></span>}
+          <span className="flex items-center gap-2">หน่วย
+            <span className="inline-flex divide-x divide-slate-300 overflow-hidden rounded-md border border-slate-300">
+              {seg(u, "m" as const, "ล้านบาท", setU)}{seg(u, "b" as const, "บาท", setU)}
+            </span></span>
+        </div>
+        {children}
+      </div>
+    </RangeCtx.Provider>
   );
 }

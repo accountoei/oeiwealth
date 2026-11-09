@@ -18,9 +18,9 @@ import BusinessBatch, { type BizBank, type BizRow } from "./BusinessBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { businessDividendFields } from "@/lib/source-edit";
 import GroupResults, { type GroupCo } from "./GroupResults";
-import { FIN_COLS, toFinYears } from "@/lib/biz-financials";
+import { FIN_COLS, groupYears, toFinYears } from "@/lib/biz-financials";
 
-const TABS: [string, string][] = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"], ["results", "ผลประกอบการ"]];
+const TABS: [string, string][] = [["overview", "ภาพรวม"], ["results", "ผลประกอบการ"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"]];
 
 type Row = { id: string; asset_id: string; company_name: string; logo_data: string | null; business_type: string | null; company_ownership_percent: number | null;
   total_shares: number | null; shares_owned: number | null; par_value: number | null; investment_cost: number | null;
@@ -146,7 +146,6 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     .reduce((t, x) => t + (pv.personId ? divShare.get(x.id) ?? 0 : Number(x.base_amount ?? 0)), 0);
   const divPct = gain.cost > 0 ? (totals.div * 100) / gain.cost : null;
   const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(mStart);
-  const oldest = held.map((r) => r.assets.current_value_date ?? "").sort()[0] ?? null;
   const staleN = held.filter((r) => !r.assets.current_value_date || r.assets.current_value_date < old).length;
 
   // ---------------------------------------------------------------- แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
@@ -181,6 +180,12 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
       key: c.id, name: c.name, href: `/financial/business/past/${c.id}`, color: PAST_COLORS[i % PAST_COLORS.length],
       established: c.established_date, closed: c.closed_date, past: true, inactive: true, rows: fin.filter((f) => f.past_business_id === c.id) })),
   ];
+  // กล่องที่ 4 (ตกลง 9 พ.ย. 2026 รอบ 2): ผลประกอบการปีล่าสุดของทั้งกลุ่ม (100% · ไม่เปลี่ยนตามสมาชิก)
+  const grp = groupYears(fin);
+  const gLast = grp.at(-1), gPrev = grp.at(-2);
+  const gFixed = [...grp].reverse().find((r) => r.hasFixed);
+  const chg = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || !b ? null : ((a - b) * 100) / Math.abs(b));
+  const profitChg = chg(gLast?.net_profit, gPrev?.net_profit), revChg = chg(gLast?.revenue, gPrev?.revenue);
   const minDate = family?.system_status === "SETUP" ? "" : family?.go_live_date ?? "";
   const months = monthOptions(family?.go_live_date, today, 0, ym);
 
@@ -200,6 +205,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
             sub={<>
               <MonthChange pct={changePct(totalFam, valuePrev)} prev={valuePrev} />
               <div>{held.length} กิจการ{latestDate && ` · ประเมินล่าสุด ${thDate(latestDate)}`}</div>
+              <div className={staleN ? "text-red-700" : "text-emerald-700"}>{staleN ? `${staleN} กิจการเกิน 1 ปียังไม่ประเมินใหม่` : "✓ ประเมินครบภายใน 1 ปี"}</div>
             </>} />
           {/* ตกลง 9 พ.ย. 2026: เงินลงทุนเป็นตัวใหญ่ · มูลค่าเทียบเงินลงทุนอยู่ด้านล่าง */}
           <StatBox label="เงินลงทุนรวม" value={withCost.length ? money(gain.cost, "THB") : "-"}
@@ -212,8 +218,15 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
               <div>ม.ค. – {thMonth(mStart)} · ก่อนภาษี</div>
               <div>{mLabel} {plusMoney(divMonth)}{divPct != null && <> · คิดเป็น <span className="font-semibold">{divPct.toFixed(2)}%</span> ของเงินลงทุน</>}</div>
             </>} />
-          <StatBox label="ประเมินมูลค่า (เก่าสุด)" value={oldest ? thDate(oldest) : "-"}
-            sub={staleN ? `${staleN} กิจการเกิน 1 ปียังไม่ประเมินใหม่` : "✓ ประเมินครบภายใน 1 ปี"} subClass={staleN ? "text-red-700" : "text-emerald-700"} />
+          <StatBox label={<>{gLast ? `กำไร (ขาดทุน) ปี ${gLast.fiscal_year + 543}` : "ผลประกอบการ"} · ทั้งกลุ่ม (100%)
+              {gLast && gLast.audit_status !== "AUDITED" && <span className="ml-1 rounded bg-amber-50 px-1 text-amber-700">Pre-audit</span>}</>}
+            value={gLast?.net_profit != null ? money(gLast.net_profit, "THB") : "-"} valueClass={gLast?.net_profit != null && gLast.net_profit < 0 ? "text-red-700" : undefined}
+            sub={!gLast ? "ยังไม่มีข้อมูล · ใส่ได้ที่หน้าของแต่ละกิจการ" : <>
+              <div>รายได้รวม {money(gLast.revenue, "THB")}{gLast.marginPct != null && <> · กำไร <span className={gLast.marginPct < 0 ? "text-red-700" : ""}>{gLast.marginPct.toFixed(1)}%</span></>}</div>
+              {gPrev && (profitChg != null || revChg != null) && <div>เทียบปี {gPrev.fiscal_year + 543}: กำไร <span className={profitChg == null ? "" : signTone(profitChg, 1)}>{profitChg == null ? "-" : signedPct(profitChg, 1)}</span>
+                {" · "}รายได้ <span className={revChg == null ? "" : signTone(revChg, 1)}>{revChg == null ? "-" : signedPct(revChg, 1)}</span></div>}
+              {gFixed?.fixedNet != null && <div>สินทรัพย์ถาวรคงเหลือ {money(gFixed.fixedNet, "THB")} (ปี {gFixed.fiscal_year + 543})</div>}
+            </>} />
         </section>
       )}
       {totalFam > 0 && (
