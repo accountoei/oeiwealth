@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, CLAIM_DONE, CLAIM_OPEN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, durationText, insCountedPaid, money, monthOptions, monthRange, monthsBetween, thDate, todayBangkok } from "@/lib/format";
+import { ADD_BTN, CLAIM_DONE, CLAIM_OPEN, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_STATUS, INS_TYPE, addDays, deathCoverage, insCountedPaid, money, monthOptions, monthRange, monthsBetween, thDate, todayBangkok } from "@/lib/format";
+import { policyYearAt } from "@/lib/insurance-flow";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
@@ -430,12 +431,12 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           })()}
           {canOrder && listRows.length > 1 && <SortToggle active={ordering} {...orderHrefs("/insurance", { p: sp.p, i: iFilter || undefined, t: tFilter, s: sParam })} />}
         </div>
-        {/* คอลัมน์ (ตกลง 7 พ.ย. 2026 · ปรับ 9 พ.ย. 2026): ประเภท · มูลค่าเวนคืน · ทุน (ตามลำดับกล่องด้านบน) · อายุสัญญา (แทนเบี้ย) · วันเริ่ม / วันสิ้นสุด แยกช่อง */}
+        {/* คอลัมน์ (ตกลง 7 พ.ย. 2026 · ปรับ 9 พ.ย. 2026): ประเภท · มูลค่าเวนคืน · ทุน (ตามลำดับกล่องด้านบน) · วันเริ่ม / วันสิ้นสุด แยกช่อง · อายุสัญญา (แทนเบี้ย · หลังวันสิ้นสุด) */}
         <table className="mt-2 w-full min-w-[64rem] text-sm">
           <thead className="whitespace-nowrap bg-slate-50 text-left text-xs text-slate-500">
             <tr><th className="py-2 pl-4 pr-3">กรมธรรม์</th><th className="px-2.5">ประเภท</th><th className="px-2.5">ผู้เอาประกัน</th>
-              <th className="px-2.5 text-right">มูลค่าเวนคืน</th><th className="px-2.5 text-right">ทุนประกัน</th><th className="px-2.5">อายุสัญญา</th>
-              <th className="px-2.5">วันเริ่มสัญญา</th><th className="px-2.5">วันสิ้นสุดสัญญา</th><th className="pl-3 pr-4">สถานะ</th></tr>
+              <th className="px-2.5 text-right">มูลค่าเวนคืน</th><th className="px-2.5 text-right">ทุนประกัน</th>
+              <th className="px-2.5">วันเริ่มสัญญา</th><th className="px-2.5">วันสิ้นสุดสัญญา</th><th className="px-2.5">อายุสัญญา</th><th className="pl-3 pr-4">สถานะ</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {listRows.length === 0 && <tr><td colSpan={9} className="px-2.5 py-6 text-center text-slate-500">
@@ -444,9 +445,14 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
               const c = r.cash_value_asset_id ? cv.get(r.cash_value_asset_id) : null;
               const role = ordering ? null : bookletRole(r, listGroups);
               const rider = !!role && !role.isMain;
-              // อายุสัญญา = วันเริ่ม → วันสิ้นสุด · มีผล + ยังไม่ถึงวันสิ้นสุด = "เหลือ …"
-              const term = r.start_date && r.end_date && r.end_date > r.start_date ? durationText(monthsBetween(r.start_date, r.end_date)) : null;
-              const left = term && r.status === "ACTIVE" && r.end_date > today ? durationText(monthsBetween(today, r.end_date)) : null;
+              // อายุสัญญา (ตกลง 9 พ.ย. 2026) = ปีกรมธรรม์ ไม่มีเศษเดือน · วันเริ่ม = ปีที่ 0 (แบบคอลัมน์ "ปีที่" หน้ากรมธรรม์)
+              //   อายุ = ปีที่ของวันสิ้นสุด (ไม่ตรงวันครบรอบ = ปัดปีที่ใกล้ที่สุด) · เหลือ = อายุ − ปีที่ของวันนี้ (มีผล + ยังไม่ถึงวันสิ้นสุด)
+              //   เหลือ 0 = "ปีสุดท้าย" · ถึง / เลยวันสิ้นสุดแล้ว = "สิ้นสุดสัญญา"
+              const term = r.start_date && r.end_date && r.end_date > r.start_date ? Math.round(monthsBetween(r.start_date, r.end_date) / 12) : null;
+              const cur = r.start_date ? policyYearAt(r.start_date, today) ?? 0 : 0;
+              //   วันครบรอบถัดไปถึง / เลยวันสิ้นสุด = ปีสุดท้าย (กันวันสิ้นสุดก่อนวันครบรอบไม่กี่วันแล้วปัดขึ้น)
+              const nextAnniv = r.start_date ? `${Number(r.start_date.slice(0, 4)) + cur + 1}${r.start_date.slice(4)}` : "";
+              const left = term != null && r.status === "ACTIVE" && r.end_date > today ? (r.end_date <= nextAnniv ? 0 : Math.max(0, term - cur)) : null;
               const late = overduePremium.get(r.id) ?? 0;
               return (
                 <tr key={r.id} className={`${r.status !== "ACTIVE" ? "opacity-50" : ""} ${role ? "bg-slate-50/40" : ""}`}>
@@ -464,9 +470,11 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
                     {pv.assetPct(c.id) != null && <div className="text-xs text-slate-500">{pv.assetPct(c.id)}% ของ {money(c.current_value, ccyTag(c.currency), 0)}</div>}
                   </> : <span className="text-amber-700">ยังไม่มี</span>) : "-"}</td>
                   <td className="px-2.5 text-right tabular-nums">{money(r.insured_amount, ccyTag(r.insured_amount_currency), 0)}</td>
-                  <td className="whitespace-nowrap px-2.5">{term ?? "-"}{left && <div className="text-xs text-slate-500">เหลือ {left}</div>}</td>
                   <td className="whitespace-nowrap px-2.5">{thDate(r.start_date)}</td>
                   <td className="whitespace-nowrap px-2.5">{thDate(r.end_date)}</td>
+                  <td className="whitespace-nowrap px-2.5">{term == null ? "-" : term > 0 ? `${term} ปี` : "ไม่ถึง 1 ปี"}
+                    {r.end_date && r.end_date <= today ? <div className="text-xs text-slate-500">สิ้นสุดสัญญา</div>
+                      : left != null && <div className="text-xs text-slate-500">{left > 0 ? `เหลือ ${left} ปี` : "ปีสุดท้าย"}</div>}</td>
                   <td className="whitespace-nowrap pl-3 pr-4 text-xs">{STATUS[r.status] ?? r.status}
                     {r.derived_status === "EXPIRING_SOON" && <div className="text-amber-700">ใกล้ครบ</div>}
                     {r.derived_status === "EXPIRED" && r.status === "ACTIVE" && <div className="text-red-600">เลยวันสิ้นสุด</div>}
