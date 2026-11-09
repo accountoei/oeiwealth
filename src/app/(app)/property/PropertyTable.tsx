@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useMemo, useState, type ReactNode } from "react";
 import { useOnMainTab } from "../income-expenses/tabs";
-import { money, thDate, todayBangkok } from "@/lib/format";
+import { SMALL_BTN, money, thDate, todayBangkok } from "@/lib/format";
 import { buildKml } from "@/lib/kml";
+import type { MapPlace } from "./PropertyMap";
+
+// โหลดไลบรารีแผนที่เฉพาะตอนกดเปิด (ไม่ถ่วงหน้าทรัพย์สิน)
+const PropertyMap = dynamic(() => import("./PropertyMap"), {
+  ssr: false,
+  loading: () => <div className="mx-4 mt-3 h-[420px] animate-pulse rounded-lg bg-slate-200 md:h-[520px]" />,
+});
 
 export type PropRow = {
   id: string; assetId: string; name: string; sub: string; loc: string | null; type: string; typeLabel: string; usage: string; usageLabel: string;
@@ -23,13 +31,19 @@ export default function PropertyTable({ rows, empty, toggle, note }: { rows: Pro
   const [usage, setUsage] = useState("");
   const [loc, setLoc] = useState("");
   const [status, setStatus] = useState("ACTIVE");
+  const [showMap, setShowMap] = useState(false);
   useOnMainTab(() => { setType(""); setUsage(""); setLoc(""); setStatus("ACTIVE"); });
   const types = useMemo(() => [...new Map(rows.map((r) => [r.type, r.typeLabel]))], [rows]);
   const usages = useMemo(() => [...new Map(rows.map((r) => [r.usage, r.usageLabel]))], [rows]);
   const locs = useMemo(() => [...new Set(rows.map((r) => r.loc ?? ""))].sort((a, b) => (a ? a.localeCompare(b, "th") : 1)), [rows]);
   const statuses = useMemo(() => [...new Set(["ACTIVE", ...rows.map((r) => r.status)])], [rows]);
-  const shown = rows.filter((r) => (!type || r.type === type) && (!usage || r.usage === usage)
-    && (!loc || (loc === "__none" ? !r.loc : r.loc === loc)) && (!status || r.status === status));
+  const shown = useMemo(() => rows.filter((r) => (!type || r.type === type) && (!usage || r.usage === usage)
+    && (!loc || (loc === "__none" ? !r.loc : r.loc === loc)) && (!status || r.status === status)), [rows, type, usage, loc, status]);
+  const places = useMemo((): MapPlace[] => shown.filter((r) => r.geo).map((r) => ({
+    id: r.id, assetId: r.assetId, name: r.name, lat: r.geo!.lat, lng: r.geo!.lng,
+    usage: r.usage, usageLabel: r.usageLabel, typeLabel: r.typeLabel, loc: r.loc, area: r.area ?? null,
+  })), [shown]);
+  const mapTitle = loc ? (loc === "__none" ? "ไม่ระบุกลุ่มทำเล" : loc) : "ทรัพย์สินตามตัวกรอง";
   const sum = (f: (r: PropRow) => number | null) => shown.reduce((t, r) => t + (f(r) ?? 0), 0);
   const filtered = !!(type || usage || loc || status !== "ACTIVE");
   return (
@@ -68,6 +82,8 @@ export default function PropertyTable({ rows, empty, toggle, note }: { rows: Pro
       </div>
       {shown.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 px-4 pt-2 text-xs text-slate-500">
+          <button type="button" onClick={() => setShowMap((v) => !v)} disabled={places.length === 0} aria-expanded={showMap}
+            className={SMALL_BTN}>{showMap ? "ซ่อนแผนที่" : "แผนที่ดาวเทียม"}</button>
           <button type="button" onClick={() => downloadKml(shown, loc)} disabled={!shown.some((r) => r.geo)}
             className="rounded-md border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50">ส่งออกแผนที่ (KML)</button>
           <span>
@@ -77,6 +93,7 @@ export default function PropertyTable({ rows, empty, toggle, note }: { rows: Pro
           </span>
         </div>
       )}
+      {showMap && places.length > 0 && <PropertyMap places={places} title={mapTitle} />}
       <table className="mt-3 w-full min-w-[56rem] text-sm">
         <thead className="bg-slate-50 text-left text-xs text-slate-500">
           <tr><th className="px-3 py-2">ทรัพย์สิน</th><th className="px-3">ประเภท</th><th className="px-3">การใช้งาน</th>
