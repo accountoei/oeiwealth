@@ -4,7 +4,6 @@ import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import { INCOME_TYPE_LABEL, MOVE_LABEL, money, thDate } from "@/lib/format";
 import { assetIncomeFields, businessDividendFields, debtDropIncomeFields, debtInterestFields, loanInterestFields, portfolioTxFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
-import { splitMoves } from "@/lib/split-moves";
 import { sourceMeta, stripPending } from "@/lib/ledger";
 import PropertyPaymentForm from "../property/PropertyPaymentForm";
 import { ReceiptEdit } from "../insurance/[id]/FlowRecord";
@@ -12,7 +11,7 @@ import type { KitExtras, KitReceipt } from "./kit-extras";
 import { PART_LABEL as INS_PART_LABEL, partRank } from "@/lib/insurance-booklet";
 import type { ExpHint } from "@/lib/category-hints";
 import { EntryEditor, type Bank, type Card, type Liab } from "./forms";
-import SplitForm from "./SplitForm";
+import SplitForm, { type SplitSides } from "./SplitForm";
 import TransferEditor from "./TransferEditor";
 import PfTransferEditor from "./PfTransferEditor";
 import PairEdit from "@/components/PairEdit";
@@ -116,7 +115,6 @@ export const closeoutIdSet = (rows: { income_ids: string[] | null; expense_id: s
 
 export function makeEntryKit(c: KitCtx) {
   const { ym, personId, canWrite, canDelete, paths: PATHS, banks, cards, liabs, persons, incSubs, expCats, expHints } = c;
-  const splitLists = { banks, cards, liabs };
   const name = new Map<string, string>([...banks.map((b) => [b.asset_id, b.name] as [string, string]),
     ...cards.map((x) => [x.id, x.label] as [string, string]), ...liabs.map((l) => [l.id, l.name] as [string, string])]);
   const otherName = new Map(c.otherAssets.map((a) => [a.id, [ASSET_PREFIX[a.asset_type], a.name].filter(Boolean).join(" ")]));
@@ -337,17 +335,23 @@ export function makeEntryKit(c: KitCtx) {
     );
   };
   /** แยกก้อนรอแยก: ปุ่ม (ตาราง) หรือกดที่แถว (ตารางเงินเข้า–ออก) */
+  /** แยกก้อนในหน้านี้ = 4 ตัวเลือก (รายได้ · ค่าใช้จ่าย · โอนเข้า / ออกบัญชี · ตกลง 9 พ.ย. 2026)
+   *   ก้อนบัญชีธนาคาร = ครบ 4 · ก้อนบัตร = รายได้ / ค่าใช้จ่าย · ก้อนหนี้ = ฝั่งเดียวกับก้อน (ฐานข้อมูลไม่รับฝั่งตรงข้าม) · จ่ายบัตร / หนี้ ไปบันทึกที่ต้นทาง */
+  const sidesOf = (l: { currency: string; bank?: string | null; card?: string | null }): SplitSides => ({
+    opposite: !!(l.bank || l.card),
+    transfers: l.bank ? banks.filter((b) => b.currency === l.currency && b.asset_id !== l.bank).map((b) => ({ id: b.asset_id, name: b.name })) : [],
+  });
   const incSplit = (i: IncFull, rowClick = false) => canWrite && canDelete && i.pending_split ? (
     <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons}
-      label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
+      categories={expCats} hints={expHints} label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
       personDefault={i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : i.received_to_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
-      moves={splitMoves({ kind: "INCOME", currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id, liab: i.received_to_liability_id }, splitLists)} />
+      sides={sidesOf({ currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id })} />
   ) : null;
   const expSplit = (i: ExpFull, rowClick = false) => canWrite && canDelete && i.pending_split ? (
     <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons} categories={expCats}
       label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
       personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"} hints={expHints}
-      moves={splitMoves({ kind: "EXPENSE", currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id, liab: i.liability_id }, splitLists)} />
+      sides={sidesOf({ currency: i.currency, bank: i.paid_from_asset_id, card: i.paid_from_credit_card_id })} />
   ) : null;
 
   // กดที่รายละเอียดเพื่อไปหน้าต้นทาง (ขีดเส้นใต้ · เมาส์เป็นรูปมือ)
