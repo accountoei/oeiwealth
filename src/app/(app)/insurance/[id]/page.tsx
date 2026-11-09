@@ -23,7 +23,7 @@ import ClaimForm from "./ClaimForm";
 import RowActions from "@/components/RowActions";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import StatusSelect, { WithStatus } from "@/components/StatusSelect";
-import AssetValuationForm from "@/components/AssetValuationForm";
+import CvValueForm from "./CvValueForm";
 import ModalButton from "@/components/ModalButton";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
@@ -94,7 +94,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     cvId ? supabase.from("assets").select("id,current_value,current_value_date,currency").eq("id", cvId).maybeSingle() : Promise.resolve({ data: null }),
-    cvId ? supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", cvId).is("deleted_at", null).order("valuation_date", { ascending: false }) : Promise.resolve({ data: null }),
+    cvId ? supabase.from("asset_valuations").select("id,valuation_date,value,bonus_part,source,notes").eq("asset_id", cvId).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }) : Promise.resolve({ data: null }),
     cvId ? supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId) : Promise.resolve({ data: null }),
     p.asset_id ? supabase.from("assets").select("name,asset_group").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
     bookQ,
@@ -197,12 +197,15 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   //   ตัวเลขตามสัญญาบอกสถานะ: จาง = ยังไม่ถึง · ขีดเส้นใต้ = ถึงแล้วยังไม่ได้ลง (กด = ลงยอดของปีนั้น) · สีฟ้า = ลงแล้ว (กด = แก้ยอดที่ลง เช่น รวมเงินปันผลตามหนังสือแจ้ง)
   //   ยอดที่ลงตรงกับตารางของปีนั้น = ไม่มีแถวแยก · ยอดที่ไม่ตรง (หนังสือแจ้ง / ยอดตั้งต้น / แก้เอง) = แถวย่อยสีฟ้า (กดแถว = แก้ / ลบ)
   const goLive: string = family?.go_live_date ?? "";
-  const CV_METHODS: [string, string][] = [["STATEMENT", "ตามหนังสือแจ้งจากบริษัทประกัน"], ["USER_ESTIMATE", "ประมาณเอง"]];
   const CV_LINK = "tabular-nums text-slate-900 underline decoration-dotted underline-offset-4 hover:text-blue-700";
   const CV_POSTED = "tabular-nums font-medium text-sky-700 hover:underline";
   const cvNote = (y: number) => `ตามตารางมูลค่าเวนคืนในสัญญา · สิ้นปีกรมธรรม์ที่ ${y}`;
-  type CvVal = { id: string; valuation_date: string; value: number; source: string; notes: string | null };
+  type CvVal = { id: string; valuation_date: string; value: number; bonus_part: number | null; source: string; notes: string | null };
   const vals = (cvVals ?? []) as CvVal[];   // ใหม่ → เก่า
+  // โบนัส (ไม่การันตี · ตกลง 9 พ.ย. 2026): ยอดรวม = การันตี + โบนัส · ตรงกับตารางเมื่อส่วนการันตีเท่าตาราง
+  const bonusOf = (v: CvVal) => Number(v.bonus_part ?? 0);
+  const guarOf = (v: CvVal) => Number(v.value) - bonusOf(v);
+  const lastBonus = vals[0] ? bonusOf(vals[0]) : 0;
   const cvByDate = [...cvRows].sort((a, b) => a.value_date.localeCompare(b.value_date));
   /** ปีกรมธรรม์ที่มีผล ณ วันนั้น = ปีล่าสุดในตารางที่ถึงวันแล้ว */
   const cvYearAt = (d: string) => cvByDate.filter((r) => r.value_date <= d).at(-1) ?? null;
@@ -212,31 +215,35 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     const y = cvYearAt(v.valuation_date);
     if (!y) return;
     yearVals.set(y.policy_year, [...(yearVals.get(y.policy_year) ?? []), v]);
-    if (!coveredBy.has(y.policy_year) && Math.abs(Number(v.value) - y.value) < 0.005) coveredBy.set(y.policy_year, v);
+    if (!coveredBy.has(y.policy_year) && Math.abs(guarOf(v) - y.value) < 0.005) coveredBy.set(y.policy_year, v);
   });
   const coveredIds = new Set([...coveredBy.values()].map((v) => v.id));
   const postedYears = [...yearVals.keys()];
   const cvActions = (v: CvVal, button?: string) => (
     <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && vals.length > 1} button={button} buttonClass={button ? CV_POSTED : undefined}
-      fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date }, { name: "value", label: "มูลค่า", type: "number", value: v.value },
-        { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />
+      editor={cvAsset ? <CvValueForm id={v.id} assetId={cvAsset.id} currency={cvAsset.currency} today={today} guaranteed={guarOf(v)} bonus={v.bonus_part}
+        date={v.valuation_date} notes={v.notes} /> : undefined} />
   );
+  /** ยอดที่มีโบนัส → บรรทัดเล็กใต้ยอดการันตี */
+  const withBonus = (v: CvVal | undefined, node: ReactNode) => v && bonusOf(v) > 0
+    ? <>{node}<span className="block text-xs text-slate-500">รวมโบนัส {money(v.value)}</span></> : node;
   const cvCellOf = (r: { policy_year: number; value: number; value_date: string }) => {
     const txt = money(r.value);
     if (r.value_date > today) return <span className="text-slate-400">{txt}</span>;
     const hit = coveredBy.get(r.policy_year);
-    if (hit) return canWrite ? cvActions(hit, txt) : <span className="font-medium text-sky-700">{txt}</span>;
+    if (hit) return withBonus(hit, canWrite ? cvActions(hit, txt) : <span className="font-medium text-sky-700">{txt}</span>);
     if (yearVals.has(r.policy_year) || !cvAsset || !canWrite || !policyActive || r.value_date < goLive) return txt;
     return (
       <ModalButton label={txt} title={`มูลค่าเวนคืน · สิ้นปีกรมธรรม์ที่ ${r.policy_year}`} className={CV_LINK}>
-        <AssetValuationForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={goLive} paths={paths} methods={CV_METHODS}
-          defaultValue={r.value} defaultDate={r.value_date} defaultNotes={cvNote(r.policy_year)} />
+        <CvValueForm assetId={cvAsset.id} currency={cvAsset.currency} today={today} minDate={goLive}
+          guaranteed={r.value} bonus={lastBonus} date={r.value_date} notes={cvNote(r.policy_year)} />
       </ModalButton>
     );
   };
   const cvSubs: FlowSub[] = cvAsset ? vals.filter((v) => !coveredIds.has(v.id)).map((v) => ({
     key: `cv${v.id}`, kind: "CV" as const, date: v.valuation_date, amount: Number(v.value),
     text: v.source === "OPENING" ? "ยอดตั้งต้น" : v.notes ?? (CV_SOURCE[v.source] ?? v.source),
+    detail: bonusOf(v) > 0 ? `การันตี ${money(guarOf(v))} + โบนัส (ไม่การันตี) ${money(bonusOf(v))}` : null,
     actions: canWrite ? cvActions(v) : null,
   })) : [];
   const isProp = p.insurance_type === "PROPERTY";
@@ -641,6 +648,9 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
               <>
                 <div className="mt-1 text-2xl font-semibold tabular-nums">{money(cvAsset.current_value, cvAsset.currency, 0)}</div>
                 <div className="text-xs text-slate-500">ณ {thDate(cvAsset.current_value_date)}</div>
+                {vals[0] && bonusOf(vals[0]) > 0 && (
+                  <div className="mt-1 text-xs text-slate-600">การันตี {money(guarOf(vals[0]), undefined, 0)} · โบนัส (ไม่การันตี) {money(bonusOf(vals[0]), undefined, 0)}</div>
+                )}
                 <div className="mt-2 text-xs text-slate-600">เจ้าของ: {activeOwners.map((o) => `${o.person_name} ${Number(o.ownership_percent)}%`).join(", ") || "-"}</div>
                 {p.person_id && !(activeOwners.length === 1 && activeOwners[0].person_id === p.person_id && Number(activeOwners[0].ownership_percent) === 100) && (
                   <div className="mt-1 text-xs text-amber-700">เจ้าของมูลค่าเวนคืนไม่ใช่ผู้เอาประกัน 100% — ตรวจว่าถูกต้อง</div>

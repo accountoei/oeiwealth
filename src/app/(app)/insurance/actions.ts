@@ -198,6 +198,31 @@ export async function saveCashValueTable(_: ActionState, form: FormData): Promis
   return { ok: lines.length === 0 ? "ล้างตารางแล้ว" : `บันทึกตาราง ${r?.count ?? lines.length} ปีแล้ว${upd}${cvMsg(r?.sync)}` };
 }
 
+/**
+ * มูลค่าเวนคืน 1 ยอด = ส่วนการันตี + โบนัส (ไม่การันตี · ตกลง 9 พ.ย. 2026)
+ *   เก็บยอดรวมเป็นมูลค่า (นับใน Net Worth) + โบนัสแยกไว้ (bonus_part) · ไม่มี / 0 = ไม่มีโบนัส
+ *   มี id = แก้ยอดเดิม (วันที่ · ยอด · หมายเหตุ) · ไม่มี = เพิ่มยอดใหม่
+ */
+export async function saveCashValue(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const guaranteed = num(form.get("guaranteed"));
+  const bonus = num(form.get("bonus")) ?? 0;
+  const date = str(form.get("valuation_date"));
+  if (guaranteed == null || guaranteed < 0) return { error: "กรุณาใส่มูลค่าการันตีเป็นตัวเลข (ไม่ติดลบ)" };
+  if (bonus < 0) return { error: "โบนัสติดลบไม่ได้" };
+  if (!date) return { error: "กรุณาใส่วันที่" };
+  const row = { valuation_date: date, value: Math.round((guaranteed + bonus) * 100) / 100, bonus_part: bonus > 0 ? bonus : null, notes: str(form.get("notes")) };
+  const id = str(form.get("id"));
+  const method = String(form.get("valuation_method") ?? "STATEMENT") === "USER_ESTIMATE" ? "USER_ESTIMATE" : "STATEMENT";
+  const { error } = id
+    ? await supabase.from("asset_valuations").update(row).eq("id", id)
+    : await supabase.from("asset_valuations").insert({ ...row, asset_id: String(form.get("asset_id")), valuation_method: method,
+        source: method === "STATEMENT" ? "STATEMENT" : "USER" });
+  if (error) return { error: friendlyError(error.message) };
+  refresh();
+  return { ok: id ? "แก้มูลค่าเวนคืนแล้ว" : "บันทึกมูลค่าเวนคืนแล้ว" };
+}
+
 /** ปุ่ม "ลงมูลค่าตามตาราง" (ปีที่ถึงวันแล้ว แต่ยังไม่ได้ลง เช่น จ่ายเบี้ยครบแล้ว) */
 export async function syncCashValue(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
