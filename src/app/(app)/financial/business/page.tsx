@@ -259,7 +259,16 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               {th("กิจการ", false)}{th("ทุนจดทะเบียน (THB)")}{th("% ที่ถือ")}
-              {th("ราคาทุน (THB)")}{th("มูลค่าปัจจุบัน (THB)")}{th("เทียบทุน")}{th(ym === today.slice(0, 7) ? "ปันผลปีนี้ (THB)" : `ปันผล ม.ค.–${thMonth(mStart)} (THB)`)}
+              {th("ราคาทุน (THB)")}{th("มูลค่าปัจจุบัน (THB)")}{th("เทียบทุน")}
+              {/* หัวคอลัมน์ปันผลเปลี่ยนตามเดือนที่เลือก → จองความกว้างเท่าข้อความที่ยาวที่สุด (ทุกเดือน · ทุกฟอนต์) ซ่อนไว้ใต้ข้อความจริง
+                  เปลี่ยนเดือนแล้วคอลัมน์อื่นไม่ขยับ (ตกลง 9 พ.ย. 2026) */}
+              <th className="whitespace-nowrap px-3 py-2 text-right">
+                <span className="inline-grid justify-items-end [&>*]:col-start-1 [&>*]:row-start-1">
+                  <span>{ym === today.slice(0, 7) ? "ปันผลปีนี้ (THB)" : `ปันผล ม.ค.–${thMonth(mStart)} (THB)`}</span>
+                  {["ปันผลปีนี้ (THB)", ...Array.from({ length: 12 }, (_, i) => `ปันผล ม.ค.–${thMonth(`${ym.slice(0, 4)}-${String(i + 1).padStart(2, "0")}-01`)} (THB)`)]
+                    .map((l) => <span key={l} aria-hidden className="invisible">{l}</span>)}
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
