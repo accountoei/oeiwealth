@@ -5738,4 +5738,59 @@ SELECT t.ok(NOT has_table_privilege('anon', 'public.business_financial_years', '
             'ผลประกอบการ: RLS เปิด · anon อ่านไม่ได้');
 RESET ROLE;
 
+
+\echo '== 13zz-bonus. ประกัน: โบนัส (ไม่การันตี) ในมูลค่าเวนคืน · ระบบลงยอดตามตาราง + ยกโบนัสล่าสุดมาบวก (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+CREATE TEMP TABLE tbn(k text PRIMARY KEY, id uuid);
+GRANT ALL ON tbn TO authenticated;
+INSERT INTO tbn SELECT 'pol', public.create_insurance_policy(jsonb_build_object(
+  'insurance_type', 'LIFE', 'person_id', t.p('คุณแม่'), 'insurer', 'โบนัสทดสอบ', 'currency', 'USD', 'premium', 1000,
+  'start_date', (current_date - interval '3 years' - interval '10 days')::date));
+SELECT id AS bnpol FROM tbn WHERE k = 'pol' \gset
+SELECT t.ok((SELECT (r->'sync'->>'created')::boolean AND (r->'sync'->>'policy_year')::int = 2
+               FROM public.set_insurance_cash_value_table(:'bnpol', jsonb_build_array(
+                 jsonb_build_object('policy_year', 2, 'value', 20000, 'value_date', current_date - 30),
+                 jsonb_build_object('policy_year', 3, 'value', 30000, 'value_date', current_date + 300))) r),
+            'โบนัส: ตั้งตาราง → สร้างมูลค่าเวนคืนปีที่ 2 (ไม่มีโบนัส)');
+SELECT cash_value_asset_id AS bncv FROM public.insurance_policies WHERE id = :'bnpol' \gset
+SELECT t.ok((SELECT bonus_part IS NULL FROM public.asset_valuations WHERE asset_id = :'bncv' AND deleted_at IS NULL),
+            'โบนัส: ยอดที่ระบบลงตอนยังไม่มีโบนัส = ไม่มีโบนัส');
+-- ยอดจากหนังสือแจ้ง: การันตี 21,000 + โบนัส 5,000
+INSERT INTO public.asset_valuations(asset_id, valuation_date, value, bonus_part, valuation_method, source, notes)
+VALUES (:'bncv', current_date - 5, 26000, 5000, 'STATEMENT', 'STATEMENT', 'หนังสือแจ้ง');
+SELECT t.ok((SELECT current_value = 26000 FROM public.assets WHERE id = :'bncv'), 'โบนัส: มูลค่าเวนคืน = การันตี + โบนัส (26,000)');
+SELECT t.fails(format($$INSERT INTO public.asset_valuations(asset_id, valuation_date, value, bonus_part) VALUES (%L, current_date - 4, 100, 200)$$, :'bncv'),
+  'av_bonus_part_ck', 'โบนัส: เกินยอดรวมไม่ได้');
+SELECT t.fails(format($$INSERT INTO public.asset_valuations(asset_id, valuation_date, value, bonus_part) VALUES (%L, current_date - 4, 100, 0)$$, :'bncv'),
+  'av_bonus_part_ck', 'โบนัส: 0 = ไม่ใส่ (NULL)');
+SELECT t.fails(format($$INSERT INTO public.asset_valuations(asset_id, valuation_date, value, bonus_part) VALUES (%L, current_date - 4, 1000, 10)$$, t.a('KBank ออมทรัพย์')),
+  'โบนัสใส่ได้เฉพาะมูลค่าเวนคืน', 'โบนัส: ใส่ได้เฉพาะมูลค่าเวนคืนของกรมธรรม์');
+-- ปีที่ 3 ถึงวัน → ยอดตามตาราง + โบนัสล่าสุด
+SELECT t.ok((SELECT (r->'sync'->>'added')::int = 1 AND (r->'sync'->>'value')::numeric = 35000
+               FROM public.set_insurance_cash_value_table(:'bnpol', jsonb_build_array(
+                 jsonb_build_object('policy_year', 2, 'value', 20000, 'value_date', current_date - 30),
+                 jsonb_build_object('policy_year', 3, 'value', 30000, 'value_date', current_date - 1))) r),
+            'โบนัส: ปีที่ 3 ถึงวัน → ลง 30,000 + โบนัส 5,000 = 35,000');
+SELECT t.ok((SELECT value = 35000 AND bonus_part = 5000 FROM public.asset_valuations
+              WHERE asset_id = :'bncv' AND deleted_at IS NULL AND valuation_date = current_date - 1),
+            'โบนัส: ยอดที่ระบบลงเก็บโบนัสแยกไว้ (5,000)');
+-- แก้ตาราง → ยอดที่ระบบลงไว้ขยับตามส่วนการันตี โบนัสคงเดิม
+SELECT t.ok((SELECT (r->>'updated')::int = 1 FROM public.set_insurance_cash_value_table(:'bnpol', jsonb_build_array(
+               jsonb_build_object('policy_year', 2, 'value', 20000, 'value_date', current_date - 30),
+               jsonb_build_object('policy_year', 3, 'value', 31000, 'value_date', current_date - 1))) r),
+            'โบนัส: แก้ตารางปีที่ 3 → ยอดที่ระบบลงไว้ขยับ 1 รายการ');
+SELECT t.ok((SELECT value = 36000 AND bonus_part = 5000 FROM public.asset_valuations
+                  WHERE asset_id = :'bncv' AND deleted_at IS NULL AND valuation_date = current_date - 1),
+            'โบนัส: แก้ตารางปีที่ 3 เป็น 31,000 → ยอดที่ลงไว้ = 36,000 (โบนัสคงเดิม)');
+-- งานประจำวัน: ปีที่ 4 ถึงวัน → ยกโบนัสมาบวก
+INSERT INTO public.insurance_cash_value_table(policy_id, policy_year, value_date, value, currency) VALUES (:'bnpol', 4, current_date, 40000, 'USD');
+SET ROLE service_role; SELECT t.login(NULL);
+SELECT t.ok(public.server_sync_insurance_cash_values() = 1, 'โบนัส: งานประจำวันลงปีที่ 4');
+SELECT t.ok((SELECT value = 45000 AND bonus_part = 5000 FROM public.asset_valuations
+              WHERE asset_id = :'bncv' AND deleted_at IS NULL AND valuation_date = current_date),
+            'โบนัส: งานประจำวัน = 40,000 + โบนัสล่าสุด 5,000');
+RESET ROLE;
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'
