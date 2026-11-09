@@ -9,6 +9,19 @@ import Modal, { type ModalSize } from "./Modal";
 const OPEN_EVENT = "fwv:row-panel-open";
 // คลิกโดนสิ่งที่กดได้อยู่แล้วในแถว (ลิงก์ / ปุ่ม / ช่องกรอก) → ไม่เปิดกล่อง
 const INTERACTIVE = "a,button,input,select,textarea,label,form,summary,details,[data-no-row-click]";
+// ยอดเงินในแถวที่กดได้ → ขีดเส้นประใต้ตัวเลข (ตกลง 9 พ.ย. 2026 · "เห็นเส้นประ = กดได้" ทุกหน้า · กดตัวเลขหรือกดแถวก็ได้)
+//   หาเองอัตโนมัติ: ช่องแรกของแถวที่มีแต่ยอดเงิน (ทศนิยม 2 ตำแหน่ง เช่น 1,000.00 / −500.00 / 1,000.00 USD) · ไม่นับในปุ่ม / ลิงก์
+//   จะระบุเองให้ใส่ data-amt ที่ตัวเลขนั้น (มีแล้ว = ไม่หาเอง) · สไตล์อยู่ใน globals.css
+const MONEY = /^[+\u2212-]?(?:[A-Z]{3} )?\d{1,3}(?:,\d{3})*\.\d{2}(?: [A-Z]{3})?$/;
+function markAmount(tr: HTMLTableRowElement) {
+  tr.querySelectorAll("[data-amt-auto]").forEach((e) => e.removeAttribute("data-amt-auto"));
+  if (tr.querySelector("[data-amt]")) return;
+  const hit = (el: Element) => !el.closest(INTERACTIVE) && MONEY.test((el.textContent ?? "").trim());
+  for (const td of Array.from(tr.cells)) {
+    const el = hit(td) ? td : Array.from(td.querySelectorAll("*")).find(hit);
+    if (el) { el.setAttribute("data-amt-auto", ""); return; }
+  }
+}
 
 export function useRowPanel(enabled: boolean) {
   const id = useId();
@@ -42,11 +55,15 @@ export function useRowPanel(enabled: boolean) {
     tr.addEventListener("click", onClick);
     return () => {
       tr.removeEventListener("click", onClick);
+      tr.querySelectorAll("[data-amt-auto]").forEach((e) => e.removeAttribute("data-amt-auto"));
       tr.classList.remove("cursor-pointer", "hover:bg-slate-50", "bg-blue-50/60");
       tr.removeAttribute("data-row-panel-row");
       setRow(null);
     };
   }, [enabled, setOpen]);
+
+  // ขีดเส้นประใต้ยอดเงิน · ทำทุกครั้งที่แสดงใหม่ (ข้อมูลในแถวเปลี่ยนได้)
+  useEffect(() => { if (row) markAmount(row); });
 
   // เปิดแถวอื่น → ปิดแถวนี้
   useEffect(() => {
