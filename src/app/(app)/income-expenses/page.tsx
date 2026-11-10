@@ -264,9 +264,9 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     i.source_transaction_id ? "รายได้ลงทุน" : i.lease_id ? "ค่าเช่า" : i.income_type === "LOAN_INTEREST" && i.asset_id ? "เงินให้กู้"
       : i.insurance_schedule_line_id || i.income_type === "INSURANCE_BENEFIT" ? "ผลประโยชน์ประกัน" : i.received_to_liability_id ? "ลดหนี้"
       : i.recurring_template_id ? "รายได้ประจำ" : i.income_type === "BUSINESS_DIVIDEND" && i.asset_id ? "ปันผลกิจการ" : "บันทึกเอง";
-  const expLabel = (i: { source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null;
-    property_utility_id: string | null; recurring_expense_id: string | null }) =>
-    i.source_cash_movement_id ? "ค่าธรรมเนียมโอน" : i.liability_id ? "หนี้สิน" : i.insurance_schedule_line_id ? "เบี้ยประกัน"
+  const expLabel = (i: { source_cash_movement_id: string | null; source_investment_tx_id?: string | null; liability_id: string | null;
+    insurance_schedule_line_id: string | null; property_utility_id: string | null; recurring_expense_id: string | null }) =>
+    i.source_cash_movement_id ? "ค่าธรรมเนียมโอน" : i.source_investment_tx_id ? "ค่าธรรมเนียมพอร์ต" : i.liability_id ? "หนี้สิน" : i.insurance_schedule_line_id ? "เบี้ยประกัน"
       : i.property_utility_id ? "ทรัพย์สิน" : i.recurring_expense_id ? "ค่าใช้จ่ายประจำ" : "บันทึกเอง";
 
   const incRows: MonthRow[] = [
@@ -474,11 +474,13 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
         </>,
         account: <>
           {i.source_cash_movement_id ? "จากรายการโอน"
+            : i.source_investment_tx_id ? "หักในพอร์ตลงทุน"
             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
             : i.paid_from_cash_holding_id ? name.get(i.paid_from_cash_holding_id) ?? "เงินฝากในพอร์ต"
             : i.liability_id ? `ทบเข้าหนี้ ${name.get(i.liability_id) ?? ""}` : "เงินสด"}
-          {!i.source_cash_movement_id && (pname(i.persons) ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
+          {i.source_investment_tx_id ? <div className="text-slate-500">ตามเจ้าของพอร์ต</div>
+            : !i.source_cash_movement_id && (pname(i.persons) ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
             : i.liability_id ? <div className="text-slate-500">ตามผู้รับผิดชอบหนี้</div>
             : i.paid_from_cash_holding_id ? <div className="text-slate-500">ตามเจ้าของพอร์ต</div>
             : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}

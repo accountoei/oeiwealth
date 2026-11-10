@@ -119,7 +119,7 @@ AFTER:   a50_sync (สร้าง/Sync Derived + Cache) → a60_fill → z90_au
 | **META** | แก้ `created_*` ไม่ได้ · Soft Delete = ADMIN/EDITOR · Restore = ADMIN · Record ที่ถูกลบต้อง Restore ก่อนแก้ | ทุกตาราง |
 | **Hard Delete block** | Client ใช้ `DELETE` ไม่ได้ (ไม่มีสิทธิ์ DELETE / TRUNCATE เลย) | ทุกตาราง |
 | **Cache Field** | Client แก้ Field ที่ระบบคำนวณไม่ได้ (Insert → ถูกรีเซ็ต, แก้ → Error) | 15 ตาราง เช่น `assets.current_value`, `investment_holdings.quantity/average_cost`, `*.base_amount`, `bank_reconciliations.*`, Field Settle เงินประกันของ Lease |
-| **Derived Lock** | Client สร้าง/แก้ Derived Record ไม่ได้ → ต้องแก้ที่ Source | `cash_movements.is_derived`, `income_transactions.source_transaction_id`, `expense_items.source_cash_movement_id`, `investment_transactions.cash_movement_id` |
+| **Derived Lock** | Client สร้าง/แก้ Derived Record ไม่ได้ → ต้องแก้ที่ Source | `cash_movements.is_derived`, `income_transactions.source_transaction_id`, `expense_items.source_cash_movement_id`, `expense_items.source_investment_tx_id`, `investment_transactions.cash_movement_id` |
 | **Period Lock** | Effective Date ≤ วันสิ้นเดือน FINAL ล่าสุด → เขียนไม่ได้ **ทุกทาง** รวม Trusted Trigger | 10 ตารางตาม Section 37 + ยอดบัตร + ยอดตั้งต้นเงินให้กู้ |
 | **Go-live Lock** | หลัง LIVE ห้ามรายการก่อน Go-live · แก้ยอดตั้งต้นได้เฉพาะ **ADMIN พร้อมเหตุผลใน `notes`** → Audit `EDIT_OPENING_POSITION` | ตารางเดียวกัน |
 | **FINAL Snapshot** | Header / Items / Lines ที่ FINAL แก้ไม่ได้แม้ Trusted (ยกเว้นผ่าน `reopen_month()`) | `net_worth_snapshots*` |
@@ -139,6 +139,7 @@ AFTER:   a50_sync (สร้าง/Sync Derived + Cache) → a60_fill → z90_au
 | `cash_movements` INVESTMENT_OUT (ธนาคาร → พอร์ต) | `investment_transactions` DEPOSIT | `amount` |
 | `cash_movements` INVESTMENT_IN (พอร์ต → ธนาคาร) | WITHDRAWAL + FEE (ถ้ามีค่าธรรมเนียม) | `amount`, `fee` |
 | `cash_movements` ที่มีค่าธรรมเนียมออกจากบัญชีธนาคาร | `expense_items` BANK_FEE (เว้นแต่ `metadata.fee_as_expense = false`) | `fee` |
+| `investment_transactions` คูปอง / ปันผล / ดอกเบี้ย / แลกเงิน / โอนในพอร์ต ที่มี `fee` · รายการ FEE (ทั้งยอด) | `expense_items` BANK_FEE ไม่มีบัญชีที่จ่าย (`source_investment_tx_id` · `related_asset_id` = พอร์ต → แบ่งรายคนตามเจ้าของพอร์ต · ไม่หักเงินซ้ำ) · ซื้อ = ต้นทุน · ขาย / ไถ่ถอน / ครบกำหนด = หักจากเงินที่ได้ · ภาษี (TAX) ไม่สร้าง (10 พ.ย. 2026) | `fee` / `amount` |
 | `investment_transactions` BUY + `settle_from` | `cash_movements` INVESTMENT_OUT ลงวันที่ Settlement | `amount + fee` |
 | SELL / REDEMPTION / MATURITY + `settle_to` | `cash_movements` INVESTMENT_IN | `amount − fee − tax` |
 | DIVIDEND / INTEREST / COUPON | `income_transactions` (1:1) + `cash_movements` **INCOME** (ถ้ามี `settle_to`) | `amount − fee − tax` |

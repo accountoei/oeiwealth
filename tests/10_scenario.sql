@@ -6011,4 +6011,72 @@ SELECT t.ok(NOT has_function_privilege('anon', 'public.replace_same_day_valuatio
             'ยอดซ้ำวันเดิม: anon เรียกไม่ได้ · ฟังก์ชันลบภายในเรียกตรงไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz9999. ค่าธรรมเนียมในพอร์ต → รายจ่ายค่าธรรมเนียมอัตโนมัติ (10 พ.ย. 2026 · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.add_holding(t.a('พอร์ตหลายบัญชี (แก้)'), 'BOND', 'หุ้นกู้ค่าธรรมเนียม Y', NULL, 'USD', NULL, NULL, NULL) IS NOT NULL AS bond_y;
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('type','COUPON','date',current_date,'holding_id',t.h('หุ้นกู้ค่าธรรมเนียม Y'),'amount',100,'fee',3.5,
+                     'cash_holding_id',t.h('เงินสด USD บัญชี A'))) AS fee_coupon \gset
+RESET ROLE;
+SELECT t.ok((SELECT count(*) FROM public.expense_items e WHERE e.source_investment_tx_id = :'fee_coupon' AND e.deleted_at IS NULL
+              AND e.amount = 3.5 AND e.currency = 'USD' AND e.expense_category = 'BANK_FEE'
+              AND e.related_asset_id = t.a('พอร์ตหลายบัญชี (แก้)') AND e.paid_from_asset_id IS NULL AND e.paid_from_cash_holding_id IS NULL
+              AND e.description LIKE 'ค่าธรรมเนียมรับคูปอง · หุ้นกู้ค่าธรรมเนียม Y%') = 1,
+            'ค่าธรรมเนียมพอร์ต: คูปองมีค่าธรรมเนียม → รายจ่าย BANK_FEE 1 แถว ผูกพอร์ต ไม่มีบัญชีที่จ่าย');
+SELECT t.ok((SELECT net_cash FROM public.v_investment_transactions_net WHERE id = :'fee_coupon') = 96.5
+            AND NOT EXISTS (SELECT 1 FROM public.cash_movements m JOIN public.expense_items e ON e.id = m.source_entity_id
+                             WHERE m.source_entity_type = 'EXPENSE' AND e.source_investment_tx_id = :'fee_coupon' AND m.deleted_at IS NULL),
+            'ค่าธรรมเนียมพอร์ต: เงินสดในพอร์ตรับสุทธิ 96.5 · ไม่หักเงินซ้ำ (ไม่มีรายการเงินออก)');
+SELECT t.ok((SELECT count(*) FROM public.v_expense_by_person v JOIN public.expense_items e ON e.id = v.expense_item_id
+              WHERE e.source_investment_tx_id = :'fee_coupon' AND v.is_derived_fee) >= 1
+            AND (SELECT sum(v.share_percent) FROM public.v_expense_by_person v JOIN public.expense_items e ON e.id = v.expense_item_id
+                  WHERE e.source_investment_tx_id = :'fee_coupon') = 100,
+            'ค่าธรรมเนียมพอร์ต: แบ่งรายคนตามเจ้าของพอร์ตครบ 100%');
+-- หน้าเว็บแก้ / ลบรายจ่ายนี้ตรงไม่ได้
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT t.fails(format($$UPDATE public.expense_items SET amount = 1 WHERE source_investment_tx_id = %L$$, :'fee_coupon'),
+               'DERIVED_RECORD', 'ค่าธรรมเนียมพอร์ต: แก้รายจ่ายจากหน้า I&E ตรงไม่ได้ (แก้ที่รายการในพอร์ต)');
+SELECT t.fails($$INSERT INTO public.expense_items(monthly_expense_id, date, description, amount, currency, expense_category, source_investment_tx_id)
+                 SELECT e.monthly_expense_id, e.date, 'ปลอม', 1, 'USD', 'BANK_FEE', e.source_investment_tx_id
+                   FROM public.expense_items e WHERE e.source_investment_tx_id IS NOT NULL LIMIT 1$$,
+               'DERIVED_RECORD', 'ค่าธรรมเนียมพอร์ต: สร้างแถวผูกพอร์ตเองไม่ได้');
+RESET ROLE;
+-- แก้ค่าธรรมเนียมที่ต้นทาง → รายจ่ายตาม · ตั้งเป็น 0 → ลบ · ใส่กลับ → กลับมาแถวเดิม
+UPDATE public.investment_transactions SET fee = 4 WHERE id = :'fee_coupon';
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE source_investment_tx_id = :'fee_coupon' AND deleted_at IS NULL) = 4,
+            'ค่าธรรมเนียมพอร์ต: แก้ค่าธรรมเนียมที่รายการพอร์ต → รายจ่ายเปลี่ยนตาม');
+UPDATE public.investment_transactions SET fee = NULL WHERE id = :'fee_coupon';
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE source_investment_tx_id = :'fee_coupon' AND deleted_at IS NULL),
+            'ค่าธรรมเนียมพอร์ต: ลบค่าธรรมเนียม → รายจ่ายถูกลบ (soft delete)');
+UPDATE public.investment_transactions SET fee = 2 WHERE id = :'fee_coupon';
+SELECT t.ok((SELECT count(*) FROM public.expense_items WHERE source_investment_tx_id = :'fee_coupon') = 1
+            AND (SELECT amount FROM public.expense_items WHERE source_investment_tx_id = :'fee_coupon' AND deleted_at IS NULL) = 2,
+            'ค่าธรรมเนียมพอร์ต: ใส่ค่าธรรมเนียมกลับ → ใช้แถวเดิม ไม่ซ้ำ');
+UPDATE public.investment_transactions SET deleted_at = now() WHERE id = :'fee_coupon';
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE source_investment_tx_id = :'fee_coupon' AND deleted_at IS NULL),
+            'ค่าธรรมเนียมพอร์ต: ลบรายการคูปอง → รายจ่ายค่าธรรมเนียมหายด้วย');
+-- รายการ "ค่าธรรมเนียม" ของพอร์ต · โอนภายในพอร์ตมีค่าธรรมเนียม · ซื้อไม่สร้าง
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('type','FEE','date',current_date,'holding_id',t.h('เงินสด USD บัญชี C'),'amount',7)) AS fee_fee \gset
+SELECT public.transfer_portfolio_cash(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('from_holding_id',t.h('เงินสด USD บัญชี A'),'to_holding_id',t.h('เงินสด USD บัญชี C'),
+                     'amount',50,'fee',1.25,'date',current_date)) IS NOT NULL AS fee_xfer;
+SELECT public.record_investment_tx(t.a('พอร์ตหลายบัญชี (แก้)'),
+  jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('หุ้นกู้ค่าธรรมเนียม Y'),'quantity',1,'price',10,'fee',5,
+                     'cash_holding_id',t.h('เงินสด USD บัญชี C'))) AS fee_buy \gset
+RESET ROLE;
+SELECT t.ok((SELECT amount FROM public.expense_items WHERE source_investment_tx_id = :'fee_fee' AND deleted_at IS NULL) = 7,
+            'ค่าธรรมเนียมพอร์ต: รายการค่าธรรมเนียม (FEE) → รายจ่ายเต็มจำนวน');
+SELECT t.ok((SELECT count(*) FROM public.expense_items e JOIN public.investment_transactions x ON x.id = e.source_investment_tx_id
+              WHERE x.transaction_type = 'CASH_TRANSFER' AND e.amount = 1.25 AND e.deleted_at IS NULL) = 1,
+            'ค่าธรรมเนียมพอร์ต: โอนระหว่างบัญชีในพอร์ตมีค่าธรรมเนียม → รายจ่าย 1 แถว');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE source_investment_tx_id = :'fee_buy'),
+            'ค่าธรรมเนียมพอร์ต: ค่าธรรมเนียมซื้อเป็นต้นทุน ไม่สร้างรายจ่าย');
+SELECT t.ok(NOT has_function_privilege('authenticated', 'private.sync_itx_fee_expense(uuid)', 'EXECUTE')
+            AND NOT has_function_privilege('anon', 'private.sync_itx_fee_expense(uuid)', 'EXECUTE'),
+            'ค่าธรรมเนียมพอร์ต: ฟังก์ชันภายในเรียกตรงไม่ได้');
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'

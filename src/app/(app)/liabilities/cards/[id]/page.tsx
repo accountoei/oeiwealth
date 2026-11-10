@@ -66,7 +66,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
   const expCats = (cats ?? []).map((x) => x.name as string);
   const { data: hintRows } = await supabase.from("expense_items")
     .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
-    .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
+    .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("source_investment_tx_id", null).is("liability_id", null)
     .order("date", { ascending: false }).limit(1500);
   const expHints = buildHints(hintRows ?? [], expCats);
   // เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน (payment_group_id เดียวกัน · วันเดียวกัน) → แถวเดียว ให้ตรงกับ Statement บัตร (ตกลง 6 พ.ย. 2026)

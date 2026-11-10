@@ -24,7 +24,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("ie_categories").select("kind,name,active").is("deleted_at", null).order("sort_order").order("name"),
     supabase.from("expense_items").select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
-      .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
+      .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("source_investment_tx_id", null).is("liability_id", null)
       .is("insurance_schedule_line_id", null).is("property_utility_id", null)
       .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500),
     incIds.length ? supabase.from("income_transactions").select(INC_SELECT).in("id", incIds) : none,
