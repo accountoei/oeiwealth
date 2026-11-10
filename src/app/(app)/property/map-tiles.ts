@@ -2,7 +2,7 @@ import type * as Leaflet from "leaflet";
 
 /**
  * ชั้นแผนที่ที่ใช้ร่วมกัน: แผนที่ดาวเทียมในหน้ารวม (PropertyMap) + หน้าพิมพ์ทรัพย์สิน (/print/property)
- * มี NEXT_PUBLIC_ARCGIS_API_KEY → ภาพ Esri World Imagery + ชั้นชื่อ Esri · ไม่มี key → ภาพ Sentinel-2 ของ EOX + ชื่อของ CARTO
+ * มี NEXT_PUBLIC_ARCGIS_API_KEY → ภาพ Esri World Imagery + ชั้นชื่อ Esri · ไม่มี key หรือ key ใช้ไม่ได้ → ภาพ Sentinel-2 ของ EOX + ชื่อของ CARTO
  */
 // สีเดียวกับหมุดในไฟล์ KML (src/lib/kml.ts)
 export const USAGE_COLOR: Record<string, string> = {
@@ -28,9 +28,12 @@ const esri = (path: string) =>
 
 export type TileDef = { url: string; attribution?: string; maxNativeZoom: number; subdomains?: string; tileSize?: number; zoomOffset?: number };
 // ภาพพื้นหลัง (ดาวเทียม) + ชั้นชื่อที่ซ้อนทับ
-export const SAT: TileDef = ESRI_KEY
-  ? { url: esri("World_Imagery"), attribution: ESRI_ATTR, maxNativeZoom: 18 }
-  : { url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg", attribution: EOX_ATTR, maxNativeZoom: 15 };
+// ภาพดาวเทียมฟรีของ EOX (~10 ม.) ไม่ต้องใช้ key ไม่มีวันหมดอายุ = ภาพสำรองเมื่อไม่มี key หรือ key ใช้ไม่ได้ (หมดอายุ / ถูกยกเลิก)
+export const EOX_SAT: TileDef = {
+  url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg", attribution: EOX_ATTR, maxNativeZoom: 15,
+};
+const ESRI_SAT: TileDef | null = ESRI_KEY ? { url: esri("World_Imagery"), attribution: ESRI_ATTR, maxNativeZoom: 18 } : null;
+export const SAT: TileDef = ESRI_SAT ?? EOX_SAT;
 export const CARTO_LABELS: TileDef = {
   url: "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", subdomains: "abcd", maxNativeZoom: 18,
   attribution: `${OSM_ATTR} © ${A("https://carto.com/attributions", "CARTO")}`,
@@ -49,7 +52,11 @@ export const LABELS: TileDef = ESRI_LABELS ?? CARTO_LABELS;
 export const STREET: TileDef = { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: OSM_ATTR, maxNativeZoom: 19 };
 
 
-/** ใส่ชั้นแผนที่ลงกลุ่ม (ล้างของเดิมก่อน) · ถ้าไทล์ชื่อของ Esri โหลดไม่ได้ จะสลับไปใช้ชื่อของ CARTO แทน */
+/** ภาพดาวเทียม Esri โหลดไม่ขึ้นติดกันกี่ช่อง จึงถือว่า key ใช้ไม่ได้ แล้วสลับไปภาพ EOX (กันเน็ตสะดุดชั่วคราวแล้วสลับผิด) */
+const SAT_FAIL_LIMIT = 4;
+
+/** ใส่ชั้นแผนที่ลงกลุ่ม (ล้างของเดิมก่อน) · สำรองอัตโนมัติ: ชื่อของ Esri โหลดไม่ได้ → ชื่อของ CARTO ·
+ *  ภาพดาวเทียม Esri โหลดไม่ขึ้นติดกัน SAT_FAIL_LIMIT ช่อง (เช่น key หมดอายุ) → ภาพ EOX · กดรีเฟรชหน้าจะลอง Esri ใหม่ */
 export function addTiles(L: typeof Leaflet, group: Leaflet.LayerGroup, defs: TileDef[]) {
   group.clearLayers();
   const make = (d: TileDef, z: number) => L.tileLayer(d.url, {
@@ -64,6 +71,16 @@ export function addTiles(L: typeof Leaflet, group: Leaflet.LayerGroup, defs: Til
       group.removeLayer(layer);
       make(CARTO_LABELS, i + 1);
     });
+    if (d === ESRI_SAT) {
+      let fails = 0;
+      layer.on("tileload", () => { fails = 0; });
+      layer.on("tileerror", () => {
+        if (++fails < SAT_FAIL_LIMIT || !group.hasLayer(layer)) return;
+        console.warn("Esri imagery tiles failed; using EOX Sentinel-2 imagery instead (ArcGIS key expired or invalid?)");
+        group.removeLayer(layer);
+        make(EOX_SAT, i + 1);
+      });
+    }
   });
 }
 

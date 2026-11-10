@@ -128,6 +128,22 @@ async function buildAttention(supabase: SupabaseClient, toClose: string | null):
   soon((recExpSoon ?? []).length, "ค่าใช้จ่ายประจำ", "รายการ", "/income-expenses?tab=expense");
   soon((propCostSoon ?? []).length, "ค่าใช้จ่ายอสังหาฯ ", "รายการ", "/property?tab=expense");
   (leases ?? []).forEach((l) => attention.push({ text: `สัญญาเช่า ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")} หมด ${thDate(l.end_date)}`, href: `/property/${l.property_asset_id}`, tone: "slate" }));
+  // คีย์แผนที่ดาวเทียม (ArcGIS) · วันหมดอายุใส่ไว้ใน Vercel คู่กับคีย์ (NEXT_PUBLIC_ARCGIS_KEY_EXPIRES = YYYY-MM-DD) · เตือน 30 วันก่อนหมด
+  // หมดแล้วแผนที่ยังใช้ได้ (สลับไปภาพ EOX เอง) แต่ภาพหยาบลง → ต่ออายุใน ArcGIS แล้วแก้ทั้งคีย์และวันหมดอายุใน Vercel → Redeploy
+  const keyExp = arcgisKeyExpires();
+  if (keyExp && keyExp <= addDays(today, 30)) attention.push(keyExp < today
+    ? { text: `คีย์แผนที่ดาวเทียม (ArcGIS) หมดอายุแล้วเมื่อ ${thDate(keyExp)} · แผนที่ใช้ภาพสำรองที่หยาบกว่า — ต่ออายุแล้วใส่ใน Vercel`, href: "/property", tone: "red" }
+    : { text: `คีย์แผนที่ดาวเทียม (ArcGIS) หมดอายุ ${thDate(keyExp)} — ต่ออายุแล้วใส่ใน Vercel`, href: "/property", tone: "amber" });
 
   return attention;
+}
+
+/** วันหมดอายุคีย์ ArcGIS (YYYY-MM-DD · ปี พ.ศ. เช่น 2570-11-09 ก็ได้) จาก Vercel · ไม่มีคีย์ / ไม่ได้ใส่วัน / รูปแบบผิด = null (ไม่เตือน) */
+function arcgisKeyExpires(): string | null {
+  if (!process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim()) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(process.env.NEXT_PUBLIC_ARCGIS_KEY_EXPIRES?.trim() ?? "");
+  if (!m) return null;
+  const y = Number(m[1]) > 2400 ? Number(m[1]) - 543 : Number(m[1]);
+  const v = `${y}-${m[2]}-${m[3]}`;
+  return Number.isNaN(Date.parse(v)) ? null : v;
 }
