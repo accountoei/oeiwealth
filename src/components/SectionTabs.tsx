@@ -5,6 +5,7 @@ import { useState } from "react";
 import IntentLink from "./IntentLink";
 import { TabActionsSlot } from "./TabActions";
 import TabLabel from "./TabLabel";
+import { resetKeptHeight } from "./KeepHeight";
 import { tabClass } from "@/lib/format";
 
 /**
@@ -24,8 +25,9 @@ export default function SectionTabs({ tabs }: { tabs: { href: string; label: str
       {tabs.map((t) => {
         const active = current === t.href || current.startsWith(`${t.href}/`);
         return (
-          <IntentLink key={t.href} href={t.href} aria-current={active ? "page" : undefined}
-            onClick={() => setPending({ href: t.href, from: pathname })}
+          // scroll={false} + resetKeptHeight: กดแท็บแล้วหน้าจออยู่ที่เดิม ไม่เด้งขึ้นบน / ไม่เลื่อนไปหัวเนื้อหา (10 พ.ย. 2026)
+          <IntentLink key={t.href} href={t.href} scroll={false} aria-current={active ? "page" : undefined}
+            onClick={() => { if (t.href !== pathname) resetKeptHeight(true); setPending({ href: t.href, from: pathname }); }}
             className={`flex shrink-0 items-center gap-1.5 ${tabClass(active).replace("-mb-px ", "")}`}>
             <TabLabel>{t.label}</TabLabel>
             {t.dot && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="มีงานค้าง" />}
