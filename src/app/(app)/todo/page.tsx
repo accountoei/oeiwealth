@@ -36,14 +36,14 @@ export default async function TodoPage({ searchParams }: { searchParams: Promise
               <ul className="divide-y divide-slate-100 text-sm">
                 {attention.map((a, i) => (
                   <li key={i} className="flex gap-2 py-2">
-                    <span className={a.tone === "red" ? "text-red-600" : a.tone === "amber" ? "text-amber-600" : "text-slate-400"}>●</span>
+                    <span aria-hidden className={`mt-1 h-3 w-3 shrink-0 rounded-full ${a.tone === "red" ? "bg-red-600" : a.tone === "amber" ? "bg-green-500" : "bg-slate-400"}`} />
                     <Link href={a.href} className="hover:underline">{a.text}</Link>
                   </li>
                 ))}
               </ul>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              <span className="text-red-600">● แดง</span> = ต้องทำก่อน (เช่น ปิดเดือน บัญชีติดลบ) · <span className="text-amber-600">● ส้ม</span> = ควรตรวจ · <span className="text-slate-400">●</span> เทา = แจ้งให้ทราบ</p>
+              <Dot c="bg-red-600" /> แดง = ต้องทำก่อน (เช่น ปิดเดือน บัญชีติดลบ) · <Dot c="bg-green-500" /> เขียว = ควรตรวจ · <Dot c="bg-slate-400" /> เทา = แจ้งให้ทราบ</p>
           </div>
         </TabPanel>
 
@@ -68,4 +68,8 @@ export default async function TodoPage({ searchParams }: { searchParams: Promise
       </div>
     </TabsProvider>
   );
+}
+
+function Dot({ c }: { c: string }) {
+  return <span aria-hidden className={`inline-block h-2.5 w-2.5 rounded-full align-[-1px] ${c}`} />;
 }
