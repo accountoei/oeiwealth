@@ -347,7 +347,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   rentRows.push(...props.flatMap((p) => (byProp.get(p.asset_id) ?? []).filter((l) => !withRow.has(l.id)).map((l): RentRow => ({
     key: `l:${l.id}`, leaseId: l.id, assetId: p.asset_id, property: p.assets.name, tenant: who(l), period: start, due: null,
     expected: Number(l.rent_amount), received: 0, currency: l.rent_currency, status: "NONE", bank: "",
-    note: arrearsLater.has(l.id) ? `จ่ายหลังสิ้นรอบ · งวดเดือนนี้ครบกำหนด ${thDate(arrearsLater.get(l.id)!)}` : nextNote(l),
+    note: arrearsLater.has(l.id) ? `จ่ายเมื่อครบรอบ · งวดเดือนนี้ครบกำหนด ${thDate(arrearsLater.get(l.id)!)}` : nextNote(l),
   }))));
   // เรียงตามทรัพย์สิน → ผู้เช่า → งวด · รายละเอียดสัญญาแสดงที่แถวแรกของสัญญา
   rentRows.sort((a, b) => a.property.localeCompare(b.property, "th") || a.tenant.localeCompare(b.tenant, "th") || a.period.localeCompare(b.period));

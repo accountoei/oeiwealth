@@ -531,7 +531,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
           {" · "}ค่าเช่า {money(l.rent_amount, l.rent_currency)} {FREQ_LABEL[l.payment_frequency] ?? ""}
           {l.payment_due_day && ` · จ่ายทุกวันที่ ${l.payment_due_day}`}
           {leaseExtra.get(l.id)?.prorate_basis === "DAYS30" && " · วันเศษหาร 30"}
-          {leaseExtra.get(l.id)?.rent_timing === "ARREARS" && " · จ่ายหลังสิ้นรอบ"}
+          {leaseExtra.get(l.id)?.rent_timing === "ARREARS" && " · ค่าเช่าล่วงหน้ารวมกับมัดจำ (จ่ายเมื่อครบรอบ)"}
           {Number(leaseExtra.get(l.id)?.late_fee_per_day ?? 0) > 0
             && ` · ค่าปรับ ${money(Number(leaseExtra.get(l.id)!.late_fee_per_day))}/วัน หลังผ่อนผัน ${leaseExtra.get(l.id)!.grace_days} วัน`}
           {rentTo.get(l.id) && <span className="text-xs text-slate-500"> · รับเข้า {bankName.get(rentTo.get(l.id)!) ?? "บัญชีที่ปิดแล้ว"}</span>}

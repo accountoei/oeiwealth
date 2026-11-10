@@ -285,7 +285,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           <div className="text-xs text-slate-500">{INCOME_TYPE_LABEL[e.income_type] ?? e.income_type}
             {e.pct != null && ` · ส่วนของ ${pv.personName} ${e.pct}%`}</div>
           {arrearsWait(e) && e.income_period < start
-            ? <div className="text-xs text-slate-500">งวด {thMonth(e.income_period)} · จ่ายหลังสิ้นรอบ</div>
+            ? <div className="text-xs text-slate-500">งวด {thMonth(e.income_period)} · จ่ายเมื่อครบรอบ</div>
             : late(e.income_period as string)}
         </>,
         account: e.receive_to_asset_id ? name.get(e.receive_to_asset_id) ?? "บัญชี" : "",
