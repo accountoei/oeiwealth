@@ -123,7 +123,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     supabase.from("insurance_followups").select("id,policy_id,person_id,role,action,status,notes").in("policy_id", partIds).is("deleted_at", null).order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
-    supabase.from("persons").select("id,name,birth_date").is("deleted_at", null).order("sort_order"),
+    supabase.from("persons").select("id,name,birth_date,status").is("deleted_at", null).order("sort_order"),
     supabase.from("insurance_cash_value_table").select("policy_year,value_date,value").eq("policy_id", id).is("deleted_at", null).order("policy_year"),
   ]);
   const lines = (linesRaw as Line[] | null) ?? [];
@@ -131,6 +131,10 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const benefits = lines.filter((x) => x.kind === "BENEFIT");
   const cards = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
   const allName = new Map((allPersons ?? []).map((x) => [x.id, x.name]));
+  // กล่องติดตามผล (ตกลง 10 พ.ย. 2026): สมาชิกยังเป็น Archived = แสดงทุกสถานะ (เป็นประวัติ)
+  //   สมาชิกกลับเป็น Active / Inactive = ซ่อน ยกเว้นรายการที่ "กำลังดำเนินการ" ค้างอยู่
+  const archived = new Set((allPersons ?? []).filter((x) => x.status === "DECEASED").map((x) => x.id));
+  const followups = (fups ?? []).filter((f) => archived.has(f.person_id) || f.status === "IN_PROGRESS");
   // คอลัมน์อายุในตารางเบี้ย (ตกลง 8 พ.ย. 2026) · ไม่มีวันเกิด = ไม่แสดงคอลัมน์
   const birthIso: string | null = (p.person_id && (allPersons ?? []).find((x) => x.id === p.person_id)?.birth_date) || null;
   const [{ data: linked }, { data: claimInc }, { data: pendExp }] = await claimQ;
@@ -852,11 +856,11 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       </section>
       </div>
 
-      {(fups ?? []).length > 0 && (
+      {followups.length > 0 && (
         <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-5">
           <h2 className="font-medium text-slate-900">กรมธรรม์ที่ต้องติดตาม (สมาชิก Archived) <InfoTip label="คำอธิบาย">แนบเอกสาร (ใบมรณบัตร / หนังสือเรียกร้องสินไหม) ได้ที่ &ldquo;เอกสาร&rdquo; ท้ายหน้านี้</InfoTip></h2>
           <ul className="space-y-2 text-sm">
-            {(fups ?? []).map((f) => (
+            {followups.map((f) => (
               <li key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2">
                 <div><b>{allName.get(f.person_id) ?? "-"}</b> ({FOLLOWUP_ROLE[f.role] ?? f.role}) · {f.action}
                   {f.notes && <div className="text-xs text-slate-500">{f.notes}</div>}</div>
