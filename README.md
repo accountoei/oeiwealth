@@ -18,6 +18,7 @@
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → anon / publishable key |
+| `NEXT_PUBLIC_ARCGIS_API_KEY` (ไม่บังคับ) | ArcGIS Location Platform → API key สิทธิ์เฉพาะ Basemaps + จำกัด Referrer เป็นโดเมนแอป · ใช้กับแผนที่ทรัพย์สิน (ภาพดาวเทียมคมชัด + ชื่อสถานที่) |
 
 ห้ามใส่ `service_role` key ในแอปหน้าเว็บ
 
