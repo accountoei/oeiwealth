@@ -8,7 +8,7 @@ import {
   signedPct,
 } from "@/lib/format";
 import {
-  AddCashAccountForm, TransferEditForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
+  AddCashAccountForm, TransferForm, TxForm, ValuationsForm, type PfTransfer,
   type CashAcct, type Holding,
 } from "./forms";
 import { moveHolding } from "../actions";
@@ -17,6 +17,7 @@ import NetInvestedBox from "./NetInvestedBox";
 import { netInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
 import { portfolioTxFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
+import PfTransferEdit from "./PfTransferEdit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { CurrencyScope } from "@/components/CurrencyContext";
 import TxFilter from "./tx-filter";
@@ -172,6 +173,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") })),
   };
   const transferBank = (m: PfTransfer) => bankName.get((m.movement_type === "INVESTMENT_OUT" ? m.from_asset_id : m.to_asset_id) ?? "") ?? "บัญชีธนาคาร";
+  const transferEdit = (m: PfTransfer, button?: string) => (
+    <PfTransferEdit m={m} portfolioId={id} portfolioLabel={a.name} bankLabel={transferBank(m)} cashAccounts={cashAccounts}
+      paths={paths} canDelete={canDelete} button={button} />
+  );
   // ตัวเลือกเดือน: เดือนปัจจุบัน → เดือนยอดตั้งต้น (ใหม่สุดก่อน) + ทุกเดือน
   const txMonths: { value: string; label: string }[] = [];
   for (let m = today.slice(0, 7); txMonths.length < 240; ) {
@@ -280,7 +285,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                     {" · "}ออก <span className="tabular-nums">{money(m.amount, m.currency)}</span> → รอยอด {m.counter_currency}
                     {m.description && <span className="text-slate-500"> · {m.description}</span>}
                   </span>
-                  {canWrite && <TransferEditForm assetId={id} t={m} bankLabel={transferBank(m)} cashAccounts={cashAccounts} minDate={goLive} today={today} />}
+                  {canWrite && transferEdit(m, "ใส่ยอดที่เข้า")}
                 </div>
               </li>
             ))}
@@ -496,7 +501,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                                     {(Number(m.fee ?? 0) > 0 || Number(m.counter_fee ?? 0) > 0) && ` · ค่าธรรมเนียม ${[
                                       Number(m.fee ?? 0) > 0 ? money(m.fee, m.currency) : null,
                                       Number(m.counter_fee ?? 0) > 0 ? money(m.counter_fee, m.counter_currency ?? undefined) : null].filter(Boolean).join(" + ")}`}
-                                    {canWrite && <TransferEditForm assetId={id} t={m} bankLabel={transferBank(m)} cashAccounts={cashAccounts} minDate={goLive} today={today} rowMode />}
+                                    {canWrite && transferEdit(m)}
                                   </div>
                                 );
                               })()}
