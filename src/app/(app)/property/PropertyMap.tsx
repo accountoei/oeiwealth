@@ -40,20 +40,26 @@ const ESRI_KEY = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim() || "";
 const esri = (path: string) =>
   `https://ibasemaps-api.arcgis.com/arcgis/rest/services/${path}/MapServer/tile/{z}/{y}/{x}?token=${encodeURIComponent(ESRI_KEY)}`;
 
-type TileDef = { url: string; attribution?: string; maxNativeZoom: number; subdomains?: string };
+type TileDef = { url: string; attribution?: string; maxNativeZoom: number; subdomains?: string; tileSize?: number; zoomOffset?: number };
 // ภาพพื้นหลัง (ดาวเทียม) + ชั้นชื่อที่ซ้อนทับ
 const SAT: TileDef = ESRI_KEY
   ? { url: esri("World_Imagery"), attribution: ESRI_ATTR, maxNativeZoom: 18 }
   : { url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg", attribution: EOX_ATTR, maxNativeZoom: 15 };
-const LABELS: TileDef[] = ESRI_KEY
-  ? [
-    { url: esri("Reference/World_Transportation"), maxNativeZoom: 18 },
-    { url: esri("Reference/World_Boundaries_and_Places"), maxNativeZoom: 18 },
-  ]
-  : [{
-    url: "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", subdomains: "abcd", maxNativeZoom: 18,
-    attribution: `${OSM_ATTR} © ${A("https://carto.com/attributions", "CARTO")}`,
-  }];
+const CARTO_LABELS: TileDef = {
+  url: "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", subdomains: "abcd", maxNativeZoom: 18,
+  attribution: `${OSM_ATTR} © ${A("https://carto.com/attributions", "CARTO")}`,
+};
+// ชั้นชื่อสถานที่ + ถนนสำหรับภาพดาวเทียม: มี key → Esri Static Basemap Tiles (arcgis/imagery/labels · ไทล์ 512 px → zoomOffset -1)
+// ชั้น Reference/* บน ibasemaps-api ไม่แสดงผลกับ key ของ Location Platform (ทดสอบบน prod 10 พ.ย. 2569) จึงไม่ใช้
+// ถ้าไทล์ชื่อของ Esri โหลดไม่ได้ จะสลับไปใช้ชื่อของ CARTO เองเพื่อให้ยังเห็นชื่อสถานที่
+const ESRI_LABELS: TileDef | null = ESRI_KEY
+  ? {
+    url: "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static/tile/{z}/{y}/{x}"
+      + `?token=${encodeURIComponent(ESRI_KEY)}`,
+    maxNativeZoom: 19, tileSize: 512, zoomOffset: -1,
+  }
+  : null;
+const LABELS: TileDef = ESRI_LABELS ?? CARTO_LABELS;
 const STREET: TileDef = { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: OSM_ATTR, maxNativeZoom: 19 };
 
 type MapStyle = "hybrid" | "sat" | "street";
@@ -111,11 +117,20 @@ export default function PropertyMap({ places, title }: { places: MapPlace[]; tit
     const L = lib.current, group = base.current;
     if (!ready || !L || !group) return;
     group.clearLayers();
-    const defs = style === "street" ? [STREET] : style === "sat" ? [SAT] : [SAT, ...LABELS];
-    defs.forEach((d, i) => L.tileLayer(d.url, {
-      attribution: d.attribution, maxNativeZoom: d.maxNativeZoom, maxZoom: 19, zIndex: i + 1,
+    const make = (d: TileDef, z: number) => L.tileLayer(d.url, {
+      attribution: d.attribution, maxNativeZoom: d.maxNativeZoom, maxZoom: 19, zIndex: z,
       ...(d.subdomains ? { subdomains: d.subdomains } : {}),
-    }).addTo(group));
+      ...(d.tileSize ? { tileSize: d.tileSize, zoomOffset: d.zoomOffset ?? 0 } : {}),
+    }).addTo(group);
+    const defs = style === "street" ? [STREET] : style === "sat" ? [SAT] : [SAT, LABELS];
+    defs.forEach((d, i) => {
+      const layer = make(d, i + 1);
+      if (d === ESRI_LABELS) layer.once("tileerror", () => {
+        console.warn("Esri label tiles failed; using CARTO labels instead");
+        group.removeLayer(layer);
+        make(CARTO_LABELS, i + 1);
+      });
+    });
   }, [ready, style]);
 
   // วาดหมุดใหม่เมื่อตัวกรองเปลี่ยน
