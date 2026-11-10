@@ -145,3 +145,8 @@ tr[data-row-panel-row]:hover :is([data-amt], [data-amt-auto]) { color: var(--col
 .pm-pop b { color: #0f172a; }
 .pm-links { display: flex; gap: 12px; margin-top: 6px; }
 .pm-links a { color: #1d4ed8; }
+
+/* หน้าพิมพ์ทรัพย์สิน (/print/property): ปุ่มซูมแผนที่ไม่ออกในกระดาษ */
+@media print {
+  .print-map .leaflet-control-zoom { display: none; }
+}
