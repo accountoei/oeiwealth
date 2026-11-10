@@ -58,7 +58,7 @@ export function loadIeRef() {
       // เดาหมวด / บัญชีจากรายการค่าใช้จ่ายที่เคยบันทึกเอง (ไม่รวมรายการจากหน้าอื่น / ก้อนรอแยก)
       supabase.from("expense_items")
         .select("description,expense_category,paid_from_asset_id,paid_from_credit_card_id")
-        .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("liability_id", null)
+        .is("deleted_at", null).eq("pending_split", false).is("source_cash_movement_id", null).is("source_investment_tx_id", null).is("liability_id", null)
         .is("insurance_schedule_line_id", null).is("property_utility_id", null)
         .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(1500),
       // บ้าน / ที่ดินที่ถืออยู่ (ค่าใช้จ่ายหมวดบ้าน / สาธารณูปโภค เลือกทรัพย์สินได้ · ตกลง 30 ต.ค. 2026)
@@ -108,7 +108,7 @@ export function loadIeMonth(start: string, end: string) {
         .or(`income_period.eq.${start},and(status.eq.OVERDUE,income_period.lt.${start}),and(due_date.gte.${start},due_date.lte.${end},income_period.lt.${start})`)
         .order("due_date"),
       supabase.from("monthly_expenses").select("id,total_amount,tracking_status").eq("year_month", start).is("deleted_at", null).maybeSingle(),
-      supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)")
+      supabase.from("expense_items").select("id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id),source_investment_tx_id,src_itx:investment_transactions!expense_items_source_investment_tx_id_fkey(id,transaction_type,transaction_date,amount,fee,notes,cash_movement_id)")
         .is("deleted_at", null).gte("date", start).lte("date", end).order("date", { ascending: false }),
       // สถานะเงินคืน: เฉพาะรายการของเดือนนี้ (หน้าใช้แค่รายการในเดือน · เดิมดึงทุกเดือน)
       supabase.from("v_expense_reimbursement_status").select("expense_item_id,reimbursed_amount,reimbursement_status")

@@ -29,7 +29,7 @@ import type { PfCash } from "@/lib/pf-cash";
 
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
 export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
-export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id)";
+export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id),source_investment_tx_id,src_itx:investment_transactions!expense_items_source_investment_tx_id_fkey(id,transaction_type,transaction_date,amount,fee,notes,cash_movement_id)";
 export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata,lease:property_leases!cash_movements_related_lease_id_fkey(pd:property_details!property_leases_property_id_fkey(asset_id))";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -166,6 +166,7 @@ export function makeEntryKit(c: KitCtx) {
   const expSource = (i: ExpRec): { href: string; label: string } | null => {
     if (fromCloseout(i.id) && i.related_asset_id) return { href: `/property/${i.related_asset_id}`, label: "ทรัพย์สิน (ผู้เช่าออก)" };
     if (i.internal_loan_income_id) return { href: i.il?.asset_id ? `/financial/loans/${i.il.asset_id}` : "/financial/loans", label: "เงินกู้ภายในครอบครัว" };
+    if (i.source_investment_tx_id) return { href: i.related_asset_id ? `/investments/${i.related_asset_id}` : "/investments", label: "พอร์ตลงทุน" };
     if (i.source_cash_movement_id) return { href: `/income-expenses?m=${ym}${personId ? `&p=${personId}` : ""}#moves`, label: "รายการโอน" };
     if (i.liability_id) return { href: `/liabilities/${i.liability_id}`, label: "หนี้สิน" };
     if (i.insurance_schedule_line_id) { const pol = policyOf(i.ins_line); return { href: pol ? `/insurance/${pol}` : "/insurance", label: "กรมธรรม์" }; }
@@ -175,7 +176,7 @@ export function makeEntryKit(c: KitCtx) {
   // แก้ที่หน้านี้ได้ด้วยฟอร์มชุดเดียวกับหน้าต้นทาง (src/lib/source-edit.ts)
   const sourceEdit = (i: ExpFull) => {
     const row = { date: i.date, amount: i.full_amount, notes: i.notes };
-    if (i.source_cash_movement_id || i.internal_loan_income_id) return null;   // ดอกเบี้ยจ่ายเงินกู้ภายใน: แก้ที่รายการรับชำระ
+    if (i.source_cash_movement_id || i.source_investment_tx_id || i.internal_loan_income_id) return null;   // ดอกเบี้ยจ่ายเงินกู้ภายใน: แก้ที่รายการรับชำระ
     if (i.property_utility_id) return propertyCostFields(row);
     if (i.insurance_schedule_line_id) return premiumPaymentFields(row);
     if (i.liability_id) return debtInterestFields(row);
@@ -306,6 +307,23 @@ export function makeEntryKit(c: KitCtx) {
       const m = moveById.get(i.source_cash_movement_id);
       return m ? moveEdit(m, { button, note: "ค่าธรรมเนียมนี้มาจากการโอนรายการนี้ · แก้ยอดค่าธรรมเนียมในช่องด้านล่าง",
         deleteNote: "ลบ = ลบการโอนทั้งรายการ (ค่าธรรมเนียมถูกลบตาม)\nถ้าผิดแค่ค่าธรรมเนียม ให้แก้ยอดค่าธรรมเนียมแล้วกดบันทึกแทน" }) : null;
+    }
+    // ค่าธรรมเนียมในพอร์ต (คูปอง / ปันผล / ดอกเบี้ย / รายการค่าธรรมเนียม) → แก้รายการในพอร์ตต้นทาง (ช่องเดียวกับหน้าพอร์ต)
+    //   แลกเงิน / โอนระหว่างบัญชีในพอร์ต → แก้ที่หน้าพอร์ต (ลิงก์ที่ชื่อรายการ)
+    if (i.source_investment_tx_id) {
+      const tx = one(i.src_itx as Rec | Rec[] | null);
+      if (!tx || tx.cash_movement_id || !["DIVIDEND", "INTEREST", "COUPON", "FEE"].includes(tx.transaction_type)) return null;
+      const isFee = tx.transaction_type === "FEE";
+      return (
+        <RowActions table="investment_transactions" id={tx.id} paths={[...PATHS, "/investments", ...(i.related_asset_id ? [`/investments/${i.related_asset_id}`] : [])]}
+          canDelete={canDelete && isFee} button={button}
+          deleteNote="ลบรายการค่าธรรมเนียมในพอร์ต · รายจ่ายนี้ถูกลบตาม"
+          fields={[
+            { name: "transaction_date", label: "วันที่", type: "date", value: tx.transaction_date },
+            ...(isFee ? [{ name: "amount", label: "ค่าธรรมเนียม", type: "number" as const, value: tx.amount }]
+              : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: tx.fee }]),
+            { name: "notes", label: "หมายเหตุ", value: tx.notes, width: "w-40" }]} />
+      );
     }
     // ดอกเบี้ยจ่ายเงินกู้ภายในครอบครัว (ฝั่งผู้กู้) → แก้ดอกเบี้ยที่รับของผู้ให้กู้ (ฝั่งผู้กู้เปลี่ยนตาม)
     if (i.internal_loan_income_id) {
