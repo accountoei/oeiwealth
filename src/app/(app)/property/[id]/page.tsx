@@ -17,6 +17,7 @@ import RowActions from "@/components/RowActions";
 import UndoButton from "@/components/UndoButton";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import DeleteEntity from "@/components/DeleteEntity";
+import { loadExpEditCtx, ONE_OFF_COLS, OneOffExpenseEdit, type OneOffExp } from "../expense-edit";
 import EditToggle from "@/components/EditToggle";
 import { CopyTaxYear, TaxLineForm, TaxYearSelect, type TaxLine } from "./LandTax";
 import { WithStatus } from "@/components/StatusSelect";
@@ -33,7 +34,7 @@ import type { MarketValuation } from "../MarketValuationForm";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
-import { propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
 import { endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
@@ -203,7 +204,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
   const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
   const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
-    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }, { data: depMoveRows }] = await Promise.all([
+    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }, { data: depMoveRows }, expCtx] = await Promise.all([
     supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
       .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
@@ -220,7 +221,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("cash_movements").select("amount,currency,movement_date,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
       .is("deleted_at", null),
     // ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026)
-    supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes,property_cost_type")
+    supabase.from("expense_items").select(ONE_OFF_COLS)
       .eq("related_asset_id", id).is("property_utility_id", null).is("source_fee_side", null).is("insurance_schedule_line_id", null)
       .is("liability_id", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
     // รายละเอียดพิมพ์สัญญาเช่า: กิจการ (สถานที่ทำสัญญา) · เจ้าของ (ชื่อเต็ม + ที่อยู่)
@@ -232,12 +233,14 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,damage_value,in_condition,in_reading,out_status,out_qty,out_missing_qty,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
     // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
-    supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
+    supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,expense_id,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
       .eq("property_leases.property_id", pd.id).is("deleted_at", null),
     // เงินประกัน: รายการรับ / คืนส่วนต่างตอนต่อสัญญา (ค่าตั้งต้นของช่องบัญชีใน "แก้ไขสัญญา")
     leases.length ? supabase.from("cash_movements").select("related_lease_id,movement_type,from_asset_id,to_asset_id")
       .in("related_lease_id", leases.map((l) => l.id)).in("movement_type", ["SECURITY_DEPOSIT_IN", "SECURITY_DEPOSIT_OUT"])
       .eq("is_derived", false).is("deleted_at", null).order("created_at") : Promise.resolve({ data: [] as never[] }),
+    // หน้าต่างแก้ค่าใช้จ่ายครั้งเดียว = ฟอร์มเดียวกับ Income & Expenses (ตกลง 10 พ.ย. 2026)
+    canWrite ? loadExpEditCtx(supabase) : Promise.resolve(null),
   ]);
   type DepMove = { related_lease_id: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null };
   const depIn = new Map<string, string | null>(), depOut = new Map<string, string | null>();
@@ -259,8 +262,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   });
   // ราคาที่ได้มา (ณ วันที่ได้มา + จ่ายเพิ่ม) · ค่าใช้จ่ายสะสม (ครั้งเดียว + ประจำ) ในกล่องมูลค่า
   const acqAll = a.acquisition_cost != null || addPays.length > 0 ? Number(a.acquisition_cost ?? 0) + addPays.reduce((t, p) => t + Number(p.amount), 0) : null;
-  const oneOff = (oneOffRows ?? []) as { id: string; date: string; description: string | null; amount: number; currency: string;
-    paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; notes: string | null; property_cost_type: string | null }[];
+  const oneOff = (oneOffRows ?? []) as unknown as (OneOffExp & { amount: number })[];
   // เบี้ยประกันทรัพย์สินนี้ที่จ่ายแล้ว (ตกลง 3 พ.ย. 2026) → รวมใน "ค่าใช้จ่าย … บาท" ของกล่องมูลค่า + ตารางค่าใช้จ่าย
   const insPays = ((insPayRows ?? []) as { id: string; date: string; description: string | null; amount: number; currency: string; notes: string | null;
     paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; insurance_schedule_lines: { policy_id: string } | { policy_id: string }[] | null }[])
@@ -436,11 +438,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
 
   // ผู้เช่าออก (ตกลง 6 พ.ย. 2026) · ต่อสัญญาได้เมื่อยังไม่มีสัญญาถัดไปของห้องเดียวกัน (หรือทั้งหลัง)
   type Closeout = { lease_id: string; move_out_date: string; settled_date: string; deposit_refund: number; advance_refund: number; net_transfer: number;
-    unpaid_rent: number; utilities: number; damage: number; forfeit: number; income_ids: string[];
+    unpaid_rent: number; utilities: number; damage: number; forfeit: number; income_ids: string[]; expense_id: string | null;
     shortfall: number; tenant_paid: number; owed_pending: number };
   const closeOf = new Map(((closeRows ?? []) as unknown as Closeout[]).map((c) => [c.lease_id, c]));
   // รายได้ที่สร้างตอนผู้เช่าออก → แก้ / ลบทีละรายการไม่ได้ (ยกเลิกทั้งชุดที่การ์ดสัญญา)
   const closeIncome = new Set([...closeOf.values()].flatMap((c) => c.income_ids ?? []));
+  const closeExpense = new Set([...closeOf.values()].flatMap((c) => (c.expense_id ? [c.expense_id] : [])));
   const CLOSE_NOTE = <span className="text-xs text-slate-400">ยกเลิกที่ &ldquo;ยกเลิกผู้เช่าออก&rdquo; ในสัญญา</span>;
   const roomKey = (u: string | null) => (u ?? "").trim().toLowerCase();
   const hasSuccessor = (l: Lease) => leases.some((o) => o.id !== l.id && o.start_date > l.start_date
@@ -1056,10 +1059,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                       {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
                     </td>
                     <td className="pl-2 text-right">
-                      {canWrite && <RowActions table="expense_items" id={e.id} paths={paths} canDelete={canDelete}
-                        fields={[{ name: "property_cost_type", label: "ประเภท", type: "select" as const, value: e.property_cost_type,
-                          options: [["", "— ไม่ระบุ —"] as [string, string], ...Object.entries(PROPERTY_COST_TYPE_LABEL)] },
-                          { name: "description", label: "รายการ", value: e.description, width: "w-48" }, ...propertyCostFields(e)]} />}
+                      {closeExpense.has(e.id) ? CLOSE_NOTE : canWrite && expCtx && <OneOffExpenseEdit e={e} ctx={expCtx} paths={paths} canDelete={canDelete} />}
                     </td>
                   </tr>
                 ))}
@@ -1084,7 +1084,10 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                       {e.paid_from_asset_id ? bankName.get(e.paid_from_asset_id) ?? "บัญชี" : e.paid_from_credit_card_id ? `บัตร ${cardName.get(e.paid_from_credit_card_id) ?? ""}` : "เงินสด"}
                     </td>
                     <td className="pl-2 text-right text-xs">
-                      {e.policyId && <Link href={`/insurance/${e.policyId}?tab=flow`} className="text-blue-700 hover:underline" title="แก้ / ลบที่หน้ากรมธรรม์">กรมธรรม์ →</Link>}
+                      {e.policyId && <Link href={`/insurance/${e.policyId}?tab=flow`} className="text-blue-700 hover:underline" title="ไปหน้ากรมธรรม์">กรมธรรม์ →</Link>}
+                      {/* กดที่แถว → แก้ / ลบการจ่ายเบี้ย (ช่องเดียวกับหน้ากรมธรรม์ / Income & Expenses · ตกลง 10 พ.ย. 2026) */}
+                      {canWrite && <RowActions table="expense_items" id={e.id} paths={[...paths, "/insurance", ...(e.policyId ? [`/insurance/${e.policyId}`] : [])]}
+                        canDelete={canDelete} fields={premiumPaymentFields(e)} />}
                     </td>
                   </tr>
                 ))}

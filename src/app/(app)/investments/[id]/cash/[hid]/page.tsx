@@ -7,6 +7,7 @@ import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type MoveRow, type StmtRow } from "../../../../income-expenses/MovesView";
 import EditButton from "@/components/EditButton";
 import RowActions from "@/components/RowActions";
+import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
 import { type CashAcct, type PfTransfer } from "../../forms";
@@ -109,9 +110,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
       actions: !canWrite ? undefined : ex ? kit.expEdit({ ...ex, full_amount: Number(ex.amount) })
         : t.source_expense_item_id ? undefined
         : <RowActions table="investment_transactions" id={t.id} paths={[...paths, "/liabilities"]} canDelete={canDelete}
-            fields={[{ name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date },
-              { name: "amount", label: "ยอด", type: "number" as const, value: t.amount },
-              { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />,
+            fields={portfolioTxFields(t, !!(t.settle_from_asset_id || t.settle_to_asset_id))} />,
     };
   };
   const txRow = (e: LEvent): MoveRow => {
@@ -135,16 +134,9 @@ export default async function PortfolioCashPage({ params, searchParams }: {
       fromBank: isIn ? null : hid, toBank: isIn ? hid : null, fromAmount: amt, fromCcy: ccy, toAmount: amt, toCcy: ccy,
       detail, sub: subs ? <div className="text-xs text-slate-400">{subs}{other !== "ภายนอก" && <> · {isIn ? "จาก" : "ไป"} {other}</>}</div> : undefined,
       actions: canWrite ? (
-        <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+        <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={portfolioTxCols(t)}
           deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-          fields={[
-            { name: "transaction_date", label: "วันที่", type: "date" as const, value: t.transaction_date },
-            ...(t.quantity != null ? [{ name: "quantity", label: "จำนวน", type: "number" as const, value: t.quantity }] : []),
-            ...(t.price != null ? [{ name: "price", label: "ราคา", type: "number" as const, value: t.price }] : []),
-            ...(["BUY", "SELL"].includes(t.transaction_type) ? [] : [{ name: "amount", label: "ยอด", type: "number" as const, value: t.amount }]),
-            ...(["FEE", "TAX", "ADJUSTMENT"].includes(t.transaction_type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee }]),
-            ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) ? [{ name: "tax", label: "ภาษี", type: "number" as const, value: t.tax }] : []),
-            { name: "notes", label: "หมายเหตุ", value: t.notes, width: "w-40" }]} />
+          fields={portfolioTxFields(t, !!(t.settle_from_asset_id || t.settle_to_asset_id))} />
       ) : undefined,
     };
   };

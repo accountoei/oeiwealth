@@ -14,7 +14,9 @@ import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortCon
 import PropertyTable, { type PropRow } from "./PropertyTable";
 import RentBatch, { type OtherIncome, type RentRow } from "./RentBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
-import { assetIncomeFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import { assetIncomeFields, debtInterestFields, premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
+import PairEdit from "@/components/PairEdit";
+import { loadExpEditCtx, OneOffExpenseEdit } from "./expense-edit";
 import RowActions from "@/components/RowActions";
 import ExpenseBatch, { type CostRow, type OtherCost, type PayOpt } from "./ExpenseBatch";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -37,7 +39,9 @@ type Inc = { id: string; asset_id: string; lease_id: string | null; received_to_
   tax: number | null; income_subtype: string | null; pending_split: boolean | null; income_period: string | null };
 type Exp = { id: string; related_asset_id: string | null; property_utility_id: string | null; date: string; description: string;
   amount: number; currency: string; base_amount: number | null; notes: string | null; pending_split: boolean | null;
-  source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null; cost_period: string | null };
+  source_cash_movement_id: string | null; liability_id: string | null; insurance_schedule_line_id: string | null; cost_period: string | null;
+  expense_category: string | null; property_cost_type: string | null; person_id: string | null; is_reimbursable: boolean | null;
+  expected_reimbursement_amount: number | null; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null; paid_from_cash_holding_id: string | null };
 type Util = { id: string; property_id: string; unit_label: string | null; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null;
   expected_amount: number | null; currency: string; frequency: string | null; due_month: number | null; active: boolean; deleted_at: string | null };
 
@@ -142,9 +146,15 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const rentPeriods = [...new Set(((rentTrack ?? []) as RT[]).filter((r) => shown.has(r.property_asset_id)).map((r) => r.income_period))];
   const utilIds = [...new Set(((costTrack ?? []) as { utility_id: string }[]).map((c) => c.utility_id))];
   const costPeriods = [...new Set(((costTrack ?? []) as { cost_period: string }[]).map((c) => c.cost_period))];
-  const expCols = "id,related_asset_id,property_utility_id,cost_period,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id";
+  const expCols = "id,related_asset_id,property_utility_id,cost_period,date,description,amount,currency,base_amount,notes,pending_split,source_cash_movement_id,liability_id,insurance_schedule_line_id,"
+    + "expense_category,property_cost_type,person_id,is_reimbursable,expected_reimbursement_amount,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id";
+  // ค่าใช้จ่ายของปี (ถึงสิ้นเดือนที่เลือก) → เดือนที่เลือก + รายได้สุทธิทั้งปี
+  const expAQ: Promise<{ data: Exp[] | null }> = ids.length
+    ? Promise.resolve(supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null)
+      .then((r) => ({ data: r.data as unknown as Exp[] | null })))
+    : Promise.resolve({ data: [] });
   const [{ utils, utilProp, expU }, { taxDataYears, taxYears, taxYear, taxRaw }, { latestVal, partRaw },
-    [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }]] = await Promise.all([
+    [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }], liabPairs, expCtx] = await Promise.all([
     // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของปี (ถึงสิ้นเดือนที่เลือก) ที่ผูกกับรายการเหล่านั้น
     //   ยอด / ความถี่ → ประมาณค่าใช้จ่ายประจำทั้งปี + เติมเดือนก่อน Go-live (กล่องภาพรวม)
     (async () => {
@@ -188,8 +198,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     Promise.all([
       ids.length ? supabase.from("income_transactions").select("id,asset_id,lease_id,received_to_asset_id,income_type,date,amount,currency,base_amount,notes,tax,income_subtype,pending_split,income_period")
         .in("asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null).order("date", { ascending: false }) : none,
-      // ค่าใช้จ่ายของปี (ถึงสิ้นเดือนที่เลือก) → เดือนที่เลือก + รายได้สุทธิทั้งปี
-      ids.length ? supabase.from("expense_items").select(expCols).in("related_asset_id", ids).gte("date", yearStart).lte("date", end).is("deleted_at", null) : none,
+      expAQ,
       // ราคาตลาดครั้งล่าสุด (อ้างอิง · ไม่นับใน Net Worth) → แท็บอัปเดตมูลค่า
       ids.length ? supabase.from("v_property_market_latest").select("*").in("asset_id", ids) : none,
       ids.length ? supabase.from("v_property_target_price").select("asset_id,min_price").in("asset_id", ids) : none,
@@ -202,6 +211,25 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       utilIds.length ? supabase.from("expense_items").select("id,property_utility_id,cost_period,date,amount,notes,currency,related_asset_id").in("property_utility_id", utilIds)
         .in("cost_period", costPeriods).is("deleted_at", null).order("date") : none,
     ]),
+    // ดอกเบี้ยหนี้ที่จ่ายพร้อมเงินต้น → หน้าต่างเดียวแก้ทั้งคู่ (เหมือนหน้าหนี้สิน / Income & Expenses · ตกลง 10 พ.ย. 2026)
+    expAQ.then(async ({ data }) => {
+      const liab = (data ?? []).filter((x) => x.liability_id && !x.pending_split);
+      const pairs = new Map<string, { group: string; liability: string; principal: { id: string; date: string; amount: number } }>();
+      if (!liab.length) return pairs;
+      const { data: gm } = await supabase.from("cash_movements").select("source_entity_id,movement_group_id").eq("source_entity_type", "EXPENSE")
+        .in("source_entity_id", liab.map((x) => x.id)).not("movement_group_id", "is", null).is("deleted_at", null);
+      const groups = [...new Set((gm ?? []).map((g) => g.movement_group_id as string))];
+      const { data: pm } = groups.length ? await supabase.from("cash_movements").select("id,movement_date,amount,movement_group_id,to_liability_id")
+        .eq("movement_type", "LIABILITY_PAYMENT").eq("is_derived", false).in("movement_group_id", groups).is("deleted_at", null) : { data: [] };
+      const byGroup = new Map((pm ?? []).map((m) => [m.movement_group_id as string, m]));
+      (gm ?? []).forEach((g) => {
+        const m = byGroup.get(g.movement_group_id as string);
+        if (m) pairs.set(g.source_entity_id as string, { group: g.movement_group_id as string, liability: m.to_liability_id as string,
+          principal: { id: m.id as string, date: m.movement_date as string, amount: Number(m.amount) } });
+      });
+      return pairs;
+    }),
+    canWrite ? loadExpEditCtx(supabase) : Promise.resolve(null),
   ]);
   // "จ่ายจาก" ที่ตั้งไว้ในแต่ละรายการค่าใช้จ่ายประจำ → ค่าตั้งต้นของแท็บบันทึกค่าใช้จ่าย
   const utilPay = new Map(((utils ?? []) as { id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[])
@@ -254,14 +282,24 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     return <RowActions table="income_transactions" id={x.id} paths={boxPaths(x.asset_id)} canDelete={canOrder}
       fields={rentLike ? rentIncomeFields(row) : assetIncomeFields(row)} button={`${text} ✎`} buttonClass={AMT} />;
   };
+  // หน้าต่างแก้ไขชุดเดียวกับหน้าต้นทาง / Income & Expenses (ตกลง 10 พ.ย. 2026) · ลิงก์เหลือเฉพาะก้อนรอแยก และค่าธรรมเนียมจากรายการโอน
   const expAmt = (x: (typeof expRows)[number]) => {
     const text = money(expOf(x));
     if (!canWrite) return text;
-    if (x.liability_id) return amtLink(text, `/liabilities/${x.liability_id}`);
-    if (x.insurance_schedule_line_id) return amtLink(text, "/insurance?tab=premium");
     if (x.source_cash_movement_id || x.pending_split) return amtLink(text, `/income-expenses?m=${ym}`);
-    return <RowActions table="expense_items" id={x.id} paths={boxPaths(x.prop)} canDelete={canOrder}
-      fields={propertyCostFields(x)} button={`${text} ✎`} buttonClass={AMT} />;
+    const btn = { button: `${text} ✎`, buttonClass: AMT };
+    const pair = x.liability_id ? liabPairs.get(x.id) : undefined;
+    if (pair) return <PairEdit {...btn} group={pair.group} canDelete={canOrder} direction="OUT" currency={x.currency}
+      paths={[...boxPaths(x.prop), `/liabilities/${pair.liability}`, "/liabilities"]} principal={pair.principal}
+      interest={{ table: "expense_items", id: x.id, date: x.date, amount: Number(x.amount) }}
+      confirmText={`ลบการจ่ายวันที่ ${thDate(pair.principal.date)}?\nเงินต้น ${money(pair.principal.amount)} + ดอกเบี้ย ${money(x.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} />;
+    if (x.liability_id) return <RowActions table="expense_items" id={x.id} paths={[...boxPaths(x.prop), `/liabilities/${x.liability_id}`, "/liabilities"]}
+      canDelete={canOrder} fields={debtInterestFields(x)} {...btn} />;
+    if (x.insurance_schedule_line_id) return <RowActions table="expense_items" id={x.id} paths={[...boxPaths(x.prop), "/insurance"]}
+      canDelete={canOrder} fields={premiumPaymentFields(x)} {...btn} />;
+    if (x.property_utility_id || !expCtx) return <RowActions table="expense_items" id={x.id} paths={boxPaths(x.prop)} canDelete={canOrder}
+      fields={propertyCostFields(x)} {...btn} />;
+    return <OneOffExpenseEdit e={x} ctx={expCtx} paths={boxPaths(x.prop)} canDelete={canOrder} {...btn} />;
   };
   const incTotal = incMonth.reduce((t, x) => t + incOf(x), 0);
   const expTotal = expRows.reduce((t, x) => t + expOf(x), 0);

@@ -6,7 +6,7 @@ import { LIABILITY_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format"
 import { AddBalanceForm, EditLiabilityForm, PayLiabilityForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
 import RowActions from "@/components/RowActions";
-import UndoButton from "@/components/UndoButton";
+import PairEdit from "@/components/PairEdit";
 import OwnershipEditor from "@/components/OwnershipEditor";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import EditToggle from "@/components/EditToggle";
@@ -33,7 +33,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
-    supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes,movement_group_id")
+    supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes,movement_group_id,is_derived")
       .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes,pending_split,currency")
       .eq("liability_id", id).is("deleted_at", null).order("date", { ascending: false }),
@@ -63,20 +63,34 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
   // จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → ยกเลิกทั้งก้อนได้
   const groups = [...new Set((pays ?? []).map((m) => m.movement_group_id as string | null).filter((g): g is string => !!g))];
   const { data: grpInt } = groups.length
-    ? await supabase.from("cash_movements").select("movement_group_id,amount").in("movement_group_id", groups)
+    ? await supabase.from("cash_movements").select("movement_group_id,source_entity_id").in("movement_group_id", groups)
         .eq("source_entity_type", "EXPENSE").is("deleted_at", null)
-    : { data: [] as { movement_group_id: string; amount: number }[] };
-  const groupInt = new Map((grpInt ?? []).map((g) => [g.movement_group_id as string, Number(g.amount)]));
+    : { data: [] as { movement_group_id: string; source_entity_id: string }[] };
+  // จ่ายครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → แถวเดียว กดที่แถวแก้ทั้งคู่ในหน้าต่างเดียว · ลบทั้งก้อนข้างปุ่มบันทึก (เหมือนแท็บบันทึกจ่าย / Loans · ตกลง 10 พ.ย. 2026)
+  const intById = new Map((ints ?? []).filter((e) => !e.pending_split).map((e) => [e.id as string, e]));
+  const pairInt = new Map((grpInt ?? []).flatMap((g) => {
+    const e = intById.get(g.source_entity_id as string);
+    return e ? [[g.movement_group_id as string, e] as const] : [];
+  }));
+  const pairOf = (m: { is_derived?: boolean | null; movement_group_id: string | null }) => (!m.is_derived && m.movement_group_id ? pairInt.get(m.movement_group_id) : undefined);
+  const pairedInt = new Set((pays ?? []).flatMap((m) => { const e = pairOf(m); return e ? [e.id as string] : []; }));
+  type Pair = { group: string; principal: { id: string; date: string; amount: number }; interest: { id: string; date: string; amount: number } };
   const payRows = [
-    ...(pays ?? []).map((m) => ({ key: `m${m.id}`, table: "cash_movements", id: m.id, date: m.movement_date as string, amount: Number(m.amount),
-      kind: m.reduces_liability ? "เงินต้น" : "จ่ายรวม (ไม่ได้แยก)", group: m.movement_group_id as string | null, bank: m.from_asset_id as string | null, notes: m.notes as string | null,
-      dateField: "movement_date", pending: false })),
-    ...(ints ?? []).map((e) => ({ key: `e${e.id}`, table: "expense_items", id: e.id, date: e.date as string, amount: Number(e.amount),
+    ...(pays ?? []).map((m) => {
+      const e = pairOf(m);
+      const pair: Pair | null = e ? { group: m.movement_group_id as string, principal: { id: m.id, date: m.movement_date as string, amount: Number(m.amount) },
+        interest: { id: e.id as string, date: e.date as string, amount: Number(e.amount) } } : null;
+      return { key: `m${m.id}`, table: "cash_movements", id: m.id, date: m.movement_date as string, amount: Number(m.amount) + (e ? Number(e.amount) : 0),
+        kind: e ? "เงินต้น + ดอกเบี้ย" : m.reduces_liability ? "เงินต้น" : "จ่ายรวม (ไม่ได้แยก)", pair, bank: m.from_asset_id as string | null,
+        notes: e ? [`เงินต้น ${money(m.amount)} · ดอกเบี้ย ${money(e.amount)}`, m.notes].filter(Boolean).join(" · ") : m.notes as string | null,
+        dateField: "movement_date", pending: false };
+    }),
+    ...(ints ?? []).filter((e) => !pairedInt.has(e.id as string)).map((e) => ({ key: `e${e.id}`, table: "expense_items", id: e.id, date: e.date as string, amount: Number(e.amount),
       kind: e.pending_split ? "หนี้เพิ่ม (รอแยกรายละเอียด)" : e.paid_from_asset_id ? "ดอกเบี้ย" : "ดอกเบี้ย / ค่าธรรมเนียม (ทบเข้าหนี้)",
-      group: null as string | null, bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date",
+      pair: null as Pair | null, bank: e.paid_from_asset_id as string | null, notes: e.notes as string | null, dateField: "date",
       pending: !!e.pending_split })),
     ...(drops ?? []).map((i) => ({ key: `i${i.id}`, table: "income_transactions", id: i.id, date: i.date as string, amount: Number(i.amount) - Number(i.tax ?? 0),
-      kind: i.pending_split ? "หนี้ลด (รอแยกรายละเอียด)" : "หนี้ลด (รายได้)", group: null as string | null, bank: null as string | null,
+      kind: i.pending_split ? "หนี้ลด (รอแยกรายละเอียด)" : "หนี้ลด (รายได้)", pair: null as Pair | null, bank: null as string | null,
       notes: i.notes as string | null, dateField: "date", pending: !!i.pending_split })),
   ].sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind, "th"));
   const today = todayBangkok();
@@ -181,13 +195,15 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                           moves={splitMoves({ kind: r.table === "income_transactions" ? "INCOME" : "EXPENSE", currency: l.currency, liab: id },
                             { banks: banks.filter((b) => b.currency === l.currency) })} />
                           : <span className="text-xs text-slate-500">ADMIN / EDITOR แยกรายการได้</span>} />
+                    ) : canWrite && r.pair ? (
+                      <PairEdit group={r.pair.group} paths={[...paths, "/income-expenses"]} canDelete={canDelete} direction="OUT" currency={l.currency}
+                        principal={r.pair.principal} interest={{ table: "expense_items", ...r.pair.interest }}
+                        confirmText={`ลบการจ่ายวันที่ ${thDate(r.date)}?\nเงินต้น ${money(r.pair.principal.amount)} + ดอกเบี้ย ${money(r.pair.interest.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} />
                     ) : canWrite && <RowActions table={r.table} id={r.id} paths={[...paths, "/income-expenses"]} canDelete={canDelete}
                       fields={r.table === "income_transactions" ? debtDropIncomeFields(r)
                         : r.table === "expense_items" ? debtInterestFields(r)
                         : [{ name: r.dateField, label: "วันที่", type: "date", value: r.date },
                            { name: "amount", label: "จำนวน", type: "number", value: r.amount }]} />}
-                    {canDelete && r.group && groupInt.has(r.group) && <div className="mt-1"><UndoButton kind="PAYMENT" id={r.group} paths={paths}
-                      confirmText={`ยกเลิกการจ่ายวันที่ ${thDate(r.date)} ทั้งก้อน?\nเงินต้น ${money(r.amount)} + ดอกเบี้ย ${money(groupInt.get(r.group))} จะถูกลบพร้อมกัน`} /></div>}
                   </td>
                 </tr>
               ))}
