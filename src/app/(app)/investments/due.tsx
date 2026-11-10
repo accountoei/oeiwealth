@@ -3,6 +3,7 @@ import { money, monthRange, thDate } from "@/lib/format";
 import { scheduleOf, type DueRow } from "@/lib/coupon-schedule";
 import type { Bank } from "./[id]/forms";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
+import { portfolioTxFields } from "@/lib/source-edit";
 import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
 
 // แท็บ "บันทึกรับผลตอบแทน" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
@@ -49,6 +50,7 @@ type HRow = { id: string; name: string; holding_type: string; currency: string; 
   investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
 type Fcn = { holding_id: string; principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
 type Tx = { id: string; holding_id: string; transaction_type: string; transaction_date: string; amount: number | null;
+  settlement_date: string | null; settle_to_asset_id: string | null; fee: number | null;
   tax: number | null; notes: string | null; cash_movement_id: string | null };
 type CRow = { id: string; name: string; currency: string; is_default_cash: boolean; interest_rate: number | null; current_value: number | null;
   investment_portfolios: { asset_id: string; assets: { name: string } | null } | null };
@@ -70,7 +72,7 @@ export async function loadDue(month: string, canWrite: boolean, showAsset: (asse
       const ids = holdings.map((h) => h.id);
       const [{ data: fcns }, { data: txs }] = await Promise.all([
         ids.length ? supabase.from("fcn_details").select("holding_id,principal,coupon_rate,coupon_frequency,issue_date,trade_date").in("holding_id", ids).is("deleted_at", null) : none,
-        ids.length ? supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,notes,cash_movement_id").in("holding_id", ids)
+        ids.length ? supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id").in("holding_id", ids)
           .in("transaction_type", ["OPENING_BALANCE", "BUY", "COUPON", "INTEREST", "MATURITY"]).is("deleted_at", null) : none,
       ]);
       return { holdings, fcns, txs };
@@ -80,9 +82,9 @@ export async function loadDue(month: string, canWrite: boolean, showAsset: (asse
       const { data: cash } = await supabase.from("investment_holdings").select("id,name,currency,is_default_cash,interest_rate,current_value,investment_portfolios!inner(asset_id,deleted_at,assets(name))")
         .eq("holding_type", "CASH").eq("status", "ACTIVE").is("deleted_at", null).is("investment_portfolios.deleted_at", null).order("created_at");
       const cashRows = ((cash as unknown as CRow[] | null) ?? []).filter((c) => c.investment_portfolios && showAsset(c.investment_portfolios.asset_id));
-      const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,amount,tax,fee,notes,cash_movement_id")
+      const { data: cashInt } = cashRows.length ? await supabase.from("investment_transactions").select("id,holding_id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,tax,fee,notes,cash_movement_id")
         .in("holding_id", cashRows.map((c) => c.id)).eq("transaction_type", "INTEREST").gte("transaction_date", start).lte("transaction_date", end).is("deleted_at", null)
-        : { data: [] as (Tx & { fee: number | null })[] };
+        : { data: [] as Tx[] };
       return { cashRows, cashInt };
     })(),
     canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order") : none,
@@ -123,10 +125,7 @@ export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
     return { id: t.id, node: t.cash_movement_id ? recLink(lbl, `/investments/${pf}/holding/${t.holding_id}`) : recEdit({
       canWrite, canDelete, label: lbl, table: "investment_transactions", id: t.id, paths: [...paths, `/investments/${pf}`],
       deleteNote: "รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม",
-      fields: [{ name: "transaction_date", label: "วันที่", type: "date", value: t.transaction_date },
-        { name: "amount", label: t.transaction_type === "MATURITY" ? "เงินต้นที่ได้คืน" : "ยอดก่อนภาษี", type: "number", value: t.amount },
-        { name: "tax", label: "ภาษีหัก ณ ที่จ่าย", type: "number", value: t.tax },
-        { name: "notes", label: "หมายเหตุ", value: t.notes, wide: true }] }) };
+      fields: portfolioTxFields({ ...t, amount: t.amount ?? 0 }, !!t.settle_to_asset_id) }) };
   };
   const dueGroups: DueGroup[] = [...groups.entries()].map(([pf, g]) => ({ pf, name: g.name, rows: g.rows.map(({ r, h }) => ({
     key: r.key, kind: r.kind, label: label(r), due: r.due, expected: r.expected, received: r.received, defaultDate: dueDefault(r.due),

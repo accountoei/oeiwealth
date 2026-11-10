@@ -29,7 +29,7 @@ import type { PfCash } from "@/lib/pf-cash";
 
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
 export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
-export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id),source_investment_tx_id,src_itx:investment_transactions!expense_items_source_investment_tx_id_fkey(id,transaction_type,transaction_date,amount,fee,notes,cash_movement_id)";
+export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id),source_investment_tx_id,src_itx:investment_transactions!expense_items_source_investment_tx_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
 export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata,lease:property_leases!cash_movements_related_lease_id_fkey(pd:property_details!property_leases_property_id_fkey(asset_id))";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -201,6 +201,24 @@ export function makeEntryKit(c: KitCtx) {
     .map((m) => [m.source_entity_id as string, m.movement_group_id as string]));
   const groupPrincipal = new Map(c.moves.filter((m) => m.movement_type === "LIABILITY_PAYMENT" && m.movement_group_id)
     .map((m) => [m.movement_group_id as string, Number(m.amount)]));
+  // จ่ายหนี้ครั้งเดียวกัน (เงินต้น + ดอกเบี้ย) → หน้าต่างเดียวแก้ทั้งคู่ · ลบทั้งก้อนข้างปุ่มบันทึก (เหมือนหน้าหนี้สิน / แท็บบันทึกจ่าย · ตกลง 10 พ.ย. 2026)
+  const liabPrincipal = new Map(c.moves.filter((m) => m.movement_type === "LIABILITY_PAYMENT" && !m.is_derived && m.movement_group_id)
+    .map((m) => [m.movement_group_id as string, m]));
+  const liabInterest = new Map(c.moves.flatMap((m) => {
+    const e = m.is_derived && m.source_entity_type === "EXPENSE" && m.source_entity_id && m.movement_group_id ? c.expById.get(m.source_entity_id) : undefined;
+    return e && e.liability_id && !e.pending_split ? [[m.movement_group_id as string, e] as const] : [];
+  }));
+  const liabPairEdit = (g: string | null | undefined, button?: string): ReactNode => {
+    const p = g ? liabPrincipal.get(g) : undefined, e = g ? liabInterest.get(g) : undefined;
+    if (!canWrite || !g || !p || !e) return null;
+    return (
+      <PairEdit group={g} canDelete={canDelete} direction="OUT" currency={p.currency} button={button}
+        paths={[...PATHS, p.to_liability_id ? `/liabilities/${p.to_liability_id}` : "/liabilities", "/liabilities"]}
+        principal={{ id: p.id, date: p.movement_date, amount: Number(p.amount) }}
+        interest={{ table: "expense_items", id: e.id as string, date: e.date as string, amount: Number(e.amount) }}
+        confirmText={`ลบการจ่ายวันที่ ${thDate(p.movement_date)}?\nเงินต้น ${money(p.amount)} + ดอกเบี้ย ${money(e.amount)} จะถูกลบพร้อมกัน\n(ถ้าผิดแค่ยอด ให้แก้ยอดแล้วกดบันทึกแทน)`} />
+    );
+  };
 
   // ผลของการลบรายการที่บันทึกที่หน้านี้ — บอกให้ชัดว่ายอดไหนถูกยกเลิก (แทนข้อความกลาง "ข้อมูลที่ระบบสร้างขึ้น…")
   const pfName = new Map(c.pfCash.map((h) => [h.id, h.label]));
@@ -227,6 +245,7 @@ export function makeEntryKit(c: KitCtx) {
    *   โอน ธนาคาร ↔ พอร์ต = ช่องครบเหมือนหน้าพอร์ต (ค่าธรรมเนียมต้นทาง / ปลายทาง · ยอดที่เข้าจริง · บัญชีในพอร์ต) */
   const moveEdit = (m: Move, opt: { button?: string; note?: string; deleteNote?: string } = {}): ReactNode => {
     if (!canWrite || m.parts || m.is_derived || !EDITABLE_MOVES.includes(m.movement_type)) return null;
+    if (m.movement_type === "LIABILITY_PAYMENT" && m.movement_group_id && liabInterest.has(m.movement_group_id)) return liabPairEdit(m.movement_group_id, opt.button);
     const pfMove = m.movement_type === "INVESTMENT_OUT" || m.movement_type === "INVESTMENT_IN";
     const pf = pfMove ? (m.movement_type === "INVESTMENT_OUT" ? m.to_asset_id : m.from_asset_id) : null;
     const bank = pfMove ? (m.movement_type === "INVESTMENT_OUT" ? m.from_asset_id : m.to_asset_id) : null;
@@ -270,13 +289,7 @@ export function makeEntryKit(c: KitCtx) {
     if (src && tx && !tx.cash_movement_id) return (
       <RowActions table="investment_transactions" id={tx.id} paths={[...PATHS, src.href, "/investments"]} canDelete={canDelete} button={button}
         deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-        fields={[
-          { name: "transaction_date", label: "วันที่", type: "date", value: tx.transaction_date },
-          ...(tx.settle_to_asset_id ? [{ name: "settlement_date", label: "วันชำระ", type: "date" as const, value: tx.settlement_date }] : []),
-          { name: "amount", label: "ยอด", type: "number", value: tx.amount },
-          { name: "fee", label: "ค่าธรรมเนียม", type: "number", value: tx.fee },
-          { name: "tax", label: "ภาษี", type: "number", value: tx.tax },
-          { name: "notes", label: "หมายเหตุ", value: tx.notes, width: "w-40" }]} />
+        fields={portfolioTxFields(tx as Parameters<typeof portfolioTxFields>[0], !!tx.settle_to_asset_id)} />
     );
     if (src) {
       const fields = incSourceEdit(i);
@@ -318,11 +331,7 @@ export function makeEntryKit(c: KitCtx) {
         <RowActions table="investment_transactions" id={tx.id} paths={[...PATHS, "/investments", ...(i.related_asset_id ? [`/investments/${i.related_asset_id}`] : [])]}
           canDelete={canDelete && isFee} button={button}
           deleteNote="ลบรายการค่าธรรมเนียมในพอร์ต · รายจ่ายนี้ถูกลบตาม"
-          fields={[
-            { name: "transaction_date", label: "วันที่", type: "date", value: tx.transaction_date },
-            ...(isFee ? [{ name: "amount", label: "ค่าธรรมเนียม", type: "number" as const, value: tx.amount }]
-              : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: tx.fee }]),
-            { name: "notes", label: "หมายเหตุ", value: tx.notes, width: "w-40" }]} />
+          fields={portfolioTxFields(tx as Parameters<typeof portfolioTxFields>[0], !!tx.settle_to_asset_id)} />
       );
     }
     // ดอกเบี้ยจ่ายเงินกู้ภายในครอบครัว (ฝั่งผู้กู้) → แก้ดอกเบี้ยที่รับของผู้ให้กู้ (ฝั่งผู้กู้เปลี่ยนตาม)
@@ -330,6 +339,7 @@ export function makeEntryKit(c: KitCtx) {
       const inc = c.incById.get(i.internal_loan_income_id);
       return inc ? incEdit(full(inc), button) : null;
     }
+    if (i.liability_id) { const g = expGroup.get(i.id); if (g && liabPrincipal.has(g)) return liabPairEdit(g, button); }
     const src = expSource(i);
     if (src) {
       const fields = sourceEdit(i);

@@ -8,6 +8,7 @@ import { SMALL_BTN, money, numOrZero, thDate } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import BankOptions from "@/components/BankOptions";
 import Flash from "@/components/Flash";
+import Modal from "@/components/Modal";
 import UndoButton from "@/components/UndoButton";
 
 // ปุ่ม "บันทึกรับ" + "บันทึกจ่าย" เหนือตารางเบี้ยและผลประโยชน์ (ตกลง 8 พ.ย. 2026 · แบบเงินกู้ แทนปุ่มรายแถว)
@@ -317,11 +318,14 @@ export function ReceiveForm({ lines, policyId, currency, banks, persons, hasCash
  * กดแถวรับล่าสุด → แก้ วันที่ / ยอด / บัญชี / หมายเหตุ (ยกเลิกของเดิม + บันทึกใหม่ในคำสั่งเดียว) หรือ ลบ (ยกเลิกทั้งก้อน)
  *   แก้ / ลบได้เฉพาะรายการรับล่าสุด (ตกลง 8 พ.ย. 2026 · แบบเงินกู้) · งวด / ผลของการรับ / ผู้รับเงิน คงเดิม
  */
-export function ReceiptEdit({ r, currency, banks, hasCashValue, paths }: {
+export function ReceiptEdit({ r, currency, banks, hasCashValue, paths, button, buttonClass }: {
   r: { id: string; date: string; amount: number; bank_asset_id: string | null; notes: string | null; outcome: string | null; cash_value_part: number };
   currency: string; banks: Bank[]; hasCashValue: boolean; paths: string[];
+  /** ปุ่มเดียวเปิดหน้าต่าง (เช่น ยอดที่รับแล้วในแท็บบันทึกรับ) · ไม่ใส่ = กดที่แถว */
+  button?: string; buttonClass?: string;
 }) {
-  const row = useRowPanel(true);
+  const row = useRowPanel(!button);
+  const [open, setOpen] = useState(false);
   const formId = `rc-${useId()}`;
   const [state, action, pending] = useActionState<ActionState, FormData>(editBenefitReceipt, {});
   const OUT: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
@@ -352,5 +356,12 @@ export function ReceiptEdit({ r, currency, banks, hasCashValue, paths }: {
       </div>
     </div>
   );
-  return row.render(panel, `รายการรับ · ${thDate(r.date)}`, "md");
+  const title = `รายการรับ · ${thDate(r.date)}`;
+  if (button) return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={buttonClass ?? SMALL_BTN}>{button}</button>
+      {open && <Modal title={title} size="md" onClose={() => setOpen(false)}>{panel}</Modal>}
+    </>
+  );
+  return row.render(panel, title, "md");
 }

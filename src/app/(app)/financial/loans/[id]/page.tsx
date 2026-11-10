@@ -206,7 +206,9 @@ export default async function LoanDetailPage({ params, searchParams }: {
       e.disburse && !e.disburse.is_derived && <RowActions key="d" table="cash_movements" id={e.disburse.id} paths={paths} {...b("แก้ไข")}
         canDelete={canDelete} fields={[
         { name: "movement_date", label: "วันที่", type: "date", value: e.disburse.movement_date },
-        { name: "amount", label: "จำนวน", type: "number", value: e.disburse.amount }]} />,
+        { name: "amount", label: "จำนวน", type: "number", value: e.disburse.amount },
+        // ช่องเดียวกับ Income & Expenses (ตกลง 10 พ.ย. 2026)
+        { name: "description", label: "รายละเอียด", value: e.disburse.description, width: "w-40" }]} />,
     ].filter(Boolean);
     return items.length ? <div className="flex flex-wrap gap-1">{items}</div> : undefined;
   };

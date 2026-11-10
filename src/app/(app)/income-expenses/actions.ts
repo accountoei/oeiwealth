@@ -370,6 +370,7 @@ export async function saveEntry(_: ActionState, form: FormData): Promise<ActionS
   }
   const warn = (data as { recon_warning?: boolean } | null)?.recon_warning;
   const note = lumpNote(before, await lumpSnap(supabase, accs, newDate), accs, null);
+  revalidatePath("/property", "layout");                           // แก้จากหน้าทรัพย์สิน / หน้ารวม Property (ฟอร์มเดียวกัน)
   return done((warn ? "บันทึกแล้ว · บัญชีนี้อัปเดตยอดคงเหลือเดือนนี้ไปแล้ว ก้อนรอแยกปรับตามให้เอง ตรวจได้ที่หน้า Bank Accounts" : "บันทึกแล้ว") + note,
     ["/liabilities", "/settings/month-closing", "/"]);
 }

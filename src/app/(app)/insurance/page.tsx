@@ -17,7 +17,9 @@ import UrlSelect from "@/components/UrlSelect";
 import { payDefaultValue } from "./PayDefaultSelect";
 import InsuranceBatch, { type BoxPolicy, type PayOpt, type YLine } from "./InsuranceBatch";
 import CoverageTab, { type ClaimKit, type CovClaim, type CovItem, type CovPolicy } from "./CoverageTab";
-import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
+import { REC_LINK, recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
+import { ReceiptEdit } from "./[id]/FlowRecord";
+import type { Bank } from "../income-expenses/forms";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import { endpointValue } from "@/lib/money-endpoint";
@@ -28,6 +30,8 @@ const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
 // ความคุ้มครองต่อจากภาพรวม (ตกลง 3 พ.ย. 2026 · เดิมอยู่ท้ายสุด) · เลิกแท็บอัปเดตมูลค่าเวนคืน (8 พ.ย. 2026 · ลงตามตารางเองทุกวัน · ปรับรายเล่มที่หน้ากรมธรรม์)
 const TABS = [["overview", "ภาพรวม"], ["coverage", "ความคุ้มครอง"], ["benefit", "บันทึกรับผลประโยชน์"], ["premium", "จ่ายชำระเบี้ยประกัน"]] as const;
+
+const one = <T,>(x: T | T[] | null | undefined): T | null => (Array.isArray(x) ? x[0] ?? null : x ?? null);
 
 export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; s?: string; yb?: string; yp?: string; tab?: string; m?: string; i?: string }> }) {
   const sp = await searchParams;
@@ -85,8 +89,14 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
   const claimQ = supabase.from("insurance_claims").select("id,policy_id,coverage_id,incident_date,claim_date,claimed_amount,received_amount,currency,status,notes").is("deleted_at", null)
     .or(`and(claim_date.gte.${year}-01-01,claim_date.lte.${year}-12-31),and(status.in.(${CLAIM_OPEN.join(",")}),claim_date.lt.${year}-01-01),and(status.in.(${CLAIM_OPEN.join(",")}),claim_date.is.null)`)
     .order("claim_date", { ascending: false }).then((r) => r);
+  // รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือกของแท็บรับ → แสดงใต้ชื่อกรมธรรม์
+  //   รายการรับล่าสุดของกรมธรรม์ → กดยอดเพื่อแก้ / ลบ (หน้าต่างเดียวกับหน้ากรมธรรม์ / Income & Expenses · ตกลง 10 พ.ย. 2026)
+  const lumpQ = supabase.from("insurance_benefit_receipts")
+    .select("id,policy_id,receipt_date,amount,currency,outcome,bank_asset_id,notes,cash_value_part,pol:insurance_policies(cash_value_asset_id)").is("line_id", null)
+    .gte("receipt_date", `${yBen}-01-01`).lte("receipt_date", `${yBen}-12-31`).is("undone_at", null).is("deleted_at", null).order("receipt_date")
+    .then((r) => r);
   const [pv, { data, error }, { data: persons }, { data: cvs }, { data: covs }, { data: claims }, { data: fups }, { data: allLines },
-    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec, { data: pendExp }, { data: fx }] = await Promise.all([
+    { data: banks }, { data: cards }, { data: family }, { data: yearLumps }, { data: allLumps }, rec, { data: pendExp }, { data: fx }, latestRc] = await Promise.all([
     loadPersonView(sp.p),
     supabase.from("v_insurance_status").select("id,insurance_type,person_id,payer_person_id,insurer,policy_no,end_date,insured_amount,insured_amount_currency,premium,premium_currency,has_cash_value,cash_value_asset_id,status,derived_status,start_date,paid_from_asset_id,paid_from_credit_card_id,plan_name,coverage_scope")
       .order("status").order("insurer"),
@@ -102,8 +112,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("families").select("go_live_date").maybeSingle(),
     // รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือกของแท็บรับ → แสดงใต้ชื่อกรมธรรม์
-    supabase.from("insurance_benefit_receipts").select("id,policy_id,receipt_date,amount,currency,outcome").is("line_id", null)
-      .gte("receipt_date", `${yBen}-01-01`).lte("receipt_date", `${yBen}-12-31`).is("undone_at", null).is("deleted_at", null).order("receipt_date"),
+    lumpQ,
     // รับเงินก้อนที่ไม่ผูกงวด → กล่อง "ผลประโยชน์ที่รับ ปี …" (กรองปีในหน้า)
     supabase.from("insurance_benefit_receipts").select("policy_id,amount,currency,receipt_date").is("line_id", null).is("undone_at", null).is("deleted_at", null),
     recQ,
@@ -115,6 +124,19 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
         .eq("is_reimbursable", true).neq("reimbursement_status", "FULL").order("date", { ascending: false }).limit(100);
     })(),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
+    // รายการรับล่าสุดของแต่ละกรมธรรม์ (ทั้งรับตามงวดและรับก้อน · วันที่ → เวลาที่บันทึก เหมือนหน้ากรมธรรม์)
+    me.role === "ADMIN" || me.role === "EDITOR" ? lumpQ.then(async ({ data }) => {
+      const pols = [...new Set((data ?? []).map((b) => b.policy_id as string))];
+      if (!pols.length) return new Set<string>();
+      const { data: all } = await supabase.from("insurance_benefit_receipts").select("id,policy_id,receipt_date,created_at")
+        .in("policy_id", pols).is("undone_at", null).is("deleted_at", null);
+      const best = new Map<string, { id: string; d: string; at: string }>();
+      (all ?? []).forEach((r) => {
+        const cur = best.get(r.policy_id as string), d = r.receipt_date as string, at = r.created_at as string;
+        if (!cur || d > cur.d || (d === cur.d && at > cur.at)) best.set(r.policy_id as string, { id: r.id as string, d, at });
+      });
+      return new Set([...best.values()].map((x) => x.id));
+    }) : Promise.resolve(new Set<string>()),
   ]);
   // สกุลเงินอื่น → บาทด้วยอัตราล่าสุด (THB Equivalent · แบบหน้า Bank Accounts · ตกลง 9 พ.ย. 2026) · ยอดแยกตามสกุลแสดงใต้กล่อง
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
@@ -273,8 +295,16 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
           paid: insCountedPaid(l), remaining: l.status === "CLOSED" ? 0 : Number(l.remaining), currency: l.currency, status: l.status,
           benefitType: l.benefit_type, edits: editsOf(l),
           tag: l.due_date < yStart ? `ค้างจากปี ${Number(l.due_date.slice(0, 4)) + 543}` : l.due_date > yEnd ? `งวดปี ${Number(l.due_date.slice(0, 4)) + 543}` : null })),
-        lumps: lumps.filter((b) => b.policy_id === r.id).map((b) => ({ id: b.id as string,
-          node: recLink(recLabel(OUTCOME[b.outcome ?? ""] ?? "รับเงินก้อน", b.receipt_date as string, Number(b.amount), b.currency as string), `/insurance/${r.id}`) })),
+        lumps: lumps.filter((b) => b.policy_id === r.id).map((b) => {
+          const label = recLabel(OUTCOME[b.outcome ?? ""] ?? "รับเงินก้อน", b.receipt_date as string, Number(b.amount), b.currency as string);
+          const cv = one(b.pol as { cash_value_asset_id: string | null } | { cash_value_asset_id: string | null }[] | null)?.cash_value_asset_id;
+          return { id: b.id as string, node: canOrder && latestRc.has(b.id as string)
+            ? <ReceiptEdit button={`${label} ✎`} buttonClass={REC_LINK} currency={b.currency as string} banks={(banks ?? []) as Bank[]} hasCashValue={!!cv}
+                paths={["/insurance", `/insurance/${r.id}`, "/income-expenses"]}
+                r={{ id: b.id as string, date: b.receipt_date as string, amount: Number(b.amount), bank_asset_id: b.bank_asset_id as string | null,
+                  notes: b.notes as string | null, outcome: b.outcome as string | null, cash_value_part: Number(b.cash_value_part ?? 0) }} />
+            : recLink(label, `/insurance/${r.id}`) };
+        }),
       };
     });
   };

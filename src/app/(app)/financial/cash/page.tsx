@@ -17,7 +17,7 @@ import InterestBatch, { type InterestRow } from "./InterestBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { FLOW_LABEL, INCOME_KEYS, OTHER_KEYS, SPEND_KEYS, flowCount, flowSum, incomeLines, monthFlows, type Move } from "./flows";
 import FlowCard from "./FlowCard";
-import { assetIncomeFields } from "@/lib/source-edit";
+import { EntryEditor, type Bank, type Person } from "../../income-expenses/forms";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
   account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null; overdraft_limit: number | null };
@@ -53,7 +53,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const movesQ = supabase.from("cash_movements").select("movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency,source_entity_id")
     .gte("movement_date", start).lte("movement_date", asOf).is("deleted_at", null).limit(10000).then((r) => r);
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
-    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }, { data: incTypes }] = await Promise.all([
+    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }, { data: incTypes }, { data: persons }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date,overdraft_limit").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
@@ -64,7 +64,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     supabase.from("income_transactions").select("received_to_asset_id,date").eq("pending_split", true).not("received_to_asset_id", "is", null).is("deleted_at", null),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     loadSortMap("assets"),
-    supabase.from("income_transactions").select("id,date,notes,received_to_asset_id,amount,tax").eq("income_type", "INTEREST").eq("pending_split", false)
+    supabase.from("income_transactions").select("id,date,notes,received_to_asset_id,amount,tax,person_id,income_type,income_subtype,currency,asset_id").eq("income_type", "INTEREST").eq("pending_split", false)
       .gte("date", start).lte("date", end).not("received_to_asset_id", "is", null).is("deleted_at", null),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance,due_day,autopay_asset_id,autopay_mode")
       .eq("status", "ACTIVE").not("autopay_asset_id", "is", null).not("due_day", "is", null).is("deleted_at", null),
@@ -80,6 +80,8 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
       const r = await supabase.from("income_transactions").select("id,income_type").in("id", ids);
       return { data: (r.data ?? []) as { id: string; income_type: string }[] };
     })(),
+    // หน้าต่างแก้ดอกเบี้ยรับ = ฟอร์มเดียวกับ Income & Expenses / หน้าบัญชี (ตกลง 10 พ.ย. 2026)
+    supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
@@ -185,6 +187,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     const days = from ? Math.round((Date.parse(a.maturity_date!) - Date.parse(from)) / 86400000) : 0;
     if (days > 0 && principal > 0) fdExpected.set(a.asset_id, Math.round(principal * Number(a.interest_rate) / 100 * days / 365 * 100) / 100);
   });
+  const activeBanks: Bank[] = ((accounts as Acc[] | null) ?? []).filter((a) => a.status === "ACTIVE").map((a) => ({ asset_id: a.asset_id, name: a.name, currency: a.currency }));
   const interestRows: InterestRow[] = all.filter((a) => a.status === "ACTIVE").map((a) => ({
     id: a.asset_id, name: a.name, bank: a.bank_name, currency: a.currency, type: ACCOUNT_TYPE_LABEL[a.account_type] ?? a.account_type,
     rate: a.interest_rate == null ? null : Number(a.interest_rate), maturity: a.maturity_date, received: interestIn.get(a.asset_id) ?? 0,
@@ -193,7 +196,11 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     edits: (interestRaw ?? []).filter((i) => i.received_to_asset_id === a.asset_id).sort((x, y) => String(x.date).localeCompare(String(y.date)))
       .map((i) => ({ id: i.id as string, node: recEdit({ canWrite, canDelete: canOrder, table: "income_transactions", id: i.id as string,
         label: recLabel("รับแล้ว", i.date as string, Number(i.amount) - Number(i.tax ?? 0), a.currency),
-        paths: [...paths, "/income-expenses", `/financial/cash/${a.asset_id}`], fields: assetIncomeFields(i as { date: string; amount: number }),
+        paths: [...paths, "/income-expenses", `/financial/cash/${a.asset_id}`],
+        editor: <EntryEditor kind="INCOME" id={i.id as string} currency={(i.currency as string) ?? a.currency} banks={activeBanks} persons={(persons ?? []) as Person[]}
+          personFallback={i.asset_id ? "ตามเจ้าของทรัพย์สิน" : undefined}
+          values={{ date: i.date as string, amount: Number(i.amount), tax: i.tax as number | null, person_id: i.person_id as string | null, notes: i.notes as string | null,
+            income_type: i.income_type as string, income_subtype: i.income_subtype as string | null, bank: i.received_to_asset_id as string | null }} />,
         deleteEffect: `เงินเข้า ${a.name} จะถูกยกเลิก (ยอดบัญชีกลับเป็นเหมือนก่อนบันทึก)` }) })),
   }));
 

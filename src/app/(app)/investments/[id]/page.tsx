@@ -15,7 +15,7 @@ import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import NetInvestedBox from "./NetInvestedBox";
 import { netInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
-import { portfolioTxFields } from "@/lib/source-edit";
+import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
 import PfTransferEdit from "./PfTransferEdit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
@@ -510,7 +510,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                             {t.source_expense_item_id && <div className="text-xs text-slate-500">ค่าใช้จ่ายที่จ่ายจากพอร์ต · แก้ที่หน้าบัญชีเงินฝาก / Income &amp; Expenses</div>}
                             {t.to_credit_card_id && <div className="text-xs text-slate-500">จ่ายบัตรเครดิตจากพอร์ต</div>}
                             {canWrite && !t.cash_movement_id && !t.source_expense_item_id && (
-                              <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete}
+                              <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={portfolioTxCols(t)}
                                 deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
                                 fields={portfolioTxFields(t, !!bank)} />
                             )}
