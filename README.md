@@ -19,6 +19,7 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → anon / publishable key |
 | `NEXT_PUBLIC_ARCGIS_API_KEY` (ไม่บังคับ) | ArcGIS Location Platform → API key สิทธิ์เฉพาะ Basemaps + จำกัด Referrer เป็นโดเมนแอป · ใช้กับแผนที่ทรัพย์สิน (ภาพดาวเทียมคมชัด + ชื่อสถานที่) |
+| `NEXT_PUBLIC_ARCGIS_KEY_EXPIRES` (ไม่บังคับ) | วันหมดอายุของคีย์ ArcGIS เช่น `2027-11-09` · กระดิ่งเตือน 30 วันก่อนหมด · ต่ออายุคีย์แล้วแก้ทั้งสองค่าพร้อมกัน → Redeploy (ไม่ติ๊ก Build Cache) · ถ้าคีย์หมดหรือใช้ไม่ได้ แผนที่สลับไปภาพดาวเทียม EOX (~10 ม.) เอง |
 
 ห้ามใส่ `service_role` key ในแอปหน้าเว็บ
 
