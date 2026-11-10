@@ -50,7 +50,7 @@ function TodoBell({ t }: { t: TodoCount | null }) {
       <Bell className="h-5 w-5" aria-hidden strokeWidth={1.9} />
       {n > 0 && (
         <span aria-hidden className={`absolute -right-0.5 -top-0.5 h-[18px] min-w-[18px] rounded-full px-1 text-center text-[11px] font-semibold leading-[18px] ring-2 ring-white ${
-          t?.red ? "bg-red-600 text-white" : "bg-amber-400 text-amber-950"}`}>{n > 99 ? "99+" : n}</span>
+          t?.red ? "bg-red-600 text-white" : "bg-green-500 text-white"}`}>{n > 99 ? "99+" : n}</span>
       )}
       <Tip>{label}</Tip>
     </IntentLink>
