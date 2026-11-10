@@ -257,7 +257,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
       <PageInfo>ตรวจความพร้อม → อัปเดตยอดคงเหลือ → ปิดเดือน (ระดับครอบครัว)</PageInfo>
 
       {/* ---------------------------------------------------------- สถานะเดือนนี้ (บนสุด) */}
-      <section className={`flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-xl border px-5 py-3 text-sm ${tone}`}>
+      <section id="month-status" className={`scroll-mt-20 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-xl border px-5 py-3 text-sm ${tone}`}>
         <div className="min-w-[min(100%,18rem)] flex-1">
           <p>
             <b className="font-semibold">{thMonth(start)}</b>
@@ -388,7 +388,8 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
                 const d = before ? Number(h.net_worth) - Number(before.net_worth) : null;
                 return (
                   <tr key={h.snapshot_month} className={h.snapshot_month.slice(0, 7) === ym ? "bg-blue-50/60" : ""}>
-                    <td className="whitespace-nowrap px-5 py-2"><Link href={`/settings/month-closing?m=${h.snapshot_month.slice(0, 7)}`} scroll={false} className="hover:underline">{thMonth(h.snapshot_month)}</Link></td>
+                    <td className="whitespace-nowrap px-5 py-2">{/* กดแล้วเลื่อนขึ้นไปกล่องสถานะของเดือนนั้น (#month-status) · เดิมอยู่ที่เดิม → ดูเหมือนกดแล้วไม่มีอะไรเกิดขึ้น */}
+                      <Link href={`/settings/month-closing?m=${h.snapshot_month.slice(0, 7)}#month-status`} className="text-blue-700 hover:underline">{thMonth(h.snapshot_month)}</Link></td>
                     <td className="px-3 text-right tabular-nums">{money(h.total_assets, undefined, 0)}</td>
                     <td className="px-3 text-right tabular-nums">{money(h.total_liabilities, undefined, 0)}</td>
                     <td className="px-3 text-right font-medium tabular-nums">{money(h.net_worth, undefined, 0)}</td>
