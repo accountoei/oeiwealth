@@ -2,11 +2,10 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import { useActionSlot } from "@/components/ActionBar";
-import { useRowPanel } from "@/components/RowPanel";
 import {
-  addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, updateTransfer, type ActionState,
+  addCashAccount, addHolding, moveCash, recordMaturity, recordTx, saveValuations, transferMoney, type ActionState,
 } from "../actions";
-import { SMALL_BTN, HOLDING_TYPE_LABEL, ROW_BTN, money, qty, thDate } from "@/lib/format";
+import { HOLDING_TYPE_LABEL, ROW_BTN, money, qty, thDate } from "@/lib/format";
 import { SettleModeRadios } from "@/components/SettleMode";
 import { CurrencySelect, useCurrencies } from "@/components/CurrencyContext";
 import BalanceGuard from "@/components/BalanceGuard";
@@ -546,63 +545,6 @@ function BankTransferBody({ assetId, currency, banks, cashAccounts, today, minDa
 export type PfTransfer = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
   amount: number; currency: string; fee: number | null; counter_amount: number | null; counter_currency: string | null;
   counter_fee: number | null; cash_holding_id: string | null; description: string | null };
-
-/** แก้รายการโอน / ใส่ยอดที่เข้าทีหลัง */
-export function TransferEditForm({ assetId, t, bankLabel, cashAccounts, minDate, today, rowMode = false }:
-  { assetId: string; t: PfTransfer; bankLabel: string; cashAccounts: CashAcct[]; minDate: string; today: string; rowMode?: boolean }) {
-  const slot = useActionSlot();
-  const row = useRowPanel(rowMode);                              // ในตาราง: กดที่แถวเพื่อเปิด
-  const useRow = rowMode && !row.showButtons;
-  const open = useRow ? true : slot.open;
-  const setOpen = useRow ? row.setOpen : slot.setOpen;
-  const { present, activeCls } = slot;
-  const [state, action, pending] = useActionState<ActionState, FormData>(updateTransfer, {});
-  const isIn = t.movement_type === "INVESTMENT_OUT";            // ธนาคาร → พอร์ต
-  const waiting = t.counter_currency != null && t.counter_amount == null;
-  const [acct, setAcct] = useState(t.cash_holding_id ?? cashAccounts.find((a) => a.currency === (isIn ? t.counter_currency ?? t.currency : t.currency))?.id ?? "");
-  const [amt, setAmt] = useState(String(Number(t.amount)));
-  const [got, setGot] = useState(t.counter_amount != null ? String(Number(t.counter_amount)) : t.counter_currency == null ? String(Number(t.amount)) : "");
-  const trigger = (
-    <button type="button" onClick={() => setOpen(!open)}
-      className={activeCls(waiting ? "rounded-md bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700" : SMALL_BTN)}>
-      {waiting ? "ใส่ยอดที่เข้า" : "แก้การโอน"}
-    </button>
-  );
-  if (!open) return trigger;
-  const c = cashAccounts.find((x) => x.id === acct);
-  const src = t.currency;
-  const show = (form: ReactNode) => (useRow ? row.render(form) : present(trigger, form));
-  const dst = (isIn ? c?.currency : t.counter_currency ?? t.currency) ?? "";
-  const accts = isIn ? cashAccounts : cashAccounts.filter((a) => a.currency === t.currency);
-  const rate = rateText(src, n(amt), dst, n(got));
-  return show((
-    <form action={action} className="mt-2 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-sm">
-      <input type="hidden" name="asset_id" value={assetId} />
-      <input type="hidden" name="movement_id" value={t.id} />
-      <input type="hidden" name="bank_asset_id" value={(isIn ? t.from_asset_id : t.to_asset_id) ?? ""} />
-      <p className="text-xs text-slate-600">{isIn ? `${bankLabel} → พอร์ต` : `พอร์ต → ${bankLabel}`} · เว้นยอดที่เข้าว่าง = ยังรอยอด</p>
-      <div className="grid gap-2 md:grid-cols-4">
-        <label className="text-xs">วันที่โอน<input name="date" type="date" required defaultValue={t.movement_date} min={minDate} max={today} className={`mt-1 block w-full ${small}`} /></label>
-        <label className="text-xs">บัญชีเงินฝากในพอร์ต
-          <select name="cash_holding_id" value={acct} onChange={(e) => setAcct(e.target.value)} className={`mt-1 block w-full ${small}`}>
-            {accts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
-          </select>
-        </label>
-        <label className="text-xs">เงินที่ออก ({src})<input name="amount" required inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} className={`mt-1 block w-full ${small}`} /></label>
-        <label className="text-xs">ค่าธรรมเนียมต้นทาง ({src})<input name="fee" inputMode="decimal" defaultValue={t.fee != null ? String(Number(t.fee)) : ""} className={`mt-1 block w-full ${small}`} /></label>
-        <label className="text-xs">ยอดที่เข้าจริง ({dst})<input name="counter_amount" inputMode="decimal" value={got} onChange={(e) => setGot(e.target.value)} className={`mt-1 block w-full ${small}`} /></label>
-        <label className="text-xs">ค่าธรรมเนียมปลายทาง ({dst})<input name="counter_fee" inputMode="decimal" defaultValue={t.counter_fee != null ? String(Number(t.counter_fee)) : ""} className={`mt-1 block w-full ${small}`} /></label>
-        <label className="text-xs md:col-span-2">รายละเอียด<input name="description" defaultValue={t.description ?? ""} className={`mt-1 block w-full ${small}`} /></label>
-      </div>
-      {rate && <p className="text-xs text-slate-700">{rate}</p>}
-      <div className="flex items-center gap-3">
-        <button disabled={pending} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">บันทึก</button>
-        <button type="button" data-close onClick={() => setOpen(false)} className={SMALL_BTN}>ปิด</button>
-        <Msg s={state} />
-      </div>
-    </form>
-  ));
-}
 
 /* ------------------------------------------------------------------ อัปเดตราคา (Statement) */
 export function ValuationsForm({ assetId, holdings, today, minDate }:

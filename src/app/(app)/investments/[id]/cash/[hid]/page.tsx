@@ -9,7 +9,8 @@ import EditButton from "@/components/EditButton";
 import RowActions from "@/components/RowActions";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
-import { TransferEditForm, type CashAcct, type PfTransfer } from "../../forms";
+import { type CashAcct, type PfTransfer } from "../../forms";
+import PfTransferEdit from "../../PfTransferEdit";
 import { cashLedger, type LEvent, type LHolding, type LMove, type LTx, type LVal } from "../../cash-ledger";
 import { CashInfoForm, CashStatementForm, SetDefaultButton } from "./forms";
 import { PfPayButton } from "../../pf-pay-forms";
@@ -166,7 +167,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
         {fx && ` · ${money(m.amount, m.currency)} → ${m.counter_amount != null ? money(m.counter_amount, m.counter_currency ?? undefined) : `รอยอด ${m.counter_currency}`}`}
         {fees.length > 0 && ` · ค่าธรรมเนียม ${fees.join(" + ")}`}</div>,
       extra: pending ? tiny("รอยอดที่เข้า") : e.waitBank ? tiny("รอยอดฝั่งธนาคาร") : undefined,
-      actions: canWrite ? <TransferEditForm assetId={id} t={m as PfTransfer} bankLabel={bank} cashAccounts={cashAccounts} minDate={goLive} today={today} rowMode /> : undefined,
+      actions: canWrite ? <PfTransferEdit m={m as PfTransfer} portfolioId={id} portfolioLabel={a.name} bankLabel={bank} cashAccounts={cashAccounts} paths={paths} canDelete={canDelete} /> : undefined,
     };
   };
   const monthEvents = all.filter((e) => e.date >= start && e.date <= end);
