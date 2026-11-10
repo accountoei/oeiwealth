@@ -40,12 +40,19 @@ type PersonDash = {
 type Family = { name: string; go_live_date: string; system_status: string };
 type InvGain = { gain: number; fx: number };
 
-/** สีหมวด (4 พ.ย. 2026 เจ้าของขอ "สดใสเหมือนกล่องเงินฝากตามธนาคาร"): ชุดสีเดียวกับ BANK_COLORS (financial/cash/page.tsx)
- *  เดิม (รอบ 4) เป็นสีหม่น OKLCH · ทุกสีเข้มพอบนพื้นขาว · ใช้กับหมวดเท่านั้น (รายบุคคลใช้สีเดียว) · มีชื่อหมวด + % กำกับเสมอ (ไม่ใช้สีอย่างเดียว)
- *  ประกัน = เขียวมะนาว (ไม่ใช้ชมพู เพราะใกล้แดงของหนี้สิน) · หนี้สิน = แดง (สีเดียวในหน้าที่เป็นโทนแดง) */
-const GROUP_COLOR: Record<string, string> = { financial: "#2563eb", loans: "#0891b2", investment: "#7c3aed", business: "#475569",
-  property: "#059669", alternative: "#f59e0b", insurance: "#65a30d" };
-const LIAB_COLOR = "#dc2626";
+/** สีหมวด (10 พ.ย. 2026 เจ้าของขอ "โทนเดียวกับกล่องอสังหาฯ ตามประเภท / เงินฝากตามธนาคาร ให้ดูสดใส"): สีระดับ 500 ชุดเดียวกับ TYPE_COLORS (property/page.tsx)
+ *  ธุรกิจ (มักเป็นก้อนใหญ่สุด) = ฟ้า แทนเทาเข้ม · เงินฝากธนาคาร = ส้ม · หมวดอื่นสีเดิมแต่สว่างขึ้น · ใช้กับหมวดเท่านั้น (รายบุคคลใช้สีเดียว)
+ *  มีชื่อหมวด + % กำกับเสมอ (ไม่ใช้สีอย่างเดียว) · ประกัน = เขียวมะนาว (ไม่ใช้ชมพู เพราะใกล้แดงของหนี้สิน) · หนี้สิน = แดง (สีเดียวในหน้าที่เป็นโทนแดง) */
+const GROUP_COLOR: Record<string, string> = {
+  alternative: "#f59e0b",
+  business: "#3b82f6",
+  financial: "#f97316",
+  insurance: "#84cc16",
+  investment: "#8b5cf6",
+  loans: "#06b6d4",
+  property: "#10b981",
+};
+const LIAB_COLOR = "#ef4444";
 /** ชื่อหมวด (4 พ.ย. 2026: "เงินฝาก / เงินสด" → "เงินฝากธนาคาร" · ไม่มีประเภทเงินสดในระบบ) */
 const GROUP: [string, string][] = [["financial", "เงินฝากธนาคาร"], ["loans", "เงินให้กู้"], ["investment", "การลงทุน"], ["business", "ธุรกิจ"],
   ["property", "อสังหาริมทรัพย์"], ["alternative", "สินทรัพย์อื่น"], ["insurance", "ประกัน"]];
