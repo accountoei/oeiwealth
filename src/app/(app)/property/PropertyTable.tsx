@@ -91,6 +91,9 @@ export default function PropertyTable({ rows, empty, toggle, note }: { rows: Pro
             {shown.some((r) => !r.geo) && <> · ไม่มีพิกัด {shown.filter((r) => !r.geo).length} แปลง (ใส่ที่ &ldquo;แก้ไขข้อมูล&rdquo;)</>}
             {" "}· นำเข้า Google My Maps: สร้างแผนที่ › นำเข้า › เลือกไฟล์ · พิมพ์ / PDF ที่เมนู ⋮ › พิมพ์แผนที่
           </span>
+          <Link target="_blank" title="พิมพ์ / บันทึก PDF ทุกแปลงตามตัวกรอง: แผนที่รวม + หน้าละ 1 แปลง"
+            href={`/print/property?${new URLSearchParams({ ids: shown.map((r) => r.assetId).join(","), title: loc ? mapTitle : "", back: "/property" })}`}
+            className={`${SMALL_BTN} ml-auto`}>พิมพ์ / PDF</Link>
         </div>
       )}
       {showMap && places.length > 0 && <PropertyMap places={places} title={mapTitle} />}

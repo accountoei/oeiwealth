@@ -726,6 +726,9 @@ export default async function PropertyDetailPage({ params, searchParams }: {
                       <a href={pd.map_url || `https://www.google.com/maps?q=${Number(pd.latitude)},${Number(pd.longitude)}`} target="_blank" rel="noopener noreferrer"
                         className="rounded-md border border-blue-600 px-3 py-1 text-sm text-blue-700 hover:bg-blue-50">เปิดใน Google Maps ↗</a>
                       {pd.latitude != null && <span className="text-xs tabular-nums text-slate-500">{Number(pd.latitude)}, {Number(pd.longitude)}</span>}
+                      <Link href={`/print/property?${new URLSearchParams({ ids: id, back: `/property/${id}` })}`} target="_blank"
+                        title="พิมพ์ / บันทึก PDF แปลงนี้: รูปแผนที่ดาวเทียม + รายละเอียด"
+                        className="ml-auto rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50">พิมพ์ / PDF</Link>
                     </div>
                     {pd.latitude != null && (
                       <iframe title="แผนที่" loading="lazy" referrerPolicy="no-referrer-when-downgrade"

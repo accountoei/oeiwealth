@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type * as Leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { ESRI_KEY, LABELS, SAT, STREET, addTiles, colorOf } from "./map-tiles";
 
 /**
  * แผนที่ภาพดาวเทียมของทรัพย์สินตามตัวกรอง (เช่น กลุ่มทำเลเดียวกัน) · หมุดสีตามการใช้งาน + ป้ายชื่อ
@@ -17,50 +18,6 @@ export type MapPlace = {
   id: string; assetId: string; name: string; lat: number; lng: number;
   usage: string; usageLabel: string; typeLabel: string; loc: string | null; area: string | null;
 };
-
-// สีเดียวกับหมุดในไฟล์ KML (src/lib/kml.ts)
-const USAGE_COLOR: Record<string, string> = {
-  BUSINESS_USE: "#483d8b",
-  OWNER_OCCUPIED: "#dc143c",
-  PERSONAL_USE: "#dc143c",
-  RENTAL: "#0078d7",
-  VACANT: "#8c8c8c",
-};
-const OTHER_COLOR = "#ffa500";
-const colorOf = (usage: string) => USAGE_COLOR[usage] ?? OTHER_COLOR;
-
-const A = (href: string, text: string) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-const EOX_ATTR = `Sentinel-2 cloudless – ${A("https://s2maps.eu", "https://s2maps.eu")} by ${A("https://eox.at", "EOX IT Services GmbH")}`
-  + " (Contains modified Copernicus Sentinel data 2024)";
-const OSM_ATTR = `© ${A("https://www.openstreetmap.org/copyright", "OpenStreetMap")} contributors`;
-const ESRI_ATTR = `Powered by ${A("https://www.esri.com", "Esri")} | Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community`;
-
-// ArcGIS Location Platform key (ใช้ฝั่งเบราว์เซอร์ได้ตามแบบของ Esri: ตั้งสิทธิ์เฉพาะ Basemaps + จำกัด referrer เป็นโดเมนของแอป)
-const ESRI_KEY = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim() || "";
-const esri = (path: string) =>
-  `https://ibasemaps-api.arcgis.com/arcgis/rest/services/${path}/MapServer/tile/{z}/{y}/{x}?token=${encodeURIComponent(ESRI_KEY)}`;
-
-type TileDef = { url: string; attribution?: string; maxNativeZoom: number; subdomains?: string; tileSize?: number; zoomOffset?: number };
-// ภาพพื้นหลัง (ดาวเทียม) + ชั้นชื่อที่ซ้อนทับ
-const SAT: TileDef = ESRI_KEY
-  ? { url: esri("World_Imagery"), attribution: ESRI_ATTR, maxNativeZoom: 18 }
-  : { url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg", attribution: EOX_ATTR, maxNativeZoom: 15 };
-const CARTO_LABELS: TileDef = {
-  url: "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", subdomains: "abcd", maxNativeZoom: 18,
-  attribution: `${OSM_ATTR} © ${A("https://carto.com/attributions", "CARTO")}`,
-};
-// ชั้นชื่อสถานที่ + ถนนสำหรับภาพดาวเทียม: มี key → Esri Static Basemap Tiles (arcgis/imagery/labels · ไทล์ 512 px → zoomOffset -1)
-// ชั้น Reference/* บน ibasemaps-api ไม่แสดงผลกับ key ของ Location Platform (ทดสอบบน prod 10 พ.ย. 2569) จึงไม่ใช้
-// ถ้าไทล์ชื่อของ Esri โหลดไม่ได้ จะสลับไปใช้ชื่อของ CARTO เองเพื่อให้ยังเห็นชื่อสถานที่
-const ESRI_LABELS: TileDef | null = ESRI_KEY
-  ? {
-    url: "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static/tile/{z}/{y}/{x}"
-      + `?token=${encodeURIComponent(ESRI_KEY)}`,
-    maxNativeZoom: 19, tileSize: 512, zoomOffset: -1,
-  }
-  : null;
-const LABELS: TileDef = ESRI_LABELS ?? CARTO_LABELS;
-const STREET: TileDef = { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: OSM_ATTR, maxNativeZoom: 19 };
 
 type MapStyle = "hybrid" | "sat" | "street";
 const STYLES: { key: MapStyle; label: string }[] = [
@@ -117,20 +74,7 @@ export default function PropertyMap({ places, title }: { places: MapPlace[]; tit
     const L = lib.current, group = base.current;
     if (!ready || !L || !group) return;
     group.clearLayers();
-    const make = (d: TileDef, z: number) => L.tileLayer(d.url, {
-      attribution: d.attribution, maxNativeZoom: d.maxNativeZoom, maxZoom: 19, zIndex: z,
-      ...(d.subdomains ? { subdomains: d.subdomains } : {}),
-      ...(d.tileSize ? { tileSize: d.tileSize, zoomOffset: d.zoomOffset ?? 0 } : {}),
-    }).addTo(group);
-    const defs = style === "street" ? [STREET] : style === "sat" ? [SAT] : [SAT, LABELS];
-    defs.forEach((d, i) => {
-      const layer = make(d, i + 1);
-      if (d === ESRI_LABELS) layer.once("tileerror", () => {
-        console.warn("Esri label tiles failed; using CARTO labels instead");
-        group.removeLayer(layer);
-        make(CARTO_LABELS, i + 1);
-      });
-    });
+    addTiles(L, group, style === "street" ? [STREET] : style === "sat" ? [SAT] : [SAT, LABELS]);
   }, [ready, style]);
 
   // วาดหมุดใหม่เมื่อตัวกรองเปลี่ยน
@@ -176,7 +120,7 @@ export default function PropertyMap({ places, title }: { places: MapPlace[]; tit
           <input type="checkbox" checked={labels} onChange={(e) => setLabels(e.target.checked)} /> แสดงชื่อแปลง
         </label>
       </div>
-      <div ref={box} className="h-[420px] w-full overflow-hidden rounded-lg bg-slate-900 md:h-[520px]" aria-label="แผนที่ทรัพย์สิน" />
+      <div ref={box} className="relative isolate z-0 h-[420px] w-full overflow-hidden rounded-lg bg-slate-900 md:h-[520px]" aria-label="แผนที่ทรัพย์สิน" />
       <p className="mt-1 text-xs text-slate-500">กดหมุดเพื่อดูรายละเอียด · ซูมด้วยปุ่ม + / − · {HINT[style]}</p>
     </div>
   );
