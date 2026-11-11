@@ -60,6 +60,9 @@ const GROUPS: { key: string; label: string; color: string }[] = [
 const PER_MONTHS: Record<string, number> = { MONTHLY: 1, QUARTERLY: 3, YEARLY: 12 };
 const FREQ_TEXT: Record<string, string> = { MONTHLY: "/เดือน", QUARTERLY: "/ไตรมาส", YEARLY: "/ปี", OTHER: "" };
 
+/** กรมธรรม์ที่เอาประกันทรัพย์สิน (v_insurance_status) · งวดเบี้ยก่อน Go-live (v_insurance_schedule_status) */
+type InsPol = { id: string; asset_id: string; premium: number | null; premium_currency: string | null; status: string };
+type InsFill = { policy_id: string; due_date: string; amount: number; currency: string };
 type Sp = Promise<{ tab?: string; m?: string; p?: string; order?: string; ty?: string }>;
 
 export default async function PropertyPage({ searchParams }: { searchParams: Sp }) {
@@ -154,7 +157,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       .then((r) => ({ data: r.data as unknown as Exp[] | null })))
     : Promise.resolve({ data: [] });
   const [{ utils, utilProp, expU }, { taxDataYears, taxYears, taxYear, taxRaw }, { latestVal, partRaw },
-    [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }], liabPairs, expCtx] = await Promise.all([
+    [{ data: incRaw }, { data: expA }, { data: marketRaw }, { data: targetRaw }, { data: compRaw }, { data: rentGot }, { data: costPaid }], liabPairs, expCtx, ins] = await Promise.all([
     // ค่าใช้จ่ายประจำของแต่ละทรัพย์สิน → ค่าใช้จ่ายของปี (ถึงสิ้นเดือนที่เลือก) ที่ผูกกับรายการเหล่านั้น
     //   ยอด / ความถี่ → ประมาณค่าใช้จ่ายประจำทั้งปี + เติมเดือนก่อน Go-live (กล่องภาพรวม)
     (async () => {
@@ -230,6 +233,20 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       return pairs;
     }),
     canWrite ? loadExpEditCtx(supabase) : Promise.resolve(null),
+    // เบี้ยประกันของทรัพย์สิน (ตกลง 11 พ.ย. 2026 · เหมือนหน้าทรัพย์สินรายตัว)
+    //   กรมธรรม์ที่มีผล: เบี้ยต่อปี → ประมาณค่าใช้จ่ายประจำทั้งปี
+    //   ปีที่ Go-live: งวดเบี้ยที่ครบก่อน Go-live (ไม่มีรายการจ่ายในระบบ) → เติมในรายได้สุทธิทั้งปี · หลัง Go-live ใช้รายการจ่ายจริง (expA)
+    (async () => {
+      if (!ids.length) return { pols: [] as InsPol[], fill: [] as InsFill[] };
+      const { data: pols } = await supabase.from("v_insurance_status").select("id,asset_id,premium,premium_currency,status").in("asset_id", ids);
+      const fillTo = yearSpan(ym, family?.go_live_date, today).actualFrom;
+      const polIds = ((pols ?? []) as InsPol[]).map((x) => x.id);
+      const { data: fill } = polIds.length && fillTo > yearStart
+        ? await supabase.from("v_insurance_schedule_status").select("policy_id,due_date,amount,currency").eq("kind", "PREMIUM").eq("skipped", false)
+          .in("policy_id", polIds).gte("due_date", yearStart).lt("due_date", fillTo).is("deleted_at", null)
+        : { data: [] };
+      return { pols: (pols ?? []) as InsPol[], fill: (fill ?? []) as InsFill[] };
+    })(),
   ]);
   // "จ่ายจาก" ที่ตั้งไว้ในแต่ละรายการค่าใช้จ่ายประจำ → ค่าตั้งต้นของแท็บบันทึกค่าใช้จ่าย
   const utilPay = new Map(((utils ?? []) as { id: string; paid_from_asset_id: string | null; paid_from_credit_card_id: string | null }[])
@@ -490,9 +507,13 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const recurring = ((utils ?? []) as Util[]).map((u) => ({ ...u, asset: utilProp.get(u.id) ?? "" }))
     .filter((u) => u.active && !u.deleted_at && u.expected_amount != null && !!PERIODS_PER_YEAR[u.frequency ?? ""] && activeIds.has(u.asset));
   const utilCost = (u: (typeof recurring)[number], periods: number) => thb(u.expected_amount, u.currency) * periods * share(u.asset);
-  const annualCost = recurring.reduce((t, u) => t + utilCost(u, PERIODS_PER_YEAR[u.frequency ?? ""]), 0);
+  // + เบี้ยต่อปีของกรมธรรม์ประกันทรัพย์สินที่มีผล (ตกลง 11 พ.ย. 2026 · ยอดรายตัวรวมกัน = ภาพรวม)
+  const premiums = ins.pols.filter((x) => x.status === "ACTIVE" && Number(x.premium ?? 0) > 0 && activeIds.has(x.asset_id));
+  const premiumCost = premiums.reduce((t, x) => t + thb(x.premium, x.premium_currency ?? "THB") * share(x.asset_id), 0);
+  const annualCost = recurring.reduce((t, u) => t + utilCost(u, PERIODS_PER_YEAR[u.frequency ?? ""]), 0) + premiumCost;
+  const polAsset = new Map(ins.pols.map((x) => [x.id, x.asset_id]));
   // รายได้สุทธิทั้งปี = ยอดจริง ม.ค. → เดือนที่เลือก · ปีที่ Go-live เติมเดือนก่อน Go-live (src/lib/property-year.ts · ตกลง 7 พ.ย. 2026)
-  //   รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น
+  //   รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น + งวดเบี้ยประกัน
   //   % ต่อปี = เฉพาะกลุ่มปล่อยเช่า: รายได้ − ค่าใช้จ่ายของกลุ่มนี้ ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มนี้
   const span = yearSpan(ym, family?.go_live_date, today);
   const netYearOf = (inGroup: (asset: string) => boolean) => {
@@ -502,7 +523,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
     if (!span.fillMonths) return actual;
     const avgInc = inc.filter((x) => x.date >= span.avgFrom && x.date <= span.avgTo).reduce((t, x) => t + incOf(x), 0) / span.avgMonths;
     const fillCost = recurring.filter((u) => inGroup(u.asset))
-      .reduce((t, u) => t + utilCost(u, periodsIn(PERIODS_PER_YEAR[u.frequency ?? ""], u.due_month, span.anchorMonth, 1, span.fillMonths)), 0);
+      .reduce((t, u) => t + utilCost(u, periodsIn(PERIODS_PER_YEAR[u.frequency ?? ""], u.due_month, span.anchorMonth, 1, span.fillMonths)), 0)
+      + ins.fill.map((l) => ({ ...l, asset: polAsset.get(l.policy_id) ?? "" })).filter((l) => activeIds.has(l.asset) && inGroup(l.asset))
+        .reduce((t, l) => t + thb(l.amount, l.currency) * share(l.asset), 0);
     return actual + avgInc * span.fillMonths - fillCost;
   };
   const netYear = netYearOf(() => true);
@@ -552,7 +575,9 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
             sub={<>
               <div>{expRows.length} รายการ</div>
               <div className={EST}>ประมาณค่าใช้จ่ายประจำทั้งปี <span className="font-medium text-red-700">{minusMoney(annualCost, "THB")}</span></div>
-              <div className="text-slate-400">{recurring.length ? `ค่าใช้จ่ายประจำ ${recurring.length} รายการ · ไม่รวมค่าใช้จ่ายครั้งเดียว` : "ยังไม่ได้ตั้งค่าใช้จ่ายประจำ"}</div>
+              <div className="text-slate-400">{recurring.length || premiums.length
+                ? [recurring.length ? `ค่าใช้จ่ายประจำ ${recurring.length} รายการ` : "", premiums.length ? `เบี้ยประกัน ${premiums.length} กรมธรรม์` : "", "ไม่รวมค่าใช้จ่ายครั้งเดียว"].filter(Boolean).join(" · ")
+                : "ยังไม่ได้ตั้งค่าใช้จ่ายประจำ"}</div>
             </>} />
           <StatBox label={`รายได้สุทธิ${mLabel}`} value={signedMoney(incTotal - expTotal, "THB")} valueClass={tone(incTotal - expTotal)}
             sub={<>
@@ -563,7 +588,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
                 <div className="inline-flex items-center gap-1">ปล่อยเช่า <span className={`font-semibold ${tone(rentalPct)}`}>{signedPct(rentalPct)}</span> ต่อปีของมูลค่า
                   <InfoTip label="วิธีคิดรายได้สุทธิทั้งปี">
                     ทั้งปี = รายได้ − ค่าใช้จ่ายที่บันทึกจริง ตั้งแต่ ม.ค. ถึงเดือนที่เลือก
-                    {span.fillMonths > 0 && <> · ปีที่เริ่มใช้ระบบ เดือนก่อน Go-live ประมาณให้: รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น (ไม่รวมค่าใช้จ่ายครั้งเดียว)</>}
+                    {span.fillMonths > 0 && <> · ปีที่เริ่มใช้ระบบ เดือนก่อน Go-live ประมาณให้: รายได้ = ค่าเฉลี่ยรายได้จริงต่อเดือนของเดือนที่จบแล้วหลัง Go-live · ค่าใช้จ่าย = ค่าใช้จ่ายประจำตามงวดของเดือนเหล่านั้น + งวดเบี้ยประกันทรัพย์สินที่ครบในเดือนเหล่านั้น (ไม่รวมค่าใช้จ่ายครั้งเดียว)</>}
                     {" "}· % ต่อปี = รายได้ − ค่าใช้จ่ายของอสังหาฯ กลุ่มปล่อยเช่า ปรับเป็น 12 เดือน ÷ มูลค่าปัจจุบันของกลุ่มปล่อยเช่า ({money(rentalValue, "THB")})
                   </InfoTip>
                 </div>
