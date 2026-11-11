@@ -20,6 +20,8 @@ const REL_RANK = ["GRANDPARENT", "PARENT", "PARENT_IN_LAW", "SELF", "SPOUSE", "S
 
 type Sp = { view?: string; archived?: string; order?: string; q?: string; gen?: string; g?: string; missing?: string };
 
+export const metadata = { title: "Members · Family & Documents" };
+
 export default async function MembersPage({ searchParams }: { searchParams: Promise<Sp> }) {
   const sp = await searchParams;
   const tree = sp.view === "tree";

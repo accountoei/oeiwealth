@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { cache, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import {
   COST_STATUS, ENCUMBRANCE_LABEL, MARKET_UNIT_LABEL, REBILL_SUBTYPE, UTILITIES_BILLING_LABEL, FREQ_LABEL, LAND_TAX_RATE_BY_USAGE, landTaxYears, LEASE_STATUS, PERIODS_PER_YEAR, PROPERTY_TYPE_LABEL, TH_MONTHS, USAGE_LABEL, UTIL_EXPENSE_CATEGORY,
@@ -78,6 +79,15 @@ type Rent = { lease_id: string; name: string; income_period: string; due_date: s
   received_amount: number; currency: string; status: string; cycle_start: string | null; cycle_end: string | null;
   grace_days: number | null; late_fee_per_day: number | null; days_past_due: number | null; in_grace: boolean; late_fee: number | null };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadAsset = cache(async (id: string) =>
+  (await createClient()).from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadAsset(id).then((r) => r.data?.name), "Property");
+}
+
 export default async function PropertyDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ ty?: string }>;
 }) {
@@ -96,7 +106,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้) และรายการอื่นของหน้า
     { data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
     { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }, { data: depMoveRows }, expCtx] = await Promise.all([
-    supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
+    loadAsset(id),
     pdQ,
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes,source_movement_id")

@@ -1,7 +1,8 @@
-import { money, signedPct } from "@/lib/format";
+import { money, signedPct, todayBangkok } from "@/lib/format";
 import { AUDIT_LABEL, calcYears, type FinCalc, type FinYear } from "@/lib/biz-financials";
 import ModalButton from "@/components/ModalButton";
 import { InfoTip } from "@/components/HeaderBar";
+import Clamp from "@/components/Clamp";
 import { FinYearEdit, FinYearForm, ResultsCharts, ResultsView, type FinOwner, type ValueHelp } from "./results";
 
 // ผลประกอบการ (ตกลง 9 พ.ย. 2026): กราฟ + ตารางรายปี + สินทรัพย์ถาวร — ใช้ในหน้ากิจการ / บริษัทที่ปิดแล้ว / ภาพรวมกลุ่ม
@@ -72,7 +73,7 @@ export function FinTable({ rows, edit, names }: { rows: FinCalc[]; edit?: (r: Fi
               <td className="whitespace-nowrap px-2 py-2">
                 <span className="font-medium">{r.fiscal_year + 543}</span>
                 {r.audit_status !== "AUDITED" && <AuditTag r={r} names={names} />}
-                {r.notes && <span className="ml-1 inline-block max-w-28 truncate align-bottom text-xs text-slate-500" title={r.notes}>{r.notes}</span>}
+                {r.notes && <Clamp text={r.notes} className="ml-1 inline-block max-w-28 align-bottom text-left text-xs text-slate-500" />}
                 {edit?.(r)}
               </td>
               <td className={`${td} ${sep}`}><M v={r.revenue_domestic} /></td>
@@ -164,7 +165,7 @@ export default function FinResults({ owner, rows: raw, canWrite, canDelete, valu
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-medium text-slate-900">ผลประกอบการ <InfoTip label="คำอธิบาย">ตัวเลขของทั้งบริษัท (100%) ตามงบการเงิน · ข้อมูลดูอย่างเดียว ไม่ลงรายได้ / ไม่นับในความมั่งคั่งสุทธิ · กำไรสะสม = กำไรรวมทุกปีที่บันทึก − ปันผลที่บริษัทจ่ายรวม · คน = รวมผู้บริหาร · กดแถวเพื่อแก้ไข</InfoTip></h2>
         {canWrite && <ModalButton label="+ เพิ่มปี" title="เพิ่มผลประกอบการ" size="lg" primary>
-          <FinYearForm owner={owner} nextYear={last ? last.fiscal_year + 1 : new Date().getFullYear() - 1} />
+          <FinYearForm owner={owner} nextYear={last ? last.fiscal_year + 1 : Number(todayBangkok().slice(0, 4)) - 1} />
         </ModalButton>}
       </div>
       {rows.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อมูล{canWrite && " · กด “+ เพิ่มปี”"}</p> : (

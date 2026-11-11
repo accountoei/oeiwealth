@@ -4,6 +4,8 @@ import { addDays, todayBangkok } from "@/lib/format";
 import NewBusinessForm from "./NewBusinessForm";
 import { InfoTip } from "@/components/HeaderBar";
 
+export const metadata = { title: "เพิ่มธุรกิจ / หุ้นนอกตลาด · Private Business" };
+
 export default async function NewBusinessPage() {
   const me = await requireAppUser();
   const supabase = await createClient();

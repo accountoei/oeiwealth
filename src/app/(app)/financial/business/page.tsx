@@ -31,6 +31,8 @@ type Own = { asset_id: string; person_id: string; ownership_percent: number; sha
 
 const COLORS = ["#2563eb", "#7c3aed", "#f43f5e", "#f59e0b", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899", "#14b8a6", "#64748b"];
 
+export const metadata = { title: "Private Business" };
+
 export default async function BusinessPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string; m?: string; fy?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

@@ -31,6 +31,8 @@ type Line = { id: string; loan_asset_id: string; installment_no: number; due_dat
   principal_remaining: number; interest_remaining: number; total_remaining: number; status: string };
 type Sp = Promise<{ p?: string; order?: string; tab?: string; m?: string; follow?: string }>;
 
+export const metadata = { title: "Loans Receivable" };
+
 export default async function LoansPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
   const me = await requireAppUser();

@@ -66,6 +66,8 @@ type InsPol = { id: string; asset_id: string; premium: number | null; premium_cu
 type InsFill = { policy_id: string; due_date: string; amount: number; currency: string };
 type Sp = Promise<{ tab?: string; m?: string; p?: string; order?: string; ty?: string }>;
 
+export const metadata = { title: "Property" };
+
 export default async function PropertyPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
   const me = await requireAppUser();

@@ -107,6 +107,8 @@ const getTrack = cache(async (start: string) => {
   return (data?.tracking_status ?? "NOT_TRACKED") as string;
 });
 
+export const metadata = { title: "Dashboard" };
+
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ p?: string; m?: string; r?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

@@ -4,20 +4,11 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { money, signedMoney, thDate } from "@/lib/format";
 import { ageAt, policyYearAt } from "@/lib/insurance-flow";
 import { InfoTip } from "@/components/HeaderBar";
+import Clamp from "@/components/Clamp";
 
 /** แถวย่อย: มูลค่าเวนคืนที่ลงจริงแต่ไม่ตรงกับตาราง (แสดงในคอลัมน์มูลค่าเวนคืน · กดแถวเพื่อแก้ / ลบ) */
 export type FlowSub = { key: string; kind: "CV"; date: string; text: string; detail?: string | null; amount: number; actions?: ReactNode };
-/**
- * หมายเหตุของแถว = บรรทัดเดียว ตัดท้ายด้วย … · กดเพื่อขยาย / ย่อ (ตกลง 9 พ.ย. 2026 · iPad ไม่มีชี้เมาส์ จึงใช้กด)
- *   บนคอมฯ ชี้เมาส์เห็นข้อความเต็ม (title) · ข้อความสั้นแสดงเหมือนเดิม · ปุ่ม → กดแล้วไม่เปิดหน้าต่างแก้ของแถว
- */
-function Clamp({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <button type="button" onClick={() => setOpen(!open)} title={open ? undefined : text} aria-expanded={open}
-      className={`block w-full text-left ${open ? "whitespace-normal break-words" : "truncate"}`}>{text}</button>
-  );
-}
+// หมายเหตุของแถว = บรรทัดเดียว ตัดท้ายด้วย … · กดเพื่อขยาย / ย่อ (Clamp)
 
 /** เล่มที่มีสัญญาเพิ่มเติม (ตกลง 6 พ.ย. 2026): คอลัมน์เบี้ยต่อส่วน (ชีวิต · สุขภาพ / สัญญาเพิ่มเติม) แล้วตามด้วย "รวมจ่าย" */
 export type FlowPart = { key: string; label: string };

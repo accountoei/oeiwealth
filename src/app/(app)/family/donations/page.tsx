@@ -19,6 +19,8 @@ const COLS = "id,donation_date,year_only,donor_kind,donor_person_id,donor_asset_
 const TAX_CLS: Record<string, string> = { ELIGIBLE: "bg-emerald-50 text-emerald-700", PENDING: "bg-amber-50 text-amber-700", NONE: "bg-slate-100 text-slate-500" };
 const year = (d: string) => Number(d.slice(0, 4));
 
+export const metadata = { title: "Donations · Family & Documents" };
+
 export default async function DonationsPage({ searchParams }: { searchParams: Promise<{ y?: string; d?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

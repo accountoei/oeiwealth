@@ -4,6 +4,8 @@ import { addDays, todayBangkok } from "@/lib/format";
 import NewPortfolioForm from "./NewPortfolioForm";
 import { InfoTip } from "@/components/HeaderBar";
 
+export const metadata = { title: "เพิ่มพอร์ตลงทุน · Investments" };
+
 export default async function NewPortfolioPage() {
   const me = await requireAppUser();
   const supabase = await createClient();

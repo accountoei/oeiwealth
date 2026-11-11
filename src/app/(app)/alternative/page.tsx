@@ -31,6 +31,8 @@ const COLORS = SHARE_COLORS;
 /** ตัวย่อบนป้าย: ตัวอักษรภาษาอังกฤษ / ตัวเลข 4 ตัวแรก (ไม่มี = 2 ตัวแรก) */
 const initials = (name: string) => { const l = name.replace(/[^A-Za-z0-9]/g, ""); return (l || name).slice(0, l ? 4 : 2).toUpperCase(); };
 
+export const metadata = { title: "Alternative Assets" };
+
 export default async function AlternativePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; c?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

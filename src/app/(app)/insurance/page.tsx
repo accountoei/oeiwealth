@@ -34,6 +34,8 @@ const TABS = [["overview", "ภาพรวม"], ["coverage", "ความค�
 
 const one = <T,>(x: T | T[] | null | undefined): T | null => (Array.isArray(x) ? x[0] ?? null : x ?? null);
 
+export const metadata = { title: "Insurance" };
+
 export default async function InsurancePage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; s?: string; yb?: string; yp?: string; tab?: string; m?: string; i?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

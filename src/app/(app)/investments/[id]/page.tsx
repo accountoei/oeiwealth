@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
 import {
@@ -48,6 +50,15 @@ type Tx = { id: string; holding_id: string | null; transaction_date: string; set
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadAsset = cache(async (id: string) =>
+  (await createClient()).from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadAsset(id).then((r) => r.data?.name), "Investments");
+}
+
 export default async function PortfolioDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ order?: string; tab?: string; m?: string; type?: string; h?: string }>;
 }) {
@@ -65,7 +76,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     { data: unsettled }, { data: persons }], [{ data: lastTx }, { data: txs }, { data: autoRows }],
     [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: capPre }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
     Promise.all([
-      supabase.from("assets").select("*").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
+      loadAsset(id),
       pfQ,
       supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
       supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name"),

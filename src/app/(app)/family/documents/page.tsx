@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
 import { DOC_CATEGORY_LABEL, DOC_MODULE_LABEL, ROW_BTN, addDays, docCategory, fileSize, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
+import Clamp from "@/components/Clamp";
 import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpload";
 import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
 import LinkDocument from "@/components/docs/LinkDocument";
@@ -16,6 +17,8 @@ type Doc = { id: string; module: string; document_type: string; title: string; m
 type Sp = Promise<{ c?: string; m?: string; q?: string; all?: string; u?: string; drive?: string; drive_error?: string }>;
 
 const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+
+export const metadata = { title: "Documents · Family & Documents" };
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
@@ -149,7 +152,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
             {st.connected ? (
               <>
                 <div className="mt-1 text-xl font-semibold text-emerald-700">เชื่อมแล้ว</div>
-                <div className="mt-1 truncate text-xs text-slate-500" title={st.account_email ?? ""}>{st.account_email}</div>
+                {st.account_email && <Clamp text={st.account_email} className="mt-1 block w-full text-left text-xs text-slate-500" />}
                 <div className="text-xs text-slate-500">ตั้งแต่ {thDate(st.connected_at?.slice(0, 10) ?? null)}</div>
                 {isAdmin && (
                   <div className="mt-2 flex flex-wrap items-center gap-3">

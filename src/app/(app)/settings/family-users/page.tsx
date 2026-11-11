@@ -6,6 +6,8 @@ import SecuritySection, { loadSecurity, type SecuritySp } from "../security/Secu
 
 const USER_STATUS: Record<string, string> = { INVITED: "รอเข้าใช้ครั้งแรก", ACTIVE: "ใช้งาน", DISABLED: "ปิดการใช้งาน" };
 
+export const metadata = { title: "User & Security · Settings" };
+
 export default async function UsersPage({ searchParams }: { searchParams: Promise<SecuritySp> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

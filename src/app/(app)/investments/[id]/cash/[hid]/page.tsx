@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { ITX_LABEL, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
@@ -23,6 +25,16 @@ import { cardLabel } from "@/lib/money-endpoint";
 type HC = LHolding & { name: string; status: string; purpose: string | null; interest_rate: number | null;
   current_value: number | null; current_value_date: string | null; value_thb: number | null; fx_rate: number | null; holding_type: string };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadHoldings = cache(async (id: string) =>
+  (await createClient()).from("v_holdings_active").select("id,name,holding_type,currency,status,is_default_cash,purpose,interest_rate,current_value,current_value_date,value_thb,fx_rate")
+    .eq("portfolio_asset_id", id));
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string; hid: string }> }) {
+  const { id, hid } = await params;
+  return detailTitle(() => loadHoldings(id).then((r) => (r.data ?? []).find((x) => x.id === hid)?.name), "Investments");
+}
+
 /** บัญชีเงินฝากในพอร์ต: หน้าตาแบบเดียวกับหน้าบัญชีธนาคาร */
 export default async function PortfolioCashPage({ params, searchParams }: {
   params: Promise<{ id: string; hid: string }>; searchParams: Promise<{ m?: string }>;
@@ -40,8 +52,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
   const [{ data: a }, { data: pf }, { data: hs }, { data: family }, { data: banks }] = await Promise.all([
     supabase.from("assets").select("id,name,currency,status").eq("id", id).eq("asset_type", "INVESTMENT_PORTFOLIO").is("deleted_at", null).maybeSingle(),
     supabase.from("investment_portfolios").select("id,institution").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("v_holdings_active").select("id,name,holding_type,currency,status,is_default_cash,purpose,interest_rate,current_value,current_value_date,value_thb,fx_rate")
-      .eq("portfolio_asset_id", id),
+    loadHoldings(id),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_bank_accounts_safe").select("asset_id,name"),
   ]);

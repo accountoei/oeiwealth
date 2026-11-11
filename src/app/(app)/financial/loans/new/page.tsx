@@ -4,6 +4,8 @@ import { addDays, todayBangkok, withBankOwners } from "@/lib/format";
 import NewLoanForm from "./NewLoanForm";
 import { InfoTip } from "@/components/HeaderBar";
 
+export const metadata = { title: "เพิ่มเงินให้กู้ยืม · Loans Receivable" };
+
 export default async function NewLoanPage() {
   const me = await requireAppUser();
   const supabase = await createClient();

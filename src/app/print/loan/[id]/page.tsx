@@ -5,7 +5,8 @@ import { LOAN_PARTY_COLS, money, thDate, thDateLong, todayBangkok } from "@/lib/
 import PrintShell, { type PrintSection } from "./print-shell";
 import { LendAddendum, LoanContract, ScheduleAnnex, type ContractData, type LendData } from "./contract";
 
-export const metadata = { title: "พิมพ์สัญญาเงินให้กู้" };
+// absolute = ไม่ต่อท้ายชื่อระบบ (ชื่อนี้เป็นชื่อไฟล์ตอนบันทึกเป็น PDF)
+export const metadata = { title: { absolute: "พิมพ์สัญญาเงินให้กู้" } };
 
 /**
  * หน้าพิมพ์ของเงินให้กู้ (นอกเมนูหลัก · ขนาด A4) — เลือกพิมพ์ได้ทีละส่วน แต่ละส่วนขึ้นหน้าใหม่

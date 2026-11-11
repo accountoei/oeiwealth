@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
 import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, thDate, todayBangkok, signedPct } from "@/lib/format";
@@ -32,12 +34,21 @@ type Tx = { id: string; transaction_date: string; settlement_date: string | null
   settle_from_asset_id: string | null; settle_to_asset_id: string | null; cash_movement_id: string | null };
 type U = { id: string; symbol: string; name: string | null; initial_price: number | null; strike_price: number | null; barrier_price: number | null };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadHolding = cache(async (id: string, hid: string) =>
+  (await createClient()).from("v_holdings_active").select("*").eq("id", hid).eq("portfolio_asset_id", id).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string; hid: string }> }) {
+  const { id, hid } = await params;
+  return detailTitle(() => loadHolding(id, hid).then((r) => r.data?.name), "Investments");
+}
+
 export default async function HoldingPage({ params }: { params: Promise<{ id: string; hid: string }> }) {
   const { id, hid } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: pvRow }, { data: autoRow }] = await Promise.all([
-    supabase.from("v_holdings_active").select("*").eq("id", hid).eq("portfolio_asset_id", id).maybeSingle(),
+    loadHolding(id, hid),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
       .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }),

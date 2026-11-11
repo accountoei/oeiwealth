@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { cache, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import {
   BENEFIT_TYPE_LABEL, CLAIM_CLS, CLAIM_DONE, CLAIM_OPEN, CLAIM_STATUS, COVERAGE_LABEL, COVERAGE_PERIOD, FOLLOWUP_ROLE, FOLLOWUP_STATUS, INS_OPEN, INS_SCHED_STATUS, INS_STATUS, INS_TYPE,
@@ -60,6 +61,16 @@ const COV_ORDER = Object.keys(COVERAGE_LABEL);
 const AMT = "tabular-nums underline decoration-dotted underline-offset-4 hover:text-blue-700";
 
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadPolicy = cache(async (id: string) =>
+  (await createClient()).from("v_insurance_status").select("*").eq("id", id).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  // บริษัท + ชื่อแบบประกัน (ไม่ใส่เลขกรมธรรม์)
+  return detailTitle(() => loadPolicy(id).then(({ data: p }) => p && `${p.insurer} ${p.plan_name ?? TYPE[p.insurance_type] ?? ""}`), "Insurance");
+}
+
 export default async function PolicyDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -67,7 +78,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const supabase = await createClient();
   // ข้อมูลหน้า: ทุกคำสั่งเริ่มพร้อมกันรอบเดียว (AGENTS.md · Page data) · คำสั่งที่ต้องรู้กรมธรรม์ / งวด / เล่ม ก่อน ต่อจากคำสั่งนั้น (.then)
   //   เดิมรอกันเป็นทอด ๆ 5 รอบ (เล่มที่มีสัญญาเพิ่มเติม 7 รอบ) → ตอนนี้ 2–3 รอบ (เล่ม 4 รอบ)
-  const pQ = supabase.from("v_insurance_status").select("*").eq("id", id).maybeSingle().then((r) => r.data);
+  const pQ = loadPolicy(id).then((r) => r.data);
   const linesQ = supabase.from("v_insurance_schedule_status").select(LINE_COLS)
     .eq("policy_id", id).order("due_date").order("installment_no").then((r) => (r.data as Line[] | null) ?? []);
   // ประวัติจ่ายเบี้ยของงวด (แก้ / ลบ ที่หน้านี้)

@@ -98,6 +98,8 @@ function checkLines(issues: Issue[], ym: string, end: string, dest: Map<string, 
 type Card = { id: string; issuer: string | null; card_name: string | null; card_last4: string | null; currency: string };
 type Flow = Record<string, string | number | null>;
 
+export const metadata = { title: "Month Closing · Settings" };
+
 /**
  * แท็บ Month Closing (ปรับ 4 พ.ย. 2026):
  *   สถานะเดือนที่ต้องปิด (บนสุด) → การ์ดสรุป → Checklist (บัตรเครดิตอยู่ในแถว Liabilities) → เดือนที่ปิดแล้ว (+ ยกเลิกการปิดเดือนล่าสุด)

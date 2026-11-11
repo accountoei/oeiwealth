@@ -21,7 +21,8 @@ export default function SectionTabs({ tabs }: { tabs: { href: string; label: str
   return (
     // เส้นเทาของแถวเป็นเงาด้านใน (ไม่ใช่ border) → เส้นใต้สีน้ำเงินของแท็บทับเส้นเทาได้ เหมือนแถบแท็บแบบอื่น (nav เลื่อนแนวนอนได้ จึงใช้ -mb-px ไม่ได้)
     <div className="mb-6 flex items-end shadow-[inset_0_-1px_0_var(--color-slate-200)]">
-    <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden text-sm [scrollbar-width:none]" aria-label="แท็บ">
+    {/* data-scroll-cue="fade": แท็บยาวเกินจอ → ขอบจางด้านที่ยังมีแท็บซ่อนอยู่ (ScrollCue) */}
+    <nav data-scroll-cue="fade" className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden text-sm [scrollbar-width:none]" aria-label="แท็บ">
       {tabs.map((t) => {
         const active = current === t.href || current.startsWith(`${t.href}/`);
         return (

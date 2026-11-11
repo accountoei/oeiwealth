@@ -6,6 +6,8 @@ import { InfoTip } from "@/components/HeaderBar";
 import { cardLabel } from "@/lib/money-endpoint";
 import { activeBanks, openCards } from "@/lib/pay-sources";
 
+export const metadata = { title: "เพิ่มกรมธรรม์ประกัน · Insurance" };
+
 // ?type=PROPERTY&asset=<id>: กดจากกล่อง "ประกันของทรัพย์สินนี้" ในหน้าทรัพย์สิน → เลือกประเภท / ทรัพย์สินไว้ให้ (ตกลง 3 พ.ย. 2026)
 export default async function NewPolicyPage({ searchParams }: { searchParams: Promise<{ type?: string; asset?: string }> }) {
   const sp = await searchParams;

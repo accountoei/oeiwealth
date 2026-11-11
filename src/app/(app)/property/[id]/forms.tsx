@@ -11,7 +11,7 @@ import {
 } from "../actions";
 import LeaseFields, { DEPOSIT_MONTHS_DEFAULT, type Bank, type CarryOption, type LeasePrefill } from "../LeaseFields";
 import LeaseContractFields, { type LeaseDetail, type LeaseDetailOptions } from "../LeaseContractFields";
-import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, PRORATE_BASIS_LABEL, RENT_TIMING_LABEL, UTILITIES_BILLING_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate } from "@/lib/format";
+import { SMALL_BTN, SMALL_DEL_BTN, COMMON_ROOM_LABEL, PRORATE_BASIS_LABEL, RENT_TIMING_LABEL, UTILITIES_BILLING_LABEL, ENCUMBRANCE_LABEL, OPPORTUNITY_METHOD_LABEL, PROPERTY_COST_TYPE_LABEL, PROPERTY_TYPE_LABEL, ROW_BTN, TH_MONTHS, USAGE_LABEL, UTIL_LABEL, money, opportunityText, thDate, todayBangkok } from "@/lib/format";
 import { DismissCostForm } from "@/app/(app)/income-expenses/forms";
 import BalanceGuard from "@/components/BalanceGuard";
 import { PayLines } from "@/components/AssetTrade";
@@ -459,7 +459,7 @@ export function EditPropertyForm({ p, components, latest, currency, currentValue
       {usage === "VACANT" && (
         <div className="grid gap-3 rounded-lg bg-amber-50 p-3 md:col-span-2 md:grid-cols-3">
           <label className="text-sm">ว่างตั้งแต่
-            <input name="vacant_since" type="date" defaultValue={p.vacant_since ?? ""} max={new Date().toISOString().slice(0, 10)} className={f} />
+            <input name="vacant_since" type="date" defaultValue={p.vacant_since ?? ""} max={todayBangkok()} className={f} />
             <span className="text-xs text-slate-500">{p.usage_type === "VACANT" ? "แก้ย้อนได้" : "เว้นว่าง = วันนี้"}</span></label>
           <label className="text-sm md:col-span-2">แผน / โครงการ
             <input name="vacant_plan" defaultValue={p.vacant_plan ?? ""} placeholder="เช่น สร้างบ้านให้ลูก · รอขาย" className={f} /></label>

@@ -35,6 +35,8 @@ const PERSON_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#
 
 type Sp = Promise<{ tab?: string; m?: string; p?: string; d?: string; order?: string }>;
 
+export const metadata = { title: "Bank Accounts" };
+
 export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
   const me = await requireAppUser();

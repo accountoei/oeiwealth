@@ -140,13 +140,23 @@ export default function Sidebar({ dots = [], familyName = "", familyPhoto = null
     window.addEventListener("pointerup", onUp);
   };
   const resetWidth = () => { setWidth(clampNavWidth(0)); setCookie(NAV_WIDTH_COOKIE, null); };
+  // เมนูมือถือ (☰) เปิดอยู่: กด Esc = ปิด (แตะพื้นที่นอกเมนูก็ปิด · ฉากหลังด้านล่าง)
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) setOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
 
   return (
     <PendingCtx.Provider value={{ path, setPending: (href) => setPendingState({ href, from: pathname }) }}>
-      <button onClick={() => setOpen(!open)} aria-label="เปิดเมนู"
+      <button onClick={() => setOpen(!open)} aria-label={open ? "ปิดเมนู" : "เปิดเมนู"} aria-expanded={open} aria-controls="app-nav"
         className="md:hidden fixed top-2.5 left-3 z-30 rounded-md bg-blue-600 text-white px-3 py-1.5 text-sm shadow">☰ เมนู</button>
-      <aside style={collapsed ? undefined : { width }}
-        className={`${open ? "flex" : "hidden"} md:flex fixed md:sticky top-0 z-20 h-screen shrink-0 flex-col pt-10 md:pt-0 border-r border-slate-200 bg-white ${
+      {/* มือถือ: ฉากหลังจาง ๆ ใต้เมนู · แตะ = ปิดเมนู (Modern Web Guidance รอบ 2 · 11 พ.ย. 2026) */}
+      {open && <div aria-hidden className="fixed inset-0 z-10 bg-slate-900/30 md:hidden" onClick={() => setOpen(false)} />}
+      {/* h-dvh = สูงเท่าจอที่เห็นจริง (มือถือ / iPad: 100vh สูงกว่าจอเมื่อแถบที่อยู่เว็บแสดงอยู่ → ท้ายเมนูถูกบัง) */}
+      <aside id="app-nav" style={collapsed ? undefined : { width }}
+        className={`${open ? "flex" : "hidden"} md:flex fixed md:sticky top-0 z-20 h-dvh shrink-0 flex-col pt-10 md:pt-0 border-r border-slate-200 bg-white ${
         dragging ? "select-none" : "transition-[width] duration-200 ease-out"} ${collapsed ? "w-16" : ""}`}>
         {/* มุมซ้ายบน: ชื่อครอบครัว + "Wealth Vault" · รูปครอบครัว (ใส่ที่ Members → แก้ไข) · ไม่มีรูป → ชื่อย่อ (ตกลง 28 ต.ค. 2026) */}
         <div className="flex min-h-[4.5rem] items-center gap-2 overflow-hidden pb-3 pl-[14px] pr-4 pt-5">
