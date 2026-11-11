@@ -8,7 +8,7 @@ import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import ModalButton from "@/components/ModalButton";
 import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm";
 import { batchPropertyValues, type ActionState } from "./actions";
-import { splitByArea } from "./valueParts";
+import { planValueParts } from "./valueParts";
 import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
 
 export type ValueRow = {
@@ -32,7 +32,6 @@ const filled = (s: string | undefined) => (s ?? "").trim() !== "";
  *   กรอกยอดรวม (30 ต.ค. 2026 · กติกาเดียวกับหน้าทรัพย์สิน) → สิ่งปลูกสร้างเท่าเดิม / ตามที่พิมพ์ · ที่ดินได้ส่วนที่เหลือ แบ่งตามเนื้อที่ · เห็นรายแถวทันที
  */
 type Plan = { total: number | null; parts: { deed_id: string; value: number }[] | null; est: Record<string, number>; error?: string };
-const round2 = (x: number) => Math.round(x * 100) / 100;
 export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }: {
   rows: ValueRow[]; today: string; minDate: string; canWrite: boolean; shareNote: string | null;
 }) {
@@ -51,38 +50,12 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
   }, {});
 
   // มูลค่าใหม่ของแต่ละทรัพย์สิน: ยอดรวม · รายแถว (ส่งเมื่อรู้ครบทุกแถว) · ตัวเลขประมาณรายแถวไว้แสดงสีเทา
+  //   กติกาเดียวกับหน้าทรัพย์สิน: planValueParts (./valueParts.ts · เทสต์ scripts/value-parts.test.mjs)
   const planOf = (r: ValueRow): Plan => {
     const sub = pv[r.id] ?? {};
-    const typed = (id: string) => filled(sub[id]);
-    const totalTyped = filled(nv[r.id]);
-    const anySub = r.parts.some((x) => typed(x.id));
-    if (!totalTyped && !anySub) return { total: null, parts: null, est: {} };
-    const eff: Record<string, number | null> = {};
-    for (const x of r.parts) eff[x.id] = typed(x.id) ? n(sub[x.id]) : x.value;
-    if (totalTyped && r.parts.length > 1) {
-      const total = n(nv[r.id]);
-      // ที่ดินที่ไม่ได้พิมพ์เอง รับส่วนที่เหลือตามเนื้อที่ · ไม่มีที่ดิน → แถวเดียวที่ไม่ได้พิมพ์
-      const untyped = r.parts.filter((x) => !typed(x.id));
-      const lands = untyped.filter((x) => x.type === "LAND").length ? untyped.filter((x) => x.type === "LAND") : untyped.length === 1 ? untyped : [];
-      if (lands.length) {
-        const others = r.parts.filter((x) => !lands.includes(x));
-        if (others.some((x) => eff[x.id] == null)) return { total, parts: null, est: {} };          // ครั้งก่อนไม่มีรายแถว → ส่งยอดรวม
-        const share = splitByArea(round2(total - others.reduce((t, x) => t + Number(eff[x.id]), 0)), lands.map((x) => x.area ?? 0));
-        lands.forEach((x, i) => { eff[x.id] = share[i]; });
-        const est = Object.fromEntries(lands.map((x) => [x.id, Number(eff[x.id])]));
-        if (share.some((v) => v < 0)) return { total, parts: null, est, error: "ยอดรวมน้อยกว่ามูลค่าสิ่งปลูกสร้าง" };
-        return { total, parts: r.parts.map((x) => ({ deed_id: x.id, value: Number(eff[x.id]) })), est };
-      }
-      if (!anySub) return { total, parts: null, est: {} };
-      const sum = round2(r.parts.reduce((t, x) => t + Number(eff[x.id] ?? 0), 0));
-      if (r.parts.some((x) => eff[x.id] == null) || Math.abs(sum - total) > 0.005)
-        return { total, parts: null, est: {}, error: "ยอดรวมไม่เท่าผลรวมรายแถว" };
-      return { total, parts: r.parts.map((x) => ({ deed_id: x.id, value: Number(eff[x.id]) })), est: {} };
-    }
-    if (totalTyped) return { total: n(nv[r.id]), parts: null, est: {} };
-    if (r.parts.some((x) => eff[x.id] == null)) return { total: NaN, parts: null, est: {}, error: "ครั้งก่อนไม่มีมูลค่ารายแถว ต้องกรอกให้ครบทุกแถว" };
-    const parts = r.parts.map((x) => ({ deed_id: x.id, value: Number(eff[x.id]) }));
-    return { total: round2(parts.reduce((t, x) => t + x.value, 0)), parts, est: {} };
+    const pl = planValueParts(r.parts.map((x) => ({ key: x.id, land: x.type === "LAND", area: x.area, last: x.value, typed: filled(sub[x.id]) ? n(sub[x.id]) : null })),
+      filled(nv[r.id]) ? n(nv[r.id]) : null);
+    return { total: pl.total, parts: pl.values ? r.parts.map((x) => ({ deed_id: x.id, value: pl.values![x.id] })) : null, est: pl.est, error: pl.error };
   };
   const plans = new Map(rows.map((r) => [r.id, planOf(r)]));
   const planOfRow = (r: ValueRow) => plans.get(r.id)!;

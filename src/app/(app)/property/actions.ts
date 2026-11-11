@@ -407,9 +407,8 @@ export async function batchPropertyValues(_: ActionState, form: FormData): Promi
   const date = str(form.get("date"));
   if (!date) return { error: "กรุณาใส่วันที่ของมูลค่า" };
   const method = str(form.get("valuation_method")) ?? "USER_ESTIMATE";
-  let input: { asset_id: string; value?: string; parts?: { deed_id: string; value: number }[] }[];
-  try { input = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
-  if (!Array.isArray(input)) return { error: "ข้อมูลไม่ถูกต้อง" };
+  const input = readRows<{ asset_id: string; value?: string; parts?: { deed_id: string; value: number }[] }>(form);
+  if (!input) return { error: BAD_ROWS_ERROR };
   const rows = input.map((r) => (Array.isArray(r.parts) && r.parts.length
     ? { asset_id: String(r.asset_id), parts: r.parts.map((p) => ({ deed_id: String(p.deed_id), value: Number(p.value) })) }
     : { asset_id: String(r.asset_id), value: num(r.value ?? null) }));
