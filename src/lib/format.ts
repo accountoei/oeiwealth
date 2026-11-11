@@ -676,85 +676,6 @@ export const RELATION_GEN: Record<string, "up" | "mid" | "down"> = {
 };
 export const GEN_FILTER_LABEL: Record<string, string> = { up: "รุ่นพ่อแม่ขึ้นไป", mid: "รุ่นเดียวกับหัวหน้า", down: "รุ่นลูกหลาน", other: "ญาติอื่น ๆ" };
 
-const PREFIX_GENDER: Record<string, "M" | "F"> = {
-  "นาย": "M", "เด็กชาย": "M", "ด.ช.": "M", "mr.": "M", "mr": "M", "master": "M",
-  "นาง": "F", "นางสาว": "F", "น.ส.": "F", "เด็กหญิง": "F", "ด.ญ.": "F", "mrs.": "F", "mrs": "F", "ms.": "F", "ms": "F", "miss": "F",
-};
-/** เพศจากคำนำหน้า (ตรงกับ private.gender_from_prefix ในฐานข้อมูล) */
-export function genderFromPrefix(prefix: string | null | undefined): "M" | "F" | null {
-  return PREFIX_GENDER[(prefix ?? "").trim().toLowerCase()] ?? null;
-}
-
-export type KinPerson = {
-  id: string; relationship: string | null; gender?: string | null; title_prefix?: string | null; birth_date?: string | null;
-  father_id: string | null; mother_id: string | null; spouse_id: string | null;
-};
-
-/** เพศที่ใช้แสดง: ที่บันทึกไว้ → จากคำนำหน้า → จากผัง (เป็นพ่อ / แม่ของใคร · ตรงข้ามกับคู่สมรส) */
-export function genderOf(p: KinPerson, people: KinPerson[], viaSpouse = true): "M" | "F" | null {
-  if (p.gender === "M" || p.gender === "F") return p.gender;
-  const g = genderFromPrefix(p.title_prefix);
-  if (g) return g;
-  const father = people.some((c) => c.father_id === p.id), mother = people.some((c) => c.mother_id === p.id);
-  if (father !== mother) return father ? "M" : "F";
-  const spouse = viaSpouse ? people.find((x) => x.id === p.spouse_id || x.spouse_id === p.id) : undefined;
-  const sg = spouse ? genderOf(spouse, people, false) : null;
-  return sg === "M" ? "F" : sg === "F" ? "M" : null;
-}
-
-/** ชื่อเรียกตามเพศ เทียบกับหัวหน้าครอบครัว (บิดา / มารดา · บุตรชาย / บุตรสาว · ปู่ / ย่า / ตา / ยาย ฯลฯ) */
-/** ลำดับพี่น้อง (คนที่ 1, 2, …) ในพ่อแม่เดียวกัน ใช้กับบุตร / หลาน · นับทุกเพศ · เรียงวันเกิด (ไม่มีวันเกิด → ต่อท้าย ตามลำดับในรายชื่อ) · ลูกคนเดียว / ไม่ได้ผูกพ่อแม่ → null */
-export function childOrdinal(p: KinPerson, people: KinPerson[]): number | null {
-  if (!p.father_id && !p.mother_id) return null;
-  const sibs = people.filter((x) => x.relationship === p.relationship && x.father_id === p.father_id && x.mother_id === p.mother_id);
-  if (sibs.length < 2) return null;
-  const idx = new Map(sibs.map((x, i) => [x.id, i]));
-  const key = (x: KinPerson) => x.birth_date ?? "9999";
-  sibs.sort((a, b) => (key(a) !== key(b) ? (key(a) < key(b) ? -1 : 1) : idx.get(a.id)! - idx.get(b.id)!));
-  const n = sibs.findIndex((x) => x.id === p.id);
-  return n < 0 ? null : n + 1;
-}
-
-export function kinLabel(p: KinPerson, people: KinPerson[], headId: string | null | undefined, ordinal = true): string {
-  const rel = p.relationship ?? "";
-  const base = RELATIONSHIP_LABEL[rel] ?? "-";
-  const g = genderOf(p, people);
-  const head = headId ? people.find((x) => x.id === headId) : undefined;
-  const pick = (m: string, f: string, both = base) => (g === "M" ? m : g === "F" ? f : both);
-  switch (rel) {
-    case "SPOUSE": return pick("สามี", "ภรรยา");
-    case "PARENT": return pick("บิดา", "มารดา");
-    case "CHILD": {
-      const n = ordinal ? childOrdinal(p, people) : null;
-      return pick("บุตรชาย", "บุตรสาว") + (n ? ` คนที่ ${n}` : "");
-    }
-    case "CHILD_IN_LAW": return pick("ลูกเขย", "ลูกสะใภ้");
-    case "GRANDCHILD": {
-      const n = ordinal ? childOrdinal(p, people) : null;
-      return pick("หลานชาย", "หลานสาว") + (n ? ` คนที่ ${n}` : "");
-    }
-    case "GRANDPARENT": {
-      const parentOf = (pid: string | null) => people.find((x) => x.id === pid);
-      const isParentOf = (x: KinPerson | undefined) => !!x && (x.father_id === p.id || x.mother_id === p.id);
-      const side = isParentOf(parentOf(head?.father_id ?? null)) ? "F" : isParentOf(parentOf(head?.mother_id ?? null)) ? "M" : null;
-      if (side === "F") return pick("ปู่", "ย่า", "ปู่ / ย่า");
-      if (side === "M") return pick("ตา", "ยาย", "ตา / ยาย");
-      return pick("ปู่ / ตา", "ย่า / ยาย");
-    }
-    case "PARENT_IN_LAW": {
-      const hg = head ? genderOf(head, people) : null;
-      if (hg === "M") return pick("พ่อตา", "แม่ยาย", "พ่อตา / แม่ยาย");
-      if (hg === "F") return pick("พ่อสามี", "แม่สามี", "พ่อ / แม่สามี");
-      return pick("พ่อของคู่สมรส", "แม่ของคู่สมรส");
-    }
-    case "SIBLING": {
-      const hb = head?.birth_date, pb = p.birth_date;
-      if (hb && pb && hb !== pb) return pb < hb ? pick("พี่ชาย", "พี่สาว", "พี่") : pick("น้องชาย", "น้องสาว", "น้อง");
-      return pick("พี่ชาย / น้องชาย", "พี่สาว / น้องสาว");
-    }
-    default: return base;
-  }
-}
 
 /** อีกกี่วันถึงวันเกิดครั้งถัดไป (0 = วันนี้) · ว่าง → null · เกิด 29 ก.พ. ปีที่ไม่มี → 1 มี.ค. */
 export function daysToBirthday(birth: string | null | undefined, today: string): number | null {
@@ -775,41 +696,6 @@ export function ageFrom(birth: string | null | undefined, today: string): number
   return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
 
-// ---------------------------------------------------------------- ธนาคาร (ชื่อมาตรฐาน)
-/** รายชื่อธนาคาร: ใช้ในช่องเลือกตอนเพิ่ม / แก้บัญชี · ชื่อที่บันทึก = label */
-export const BANKS: { code: string; label: string; aliases: string[] }[] = [
-  { code: "BBL", label: "กรุงเทพ (BBL)", aliases: ["bbl", "กรุงเทพ", "bangkokbank", "bualuang"] },
-  { code: "KBANK", label: "กสิกรไทย (KBANK)", aliases: ["kbank", "kbiz", "kplus", "กสิกร", "กสิกรไทย", "kasikorn", "kasikornbank"] },
-  { code: "SCB", label: "ไทยพาณิชย์ (SCB)", aliases: ["scb", "ไทยพาณิชย์", "siamcommercial", "siamcommercialbank"] },
-  { code: "KTB", label: "กรุงไทย (KTB)", aliases: ["ktb", "กรุงไทย", "krungthai", "krungthaibank"] },
-  { code: "BAY", label: "กรุงศรี (BAY)", aliases: ["bay", "กรุงศรี", "กรุงศรีอยุธยา", "krungsri", "bankofayudhya"] },
-  { code: "TTB", label: "ทีทีบี (TTB)", aliases: ["ttb", "ทีทีบี", "ทหารไทยธนชาต", "ทหารไทย", "ธนชาต", "tmb", "thanachart", "tmbthanachart"] },
-  { code: "GSB", label: "ออมสิน (GSB)", aliases: ["gsb", "ออมสิน", "governmentsavings", "governmentsavingsbank"] },
-  { code: "BAAC", label: "ธ.ก.ส. (BAAC)", aliases: ["baac", "ธกส", "ธ.ก.ส.", "เพื่อการเกษตรและสหกรณ์การเกษตร"] },
-  { code: "GHB", label: "อาคารสงเคราะห์ (GHB)", aliases: ["ghb", "ธอส", "ธ.อ.ส.", "อาคารสงเคราะห์", "governmenthousing"] },
-  { code: "UOB", label: "ยูโอบี (UOB)", aliases: ["uob", "ยูโอบี"] },
-  { code: "CIMB", label: "ซีไอเอ็มบี ไทย (CIMB)", aliases: ["cimb", "cimbthai", "ซีไอเอ็มบี", "ซีไอเอ็มบีไทย"] },
-  { code: "KKP", label: "เกียรตินาคินภัทร (KKP)", aliases: ["kkp", "เกียรตินาคิน", "เกียรตินาคินภัทร", "kiatnakin", "kiatnakinphatra"] },
-  { code: "TISCO", label: "ทิสโก้ (TISCO)", aliases: ["tisco", "ทิสโก้"] },
-  { code: "LHB", label: "แลนด์ แอนด์ เฮ้าส์ (LH Bank)", aliases: ["lhb", "lhbank", "แลนด์แอนด์เฮ้าส์", "landandhouses"] },
-  { code: "TCRB", label: "ไทยเครดิต (TCRB)", aliases: ["tcrb", "ไทยเครดิต", "thaicredit"] },
-  { code: "ICBC", label: "ไอซีบีซี ไทย (ICBC)", aliases: ["icbc", "icbcthai", "ไอซีบีซี"] },
-  { code: "IBANK", label: "อิสลามแห่งประเทศไทย (ibank)", aliases: ["ibank", "อิสลาม", "อิสลามแห่งประเทศไทย"] },
-  { code: "CITI", label: "ซิตี้แบงก์ (Citibank)", aliases: ["citi", "citibank", "ซิตี้", "ซิตี้แบงก์", "ซิตี้แบงค์"] },
-  { code: "HSBC", label: "เอชเอสบีซี (HSBC)", aliases: ["hsbc", "เอชเอสบีซี"] },
-  { code: "SCBT", label: "สแตนดาร์ดชาร์เตอร์ด (SC)", aliases: ["standardchartered", "สแตนดาร์ดชาร์เตอร์ด", "scbt"] },
-];
-const bankKey = (s: string) => s.toLowerCase().replace(/ธนาคาร|bank|จำกัด|\(มหาชน\)|มหาชน|pcl|public company limited|[\s.\-()]/g, "");
-/** ชื่อธนาคารที่พิมพ์ต่างกัน (BBL / กรุงเทพ / Bangkok Bank) → ชื่อมาตรฐานเดียว · ไม่รู้จัก = ชื่อเดิม */
-export function bankLabel(raw: string | null | undefined): string {
-  const s = (raw ?? "").trim();
-  if (!s) return "-";
-  const exact = BANKS.find((b) => b.label === s);
-  if (exact) return exact.label;
-  const k = bankKey(s);
-  const hit = BANKS.find((b) => b.aliases.some((a) => bankKey(a) === k) || bankKey(b.code) === k);
-  return hit?.label ?? s;
-}
 
 /** อัตราภาษีที่ดินและสิ่งปลูกสร้างที่ระบบเสนอ (% ของฐานภาษี · ขั้นแรก) ตามการใช้งาน — ใช้เมื่อยังไม่มีรายการปีก่อน · แก้ได้ทุกครั้ง */
 /** ปีภาษีที่ดินปีแรกที่เลือกได้ (ค.ศ.) — ปีก่อนหน้าไม่มีข้อมูล · ถึงปีหน้า */

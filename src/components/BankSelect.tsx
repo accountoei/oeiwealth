@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BANKS, bankLabel } from "@/lib/format";
+import { BANKS, bankLabel } from "@/lib/banks";
 
 const OTHER = "__other__";
 
