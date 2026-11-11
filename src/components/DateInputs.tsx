@@ -23,7 +23,7 @@ function put(el: HTMLInputElement, v: string) {
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-// ข้อความเล็กใต้ช่อง: ลอยทับ (position fixed) ไม่ดันเลย์เอาต์ของฟอร์ม
+// ข้อความเล็กใต้ช่อง: ลอยทับ (position fixed) ไม่ดันเลย์เอาต์ของฟอร์ม · ช่องในหน้าต่าง pop up → วางใน <dialog> (ไม่งั้นอยู่หลังหน้าต่าง)
 function tip(el: HTMLInputElement, text: string, warn: boolean) {
   const r = el.getBoundingClientRect();
   const t = document.createElement("div");
@@ -32,7 +32,7 @@ function tip(el: HTMLInputElement, text: string, warn: boolean) {
   t.className = `pointer-events-none fixed z-[100] rounded px-1.5 py-0.5 text-xs shadow-sm ${warn ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`;
   t.style.left = `${r.left}px`;
   t.style.top = `${r.bottom + 2}px`;
-  document.body.appendChild(t);
+  (el.closest("dialog") ?? document.body).appendChild(t);
   setTimeout(() => t.remove(), 4000);
 }
 

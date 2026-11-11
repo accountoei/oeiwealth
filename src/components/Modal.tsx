@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 const TOAST_EVENT = "fwv-toast";
-const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: Esc ปิดเฉพาะบนสุด
+const stack: object[] = [];                                 // หน้าต่างซ้อนกัน: ปลดล็อกการเลื่อนหน้าเมื่อปิดครบทุกหน้าต่าง
+const noSubscribe = () => () => {};
 const InModal = createContext(false);
 export type ModalSize = "sm" | "md" | "lg";
 const MODAL_WIDTH: Record<ModalSize, string> = { sm: "max-w-md", md: "max-w-3xl", lg: "max-w-6xl" };
@@ -15,7 +16,9 @@ export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST
 
 /**
  * หน้าต่าง pop up ของฟอร์มที่เปิดจากปุ่ม (ใช้ผ่าน useActionSlot ใน ActionBar.tsx)
+ *   เป็น <dialog> ของ browser (11 พ.ย. 2026): หน้าข้างหลังกดไม่ได้ · Tab วนอยู่ในหน้าต่าง · ปิดแล้วโฟกัสกลับปุ่มที่เปิด
  *   ปิด: ปุ่ม ✕ · กด Esc — คลิกนอกหน้าต่างไม่ปิด (กันข้อมูลที่กรอกหาย)
+ *   โฟกัสช่องแรกเมื่อเปิด: ใส่ data-autofocus (autoFocus ของ React ใช้ในหน้าต่างไม่ได้)
  *   ปุ่ม ปิด / ยกเลิก ของฟอร์ม (ใส่ data-close) ซ่อนเมื่ออยู่ในหน้าต่างนี้ (มี ✕ แล้ว · ตกลง 27 ต.ค. 2026) · ฟอร์มที่กางในหน้ายังเห็นปุ่มนี้
  *   บันทึกสำเร็จ (ฟอร์มขึ้นข้อความสีเขียวใหม่หลังกดบันทึก) → ปิดเอง + แจ้งข้อความมุมจอ + รีเฟรชหน้า
  *   ไม่ต้องการให้ปิดเอง (เช่น ถามต่อหลังบันทึก) → ใส่ data-keep-open ในเนื้อหา
@@ -30,26 +33,44 @@ export const toast = (msg: string) => window.dispatchEvent(new CustomEvent(TOAST
  *   ระวัง: sm: / md: / lg: ของ Tailwind ดูความกว้างจอ ไม่ใช่ความกว้างหน้าต่าง → ฟอร์ม 3–4 คอลัมน์ห้ามใช้ sm
  */
 export default function Modal({ children, onClose, size = "md", title }: { children: ReactNode; onClose: () => void; size?: ModalSize; title?: string }) {
-  const [mounted, setMounted] = useState(false);
+  // ฝั่งเซิร์ฟเวอร์ = ยังไม่วาด (หน้าต่างเปิดจากการกดเท่านั้น) · ไม่ใช้ setState ใน effect
+  const mounted = useSyncExternalStore(noSubscribe, () => true, () => false);
+  const dlg = useRef<HTMLDialogElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
-  close.current = onClose;
+  useLayoutEffect(() => { close.current = onClose; });
+  const titleId = useId();
 
-  useEffect(() => { setMounted(true); }, []);
-  // Esc = ปิด · ล็อกการเลื่อนหน้าหลังระหว่างเปิด
-  useEffect(() => {
+  // เปิดเป็น <dialog> ของ browser (showModal · Modern Web Guidance "dialog" · 11 พ.ย. 2026)
+  //   browser ทำให้เอง: หน้าข้างหลังกด / Tab ไปไม่ได้ · โฟกัสเข้าหน้าต่าง · Esc ปิดเฉพาะบนสุด · ปิดแล้วโฟกัสกลับปุ่มที่เปิด (ไม่เลื่อนหน้า)
+  //   ยังล็อกการเลื่อนหน้าหลังด้วย overflow: hidden เพราะ Safari / iPad ยังไม่รองรับวิธี CSS ที่คู่มือแนะนำ
+  useLayoutEffect(() => {
+    const d = dlg.current;
+    if (!mounted || !d) return;
     const me = {};
     stack.push(me);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && stack[stack.length - 1] === me) close.current(); };
-    document.addEventListener("keydown", onKey);
+    d.showModal();
+    // autoFocus ของ React ใช้ในหน้าต่างไม่ได้ (ทำงานก่อนหน้าต่างเปิด) → ใส่ data-autofocus แทน
+    d.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // browser ปิดหน้าต่างเอง (Esc) → แจ้งเจ้าของให้เลิกวาด · d.open = เปิดใหม่แล้ว (dev strict mode) → ไม่นับ
+    const onClosed = () => { if (!d.open) close.current(); };
+    d.addEventListener("close", onClosed);
     return () => {
-      document.removeEventListener("keydown", onKey);
+      d.removeEventListener("close", onClosed);
+      if (d.open) d.close();                                  // ปิดก่อนถูกถอดออกจากหน้า → โฟกัสกลับปุ่มที่เปิด
       stack.splice(stack.indexOf(me), 1);
       document.body.style.overflow = stack.length ? "hidden" : prev;
     };
-  }, []);
+  }, [mounted]);
+  // ชื่อหน้าต่างสำหรับโปรแกรมอ่านหน้าจอ: title หรือหัวข้อแรกในเนื้อหา
+  useLayoutEffect(() => {
+    const d = dlg.current;
+    if (!mounted || !d || title) return;
+    const h = body.current?.querySelector<HTMLElement>("h1, h2, h3, legend");
+    if (h) { h.id ||= `${titleId}-h`; d.setAttribute("aria-labelledby", h.id); }
+  }, [mounted, title, titleId]);
   // บันทึกสำเร็จ → ปิดเอง
   //   หลังกดบันทึก: รอจนปุ่มที่ถูกปิดระหว่างบันทึกกลับมากดได้ (หรือมีข้อความสีเขียวใหม่) → ไม่มีข้อความสีแดง + มีข้อความสีเขียว = สำเร็จ
   useEffect(() => {
@@ -93,18 +114,21 @@ export default function Modal({ children, onClose, size = "md", title }: { child
   }, [mounted]);
 
   if (!mounted) return null;
+  // <dialog> เต็มจอ + พื้นหลังมืด (::backdrop) · กล่องขาวอยู่ข้างใน · ตัวหน้าต่างเลื่อนขึ้นลงได้เมื่อเนื้อหายาว
+  //   ส่วนที่ลอยทับ (รายการตัวเลือก / ข้อความใต้ช่องวันที่) ต้องวางไว้ใน <dialog> นี้ ไม่ใช่ document.body (ไม่งั้นอยู่หลังหน้าต่าง)
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 md:p-10" role="dialog" aria-modal="true">
-      <div className={`relative w-full ${MODAL_WIDTH[size]} rounded-xl bg-white p-5 pt-10 text-left shadow-xl`}>
+    <dialog ref={dlg} aria-labelledby={title ? titleId : undefined}
+      className="fixed inset-0 m-0 h-full max-h-none w-full max-w-none overflow-y-auto overscroll-contain bg-transparent p-4 text-left text-inherit backdrop:bg-slate-900/40 open:flex open:items-start open:justify-center md:p-10">
+      <div className={`relative w-full ${MODAL_WIDTH[size]} rounded-xl bg-white p-5 pt-10 shadow-xl`}>
         <button type="button" onClick={() => close.current()} aria-label="ปิด"
           className="absolute right-3 top-3 rounded-md px-2 py-0.5 text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-800">✕</button>
-        {title && <h2 className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}
+        {title && <h2 id={titleId} className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}
         {/* กรอบ / พื้นหลังของฟอร์มเดิมไม่ต้องซ้อนในหน้าต่าง · ซ่อนปุ่ม ปิด / ยกเลิก ของฟอร์ม */}
         <div ref={body} className="[&_[data-close]]:hidden [&>*:first-child]:mt-0 [&>*:first-child]:rounded-none [&>*:first-child]:border-0 [&>*:first-child]:bg-transparent [&>*:first-child]:p-0">
           <InModal.Provider value>{children}</InModal.Provider>
         </div>
       </div>
-    </div>,
+    </dialog>,
     document.body,
   );
 }
@@ -122,9 +146,17 @@ export function Toaster() {
     window.addEventListener(TOAST_EVENT, on);
     return () => { window.removeEventListener(TOAST_EVENT, on); clearTimeout(t); };
   }, []);
+  // แสดงเหนือหน้าต่าง pop up ที่ยังเปิดอยู่ (หน้าต่างอยู่ชั้นบนสุดของ browser) → ใช้ popover ถ้า browser รองรับ (iPad iOS 18.3 ขึ้นไป)
+  //   ไม่รองรับ = แสดงแบบเดิม (ลอยมุมจอ z-[60])
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (msg && el && "showPopover" in el && !el.matches(":popover-open")) el.showPopover();
+  }, [msg]);
   if (!msg) return null;
   return (
-    <div className="fixed bottom-4 right-4 z-[60] max-w-sm rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-lg" role="status">
+    <div ref={box} popover="manual" style={{ inset: "auto 1rem 1rem auto" }}
+      className="fixed z-[60] m-0 max-w-sm rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow-lg" role="status">
       {msg}
     </div>
   );
