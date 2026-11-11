@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { childOrdinal, kinLabel } from "@/lib/format";
+import { childOrdinal, kinLabel } from "@/lib/kinship";
 
 export type TreePerson = {
   id: string; name: string; nickname: string | null; photo: string | null; relationship: string | null; status: string;

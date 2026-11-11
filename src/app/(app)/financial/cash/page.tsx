@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, ACCOUNT_TYPE_LABEL, CCY_COLORS, INCOME_TYPE_LABEL, bankLabel, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, ACCOUNT_TYPE_LABEL, CCY_COLORS, INCOME_TYPE_LABEL, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { bankLabel } from "@/lib/banks";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
