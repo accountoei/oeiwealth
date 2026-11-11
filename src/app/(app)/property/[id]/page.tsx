@@ -85,16 +85,23 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
+  // ข้อมูลหน้า: ทุกคำสั่งเริ่มพร้อมกันรอบเดียว (AGENTS.md · Page data · เดิม 2 รอบ) · คำสั่งที่ต้องรู้รายละเอียดทรัพย์สิน / สัญญาเช่าก่อน ต่อจากคำสั่งนั้น
+  //   .then((r) => r) = ส่งคำสั่งครั้งเดียว แล้วใช้ผลซ้ำได้ (คำสั่ง supabase-js ส่งใหม่ทุกครั้งที่ .then)
+  const pdQ = supabase.from("property_details").select(`*, property_utilities(id,utility_type,unit_label,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
+    .eq("asset_id", id).is("deleted_at", null).maybeSingle().then((r) => r);
+  const leaseQ = supabase.from("v_lease_status").select("*").eq("property_asset_id", id).order("start_date", { ascending: false }).then((r) => r);
   const [{ data: a }, { data: pd }, { data: owners }, { data: vals }, { data: leaseRows }, { data: rentRows },
     { data: banks }, { data: family }, { data: persons }, { data: costRows }, { data: cardRows }, { data: marketRows }, { data: debtRows }, { data: lotRows }, { data: targetRow }, { data: partRows }, { data: eventRows }, { data: cpiLast },
-    { data: insBox }, { data: insPayRows }] = await Promise.all([
+    { data: insBox }, { data: insPayRows },
+    // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้) และรายการอื่นของหน้า
+    { data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
+    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }, { data: depMoveRows }, expCtx] = await Promise.all([
     supabase.from("assets").select("*").eq("id", id).is("deleted_at", null).maybeSingle(),
-    supabase.from("property_details").select(`*, property_utilities(id,utility_type,unit_label,provider,account_no,meter_no,notes,deleted_at,expected_amount,currency,frequency,due_day,due_month,active,paid_from_asset_id,paid_from_credit_card_id), property_deeds(${COMPONENT_FIELDS})`)
-      .eq("asset_id", id).is("deleted_at", null).maybeSingle(),
+    pdQ,
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,valuation_method,source,notes,source_movement_id")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
-    supabase.from("v_lease_status").select("*").eq("property_asset_id", id).order("start_date", { ascending: false }),
+    leaseQ,
     supabase.from("v_lease_rent_tracking").select("*").eq("property_asset_id", id)
       .order("income_period", { ascending: false }).limit(36),
     activeBanks(supabase),
@@ -132,6 +139,46 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     // เบี้ยประกันที่จ่ายแล้ว (ผูกทรัพย์สินนี้) → นับเป็นค่าใช้จ่ายของทรัพย์สิน · แก้ / ลบที่หน้ากรมธรรม์
     supabase.from("expense_items").select("id,date,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,notes,insurance_schedule_lines(policy_id)")
       .eq("related_asset_id", id).not("insurance_schedule_line_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
+    // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
+    supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
+      .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
+    pdQ.then(async ({ data: pd }) => {
+      const utilIds = ((pd?.property_utilities ?? []) as Util[]).map((u) => u.id);
+      return utilIds.length ? await supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
+        .in("property_utility_id", utilIds).is("deleted_at", null).order("date", { ascending: false }).limit(60) : { data: [] as never[] };
+    }),
+    supabase.from("v_property_tax_lines").select("*").eq("asset_id", id).order("tax_year", { ascending: false }).order("sort_order").order("created_at"),
+    // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
+    supabase.rpc("asset_has_history", { p_asset_id: id }),
+    // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
+    pdQ.then(async ({ data: pd }) => (pd ? await supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,prorate_basis,rent_timing,grace_days,late_fee_per_day,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null) : { data: null })),
+    // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
+    supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount,kind")
+      .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
+    // จ่ายเพิ่ม (ซื้อ / ต่อเติม) → ราคาที่ได้มา · ผูกส่วนประกอบ → แสดงใต้ต้นทุนของแถวนั้น
+    supabase.from("cash_movements").select("amount,currency,movement_date,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
+      .is("deleted_at", null),
+    // ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026)
+    supabase.from("expense_items").select(ONE_OFF_COLS)
+      .eq("related_asset_id", id).is("property_utility_id", null).is("source_fee_side", null).is("insurance_schedule_line_id", null)
+      .is("liability_id", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
+    // รายละเอียดพิมพ์สัญญาเช่า: กิจการ (สถานที่ทำสัญญา) · เจ้าของ (ชื่อเต็ม + ที่อยู่)
+    supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
+    supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
+    // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
+    pdQ.then(async ({ data: pd }) => (pd ? await supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,damage_value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
+      .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at") : { data: null })),
+    pdQ.then(async ({ data: pd }) => (pd ? await supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,damage_value,in_condition,in_reading,out_status,out_qty,out_missing_qty,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
+      .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at") : { data: null })),
+    // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
+    pdQ.then(async ({ data: pd }) => (pd ? await supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,expense_id,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
+      .eq("property_leases.property_id", pd.id).is("deleted_at", null) : { data: null })),
+    // เงินประกัน: รายการรับ / คืนส่วนต่างตอนต่อสัญญา (ค่าตั้งต้นของช่องบัญชีใน "แก้ไขสัญญา")
+    leaseQ.then(async ({ data: ls }) => (ls?.length ? await supabase.from("cash_movements").select("related_lease_id,movement_type,from_asset_id,to_asset_id")
+      .in("related_lease_id", ls.map((l) => l.id as string)).in("movement_type", ["SECURITY_DEPOSIT_IN", "SECURITY_DEPOSIT_OUT"])
+      .eq("is_derived", false).is("deleted_at", null).order("created_at") : { data: [] as never[] })),
+    // หน้าต่างแก้ค่าใช้จ่ายครั้งเดียว = ฟอร์มเดียวกับ Income & Expenses (ตกลง 10 พ.ย. 2026)
+    me.role !== "VIEWER" ? loadExpEditCtx(supabase) : Promise.resolve(null),
   ]);
   if (!a || !pd) notFound();
 
@@ -202,47 +249,6 @@ export default async function PropertyDetailPage({ params, searchParams }: {
   // ที่ว่าง: ระยะเวลาที่ว่าง + ประวัติช่วงที่เคยว่าง
   const vacantMonths = pd.usage_type === "VACANT" && pd.vacant_since ? monthsBetween(pd.vacant_since, today) : 0;
   const vacancyHistory = ((pd.vacancy_history ?? []) as { from: string; to: string; plan: string | null }[]).slice().reverse();
-  // ประวัติรับค่าเช่า / จ่ายค่าใช้จ่ายประจำ (แก้ / ลบ ที่หน้านี้)
-  const utilIds = ((pd.property_utilities ?? []) as Util[]).map((u) => u.id);
-  const [{ data: rentPaid }, { data: costPaid }, { data: taxRaw }, { data: hasHistory }, { data: rentToRows }, { data: chargeRows }, { data: payRows }, { data: oneOffRows },
-    { data: bizRows }, { data: ownerPeople }, { data: invRows }, { data: handRows }, { data: closeRows }, { data: depMoveRows }, expCtx] = await Promise.all([
-    supabase.from("income_transactions").select("id,date,income_period,income_type,income_subtype,amount,tax,currency,received_to_asset_id,notes,lease_id")
-      .eq("asset_id", id).not("lease_id", "is", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
-    utilIds.length ? supabase.from("expense_items").select("id,date,cost_period,description,amount,currency,paid_from_asset_id,paid_from_credit_card_id,property_utility_id,notes")
-      .in("property_utility_id", utilIds).is("deleted_at", null).order("date", { ascending: false }).limit(60) : Promise.resolve({ data: [] as never[] }),
-    supabase.from("v_property_tax_lines").select("*").eq("asset_id", id).order("tax_year", { ascending: false }).order("sort_order").order("created_at"),
-    // มีรายการแล้ว (ซื้อ / ขาย / มูลค่ามากกว่า 1 ครั้ง) → ลบไม่ได้ ต้องเปลี่ยนสถานะแทน
-    supabase.rpc("asset_has_history", { p_asset_id: id }),
-    // บัญชีรับค่าเช่าที่ตั้งไว้ของแต่ละสัญญา (ค่าตั้งต้นตอนบันทึกรับ)
-    supabase.from("property_leases").select(`id,rent_to_asset_id,utilities_billing,prorate_basis,rent_timing,grace_days,late_fee_per_day,${LEASE_DETAIL_FIELDS}`).eq("property_id", pd.id).is("deleted_at", null),
-    // ค่าน้ำไฟที่เรียกเก็บผู้เช่า (ยังไม่ได้รับ)
-    supabase.from("v_lease_utility_charges").select("id,lease_id,cost_period,description,amount,currency,notes,paid_date,paid_amount,kind")
-      .eq("property_asset_id", id).eq("status", "PENDING").order("cost_period", { ascending: false }),
-    // จ่ายเพิ่ม (ซื้อ / ต่อเติม) → ราคาที่ได้มา · ผูกส่วนประกอบ → แสดงใต้ต้นทุนของแถวนั้น
-    supabase.from("cash_movements").select("amount,currency,movement_date,metadata").eq("to_asset_id", id).eq("movement_type", "ASSET_PURCHASE")
-      .is("deleted_at", null),
-    // ค่าใช้จ่ายครั้งเดียวของทรัพย์สินนี้ (ซ่อม / ทำห้องน้ำ · ไม่เพิ่มมูลค่า · ตกลง 29 ต.ค. 2026)
-    supabase.from("expense_items").select(ONE_OFF_COLS)
-      .eq("related_asset_id", id).is("property_utility_id", null).is("source_fee_side", null).is("insurance_schedule_line_id", null)
-      .is("liability_id", null).is("deleted_at", null).order("date", { ascending: false }).limit(60),
-    // รายละเอียดพิมพ์สัญญาเช่า: กิจการ (สถานที่ทำสัญญา) · เจ้าของ (ชื่อเต็ม + ที่อยู่)
-    supabase.from("private_business_details").select("asset_id,company_name").is("deleted_at", null).order("company_name"),
-    supabase.from("persons").select("id,name,title_prefix,full_name_th,address").is("deleted_at", null),
-    // ของในทรัพย์สิน + รายการส่งมอบของทุกสัญญา (ไม่นับใน Net Worth)
-    supabase.from("property_inventory_items").select("id,unit_label,item_type,name,qty,brand,serial_no,value,damage_value,notes,sort_order,expense_item_id,disposal_type,disposed_date,disposal_amount,expense_items(date)")
-      .eq("property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
-    supabase.from("lease_handover_items").select("id,lease_id,inventory_item_id,utility_id,item_type,name,qty,brand,serial_no,value,damage_value,in_condition,in_reading,out_status,out_qty,out_missing_qty,out_condition,out_reading,deduction,notes,property_leases!inner(property_id)")
-      .eq("property_leases.property_id", pd.id).is("deleted_at", null).order("sort_order").order("created_at"),
-    // บันทึกผู้เช่าออก (ใบสรุป · ยกเลิกได้)
-    supabase.from("lease_closeouts").select("lease_id,move_out_date,settled_date,deposit_refund,advance_refund,net_transfer,unpaid_rent,utilities,damage,forfeit,income_ids,expense_id,shortfall,tenant_paid,owed_pending,property_leases!inner(property_id)")
-      .eq("property_leases.property_id", pd.id).is("deleted_at", null),
-    // เงินประกัน: รายการรับ / คืนส่วนต่างตอนต่อสัญญา (ค่าตั้งต้นของช่องบัญชีใน "แก้ไขสัญญา")
-    leases.length ? supabase.from("cash_movements").select("related_lease_id,movement_type,from_asset_id,to_asset_id")
-      .in("related_lease_id", leases.map((l) => l.id)).in("movement_type", ["SECURITY_DEPOSIT_IN", "SECURITY_DEPOSIT_OUT"])
-      .eq("is_derived", false).is("deleted_at", null).order("created_at") : Promise.resolve({ data: [] as never[] }),
-    // หน้าต่างแก้ค่าใช้จ่ายครั้งเดียว = ฟอร์มเดียวกับ Income & Expenses (ตกลง 10 พ.ย. 2026)
-    canWrite ? loadExpEditCtx(supabase) : Promise.resolve(null),
-  ]);
   type DepMove = { related_lease_id: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null };
   const depIn = new Map<string, string | null>(), depOut = new Map<string, string | null>();
   ((depMoveRows ?? []) as DepMove[]).forEach((m) => {
