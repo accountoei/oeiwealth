@@ -65,18 +65,27 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const sp = await searchParams;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const { data: p } = await supabase.from("v_insurance_status").select("*").eq("id", id).maybeSingle();
-  if (!p) notFound();
-  const cvId: string | null = p.cash_value_asset_id;
+  // ข้อมูลหน้า: ทุกคำสั่งเริ่มพร้อมกันรอบเดียว (AGENTS.md · Page data) · คำสั่งที่ต้องรู้กรมธรรม์ / งวด / เล่ม ก่อน ต่อจากคำสั่งนั้น (.then)
+  //   เดิมรอกันเป็นทอด ๆ 5 รอบ (เล่มที่มีสัญญาเพิ่มเติม 7 รอบ) → ตอนนี้ 2–3 รอบ (เล่ม 4 รอบ)
+  const pQ = supabase.from("v_insurance_status").select("*").eq("id", id).maybeSingle().then((r) => r.data);
+  const linesQ = supabase.from("v_insurance_schedule_status").select(LINE_COLS)
+    .eq("policy_id", id).order("due_date").order("installment_no").then((r) => (r.data as Line[] | null) ?? []);
+  // ประวัติจ่ายเบี้ยของงวด (แก้ / ลบ ที่หน้านี้)
+  const paysOf = (ls: { id: string; kind: string }[]) => {
+    const premIds = ls.filter((x) => x.kind === "PREMIUM").map((x) => x.id);
+    return premIds.length
+      ? supabase.from("expense_items").select(PAY_COLS).in("insurance_schedule_line_id", premIds).is("deleted_at", null).order("date", { ascending: false }).then((r) => r.data ?? [])
+      : Promise.resolve([]);
+  };
   // กรมธรรม์เล่มเดียวกัน (บริษัท + เลขกรมธรรม์ · ตกลง 6 พ.ย. 2026): หน้ารายการหลักโหลดงวด / การจ่าย / ความคุ้มครอง / เคลมของสัญญาเพิ่มเติมด้วย
   //   เล่มละ 1 หน้า (ตกลง 7 พ.ย. 2026): เปิดหน้าสัญญาเพิ่มเติม → ไปหน้ารายการหลัก · แก้ทุกส่วนได้ที่หน้านี้
-  const bookQ = (async () => {
-    if (!bookletKey(p)) return null;
+  const bookQ = pQ.then(async (p) => {
+    if (!p || !bookletKey(p)) return null;
     const { data: all } = await supabase.from("v_insurance_status").select(BOOK_COLS).not("policy_no", "is", null).order("created_at");
     const role = bookletRole(p as BookPol, bookletGroups((all ?? []) as BookPol[]));
     if (!role) return null;
     const ids = role.parts.filter((x) => x.id !== id).map((x) => x.id);
-    if (!role.isMain) return { role, lines: [] as SLine[], covs: [], receipts: [], pays: [], claims: [] };
+    if (!role.isMain) return { role, ids, lines: [] as SLine[], covs: [], receipts: [], claims: [] };
     const [{ data: ls }, { data: cv }, { data: rc }, { data: cl }] = await Promise.all([
       supabase.from("v_insurance_schedule_status").select(`policy_id,${LINE_COLS}`).in("policy_id", ids).order("due_date").order("installment_no"),
       supabase.from("insurance_coverages").select(`policy_id,${COV_COLS}`).in("policy_id", ids).is("deleted_at", null).order("created_at"),
@@ -84,51 +93,64 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
         .order("receipt_date", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("insurance_claims").select("*").in("policy_id", ids).is("deleted_at", null).order("claim_date", { ascending: false }),
     ]);
-    const premIds = ((ls ?? []) as SLine[]).filter((x) => x.kind === "PREMIUM").map((x) => x.id);
-    const { data: pays } = premIds.length
-      ? await supabase.from("expense_items").select(PAY_COLS).in("insurance_schedule_line_id", premIds).is("deleted_at", null).order("date", { ascending: false })
-      : { data: [] };
-    return { role, lines: (ls ?? []) as SLine[], covs: cv ?? [], receipts: rc ?? [], pays: pays ?? [], claims: cl ?? [] };
-  })();
-  const [{ data: bens }, { data: mainClaims }, { data: persons }, { data: family }, { data: cvAsset }, { data: cvVals }, { data: owners }, { data: insured }, bookRes] = await Promise.all([
+    return { role, ids, lines: (ls ?? []) as SLine[], covs: cv ?? [], receipts: rc ?? [], claims: cl ?? [] };
+  });
+  // เคลมของทั้งเล่ม → เงินที่ได้รับของเคลม: เงินคืนค่าใช้จ่าย + รายได้ที่ผูกเคลม · ค่าใช้จ่ายที่รอเงินคืน (ตัวเลือกของปุ่ม "บันทึกรับเงิน" · ตกลง 8 พ.ย. 2026)
+  const claimQ = Promise.all([
+    supabase.from("insurance_claims").select("*").eq("policy_id", id).is("deleted_at", null).order("claim_date", { ascending: false }).then((r) => r.data ?? []),
+    bookQ,
+  ]).then(async ([mainClaims, book]) => {
+    const claims = [...mainClaims.map((c) => ({ ...c, policy_id: id as string })), ...(book?.claims ?? [])]
+      .sort((a, b) => String(b.claim_date ?? "").localeCompare(String(a.claim_date ?? "")));
+    const claimIds = claims.map((c) => c.id);
+    const hasOpenClaim = claims.some((c) => !CLAIM_DONE.includes(c.status));
+    const [{ data: linked }, { data: claimInc }, { data: pendExp }] = await (claimIds.length ? Promise.all([
+      supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,received_to_asset_id,received_to_credit_card_id,expense_items(description,date)")
+        .in("insurance_claim_id", claimIds).is("deleted_at", null).order("received_date"),
+      supabase.from("income_transactions").select("id,insurance_claim_id,date,amount,currency,received_to_asset_id")
+        .in("insurance_claim_id", claimIds).is("deleted_at", null).order("date"),
+      hasOpenClaim && me.role !== "VIEWER"
+        ? supabase.from("v_expense_reimbursement_status").select("expense_item_id,date,description,amount,currency,expected_reimbursement_amount,reimbursed_amount")
+          .eq("is_reimbursable", true).neq("reimbursement_status", "FULL").order("date", { ascending: false }).limit(100)
+        : Promise.resolve({ data: null }),
+    ]) : Promise.resolve([{ data: [] }, { data: [] }, { data: null }] as const));
+    return { claims, linked, claimInc, pendExp };
+  });
+  const [p, lines, premPays, bookRes, bookPays, { claims, linked, claimInc, pendExp }, { cvAsset, cvVals, owners }, insured, { data: fups },
+    { data: bens }, { data: persons }, { data: family }, { data: covs }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }, { data: receipts }] = await Promise.all([
+    pQ,
+    linesQ,
+    linesQ.then(paysOf),
+    bookQ,
+    bookQ.then((b) => (b?.role.isMain ? paysOf(b.lines) : [])),
+    claimQ,
+    // มูลค่าเวนคืน (สินทรัพย์ที่ผูก) + ประวัติ + เจ้าของ
+    pQ.then(async (p) => {
+      const cvId: string | null = p?.cash_value_asset_id ?? null;
+      if (!cvId) return { cvAsset: null, cvVals: null, owners: null };
+      const [{ data: cvAsset }, { data: cvVals }, { data: owners }] = await Promise.all([
+        supabase.from("assets").select("id,current_value,current_value_date,currency").eq("id", cvId).maybeSingle(),
+        supabase.from("asset_valuations").select("id,valuation_date,value,bonus_part,source,notes").eq("asset_id", cvId).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId),
+      ]);
+      return { cvAsset, cvVals, owners };
+    }),
+    // ทรัพย์สินที่ประกันคุ้มครอง (ประกันทรัพย์สิน)
+    pQ.then(async (p) => (p?.asset_id ? (await supabase.from("assets").select("name,asset_group").eq("id", p.asset_id).maybeSingle()).data : null)),
+    bookQ.then((b) => supabase.from("insurance_followups").select("id,policy_id,person_id,role,action,status,notes").in("policy_id", [id, ...(b?.ids ?? [])]).is("deleted_at", null).order("created_at")),
     supabase.from("insurance_beneficiaries").select("id,person_id,beneficiary_name,percentage,persons(name)").eq("policy_id", id).is("deleted_at", null),
-    supabase.from("insurance_claims").select("*").eq("policy_id", id).is("deleted_at", null).order("claim_date", { ascending: false }),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("families").select("go_live_date").maybeSingle(),
-    cvId ? supabase.from("assets").select("id,current_value,current_value_date,currency").eq("id", cvId).maybeSingle() : Promise.resolve({ data: null }),
-    cvId ? supabase.from("asset_valuations").select("id,valuation_date,value,bonus_part,source,notes").eq("asset_id", cvId).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }) : Promise.resolve({ data: null }),
-    cvId ? supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", cvId) : Promise.resolve({ data: null }),
-    p.asset_id ? supabase.from("assets").select("name,asset_group").eq("id", p.asset_id).maybeSingle() : Promise.resolve({ data: null }),
-    bookQ,
-  ]);
-  if (bookRes && !bookRes.role.isMain) redirect(`/insurance/${bookRes.role.main.id}${sp.tab ? `?tab=${encodeURIComponent(sp.tab)}` : ""}`);
-  const partIds = [id, ...(bookRes?.role.parts ?? []).filter((x) => x.id !== id).map((x) => x.id)];
-  const claims = [...(mainClaims ?? []).map((c) => ({ ...c, policy_id: id as string })), ...(bookRes?.claims ?? [])]
-    .sort((a, b) => String(b.claim_date ?? "").localeCompare(String(a.claim_date ?? "")));
-  const claimIds = (claims ?? []).map((c) => c.id);
-  // (เริ่มพร้อมชุดถัดไป ไม่รอรอบแยก) เงินที่ได้รับของเคลม: เงินคืนค่าใช้จ่าย + รายได้ที่ผูกเคลม · ค่าใช้จ่ายที่รอเงินคืน (ตัวเลือกของปุ่ม "บันทึกรับเงิน" · ตกลง 8 พ.ย. 2026)
-  const hasOpenClaim = claims.some((c) => !CLAIM_DONE.includes(c.status));
-  const claimQ = claimIds.length ? Promise.all([
-    supabase.from("expense_reimbursements").select("id,insurance_claim_id,received_date,amount,currency,received_to_asset_id,received_to_credit_card_id,expense_items(description,date)")
-      .in("insurance_claim_id", claimIds).is("deleted_at", null).order("received_date"),
-    supabase.from("income_transactions").select("id,insurance_claim_id,date,amount,currency,received_to_asset_id")
-      .in("insurance_claim_id", claimIds).is("deleted_at", null).order("date"),
-    hasOpenClaim && me.role !== "VIEWER"
-      ? supabase.from("v_expense_reimbursement_status").select("expense_item_id,date,description,amount,currency,expected_reimbursement_amount,reimbursed_amount")
-        .eq("is_reimbursable", true).neq("reimbursement_status", "FULL").order("date", { ascending: false }).limit(100)
-      : Promise.resolve({ data: null }),
-  ]) : Promise.resolve([{ data: [] }, { data: [] }, { data: null }] as const);
-  const [{ data: linesRaw }, { data: covs }, { data: fups }, { data: banks }, { data: cardsRaw }, { data: allPersons }, { data: cvTable }] = await Promise.all([
-    supabase.from("v_insurance_schedule_status").select(LINE_COLS)
-      .eq("policy_id", id).order("due_date").order("installment_no"),
     supabase.from("insurance_coverages").select(COV_COLS).eq("policy_id", id).is("deleted_at", null).order("created_at"),
-    supabase.from("insurance_followups").select("id,policy_id,person_id,role,action,status,notes").in("policy_id", partIds).is("deleted_at", null).order("created_at"),
     activeBanks(supabase),
     openCards(supabase),
     supabase.from("persons").select("id,name,birth_date,status").is("deleted_at", null).order("sort_order"),
     supabase.from("insurance_cash_value_table").select("policy_year,value_date,value").eq("policy_id", id).is("deleted_at", null).order("policy_year"),
+    supabase.from("insurance_benefit_receipts").select(RECV_COLS)
+      .eq("policy_id", id).is("undone_at", null).is("deleted_at", null).order("receipt_date", { ascending: false }).order("created_at", { ascending: false }),
   ]);
-  const lines = (linesRaw as Line[] | null) ?? [];
+  if (!p) notFound();
+  if (bookRes && !bookRes.role.isMain) redirect(`/insurance/${bookRes.role.main.id}${sp.tab ? `?tab=${encodeURIComponent(sp.tab)}` : ""}`);
   const premiums = lines.filter((x) => x.kind === "PREMIUM");
   const benefits = lines.filter((x) => x.kind === "BENEFIT");
   const cards = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, label: cardLabel(c) }));
@@ -139,7 +161,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const followups = (fups ?? []).filter((f) => archived.has(f.person_id) || f.status === "IN_PROGRESS");
   // คอลัมน์อายุในตารางเบี้ย (ตกลง 8 พ.ย. 2026) · ไม่มีวันเกิด = ไม่แสดงคอลัมน์
   const birthIso: string | null = (p.person_id && (allPersons ?? []).find((x) => x.id === p.person_id)?.birth_date) || null;
-  const [{ data: linked }, { data: claimInc }, { data: pendExp }] = await claimQ;
   const incByClaim = new Map<string, NonNullable<typeof claimInc>>();
   (claimInc ?? []).forEach((r) => { if (r.insurance_claim_id) incByClaim.set(r.insurance_claim_id, [...(incByClaim.get(r.insurance_claim_id) ?? []), r]); });
   const pendingExp = (pendExp ?? []).map((e) => ({ id: e.expense_item_id as string, date: e.date as string, description: e.description as string, currency: e.currency as string,
@@ -158,14 +179,6 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const ccy = p.insured_amount_currency ?? p.premium_currency ?? cvAsset?.currency ?? "THB";
   const payerId: string | null = p.payer_person_id ?? p.person_id ?? null;
   const policyActive = p.status === "ACTIVE";
-  // ประวัติจ่ายเบี้ย (แก้ / ลบ ที่หน้านี้)
-  const { data: premPays } = premiums.length
-    ? await supabase.from("expense_items").select(PAY_COLS)
-        .in("insurance_schedule_line_id", premiums.map((x) => x.id)).is("deleted_at", null).order("date", { ascending: false })
-    : { data: [] };
-  const { data: receipts } = await supabase.from("insurance_benefit_receipts")
-    .select(RECV_COLS)
-    .eq("policy_id", id).is("undone_at", null).is("deleted_at", null).order("receipt_date", { ascending: false }).order("created_at", { ascending: false });
   const OUTCOME: Record<string, string> = { MATURED: "ครบสัญญา", SURRENDERED: "เวนคืน", CLAIMED: "สินไหม" };
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));
   const cardName = new Map(cards.map((c) => [c.id as string, c.label]));
@@ -298,7 +311,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
   const payLabel = (pid: string, no: number) => `${policyLabel}${bookRes ? ` · ${partName(pid)}` : ""} งวดที่ ${no}`;
   const allLines: SLine[] = [...lines.map((x) => ({ ...x, policy_id: id })), ...(book?.lines ?? [])];
   const allReceipts = [...(receipts ?? []).map((r) => ({ ...r, policy_id: id })), ...(book?.receipts ?? [])];
-  const allPays = [...(premPays ?? []), ...(book?.pays ?? [])];
+  const allPays = [...premPays, ...bookPays];
   const lumps = allReceipts.filter((r) => !r.line_id);
   /** ส่วนที่นับในสุทธิสะสม / คุ้มทุน: สัญญาหลัก + สัญญาเพิ่มเติมแบบชีวิต / บำนาญ */
   const inNet = (pid: string) => pid === id || ["LIFE", "ANNUITY"].includes(polOf.get(pid)?.insurance_type ?? "");
@@ -372,7 +385,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
     ...pays.map((e) => ({ kind: "PREMIUM" as const, line_id: e.insurance_schedule_line_id as string | null, date: e.date as string, amount: Number(e.amount), currency: e.currency as string })),
     ...recs.map((r) => ({ kind: "BENEFIT" as const, line_id: r.line_id as string | null, date: r.receipt_date as string, amount: Number(r.amount), currency: r.currency as string })),
   ];
-  const flowCash = cashOf(premPays ?? [], receipts ?? []);
+  const flowCash = cashOf(premPays, receipts ?? []);
   const bookCash = cashOf(allPays, allReceipts);
   const mixedOf = (ls: { currency: string }[], cs: FlowCash[]) => ls.some((x) => x.currency !== flowCcy) || cs.some((c) => c.currency !== flowCcy);
   const mixedCcy = mixedOf(lines, flowCash);
