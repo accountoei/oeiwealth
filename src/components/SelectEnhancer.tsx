@@ -215,6 +215,7 @@ export default function SelectEnhancer() {
         })}
       </div>
     </div>,
-    document.body,
+    // ช่องในหน้าต่าง pop up (<dialog>) → วางรายการใน <dialog> นั้น (นอกหน้าต่าง = อยู่ข้างหลังและกดไม่ได้)
+    st.el.closest("dialog") ?? document.body,
   );
 }

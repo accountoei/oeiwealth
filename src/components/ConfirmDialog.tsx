@@ -21,11 +21,12 @@ export function useConfirm() {
       <div className="space-y-4">
         <p className="whitespace-pre-line text-sm text-slate-800">{cur.text}</p>
         <div className="flex items-center gap-3">
-          <button type="button" autoFocus onClick={() => done(true)}
+          {/* โฟกัสเริ่มต้น: ลบ / ยกเลิกรายการ = "ยกเลิก" (กด Enter แล้วไม่ลบ) · ยืนยันทั่วไป = ปุ่มยืนยัน (Modern Web Guidance "dialog") */}
+          <button type="button" data-autofocus={cur.danger ? undefined : true} onClick={() => done(true)}
             className={`rounded-md px-4 py-2 text-sm text-white ${cur.danger ? "bg-red-700 hover:bg-red-800" : "bg-blue-600 hover:bg-blue-700"}`}>
             {cur.okLabel ?? "ยืนยัน"}
           </button>
-          <button type="button" onClick={() => done(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">ยกเลิก</button>
+          <button type="button" data-autofocus={cur.danger ? true : undefined} onClick={() => done(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">ยกเลิก</button>
         </div>
       </div>
     </Modal>

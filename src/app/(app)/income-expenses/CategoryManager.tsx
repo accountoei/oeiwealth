@@ -61,7 +61,7 @@ function Row({ c, first, last, canEdit, locked, ordering }: { c: Cat; first: boo
           <Modal size="sm" title="เปลี่ยนชื่อหมวด" onClose={() => setEditing(false)}>
             <form action={renameAction} className="space-y-3">
               <input type="hidden" name="id" value={c.id} />
-              <input name="name" defaultValue={c.name} required autoFocus className={`w-full ${small} py-2`} />
+              <input name="name" defaultValue={c.name} required data-autofocus className={`w-full ${small} py-2`} />
               {c.used > 0 && <p className="text-xs text-slate-500">รายการเดิม {c.used} รายการจะเปลี่ยนชื่อตาม (ยอดเงินไม่เปลี่ยน)</p>}
               <div className="flex items-center gap-3">
                 <button disabled={renaming} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{renaming ? "กำลังบันทึก…" : "บันทึก"}</button>
