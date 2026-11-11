@@ -3,7 +3,8 @@ import { requireAppUser } from "@/lib/auth";
 import { COVERAGE_LABEL, INS_TYPE, covAmount, covExtra, covName, money, thDate, thDateLong, todayBangkok } from "@/lib/format";
 import PrintShell, { type PrintSection } from "../loan/[id]/print-shell";
 
-export const metadata = { title: "พิมพ์สรุปประกันสำหรับโรงพยาบาล" };
+// absolute = ไม่ต่อท้ายชื่อระบบ (ชื่อนี้เป็นชื่อไฟล์ตอนบันทึกเป็น PDF)
+export const metadata = { title: { absolute: "พิมพ์สรุปประกันสำหรับโรงพยาบาล" } };
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const ORDER = ["HEALTH", "ACCIDENT", "LIFE", "ANNUITY"];

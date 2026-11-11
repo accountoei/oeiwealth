@@ -18,6 +18,8 @@ const SKIP_REASON: Record<string, string> = { DEVIATION_OVER_5PCT: "ต่าง
   NO_HOLDING: "ไม่พบหลักทรัพย์ / ปิดดึงราคาแล้ว", NOT_FOUND: "ไม่พบราคา", HAS_STATEMENT: "มีราคาจาก Statement วันนั้นแล้ว", BAD_DATE: "วันที่ไม่ถูกต้อง", UNIT: "หน่วยไม่ใช่ บาททองคำ / กรัม", PERIOD_LOCKED: "อยู่ในงวดที่ปิดแล้ว",
   NEEDS_BASELINE: "รอยืนยันราคาฐาน", NO_ASSOC_PRICE: "อ่านราคาสมาคมค้าทองคำไม่ได้", SOURCE_MISMATCH: "ราคาสมาคมฯ ต่างจากราคาโลกเกิน 3%" };
 
+export const metadata = { title: "FX & Prices · Settings" };
+
 export default async function SystemPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   // Opening Setup แยกเป็นแท็บของ Settings แล้ว (ลิงก์เดิม ?tab=opening ยังใช้ได้)
   if ((await searchParams).tab === "opening") redirect("/settings/opening");

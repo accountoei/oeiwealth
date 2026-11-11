@@ -29,7 +29,7 @@ export default function DocViewer({ id, title, mime }: { id: string; title: stri
 
   const viewable = type === "application/pdf" || type.startsWith("text/");
   return (
-    <div className="flex h-screen flex-col bg-slate-100">
+    <div className="flex h-dvh flex-col bg-slate-100">
       <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2 text-sm">
         <span className="truncate font-medium text-slate-900">{title}</span>
         {url && <a href={url} download={title + extFromMime(type)} className="shrink-0 text-slate-700 underline">ดาวน์โหลด</a>}

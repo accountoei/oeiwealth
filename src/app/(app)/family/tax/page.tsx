@@ -141,6 +141,8 @@ function FamilyTax({ info, people, fam, thisYear, today }: {
   );
 }
 
+export const metadata = { title: "Tax · Family & Documents" };
+
 export default async function TaxPage({ searchParams }: { searchParams: Promise<{ p?: string; y?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

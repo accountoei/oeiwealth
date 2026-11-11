@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { money, thDate, todayBangkok, signedMoney } from "@/lib/format";
 import { ActionBar } from "@/components/ActionBar";
@@ -23,12 +25,22 @@ type PremPol = { insurance_type: string; insurer: string; policy_no: string | nu
 type PremLine = { policy_id: string; pol: PremPol | PremPol[] | null };
 const one = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadCard = cache(async (id: string) =>
+  (await createClient()).from("credit_cards").select("*, persons(name)").eq("id", id).is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  // บริษัท + ชื่อบัตร (ไม่ใส่เลขบัตร)
+  return detailTitle(() => loadCard(id).then(({ data: c }) => c && `${c.issuer} ${c.card_name ?? ""}`), "Liabilities");
+}
+
 export default async function CardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: c }, { data: bal }, { data: hist }, { data: family }, { data: banksRaw }] = await Promise.all([
-    supabase.from("credit_cards").select("*, persons(name)").eq("id", id).is("deleted_at", null).maybeSingle(),
+    loadCard(id),
     supabase.from("v_card_balances").select("current_balance").eq("card_id", id).maybeSingle(),
     supabase.from("credit_card_statements").select("id,statement_date,balance,notes")
       .eq("credit_card_id", id).is("deleted_at", null).order("statement_date", { ascending: false }),

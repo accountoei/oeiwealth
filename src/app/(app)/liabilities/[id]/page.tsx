@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { LIABILITY_TYPE_LABEL, money, thDate, todayBangkok } from "@/lib/format";
 import { AddBalanceForm, EditLiabilityForm, PayLiabilityForm } from "./forms";
@@ -20,13 +22,22 @@ import { activeBanks } from "@/lib/pay-sources";
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadLiability = cache(async (id: string) =>
+  (await createClient()).from("liabilities").select("*, linked:assets!liabilities_linked_asset_id_fkey(name)")
+    .eq("id", id).is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadLiability(id).then((r) => r.data?.name), "Liabilities");
+}
+
 export default async function LiabilityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: l }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banksRaw }, { data: pays }, { data: ints }, { data: biz }] = await Promise.all([
-    supabase.from("liabilities").select("*, linked:assets!liabilities_linked_asset_id_fkey(name)")
-      .eq("id", id).is("deleted_at", null).maybeSingle(),
+    loadLiability(id),
     supabase.from("liability_ownerships").select("id,person_id,responsibility_percent,persons(name)")
       .eq("liability_id", id).is("deleted_at", null),
     supabase.from("liability_valuations").select("id,valuation_date,balance,source,notes")

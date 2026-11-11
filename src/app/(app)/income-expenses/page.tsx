@@ -44,6 +44,8 @@ const EXP_STATUS: Record<string, { text: string; cls: string }> = {
 
 type Sp = Promise<{ tab?: string; m?: string; p?: string; it?: string; et?: string; st?: string; hl?: string }>;
 
+export const metadata = { title: "Income & Expenses" };
+
 export default async function IncomeExpensesPage({ searchParams }: { searchParams: Sp }) {
   const sp = await searchParams;
   const me = await requireAppUser();

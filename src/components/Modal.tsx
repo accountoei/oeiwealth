@@ -121,7 +121,7 @@ export default function Modal({ children, onClose, size = "md", title }: { child
       className="fixed inset-0 m-0 h-full max-h-none w-full max-w-none overflow-y-auto overscroll-contain bg-transparent p-4 text-left text-inherit backdrop:bg-slate-900/40 open:flex open:items-start open:justify-center md:p-10">
       <div className={`relative w-full ${MODAL_WIDTH[size]} rounded-xl bg-white p-5 pt-10 shadow-xl`}>
         <button type="button" onClick={() => close.current()} aria-label="ปิด"
-          className="absolute right-3 top-3 rounded-md px-2 py-0.5 text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-800">✕</button>
+          className="tap [--tap:-11px_-6px] absolute right-3 top-3 rounded-md px-2 py-0.5 text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-800">✕</button>
         {title && <h2 id={titleId} className="-mt-6 mb-4 pr-8 font-medium text-slate-900">{title}</h2>}
         {/* กรอบ / พื้นหลังของฟอร์มเดิมไม่ต้องซ้อนในหน้าต่าง · ซ่อนปุ่ม ปิด / ยกเลิก ของฟอร์ม */}
         <div ref={body} className="[&_[data-close]]:hidden [&>*:first-child]:mt-0 [&>*:first-child]:rounded-none [&>*:first-child]:border-0 [&>*:first-child]:bg-transparent [&>*:first-child]:p-0">

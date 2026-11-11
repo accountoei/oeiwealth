@@ -10,7 +10,8 @@ export function SortToggle({ active, href, doneHref }: { active: boolean; href: 
     : <Link href={href} scroll={false} className="text-xs text-slate-600 underline hover:text-slate-900">จัดลำดับ</Link>;
 }
 
-const b = "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
+// tap + --tap: จอสัมผัสขยายพื้นที่แตะขึ้น-ลงอย่างเดียว (ซ้าย-ขวาเท่าครึ่งช่องห่าง → ↑ กับ ↓ ไม่ทับกัน)
+const b = "tap [--tap:-10px_-2px] rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-30";
 
 /** ↑ ↓ — สลับกับรายการก่อนหน้า / ถัดไปที่มองเห็นในหน้า */
 export function MoveButtons({ table, id, prev, next, paths }: { table: string; id: string; prev?: string | null; next?: string | null; paths: string[] }) {

@@ -4,6 +4,8 @@ import { addDays, todayBangkok } from "@/lib/format";
 import NewLiabilityForm from "./NewLiabilityForm";
 import { InfoTip } from "@/components/HeaderBar";
 
+export const metadata = { title: "เพิ่มเงินกู้ / หนี้สิน · Liabilities" };
+
 export default async function NewLiabilityPage() {
   const me = await requireAppUser();
   const supabase = await createClient();

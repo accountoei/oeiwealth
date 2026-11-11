@@ -57,7 +57,7 @@ export function TabNav({ tabs }: { tabs: [string, string][] }) {
     // แถวเดียวกับ TabNav กลาง (src/components/ClientTabs.tsx): ชื่อแท็บไม่ตัดคำ · แท็บยาวเกินจอ = ปัดแถวแท็บซ้าย–ขวา
     // ปุ่ม "+ …" วางแถวเดียวกับแท็บไม่พอ (iPad แนวตั้ง / มือถือ) → ขึ้นไปแถวบนชิดขวา (flex-wrap-reverse) ไม่ล้นจอ
     <nav className="flex flex-wrap-reverse items-end gap-x-1 gap-y-2 border-b border-slate-200 text-sm" aria-label="มุมมอง">
-      <div className="-mb-px flex min-w-0 max-w-full gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div data-scroll-cue="fade" className="-mb-px flex min-w-0 max-w-full gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map(([k, l]) => (
           <button key={k} type="button" onClick={() => setActive(k)} aria-pressed={active === k}
             className={`shrink-0 whitespace-nowrap ${tabClass(active === k).replace("-mb-px ", "")}`}><TabLabel>{l}</TabLabel></button>

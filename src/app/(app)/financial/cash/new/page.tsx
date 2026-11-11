@@ -4,6 +4,8 @@ import { addDays, todayBangkok } from "@/lib/format";
 import NewAccountForm from "./NewAccountForm";
 import { InfoTip } from "@/components/HeaderBar";
 
+export const metadata = { title: "เพิ่มบัญชีเงินฝาก · Bank Accounts" };
+
 export default async function NewAccountPage() {
   const me = await requireAppUser();
   const supabase = await createClient();

@@ -102,6 +102,13 @@ All three must pass before pushing. Pushing to `main` deploys to production on V
 - Session refresh + redirect-to-login lives in `src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; the exported function is `proxy`).
 - Security headers for every page live in `next.config.ts` (`SECURITY_HEADERS`): other sites may not frame the app (`frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN`; `/view` frames its own blob files), `nosniff`, `Referrer-Policy`, `Permissions-Policy` (camera stays allowed for document photos). If a feature needs a blocked browser feature or cross-site framing, change that list on purpose — never remove the headers.
 - Keep `supabase/functions` excluded from `tsconfig`; type-check Edge Functions with `deno check`.
+- **Page basics that work by themselves** (Modern Web Guidance round 2, 11 Nov 2026) — reuse them instead of building your own:
+  - **Browser tab title**: every page sets one; the root layout adds "· Family Wealth Vault". List page = menu name (`export const metadata = { title: "Bank Accounts" }`), tab page = "tab · menu", new page = "h1 · menu". A detail page uses `generateMetadata` + `detailTitle()` (`src/lib/page-title.ts`) with its main query moved into a module-level React `cache()` loader that the page's `Promise.all` also calls, so the name costs no extra trip. Never put account / policy / card numbers in a title. Print pages use `title: { absolute: … }` (the title is the PDF file name).
+  - **Wide tables**: `ScrollCue` (root layout) shades the edge of any `overflow-x-auto` box holding a `<table>` when there is more to scroll; a tab row that scrolls gets `data-scroll-cue="fade"`; `data-scroll-cue="off"` opts a box out.
+  - **Required / invalid fields** turn red by themselves after the user leaves the field or presses Save (`:user-invalid` in `globals.css`) — just mark the input `required` / `min` / `max`; don't add red borders by hand.
+  - **Small icon buttons** (ⓘ, sort arrows, ↑ ↓, ✕): add class `tap` — on touch screens the tap area grows to ~44 px with no visual change (`[--tap:-10px_-2px]` to limit it when buttons sit side by side).
+  - **Truncated text** a user may need to read: `<Clamp text=… />` (`src/components/Clamp.tsx`, tap to expand), not `truncate` + `title` alone (iPad has no hover).
+  - Full-height layouts use `h-dvh`, not `h-screen` (iPhone / iPad address bar). Inputs are 16 px on phones so Safari does not zoom (`globals.css`).
 
 ## 4. Edge Functions
 

@@ -13,6 +13,8 @@ const FIELD: Record<string, string> = {
 
 type Comp = { asset_id: string; name: string; asset_group: string; asset_type: string; score: number | null; missing: string[] };
 
+export const metadata = { title: "To-Do List" };
+
 export default async function TodoPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const sp = await searchParams;
   await requireAppUser();

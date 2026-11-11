@@ -5,7 +5,8 @@ import PrintShell, { type PrintSection } from "../../loan/[id]/print-shell";
 import { CloseoutSummary, HandoverAnnex, LeaseContract, RentAnnex, termMonths, TITLE, type CloseoutData, type LeaseData } from "./contract";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
 
-export const metadata = { title: "พิมพ์สัญญาเช่า" };
+// absolute = ไม่ต่อท้ายชื่อระบบ (ชื่อนี้เป็นชื่อไฟล์ตอนบันทึกเป็น PDF)
+export const metadata = { title: { absolute: "พิมพ์สัญญาเช่า" } };
 
 /**
  * หน้าพิมพ์สัญญาเช่า (นอกเมนูหลัก · ขนาด A4 · ตกลง 2 พ.ย. 2026) — แบบเดียวกับหน้าพิมพ์สัญญาเงินให้กู้

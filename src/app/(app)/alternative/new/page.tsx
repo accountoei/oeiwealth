@@ -5,6 +5,8 @@ import NewAlternativeForm from "./NewAlternativeForm";
 import { InfoTip } from "@/components/HeaderBar";
 import { activeBanks } from "@/lib/pay-sources";
 
+export const metadata = { title: "เพิ่มสินทรัพย์อื่น · Alternative Assets" };
+
 export default async function NewAlternativePage() {
   const me = await requireAppUser();
   const supabase = await createClient();

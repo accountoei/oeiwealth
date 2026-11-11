@@ -36,6 +36,8 @@ const DERIVED: Record<string, { text: string; cls: string }> = {
 const CARD_STATUS: Record<string, string> = { ACTIVE: "", SUSPENDED: "ระงับชั่วคราว", CLOSED: "ยกเลิกแล้ว" };
 const TABS = [["overview", "ภาพรวม"], ["pay", "จ่ายชำระเงินกู้/บัตรเครดิต"]] as const;
 
+export const metadata = { title: "Liabilities" };
+
 export default async function LiabilitiesPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; tab?: string; m?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

@@ -14,8 +14,8 @@ export default function DateSortHead({ asc, onToggle, href, label = "วัน�
     <span className="inline-flex items-center whitespace-nowrap">
       {label}
       {href
-        ? <Link href={href} scroll={false} title={title} aria-label={title}>{icon}</Link>
-        : <button type="button" onClick={onToggle} title={title} aria-label={title}>{icon}</button>}
+        ? <Link href={href} scroll={false} title={title} aria-label={title} className="tap">{icon}</Link>
+        : <button type="button" onClick={onToggle} title={title} aria-label={title} className="tap">{icon}</button>}
     </span>
   );
 }

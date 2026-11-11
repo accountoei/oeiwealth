@@ -4,6 +4,7 @@ import { requireAppUser } from "@/lib/auth";
 import Link from "next/link";
 import { CLAIM_STATUS, COVERAGE_ANNUAL, COVERAGE_LABEL, money, SMALL_BTN, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
+import Clamp from "@/components/Clamp";
 import CheckupForm from "./CheckupForm";
 import PersonFilter from "@/components/PersonFilter";
 import { redirect } from "next/navigation";
@@ -113,6 +114,8 @@ function FamilyView({ list, fam, yearAgo }: { list: { id: string; name: string }
     </div>
   );
 }
+
+export const metadata = { title: "Health · Family & Documents" };
 
 export default async function HealthPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
   const sp = await searchParams;
@@ -225,7 +228,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                       {recent.map((c) => (
                         <th key={c.id} className="whitespace-nowrap px-2 text-right font-normal">
                           <div className="font-medium text-slate-700">{thDate(c.checkup_date)}</div>
-                          {c.hospital && <div className="max-w-[9rem] truncate" title={c.hospital}>{c.hospital}</div>}
+                          {c.hospital && <Clamp text={c.hospital} className="ml-auto block max-w-[9rem] text-right" />}
                           {canWrite && <div className="mt-1"><RowActions table="health_checkups" id={c.id} paths={PATHS} canDelete={canDelete} button="แก้ไข" buttonClass={SMALL_BTN}
                             deleteEffect="ผลรายการตรวจของครั้งนี้จะไม่แสดงอีก (ไม่มีเงินเข้า–ออกบัญชีเกี่ยวข้อง)" fields={[
                             { name: "checkup_date", label: "วันที่", type: "date", value: c.checkup_date }, { name: "hospital", label: "โรงพยาบาล", value: c.hospital },

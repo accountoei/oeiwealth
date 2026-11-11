@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { SMALL_BTN, LOAN_PARTY_COLS as PARTY_COLS, MOVE_LABEL, money, thDate, todayBangkok, withBankOwners } from "@/lib/format";
 import { ApplyScheduleOpening, DisburseForm, LoanInfoForm, PaymentForm } from "./forms";
@@ -23,6 +25,15 @@ import { InfoTip } from "@/components/HeaderBar";
 type Sched = { id: string; installment_no: number; due_date: string; principal_due: number; interest_due: number; total_due: number;
   notes: string | null; principal_remaining: number; interest_remaining: number; total_remaining: number; status: string; grace_until: string };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadLoan = cache(async (id: string) =>
+  (await createClient()).from("v_loans_status").select("*").eq("asset_id", id).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadLoan(id).then((r) => r.data?.name), "Loans Receivable");
+}
+
 export default async function LoanDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ restructure?: string; sched?: string; party?: string }>;
 }) {
@@ -32,7 +43,7 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: l }, { data: extra }, { data: owners }, { data: moves }, { data: incomes }, { data: banks }, { data: family }, { data: persons }, { data: schedRaw }, { data: businesses }, { data: owns }] = await Promise.all([
-    supabase.from("v_loans_status").select("*").eq("asset_id", id).maybeSingle(),
+    loadLoan(id),
     supabase.from("loan_details").select(`borrower_phone,contract_no,purpose,grace_days,at_risk_amount,risk_assessed_date,risk_note,${PARTY_COLS}`).eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("cash_movements").select("id,movement_date,movement_type,from_asset_id,to_asset_id,amount,description,is_derived,movement_group_id,created_at")

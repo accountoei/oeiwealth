@@ -28,6 +28,8 @@ type H = { id: string; portfolio_asset_id: string; holding_type: string; currenc
   status: string; name: string; maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
   value_thb: number | null };
 
+export const metadata = { title: "Investments" };
+
 export default async function InvestmentsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string; t?: string; tab?: string; m?: string; d?: string }> }) {
   const sp = await searchParams;
   const tab = sp.tab === "due" || sp.tab === "update" ? sp.tab : "overview";

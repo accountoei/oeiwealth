@@ -4,7 +4,8 @@ import { PROPERTY_TYPE_LABEL, USAGE_LABEL, landText, todayBangkok } from "@/lib/
 import { COMPONENT_FIELDS, COMP_TYPE_LABEL, compName, type Component } from "@/app/(app)/property/components";
 import PropertyPrintView, { type PrintPlot } from "./print-view";
 
-export const metadata = { title: "พิมพ์ทรัพย์สินพร้อมแผนที่" };
+// absolute = ไม่ต่อท้ายชื่อระบบ (ชื่อนี้เป็นชื่อไฟล์ตอนบันทึกเป็น PDF)
+export const metadata = { title: { absolute: "พิมพ์ทรัพย์สินพร้อมแผนที่" } };
 
 const STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย", CLOSED: "ปิดแล้ว" };
 

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { ACCOUNT_TYPE_LABEL, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney } from "@/lib/format";
 import { bankLabel } from "@/lib/banks";
@@ -30,6 +32,15 @@ const MOVE_LABEL: Record<string, string> = {
   REIMBURSEMENT_IN: "เงินคืนค่าใช้จ่าย", OTHER_IN: "เงินเข้าอื่น ๆ", OTHER_OUT: "เงินออกอื่น ๆ",
 };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadAccount = cache(async (id: string) =>
+  (await createClient()).from("v_bank_accounts_safe").select("*").eq("asset_id", id).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadAccount(id).then((r) => r.data?.name), "Bank Accounts");
+}
+
 export default async function AccountDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ m?: string }>;
 }) {
@@ -42,7 +53,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
   const { start, end } = monthRange(ym);
   const dayBefore = new Date(Date.parse(`${start}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
   const [{ data: acc }, { data: owners }, { data: vals }, { data: moves }, { data: family }, { data: persons }] = await Promise.all([
-    supabase.from("v_bank_accounts_safe").select("*").eq("asset_id", id).maybeSingle(),
+    loadAccount(id),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes")
       .eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),

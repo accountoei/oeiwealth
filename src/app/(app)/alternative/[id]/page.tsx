@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
@@ -15,17 +16,27 @@ import { AltInfoForm, GoldValuationForm } from "./forms";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
 import { activeBanks } from "@/lib/pay-sources";
+import { detailTitle } from "@/lib/page-title";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาด (อัตโนมัติ)" };
 const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
 type Cat = { category_name: string; category_code: string; default_unit: string | null };
+
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadAsset = cache(async (id: string) =>
+  (await createClient()).from("assets").select("*").eq("id", id).eq("asset_group", "ALTERNATIVE").is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadAsset(id).then((r) => r.data?.name), "Alternative Assets");
+}
 
 export default async function AlternativeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: family }, { data: persons }, { data: banks }, { data: hasHistory }] = await Promise.all([
-    supabase.from("assets").select("*").eq("id", id).eq("asset_group", "ALTERNATIVE").is("deleted_at", null).maybeSingle(),
+    loadAsset(id),
     supabase.from("alternative_asset_details").select("*, asset_categories(category_name,category_code,default_unit)").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),

@@ -13,6 +13,8 @@ import { addDays } from "@/lib/format";
 
 type Card = { id: string; person_id: string; issuer: string; card_name: string | null };
 
+export const metadata = { title: "Membership & Points · Family & Documents" };
+
 export default async function MembershipsPage({ searchParams }: { searchParams: Promise<{ p?: string; order?: string }> }) {
   const sp = await searchParams;
   const me = await requireAppUser();

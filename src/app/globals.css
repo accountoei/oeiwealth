@@ -70,6 +70,22 @@ h2 { color: #0b1220; }
 /* ตาราง: หัวตารางชัด แถวสลับอ่านง่าย */
 table thead th { font-weight: 600; color: #334155; }
 table tbody tr:hover { background: #f8faff; }
+/* ตารางกว้างกว่ากล่อง (ScrollCue ใส่ data-edge = ด้านที่ยังเลื่อนไปได้): เงาจาง ๆ ที่ขอบด้านนั้น · ไม่ล้น = ไม่มีเงา
+   เงาอยู่ใต้เนื้อหา → แถวหัวตารางสีเทา / แถวที่ชี้เมาส์ บังเงาตรงแถวนั้น (ตั้งใจ ไม่ทับตัวหนังสือ) */
+[data-edge]:not([data-scroll-cue]) {
+  background-image: linear-gradient(to right, rgb(15 23 42 / 0.14), transparent), linear-gradient(to left, rgb(15 23 42 / 0.14), transparent);
+  background-repeat: no-repeat;
+  background-position: left top, right top;
+  background-size: 0 0, 0 0;
+}
+[data-edge="l"]:not([data-scroll-cue]) { background-size: 14px 100%, 0 0; }
+[data-edge="r"]:not([data-scroll-cue]) { background-size: 0 0, 14px 100%; }
+[data-edge="lr"]:not([data-scroll-cue]) { background-size: 14px 100%, 14px 100%; }
+/* แถวแท็บที่เลื่อนได้ (data-scroll-cue="fade"): ขอบจางแบบเดียวกับ TabNav */
+[data-scroll-cue="fade"][data-edge="l"] { mask-image: linear-gradient(to right, transparent, #000 2.5rem); }
+[data-scroll-cue="fade"][data-edge="r"] { mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); }
+[data-scroll-cue="fade"][data-edge="lr"] { mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent); }
+@media print { [data-edge] { background-image: none; mask-image: none; } }
 
 /* กล่องตัวเลข (มาตรฐานทุกหน้า): หัวข้อชิดซ้าย · ตัวเลขและบรรทัดใต้ตัวเลขชิดขวา
    ใส่ class "num-box" ที่กล่อง → ทุก <div> ยกเว้นตัวแรก (หัวข้อ) ชิดขวา · <dl> / <p> / ตาราง ไม่เปลี่ยน */
@@ -92,6 +108,15 @@ input:focus, select:focus, textarea:focus {
   border-color: #1f5eff !important;
 }
 input::placeholder, textarea::placeholder { color: #8a94a6; }
+/* ช่องที่ต้องกรอกแต่ว่าง / กรอกผิดรูปแบบ / วันที่เกินช่วง: ขอบแดง — เฉพาะหลังแตะช่องนั้นแล้วออก หรือกดบันทึก (เปิดฟอร์มมาไม่แดง)
+   :user-invalid = ของเบราว์เซอร์เอง (Safari 16.5+ / Chrome 119+) · Modern Web Guidance รอบ 2 · 11 พ.ย. 2026 */
+input:user-invalid, select:user-invalid, textarea:user-invalid { border-color: #ef4444; }
+input:user-invalid:focus, select:user-invalid:focus, textarea:user-invalid:focus { outline-color: rgb(239 68 68 / 0.25); border-color: #ef4444 !important; }
+/* iPhone (จอแคบ · หรือจอสัมผัสที่เตี้ย = มือถือแนวนอน): ตัวอักษรในช่องกรอก 16 px → Safari ไม่ซูมหน้าเองตอนแตะช่อง
+   (ต่ำกว่า 16 px = ซูม แล้วต้องถ่างนิ้วกลับ) · iPad / คอมฯ เท่าเดิม */
+@media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea { font-size: 16px; }
+}
 /* ช่องเลือกที่มีตัวเลือกว่างแบบคำตัวอย่าง (data-ph · เช่น "เลือกรอบ"): ยังไม่เลือก (data-empty) = สีเทา · ในรายการ ตัวเลือกว่างสีเทา ที่เหลือสีปกติ
    ต้องอยู่นอก @layer: กฎ select ด้านบนทับ class text-* ของ Tailwind (ตกลง 8 พ.ย. 2026) */
 select[data-ph][data-empty] { color: #8a94a6; }
@@ -118,6 +143,12 @@ a.underline, button.underline { text-underline-offset: 3px; }
 /* ยอดเงินในแถวที่กดได้ = ขีดเส้นประ แบบเดียวกับตัวเลขที่กดได้ในตาราง (ตกลง 9 พ.ย. 2026 · RowPanel ใส่ data-amt-auto ให้เอง) */
 tr[data-row-panel-row] :is([data-amt], [data-amt-auto]) { text-decoration-line: underline; text-decoration-style: dotted; text-underline-offset: 4px; }
 tr[data-row-panel-row]:hover :is([data-amt], [data-amt-auto]) { color: var(--color-blue-700, #1d4ed8); }
+/* ปุ่มเล็ก (ⓘ · ลูกศรเรียงวันที่ · ↑ ↓ จัดลำดับ · ✕ ปิด pop up): ใส่ class "tap" → จอสัมผัสขยายพื้นที่แตะรอบปุ่มเป็น ~40–44 px
+   หน้าตาเท่าเดิม (พื้นที่แตะเป็นกรอบใส) · --tap = ระยะที่ขยาย (ค่าลบ · ตั้งต่อปุ่มได้ เช่น ปุ่มที่วางชิดกัน) · Modern Web Guidance รอบ 2 · 11 พ.ย. 2026 */
+@media (pointer: coarse) {
+  .tap:not(.absolute, .fixed, .sticky) { position: relative; }
+  .tap::after { content: ""; position: absolute; inset: var(--tap, -12px); }
+}
 /* แถวตารางที่กดเพื่อแก้ไข / ลบได้ (RowPanel) — จอสัมผัสไม่มีการชี้เมาส์ให้แถวเปลี่ยนสี จึงใส่ › ท้ายแถว (ตกลง 5 พ.ย. 2026) */
 @media (hover: none) {
   tr[data-row-panel-row] > td:last-child::after { content: "›"; margin-left: 0.375rem; color: var(--color-slate-400, #94a3b8); }

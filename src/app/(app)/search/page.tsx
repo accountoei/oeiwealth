@@ -3,6 +3,8 @@ import { requireAppUser } from "@/lib/auth";
 import { searchFull, type SearchHit } from "@/lib/search";
 import { PageInfo } from "@/components/HeaderBar";
 
+export const metadata = { title: "ผลการค้นหา" };
+
 /** หน้า "ผลการค้นหา" (กด Enter ในช่องค้นหาด้านบน · ตกลง 30 ต.ค. 2026): ค้นทุกข้อมูลที่มีชื่อ / หมายเหตุ เรียงเป็นกลุ่มลงมา */
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const sp = await searchParams;

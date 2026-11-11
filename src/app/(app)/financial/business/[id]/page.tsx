@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { MOVE_LABEL, addDays, money, qty, thDate, todayBangkok, signedMoney } from "@/lib/format";
 import BusinessBadge from "../badge";
@@ -26,12 +28,21 @@ const METHOD_LABEL: Record<string, string> = {
   BOOK_VALUE: "มูลค่าตามบัญชี", USER_ESTIMATE: "ประมาณเอง", APPRAISAL: "ผู้ประเมิน", LATEST_TRANSACTION: "ราคาซื้อขายล่าสุด",
 };
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadAsset = cache(async (id: string) =>
+  (await createClient()).from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadAsset(id).then((r) => r.data?.name), "Private Business");
+}
+
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: a }, { data: d }, { data: owners }, { data: vals }, { data: incomes }, { data: moves }, { data: banks }, { data: family }, { data: persons }, { data: sales }, { data: inLoans }, { data: inDebts }, { data: finRows }] = await Promise.all([
-    supabase.from("assets").select("*").eq("id", id).eq("asset_type", "PRIVATE_BUSINESS").is("deleted_at", null).maybeSingle(),
+    loadAsset(id),
     supabase.from("private_business_details").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("asset_ownerships").select("person_id,ownership_percent,shares,cost_per_share,start_date,end_date,persons(name)").eq("asset_id", id).is("deleted_at", null),
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes,valuation_method").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),

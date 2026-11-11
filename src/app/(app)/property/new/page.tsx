@@ -5,6 +5,8 @@ import NewPropertyForm from "./NewPropertyForm";
 import { InfoTip } from "@/components/HeaderBar";
 import { activeBanks } from "@/lib/pay-sources";
 
+export const metadata = { title: "เพิ่มทรัพย์สิน · Property" };
+
 export default async function NewPropertyPage() {
   const me = await requireAppUser();
   const supabase = await createClient();

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
 import { ageFrom, EDUCATION_LEVEL_LABEL, GENDER_LABEL, money, PERSON_STATUS_LABEL, thDate, todayBangkok, minusMoney } from "@/lib/format";
 import { genderOf, kinLabel } from "@/lib/kinship";
@@ -20,12 +22,21 @@ function fmtNid(n: string | null) {
   return n && n.length === 13 ? `${n[0]}-${n.slice(1, 5)}-${n.slice(5, 10)}-${n.slice(10, 12)}-${n[12]}` : n;
 }
 
+// ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
+const loadPerson = cache(async (id: string) =>
+  (await createClient()).from("persons").select(FIELDS).eq("id", id).is("deleted_at", null).maybeSingle());
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return detailTitle(() => loadPerson(id).then((r) => (r.data as { name?: string } | null)?.name), "Family & Documents");
+}
+
 export default async function MemberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
   const [{ data: person }, { data: nw }, { data: links }, { data: status }, { count: policies }, { data: all }, { data: family }] = await Promise.all([
-    supabase.from("persons").select(FIELDS).eq("id", id).is("deleted_at", null).maybeSingle(),
+    loadPerson(id),
     supabase.from("v_net_worth_by_person").select("total_assets,total_liabilities,net_worth").eq("person_id", id).maybeSingle(),
     supabase.from("document_links").select("documents(id,title,document_type,mime_type,version_status,deleted_at,created_at)")
       .eq("entity_type", "PERSON").eq("entity_id", id).is("deleted_at", null),
