@@ -14,6 +14,7 @@ import { ActionBar } from "@/components/ActionBar";
 import { AltInfoForm, GoldValuationForm } from "./forms";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
+import { activeBanks } from "@/lib/pay-sources";
 
 const SOURCE: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement", MARKET: "ราคาตลาด (อัตโนมัติ)" };
 const ASSET_STATUS: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", GIFTED: "ยกให้แล้ว", LOST: "สูญหาย / เสียหาย" };
@@ -30,7 +31,7 @@ export default async function AlternativeDetailPage({ params }: { params: Promis
     supabase.from("asset_valuations").select("id,valuation_date,value,source,notes").eq("asset_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     // มีรายการแล้ว (ซื้อ / ขาย / ขายบางส่วน / มูลค่ามากกว่า 1 ครั้ง) → ล็อกหน่วยนับ + ลบไม่ได้
     supabase.rpc("asset_has_history", { p_asset_id: id }),
   ]);

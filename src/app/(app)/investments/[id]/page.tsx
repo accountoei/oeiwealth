@@ -31,6 +31,8 @@ import { ActionBar } from "@/components/ActionBar";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
 import { InfoTip } from "@/components/HeaderBar";
+import { cardLabel } from "@/lib/money-endpoint";
+import { activeBanks } from "@/lib/pay-sources";
 
 type H = Holding & { average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean;
@@ -68,7 +70,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
       supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name"),
       supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
-      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+      activeBanks(supabase),
       supabase.from("families").select("go_live_date,system_status").maybeSingle(),
       supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
       supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
@@ -170,7 +172,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const pay: PfPayCtx = {
     accounts: cashAccounts, categories: (catRows ?? []).map((c) => c.name as string), persons: persons ?? [],
     cards: (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string, outstanding_balance: curBal.get(c.id as string) ?? Number(c.outstanding_balance),
-      label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") })),
+      label: cardLabel(c) })),
   };
   const transferBank = (m: PfTransfer) => bankName.get((m.movement_type === "INVESTMENT_OUT" ? m.from_asset_id : m.to_asset_id) ?? "") ?? "บัญชีธนาคาร";
   const transferEdit = (m: PfTransfer, button?: string) => (

@@ -3,6 +3,7 @@
  *   (รูปแบบเดียวกับ money-endpoint) · ค่าตั้งต้น = บัญชีที่ผูกไว้ (ถ้ายังอยู่ในรายการ) → บัญชีหลักในพอร์ต ★ → บัญชีธนาคารแรก
  *   ใช้ได้ทั้งฝั่ง server / client
  */
+import { endpointValue } from "@/lib/money-endpoint";
 type Cash = { id: string; name: string; currency: string; is_default_cash: boolean };
 type Bank = { asset_id: string; name: string; currency: string };
 
@@ -13,8 +14,8 @@ export const INCOME_GROUP = { portfolio: "เงินฝากในพอร�
 export function incomeAccountOptions(cashAccounts: Cash[], banks: Bank[], currency: string): IncomeOpt[] {
   return [
     ...cashAccounts.filter((a) => a.currency === currency).sort((a, b) => Number(b.is_default_cash) - Number(a.is_default_cash))
-      .map((a): IncomeOpt => [`h:${a.id}`, `${a.name}${a.is_default_cash ? " ★" : ""}`, INCOME_GROUP.portfolio]),
-    ...banks.filter((b) => b.currency === currency).map((b): IncomeOpt => [`a:${b.asset_id}`, b.name, INCOME_GROUP.bank]),
+      .map((a): IncomeOpt => [endpointValue({ kind: "portfolio", id: a.id }), `${a.name}${a.is_default_cash ? " ★" : ""}`, INCOME_GROUP.portfolio]),
+    ...banks.filter((b) => b.currency === currency).map((b): IncomeOpt => [endpointValue({ kind: "bank", id: b.asset_id }), b.name, INCOME_GROUP.bank]),
   ];
 }
 
@@ -30,7 +31,8 @@ export function groupIncomeOptions(options: IncomeOpt[]): [string, IncomeOpt[]][
 
 export function defaultIncomeAccount(options: IncomeOpt[], cashId?: string | null, bankId?: string | null) {
   const has = (v: string) => options.some(([o]) => o === v);
-  if (cashId && has(`h:${cashId}`)) return `h:${cashId}`;
-  if (bankId && has(`a:${bankId}`)) return `a:${bankId}`;
+  const cash = endpointValue({ kind: "portfolio", id: cashId ?? null }), bank = endpointValue({ kind: "bank", id: bankId ?? null });
+  if (cash && has(cash)) return cash;
+  if (bank && has(bank)) return bank;
   return options[0]?.[0] ?? "";
 }

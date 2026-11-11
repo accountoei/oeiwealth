@@ -4,6 +4,8 @@ import type { Bank, Card, Liab } from "./forms";
 import { EXP_SELECT, INC_SELECT, closeoutIdSet, type KitCtx, type Move } from "./entry-kit";
 import { loadPfCash } from "@/lib/pf-cash";
 import { loadKitExtras } from "./kit-extras";
+import { cardLabel } from "@/lib/money-endpoint";
+import { activeBanks } from "@/lib/pay-sources";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
 
@@ -17,7 +19,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   const none = Promise.resolve({ data: [] as never[] });
   const [{ data: banksRaw }, { data: cardsRaw }, { data: cardBal }, { data: liabRaw }, { data: persons }, { data: cats }, { data: hintRows },
     { data: incs }, { data: exps }, pfCash, { data: closeouts }] = await Promise.all([
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
     supabase.from("v_card_balances").select("card_id,current_balance"),
     supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),
@@ -46,7 +48,7 @@ export async function loadKitCtx(supabase: Supa, moves: Move[], base: Pick<KitCt
   const { data: others } = otherIds.length ? await supabase.from("assets").select("id,name,asset_type,asset_group").in("id", otherIds) : { data: [] };
   const cur = new Map((cardBal ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
   const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: cur.get(c.id) ?? Number(c.outstanding_balance),
-    label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
+    label: cardLabel(c) }));
   const expCats = (cats ?? []).filter((c) => c.kind === "EXPENSE" && c.active).map((c) => c.name as string);
   const incSubs = (cats ?? []).filter((c) => c.kind === "INCOME_OTHER" && c.active).map((c) => c.name as string);
   return {

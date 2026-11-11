@@ -19,6 +19,7 @@ import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
 import HoldingHistory from "./history";
 import { InfoTip } from "@/components/HeaderBar";
+import { activeBanks } from "@/lib/pay-sources";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
@@ -45,7 +46,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     cachedRpc<Ret[]>("investment_returns", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // ผลเดียวกับหน้ารวม (จำไว้ / จนมีการบันทึก)
     supabase.from("fcn_details").select("*, fcn_underlyings(id,symbol,name,initial_price,strike_price,barrier_price,deleted_at)")
       .eq("holding_id", hid).is("deleted_at", null).maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("v_holdings_active").select("id,name,currency,is_default_cash").eq("portfolio_asset_id", id)
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),

@@ -19,6 +19,7 @@ import { InfoTip } from "@/components/HeaderBar";
 import ModalButton from "@/components/ModalButton";
 import FinResults from "../FinResults";
 import { FIN_COLS, toFinYears } from "@/lib/biz-financials";
+import { activeBanks } from "@/lib/pay-sources";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
 const METHOD_LABEL: Record<string, string> = {
@@ -37,7 +38,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
     supabase.from("income_transactions").select("id,date,amount,tax,currency,notes,income_type,income_subtype").eq("asset_id", id).is("deleted_at", null).order("date", { ascending: false }),
     supabase.from("cash_movements").select("id,movement_date,movement_type,amount,currency,description,is_derived,metadata").or(`from_asset_id.eq.${id},to_asset_id.eq.${id}`)
       .is("deleted_at", null).order("movement_date", { ascending: false }),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("business_share_sales").select("id,kind,sale_date,shares,price,fee,currency,bank_asset_id,value_before,value_after,book_value,gain,cost_basis,new_issue,notes,created_at,persons(name)")

@@ -31,6 +31,7 @@ import { stripPending } from "@/lib/ledger";
 import MoveBadge from "@/components/MoveBadge";
 import { StatBox } from "@/components/Boxes";
 import { loadIeMonth, loadIePersonShares, loadIeRef } from "./page-data";
+import { cardLabel } from "@/lib/money-endpoint";
 
 const PATHS = ["/income-expenses", "/financial/cash"];
 // ชื่อรายการที่กดไปหน้าต้นทางได้ (ขีดเส้นใต้จาง ๆ · เมาส์เป็นรูปมือ)
@@ -81,7 +82,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
   const banks = (banksRaw as Bank[] | null) ?? [];
   const cardCur = new Map((cardBalRaw ?? []).map((r) => [r.card_id as string, Number(r.current_balance)]));
   const cards: Card[] = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, outstanding_balance: cardCur.get(c.id) ?? Number(c.outstanding_balance),
-    label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
+    label: cardLabel(c) }));
   const liabs = (liabRaw as Liab[] | null) ?? [];
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
@@ -197,7 +198,7 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
     .filter((c) => c.status === "ACTIVE" && (c.autopay_asset_id || c.autopay_cash_holding_id) && c.due_day && pv.isPerson(c.person_id))
     .map((c) => ({
       id: c.id as string, bank: (c.autopay_asset_id ?? c.autopay_cash_holding_id) as string, hold: (c.autopay_cash_holding_id ?? null) as string | null, currency: c.currency as string, minimum: c.autopay_mode === "MINIMUM",
-      label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "),
+      label: cardLabel(c),
       balance: Number(c.outstanding_balance), balanceDate: c.balance_date as string | null,
       due: `${start.slice(0, 8)}${String(Math.min(Number(c.due_day), lastDay)).padStart(2, "0")}`,
       paid: (moves ?? []).some((m) => m.movement_type === "CARD_PAYMENT" && m.to_credit_card_id === c.id)

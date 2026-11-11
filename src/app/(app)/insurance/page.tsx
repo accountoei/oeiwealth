@@ -22,9 +22,10 @@ import { ReceiptEdit } from "./[id]/FlowRecord";
 import type { Bank } from "../income-expenses/forms";
 import { premiumPaymentFields } from "@/lib/source-edit";
 import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
-import { endpointValue } from "@/lib/money-endpoint";
+import { cardLabel, endpointValue } from "@/lib/money-endpoint";
 import UndoButton from "@/components/UndoButton";
 import { PART_LABEL, bookletCount, bookletGroups, bookletOrder, bookletRole, partLabel } from "@/lib/insurance-booklet";
+import { activeBanks, openCards } from "@/lib/pay-sources";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const STATUS = Object.fromEntries(INS_STATUS);
@@ -108,8 +109,8 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     supabase.from("insurance_followups").select("id,person_id,policy_id,role,action,status").is("deleted_at", null)
       .in("status", ["OPEN", "IN_PROGRESS"]).order("created_at"),
     linesQ,
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    activeBanks(supabase),
+    openCards(supabase),
     supabase.from("families").select("go_live_date").maybeSingle(),
     // รับเงินก้อนที่ไม่ผูกงวด (ครบสัญญา / เวนคืน / สินไหม) ในปีที่เลือกของแท็บรับ → แสดงใต้ชื่อกรมธรรม์
     lumpQ,
@@ -253,7 +254,7 @@ export default async function InsurancePage({ searchParams }: { searchParams: Pr
     return c && c.current_value != null ? toThb(c.current_value, c.currency) * pv.assetShare(c.id) : 0; };
   const bankPays: PayOpt[] = (banks ?? []).map((b) => ({ value: endpointValue({ kind: "bank", id: b.asset_id }), label: `บัญชี ${b.name}`, currency: b.currency }));
   const cardPays: PayOpt[] = (cards ?? []).map((c) => ({ value: endpointValue({ kind: "card", id: c.id }),
-    label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency }));
+    label: `บัตร ${cardLabel(c)}`, currency: c.currency }));
   const canWrite = me.role !== "VIEWER";
   const goLive = family?.go_live_date ?? "";
   const mine = new Set(mineRows.map((r) => r.id));

@@ -36,6 +36,8 @@ import ClaimReceiveForm from "./ClaimReceiveForm";
 import ScrollToId from "./ScrollToId";
 import { payDefaultValue } from "../PayDefaultSelect";
 import { InfoTip } from "@/components/HeaderBar";
+import { cardLabel } from "@/lib/money-endpoint";
+import { activeBanks, openCards } from "@/lib/pay-sources";
 
 const TYPE = Object.fromEntries(INS_TYPE);
 const CSTATUS = Object.fromEntries(CLAIM_STATUS);
@@ -121,15 +123,15 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
       .eq("policy_id", id).order("due_date").order("installment_no"),
     supabase.from("insurance_coverages").select(COV_COLS).eq("policy_id", id).is("deleted_at", null).order("created_at"),
     supabase.from("insurance_followups").select("id,policy_id,person_id,role,action,status,notes").in("policy_id", partIds).is("deleted_at", null).order("created_at"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    activeBanks(supabase),
+    openCards(supabase),
     supabase.from("persons").select("id,name,birth_date,status").is("deleted_at", null).order("sort_order"),
     supabase.from("insurance_cash_value_table").select("policy_year,value_date,value").eq("policy_id", id).is("deleted_at", null).order("policy_year"),
   ]);
   const lines = (linesRaw as Line[] | null) ?? [];
   const premiums = lines.filter((x) => x.kind === "PREMIUM");
   const benefits = lines.filter((x) => x.kind === "BENEFIT");
-  const cards = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
+  const cards = (cardsRaw ?? []).map((c) => ({ id: c.id, currency: c.currency, label: cardLabel(c) }));
   const allName = new Map((allPersons ?? []).map((x) => [x.id, x.name]));
   // กล่องติดตามผล (ตกลง 10 พ.ย. 2026): สมาชิกยังเป็น Archived = แสดงทุกสถานะ (เป็นประวัติ)
   //   สมาชิกกลับเป็น Active / Inactive = ซ่อน ยกเว้นรายการที่ "กำลังดำเนินการ" ค้างอยู่

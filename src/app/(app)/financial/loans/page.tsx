@@ -16,6 +16,7 @@ import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import LoanBatch, { type LoanRow } from "./LoanBatch";
 import { recEdit, recLabel, recLink, recPair, wholeUndo, type Recorded } from "@/lib/recorded-edit";
 import { loanInterestFields } from "@/lib/source-edit";
+import { activeBanks } from "@/lib/pay-sources";
 
 const STATUS: Record<string, string> = { ACTIVE: "ปกติ", AT_RISK: "มีความเสี่ยง", CLOSED: "ปิดแล้ว", WRITTEN_OFF: "ตัดหนี้สูญ" };
 const DERIVED: Record<string, { text: string; cls: string }> = {
@@ -54,7 +55,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     // รับชำระจริง: เงินต้น (เงินเข้าจากเงินให้กู้) + ดอกเบี้ย (รายได้)
     supabase.from("cash_movements").select("id,from_asset_id,to_asset_id,movement_date,amount,movement_group_id,is_derived").eq("movement_type", "LOAN_PRINCIPAL_RECEIPT").is("deleted_at", null),
     supabase.from("income_transactions").select("id,asset_id,date,amount,tax,currency,received_to_asset_id").eq("income_type", "LOAN_INTEREST").not("asset_id", "is", null).is("deleted_at", null),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("families").select("go_live_date").maybeSingle(),
     loadSortMap("assets"),
     prevMonthValue(today, pv.personId, "LOANS"),

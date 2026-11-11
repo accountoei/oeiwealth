@@ -3,6 +3,7 @@ import { requireAppUser } from "@/lib/auth";
 import { addDays, todayBangkok } from "@/lib/format";
 import NewAlternativeForm from "./NewAlternativeForm";
 import { InfoTip } from "@/components/HeaderBar";
+import { activeBanks } from "@/lib/pay-sources";
 
 export default async function NewAlternativePage() {
   const me = await requireAppUser();
@@ -11,7 +12,7 @@ export default async function NewAlternativePage() {
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("asset_categories").select("id,category_name,category_code,default_unit,family_id").is("deleted_at", null).eq("active", true).order("family_id", { nullsFirst: true }).order("category_name"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
   ]);
   if (me.role === "VIEWER") return <p className="text-sm text-slate-600">สิทธิ์ผู้ดูเพิ่มรายการไม่ได้</p>;
   if (!family) return <p className="text-sm text-red-600">ไม่พบข้อมูลครอบครัว</p>;

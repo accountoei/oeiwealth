@@ -3,6 +3,8 @@ import { requireAppUser } from "@/lib/auth";
 import { INS_TYPE, todayBangkok } from "@/lib/format";
 import NewPolicyForm from "./NewPolicyForm";
 import { InfoTip } from "@/components/HeaderBar";
+import { cardLabel } from "@/lib/money-endpoint";
+import { activeBanks, openCards } from "@/lib/pay-sources";
 
 // ?type=PROPERTY&asset=<id>: กดจากกล่อง "ประกันของทรัพย์สินนี้" ในหน้าทรัพย์สิน → เลือกประเภท / ทรัพย์สินไว้ให้ (ตกลง 3 พ.ย. 2026)
 export default async function NewPolicyPage({ searchParams }: { searchParams: Promise<{ type?: string; asset?: string }> }) {
@@ -14,8 +16,8 @@ export default async function NewPolicyPage({ searchParams }: { searchParams: Pr
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_assets_active").select("id,name").in("asset_group", ["PROPERTY", "ALTERNATIVE"]).eq("status", "ACTIVE").order("name"),
     // จ่ายเบี้ยจาก (ค่าตั้งต้น · ตกลง 3 พ.ย. 2026)
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    activeBanks(supabase),
+    openCards(supabase),
   ]);
   if (me.role === "VIEWER") return <p className="text-sm text-slate-600">สิทธิ์ผู้ดูเพิ่มรายการไม่ได้</p>;
   if (!family) return <p className="text-sm text-red-600">ไม่พบข้อมูลครอบครัว</p>;
@@ -29,7 +31,7 @@ export default async function NewPolicyPage({ searchParams }: { searchParams: Pr
       <NewPolicyForm persons={persons ?? []} assets={assets ?? []} initialType={initialType} initialAsset={initialAsset}
         banks={(banks ?? []) as { asset_id: string; name: string; currency: string; frequent: boolean | null }[]}
         cards={(cards ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string,
-          label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }))}
+          label: cardLabel(c) }))}
         today={todayBangkok()} />
     </div>
   );

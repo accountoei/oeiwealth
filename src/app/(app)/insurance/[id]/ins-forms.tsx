@@ -11,6 +11,7 @@ import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
 import PayDefaultSelect from "../PayDefaultSelect";
+import { usableDefault } from "@/lib/money-endpoint";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -40,8 +41,7 @@ export function PayPremiumForm({ policyId, lineId, label, amount, currency, bank
   today: string; cashValue?: CashValueCtx | null;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const defBank = defaultPay.startsWith("a:") && banks.some((b) => b.asset_id === defaultPay.slice(2) && b.currency === currency) ? defaultPay.slice(2) : undefined;
-  const defCard = defaultPay.startsWith("c:") && cards.some((c) => c.id === defaultPay.slice(2) && c.currency === currency) ? defaultPay.slice(2) : undefined;
+  const { bank: defBank, card: defCard } = usableDefault(defaultPay, currency, banks, cards);
   const [via, setVia] = useState(defCard ? "card" : defBank || banks.length ? "bank" : cards.length ? "card" : "cash");
   const [state, action, pending] = useActionState<PayState, FormData>(payPremium, {});
   if (state.ok) {

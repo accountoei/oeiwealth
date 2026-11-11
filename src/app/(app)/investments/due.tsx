@@ -5,6 +5,7 @@ import type { Bank } from "./[id]/forms";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { portfolioTxFields } from "@/lib/source-edit";
 import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
+import { activeBanks } from "@/lib/pay-sources";
 
 // แท็บ "บันทึกรับผลตอบแทน" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
 //   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก (ทุกพอร์ตในตารางเดียว) · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
@@ -87,7 +88,7 @@ export async function loadDue(month: string, canWrite: boolean, showAsset: (asse
         : { data: [] as Tx[] };
       return { cashRows, cashInt };
     })(),
-    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order") : none,
+    canWrite ? activeBanks(supabase) : none,
   ]);
   return { holdings, fcns, txs, cashRows, cashInt, banks };
 }

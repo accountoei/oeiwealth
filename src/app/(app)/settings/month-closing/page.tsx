@@ -7,6 +7,8 @@ import { FinalizeForm, ReopenForm } from "./forms";
 import { ActionBar } from "@/components/ActionBar";
 import { StatBox } from "@/components/Boxes";
 import { cachedRpc } from "@/lib/data-cache";
+import { cardLabel } from "@/lib/money-endpoint";
+import { activeBanks } from "@/lib/pay-sources";
 
 type Issue = { severity: string; code: string; message: string; entity_type: string | null; entity_id: string | null };
 type Check = { category: string; status: string; issue_count: number; issues: Issue[] };
@@ -148,7 +150,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
     [stmts, cExp, cPay, cRe, cInc, cBuy]] = await Promise.all([
     finalsP, defaultP, monthP, checksP,
     monthP.then(({ start }) => cachedRpc<Preview>("month_net_worth_preview", { p_month: start })),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order").then((r) => r),
+    activeBanks(supabase).then((r) => r),
     monthP.then(({ start }) => supabase.from("bank_reconciliations").select("bank_asset_id,status").eq("year_month", start).is("deleted_at", null).neq("status", "OPEN")),
     asOfP.then((d) => cachedRpc<{ asset_id: string; last_date: string | null }[]>("bank_balances_at", { p_date: d })),
     // มูลค่าเก่า (VALUE_OLD) → ต้องรู้ประเภททรัพย์สินเพื่อชี้ไปหน้าที่ถูก
@@ -196,7 +198,7 @@ export default async function MonthClosingPage({ searchParams }: { searchParams:
     const spend = sum(cExp, "paid_from_credit_card_id", c.id, "date", sd) + sum(cBuy, "from_credit_card_id", c.id, "movement_date", sd);
     const paid = sum(cPay, "to_credit_card_id", c.id, "movement_date", sd);
     const back = sum(cRe, "received_to_credit_card_id", c.id, "received_date", sd) + sum(cInc, "received_to_credit_card_id", c.id, "date", sd, "tax");
-    return { id: c.id, name: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "),
+    return { id: c.id, name: cardLabel(c),
       currency: c.currency, stDate: sd, stBal: Number(st.balance), spend, paid, back,
       total: Math.max(Number(st.balance) + spend - paid - back, 0), exact: sd >= asOf };
   }).filter((x): x is NonNullable<typeof x> => !!x);

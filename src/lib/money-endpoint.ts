@@ -53,6 +53,31 @@ export function paidFromColumns(e: Endpoint) {
   };
 }
 
+/** ชื่อบัตรเครดิตแบบเดียวกันทุกหน้า: ผู้ออกบัตร ชื่อบัตร ••เลขท้าย */
+export function cardLabel(c: { issuer?: string | null; card_name?: string | null; card_last4?: string | null }): string {
+  return [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ");
+}
+
+/** อ่านกลับจากคอลัมน์ "จ่ายจาก" (กลับด้านของ paidFromColumns) · ไม่มีเลย = เงินสด */
+export function endpointFromColumns(r: { paid_from_asset_id?: string | null; paid_from_credit_card_id?: string | null; paid_from_cash_holding_id?: string | null }): Endpoint {
+  if (r.paid_from_asset_id) return { kind: "bank", id: r.paid_from_asset_id };
+  if (r.paid_from_credit_card_id) return { kind: "card", id: r.paid_from_credit_card_id };
+  if (r.paid_from_cash_holding_id) return { kind: "portfolio", id: r.paid_from_cash_holding_id };
+  return { kind: "cash", id: null };
+}
+
+/**
+ * ค่าตั้งต้น "จ่ายจาก" ที่เก็บไว้ ("a:" / "c:") → รหัสบัญชี / บัตรที่ยังเลือกได้ในฟอร์ม
+ * ใช้เฉพาะเมื่อยังอยู่ในรายการและสกุลเงินตรงกัน · ไม่ตรง = ไม่มีค่าตั้งต้น (ฟอร์มใช้บัญชีแรกแบบเดิม)
+ */
+export function usableDefault(value: string | null | undefined, currency: string,
+  banks: { asset_id: string; currency: string }[], cards: { id: string; currency: string }[]): { bank?: string; card?: string } {
+  const e = parseEndpoint(value);
+  if (e.kind === "bank" && banks.some((b) => b.asset_id === e.id && b.currency === currency)) return { bank: e.id! };
+  if (e.kind === "card" && cards.some((c) => c.id === e.id && c.currency === currency)) return { card: e.id! };
+  return {};
+}
+
 /** รหัสบัญชีธนาคาร / บัตร ของช่องทาง (null ถ้าเป็นประเภทอื่น) */
 export const bankId = (e: Endpoint) => (e.kind === "bank" ? e.id : null);
 export const cardId = (e: Endpoint) => (e.kind === "card" ? e.id : null);

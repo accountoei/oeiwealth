@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import RowActions from "@/components/RowActions";
 import { EntryEditor, type Bank, type Card, type Person } from "../income-expenses/forms";
 import { queryPfCash, type PfCash } from "@/lib/pf-cash";
+import { cardLabel } from "@/lib/money-endpoint";
 
 /**
  * ค่าใช้จ่ายครั้งเดียวของทรัพย์สิน → หน้าต่างแก้ไขชุดเดียวกับ Income & Expenses (ตกลง 10 พ.ย. 2026)
@@ -27,7 +28,7 @@ export async function loadExpEditCtx(supabase: SupabaseClient): Promise<ExpEditC
   return {
     banks: (banks ?? []) as Bank[],
     cards: (cards ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string, outstanding_balance: cur.get(c.id as string) ?? Number(c.outstanding_balance ?? 0),
-      label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") })),
+      label: cardLabel(c) })),
     pfCash: pf.data,
     persons: (persons ?? []) as Person[],
     categories: (cats ?? []).map((c) => c.name as string),

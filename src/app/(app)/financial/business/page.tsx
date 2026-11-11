@@ -20,6 +20,7 @@ import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { businessDividendFields } from "@/lib/source-edit";
 import GroupResults, { type GroupCo } from "./GroupResults";
 import { FIN_COLS, bookEquity, calcYears, groupYears, toFinYears } from "@/lib/biz-financials";
+import { activeBanks } from "@/lib/pay-sources";
 
 const TABS: [string, string][] = [["overview", "ภาพรวม"], ["results", "ผลประกอบการ"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับเงินปันผล"]];
 
@@ -59,7 +60,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     ids.length ? supabase.from("income_transactions").select("id,asset_id,base_amount,person_id,date,amount,tax,notes,currency").in("asset_id", ids).eq("income_type", "BUSINESS_DIVIDEND")
       .gte("date", yearStart).lte("date", divEnd).is("deleted_at", null) : none,
     pv.personId ? supabase.from("v_income_by_person").select("income_id,base_amount_share").eq("person_id", pv.personId).eq("income_type", "BUSINESS_DIVIDEND").gte("date", yearStart).lte("date", divEnd) : none,
-    canWrite ? supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order") : none,
+    canWrite ? activeBanks(supabase) : none,
     canWrite ? supabase.from("v_asset_ownerships_active").select("asset_id,person_id,end_date") : none,
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null),
