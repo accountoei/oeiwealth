@@ -18,6 +18,7 @@ import { PayLines } from "@/components/AssetTrade";
 import { StatusSlot } from "@/components/StatusSelect";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
+import { lateFee } from "@/lib/receipt-rules";
 
 const input = "rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -28,8 +29,8 @@ const link = SMALL_BTN;   // ปุ่มเล็ก (เดิมเป็น�
 
 /** ค่าปรับล่าช้า ณ วันที่รับ: (วันที่เลยกำหนด − วันผ่อนผัน) × ค่าปรับต่อวัน · ไม่เกินผ่อนผัน = "" */
 export function lateFeeOf(late: { due: string; grace: number; perDay: number }, date: string) {
-  const days = Math.round((Date.parse(date) - Date.parse(late.due)) / 86400000) - late.grace;
-  return days > 0 && late.perDay > 0 ? money(days * late.perDay) : "";
+  const fee = lateFee(late.due, late.grace, late.perDay, date);
+  return fee > 0 ? money(fee) : "";
 }
 
 function Msg({ s }: { s: ActionState }) {

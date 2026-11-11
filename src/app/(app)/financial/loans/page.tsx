@@ -12,6 +12,7 @@ import MonthPicker from "@/components/MonthPicker";
 import { MoveButtons, SortToggle, bySort, neighbors } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
 import { LOAN_SCHED_STATUS } from "@/lib/loan-schedule";
+import { payFromLine } from "@/lib/receipt-rules";
 import { TabNav, TabPanel, TabsProvider } from "../../income-expenses/tabs";
 import LoanBatch, { type LoanRow } from "./LoanBatch";
 import { recEdit, recLabel, recLink, recPair, wholeUndo, type Recorded } from "@/lib/recorded-edit";
@@ -170,8 +171,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Sp }) 
     dueP: Math.round(upTo(r.asset_id, end, "principal_remaining") * 100) / 100, dueI: Math.round(upTo(r.asset_id, end, "interest_remaining") * 100) / 100,
     owe: (byLoan.get(r.asset_id) ?? []).filter((y) => Number(y.total_remaining) > 0.005)
       .map((y) => ({ due: y.due_date, p: Number(y.principal_remaining), i: Number(y.interest_remaining) })),
-    from: (byLoan.get(r.asset_id) ?? []).filter((y) => y.status === "OVERDUE" || y.status === "DUE").at(-1)?.due_date
-      ?? monthLines.find((y) => y.loan_asset_id === r.asset_id && Number(y.total_remaining) > 0.005)?.due_date,
+    // งวดที่เริ่มเติม (src/lib/receipt-rules.ts): สัญญาที่ไม่มีงวดในเดือนนี้ → งวดถัดไป เหมือนหน้าสัญญา (ตกลง 11 พ.ย. 2026)
+    from: payFromLine(byLoan.get(r.asset_id) ?? [], monthLines.filter((y) => y.loan_asset_id === r.asset_id))?.due_date,
     defaultBank: [lastBank.get(r.asset_id)].find((b) => b && bankList.some((x) => x.id === b && x.currency === r.currency))
       ?? bankList.find((x) => x.currency === r.currency)?.id ?? "",
   });

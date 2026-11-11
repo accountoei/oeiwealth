@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
+import { dueAsOf, splitInterestFirst } from "@/lib/receipt-rules";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
@@ -52,8 +53,8 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   // ยอดที่ถึงกำหนดตามวันที่ได้รับ: งวดที่ค้างที่ครบถึงวันนั้น (ไม่ก่อนงวด from = งวดที่เลยกำหนดล่าสุด / งวดแรกของเดือน)
   const dueAt = (r: LoanRow, d: string): LoanRow => {
     if (!r.owe) return r;
-    const upTo = r.from && d < r.from ? r.from : d, ls = r.owe.filter((x) => x.due <= upTo);
-    return { ...r, dueP: r2(ls.reduce((t, x) => t + x.p, 0)), dueI: r2(ls.reduce((t, x) => t + x.i, 0)) };
+    const o = dueAsOf(r.owe, r.from, d);
+    return { ...r, dueP: o.p, dueI: o.i };
   };
   const rows = rows0.map((r) => dueAt(r, date)), others = others0.map((r) => dueAt(r, date));
   const all = [...rows, ...others];
@@ -70,6 +71,8 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   // ตัวกรองผู้กู้ (ตกลง 6 พ.ย. 2026) · ยอดที่กรอกไว้ในแถวที่ถูกกรองซ่อนยังบันทึกด้วย
   const borrowers = [...new Set(all.map((r) => r.borrower).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
   const shown = who ? base.filter((r) => r.borrower === who) : base;
+  // "ใส่ยอดทุกแถว" เติมเฉพาะสัญญาที่มีงวดในเดือนนี้ · สัญญาอื่น (ยอด = งวดถัดไป) เติมทีละแถวด้วย "ตามงวด" เท่านั้น (ไม่รับล่วงหน้าโดยไม่ตั้งใจ)
+  const fillable = shown.filter((r) => r.lines.length > 0);
   const thbShown = shown.filter((r) => r.currency === "THB");
   // แถวรวม: ไม่แสดงเมื่อยอดถึงกำหนดและยอดที่กรอกเป็น 0 ทั้งคู่ (ตกลง 6 พ.ย. 2026)
   const thbDue = r2(thbShown.reduce((t, r) => t + r.dueP + r.dueI, 0)), thbTyped = r2(thbShown.reduce((t, r) => t + n(tot[r.id]), 0));
@@ -83,16 +86,16 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   const split = (r: LoanRow, v: string) => {
     setTot({ ...tot, [r.id]: v });
     if (v.trim() === "") { setPr({ ...pr, [r.id]: "" }); setInt({ ...int, [r.id]: "" }); return; }
-    const t = n(v), i = r2(Math.min(t, Math.max(r.dueI, 0)));
-    setInt({ ...int, [r.id]: fmt(i) || (r.dueI > 0 ? "0.00" : "") }); setPr({ ...pr, [r.id]: fmt(r2(t - i)) });
+    const s = splitInterestFirst(n(v), r.dueI);
+    setInt({ ...int, [r.id]: fmt(s.interest) || (r.dueI > 0 ? "0.00" : "") }); setPr({ ...pr, [r.id]: fmt(s.principal) });
   };
   // เปลี่ยนวันที่: แถวที่ใส่ยอดรวมไว้ → แบ่งใหม่ (หักดอกที่ครบถึงวันใหม่ก่อน)
   const onDate = (d: string) => {
     setDate(d);
     const p = { ...pr }, i = { ...int };
     all.filter((r) => (tot[r.id] ?? "").trim() !== "").forEach((r) => {
-      const t = n(tot[r.id]), dI = dueAt(r, d).dueI, ii = r2(Math.min(t, Math.max(dI, 0)));
-      i[r.id] = fmt(ii) || (dI > 0 ? "0.00" : ""); p[r.id] = fmt(r2(t - ii));
+      const dI = dueAt(r, d).dueI, s = splitInterestFirst(n(tot[r.id]), dI);
+      i[r.id] = fmt(s.interest) || (dI > 0 ? "0.00" : ""); p[r.id] = fmt(s.principal);
     });
     setPr(p); setInt(i);
   };
@@ -176,7 +179,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
               <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} />
               แสดงสัญญาอื่นที่ยังไม่ปิด ({others.length})</label>
           )}</>}
-        fill={canWrite && <FillAll onClick={() => fill(shown)} disabled={!shown.some((r) => r.dueP + r.dueI > 0.005)} />}>
+        fill={canWrite && <FillAll onClick={() => fill(fillable)} disabled={!fillable.some((r) => r.dueP + r.dueI > 0.005)} />}>
         {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => { setTot({}); setPr({}); setInt({}); setTax({}); }} state={state}
