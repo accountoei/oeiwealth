@@ -111,7 +111,7 @@ export default function SecurityPanel({ isAdmin, account }: { isAdmin: boolean; 
             <img src={enroll.qr} alt="QR Code" className="h-44 w-44 rounded border border-slate-200" />
             <p className="break-all text-xs text-slate-500">ถ้าสแกนไม่ได้ ใส่รหัสนี้ในแอป: {enroll.secret}</p>
             <div className="flex gap-2">
-              <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" data-code placeholder="รหัส 6 หลัก" className={input} />
+              <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" aria-label="รหัส 6 หลัก" data-code placeholder="รหัส 6 หลัก" className={input} />
               <button disabled={busy} className={btn}>ยืนยัน</button>
               <button type="button" onClick={() => setEnroll(null)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">ยกเลิก</button>
             </div>
