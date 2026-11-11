@@ -15,6 +15,7 @@ import { splitMoves } from "@/lib/split-moves";
 import SplitForm from "../../income-expenses/SplitForm";
 import { DetailItem as Item } from "@/components/Boxes";
 import { InfoTip } from "@/components/HeaderBar";
+import { activeBanks } from "@/lib/pay-sources";
 
 const SOURCE_LABEL: Record<string, string> = { OPENING: "ยอดตั้งต้น", STATEMENT: "Statement", USER: "ผู้ใช้" };
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ยังผ่อนอยู่", CLOSED: "ปิดหนี้แล้ว", WRITTEN_OFF: "ตัดหนี้สูญ / ยกหนี้" };
@@ -32,7 +33,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
       .eq("liability_id", id).is("deleted_at", null).order("valuation_date", { ascending: false }),
     supabase.from("families").select("go_live_date").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("cash_movements").select("id,movement_date,amount,from_asset_id,reduces_liability,description,notes,movement_group_id,is_derived")
       .eq("to_liability_id", id).is("deleted_at", null).order("movement_date", { ascending: false }),
     supabase.from("expense_items").select("id,date,amount,paid_from_asset_id,notes,pending_split,currency")

@@ -18,6 +18,7 @@ import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { FLOW_LABEL, INCOME_KEYS, OTHER_KEYS, SPEND_KEYS, flowCount, flowSum, incomeLines, monthFlows, type Move } from "./flows";
 import FlowCard from "./FlowCard";
 import { EntryEditor, type Bank, type Person } from "../../income-expenses/forms";
+import { cardLabel } from "@/lib/money-endpoint";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
   account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null; overdraft_limit: number | null };
@@ -272,7 +273,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             <div className="font-medium">บัตรเครดิตตัดบัญชีอัตโนมัติรอยืนยัน {cardWaiting.length} ใบ — กดยืนยันก่อนอัปเดตยอด</div>
             <ul className="mt-1 list-disc pl-5 text-xs">
               {cardWaiting.map((c) => (
-                <li key={c.id as string}>{[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}
+                <li key={c.id as string}>{cardLabel(c)}
                   {" "}ตัดจาก {accName.get(c.autopay_asset_id as string)} · ครบ {thDate(c.due)}</li>
               ))}
             </ul>

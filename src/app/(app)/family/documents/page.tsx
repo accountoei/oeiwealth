@@ -9,6 +9,7 @@ import DocumentUpload, { type EntityOption } from "@/components/docs/DocumentUpl
 import { ConnectDrive, DownloadDoc } from "@/components/docs/DocButtons";
 import LinkDocument from "@/components/docs/LinkDocument";
 import { ActionBar } from "@/components/ActionBar";
+import { cardLabel } from "@/lib/money-endpoint";
 
 type Doc = { id: string; module: string; document_type: string; title: string; mime_type: string | null; file_size: number | null;
   issue_date: string | null; expiry_date: string | null; version_status: string; notes: string | null; created_at: string; derived_status: string | null };
@@ -60,7 +61,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Sp
   (leases ?? []).forEach((l) => label.set(`PROPERTY_LEASE:${l.id}`, {
     name: `สัญญาเช่า · ${[l.unit_label, l.tenant_name].filter(Boolean).join(" · ")}`, href: `/property/${l.property_asset_id}` }));
   const cardName = (c: { issuer: string; card_name: string | null; card_last4: string | null }) =>
-    [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ");
+    cardLabel(c);
   (cards ?? []).forEach((c) => label.set(`CREDIT_CARD:${c.id}`, { name: cardName(c), href: `/liabilities/cards/${c.id}` }));
   // ใบอนุโมทนา / หลักฐานการบริจาค (แท็บ Donations)
   const donIds = [...new Set((links ?? []).filter((l) => l.entity_type === "DONATION").map((l) => l.entity_id))];

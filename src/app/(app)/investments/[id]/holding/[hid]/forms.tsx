@@ -13,6 +13,7 @@ import { CashAccountSelect, type CashAcct } from "../../forms";
 import { defaultIncomeAccount, groupIncomeOptions, incomeAccountOptions } from "@/lib/income-account";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
+import { bankId, holdingId as holdingOf, parseEndpoint } from "@/lib/money-endpoint";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
@@ -99,7 +100,8 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
   incomeAccount?: string;
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot();
-  const [mode, setMode] = useState(incomeAccount?.startsWith("a:") ? "bank" : "cash");
+  const incEp = parseEndpoint(incomeAccount);
+  const [mode, setMode] = useState(incEp.kind === "bank" ? "bank" : "cash");
   const [txState, txAction, txPending] = useActionState<ActionState, FormData>(recordTx, {});
   const [matState, matAction, matPending] = useActionState<ActionState, FormData>(recordMaturity, {});
   const [type, setType] = useState(isFcn ? "COUPON" : "DIVIDEND");
@@ -134,10 +136,10 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <SettleModeRadios mode={mode} setMode={setMode} portfolioName={portfolioName} className="flex flex-wrap items-center gap-3" />
         {mode === "cash" && <CashAccountSelect accounts={cashAccounts} currency={currency} label="บัญชี" compact
-          defaultId={incomeAccount?.startsWith("h:") ? incomeAccount.slice(2) : null} />}
+          defaultId={holdingOf(incEp)} />}
         {mode === "bank" && (
           <>
-            <select name="bank_asset_id" required defaultValue={incomeAccount?.startsWith("a:") ? incomeAccount.slice(2) : ""} className={small}>
+            <select name="bank_asset_id" required defaultValue={bankId(incEp) ?? ""} className={small}>
               <option value="">— บัญชี ({currency}) —</option><BankOptions banks={list} />
             </select>
             {!mat && <label className="text-xs">วันเงินเข้าจริง<input name="settlement_date" type="date" className={`ml-1 ${small}`} /></label>}
@@ -191,8 +193,8 @@ export function HoldingInfoForm({ id, paths, v, autoKind, autoBlocked, coupon, i
         <label className="block text-sm text-slate-700 md:col-span-2">หมายเหตุ<input name="f_notes" defaultValue={v.notes ?? ""} className={input} /></label>
         {incomeOpts.length > 0 && (
           <label className="block text-sm text-slate-700 md:col-span-3">รับดอกเบี้ย / ปันผล / เงินคืน เข้าบัญชี
-            <input type="hidden" name="f_income_cash_holding_id" value={inc.startsWith("h:") ? inc.slice(2) : ""} />
-            <input type="hidden" name="f_income_bank_asset_id" value={inc.startsWith("a:") ? inc.slice(2) : ""} />
+            <input type="hidden" name="f_income_cash_holding_id" value={holdingOf(parseEndpoint(inc)) ?? ""} />
+            <input type="hidden" name="f_income_bank_asset_id" value={bankId(parseEndpoint(inc)) ?? ""} />
             <select value={inc} onChange={(e) => setInc(e.target.value)} className={input}>
               {groupIncomeOptions(incomeOpts).map(([g, os]) => <optgroup key={g} label={g}>{os.map(([o, l]) => <option key={o} value={o}>{l}</option>)}</optgroup>)}
             </select>

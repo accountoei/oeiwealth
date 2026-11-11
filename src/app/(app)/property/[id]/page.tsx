@@ -35,7 +35,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ActionBar } from "@/components/ActionBar";
 import { UndoDismissButton } from "@/app/(app)/income-expenses/forms";
 import { premiumPaymentFields, propertyCostFields, rentIncomeFields } from "@/lib/source-edit";
-import { endpointValue } from "@/lib/money-endpoint";
+import { cardLabel, endpointValue } from "@/lib/money-endpoint";
 import { DetailItem as Item } from "@/components/Boxes";
 import { LEASE_DETAIL_FIELDS } from "@/lib/lease";
 import CycleNote from "../CycleNote";
@@ -43,6 +43,7 @@ import { CopyRoomButton, DisposeButton, HandoverButton, InventoryAddButton, Undo
 import type { LeaseDetail, LeaseDetailOptions } from "../LeaseContractFields";
 import type { LeasePrefill } from "../LeaseFields";
 import { InfoTip } from "@/components/HeaderBar";
+import { activeBanks, openCards } from "@/lib/pay-sources";
 
 const INS_STATUS_LABEL = Object.fromEntries(INS_STATUS);
 const SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่าตั้งต้น", APPRAISAL: "ผู้ประเมิน", USER: "ผู้ใช้", STATEMENT: "Statement" };
@@ -96,12 +97,12 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     supabase.from("v_lease_status").select("*").eq("property_asset_id", id).order("start_date", { ascending: false }),
     supabase.from("v_lease_rent_tracking").select("*").eq("property_asset_id", id)
       .order("income_period", { ascending: false }).limit(36),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("families").select("go_live_date,opportunity_method,opportunity_rate_pct").maybeSingle(),
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     supabase.from("v_property_cost_tracking").select("utility_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,gap,currency,status,last_paid_date,dismissal_id,dismissal_reason")
       .eq("property_asset_id", id).order("cost_period", { ascending: false }).order("utility_type").limit(48),
-    supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+    openCards(supabase),
     // ราคาตลาด (อ้างอิง · ไม่นับใน Net Worth) · หนี้ที่ผูกกับทรัพย์สินนี้ → สุทธิหลังปิดหนี้
     supabase.from("v_property_market_valuations").select("*").eq("asset_id", id)
       .order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
@@ -187,7 +188,7 @@ export default async function PropertyDetailPage({ params, searchParams }: {
     value: hasLatest ? latestByComp[c.id] ?? 0 : null }));
   const demolishable = saleComps.filter((c) => c.type !== "LAND");
   const cards = (cardRows ?? []).map((c) => ({ id: c.id as string, currency: c.currency as string,
-    label: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ") }));
+    label: cardLabel(c) }));
   // ประกันของทรัพย์สินนี้ · เบี้ยต่อปีของกรมธรรม์ที่มีผลรวมในประมาณการต่อปี
   const insPols = insBox?.pols ?? [];
   const newInsHref = `/insurance/new?type=PROPERTY&asset=${id}`;

@@ -15,6 +15,7 @@ import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import PayBatch, { type DebtRow } from "./PayBatch";
 import { recEdit, recLabel, recLink, recPair, wholeUndo, type Recorded } from "@/lib/recorded-edit";
 import { debtInterestFields } from "@/lib/source-edit";
+import { cardLabel } from "@/lib/money-endpoint";
 
 type Row = { liability_source: string; source_id: string; name: string; subtype: string; currency: string;
   amount: number | null; balance_date: string | null; due_date: string | null; monthly_payment: number | null;
@@ -178,7 +179,7 @@ export default async function LiabilitiesPage({ searchParams }: { searchParams: 
       monthly: r.monthly_payment != null ? Number(r.monthly_payment) : null, dueDay: r.payment_due_day, autopay: false,
       defaultBank: payBanks.find((b) => b.currency === r.currency)?.id ?? "", edits: loanEdits(r.source_id) })),
     ...cards.filter((c) => c.status === "ACTIVE").map((c): DebtRow => ({ key: `c${c.id}`, kind: "CARD", id: c.id, href: `/liabilities/cards/${c.id}`,
-      name: [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" "), sub: holder(c), currency: c.currency,
+      name: cardLabel(c), sub: holder(c), currency: c.currency,
       balance: curOf(c), monthly: null, dueDay: c.due_day, autopay: !!c.autopay_asset_id,
       defaultBank: c.autopay_asset_id ?? payBanks.find((b) => b.currency === c.currency)?.id ?? "", edits: cardEdits(c.id) })),
   ];

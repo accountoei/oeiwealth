@@ -7,6 +7,7 @@ import { SMALL_BTN, SMALL_DEL_BTN, money, numOrZero } from "@/lib/format";
 import BalanceGuard from "@/components/BalanceGuard";
 import Flash from "@/components/Flash";
 import BankOptions from "@/components/BankOptions";
+import { endpointValue } from "@/lib/money-endpoint";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 type Bank = { asset_id: string; name: string; currency: string };
@@ -65,13 +66,13 @@ function SaleLines({ currency, banks, cards = [], demolish = false }: { currency
             <button type="button" onClick={() => setCost((cs) => cs.filter((x) => x.key !== c.key))} className={SMALL_DEL_BTN}>ลบ</button>
             <select value={c.pay} onChange={(e) => setC(c.key, { pay: e.target.value })} aria-label="จ่ายอย่างไร" className={`col-span-2 ${cellCls}`}>
               {(!demolish || rec.length > 0) && <option value="DEDUCT">หักจากเงินที่ได้รับ</option>}
-              <optgroup label="จ่ายจากบัญชี">{banks.map((b) => <option key={b.asset_id} value={`a:${b.asset_id}`}>จ่ายจาก {b.name}</option>)}</optgroup>
-              {cardList.length > 0 && <optgroup label="จ่ายด้วยบัตรเครดิต">{cardList.map((x) => <option key={x.id} value={`c:${x.id}`}>บัตร {x.label}</option>)}</optgroup>}
+              <optgroup label="จ่ายจากบัญชี">{banks.map((b) => <option key={b.asset_id} value={endpointValue({ kind: "bank", id: b.asset_id })}>จ่ายจาก {b.name}</option>)}</optgroup>
+              {cardList.length > 0 && <optgroup label="จ่ายด้วยบัตรเครดิต">{cardList.map((x) => <option key={x.id} value={endpointValue({ kind: "card", id: x.id })}>บัตร {x.label}</option>)}</optgroup>}
             </select>
           </div>
         ))}
         <button type="button" onClick={() => setCost((cs) => [...cs, { key: key(), label: "", amount: "",
-          pay: !demolish || rec.length > 0 ? "DEDUCT" : banks[0] ? `a:${banks[0].asset_id}` : "DEDUCT" }])}
+          pay: !demolish || rec.length > 0 ? "DEDUCT" : banks[0] ? endpointValue({ kind: "bank", id: banks[0].asset_id }) : "DEDUCT" }])}
           className={`${SMALL_BTN} self-start`}>+ ค่าใช้จ่าย</button>
       </div>
       <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm md:col-span-2">

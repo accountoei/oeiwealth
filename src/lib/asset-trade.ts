@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/revalidate";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError, numOrNull as num, parseSalvage, strOrNull as str } from "@/lib/format";
-import { payLinesFromForm } from "@/lib/money-endpoint";
+import { payLinesFromForm, parseEndpoint } from "@/lib/money-endpoint";
 
 export type TradeState = { error?: string; ok?: string };
 
@@ -40,9 +40,10 @@ function linesFromForm(form: FormData): { receipts: Receipt[]; costs: Cost[] } |
     if (!label && (a === null || a === 0)) continue;
     if (a === null || Number.isNaN(a) || a <= 0) return { error: `ค่าใช้จ่ายแถวที่ ${i + 1}: ใส่จำนวนเงินมากกว่า 0` };
     if (!label) return { error: `ค่าใช้จ่ายแถวที่ ${i + 1}: ใส่รายการ` };
-    const pay = String(c.pay ?? "DEDUCT");
-    if (pay.startsWith("a:")) costs.push({ label, amount: a, pay: "BANK", bank_asset_id: pay.slice(2) });
-    else if (pay.startsWith("c:")) costs.push({ label, amount: a, pay: "CARD", card_id: pay.slice(2) });
+    // "a:" บัญชี · "c:" บัตร (src/lib/money-endpoint.ts) · อื่น ๆ = หักจากเงินที่ได้รับ
+    const pay = parseEndpoint(String(c.pay ?? "DEDUCT"));
+    if (pay.kind === "bank" && pay.id) costs.push({ label, amount: a, pay: "BANK", bank_asset_id: pay.id });
+    else if (pay.kind === "card" && pay.id) costs.push({ label, amount: a, pay: "CARD", card_id: pay.id });
     else costs.push({ label, amount: a, pay: "DEDUCT" });
   }
   return { receipts, costs };

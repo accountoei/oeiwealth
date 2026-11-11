@@ -15,6 +15,7 @@ import { DetailItem as Item } from "@/components/Boxes";
 import { loadPfCash } from "@/lib/pf-cash";
 import { InfoTip } from "@/components/HeaderBar";
 import { PART_LABEL, partRank } from "@/lib/insurance-booklet";
+import { activeBanks } from "@/lib/pay-sources";
 
 type Line = { key: string; id: string; table: "expense_items" | "income_transactions" | ""; date: string; kind: string; text: string; amount: number; pending: boolean;
   /** เบี้ยประกันเล่มเดียวกันที่จ่ายพร้อมกัน: ยอดแยกทีละส่วน (ชีวิต 1,402.00 + สุขภาพ 730.00) · href = หน้ากรมธรรม์หลัก */ sub?: string; href?: string };
@@ -32,7 +33,7 @@ export default async function CardDetailPage({ params }: { params: Promise<{ id:
     supabase.from("credit_card_statements").select("id,statement_date,balance,notes")
       .eq("credit_card_id", id).is("deleted_at", null).order("statement_date", { ascending: false }),
     supabase.from("families").select("go_live_date,system_status").maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
   ]);
   if (!c) notFound();
 

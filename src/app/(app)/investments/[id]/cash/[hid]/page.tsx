@@ -18,6 +18,7 @@ import { PfPayButton } from "../../pf-pay-forms";
 import { EXP_SELECT, makeEntryKit } from "../../../../income-expenses/entry-kit";
 import { loadKitCtx } from "../../../../income-expenses/entry-kit-load";
 import { InfoTip } from "@/components/HeaderBar";
+import { cardLabel } from "@/lib/money-endpoint";
 
 type HC = LHolding & { name: string; status: string; purpose: string | null; interest_rate: number | null;
   current_value: number | null; current_value_date: string | null; value_thb: number | null; fx_rate: number | null; holding_type: string };
@@ -83,7 +84,7 @@ export default async function PortfolioCashPage({ params, searchParams }: {
   ]);
   const expById = new Map((exps ?? []).map((x) => [x.id as string, x]));
   const kit = makeEntryKit({ ...kitBase, expById });
-  const cardName = new Map((cardRows ?? []).map((c) => [c.id as string, [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")]));
+  const cardName = new Map((cardRows ?? []).map((c) => [c.id as string, cardLabel(c)]));
   const waiting = all.filter((e) => e.amt == null || e.waitBank);
 
   const bankName = new Map((banks ?? []).map((b) => [b.asset_id as string, b.name as string]));

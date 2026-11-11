@@ -15,6 +15,7 @@ import OwnershipEditor from "@/components/OwnershipEditor";
 import { WithStatus } from "@/components/StatusSelect";
 import EntityDocuments from "@/components/docs/EntityDocuments";
 import { DetailItem as Item } from "@/components/Boxes";
+import { cardLabel } from "@/lib/money-endpoint";
 
 const SOURCE_LABEL: Record<string, string> = {
   OPENING: "ยอดตั้งต้น", ACCOUNT_SETUP: "เปิดบัญชีในระบบ", BALANCE_UPDATE: "อัปเดตยอด",
@@ -73,7 +74,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
   const incBy = new Map((incMeta ?? []).map((e) => [e.id as string, e]));
   const bankBy = new Map((banksAll ?? []).map((b) => [b.asset_id as string, b]));
   const otherBy = new Map((others ?? []).map((a) => [a.id as string, a.name as string]));
-  const cardBy = new Map((cardsMeta ?? []).map((c) => [c.id as string, [c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")]));
+  const cardBy = new Map((cardsMeta ?? []).map((c) => [c.id as string, cardLabel(c)]));
   const liabBy = new Map((liabsMeta ?? []).map((l) => [l.id as string, l.name as string]));
   const acctLabel = (aid: string | null) => {
     if (!aid) return "ภายนอก";

@@ -3,6 +3,7 @@ import { buildHints } from "@/lib/category-hints";
 import { queryPfCash } from "@/lib/pf-cash";
 import { INC_SELECT, MOVE_SELECT, closeoutIdSet } from "./entry-kit";
 import { loadKitExtras } from "./kit-extras";
+import { activeBanks } from "@/lib/pay-sources";
 
 /**
  * ข้อมูลหน้า Income & Expenses (5 พ.ย. 2026)
@@ -28,7 +29,7 @@ export function loadIeRef() {
       .in("lease_status", ["ACTIVE", "EXPIRING_SOON", "UPCOMING"]).order("end_date").then((r) => r);
     const res = await Promise.all([
       supabase.from("families").select("go_live_date").maybeSingle(),
-      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+      activeBanks(supabase),
       supabase.from("credit_cards").select("id,person_id,issuer,card_name,card_last4,currency,outstanding_balance,balance_date,status,due_day,autopay_asset_id,autopay_cash_holding_id,autopay_mode")
         .is("deleted_at", null).neq("status", "CLOSED"),
       supabase.from("liabilities").select("id,name,currency,outstanding_amount").is("deleted_at", null).eq("status", "ACTIVE"),

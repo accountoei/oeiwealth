@@ -1,7 +1,7 @@
 // node scripts/money-endpoint.test.mjs — ทดสอบการอ่าน / แปลงช่องทางเงิน (src/lib/money-endpoint.ts · รหัสสมมติ)
 // ต้องใช้ Node 22.18+ (อ่านไฟล์ .ts ได้เอง)
 import assert from "node:assert/strict";
-import { bankId, cardId, endpointFromForm, endpointValue, holdingId, missingEndpoint, paidFromColumns, parseEndpoint, payLinesFromForm } from "../src/lib/money-endpoint.ts";
+import { bankId, cardId, cardLabel, endpointFromColumns, endpointFromForm, endpointValue, holdingId, missingEndpoint, paidFromColumns, parseEndpoint, payLinesFromForm, usableDefault } from "../src/lib/money-endpoint.ts";
 
 const form = (o) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 
@@ -55,5 +55,26 @@ assert.deepEqual(payLinesFromForm(lines([["bank", "A1", "0"]])), { error: "บ�
 assert.deepEqual(payLinesFromForm(lines([["bank", "A1", "10"], ["cash", "", "5"]])), { error: "บรรทัดที่ 2 · กรุณาเลือกผู้จ่าย" });
 assert.deepEqual(payLinesFromForm(lines([["bank", "A1", " "]])), { error: "กรุณาใส่จำนวนเงินอย่างน้อย 1 บรรทัด" });
 assert.equal(payLinesFromForm(lines([["bank", "A1", "abc"]])).error, "บรรทัดที่ 1 · จำนวนเงินต้องเป็นตัวเลขมากกว่า 0");
+
+// ชื่อบัตร: ผู้ออกบัตร ชื่อบัตร ••เลขท้าย (ช่องว่างข้ามไป)
+assert.equal(cardLabel({ issuer: "ธนาคาร ก", card_name: "Gold", card_last4: "1234" }), "ธนาคาร ก Gold ••1234");
+assert.equal(cardLabel({ issuer: "ธนาคาร ก", card_name: null, card_last4: null }), "ธนาคาร ก");
+assert.equal(cardLabel({}), "");
+
+// คอลัมน์ "จ่ายจาก" → ช่องทาง (กลับด้านของ paidFromColumns)
+for (const e of [{ kind: "bank", id: "A1" }, { kind: "card", id: "C1" }, { kind: "portfolio", id: "H1" }, { kind: "cash", id: null }])
+  assert.deepEqual(endpointFromColumns(paidFromColumns(e)), e);
+assert.deepEqual(endpointFromColumns({}), { kind: "cash", id: null });
+assert.equal(endpointValue(endpointFromColumns({ paid_from_asset_id: "A1", paid_from_credit_card_id: null })), "a:A1");
+
+// ค่าตั้งต้นที่เก็บไว้ → ใช้ได้เมื่อยังอยู่ในรายการและสกุลตรง
+const banks = [{ asset_id: "A1", currency: "THB" }, { asset_id: "A2", currency: "USD" }], cards = [{ id: "C1", currency: "THB" }];
+assert.deepEqual(usableDefault("a:A1", "THB", banks, cards), { bank: "A1" });
+assert.deepEqual(usableDefault("a:A2", "THB", banks, cards), {});          // สกุลไม่ตรง
+assert.deepEqual(usableDefault("a:A9", "THB", banks, cards), {});          // ปิดบัญชีไปแล้ว
+assert.deepEqual(usableDefault("c:C1", "THB", banks, cards), { card: "C1" });
+assert.deepEqual(usableDefault("", "THB", banks, cards), {});
+assert.deepEqual(usableDefault(undefined, "THB", banks, cards), {});
+
 
 console.log("money-endpoint: ALL TESTS PASSED");

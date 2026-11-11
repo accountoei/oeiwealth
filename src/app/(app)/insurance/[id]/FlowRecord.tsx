@@ -10,6 +10,7 @@ import BankOptions from "@/components/BankOptions";
 import Flash from "@/components/Flash";
 import Modal from "@/components/Modal";
 import UndoButton from "@/components/UndoButton";
+import { usableDefault } from "@/lib/money-endpoint";
 
 // ปุ่ม "บันทึกรับ" + "บันทึกจ่าย" เหนือตารางเบี้ยและผลประโยชน์ (ตกลง 8 พ.ย. 2026 · แบบเงินกู้ แทนปุ่มรายแถว)
 //   เลือกวันที่ → เติมงวดที่ครบถึงวันนั้น (อย่างน้อยงวดค้างล่าสุด หรืองวดถัดไป) ทุกส่วนของเล่ม · แก้ยอดเองได้ · ช่องว่าง = ไม่บันทึกงวดนั้น
@@ -138,8 +139,7 @@ export function PayLinesForm({ lines, group, banks, cards, persons, defaultPerso
 }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "md" });
   const currency = lines[0]?.currency ?? "THB";
-  const defBank = defaultPay.startsWith("a:") && banks.some((b) => b.asset_id === defaultPay.slice(2) && b.currency === currency) ? defaultPay.slice(2) : undefined;
-  const defCard = defaultPay.startsWith("c:") && cards.some((c) => c.id === defaultPay.slice(2) && c.currency === currency) ? defaultPay.slice(2) : undefined;
+  const { bank: defBank, card: defCard } = usableDefault(defaultPay, currency, banks, cards);
   const [via, setVia] = useState(defCard ? "card" : defBank || banks.length ? "bank" : cards.length ? "card" : "cash");
   const f = useLineFill(lines, today);
   const [state, action, pending] = useActionState<ActionState, FormData>(payBooklet, {});

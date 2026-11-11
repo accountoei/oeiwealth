@@ -5,7 +5,7 @@ import { ADD_BTN, INCOME_TYPE_LABEL, LAND_TAX_RATE_BY_USAGE, LEASE_STATUS, PROPE
 import { periodsIn, yearSpan } from "@/lib/property-year";
 import { cycleNote } from "@/lib/lease";
 import { loadPersonView } from "@/lib/person-view";
-import { endpointValue } from "@/lib/money-endpoint";
+import { cardLabel, endpointValue } from "@/lib/money-endpoint";
 import PersonFilter from "@/components/PersonFilter";
 import { HeaderFilters, InfoTip, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
@@ -28,6 +28,7 @@ import { compName, type Component } from "./components";
 import type { MarketValuation } from "./MarketValuationForm";
 import LandTaxTable, { type TaxLineRow, type TaxPropRow } from "./LandTaxTable";
 import { ShareBox } from "@/components/ShareTable";
+import { activeBanks, openCards } from "@/lib/pay-sources";
 
 type Prop = { id: string; asset_id: string; property_type: string; usage_type: string; vacant_since: string | null; location_group: string | null;
   land_area_sq_wa: number | null; latitude: number | null; longitude: number | null; address: string | null;
@@ -122,8 +123,8 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
       withCarried("v_property_cost_tracking", "utility_id,property_asset_id,utility_type,provider,cost_period,due_date,expected_amount,paid_amount,currency,status",
         "utility_id", "cost_period", supabase.from("expense_items").select("utility_id:property_utility_id,cost_period").not("property_utility_id", "is", null)
           .lt("cost_period", start).gte("date", start).lte("date", end).is("deleted_at", null)),
-      supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
-      supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency").is("deleted_at", null).neq("status", "CLOSED"),
+      activeBanks(supabase),
+      openCards(supabase),
     ]),
     // บัญชีรับค่าเช่าที่ตั้งไว้ในสัญญา → ค่าตั้งต้นของแท็บรับค่าเช่า · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืน
     Promise.all([
@@ -540,7 +541,7 @@ export default async function PropertyPage({ searchParams }: { searchParams: Sp 
   const pays: PayOpt[] = [
     ...banks.map((b) => ({ value: endpointValue({ kind: "bank", id: b.id }), label: `บัญชี ${b.name}`, currency: b.currency })),
     ...((cardRows ?? []) as { id: string; issuer: string | null; card_name: string | null; card_last4: string | null; currency: string }[])
-      .map((c) => ({ value: endpointValue({ kind: "card", id: c.id }), label: `บัตร ${[c.issuer, c.card_name, c.card_last4 ? `••${c.card_last4}` : null].filter(Boolean).join(" ")}`, currency: c.currency })),
+      .map((c) => ({ value: endpointValue({ kind: "card", id: c.id }), label: `บัตร ${cardLabel(c)}`, currency: c.currency })),
   ];
 
   return (

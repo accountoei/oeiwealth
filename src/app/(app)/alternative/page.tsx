@@ -16,6 +16,7 @@ import { TabNav, TabPanel, TabsProvider } from "@/components/ClientTabs";
 import AltBatch, { type AltRow } from "./AltBatch";
 import { recEdit, recLabel } from "@/lib/recorded-edit";
 import { assetIncomeFields } from "@/lib/source-edit";
+import { activeBanks } from "@/lib/pay-sources";
 
 type Cat = { id: string; category_name: string; category_code: string; default_unit: string | null };
 const TABS = [["overview", "ภาพรวม"], ["update", "อัปเดตมูลค่า"], ["record", "บันทึกรับผลตอบแทน"]] as const;
@@ -48,7 +49,7 @@ export default async function AlternativePage({ searchParams }: { searchParams: 
       .is("deleted_at", null).is("assets.deleted_at", null).order("created_at"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,frequent").eq("status", "ACTIVE").order("pick_order"),
+    activeBanks(supabase),
     supabase.from("families").select("go_live_date").maybeSingle(),
     // ผลตอบแทนที่รับแล้วตั้งแต่ต้นปีถึงสิ้นเดือนที่เลือก (กล่องสรุป · กรองเฉพาะสินทรัพย์ทางเลือกด้านล่าง)
     supabase.from("income_transactions").select("asset_id,date,base_amount").eq("income_type", "OTHER").eq("pending_split", false)
