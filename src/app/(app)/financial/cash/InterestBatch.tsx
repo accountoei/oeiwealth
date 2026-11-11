@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { money, thDate } from "@/lib/format";
 import { batchInterest, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, FillAll, STICKY_BAR, TaxAll } from "@/components/BatchSave";
+import { BatchSave, FillAll, HiddenFilled, STICKY_BAR, TaxAll, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt, inputNumber as n, withholdingFor } from "@/lib/batch-entry";
 
 export type InterestRow = {
   id: string; name: string; bank: string; currency: string; type: string;
@@ -21,9 +20,8 @@ export type InterestRow = {
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number(s.replace(/,/g, ""));
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const TAX_RATE = 0.15;
+/** ดอกเบี้ยเงินฝาก หัก ณ ที่จ่าย 15% */
+const TAX_PCT = 15;
 
 /**
  * รับดอกเบี้ยหลายบัญชีพร้อมกัน: เลือกวันที่รับ → กรอกดอกเบี้ยก่อนภาษี (+ ภาษีหัก ณ ที่จ่าย) เฉพาะบัญชีที่ได้ → บันทึกครั้งเดียว
@@ -32,7 +30,6 @@ const TAX_RATE = 0.15;
 export default function InterestBatch({ rows, defaultDate, today, minDate, monthLabel, canWrite }: {
   rows: InterestRow[]; defaultDate: string; today: string; minDate: string; monthLabel: string; canWrite: boolean;
 }) {
-  const router = useRouter();
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
@@ -40,24 +37,21 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
   useOnMainTab(() => setBank(""));
   const bankList = [...new Set(rows.map((r) => r.bank))].sort((a, b) => a.localeCompare(b, "th"));
   const shown = bank ? rows.filter((r) => r.bank === bank) : rows;
-  const [state, action, pending] = useActionState<BatchState, FormData>(batchInterest, {});
-  const cf = useConfirmSubmit();
-  useEffect(() => { if (state.ok) { setVals({}); setTax({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<BatchState>(batchInterest, () => { setVals({}); setTax({}); });
 
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
   const net = (r: InterestRow) => n(vals[r.id] ?? "") - (tax[r.id]?.trim() ? n(tax[r.id]) : 0);
   const payload = chosen.map((r) => ({ asset_id: r.id, amount: vals[r.id], tax: tax[r.id] ?? "" }));
-  const onSubmit = cf.guard(`บันทึกรับดอกเบี้ย ${chosen.length} บัญชี ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""}`).join("\n")}`,
-    { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกรับดอกเบี้ย ${chosen.length} บัญชี ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""}`).join("\n")}`);
   // กรอกตามยอดคาดว่าจะได้รับ (แถวที่แสดง ยังว่าง มียอดคาดการณ์) · แบบแท็บบันทึกรับผลตอบแทนของ Investments
   const fillable = shown.filter((r) => r.expected != null && !(vals[r.id] ?? "").trim());
   const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.id, fmt(r.expected!)])) });
-  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(chosen.filter((r) => !Number.isNaN(n(vals[r.id]))).map((r) => [r.id, fmt(Math.round(n(vals[r.id]) * TAX_RATE * 100) / 100)])) });
+  const taxAll = () => setTax({ ...tax, ...withholdingFor(chosen.map((r) => r.id), vals, TAX_PCT) });
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -75,11 +69,11 @@ export default function InterestBatch({ rows, defaultDate, today, minDate, month
           <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} บัญชีที่กรอกไว้ในธนาคารอื่น</span>}
+            note={<HiddenFilled count={hiddenChosen} label="บัญชีที่กรอกไว้ในธนาคารอื่น" />}
             info={<>กรอกดอกเบี้ยก่อนหักภาษีเฉพาะบัญชีที่ได้รับ (ช่องว่าง = ไม่บันทึก) · ภาษีหัก ณ ที่จ่ายใส่เองหรือกด &ldquo;คิดภาษี 15%&rdquo; · ยอดเข้าบัญชีสุทธิ = ดอกเบี้ยก่อนภาษี − ภาษีหัก ณ ที่จ่าย
           · ยอดคาดว่าจะได้รับ = เฉพาะเงินฝากประจำที่ครบกำหนดเดือนนี้ (เงินต้น × อัตรา × วันฝาก ÷ 365 · ประมาณการ)
           · ถ้าอัปเดตยอดคงเหลือไปแล้ว ก้อน &ldquo;รอแยกรายละเอียด&rdquo; จะลดลงเองตามดอกเบี้ยที่บันทึก</>}>
-            {canWrite && <TaxAll pct={15} onClick={taxAll} disabled={chosen.length === 0} />}
+            {canWrite && <TaxAll pct={TAX_PCT} onClick={taxAll} disabled={chosen.length === 0} />}
           </BatchSave>
         </div>
       </div>

@@ -23,6 +23,25 @@ export function amountOrNull(s: string | null | undefined): number | null {
   return t === "" ? null : Number(t);
 }
 
+/** ช่องตัวเลขในตาราง (ฝั่งหน้าจอ) → number · ว่าง = 0 · ไม่ใช่ตัวเลข = NaN (ใช้แยก "พิมพ์ผิด" ออกจาก "ว่าง") */
+export const inputNumber = (s: string | null | undefined) => Number(plainNumber(s));
+
+/** ตัวเลข → ข้อความใส่ช่องกรอก: จุลภาค + ทศนิยม 2 ตำแหน่ง (แบบที่ช่อง inputMode="decimal" แสดง) */
+export const inputAmount = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** ภาษีหัก ณ ที่จ่าย pct% ของยอดที่กรอก (ปัดทศนิยม 2 ตำแหน่ง) → ข้อความใส่ช่องภาษี */
+export const withholding = (amount: string | null | undefined, pct: number) =>
+  inputAmount(Math.round(inputNumber(amount) * (pct / 100) * 100) / 100);
+
+/**
+ * ปุ่ม "หัก ณ ที่จ่าย x%" ของแถบบน: ภาษีของทุกแถวใน keys ที่กรอกยอดเป็นตัวเลข → { key: ภาษี } (เอาไปรวมกับช่องภาษีเดิม)
+ *   แถวที่ยอดว่าง / พิมพ์ผิด ไม่แตะ
+ */
+export function withholdingFor(keys: string[], amounts: Record<string, string>, pct: number): Record<string, string> {
+  return Object.fromEntries(keys.filter((k) => plainNumber(amounts[k]) !== "" && !Number.isNaN(inputNumber(amounts[k])))
+    .map((k) => [k, withholding(amounts[k], pct)]));
+}
+
 /** ยอดต้องเป็นตัวเลขมากกว่า 0 */
 export const isPositive = (v: number | null): v is number => v != null && !Number.isNaN(v) && v > 0;
 

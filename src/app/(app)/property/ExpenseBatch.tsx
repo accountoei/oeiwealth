@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useState, type ReactNode } from "react";
 import { SMALL_BTN, SMALL_DEL_BTN, COST_STATUS, PROPERTY_COST_TYPE_LABEL, money, thDate, thMonth } from "@/lib/format";
 import { batchPropertyExpenses, type BatchState } from "./actions";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave, FillAll, FilterSelect } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, FilterSelect, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt } from "@/lib/batch-entry";
 
 export type CostRow = {
   key: string; utilityId: string; assetId: string; property: string; label: string; type: string; typeLabel: string; period: string; due: string | null;
@@ -23,7 +22,6 @@ export type OtherCost = { key: string; assetId: string; property: string; date: 
 type Extra = { id: number; asset: string; ctype: string; description: string; amount: string; pay: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const OTHER_CATEGORY = "บ้าน / สาธารณูปโภค";
 
 /**
@@ -37,7 +35,6 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
   rows: CostRow[]; others: OtherCost[]; total: number; totalLabel: string;
   props: { id: string; name: string }[]; pays: PayOpt[]; defaultDate: string; today: string; ym: string; canWrite: boolean;
 }) {
-  const router = useRouter();
   const firstPay = (ccy: string) => pays.find((p) => p.currency === ccy)?.value ?? "";
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -50,9 +47,7 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
   const [kind, setKind] = useState("");
   const kinds = [...new Map(rows.map((r) => [r.type, r.typeLabel]))];
   const shownRows = kind ? rows.filter((r) => r.type === kind) : rows;
-  const [state, action, pending] = useActionState<BatchState, FormData>(batchPropertyExpenses, {});
-  const cf = useConfirmSubmit();
-  useEffect(() => { if (state.ok) { setVals({}); setExtra([blank(Date.now())]); router.refresh(); } }, [state, router]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { state, action, pending, confirm, dialog } = useBatchSave<BatchState>(batchPropertyExpenses, () => { setVals({}); setExtra([blank(Date.now())]); });
   const open = rows.filter((r) => r.status !== "PAID" && r.status !== "DISMISSED");
   const chosen = open.filter((r) => (vals[r.key] ?? "").trim() !== "");
   const extras = extra.filter((x) => x.amount.trim() !== "");
@@ -64,10 +59,10 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
   ];
   const name = new Map(props.map((p) => [p.id, p.name]));
   const count = payload.length;
-  const onSubmit = cf.guard(`บันทึกค่าใช้จ่าย ${count} รายการ ณ วันที่ ${thDate(date)} ?\n${[
+  const onSubmit = confirm(`บันทึกค่าใช้จ่าย ${count} รายการ ณ วันที่ ${thDate(date)} ?\n${[
     ...chosen.map((r) => `• ${r.property} · ${r.label} ${vals[r.key]}${rebillOn(r) ? " (เรียกเก็บผู้เช่า)" : ""}`),
     ...extras.map((x) => `• ${name.get(x.asset) ?? "(ยังไม่เลือกทรัพย์สิน)"} · ${PROPERTY_COST_TYPE_LABEL[x.ctype] ?? "(ยังไม่เลือกประเภท)"} · ${x.description || "(ไม่มีรายการ)"} ${x.amount}`),
-  ].join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  ].join("\n")}`);
   const cols = canWrite ? 6 : 4;
   const setX = (id: number, patch: Partial<Extra>) => setExtra(extra.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const PaySelect = ({ value, onChange, ccy }: { value: string; onChange: (v: string) => void; ccy?: string }) => (
@@ -79,7 +74,7 @@ export default function ExpenseBatch({ rows, others, total, totalLabel, props, p
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · ประเภท · ใส่ยอดทุกแถว | บันทึก + วันที่ */}
       <BatchBar title={<>ค่าใช้จ่ายทรัพย์สิน งวด {thMonth(`${ym}-01`)}

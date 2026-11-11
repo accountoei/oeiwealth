@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import Flash from "./Flash";
 import { InfoTip } from "./HeaderBar";
+import { useConfirmSubmit } from "./ConfirmDialog";
 
 /**
  * แถบบันทึกของตารางบันทึกหลายรายการ (แท็บอัปเดตยอด / มูลค่า และแท็บบันทึกรับ / จ่าย ทุกเมนู · ตกลง 5 พ.ย. 2026)
@@ -14,6 +16,29 @@ import { InfoTip } from "./HeaderBar";
 export const STICKY_BAR = "z-[5] md:sticky md:top-[var(--app-header-h,4rem)]";
 
 const SMALL = "rounded-md border border-slate-300 px-2 py-1 text-sm";
+
+/**
+ * การบันทึกของตารางบันทึกหลายรายการ — ทุกแท็บใช้ตัวนี้ (แทนการเขียน useActionState + หน้าต่างยืนยัน + โหลดใหม่เองทุกหน้า)
+ *   save = server action ของหน้า · บันทึกสำเร็จ → onSaved() (ล้างช่องที่กรอก ฯลฯ) แล้วโหลดตัวเลขใหม่จากฐานข้อมูล
+ *   confirm(ข้อความ) → ใส่เป็น onSubmit ของ <BatchSave> (ปุ่มยืนยัน "ยืนยันบันทึก") · วาง dialog ไว้ในหน้า (นอก <form>)
+ *   ล้างช่องใน action เอง ไม่ใช่ใน useEffect → ไม่ render ซ้ำสองรอบหลังบันทึก
+ */
+export function useBatchSave<S extends { ok?: string | null }>(save: (prev: S, form: FormData) => Promise<S>, onSaved: () => void) {
+  const router = useRouter();
+  const [state, action, pending] = useActionState<S, FormData>(async (prev, form) => {
+    const r = await save(prev as S, form);
+    if (r.ok) { onSaved(); router.refresh(); }
+    return r as Awaited<S>;
+  }, {} as Awaited<S>);
+  const { guard, dialog } = useConfirmSubmit();
+  const confirm = (text: string, enabled = true) => guard(text, { okLabel: "ยืนยันบันทึก" }, enabled);
+  return { state, action, pending, confirm, dialog };
+}
+
+/** ข้อความเล็กในแถบบันทึก (note ของ <BatchSave>): ยอดที่กรอกไว้ในแถวที่ตัวกรองซ่อนอยู่ ยังบันทึกด้วย · 0 = ไม่แสดง */
+export function HiddenFilled({ count, label }: { count: number; /** เช่น "บัญชีที่กรอกไว้ในธนาคารอื่น" */ label: string }) {
+  return count > 0 ? <span className="text-xs text-amber-700">รวม {count} {label}</span> : null;
+}
 
 /**
  * แถบบนของแท็บบันทึกหลายรายการ — เรียงเหมือนกันทุกหน้า (ตกลง 6 พ.ย. 2026):

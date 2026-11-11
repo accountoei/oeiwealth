@@ -1,21 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { money, thDate } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchAltIncome, batchAltValues, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave } from "@/components/BatchSave";
+import { BatchBar, BatchSave, useBatchSave } from "@/components/BatchSave";
+import { inputNumber as n } from "@/lib/batch-entry";
 
 export type AltRow = { id: string; name: string; category: string; currency: string; value: number | null; valueDate: string | null; auto: boolean;
   /** ผลตอบแทนที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
 export type AltBank = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 const METHODS: [string, string][] = [["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน / ร้าน"], ["LATEST_TRANSACTION", "ราคาตลาดล่าสุด"]];
 
 /**
@@ -33,26 +31,23 @@ export default function AltBatch({ part, rows, banks, today, defaultDate = today
 }
 
 function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: AltRow[]; banks: AltBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) =>
     [r.id, (banks.find((b) => b.currency === r.currency) ?? banks[0])?.id ?? ""])));
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchAltIncome, {});
-  useEffect(() => { if (state.ok) { setVals({}); setTax({}); setNotes({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchAltIncome, () => { setVals({}); setTax({}); setNotes({}); });
 
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
   const payload = chosen.map((r) => ({ asset_id: r.id, label: r.name, amount: vals[r.id], tax: tax[r.id] ?? "", bank_asset_id: bank[r.id] ?? "", notes: notes[r.id] ?? "" }));
   const bankOf = new Map(banks.map((b) => [b.id, b]));
-  const onSubmit = cf.guard(`บันทึกรับผลตอบแทน ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
-    `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""} → ${bankOf.get(bank[r.id] ?? "")?.name ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกรับผลตอบแทน ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+    `• ${r.name} ${vals[r.id]}${tax[r.id]?.trim() ? ` (ภาษี ${tax[r.id]})` : ""} → ${bankOf.get(bank[r.id] ?? "")?.name ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`);
 
   return (
     <section className="space-y-3">
-      {cf.dialog}
+      {dialog}
       <BatchBar title={<>รับผลตอบแทน <span className="text-xs font-normal text-slate-500">(ค่าเช่า / ค่าให้ยืม · Staking · ผลตอบแทนอื่น)</span>
           <InfoTip label="คำอธิบาย">บันทึกเป็นรายได้ &ldquo;อื่น ๆ&rdquo; ผูกกับทรัพย์สิน · แบ่งให้เจ้าของตามสัดส่วน · ยอดเป็นสกุลของบัญชีที่รับ · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</InfoTip></>}>
         {canWrite && (
@@ -106,20 +101,17 @@ function IncomeBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { r
 }
 
 function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: AltRow[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(defaultDate);
   const [method, setMethod] = useState("USER_ESTIMATE");
   const [vals, setVals] = useState<Record<string, string>>({});
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchAltValues, {});
-  useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchAltValues, () => setVals({}));
   const chosen = rows.filter((r) => !r.auto && (vals[r.id] ?? "").trim() !== "");
   const payload = chosen.map((r) => ({ asset_id: r.id, label: r.name, value: vals[r.id] }));
-  const onSubmit = cf.guard(`บันทึกมูลค่า ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกมูลค่า ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`);
 
   return (
     <section className="space-y-3">
-      {cf.dialog}
+      {dialog}
       <BatchBar title={<>อัปเดตมูลค่า <InfoTip label="คำอธิบาย">ทองที่ตั้งราคาอัตโนมัติ ระบบลงราคารับซื้อให้ทุกวันทำการ · ทองที่ปิดราคาอัตโนมัติ / ต้องคำนวณจากน้ำหนัก ใช้ฟอร์มในหน้าทรัพย์สิน · ผิดแถวเดียว = ไม่บันทึกทั้งชุด</InfoTip></>}>
         {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, method, rows: JSON.stringify(payload) }}
