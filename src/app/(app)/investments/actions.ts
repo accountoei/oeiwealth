@@ -260,9 +260,9 @@ export async function batchValuations(_: ActionState, form: FormData): Promise<A
   const supabase = await createClient();
   const date = str(form.get("date"));
   if (!date) return { error: "กรุณาใส่วันที่ของราคา" };
-  let input: { holding_id: string; price?: string; mv?: string }[];
-  try { input = JSON.parse(String(form.get("rows") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
-  if (!Array.isArray(input) || input.length === 0) return { error: "ยังไม่ได้กรอกราคาหรือมูลค่าเลย" };
+  const input = readRows<{ holding_id: string; price?: string; mv?: string }>(form);
+  if (!input) return { error: BAD_ROWS_ERROR };
+  if (input.length === 0) return { error: "ยังไม่ได้กรอกราคาหรือมูลค่าเลย" };
   const { data: hs, error: hErr } = await supabase.from("v_holdings_active")
     .select("id,name,holding_type,quantity,portfolio_asset_id").in("id", input.map((r) => r.holding_id));
   if (hErr) return { error: friendlyError(hErr.message) };
