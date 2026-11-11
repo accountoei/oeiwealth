@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useActionState, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Fragment, useState } from "react";
 import { SMALL_BTN, addDays, diffText, marketStale, money, PROPERTY_TYPE_LABEL, thDate, USAGE_LABEL } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import ModalButton from "@/components/ModalButton";
 import MarketValuationForm, { type MarketValuation } from "./MarketValuationForm";
 import { batchPropertyValues, type ActionState } from "./actions";
 import { planValueParts } from "./valueParts";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchSave, HiddenFilled, STICKY_BAR, useBatchSave } from "@/components/BatchSave";
+import { inputNumber as n } from "@/lib/batch-entry";
 
 export type ValueRow = {
   id: string; name: string; typeLabel: string; /** ตัวกรองด้านบน */ type: string; usage: string; currency: string; value: number | null; date: string | null;
@@ -21,7 +20,6 @@ export type ValueRow = {
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number(s.replace(/,/g, ""));
 const filled = (s: string | undefined) => (s ?? "").trim() !== "";
 
 /**
@@ -35,19 +33,13 @@ type Plan = { total: number | null; parts: { deed_id: string; value: number }[] 
 export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }: {
   rows: ValueRow[]; today: string; minDate: string; canWrite: boolean; shareNote: string | null;
 }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(today);
   const [ty, setTy] = useState("");
   const [us, setUs] = useState("");
   const [nv, setNv] = useState<Record<string, string>>({});
   const [pv, setPv] = useState<Record<string, Record<string, string>>>({});   // asset → ส่วนประกอบ → มูลค่าใหม่
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, form) => {
-    const r = await batchPropertyValues(prev, form);
-    if (r.ok) { setNv({}); setPv({}); router.refresh(); }
-    return r;
-  }, {});
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchPropertyValues, () => { setNv({}); setPv({}); });
 
   // มูลค่าใหม่ของแต่ละทรัพย์สิน: ยอดรวม · รายแถว (ส่งเมื่อรู้ครบทุกแถว) · ตัวเลขประมาณรายแถวไว้แสดงสีเทา
   //   กติกาเดียวกับหน้าทรัพย์สิน: planValueParts (./valueParts.ts · เทสต์ scripts/value-parts.test.mjs)
@@ -66,7 +58,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
     return pl.parts ? { asset_id: r.id, parts: pl.parts } : { asset_id: r.id, value: nv[r.id] };
   });
   const setSub = (r: ValueRow, pid: string, v: string) => setPv({ ...pv, [r.id]: { ...(pv[r.id] ?? {}), [pid]: v } });
-  const onSubmit = cf.guard(`บันทึกมูลค่าใหม่ ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกมูลค่าใหม่ ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}`);
   // ยอดรวม (บาท · ตามสัดส่วนของสมาชิกที่เลือก) · ราคาตลาดรวมเฉพาะรายการที่ประเมินแล้ว
   //   ตามตัวกรองด้านบน · ตัวเลขที่กรอกไว้ในแถวที่ถูกกรองออกยังอยู่และบันทึกด้วย (หน้าต่างยืนยันแสดงชื่อทุกรายการ)
   const shown = rows.filter((r) => (!ty || r.type === ty) && (!us || r.usage === us));
@@ -80,7 +72,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     {/* ฟอร์มบันทึกครอบเฉพาะแถบบันทึกด้านบน ไม่ครอบตาราง (ตารางมีฟอร์มราคาตลาดใน pop up ของแต่ละแถว → ห้ามซ้อนฟอร์ม) */}
     <div className="space-y-3">
       <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
@@ -98,7 +90,7 @@ export default function ValueBatch({ rows, today, minDate, canWrite, shareNote }
           <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, valuation_method: "USER_ESTIMATE", rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} disabled={incomplete.length > 0} onClear={() => { setNv({}); setPv({}); }} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            note={<>{hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้แต่ถูกตัวกรองซ่อน</span>}
+            note={<><HiddenFilled count={hiddenChosen} label="รายการที่กรอกไว้แต่ถูกตัวกรองซ่อน" />
               {incomplete.length > 0 && <span className="text-sm text-amber-700">{incomplete.map((r) => `${r.name}: ${planOfRow(r).error}`).join(" · ")}</span>}</>}
             info={<>มูลค่าใหม่ = มูลค่าที่นับในความมั่งคั่งสุทธิ (กรอกเฉพาะรายการที่เปลี่ยน · ช่องว่าง = ไม่บันทึก) · ใส่ยอดรวม → สิ่งปลูกสร้างเท่าเดิม ที่ดินได้ส่วนที่เหลือตามเนื้อที่ (พิมพ์ทับรายแถวได้)
           · ราคาตลาดเป็นข้อมูลอ้างอิงเท่านั้น ไม่นับในความมั่งคั่งสุทธิ · กดที่ตัวเลข (หรือ &ldquo;ประเมิน&rdquo;) เพื่อบันทึก{shareNote && ` · ${shareNote}`}</>} />

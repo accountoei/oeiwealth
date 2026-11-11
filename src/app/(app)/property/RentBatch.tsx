@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useState, type ReactNode } from "react";
 import { money, thDate } from "@/lib/format";
 import { lateFee } from "@/lib/receipt-rules";
 import { batchRent, type BatchState } from "./actions";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
-import { BatchSave, FillAll, STICKY_BAR, TaxAll } from "@/components/BatchSave";
+import { BatchSave, FillAll, HiddenFilled, STICKY_BAR, TaxAll, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt, inputNumber as n, withholdingFor } from "@/lib/batch-entry";
 
 export type RentRow = {
   key: string; leaseId: string; assetId: string; property: string; tenant: string; period: string; due: string | null;
@@ -27,10 +26,8 @@ export type OtherIncome = { key: string; assetId: string; property: string; date
 export type BankOpt = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** ผู้เช่านิติบุคคลหักภาษี ณ ที่จ่ายค่าเช่า 5% */
-const TAX_RATE = 0.05;
+const TAX_PCT = 5;
 
 /** สถานะเป็นบรรทัดเล็กใต้วันครบกำหนด (แบบเดียวกับแท็บรับของ Investments) */
 function RentStatus({ r, today }: { r: RentRow; today: string }) {
@@ -58,16 +55,13 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
   rows: RentRow[]; others: OtherIncome[]; incByAsset: Record<string, number>; totalLabel: string;
   banks: BankOpt[]; defaultDate: string; today: string; minDate: string; canWrite: boolean;
 }) {
-  const router = useRouter();
   const [prop, setProp] = useState("");
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
   const [fee, setFee] = useState<Record<string, string>>({});   // ไม่มีในนี้ = ค่าปรับตามวันที่รับ
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key, r.bank])));
-  const [state, action, pending] = useActionState<BatchState, FormData>(batchRent, {});
-  const cf = useConfirmSubmit();
-  useEffect(() => { if (state.ok) { setVals({}); setTax({}); setFee({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<BatchState>(batchRent, () => { setVals({}); setTax({}); setFee({}); });
 
   const propList = [...new Map(rows.map((r) => [r.assetId, r.property])).entries()].sort((a, b) => a[1].localeCompare(b[1], "th"));
   const shown = rows.filter((r) => !prop || r.assetId === prop);
@@ -96,13 +90,13 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
   const fillable = shown.filter((r) => editable(r) && gap(r) > 0 && !(vals[r.key] ?? "").trim());
   const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.key, fmt(gap(r))])) });
   const taxable = shown.filter((r) => filled(r) && !r.chargeId && !Number.isNaN(n(vals[r.key])));
-  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
-  const onSubmit = cf.guard(`บันทึกรับค่าเช่า ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
-    `• ${r.property} · ${r.tenant} ${vals[r.key]}${taxOf(r).trim() ? ` (ภาษี ${taxOf(r)})` : ""}${n(feeOf(r)) > 0 ? ` + ค่าปรับ ${feeOf(r)}` : ""}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const taxAll = () => setTax({ ...tax, ...withholdingFor(taxable.map((r) => r.key), vals, TAX_PCT) });
+  const onSubmit = confirm(`บันทึกรับค่าเช่า ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+    `• ${r.property} · ${r.tenant} ${vals[r.key]}${taxOf(r).trim() ? ` (ภาษี ${taxOf(r)})` : ""}${n(feeOf(r)) > 0 ? ` + ค่าปรับ ${feeOf(r)}` : ""}`).join("\n")}`);
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       {canWrite && (
         <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
@@ -121,12 +115,12 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
             <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(payload) }}
               count={chosen.length} pending={pending} onClear={() => { setVals({}); setTax({}); setFee({}); }} state={state}
               date={date} onDate={setDate} minDate={minDate} maxDate={today}
-              note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในทรัพย์สินอื่น</span>}
+              note={<HiddenFilled count={hiddenChosen} label="รายการที่กรอกไว้ในทรัพย์สินอื่น" />}
               info={<>กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ)
             · ยอดก่อนภาษี = ค่าเช่าเต็มตามสัญญา ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย (ผู้เช่านิติบุคคลหัก 5%) + ค่าปรับล่าช้า
             · ค่าปรับล่าช้า (สัญญาที่ตั้งไว้) เติมให้ตามวันที่รับ นับเฉพาะวันที่เกินวันผ่อนผัน แก้หรือลบได้ บันทึกเป็นรายได้อื่น &ldquo;ค่าปรับชำระค่าเช่าล่าช้า&rdquo;
             · งวดเดือนก่อนที่ยังค้างรับยกมาให้ · ค่าน้ำไฟเรียกเก็บผู้เช่าที่ยังไม่ได้รับคืนแสดงต่อท้าย (นับเป็นรายได้อื่น ไม่มีภาษี) · ยกเว้นงวดทำที่หน้าของทรัพย์สิน</>}>
-              <TaxAll pct={5} onClick={taxAll} disabled={taxable.length === 0} />
+              <TaxAll pct={TAX_PCT} onClick={taxAll} disabled={taxable.length === 0} />
             </BatchSave>
           </div>
         </div>

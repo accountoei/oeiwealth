@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
 import { batchUpdate, type BatchState } from "./actions";
 import { useOnMainTab } from "../../income-expenses/tabs";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchSave, HiddenFilled, STICKY_BAR, useBatchSave } from "@/components/BatchSave";
+import { inputNumber as n } from "@/lib/batch-entry";
 
 export type BatchRow = {
   id: string; name: string; bank: string; currency: string;
@@ -15,7 +15,6 @@ export type BatchRow = {
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number(s.replace(/,/g, ""));
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
 /**
@@ -32,10 +31,8 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
   useOnMainTab(() => setBank(""));
   const bankList = [...new Set(rows.map((r) => r.bank))].sort((a, b) => a.localeCompare(b, "th"));
   const shown = bank ? rows.filter((r) => r.bank === bank) : rows;
-  const [state, action, pending] = useActionState<BatchState, FormData>(batchUpdate, {});
-  const cf = useConfirmSubmit();
   // บันทึกแล้ว → ล้างช่องที่กรอก + โหลดยอดใหม่ (ผลรายบัญชียังแสดงอยู่)
-  useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<BatchState>(batchUpdate, () => setVals({}));
   const result = new Map((state.results ?? []).map((r) => [r.asset_id, r]));
 
   const pickDate = (d: string) => {
@@ -46,12 +43,11 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
   // ยอดที่กรอกไว้ของบัญชีที่ถูกตัวกรองซ่อน ยังบันทึกด้วย (กรอกทีละธนาคาร แล้วกดบันทึกครั้งเดียว)
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim() !== "");
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
-  const onSubmit = cf.guard(`บันทึกยอดคงเหลือ ${chosen.length} บัญชี ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}\nส่วนต่างจะลงเป็นก้อน "รอแยกรายละเอียด" ให้อัตโนมัติ`,
-    { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกยอดคงเหลือ ${chosen.length} บัญชี ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name}`).join("\n")}\nส่วนต่างจะลงเป็นก้อน "รอแยกรายละเอียด" ให้อัตโนมัติ`);
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -66,7 +62,7 @@ export default function BatchUpdate({ date, today, minDate, rows, canWrite, ym }
           <BatchSave canWrite={canWrite} action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(chosen.map((r) => ({ asset_id: r.id, value: vals[r.id] }))) }}
             count={chosen.length} pending={pending} onClear={() => setVals({})} state={state}
             date={date} onDate={pickDate} minDate={minDate} maxDate={today}
-            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} บัญชีที่กรอกไว้ในธนาคารอื่น</span>}
+            note={<HiddenFilled count={hiddenChosen} label="บัญชีที่กรอกไว้ในธนาคารอื่น" />}
             info={<>กรอกยอดจริงจากแอปธนาคาร / Statement เฉพาะบัญชีที่ต้องการ (ช่องว่าง = ไม่บันทึก) · ส่วนต่างลงก้อน &ldquo;รอแยกรายละเอียด&rdquo; อัตโนมัติ · สลับธนาคารได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</>} />
         </div>
       </div>

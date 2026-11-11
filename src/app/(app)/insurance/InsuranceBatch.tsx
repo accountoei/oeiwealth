@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useActionState, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Fragment, useState } from "react";
 import { SMALL_BTN, BENEFIT_TYPE_LABEL, INS_OPEN, INS_SCHED_STATUS, money, numOrZero, thDate } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import YearSelect from "@/components/YearSelect";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchBenefits, batchPremiums, type ActionState } from "./actions";
-import { BatchBar, BatchSave, FillAll, LateNote } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, LateNote, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt } from "@/lib/batch-entry";
 import type { ReactNode } from "react";
 
 /** แถวจาก v_insurance_schedule_status */
@@ -29,7 +28,6 @@ export type BoxPolicy = { id: string; name: string; person: string | null; activ
 export type PayOpt = { value: string; label: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const cur = (c: string) => (c !== "THB" ? c : undefined);
 
 /**
@@ -44,8 +42,6 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   /** งวดค้าง THB ทุกปี (เลยกำหนด ณ วันนี้) → บรรทัดสีแดงใต้ตาราง */ late?: { count: number; amount: number };
 }) {
   const prem = kind === "PREMIUM";
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const lines = policies.flatMap((p) => p.lines.map((l) => ({ ...l, policyId: p.id, policy: p.name, active: p.active, part: p.booklet?.part, group: p.booklet?.key })));
   const payOf = new Map(policies.map((p) => [p.id, p.pay ?? ""]));
   // ค่าตั้งต้นของกรมธรรม์ก่อน (ถ้ายังใช้ได้และสกุลตรง · ตกลง 3 พ.ย. 2026) ไม่งั้นบัญชีแรกของสกุล
@@ -55,8 +51,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
   const [expand, setExpand] = useState<Record<string, boolean>>({});
   const [vals, setVals] = useState<Record<string, string>>({});
   const [pay, setPay] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, firstPay(l.currency, payOf.get(l.policyId))])));
-  const [state, action, pending] = useActionState<ActionState, FormData>(prem ? batchPremiums : batchBenefits, {});
-  useEffect(() => { if (state.ok) { setVals({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(prem ? batchPremiums : batchBenefits, () => setVals({}));
 
   const open = (l: (typeof lines)[number]) => l.active && INS_OPEN.includes(l.status) && l.remaining > 0.005;
   const due = (l: (typeof lines)[number]) => open(l) && (l.status === "OVERDUE" || l.due <= soon);
@@ -69,8 +64,8 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
     group: l.group ?? null }));
   const payName = new Map(pays.map((p) => [p.value, p.label]));
   const what = prem ? "จ่ายเบี้ย" : "รับผลประโยชน์";
-  const onSubmit = cf.guard(`บันทึก${what} ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((l) =>
-    `• ${label(l)} ${vals[l.id]} ${prem ? "จาก" : "→"} ${payName.get(pay[l.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึก${what} ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((l) =>
+    `• ${label(l)} ${vals[l.id]} ${prem ? "จาก" : "→"} ${payName.get(pay[l.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`);
   const statusText = (s: string) => s === "PAID" ? (prem ? "จ่ายแล้ว" : "รับแล้ว") : s === "PENDING" ? (prem ? "รอจ่าย" : "รอรับ") : INS_SCHED_STATUS[s]?.text ?? s;
   // ยอดรวมท้ายกล่อง = งวดที่ครบในปีที่เลือกเท่านั้น (งวดค้างจากปีก่อน / งวดปีหน้า แสดงในกล่องแต่ไม่นับรวม)
   const inYear = (l: BoxLine) => !l.tag;
@@ -83,7 +78,7 @@ export default function InsuranceBatch({ kind, year, years, hrefOf, policies, pa
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     {/* ฟอร์มบันทึกครอบเฉพาะแถบบันทึกด้านบน (BatchSave) ไม่ครอบตาราง: ในตารางมีปุ่ม "ยกเลิก" ที่เป็นฟอร์มของตัวเอง (ฟอร์มซ้อนฟอร์ม = กดไม่ได้ · 5 พ.ย. 2026) */}
     <div className="space-y-3">
       {/* แถบบน (ตกลง 6 พ.ย. 2026): ปี (ช่องแรก · ไม่มีชื่อกล่อง) · บริษัท · ใส่ยอดทุกแถว | บันทึก + วันที่ ⓘ */}

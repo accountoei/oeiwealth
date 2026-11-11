@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState, type ReactNode } from "react";
 import { money, thDate } from "@/lib/format";
 import { dueAsOf, splitInterestFirst } from "@/lib/receipt-rules";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchReceiveLoans, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave, FillAll, FilterSelect, LateNote } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, FilterSelect, HiddenFilled, LateNote, useBatchSave } from "@/components/BatchSave";
+import { inputAmount, inputNumber } from "@/lib/batch-entry";
 
 export type LoanRow = {
   id: string; name: string; borrower: string; currency: string;
@@ -24,8 +23,9 @@ export type LoanRow = {
 export type BankOpt = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const fmt = (v: number) => (v ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
-const n = (s: string | undefined) => Number((s ?? "").replace(/,/g, "")) || 0;
+/** 0 = ช่องว่าง · พิมพ์ผิด = 0 (ตารางนี้รวมยอดเงินต้น + ดอกเบี้ย) */
+const fmt = (v: number) => (v ? inputAmount(v) : "");
+const n = (s: string | undefined) => inputNumber(s) || 0;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /**
@@ -41,8 +41,6 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   /** คำอธิบายแท็บ → ⓘ ที่หัวตาราง */
   info?: ReactNode;
 }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(today);
   const [showOthers, setShowOthers] = useState(false);
   const [who, setWho] = useState("");
@@ -59,13 +57,11 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
   const rows = rows0.map((r) => dueAt(r, date)), others = others0.map((r) => dueAt(r, date));
   const all = [...rows, ...others];
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(all.map((r) => [r.id, r.defaultBank])));
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchReceiveLoans, {});
   const sent = useRef<{ id: string; name: string; extra: number }[]>([]);
   const [over, setOver] = useState<{ id: string; name: string; extra: number }[]>([]);
-  useEffect(() => {
-    if (!state.ok) return;
-    setOver(sent.current); setTot({}); setPr({}); setInt({}); setTax({}); router.refresh();
-  }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchReceiveLoans, () => {
+    setOver(sent.current); setTot({}); setPr({}); setInt({}); setTax({});
+  });
 
   const base = showOthers ? all : rows;
   // ตัวกรองผู้กู้ (ตกลง 6 พ.ย. 2026) · ยอดที่กรอกไว้ในแถวที่ถูกกรองซ่อนยังบันทึกด้วย
@@ -104,9 +100,8 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
     list.filter((r) => r.dueP + r.dueI > 0.005).forEach((r) => { p[r.id] = fmt(r.dueP); i[r.id] = fmt(r.dueI); t[r.id] = fmt(r2(r.dueP + r.dueI)); });
     setPr(p); setInt(i); setTot(t);
   };
-  const guard = cf.guard(`บันทึกรับชำระ ${chosen.length} สัญญา ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
-    `• ${r.name} ${fmt(total(r)) || "0.00"} (เงินต้น ${pr[r.id] || "0.00"} · ดอกเบี้ย ${int[r.id] || "0.00"}) เข้า ${bankName.get(bank[r.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`,
-    { okLabel: "ยืนยันบันทึก" });
+  const guard = confirm(`บันทึกรับชำระ ${chosen.length} สัญญา ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+    `• ${r.name} ${fmt(total(r)) || "0.00"} (เงินต้น ${pr[r.id] || "0.00"} · ดอกเบี้ย ${int[r.id] || "0.00"}) เข้า ${bankName.get(bank[r.id] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`);
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     sent.current = chosen.map((r) => ({ id: r.id, name: r.name, extra: r2(n(pr[r.id]) - r.dueP) })).filter((x) => Math.abs(x.extra) > 0.01);
     guard(e);
@@ -168,7 +163,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · ผู้กู้ · ใส่ยอดทุกแถว | บันทึก + วันที่ */}
       <BatchBar title={<>รับชำระคืนเงินกู้{info && <InfoTip label="คำอธิบาย">{info}</InfoTip>}</>}
@@ -183,7 +178,7 @@ export default function LoanBatch({ rows: rows0, others: others0, banks, today, 
         {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={chosen.length} pending={pending} onClear={() => { setTot({}); setPr({}); setInt({}); setTax({}); }} state={state}
-            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ของผู้กู้อื่น</span>}
+            note={<HiddenFilled count={hiddenChosen} label="รายการที่กรอกไว้ของผู้กู้อื่น" />}
             date={date} onDate={onDate} minDate={minDate} maxDate={today}
             info={<>วันที่ด้านขวาใช้กับทุกแถวที่กรอก · ช่องว่าง = ไม่บันทึก · ยอดรวมแบ่งให้เอง: หักดอกเบี้ยที่ถึงกำหนดก่อน ที่เหลือเป็นเงินต้น</>} />
         )}

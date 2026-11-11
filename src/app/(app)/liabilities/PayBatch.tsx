@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { money, thDate } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchPayDebts, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave, FillAll } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt, inputNumber as n } from "@/lib/batch-entry";
 
 export type DebtRow = {
   key: string; kind: "LOAN" | "CARD"; id: string; href: string; name: string; sub: string | null; currency: string;
@@ -18,8 +17,6 @@ export type DebtRow = {
 export type BankOpt = { id: string; name: string; currency: string };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 
 /**
  * แท็บ "จ่ายชำระเงินกู้/บัตรเครดิต" ของหน้า Liabilities (ตกลง 27 ต.ค. 2026)
@@ -29,14 +26,11 @@ const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
 export default function PayBatch({ rows, banks, today, defaultDate = today, minDate, canWrite }: {
   rows: DebtRow[]; banks: BankOpt[]; today: string; defaultDate?: string; minDate: string; canWrite: boolean;
 }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(defaultDate);
   const [pr, setPr] = useState<Record<string, string>>({});     // เงินต้น (เงินกู้) / ยอดที่จ่าย (บัตร)
   const [int, setInt] = useState<Record<string, string>>({});   // ดอกเบี้ย (เงินกู้)
   const [bank, setBank] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.key, r.defaultBank])));
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchPayDebts, {});
-  useEffect(() => { if (state.ok) { setPr({}); setInt({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchPayDebts, () => { setPr({}); setInt({}); });
 
   const has = (r: DebtRow) => (pr[r.key] ?? "").trim() !== "" || (r.kind === "LOAN" && (int[r.key] ?? "").trim() !== "");
   const chosen = rows.filter(has);
@@ -44,9 +38,8 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
     ...(r.kind === "LOAN" ? { principal: pr[r.key] ?? "", interest: int[r.key] ?? "" } : { amount: pr[r.key] ?? "" }) }));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
   const total = (r: DebtRow) => (pr[r.key]?.trim() ? n(pr[r.key]) : 0) + (r.kind === "LOAN" && int[r.key]?.trim() ? n(int[r.key]) : 0);
-  const onSubmit = cf.guard(`บันทึกจ่าย ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
-    `• ${r.name} ${fmt(total(r))}${r.kind === "LOAN" && int[r.key]?.trim() ? ` (ดอกเบี้ย ${int[r.key]})` : ""} จาก ${bankName.get(bank[r.key] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`,
-    { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกจ่าย ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) =>
+    `• ${r.name} ${fmt(total(r))}${r.kind === "LOAN" && int[r.key]?.trim() ? ` (ดอกเบี้ย ${int[r.key]})` : ""} จาก ${bankName.get(bank[r.key] ?? "") ?? "(ยังไม่เลือกบัญชี)"}`).join("\n")}`);
   const loans = rows.filter((r) => r.kind === "LOAN");
   const cards = rows.filter((r) => r.kind === "CARD");
 
@@ -66,7 +59,7 @@ export default function PayBatch({ rows, banks, today, defaultDate = today, minD
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       {/* แถบบนแบบเดียวกันทุกหน้า (ตกลง 6 พ.ย. 2026): ชื่อ · ใส่ยอดทุกแถว (เงินกู้ = ค่างวดเป็นเงินต้น · บัตร = ยอดค้างเต็มจำนวน) | บันทึก + วันที่ */}
       <BatchBar title="จ่ายชำระเงินกู้ / บัตรเครดิต"

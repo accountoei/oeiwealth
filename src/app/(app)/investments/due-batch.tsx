@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useState, type ReactNode } from "react";
 import { HOLDING_TYPE_LABEL, money, thDate } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { bankId, endpointValue, holdingId, parseEndpoint } from "@/lib/money-endpoint";
 import { defaultIncomeAccount, INCOME_GROUP, incomeAccountOptions } from "@/lib/income-account";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchInvestmentIncome, type ActionState, type BatchIncomeRow } from "./actions";
 import type { Bank, CashAcct } from "./[id]/forms";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchSave, FillAll, LateNote, STICKY_BAR, TaxAll } from "@/components/BatchSave";
+import { BatchSave, FillAll, HiddenFilled, LateNote, STICKY_BAR, TaxAll, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt, inputNumber as n, withholdingFor } from "@/lib/batch-entry";
 
 // แท็บ "บันทึกรับผลตอบแทน" (ส่วนที่กรอกได้) — ตารางเดียวทุกพอร์ต (ตกลง 24 ต.ค. 2026):
 //   ดอกเบี้ย / Coupon · เงินต้นครบกำหนด · ดอกเบี้ยบัญชีเงินฝากในพอร์ต → กดบันทึกครั้งเดียว (ผิดแถวเดียว = ไม่บันทึกเลยทั้งชุด)
@@ -43,9 +42,8 @@ export function DueStatus({ due, received, today }: { due: string; received: { d
 }
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const TAX_RATE = 0.15;
+/** ดอกเบี้ยตราสารหนี้ / เงินฝากในพอร์ต หัก ณ ที่จ่าย 15% */
+const TAX_PCT = 15;
 
 /** แถวในตาราง: รายการตามตาราง (ดอกเบี้ย / เงินต้น) หรือดอกเบี้ยบัญชีเงินฝากในพอร์ต */
 type Row = { key: string; pf: string; pfName: string; currency: string; item?: DueItem; cash?: PfCash };
@@ -55,15 +53,12 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
   /** คำอธิบายแท็บ → ⓘ ที่หัวคอลัมน์แรก */
   info?: ReactNode;
 }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [pf, setPf] = useState("");
   const [date, setDate] = useState(defaultDate);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [tax, setTax] = useState<Record<string, string>>({});
   const [dest, setDest] = useState<Record<string, string>>({});
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchInvestmentIncome, {});
-  useEffect(() => { if (state.ok) { setVals({}); setTax({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchInvestmentIncome, () => { setVals({}); setTax({}); });
 
   const rows: Row[] = [
     ...groups.flatMap((g) => g.rows.map((it) => ({ key: it.key, pf: g.pf, pfName: g.name, currency: it.holding.currency, item: it }))),
@@ -99,10 +94,10 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
   const fillable = shown.filter((r) => editable(r) && r.item?.expected != null && !(vals[r.key] ?? "").trim());
   const fillAll = () => setVals({ ...vals, ...Object.fromEntries(fillable.map((r) => [r.key, fmt(r.item!.expected!)])) });
   const taxable = shown.filter((r) => filled(r) && r.item?.kind !== "PRINCIPAL" && !Number.isNaN(n(vals[r.key])));
-  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(taxable.map((r) => [r.key, fmt(Math.round(n(vals[r.key]) * TAX_RATE * 100) / 100)])) });
+  const taxAll = () => setTax({ ...tax, ...withholdingFor(taxable.map((r) => r.key), vals, TAX_PCT) });
 
-  const onSubmit = cf.guard(`บันทึกรับ ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""}`).join("\n")}`
-    + (maturities ? `\n\nเงินต้นครบกำหนด ${maturities} รายการ: หลักทรัพย์จะปิดเป็น "ครบกำหนด" (เงินต้นไม่ใช่รายได้)` : ""), { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกรับ ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map((l) => `• ${l.title} ${l.amount}${l.tax.trim() ? ` (ภาษี ${l.tax})` : ""}`).join("\n")}`
+    + (maturities ? `\n\nเงินต้นครบกำหนด ${maturities} รายการ: หลักทรัพย์จะปิดเป็น "ครบกำหนด" (เงินต้นไม่ใช่รายได้)` : ""));
 
   // แถวรวมท้ายตาราง: บรรทัดละ 1 สกุลเงิน (THB ก่อน) · แทนการ์ดสรุปด้านบน (ตกลง 6 พ.ย. 2026)
   const ccyOrder = (a: string, b: string) => Number(b === "THB") - Number(a === "THB") || a.localeCompare(b);
@@ -125,7 +120,7 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
   if (rows.length === 0) return null;
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       {canWrite && (
         <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
@@ -144,10 +139,10 @@ export default function DueBatch({ groups, cash, banks, today, minDate, defaultD
             <BatchSave action={action} onSubmit={onSubmit} fields={{ rows: JSON.stringify(lines.map((l) => ({ ...l, title: undefined }))) }}
               count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); }} state={state}
               date={date} onDate={setDate} minDate={minDate} maxDate={today}
-              note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
+              note={<HiddenFilled count={hiddenChosen} label="รายการที่กรอกไว้ในพอร์ตอื่น" />}
               info={<>กรอกเฉพาะรายการที่ได้รับ (ช่องว่าง = ไม่บันทึก) · วันที่รับใช้กับทุกแถวที่กรอก (รับคนละวัน = บันทึกทีละรอบ) · ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษีหัก ณ ที่จ่าย
             · เงินต้นครบกำหนดไม่ใช่รายได้ บันทึกแล้วหลักทรัพย์ปิดเป็น &ldquo;ครบกำหนด&rdquo; · ดอกเบี้ยเงินฝากในพอร์ตเข้าบัญชีนั้นเอง</>}>
-              <TaxAll pct={15} onClick={taxAll} disabled={taxable.length === 0} />
+              <TaxAll pct={TAX_PCT} onClick={taxAll} disabled={taxable.length === 0} />
             </BatchSave>
           </div>
         </div>

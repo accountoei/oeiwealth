@@ -1,14 +1,13 @@
 "use client";
 
 import IntentLink from "@/components/IntentLink";
-import { Fragment, useActionState, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Fragment, useState } from "react";
 import { money, qty, thDate, signedMoney, signedPct } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
 import { batchDividends, batchValues, type ActionState } from "./actions";
 import { InfoTip } from "@/components/HeaderBar";
-import { BatchBar, BatchSave, FillAll, TaxAll } from "@/components/BatchSave";
+import { BatchBar, BatchSave, FillAll, TaxAll, useBatchSave } from "@/components/BatchSave";
+import { inputAmount as fmt, inputNumber as n, withholdingFor } from "@/lib/batch-entry";
 
 export type BizHolder = { personId: string; name: string; shares: number | null; pct: number;
   /** ปันผลที่รับแล้วในเดือนที่เลือก (ทีละครั้ง · กดเพื่อแก้ / ลบ) */ edits?: Recorded[] };
@@ -19,9 +18,8 @@ export type BizRow = { id: string; name: string; currency: string; value: number
 export type BizBank = { id: string; name: string; currency: string; owners: string[] };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number((s ?? "").replace(/,/g, ""));
-const fmt = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const TAX_RATE = 0.1;
+/** ปันผล หัก ณ ที่จ่าย 10% */
+const TAX_PCT = 10;
 const pctText = (p: number) => p.toLocaleString("en-US", { maximumFractionDigits: 2 });
 const METHODS: [string, string][] = [["BOOK_VALUE", "มูลค่าตามบัญชี"], ["USER_ESTIMATE", "ประมาณเอง"], ["APPRAISAL", "ผู้ประเมิน"], ["LATEST_TRANSACTION", "ราคาซื้อขายล่าสุด"]];
 
@@ -39,8 +37,6 @@ export default function BusinessBatch({ part, rows, banks, today, defaultDate = 
 }
 
 function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; banks: BizBank[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(defaultDate);
   const [dps, setDps] = useState<Record<string, string>>({});
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -50,31 +46,30 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
     const own = banks.filter((b) => b.owners.includes(h.personId));
     return [`${r.id}:${h.personId}`, (own.find((b) => b.currency === r.currency) ?? own[0])?.id ?? ""];
   }))));
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchDividends, {});
-  useEffect(() => { if (state.ok) { setVals({}); setTax({}); setDps({}); router.refresh(); } }, [state, router]);
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchDividends, () => { setVals({}); setTax({}); setDps({}); });
 
   const lines = rows.flatMap((r) => r.holders.filter((h) => (vals[`${r.id}:${h.personId}`] ?? "").trim())
     .map((h) => ({ r, h, k: `${r.id}:${h.personId}` })));
   const payload = lines.map(({ r, h, k }) => ({ asset_id: r.id, person_id: h.personId, amount: vals[k], tax: tax[k] ?? "", bank_asset_id: bank[k] ?? "" }));
   const bankName = new Map(banks.map((b) => [b.id, b.name]));
-  const onSubmit = cf.guard(`บันทึกปันผล ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map(({ r, h, k }) =>
-    `• ${r.name} · ${h.name} ${vals[k]}${tax[k]?.trim() ? ` (ภาษี ${tax[k]})` : ""} → ${bankName.get(bank[k]) ?? "ไม่ผ่านบัญชี"}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกปันผล ${lines.length} รายการ ณ วันที่ ${thDate(date)} ?\n${lines.map(({ r, h, k }) =>
+    `• ${r.name} · ${h.name} ${vals[k]}${tax[k]?.trim() ? ` (ภาษี ${tax[k]})` : ""} → ${bankName.get(bank[k]) ?? "ไม่ผ่านบัญชี"}`).join("\n")}`);
   const fillDps = (r: BizRow, v: string) => {
     setDps({ ...dps, [r.id]: v });
     if (!v.trim() || Number.isNaN(n(v))) return;
     setVals({ ...vals, ...Object.fromEntries(r.holders.filter((h) => h.shares != null).map((h) => [`${r.id}:${h.personId}`, fmt(Math.round(h.shares! * n(v) * 100) / 100)])) });
   };
-  const taxAll = () => setTax({ ...tax, ...Object.fromEntries(lines.filter(({ k }) => !Number.isNaN(n(vals[k]))).map(({ k }) => [k, fmt(Math.round(n(vals[k]) * TAX_RATE * 100) / 100)])) });
+  const taxAll = () => setTax({ ...tax, ...withholdingFor(lines.map(({ k }) => k), vals, TAX_PCT) });
 
   return (
     <section className="space-y-3">
-      {cf.dialog}
+      {dialog}
       <BatchBar title={<>รับปันผล (แยกตามผู้ถือหุ้น) <InfoTip label="คำอธิบาย">กรอกเฉพาะผู้ถือหุ้นที่ได้รับ (ช่องว่าง = ไม่บันทึก) · รายได้ &ldquo;ปันผลกิจการ&rdquo; เป็นของคนนั้น 100% เข้าบัญชีที่เลือก · ผู้ถือหุ้นคนไหนผิด จะไม่บันทึกเลยทั้งชุด · แก้ / ลบรายการได้ที่หน้า Income &amp; Expenses</InfoTip></>}>
         {canWrite && (
           <BatchSave action={action} onSubmit={onSubmit} fields={{ date, rows: JSON.stringify(payload) }}
             count={lines.length} pending={pending} onClear={() => { setVals({}); setTax({}); setDps({}); }} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}>
-            <TaxAll pct={10} onClick={taxAll} disabled={lines.length === 0} />
+            <TaxAll pct={TAX_PCT} onClick={taxAll} disabled={lines.length === 0} />
           </BatchSave>
         )}
       </BatchBar>
@@ -141,15 +136,14 @@ function DividendBatch({ rows, banks, today, defaultDate, minDate, canWrite }: {
 }
 
 function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: BizRow[]; today: string; defaultDate: string; minDate: string; canWrite: boolean }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [date, setDate] = useState(defaultDate);
   const [method, setMethod] = useState("USER_ESTIMATE");
   const [vals, setVals] = useState<Record<string, string>>({});
   // แถวที่เติมด้วย "กรอกตามงบการเงิน" (ค่าที่เติม) → แนบหมายเหตุที่มาให้ เฉพาะแถวที่ยังไม่ได้แก้ตัวเลข
   const [filled, setFilled] = useState<Record<string, string>>({});
-  const [state, action, pending] = useActionState<ActionState, FormData>(batchValues, {});
-  useEffect(() => { if (state.ok) { setVals({}); setFilled({}); setMethod("USER_ESTIMATE"); router.refresh(); } }, [state, router]);
+  // ล้างแล้วกลับเป็น "ประมาณเอง" → ยอดที่พิมพ์เองจะไม่ถูกติดป้ายมูลค่าตามบัญชีโดยไม่ตั้งใจ (ทั้งกดล้างเองและหลังบันทึก)
+  const clear = () => { setVals({}); setFilled({}); setMethod("USER_ESTIMATE"); };
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchValues, clear);
   const chosen = rows.filter((r) => (vals[r.id] ?? "").trim());
   const withBook = rows.filter((r) => r.book);
   const bookNote = (r: BizRow) => r.book && vals[r.id] === filled[r.id]
@@ -158,13 +152,11 @@ function ValueBatch({ rows, today, defaultDate, minDate, canWrite }: { rows: Biz
     const f = Object.fromEntries(withBook.map((r) => [r.id, fmt(r.book!.value)]));
     setVals({ ...vals, ...f }); setFilled(f); setMethod("BOOK_VALUE");
   };
-  // ล้างแล้วกลับเป็น "ประมาณเอง" → ยอดที่พิมพ์เองจะไม่ถูกติดป้ายมูลค่าตามบัญชีโดยไม่ตั้งใจ
-  const clear = () => { setVals({}); setFilled({}); setMethod("USER_ESTIMATE"); };
-  const onSubmit = cf.guard(`บันทึกมูลค่า ${chosen.length} กิจการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`, { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกมูลค่า ${chosen.length} กิจการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.name} ${vals[r.id]}`).join("\n")}`);
 
   return (
     <section className="space-y-3">
-      {cf.dialog}
+      {dialog}
       <BatchBar title={<>อัปเดตมูลค่า <InfoTip label="คำอธิบาย">กรอกเฉพาะกิจการที่มีมูลค่าใหม่ · มูลค่าใหม่เป็นมูลค่าปัจจุบันของกิจการ (ส่วนของครอบครัว) · ประวัติ / ลบ ดูที่หน้ากิจการ
         <br />มูลค่าตามงบการเงิน = ส่วนของผู้ถือหุ้นปีล่าสุดที่บันทึกในผลประกอบการ (ทุนจดทะเบียน + กำไรสะสม หรือยอดที่กรอกเอง) × สัดส่วนที่ครอบครัวถือ · &ldquo;กรอกตามงบการเงิน&rdquo; เติมให้ทุกแถว (วิธีประเมิน = มูลค่าตามบัญชี) ตรวจ / แก้ได้ก่อนกดบันทึก</InfoTip></>}
         fill={canWrite && <FillAll label="กรอกตามงบการเงิน" onClick={fillBook} disabled={withBook.length === 0} />}>

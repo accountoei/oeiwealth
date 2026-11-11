@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { HOLDING_TYPE_LABEL, money, qty, thDate } from "@/lib/format";
-import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { batchValuations, type ActionState } from "./actions";
-import { BatchSave, STICKY_BAR } from "@/components/BatchSave";
+import { BatchSave, HiddenFilled, STICKY_BAR, useBatchSave } from "@/components/BatchSave";
+import { inputNumber as n } from "@/lib/batch-entry";
 
 export type UpdateRow = {
   id: string; pf: string; pfName: string; name: string; symbol: string | null; type: string; currency: string; qty: number;
@@ -16,7 +15,6 @@ export type UpdateRow = {
 };
 
 const small = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const n = (s: string) => Number(s.replace(/,/g, ""));
 const filled = (s: string | undefined) => (s ?? "").trim() !== "";
 
 /**
@@ -24,18 +22,12 @@ const filled = (s: string | undefined) => (s ?? "").trim() !== "";
  *   ตัวกรองพอร์ต (ซ้าย) · วันที่เดียวทั้งชุด (ขวา) · ช่องว่าง = ไม่บันทึก · ยอดที่กรอกในพอร์ตที่ถูกตัวกรองซ่อนยังบันทึกด้วย
  */
 export default function UpdateBatch({ rows, today, initialDate, minDate, canWrite }: { rows: UpdateRow[]; today: string; initialDate: string; minDate: string; canWrite: boolean }) {
-  const router = useRouter();
-  const cf = useConfirmSubmit();
   const [pf, setPf] = useState("");
   const [date, setDate] = useState(initialDate);
   const [price, setPrice] = useState<Record<string, string>>({});
   const [mv, setMv] = useState<Record<string, string>>({});
   // บันทึกแล้ว → ล้างช่องที่กรอก + โหลดราคาใหม่
-  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, form) => {
-    const r = await batchValuations(prev, form);
-    if (r.ok) { setPrice({}); setMv({}); router.refresh(); }
-    return r;
-  }, {});
+  const { state, action, pending, confirm, dialog } = useBatchSave<ActionState>(batchValuations, () => { setPrice({}); setMv({}); });
 
   const pfList = [...new Map(rows.map((r) => [r.pf, r.pfName])).entries()];
   const shown = rows.filter((r) => !pf || r.pf === pf);
@@ -43,12 +35,11 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
   const newValue = (r: UpdateRow) => filled(mv[r.id]) ? n(mv[r.id]) : !r.cash && !r.lump && filled(price[r.id]) ? n(price[r.id]) * r.qty : null;
   const chosen = rows.filter((r) => filled(mv[r.id]) || (!r.cash && !r.lump && filled(price[r.id])));
   const hiddenChosen = chosen.filter((r) => !shown.includes(r)).length;
-  const onSubmit = cf.guard(`บันทึกราคา / ยอดตาม Statement ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.pfName} · ${r.name}`).join("\n")}`,
-    { okLabel: "ยืนยันบันทึก" });
+  const onSubmit = confirm(`บันทึกราคา / ยอดตาม Statement ${chosen.length} รายการ ณ วันที่ ${thDate(date)} ?\n${chosen.map((r) => `• ${r.pfName} · ${r.name}`).join("\n")}`);
 
   return (
     <>
-    {cf.dialog}
+    {dialog}
     <div className="space-y-3">
       <div className={`space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm ${STICKY_BAR}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -64,7 +55,7 @@ export default function UpdateBatch({ rows, today, initialDate, minDate, canWrit
               holding_id: r.id, mv: filled(mv[r.id]) ? mv[r.id] : undefined, price: !r.cash && !r.lump && filled(price[r.id]) ? price[r.id] : undefined }))) }}
             count={chosen.length} pending={pending} onClear={() => { setPrice({}); setMv({}); }} state={state}
             date={date} onDate={setDate} minDate={minDate} maxDate={today}
-            note={hiddenChosen > 0 && <span className="text-xs text-amber-700">รวม {hiddenChosen} รายการที่กรอกไว้ในพอร์ตอื่น</span>}
+            note={<HiddenFilled count={hiddenChosen} label="รายการที่กรอกไว้ในพอร์ตอื่น" />}
             info={<>กรอกตาม Statement เฉพาะตัวที่มีราคาใหม่ (ช่องว่าง = ไม่บันทึก) · ใส่ราคาต่อหน่วย หรือมูลค่ารวม · บัญชีเงินฝากในพอร์ต / มูลค่าก้อนเดียว ใส่มูลค่า · ราคาจาก Statement ใช้แทนราคาอัตโนมัติของวันนั้น · สลับพอร์ตได้ ยอดที่กรอกไว้ยังอยู่และบันทึกพร้อมกัน</>} />
         </div>
       </div>
