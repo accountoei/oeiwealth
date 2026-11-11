@@ -53,7 +53,7 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 ```bash
 service postgresql start
 DB=fwv_test bash tests/run.sh --scenario    # must end with: ALL SCENARIO TESTS PASSED (N checks) — N must not be lower than on main before your change
-node scripts/fx-fetch.test.mjs && node scripts/price-fetch.test.mjs && node scripts/money-endpoint.test.mjs && node scripts/batch-entry.test.mjs && node scripts/form-input.test.mjs && node scripts/tax-calc.test.mjs && node scripts/loan-schedule.test.mjs && node scripts/insurance-flow.test.mjs && node scripts/insurance-grid.test.mjs && node scripts/property-year.test.mjs && node scripts/receipt-rules.test.mjs
+for t in scripts/*.test.mjs; do node "$t" || { echo "FAILED: $t"; break; }; done    # every unit test file (a new scripts/*.test.mjs runs without editing this line)
 ```
 
 `tests/run.sh` **drops and recreates a database**. Run it **only against a local Postgres**, never against Supabase.
