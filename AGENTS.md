@@ -16,6 +16,8 @@ The owner/operator is **not a programmer**: every change must be explained in pl
 2. Only one agent should change code at a time. If you are not the primary agent, work on a **branch and open a Pull Request**; do not push to `main`.
    **The owner merges PRs.** Exception: a PR that changes **only documentation** (`docs/`, `*.md`; no code, migrations, Edge Functions or workflows) may be merged by the AI itself — tell the owner afterwards.
 3. Read the relevant migration(s) and page(s) before changing them. The database is the source of truth for business rules.
+4. **Simplicity first** (owner, 11 Nov 2026 — from the shared rules in the owner's KOS repo): write the minimum code that does what was asked. No extra features, no settings or "flexibility" nobody asked for, no abstraction for code used once, no handling for situations that cannot happen. If 200 lines could be 50, rewrite it. Reuse what the repo already has (the shared pieces named in section 3, `src/lib/format.ts`, existing components) before adding a new component or package.
+5. **Surgical changes** (owner, 11 Nov 2026): touch only what the task needs. Do not "improve" nearby code, comments or formatting, and do not refactor what is not broken. Match the existing style. Remove only the imports / variables / functions **your** change made unused. If you spot other dead code or a bug outside the task, **mention it** in the hand-back (in Thai) — do not fix it in the same PR. Test: every changed line traces back to the owner's request. (Rules in this file that ask for a change everywhere — e.g. "same record = same edit popup on every page" — are part of the request when the task is that rule.)
 
 ## 1. Hard security rules (never break these)
 
