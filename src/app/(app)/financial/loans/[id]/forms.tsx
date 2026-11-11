@@ -11,6 +11,7 @@ import Flash from "@/components/Flash";
 import ContractParties, { type PartyOptions, type PartyValues } from "../ContractParties";
 import PartyPicker, { type BorrowerBank } from "@/components/PartyPicker";
 import BankOptions from "@/components/BankOptions";
+import { dueAsOf, splitInterestFirst } from "@/lib/receipt-rules";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
@@ -46,12 +47,7 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   const { open, setOpen, present, activeCls } = useActionSlot();
   const [state, action, pending] = useActionState<ActionState, FormData>(receivePayment, {});
   const [date, setDate] = useState(today);
-  const owed = (d: string) => {
-    const upTo = due && d < due.from ? due.from : d;
-    const ls = (due?.lines ?? []).filter((x) => x.due <= upTo);
-    return { p: Math.round(ls.reduce((s, x) => s + x.p, 0) * 100) / 100, i: Math.round(ls.reduce((s, x) => s + x.i, 0) * 100) / 100,
-      nos: ls.map((x) => x.no) };
-  };
+  const owed = (d: string) => dueAsOf(due?.lines ?? [], due?.from, d);
   const now = due ? owed(date) : null;
   const owedI = now ? now.i : interestOwed, dueP = now ? now.p : principalDue;
   const [p, setP] = useState(amt(now ? now.p : principal));
@@ -63,9 +59,8 @@ export function PaymentForm({ assetId, currency, banks, today, minDate, principa
   const list = banks.filter((b) => b.currency === currency);
   const split = (v: string, oi = owedI) => {
     setTotal(v);
-    const t = num(v);
-    const ii = Math.min(t, Math.max(0, oi ?? 0));
-    setI(amt(Math.round(ii * 100) / 100)); setP(amt(Math.round((t - ii) * 100) / 100));
+    const s = splitInterestFirst(num(v), oi ?? 0);
+    setI(amt(s.interest)); setP(amt(s.principal));
   };
   const sumOf = (pp: string, iv: string) => setTotal(amt(num(pp) + num(iv)));
   const onDate = (d: string) => {

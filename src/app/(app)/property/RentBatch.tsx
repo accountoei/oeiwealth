@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { money, thDate } from "@/lib/format";
+import { lateFee } from "@/lib/receipt-rules";
 import { batchRent, type BatchState } from "./actions";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { RecordedLines, type Recorded } from "@/lib/recorded-edit";
@@ -82,8 +83,8 @@ export default function RentBatch({ rows, others, incByAsset, totalLabel, banks,
   // ค่าปรับล่าช้า ณ วันที่รับ = (วันที่เลยกำหนด − วันผ่อนผัน) × ค่าปรับต่อวัน · แก้ / ลบได้ (ไม่เก็บ = ลบเป็นว่าง)
   const autoFee = (r: RentRow) => {
     if (!r.feePerDay || !r.due || r.chargeId) return "";
-    const days = Math.round((Date.parse(date) - Date.parse(r.due)) / 86400000) - (r.grace ?? 0);
-    return days > 0 ? fmt(days * r.feePerDay) : "";
+    const f = lateFee(r.due, r.grace ?? 0, r.feePerDay, date);
+    return f > 0 ? fmt(f) : "";
   };
   const feeOf = (r: RentRow) => (r.feePerDay ? fee[r.key] ?? autoFee(r) : "");
   // ยอดเข้าบัญชีสุทธิ = ยอดก่อนภาษี − ภาษี + ค่าปรับล่าช้า (เข้าบัญชีเดียวกัน)

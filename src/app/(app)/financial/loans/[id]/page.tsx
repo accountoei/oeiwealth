@@ -15,6 +15,7 @@ import EntityDocuments from "@/components/docs/EntityDocuments";
 import { ScheduleEditor } from "./schedule-editor";
 import { RestructureEditor } from "./restructure-editor";
 import { addMonthsKeepDay, LOAN_SCHED_STATUS, openingFromSchedule } from "@/lib/loan-schedule";
+import { payFromLine } from "@/lib/receipt-rules";
 import { ActionBar } from "@/components/ActionBar";
 import { loanInterestFields } from "@/lib/source-edit";
 import { InfoTip } from "@/components/HeaderBar";
@@ -69,7 +70,8 @@ export default async function LoanDetailPage({ params, searchParams }: {
   const overdueAmt = overdue.reduce((s, x) => s + Number(x.total_remaining), 0);
   // ปุ่ม "บันทึกรับชำระ" (ปุ่มเดียว): มีงวดเลยกำหนด → เติมเฉพาะงวดที่เลยกำหนด (ไม่รวมงวดที่ยังไม่ถึง · ตกลง 30 ต.ค. 2026)
   //   ไม่มี → งวดถัดไป · ในหน้าต่าง ยอดเปลี่ยนตาม "วันที่ได้รับ" (งวดที่ครบถึงวันนั้น)
-  const payTo = [...overdue, ...inGrace].sort((a, b) => a.due_date.localeCompare(b.due_date)).at(-1) ?? nextDue;
+  //   กฎเดียวกับแท็บรับชำระ: src/lib/receipt-rules.ts payFromLine
+  const payTo = payFromLine(sched);
   const dueLines = { lines: open.map((x) => ({ no: x.installment_no, due: x.due_date, p: Number(x.principal_remaining), i: Number(x.interest_remaining) })),
     from: payTo?.due_date ?? today };
   // ดอกเบี้ยค้างสะสมถึงงวดนั้น (ใช้แบ่งยอดรวมที่รับ: หักดอกก่อน ที่เหลือเป็นต้น)
