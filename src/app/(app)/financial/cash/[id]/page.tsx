@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
-import { ACCOUNT_TYPE_LABEL, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney } from "@/lib/format";
+import { ACCOUNT_TYPE_LABEL, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney, withOpeningMonth } from "@/lib/format";
 import { bankLabel } from "@/lib/banks";
 import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type StmtRow } from "../../../income-expenses/MovesView";
@@ -177,7 +177,8 @@ export default async function AccountDetailPage({ params, searchParams }: {
   // ประวัติยอดที่ยืนยัน: เฉพาะเดือนที่เลือก (ใหม่ → เก่า) · ไม่มี = บอกยอดล่าสุดก่อนหน้า
   const monthHist = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end);
   const lastVal = (vals ?? []).find((v) => v.valuation_date <= end);
-  const months = monthOptions(family?.go_live_date, today, 0, ym);
+  // เดือนยอดตั้งต้น (ก่อน Go-live) อยู่ท้ายรายการ → เปิดแก้ยอดตั้งต้นจากปุ่ม "บันทึกยอดคงเหลือตาม Statement" ได้
+  const months = withOpeningMonth(monthOptions(family?.go_live_date, today, 0, ym), family?.go_live_date);
   // ตารางแบบเดียวกับกล่องเงินเข้า–ออกในหน้า Income & Expenses (ชุดคำสั่งกลาง entry-kit) · rows ส่งแบบใหม่ → เก่า
   const ledgerStmts: StmtRow[] = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end)
     .map((v) => ({ key: `v${v.id}`, date: v.valuation_date, value: Number(v.value), label: SOURCE_LABEL[v.source] ?? v.source }));
