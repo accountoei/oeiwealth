@@ -12,6 +12,8 @@ export type PortfolioRow = {
   unreal: number; real: number; fx: number; income: number; total: number; cost: number;
   /** เงินลงทุนสุทธิ (บาท · เงินโอนเข้า − โอนกลับ) · null = ยังไม่มีเงินโอน */
   invested?: number | null;
+  /** ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (บาท) · บวกกลับในกำไรเทียบเงินลงทุน */
+  received?: number;
 };
 
 const sign = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" : "text-slate-500");
@@ -28,13 +30,14 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
   // เงินลงทุนสุทธิ: แสดงเมื่อมีพอร์ตที่มีเงินโอน · แถวรวม = เฉพาะพอร์ตที่ยังเปิด (พอร์ตที่ปิด = กำไรที่รับรู้แล้วของพอร์ตนั้น)
   const hasInv = rows.some((r) => r.invested != null);
   const invRows = rows.filter((r) => r.invested != null && !r.closed);
-  const invTot = { inv: invRows.reduce((t, r) => t + r.invested!, 0), value: invRows.reduce((t, r) => t + r.valueThb, 0) };
+  const invTot = { inv: invRows.reduce((t, r) => t + r.invested!, 0), value: invRows.reduce((t, r) => t + r.valueThb + (r.received ?? 0), 0) };
+  const plInv = (r: PortfolioRow) => r.valueThb + (r.received ?? 0) - r.invested!;
   return (
     <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="font-medium text-slate-900">พอร์ตทั้งหมด <InfoTip label="คำอธิบาย">ต้นทุน = ต้นทุนเฉลี่ยของหลักทรัพย์ที่ถืออยู่ · ผลตอบแทนนับตั้งแต่ยอดตั้งต้น · % เทียบต้นทุน · กดแถวเพื่อดูแยกส่วน · กดชื่อเพื่อเปิดพอร์ต
-        {hasInv && " · เงินลงทุนสุทธิ = เงินที่โอนเข้าพอร์ต (ก่อน + หลัง Go-live) − โอนกลับ · กำไรเทียบเงินลงทุน = มูลค่า − เงินลงทุนสุทธิ (รวมผลค่าเงิน) · แถวรวมนับเฉพาะพอร์ตที่ยังเปิด"}</InfoTip></h2>
+        {hasInv && " · เงินลงทุนสุทธิ = เงินที่โอนเข้าพอร์ต (ก่อน + หลัง Go-live) − โอนกลับ · กำไรเทียบเงินลงทุน = มูลค่า + ปันผล / ดอกเบี้ยที่เข้าบัญชีธนาคารโดยตรง − เงินลงทุนสุทธิ (รวมผลค่าเงิน) · แถวรวมนับเฉพาะพอร์ตที่ยังเปิด"}</InfoTip></h2>
           {filter}
         </div>
         {toggle}
@@ -80,9 +83,10 @@ export default function PortfolioTable({ rows, ordering = false, paths = [], tog
                   </td>
                   {hasInv && <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{r.invested == null ? "-" : money(r.invested, undefined, 2)}</td>}
                   {hasInv && (r.invested == null ? <td className="px-3 py-2.5 text-right text-slate-400">-</td> : (
-                    <td className={`px-3 py-2.5 text-right tabular-nums ${sign(r.valueThb - r.invested)}`}>
-                      <div className="font-medium">{amt(r.valueThb - r.invested)}</div>
-                      {pct(r.valueThb - r.invested, r.invested) && <div className="text-xs">{pct(r.valueThb - r.invested, r.invested)}</div>}
+                    <td className={`px-3 py-2.5 text-right tabular-nums ${sign(plInv(r))}`}>
+                      <div className="font-medium">{amt(plInv(r))}</div>
+                      {pct(plInv(r), r.invested) && <div className="text-xs">{pct(plInv(r), r.invested)}</div>}
+                      {(r.received ?? 0) > 0.005 && <div className="text-xs text-slate-500">รวมรับเข้าบัญชี {money(r.received, undefined, 0)}</div>}
                       {r.closed && <div className="text-xs text-slate-500">รับรู้แล้ว</div>}
                     </td>))}
                   <td className="pr-3 pt-2.5 text-right text-xs text-slate-400">{isOpen ? "▴" : "▾"}</td>

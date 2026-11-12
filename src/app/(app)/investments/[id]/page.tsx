@@ -16,7 +16,7 @@ import {
 import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import NetInvestedBox from "./NetInvestedBox";
-import { netInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, incomeToBank, netInvested, type CapitalMove, type CapitalPre, type IncomeToBank } from "@/lib/net-invested";
 import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
 import PfTransferEdit from "./PfTransferEdit";
@@ -74,7 +74,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const pfQ = supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle().then((r) => r);
   const [[{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
     { data: unsettled }, { data: persons }], [{ data: lastTx }, { data: txs }, { data: autoRows }],
-    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: capPre }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
+    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: capPre }, { data: directMvs }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
     Promise.all([
       loadAsset(id),
       pfQ,
@@ -109,6 +109,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       // เงินโอนเข้าพอร์ตก่อน Go-live (กล่องเงินลงทุนสุทธิ)
       supabase.from("portfolio_capital_transfers").select("id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes")
         .eq("portfolio_asset_id", id).is("deleted_at", null).order("transfer_date"),
+      // ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต) → นับในเงินลงทุนสุทธิ
+      supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).eq("is_derived", true).eq("source_entity_type", "INVESTMENT_TX").is("deleted_at", null)
+        .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`).limit(2000),
     ]),
     // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
     canWrite ? Promise.all([
@@ -158,7 +161,11 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txList = (txs as Tx[] | null) ?? [];
   const transfers = (mvs as PfTransfer[] | null) ?? [];
   const transferById = new Map(transfers.map((m) => [m.id, m]));
-  const invested = netInvested(id, a.currency, (capPre as CapitalPre[] | null) ?? [], transfers as unknown as CapitalMove[]);
+  const invested = netInvested(id, a.currency, (capPre as CapitalPre[] | null) ?? [],
+    [...(transfers as unknown as CapitalMove[]), ...((directMvs as CapitalMove[] | null) ?? [])]);
+  // ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่าพอร์ต) → บวกกลับในกำไรเทียบเงินลงทุน
+  const incomeRows = txList.filter((t) => ["DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) && t.settle_to_asset_id);
+  const received = incomeToBank(a.currency, incomeRows as unknown as IncomeToBank[]);
   // มียอดตั้งต้นก่อน Go-live แต่ยังไม่ได้ใส่เงินโอนก่อน Go-live → กำไร / ขาดทุนเทียบเงินลงทุนยังไม่ครบ (ไม่แสดง %)
   const missingPre = txList.some((t) => t.transaction_type === "OPENING_BALANCE") && !invested.lines.some((l) => l.kind === "PRE");
   // เงินโอนที่ยังไม่ทราบยอด (รอยอด) รายบัญชี — ที่ทราบยอดแล้วนับในยอดบัญชีเงินฝากทันที
@@ -233,7 +240,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           <NetInvestedBox assetId={id} currency={a.currency} investedThb={invested.thb} investedCcy={invested.ccy}
             valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
             valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
-            incomeThb={incomeThb} missingPre={missingPre}
+            incomeThb={incomeThb} missingPre={missingPre} receivedThb={received.thb} receivedCcy={received.ccy}
             closed={a.status === "CLOSED"} lines={invested.lines} goLive={goLive} canWrite={canWrite} canDelete={canDelete} paths={paths}>
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
