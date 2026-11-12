@@ -9,7 +9,7 @@ import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
-import { CAPITAL_MOVE_COLS, INCOME_TO_BANK_COLS, incomeToBank, netInvested, vsInvested, type CapitalMove, type CapitalPre, type IncomeToBank } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, INCOME_TO_BANK_COLS, OPENING_COST_COLS, incomeToBank, netInvested, vsInvested, type CapitalMove, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -51,7 +51,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: capPre }, { data: capMoves }, { data: incBank }], { data: income }, rets,
+  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: opening }, { data: capMoves }, { data: incBank }], { data: income }, rets,
     [openPfs, updateData], dueData, totalPrev] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
@@ -60,8 +60,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       pfsQ,
       supabase.from("v_holdings_active").select("id,portfolio_asset_id,holding_type,currency,current_value,status,name,maturity_date,derived_status,valued_at_cost,value_thb"),
       familyQ,
-      // เงินลงทุนสุทธิรายพอร์ต: เงินโอนก่อน Go-live + โอนไป / โอนกลับหลัง Go-live
-      supabase.from("portfolio_capital_transfers").select("id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes").is("deleted_at", null),
+      // เงินลงทุนสุทธิรายพอร์ต: ต้นทุนรวมของยอดตั้งต้น + โอนไป / โอนกลับหลัง Go-live
+      supabase.from("investment_transactions").select(`${OPENING_COST_COLS},pf:investment_portfolios!inner(asset_id)`)
+        .eq("transaction_type", "OPENING_BALANCE").is("deleted_at", null).limit(5000),
       //   + ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต)
       supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).in("movement_type", ["INVESTMENT_OUT", "INVESTMENT_IN"])
         .or("is_derived.eq.false,source_entity_type.eq.INVESTMENT_TX").is("deleted_at", null).limit(5000),
@@ -142,9 +143,11 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const types = [...new Set(list.map((p) => pfType.get(p.asset_id) ?? "OTHER"))];
   const tFilter = types.includes(sp.t ?? "") ? sp.t : undefined;
   const tHref = (t?: string) => { const q = new URLSearchParams(); if (sp.p) q.set("p", sp.p); if (t) q.set("t", t); const s = q.toString(); return `/investments${s ? `?${s}` : ""}`; };
-  // เงินลงทุนสุทธิ (บาท × สัดส่วนของสมาชิกที่เลือก) · null = ยังไม่มีเงินโอน
+  const openingRows: OpeningCost[] = ((opening ?? []) as unknown as (Omit<OpeningCost, "portfolio_asset_id"> & { pf: { asset_id: string } })[])
+    .map((o) => ({ ...o, portfolio_asset_id: o.pf.asset_id }));
+  // เงินลงทุนสุทธิ (บาท × สัดส่วนของสมาชิกที่เลือก) · null = ไม่มียอดตั้งต้นและยังไม่มีเงินโอน
   const investedOf = (assetId: string, ccy: string) => {
-    const n = netInvested(assetId, ccy, (capPre as CapitalPre[] | null) ?? [], (capMoves as CapitalMove[] | null) ?? []);
+    const n = netInvested(assetId, ccy, openingRows, (capMoves as CapitalMove[] | null) ?? []);
     return n.lines.length ? n.thb * sh(assetId) : null;
   };
   const receivedOf = (assetId: string, ccy: string) =>
