@@ -23,15 +23,19 @@ export const movePortfolio = (m: CapitalMove) => (m.movement_type === "INVESTMEN
 /**
  * รวมเงินลงทุนสุทธิของพอร์ตหนึ่ง · pfCcy = สกุลพอร์ต
  * บาท: ก่อน Go-live = ต้นทุนรวมของยอดตั้งต้น (1 บรรทัด) · โอนไป = ยอดบาทของฝั่งธนาคาร (base_amount) · โอนกลับ = ยอดบาทที่เข้าบัญชี (ยังไม่ทราบ → base_amount)
- * สกุลพอร์ต: ยอดฝั่งพอร์ต · ไม่ทราบสักรายการ (เช่น รอยอดปลายทาง / ยอดตั้งต้นต่างสกุลพอร์ต) → null (แสดงเฉพาะบาท)
+ * สกุลพอร์ต: ยอดฝั่งพอร์ต · ไม่ทราบสักรายการ (เช่น รอยอดปลายทาง / ยอดตั้งต้นไม่มีสกุลพอร์ตเลย) → null (แสดงเฉพาะบาท)
  */
 export function netInvested(assetId: string, pfCcy: string, opening: OpeningCost[], moves: CapitalMove[]): NetInvested {
   const lines: CapitalLine[] = [];
   const op = opening.filter((o) => o.portfolio_asset_id === assetId);
   if (op.length) {
     const thb = op.reduce((t, o) => t + Number(o.cost_base_currency ?? 0), 0);
+    // ยอดตั้งต้นต่างสกุลพอร์ต (เช่น AUD ในพอร์ต USD) แปลงด้วยอัตราเฉลี่ยของยอดตั้งต้นสกุลพอร์ต (ต้นทุนบาท ÷ ต้นทุนสกุลพอร์ต)
+    const same = op.filter((o) => o.currency === pfCcy);
+    const sameCcy = same.reduce((t, o) => t + Number(o.quantity ?? 0) * Number(o.price ?? 0), 0);
+    const sameThb = same.reduce((t, o) => t + Number(o.cost_base_currency ?? 0), 0);
     lines.push({ key: "opening", date: op[0].transaction_date, kind: "PRE", thb,
-      ccy: pfCcy === "THB" ? thb : op.every((o) => o.currency === pfCcy) ? op.reduce((t, o) => t + Number(o.quantity ?? 0) * Number(o.price ?? 0), 0) : null });
+      ccy: pfCcy === "THB" ? thb : same.length === op.length ? sameCcy : sameCcy > 0 && sameThb > 0 ? sameCcy + (thb - sameThb) * sameCcy / sameThb : null });
   }
   moves.filter((m) => movePortfolio(m) === assetId).forEach((m) => {
     const out = m.movement_type === "INVESTMENT_OUT";
