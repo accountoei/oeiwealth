@@ -12,8 +12,10 @@ const lbl = "block text-sm text-slate-700";
 const btn = "rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50";
 
 /* ------------------------------------------------------------------ แก้ไขรายละเอียดพอร์ต (ใช้ใน pop up "แก้ไขข้อมูล") */
-export function PortfolioInfoForm({ assetId, name, institution, portfolioType, currency, notes }: {
+export function PortfolioInfoForm({ assetId, name, institution, portfolioType, currency, notes, fxCcys, statementFx, statementFxDate }: {
   assetId: string; name: string; institution: string; portfolioType: string; currency: string; notes: string | null;
+  /** สกุลอื่นที่มีในพอร์ต (ไม่ใช่สกุลพอร์ต) → ช่องอัตราตาม Statement */
+  fxCcys: string[]; statementFx: Record<string, number> | null; statementFxDate: string | null;
 }) {
   const [ccy, setCcy] = useState(currency);
   const [confirm, setConfirm] = useState(false);
@@ -35,6 +37,21 @@ export function PortfolioInfoForm({ assetId, name, institution, portfolioType, c
         </label>
         <label className={`${lbl} md:col-span-2`}>หมายเหตุ<input name="notes" defaultValue={notes ?? ""} className={input} /></label>
       </div>
+      {currency !== "THB" && fxCcys.length > 0 && !ccyChanged && (
+        <div className="rounded-lg border border-slate-200 p-3">
+          <input type="hidden" name="statement_fx" value="1" />
+          <p className="text-sm font-medium text-slate-800">อัตราแลกเปลี่ยนตาม Statement</p>
+          <p className="text-xs text-slate-500">ใส่ตามธนาคาร ให้มูลค่าเป็น {currency} ตรงกับ Statement · เว้นว่าง = ใช้อัตรา ธปท. · มูลค่าเป็นบาท (ความมั่งคั่งสุทธิ) ใช้อัตรา ธปท. เสมอ</p>
+          <div className="mt-2 grid gap-3 md:grid-cols-4">
+            <label className={lbl}>ณ วันที่ (Statement)<input type="date" name="statement_fx_date" defaultValue={statementFxDate ?? ""} className={input} /></label>
+            {fxCcys.map((c) => (
+              <label key={c} className={lbl}>1 {c} = ? {currency}
+                <input name={`fx_rate_${c}`} inputMode="decimal" defaultValue={statementFx?.[c] ?? ""} className={input} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       {ccyChanged && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-medium">เปลี่ยนสกุลพอร์ต {currency} → {ccy}</p>

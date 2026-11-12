@@ -145,6 +145,9 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const totalThb = active.reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const cashHoldings = active.filter((h) => h.holding_type === "CASH");
   const securities = holdings.filter((h) => h.holding_type !== "CASH");
+  // อัตราตาม Statement (สกุลอื่น → สกุลพอร์ต) · ช่องกรอก = สกุลอื่นที่มีในพอร์ต + สกุลที่เคยใส่อัตราไว้
+  const stmtFx = Object.entries((pf.statement_fx ?? {}) as Record<string, number>);
+  const fxCcys = [...new Set([...holdings.map((h) => h.currency), ...stmtFx.map(([c]) => c)])].filter((c) => c !== a.currency).sort();
   const cashAccounts: CashAcct[] = cashHoldings.map((h) => ({ id: h.id, name: h.name, currency: h.currency, is_default_cash: h.is_default_cash }));
   const secThb = securities.filter((h) => h.status === "ACTIVE").reduce((s, h) => s + (thbOf(h) ?? 0), 0);
   const rateNote = (h: H) => h.currency === "THB" ? null
@@ -243,8 +246,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (
-              <div className="mt-1 text-xs text-slate-500">= {money(pv?.portfolio_value ?? null, a.currency, 0)}
-                {pv?.portfolio_fx_rate ? ` · 1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท` : ""}</div>
+              <div className="mt-1 text-xs text-slate-500">{stmtFx.length ? "มูลค่า " : "= "}{money(pv?.portfolio_value ?? null, a.currency, 0)}
+                {pv?.portfolio_fx_rate ? ` · 1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท` : ""}
+                {stmtFx.length > 0 && <div>{stmtFx.map(([c]) => c).join(" / ")} คิดเป็น {a.currency} ตามอัตรา Statement {thDate(pf.statement_fx_date)}
+                  {" "}({stmtFx.map(([c, r]) => `1 ${c} = ${money(r, undefined, 4)}`).join(" · ")})</div>}</div>
             )}
             {Number(pv?.in_transit ?? 0) !== 0 && (
               <div className="mt-1 text-xs text-amber-700">+ เงินโอนที่รอใส่ยอด {money(pv?.in_transit ?? 0, a.currency, 0)}</div>
@@ -274,7 +279,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 <WithStatus status={{ table: "assets", id, value: a.status, paths, label: "สถานะพอร์ต",
                   options: [["ACTIVE", "ใช้งาน"], ["CLOSED", "ปิดพอร์ตแล้ว"]],
                   remove: me.role === "ADMIN" ? { kind: "asset", id, redirectTo: "/investments", paths: ["/investments"], label: "ลบพอร์ตนี้", hint: "ลบได้เฉพาะพอร์ตที่มีแค่ยอดตั้งต้น (ไม่มีซื้อ ขาย ปันผล หรือการโอน)" } : undefined }}>
-                  <PortfolioInfoForm assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type} currency={a.currency} notes={a.notes} />
+                  <PortfolioInfoForm assetId={id} name={a.name} institution={pf.institution} portfolioType={pf.portfolio_type} currency={a.currency} notes={a.notes}
+                    fxCcys={fxCcys} statementFx={pf.statement_fx} statementFxDate={pf.statement_fx_date} />
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
