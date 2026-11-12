@@ -20,8 +20,7 @@ export function resetKeptHeight(nav = false) {
 
 /**
  * กันหน้าจอเด้งเมื่อกดตัวกรอง / เปลี่ยนเดือน / เปลี่ยนแท็บ: ผลกรองหรือแท็บใหม่สั้นลง browser จะไม่ดึงหน้าจอขึ้น
- *   ตัวกรอง (path เดิม เปลี่ยนแค่ ?…) → เนื้อหาไม่หดต่ำกว่าความสูงที่เคยมี
- *   แท็บ (resetKeptHeight) → สูงพอให้ตำแหน่งเลื่อนเดิมยังอยู่ แล้วหดตามเมื่อเลื่อนขึ้น
+ *   ตัวกรอง / แท็บ → สูงพอให้ตำแหน่งเลื่อนเดิมยังอยู่ (ที่ว่างถึงขอบล่างจอเท่านั้น) แล้วหดตามเมื่อเลื่อนขึ้น
  *   เปลี่ยนหน้า (ไม่ใช่กดแท็บ) → เริ่มนับใหม่
  */
 export default function KeepHeight({ children }: { children: React.ReactNode }) {
@@ -42,9 +41,13 @@ export default function KeepHeight({ children }: { children: React.ReactNode }) 
       keep = Math.max(parseFloat(el.style.minHeight || "0"), box.offsetHeight);
       shrink = true;
     } else el.style.minHeight = "";
+    // เนื้อหาสูงขึ้น → จำไว้ · เนื้อหาหด (ตัวกรอง / เปลี่ยนเดือน) → เหลือที่ว่างแค่ถึงขอบล่างจอ (หน้าไม่เด้ง แต่เลื่อนลงไปเจอที่ว่างไม่ได้ · 12 พ.ย. 2026)
     const ro = new ResizeObserver(() => {
       const h = box.offsetHeight;
-      if (h > keep) { keep = h; shrink = false; apply(); }
+      if (h >= keep) { keep = h; shrink = false; apply(); return; }
+      const want = Math.max(h, needed());
+      if (want < keep) { keep = want; apply(); }
+      shrink = keep > h;
     });
     ro.observe(box);
     const reset = () => {
