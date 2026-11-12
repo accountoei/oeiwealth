@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useState, useSyncExternalStore, useTransition, type ReactNode, type TransitionStartFunction } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, useTransition, type ReactNode, type TransitionStartFunction } from "react";
 import { Info } from "lucide-react";
 import { createPortal } from "react-dom";
 import { NAV, NAV_HREFS } from "./nav";
@@ -43,24 +43,30 @@ export function PageInfo({ children }: { children: ReactNode }) {
 
 /** ไอคอน ⓘ ชี้ / แตะ แล้วแสดงคำอธิบาย · ใช้ที่หัวกล่องได้ด้วย · กล่องคำอธิบายเริ่มที่ไอคอน แล้วเลื่อนซ้ายเองเมื่อทางขวาไม่พอ (ไม่ล้นจอ) */
 export function InfoTip({ children, label = "คำอธิบายหน้านี้" }: { children: ReactNode; label?: string }) {
-  const [open, setOpen] = useState(false);
-  const [shift, setShift] = useState(0);
+  // ตำแหน่งบนจอ (fixed) วางที่ body / pop up ที่เปิดอยู่: ลอยเหนือทุกกล่อง ไม่ถูกกล่องที่เลื่อนซ้าย–ขวาได้ (overflow) ตัดทิ้ง (12 พ.ย. 2026)
+  const [pos, setPos] = useState<{ left: number; top: number; host: Element } | null>(null);
   const show = (el: HTMLElement, v: boolean) => {
-    if (v) {
-      const r = el.getBoundingClientRect(), w = Math.min(352, window.innerWidth * 0.8);
-      setShift(Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) - r.left);
-    }
-    setOpen(v);
+    if (!v) { setPos(null); return; }
+    const r = el.getBoundingClientRect(), w = Math.min(352, window.innerWidth * 0.8);
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), top: r.bottom + 4, host: el.closest("dialog") ?? document.body });
   };
+  // เลื่อนหน้า / ย่อขยายจอ ระหว่างเปิด → ปิด (กล่องไม่ลอยค้างห่างจากไอคอน)
+  useEffect(() => {
+    if (!pos) return;
+    const close = () => setPos(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [pos]);
   return (
-    <span className="relative inline-flex" onMouseEnter={(e) => show(e.currentTarget, true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" aria-label={label} aria-expanded={open} onClick={(e) => show(e.currentTarget, !open)} onBlur={() => setOpen(false)}
+    <span className="relative inline-flex" onMouseEnter={(e) => show(e.currentTarget, true)} onMouseLeave={() => setPos(null)}>
+      <button type="button" aria-label={label} aria-expanded={!!pos} onClick={(e) => show(e.currentTarget, !pos)} onBlur={() => setPos(null)}
         className="tap rounded-full p-0.5 text-slate-400 hover:text-slate-700"><Info className="h-4 w-4" /></button>
       {/* whitespace-normal / text-left: กล่องไม่รับค่าจากที่วาง (หัวตารางที่ nowrap → ข้อความล้นกล่องทับตาราง · แก้ 8 พ.ย. 2026) */}
-      {open && (
-        <span role="tooltip" style={{ left: shift }} className={`absolute top-full z-30 mt-1 w-[min(22rem,80vw)] whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed text-slate-600 shadow-lg`}>
+      {pos && createPortal(
+        <span role="tooltip" style={{ left: pos.left, top: pos.top }} className={`fixed z-50 w-[min(22rem,80vw)] whitespace-normal rounded-lg border border-slate-200 bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed text-slate-600 shadow-lg`}>
           {children}
-        </span>
+        </span>, pos.host,
       )}
     </span>
   );
