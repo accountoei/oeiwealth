@@ -411,6 +411,15 @@ export function monthOptions(goLiveDate: string | null | undefined, today: strin
   return out;
 }
 
+/** ช่องเลือกเดือน + เดือนยอดตั้งต้น (เดือนก่อน Go-live · ป้าย "(ยอดตั้งต้น)") ต่อท้าย — ให้เปิดดู / แก้ยอดตั้งต้นได้ (หน้าบัญชีธนาคาร) */
+export function withOpeningMonth(opts: { value: string; label: string }[], goLiveDate: string | null | undefined) {
+  if (!goLiveDate) return opts;
+  const openYm = monthRange(goLiveDate.slice(0, 7)).prev;
+  const out = opts.some((x) => x.value === openYm) ? [...opts] : [...opts, { value: openYm, label: thMonth(`${openYm}-01`) }];
+  return out.sort((a, b) => b.value.localeCompare(a.value))
+    .map((x) => (x.value === openYm ? { ...x, label: `${thMonth(`${openYm}-01`)} (ยอดตั้งต้น)` } : x));
+}
+
 /** ปุ่มคำสั่งในแถวตาราง (บันทึกรับ / บันทึกจ่าย) · สีเดียวกันทุกหน้า */
 /** คอลัมน์รายละเอียดคู่สัญญาของเงินให้กู้ (loan_details · ใช้ทั้งหน้าสัญญาและหน้าพิมพ์) */
 export const LOAN_PARTY_COLS = "borrower_address,borrower_id_last4,guarantor_name,guarantor_phone,guarantor_address,guarantor_id_last4,witness1_name,witness2_name,contract_place_type,contract_place_business_id,contract_place_text,repay_bank_asset_id,borrower_person_id,borrower_business_id,borrower_bank_asset_id";
