@@ -3354,16 +3354,16 @@ SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไ�
 SELECT t.ok(t.ig() = 750, 'กำไรเงินลงทุน: ขาย 50 หน่วยที่ 55 (ราคาล่าสุด 60) → ขาดทุนจากราคาล่าสุด −250');
 SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','FEE','date',current_date,'amount',30,
   'holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'))) IS NOT NULL AS g_fee;
-SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: ค่าธรรมเนียมในพอร์ต −30 ลดกำไร');
+SELECT t.ok(t.ig() = 750, 'กำไรเงินลงทุน: ค่าธรรมเนียมในพอร์ต −30 เป็นค่าใช้จ่ายแล้ว (#426) ไม่ลดกำไรซ้ำ');
 SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','BUY','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
   'quantity',10,'price',60,'settle_bank_asset_id',t.a('KBank ออมทรัพย์'))) IS NOT NULL AS g_buy_bank;
 SELECT public.record_investment_tx(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('type','SELL','date',current_date,'holding_id',t.h('กองทุนทดสอบกำไร'),
   'quantity',10,'price',60,'settle_bank_asset_id',t.a('KBank ออมทรัพย์'))) IS NOT NULL AS g_sell_bank;
-SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: ซื้อ / ขายที่ตัดจาก / เข้าบัญชีธนาคาร ที่ราคาล่าสุด ไม่เปลี่ยนกำไร');
+SELECT t.ok(t.ig() = 750, 'กำไรเงินลงทุน: ซื้อ / ขายที่ตัดจาก / เข้าบัญชีธนาคาร ที่ราคาล่าสุด ไม่เปลี่ยนกำไร');
 SELECT public.transfer_portfolio_money(t.a('พอร์ตทดสอบกำไร'), jsonb_build_object('direction','OUT','bank_asset_id',t.a('KBank ออมทรัพย์'),
   'cash_holding_id',t.h('เงินฝากพอร์ตทดสอบกำไร'),'date',current_date,'amount','1000','counter_amount','1000')) IS NOT NULL AS g_out;
-SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: โอนเงินพอร์ต → ธนาคาร ไม่ใช่ขาดทุน');
-SELECT t.ok(t.ig(t.p('คุณพ่อ')) = 720 AND t.ig(t.p('คุณแม่')) = 0, 'กำไรเงินลงทุน รายคน: ตามสัดส่วนเจ้าของ (คุณพ่อ 100%)');
+SELECT t.ok(t.ig() = 750, 'กำไรเงินลงทุน: โอนเงินพอร์ต → ธนาคาร ไม่ใช่ขาดทุน');
+SELECT t.ok(t.ig(t.p('คุณพ่อ')) = 750 AND t.ig(t.p('คุณแม่')) = 0, 'กำไรเงินลงทุน รายคน: ตามสัดส่วนเจ้าของ (คุณพ่อ 100%)');
 SELECT t.ok((SELECT (j->>'gain')::numeric = (SELECT sum((e->>'gain')::numeric) FROM jsonb_array_elements(j->'by_portfolio') e)
                FROM (SELECT public.month_investment_gain(date_trunc('month', current_date)::date) AS j) x),
             'กำไรเงินลงทุน: ยอดรวม = ผลรวมรายพอร์ต');
@@ -3371,7 +3371,7 @@ SELECT t.ok((SELECT (j->>'fx')::numeric <> 0 FROM (SELECT public.month_investmen
             'กำไรเงินลงทุน: พอร์ต USD มีส่วนจาก FX เมื่ออัตราเปลี่ยน');
 SELECT t.ok((SELECT j IS NULL FROM (SELECT public.month_investment_gain('2026-05-01') AS j) x), 'กำไรเงินลงทุน: เดือนก่อน Go-live ไม่มีฐานเทียบ = NULL');
 SELECT t.login('00000000-0000-0000-0000-00000000000f');
-SELECT t.ok(t.ig() = 720, 'กำไรเงินลงทุน: VIEWER ดูได้');
+SELECT t.ok(t.ig() = 750, 'กำไรเงินลงทุน: VIEWER ดูได้');
 SELECT t.ok(NOT has_function_privilege('anon', 'public.month_investment_gain(date, uuid)', 'EXECUTE'), 'กำไรเงินลงทุน: anon เรียกไม่ได้');
 RESET ROLE;
 ROLLBACK;
@@ -6077,6 +6077,115 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.expense_items WHERE source_investme
 SELECT t.ok(NOT has_function_privilege('authenticated', 'private.sync_itx_fee_expense(uuid)', 'EXECUTE')
             AND NOT has_function_privilege('anon', 'private.sync_itx_fee_expense(uuid)', 'EXECUTE'),
             'ค่าธรรมเนียมพอร์ต: ฟังก์ชันภายในเรียกตรงไม่ได้');
+ROLLBACK;
+
+\echo '== 13zz99999. ก้อนรอแยกของบัญชีเงินฝากในพอร์ต (12 พ.ย. 2026 · ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SELECT (date_trunc('month', current_date) - interval '1 month')::date - 1 AS pl0, (date_trunc('month', current_date) - interval '1 month')::date + 4 AS pl1,
+       (date_trunc('month', current_date) - interval '1 month')::date + 9 AS pl2, (date_trunc('month', current_date) - interval '1 month')::date + 14 AS pl3,
+       (date_trunc('month', current_date) - interval '1 month')::date + 19 AS pl4, (date_trunc('month', current_date) - interval '1 month')::date + 24 AS pl5 \gset
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+INSERT INTO public.assets(family_id, asset_group, asset_type, name, currency)
+  SELECT id, 'INVESTMENT', 'INVESTMENT_PORTFOLIO', 'พอร์ตก้อนรอแยก', 'THB' FROM public.families;
+INSERT INTO public.investment_portfolios(asset_id, institution) VALUES (t.a('พอร์ตก้อนรอแยก'), 'ทดสอบ');
+INSERT INTO public.asset_ownerships(asset_id, person_id, ownership_percent, start_date)
+  VALUES (t.a('พอร์ตก้อนรอแยก'), t.p('คุณพ่อ'), 60, '2020-01-01'), (t.a('พอร์ตก้อนรอแยก'), t.p('คุณแม่'), 40, '2020-01-01');
+SELECT public.add_holding(t.a('พอร์ตก้อนรอแยก'), 'CASH', 'เงินฝากพอร์ตก้อน', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS pl_cash;
+SELECT public.add_holding(t.a('พอร์ตก้อนรอแยก'), 'BOND', 'หุ้นกู้พอร์ตก้อน', NULL, 'THB', NULL, NULL, NULL) IS NOT NULL AS pl_bond;
+CREATE OR REPLACE FUNCTION pg_temp.pl_inc() RETURNS public.income_transactions LANGUAGE sql AS $f$
+  SELECT * FROM public.income_transactions WHERE lump_cash_holding_id = t.h('เงินฝากพอร์ตก้อน') AND deleted_at IS NULL $f$;
+CREATE OR REPLACE FUNCTION pg_temp.pl_exp() RETURNS public.expense_items LANGUAGE sql AS $f$
+  SELECT * FROM public.expense_items WHERE lump_cash_holding_id = t.h('เงินฝากพอร์ตก้อน') AND deleted_at IS NULL $f$;
+CREATE OR REPLACE FUNCTION pg_temp.pl_val(d date, v numeric) RETURNS void LANGUAGE sql AS $f$
+  INSERT INTO public.investment_valuations(holding_id, valuation_date, price, quantity, market_value, source)
+  VALUES (t.h('เงินฝากพอร์ตก้อน'), d, 1, v, v, 'STATEMENT') $f$;
+-- ยอดแรก (ไม่มียอดตั้งต้นก่อนหน้า) → ไม่มีก้อน
+SELECT pg_temp.pl_val(:'pl0', 1000);
+SELECT t.ok((pg_temp.pl_inc()).id IS NULL AND (pg_temp.pl_exp()).id IS NULL, 'ก้อนพอร์ต: ยอดแรกของบัญชี ไม่มียอดตั้งต้นให้เทียบ → ไม่มีก้อน');
+-- เดือนถัดไป ยอดสูงกว่า → รายได้รอแยก ผูกพอร์ต · ไม่มีเงินเข้าบัญชีใด
+SELECT pg_temp.pl_val(:'pl4', 1100);
+SELECT t.ok((SELECT amount = 100 AND date = :'pl4' AND lump_from = :'pl0' AND pending_split AND asset_id = t.a('พอร์ตก้อนรอแยก')
+                    AND received_to_asset_id IS NULL AND notes LIKE 'รอแยกรายละเอียด · ส่วนต่างยอด เงินฝากพอร์ตก้อน · พอร์ตก้อนรอแยก%'
+               FROM pg_temp.pl_inc()),
+            'ก้อนพอร์ต: ยอด Statement สูงกว่าที่คำนวณ 100 → รายได้รอแยก ลงวันที่ของยอด ผูกพอร์ต');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM public.cash_movements m WHERE m.source_entity_id = (pg_temp.pl_inc()).id AND m.deleted_at IS NULL),
+            'ก้อนพอร์ต: ไม่มีรายการเงินเข้า–ออกบัญชี (ไม่อยู่ในกล่องเงินเข้า–ออกบัญชี)');
+SELECT t.ok((SELECT sum(share_percent) = 100 AND sum(share_percent) FILTER (WHERE person_id = t.p('คุณพ่อ')) = 60
+               FROM public.v_income_by_person WHERE income_id = (pg_temp.pl_inc()).id),
+            'ก้อนพอร์ต: รายได้แบ่งรายคนตามเจ้าของพอร์ต (60 / 40)');
+-- ยอดย้อนหลังก่อนวันที่ของก้อนในเดือนเดียวกัน = เก็บประวัติอย่างเดียว
+SELECT pg_temp.pl_val(:'pl2', 2000);
+SELECT t.ok((SELECT amount = 100 AND date = :'pl4' FROM pg_temp.pl_inc()), 'ก้อนพอร์ต: ยอดย้อนหลังก่อนวันที่ของก้อน ไม่เปลี่ยนก้อน');
+-- ยอดใหม่ในเดือนเดียวกัน ต่ำกว่า → ก้อนเดียว กลับด้านเป็นค่าใช้จ่าย ย้ายวันที่
+SELECT pg_temp.pl_val(:'pl5', 900);
+SELECT t.ok((pg_temp.pl_inc()).id IS NULL
+            AND (SELECT amount = 100 AND date = :'pl5' AND lump_kind = 'PF_CASH' AND related_asset_id = t.a('พอร์ตก้อนรอแยก')
+                        AND paid_from_asset_id IS NULL AND paid_from_cash_holding_id IS NULL FROM pg_temp.pl_exp())
+            AND (SELECT count(*) FROM public.expense_items WHERE lump_cash_holding_id = t.h('เงินฝากพอร์ตก้อน') AND deleted_at IS NULL) = 1,
+            'ก้อนพอร์ต: ยอดล่าสุดของเดือนต่ำกว่า → ก้อนเดียว กลับเป็นค่าใช้จ่าย 100 ย้ายวันที่');
+SELECT t.ok((SELECT sum(share_percent) = 100 AND sum(share_percent) FILTER (WHERE person_id = t.p('คุณแม่')) = 40
+               FROM public.v_expense_by_person WHERE expense_item_id = (pg_temp.pl_exp()).id),
+            'ก้อนพอร์ต: ค่าใช้จ่ายแบ่งรายคนตามเจ้าของพอร์ต');
+-- บันทึกรายการจริงในช่วง → ก้อนเล็กลงเอง
+SELECT public.record_investment_tx(t.a('พอร์ตก้อนรอแยก'), jsonb_build_object('type','FEE','date',:'pl3','amount',30,
+  'holding_id',t.h('เงินฝากพอร์ตก้อน'))) IS NOT NULL AS pl_fee;
+SELECT t.ok((pg_temp.pl_exp()).amount = 70, 'ก้อนพอร์ต: บันทึกค่าธรรมเนียม 30 ในช่วง → ก้อนเหลือ 70');
+-- แก้ / ลบก้อนตรง ๆ ไม่ได้
+SELECT t.fails(format($$UPDATE public.expense_items SET amount = 1 WHERE id = %L$$, (pg_temp.pl_exp()).id), 'แยกรายการ',
+               'ก้อนพอร์ต: แก้ยอดก้อนตรง ๆ ไม่ได้');
+SELECT t.fails($$INSERT INTO public.income_transactions(family_id, asset_id, date, income_type, amount, currency, pending_split, lump_cash_holding_id)
+                 SELECT a.family_id, a.id, current_date, 'OTHER', 1, 'THB', true, t.h('เงินฝากพอร์ตก้อน') FROM public.assets a
+                  WHERE a.id = t.a('พอร์ตก้อนรอแยก')$$, 'สร้างได้จาก', 'ก้อนพอร์ต: สร้างก้อนเองไม่ได้');
+-- แยก: ตรวจยอด / วันที่ / ประเภท
+SELECT t.fails(format($$SELECT public.split_pf_lump('EXPENSE', %L, '[{"type":"FEE","amount":80}]')$$, (pg_temp.pl_exp()).id),
+               'มากกว่ายอดรอแยก', 'ก้อนพอร์ต: แยกเกินยอดก้อนไม่ได้');
+SELECT t.fails(format($$SELECT public.split_pf_lump('EXPENSE', %L, jsonb_build_array(jsonb_build_object('type','FEE','amount',10,'date',%L::date)))$$,
+                      (pg_temp.pl_exp()).id, :'pl0'), 'นอกช่วง', 'ก้อนพอร์ต: วันที่ก่อนยอดตั้งต้นไม่ได้');
+SELECT t.fails(format($$SELECT public.split_pf_lump('EXPENSE', %L, '[{"type":"BUY","amount":10}]')$$, (pg_temp.pl_exp()).id),
+               'ประเภทบรรทัด', 'ก้อนพอร์ต: ประเภทที่ไม่รองรับ');
+SELECT t.fails(format($$SELECT public.split_pf_lump('EXPENSE', %L, '[{"type":"TRANSFER_OUT","amount":10}]')$$, (pg_temp.pl_exp()).id),
+               'เลือกบัญชีธนาคาร', 'ก้อนพอร์ต: โอนต้องเลือกบัญชีธนาคาร');
+-- แยกเป็นค่าธรรมเนียม + โอนออกไปบัญชีธนาคาร → ก้อนหมด
+SELECT public.split_pf_lump('EXPENSE', (pg_temp.pl_exp()).id, jsonb_build_array(
+  jsonb_build_object('type','FEE','amount',20,'date',:'pl3'),
+  jsonb_build_object('type','TRANSFER_OUT','amount',50,'bank_asset_id',t.a('KBank ออมทรัพย์'),'notes','โอนกลับธนาคาร')));
+SELECT t.ok((pg_temp.pl_exp()).id IS NULL AND (pg_temp.pl_inc()).id IS NULL, 'ก้อนพอร์ต: แยกครบ (ค่าธรรมเนียม + โอนออก) → ก้อนหาย');
+SELECT t.ok((SELECT count(*) FROM public.cash_movements WHERE movement_type = 'INVESTMENT_IN' AND from_asset_id = t.a('พอร์ตก้อนรอแยก')
+               AND to_asset_id = t.a('KBank ออมทรัพย์') AND amount = 50 AND cash_holding_id = t.h('เงินฝากพอร์ตก้อน')
+               AND movement_date = :'pl5' AND deleted_at IS NULL) = 1
+            AND (SELECT count(*) FROM public.expense_items e JOIN public.investment_transactions x ON x.id = e.source_investment_tx_id
+                  WHERE x.portfolio_id = (SELECT id FROM public.investment_portfolios WHERE asset_id = t.a('พอร์ตก้อนรอแยก'))
+                    AND e.deleted_at IS NULL) = 2,
+            'ก้อนพอร์ต: โอนออกเข้าบัญชีธนาคาร 50 + ค่าธรรมเนียมเป็นรายจ่าย 2 รายการ');
+SELECT t.ok((SELECT hv.value FROM private.holding_value_at(t.h('เงินฝากพอร์ตก้อน')) hv) = 900, 'ก้อนพอร์ต: ยอดเงินฝากในพอร์ตยังตาม Statement (900)');
+RESET ROLE;
+-- กำไร / ขาดทุนเงินลงทุน: ค่าธรรมเนียม + ก้อน = เงินออกจากพอร์ต (ไม่นับซ้ำ) · รวม = ยอดเปลี่ยน
+UPDATE public.cash_movements SET deleted_at = now() WHERE movement_type = 'INVESTMENT_IN' AND from_asset_id = t.a('พอร์ตก้อนรอแยก');
+SELECT t.ok((pg_temp.pl_exp()).amount = 50, 'ก้อนพอร์ต: ลบเงินโอนที่แยกออกไป → ก้อนกลับมา 50');
+SELECT t.ok((SELECT sum(thb) FROM private.portfolio_flows((SELECT id FROM public.families), :'pl0', :'pl5')
+              WHERE asset_id = t.a('พอร์ตก้อนรอแยก')) = -100,
+            'ก้อนพอร์ต: เงินเข้า–ออกพอร์ต (ค่าธรรมเนียม 50 + ก้อน 50) = ยอดเปลี่ยน −100 → กำไร / ขาดทุน 0');
+-- เดือนนี้: ยอดสูงขึ้น → แยกเป็นดอกเบี้ย + คูปอง (หักภาษี)
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT pg_temp.pl_val(current_date, 1000);
+SELECT t.ok((SELECT amount = 100 AND lump_from = :'pl5' FROM pg_temp.pl_inc()), 'ก้อนพอร์ต: เดือนใหม่ ตั้งต้นจากยอดล่าสุดเดือนก่อน → รายได้รอแยก 100');
+SELECT t.fails(format($$SELECT public.split_pf_lump('INCOME', %L, '[{"type":"COUPON","amount":50}]')$$, (pg_temp.pl_inc()).id),
+               'เลือกหลักทรัพย์', 'ก้อนพอร์ต: คูปองต้องเลือกหุ้นกู้');
+SELECT public.split_pf_lump('INCOME', (pg_temp.pl_inc()).id, jsonb_build_array(
+  jsonb_build_object('type','INTEREST','amount',60),
+  jsonb_build_object('type','COUPON','amount',50,'tax',10,'holding_id',t.h('หุ้นกู้พอร์ตก้อน'))));
+SELECT t.ok((pg_temp.pl_inc()).id IS NULL
+            AND (SELECT count(*) FROM public.income_transactions i JOIN public.investment_transactions x ON x.id = i.source_transaction_id
+                  WHERE x.cash_holding_id = t.h('เงินฝากพอร์ตก้อน') AND x.transaction_type IN ('INTEREST','COUPON') AND i.deleted_at IS NULL) = 2,
+            'ก้อนพอร์ต: แยกเป็นดอกเบี้ย 60 + คูปอง 50 (ภาษี 10) → รายได้ลงทุน 2 รายการ ก้อนหาย');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails(format($$SELECT public.split_pf_lump('EXPENSE', %L, '[{"type":"FEE","amount":1}]')$$, (pg_temp.pl_exp()).id),
+               'PERMISSION|สิทธิ์|denied', 'ก้อนพอร์ต: VIEWER แยกไม่ได้');
+RESET ROLE;
+SELECT t.ok(NOT has_function_privilege('anon', 'public.split_pf_lump(text, uuid, jsonb)', 'EXECUTE')
+            AND NOT has_function_privilege('authenticated', 'private.sync_pf_cash_lump(uuid, date)', 'EXECUTE')
+            AND NOT has_function_privilege('authenticated', 'private.pf_cash_flows(uuid, date, date)', 'EXECUTE'),
+            'ก้อนพอร์ต: anon เรียกแยกไม่ได้ · ฟังก์ชันภายในเรียกตรงไม่ได้');
 ROLLBACK;
 
 \echo 'ALL SCENARIO TESTS PASSED'

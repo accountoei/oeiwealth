@@ -360,6 +360,19 @@ export async function setDefaultCash(form: FormData): Promise<void> {
   revalidate(String(form.get("asset_id")));
 }
 
+/** แยกก้อน "รอแยกรายละเอียด" ของบัญชีเงินฝากในพอร์ต → รายการจริงในพอร์ต (ADMIN / EDITOR · ฐานข้อมูลตรวจยอด / วันที่) */
+export async function splitPfLump(_: ActionState, form: FormData): Promise<ActionState> {
+  let lines: unknown;
+  try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "ข้อมูลไม่ถูกต้อง" }; }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("split_pf_lump", { p_kind: String(form.get("kind")), p_id: String(form.get("id")), p_lines: lines });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(String(form.get("asset_id")));
+  revalidatePath("/income-expenses");
+  revalidatePath("/financial/cash", "layout");
+  return { ok: "แยกรายการแล้ว" };
+}
+
 const pct = (v: FormDataEntryValue | null) => num(v);
 
 /** เงินที่โอนเข้าพอร์ตก่อน Go-live (อ้างอิง · ไม่กระทบยอดบัญชี / Net Worth) — ฐานข้อมูลตรวจวันที่ก่อน Go-live */

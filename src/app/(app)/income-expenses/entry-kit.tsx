@@ -28,8 +28,8 @@ import type { PfCash } from "@/lib/pf-cash";
  */
 
 // คอลัมน์ที่ต้องใช้ (select เดียวกันทั้งสองหน้า)
-export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
-export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id),source_investment_tx_id,src_itx:investment_transactions!expense_items_source_investment_tx_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
+export const INC_SELECT = "id,date,income_type,income_subtype,amount,tax,currency,base_amount,received_to_asset_id,received_to_credit_card_id,received_to_liability_id,person_id,lease_id,source_transaction_id,asset_id,insurance_schedule_line_id,notes,pending_split,lump_cash_holding_id,recurring_template_id,persons(name),ins_line:insurance_schedule_lines(policy_id),src_asset:assets!income_transactions_asset_id_fkey(name),src_tx:investment_transactions!income_transactions_source_transaction_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
+export const EXP_SELECT = "id,date,description,amount,currency,base_amount,expense_category,property_cost_type,paid_from_asset_id,paid_from_credit_card_id,paid_from_cash_holding_id,liability_id,insurance_schedule_line_id,property_utility_id,source_fee_side,related_asset_id,pending_split,lump_cash_holding_id,person_id,source_cash_movement_id,is_reimbursable,expected_reimbursement_amount,recurring_expense_id,notes,persons(name),ins_line:insurance_schedule_lines(policy_id,installment_no,pol:insurance_policies(insurance_type,insurer,policy_no)),payment_group_id,internal_loan_income_id,il:income_transactions!expense_items_internal_loan_income_id_fkey(asset_id),source_investment_tx_id,src_itx:investment_transactions!expense_items_source_investment_tx_id_fkey(id,transaction_type,transaction_date,settlement_date,settle_to_asset_id,amount,fee,tax,notes,cash_movement_id)";
 export const MOVE_SELECT = "id,movement_date,movement_type,from_asset_id,to_asset_id,to_credit_card_id,to_liability_id,amount,currency,base_amount,counter_amount,counter_currency,counter_fee,cash_holding_id,fee,is_derived,description,movement_group_id,source_entity_type,source_entity_id,metadata,lease:property_leases!cash_movements_related_lease_id_fkey(pd:property_details!property_leases_property_id_fkey(asset_id))";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -369,13 +369,19 @@ export function makeEntryKit(c: KitCtx) {
     opposite: !!(l.bank || l.card),
     transfers: l.bank ? banks.filter((b) => b.currency === l.currency && b.asset_id !== l.bank).map((b) => ({ id: b.asset_id, name: b.name })) : [],
   });
-  const incSplit = (i: IncFull, rowClick = false) => canWrite && canDelete && i.pending_split ? (
+  // ก้อนของบัญชีเงินฝากในพอร์ต: แยกที่หน้าบัญชีนั้น (บันทึกเป็นรายการในพอร์ต)
+  const pfSplit = (pf: string | null, hid: string) => (
+    <Link href={`/investments/${pf}/cash/${hid}`} title="แยกรายละเอียดที่หน้าเงินฝากในพอร์ต" className={NAME_LINK}>ไปแยกที่หน้าพอร์ต →</Link>
+  );
+  const incSplit = (i: IncFull, rowClick = false) => canWrite && canDelete && i.pending_split && i.lump_cash_holding_id ? pfSplit(i.asset_id, i.lump_cash_holding_id)
+    : canWrite && canDelete && i.pending_split ? (
     <SplitForm key={`${i.id}-${i.full_amount}`} kind="INCOME" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons}
       categories={expCats} hints={expHints} label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
       personDefault={i.received_to_liability_id ? "ตามผู้รับผิดชอบหนี้" : i.received_to_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"}
       sides={sidesOf({ currency: i.currency, bank: i.received_to_asset_id, card: i.received_to_credit_card_id })} />
   ) : null;
-  const expSplit = (i: ExpFull, rowClick = false) => canWrite && canDelete && i.pending_split ? (
+  const expSplit = (i: ExpFull, rowClick = false) => canWrite && canDelete && i.pending_split && i.lump_cash_holding_id ? pfSplit(i.related_asset_id, i.lump_cash_holding_id)
+    : canWrite && canDelete && i.pending_split ? (
     <SplitForm key={`${i.id}-${i.full_amount}`} kind="EXPENSE" id={i.id} amount={Number(i.full_amount)} currency={i.currency} persons={persons} categories={expCats}
       label="แยกรายละเอียด" rowClick={rowClick} buttonCls={SPLIT_BTN}
       personDefault={i.liability_id ? "ตามผู้รับผิดชอบหนี้" : i.paid_from_credit_card_id ? "ตามเจ้าของบัตร" : "ตามเจ้าของบัญชี"} hints={expHints}

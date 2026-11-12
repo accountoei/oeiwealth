@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { detailTitle } from "@/lib/page-title";
 import { requireAppUser } from "@/lib/auth";
-import { ITX_LABEL, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney } from "@/lib/format";
+import { ITX_LABEL, ROW_BTN, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok, plusMoney, minusMoney } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
 import MovesView, { type MoveRow, type StmtRow } from "../../../../income-expenses/MovesView";
 import EditButton from "@/components/EditButton";
+import ModalButton from "@/components/ModalButton";
 import RowActions from "@/components/RowActions";
 import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import EntityDocuments from "@/components/docs/EntityDocuments";
@@ -15,7 +16,7 @@ import { DetailItem as Item } from "@/components/Boxes";
 import { type CashAcct, type PfTransfer } from "../../forms";
 import PfTransferEdit from "../../PfTransferEdit";
 import { cashLedger, type LEvent, type LHolding, type LMove, type LTx, type LVal } from "../../cash-ledger";
-import { CashInfoForm, CashStatementForm, SetDefaultButton } from "./forms";
+import { CashInfoForm, CashStatementForm, PfLumpSplitForm, SetDefaultButton } from "./forms";
 import { PfPayButton } from "../../pf-pay-forms";
 import { EXP_SELECT, makeEntryKit } from "../../../../income-expenses/entry-kit";
 import { loadKitCtx } from "../../../../income-expenses/entry-kit-load";
@@ -54,13 +55,13 @@ export default async function PortfolioCashPage({ params, searchParams }: {
     supabase.from("investment_portfolios").select("id,institution").eq("asset_id", id).is("deleted_at", null).maybeSingle(),
     loadHoldings(id),
     supabase.from("families").select("go_live_date").maybeSingle(),
-    supabase.from("v_bank_accounts_safe").select("asset_id,name"),
+    supabase.from("v_bank_accounts_safe").select("asset_id,name,currency"),
   ]);
   const holdings = (hs as HC[] | null) ?? [];
   const h = holdings.find((x) => x.id === hid);
   if (!a || !pf || !h || h.holding_type !== "CASH") notFound();
 
-  const [{ data: vals }, { data: txs }, { data: mvs }] = await Promise.all([
+  const [{ data: vals }, { data: txs }, { data: mvs }, { data: incLumps }, { data: expLumps }] = await Promise.all([
     supabase.from("investment_valuations").select("id,valuation_date,market_value,source,created_at").eq("holding_id", hid).is("deleted_at", null)
       .order("valuation_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("v_investment_transactions_net").select("*").eq("portfolio_id", pf.id).limit(5000),
@@ -69,6 +70,9 @@ export default async function PortfolioCashPage({ params, searchParams }: {
       .eq("is_derived", false).is("deleted_at", null)
       .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
       .limit(2000),
+    // ก้อนรอแยกของบัญชีนี้ (ยอด Statement ต่างจากรายการที่บันทึก)
+    supabase.from("income_transactions").select("id,date,amount,currency,lump_from").eq("lump_cash_holding_id", hid).eq("pending_split", true).is("deleted_at", null),
+    supabase.from("expense_items").select("id,date,amount,currency,lump_from").eq("lump_cash_holding_id", hid).eq("pending_split", true).is("deleted_at", null),
   ]);
 
   const canWrite = me.role !== "VIEWER";
@@ -186,6 +190,9 @@ export default async function PortfolioCashPage({ params, searchParams }: {
   const closing = L.balanceAt(hid, ccy, valList, end < today ? end : today, fallback).balance;
   const neg = (v: number | null | undefined) => (Number(v ?? 0) < -0.005 ? "text-red-700" : "");
   const thbNow = h.currency === "THB" ? null : h.fx_rate != null ? now.balance * Number(h.fx_rate) : null;
+  const lumps = [...(incLumps ?? []).map((x) => ({ ...x, kind: "INCOME" as const })), ...(expLumps ?? []).map((x) => ({ ...x, kind: "EXPENSE" as const }))]
+    .sort((x, y) => x.date.localeCompare(y.date));
+  const securities = holdings.filter((x) => x.holding_type !== "CASH" && x.currency === ccy).map((x) => ({ id: x.id, name: x.name }));
 
   return (
     <div className="space-y-6">
@@ -290,6 +297,18 @@ export default async function PortfolioCashPage({ params, searchParams }: {
           <span className="text-red-700">เงินออก <b className="tabular-nums">{minusMoney(sumOut)}</b></span>
           <span className="text-slate-600">ยอด{end < today ? "สิ้นเดือน" : "ล่าสุด"} <b className={`tabular-nums ${neg(closing)}`}>{money(closing, ccy)}</b></span>
         </div>
+        {/* เตือนเฉพาะเมื่อมีเรื่องต้องทำ: ยอด Statement ต่างจากรายการที่บันทึก */}
+        {lumps.map((l) => (
+          <div key={l.id} className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-amber-700">
+            <span>มี{l.kind === "INCOME" ? "รายได้" : "ค่าใช้จ่าย"}รอแยกรายละเอียด {thMonth(`${l.date.slice(0, 7)}-01`)} {money(Number(l.amount), l.currency)}</span>
+            {canDelete && (
+              <ModalButton label="แยกรายละเอียด" title={`แยกรายละเอียด · ${h.name}`} className={ROW_BTN}>
+                <PfLumpSplitForm key={`${l.id}-${l.amount}`} assetId={id} lump={{ kind: l.kind, id: l.id, amount: Number(l.amount), currency: l.currency, date: l.date, from: l.lump_from }}
+                  securities={securities} banks={(banks ?? []).map((b) => ({ asset_id: b.asset_id as string, name: b.name as string, currency: b.currency as string }))} />
+              </ModalButton>
+            )}
+          </div>
+        ))}
         <div className="mt-3">
           <MovesView rows={rows} banks={[]} showActions={canWrite} fixedAcct={hid}
             openings={{ [hid]: opening }} statements={{ [hid]: stmts }} monthStart={start} />
