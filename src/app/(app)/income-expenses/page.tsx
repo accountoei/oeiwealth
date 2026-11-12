@@ -373,7 +373,8 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
           {i.currency !== "THB" && <div className="text-xs text-slate-400">≈ {money(netThb, "THB")}</div>}
         </>,
         account: i.received_to_asset_id ? name.get(i.received_to_asset_id) ?? "บัญชี" : i.received_to_credit_card_id ? `เข้าบัตร ${name.get(i.received_to_credit_card_id) ?? ""}`
-          : i.received_to_liability_id ? `ลดหนี้ ${name.get(i.received_to_liability_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน" : "ไม่ผ่านบัญชี",
+          : i.received_to_liability_id ? `ลดหนี้ ${name.get(i.received_to_liability_id) ?? ""}` : i.source_transaction_id ? "ตามรายการลงทุน"
+          : i.lump_cash_holding_id ? name.get(i.lump_cash_holding_id) ?? "เงินฝากในพอร์ต" : "ไม่ผ่านบัญชี",
         action: i.pending_split ? incSplit(i) ?? <MoveBadge label="รอแยกรายละเอียด" tone="amber" /> : incEdit(i, "แก้ไข") ?? DONE_INC,
       };
     }),
@@ -481,11 +482,12 @@ export default async function IncomeExpensesPage({ searchParams }: { searchParam
             : i.paid_from_asset_id ? name.get(i.paid_from_asset_id) ?? "บัญชี"
             : i.paid_from_credit_card_id ? `บัตร ${name.get(i.paid_from_credit_card_id) ?? ""}`
             : i.paid_from_cash_holding_id ? name.get(i.paid_from_cash_holding_id) ?? "เงินฝากในพอร์ต"
+            : i.lump_cash_holding_id ? name.get(i.lump_cash_holding_id) ?? "เงินฝากในพอร์ต"
             : i.liability_id ? `ทบเข้าหนี้ ${name.get(i.liability_id) ?? ""}` : "เงินสด"}
           {i.source_investment_tx_id ? <div className="text-slate-500">ตามเจ้าของพอร์ต</div>
             : !i.source_cash_movement_id && (pname(i.persons) ? <div className="text-slate-500">ของ {pname(i.persons)}</div>
             : i.liability_id ? <div className="text-slate-500">ตามผู้รับผิดชอบหนี้</div>
-            : i.paid_from_cash_holding_id ? <div className="text-slate-500">ตามเจ้าของพอร์ต</div>
+            : i.paid_from_cash_holding_id || i.lump_cash_holding_id ? <div className="text-slate-500">ตามเจ้าของพอร์ต</div>
             : !i.paid_from_asset_id && !i.paid_from_credit_card_id && <div className="text-slate-500">ส่วนกลาง</div>)}
         </>,
         action: i.pending_split ? expSplit(i) ?? <MoveBadge label="รอแยกรายละเอียด" tone="amber" />
