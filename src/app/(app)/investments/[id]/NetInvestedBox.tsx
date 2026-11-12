@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
 import { SMALL_BTN, money, thDate, signedMoney, signedPct } from "@/lib/format";
 import { vsInvested, type CapitalLine } from "@/lib/net-invested";
@@ -16,10 +16,13 @@ const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
  * พอร์ตต่างประเทศ: บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน · พอร์ตปิดแล้ว = กำไร / ขาดทุนที่รับรู้แล้ว
  * receivedThb / Ccy = ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่า) → บวกกลับในกำไร / ขาดทุน (ตกลง 12 พ.ย. 2026)
  */
-export default function NetInvestedBox({ currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, receivedThb, receivedCcy, closed, lines, children }: {
+export default function NetInvestedBox({ currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, receivedThb, receivedCcy, closed, lines, openings = [], children }: {
   currency: string; investedThb: number; investedCcy: number | null; valueThb: number | null; valueCcy: number | null;
   incomeThb: number; receivedThb: number; receivedCcy: number | null;
-  closed: boolean; lines: CapitalLine[]; children: ReactNode;
+  closed: boolean; lines: CapitalLine[];
+  /** ต้นทุนยอดตั้งต้นรายตัว (แสดงใต้บรรทัดก่อน Go-live) · edit = RowActions ของรายการยอดตั้งต้น → คลิกแถวเพื่อแก้ (ตกลง 12 พ.ย. 2026) */
+  openings?: { key: string; name: string; thb: number; local: number; currency: string; edit: ReactNode }[];
+  children: ReactNode;
 }) {
   const [list, setList] = useState(false);
   const fx = currency !== "THB";
@@ -60,15 +63,25 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
                 <th className="text-right">บาท</th>{fx && <th className="text-right">{currency}</th>}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {lines.map((l) => (
-                  <tr key={l.key} className="align-top">
+                  <Fragment key={l.key}>
+                  <tr className="align-top">
                     <td className="py-1.5">{thDate(l.date)}</td>
                     <td>{l.kind === "PRE" ? "ต้นทุนรวมของยอดตั้งต้น (ก่อน Go-live)" : l.derived ? (l.kind === "OUT" ? "ซื้อ (ตัดบัญชีธนาคาร)" : "ขาย / ไถ่ถอน / ครบกำหนด (เข้าบัญชีธนาคาร)")
                       : l.kind === "OUT" ? "โอนเข้าพอร์ต" : "โอนกลับจากพอร์ต"}
-                      <div className="text-xs text-slate-400">{l.kind === "PRE" ? "แก้ต้นทุนที่รายการยอดตั้งต้นของแต่ละตัวในแท็บรายการ"
+                      <div className="text-xs text-slate-400">{l.kind === "PRE" ? (openings.some((o) => o.edit) ? "คลิกแถวรายตัวด้านล่างเพื่อแก้ต้นทุน" : "ต้นทุนรายตัวด้านล่าง")
                         : l.derived ? "แก้ที่รายการในแท็บรายการ" : "แก้ที่รายการโอนในหน้าพอร์ต"}</div></td>
                     <td className={`text-right tabular-nums ${sign(l.thb)}`}>{signed(l.thb)}</td>
                     {fx && <td className={`text-right tabular-nums ${l.ccy == null ? "text-slate-400" : sign(l.ccy)}`}>{l.ccy == null ? "—" : signed(l.ccy)}</td>}
                   </tr>
+                  {l.kind === "PRE" && openings.map((o) => (
+                    <tr key={o.key} className="align-top text-xs text-slate-600">
+                      <td></td>
+                      <td className="py-1 pl-3">{o.name}{o.edit}</td>
+                      <td className="text-right tabular-nums">{money(o.thb)}</td>
+                      {fx && <td className="text-right tabular-nums">{money(o.local)}{o.currency !== currency ? ` ${o.currency}` : ""}</td>}
+                    </tr>
+                  ))}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot className="border-t-2 border-slate-200 font-medium">

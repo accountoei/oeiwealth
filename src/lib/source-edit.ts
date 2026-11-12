@@ -70,7 +70,8 @@ export const assetIncomeFields = (r: IncRow): FieldSpec[] => [
 
 // ---------------------------------------------------------------- รายการในพอร์ต
 type ItxRow = { transaction_type: string; transaction_date: string; settlement_date?: string | null; quantity?: number | string | null;
-  price?: number | string | null; amount: number | string; fee?: number | string | null; tax?: number | string | null; notes?: string | null };
+  price?: number | string | null; amount: number | string; fee?: number | string | null; tax?: number | string | null; notes?: string | null;
+  currency?: string; cost_base_currency?: number | string | null };
 
 /**
  * รายการในพอร์ต — ชุดเดียวทุกหน้า (หน้าพอร์ต · หน้าหลักทรัพย์ · บัญชีเงินฝากในพอร์ต · แท็บบันทึกรับ · Income & Expenses · ตกลง 10 พ.ย. 2026)
@@ -80,6 +81,16 @@ export const portfolioTxFields = (t: ItxRow, bank: boolean): FieldSpec[] => {
   const type = t.transaction_type;
   const trade = ["BUY", "SELL", "OPENING_BALANCE"].includes(type) && t.quantity != null && t.price != null;
   const income = ["DIVIDEND", "INTEREST", "COUPON"].includes(type);
+  // ยอดตั้งต้นสกุลต่างประเทศ: ต้นทุนรวมเป็นบาท แก้ได้ · แก้ราคา / จำนวน → บาทเปลี่ยนตามอัตราเดิมของรายการ (ตกลง 12 พ.ย. 2026)
+  //   ยอดตั้งต้นเงินบาท: ต้นทุนบาท = มูลค่า (คำนวณใหม่ตอนบันทึก ใน updateRecord)
+  const fxOpen = type === "OPENING_BALANCE" && !!t.currency && t.currency !== "THB";
+  const rate = fxOpen && Number(t.amount) > 0 && t.cost_base_currency != null ? Number(t.cost_base_currency) / Number(t.amount) : null;
+  const thbCost: FieldSpec[] = !fxOpen ? [] : [
+    ...(rate != null ? [{ name: "cost_rate", label: `อัตราต้นทุน (บาท / ${t.currency})`, value: money(rate, undefined, 6), readOnly: true }] : []),
+    { name: "cost_base_currency", label: "ต้นทุนรวมเป็นบาท", type: "number" as const,
+      value: t.cost_base_currency == null ? null : money(t.cost_base_currency),
+      ...(rate != null ? { calc: { op: "mul" as const, a: trade ? "value" : "amount", b: "cost_rate" } } : {}) },
+  ];
   return [
     type === "OPENING_BALANCE"
       ? { name: "opening_date", label: "วันที่ (วันตั้งต้น)", value: thDate(t.transaction_date), readOnly: true }
@@ -90,6 +101,7 @@ export const portfolioTxFields = (t: ItxRow, bank: boolean): FieldSpec[] => {
     ...(trade ? [{ name: "value", label: "มูลค่า (= จำนวน × ราคา)", type: "number" as const, value: money(t.amount), readOnly: true,
       calc: { op: "mul" as const, a: "quantity", b: "price" } }]
       : [{ name: "amount", label: income ? "ยอดก่อนภาษี" : type === "MATURITY" ? "เงินต้นที่ได้คืน" : "ยอด", type: "number" as const, value: t.amount }]),
+    ...thbCost,
     ...(["FEE", "TAX", "OPENING_BALANCE", "ADJUSTMENT", "PAYMENT"].includes(type) ? [] : [{ name: "fee", label: "ค่าธรรมเนียม", type: "number" as const, value: t.fee ?? null }]),
     ...(["SELL", "REDEMPTION", "MATURITY", "DIVIDEND", "INTEREST", "COUPON"].includes(type) ? [{ name: "tax", label: income ? "ภาษีหัก ณ ที่จ่าย" : "ภาษี", type: "number" as const, value: t.tax ?? null }] : []),
     { name: "notes", label: "หมายเหตุ", value: t.notes ?? null, wide: true },

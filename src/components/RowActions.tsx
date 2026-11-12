@@ -21,15 +21,17 @@ export type FieldSpec = {
 };
 
 const toNum = (s: string) => Number(s.replace(/,/g, ""));
-/** แก้ช่องหนึ่ง → ช่องที่คำนวณจากช่องนั้นเปลี่ยนตาม (ไม่ย้อนกลับไปแก้ช่องที่กำลังพิมพ์) */
-function recalc(form: HTMLFormElement, changed: string, fields: FieldSpec[]) {
+/** แก้ช่องหนึ่ง → ช่องที่คำนวณจากช่องนั้นเปลี่ยนตาม ต่อเป็นทอด (เช่น ราคา → มูลค่า → ต้นทุนบาท) · ไม่ย้อนกลับไปแก้ช่องที่แก้ไปแล้วในรอบนี้ */
+function recalc(form: HTMLFormElement, changed: string, fields: FieldSpec[], seen = new Set([changed])) {
   const el = (n: string) => form.querySelector<HTMLInputElement>(`[data-f="${n}"]`);
   for (const f of fields) {
-    if (!f.calc || f.name === changed || (f.calc.a !== changed && f.calc.b !== changed)) continue;
+    if (!f.calc || seen.has(f.name) || (f.calc.a !== changed && f.calc.b !== changed)) continue;
     const a = toNum(el(f.calc.a)?.value ?? ""), b = toNum(el(f.calc.b)?.value ?? ""), out = el(f.name);
     if (!out || !Number.isFinite(a) || !Number.isFinite(b) || (f.calc.op === "div" && b === 0)) continue;
     const v = f.calc.op === "mul" ? a * b : a / b;
     out.value = v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: f.calc.digits ?? 2 });
+    seen.add(f.name);
+    recalc(form, f.name, fields, seen);
   }
 }
 
