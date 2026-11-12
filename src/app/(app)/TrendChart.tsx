@@ -44,19 +44,21 @@ export default function TrendChart({ points, selected }: { points: TrendPoint[];
   // แกนตัวเลขซ้าย + ขวา (9 พ.ย. 2026) · มือถือ (< 480px) แกนซ้ายอย่างเดียว
   const L = narrow ? 56 : 64, R = narrow ? 16 : 64, T = 12, B = 28;
   const vs = points.map((p) => p.v);
-  let lo = Math.min(...vs), hi = Math.max(...vs);
-  const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.05 || 1;
-  lo -= pad; hi += pad;
+  const minV = Math.min(...vs), maxV = Math.max(...vs);
+  const pad = (maxV - minV) * 0.15 || Math.abs(maxV) * 0.05 || 1;
+  // ขีดแกนที่ตัวเลขกลม (1 / 2 / 5 × 10ⁿ) · ทศนิยมไม่เกิน 2 ตำแหน่งของหน่วย (M / K) → ป้ายไม่ยาวจนตกขอบ (12 พ.ย. 2026)
+  //   ยอดขยับน้อยมาก → ขีดห่างกันอย่างน้อย 0.01 หน่วย (เช่น 10,000 บาท) ป้ายไม่ซ้ำกัน · เส้นดูราบลง
+  const big = Math.max(Math.abs(minV), Math.abs(maxV));
+  const [div, unit] = big >= 1e6 ? [1e6, "M"] : big >= 1e3 ? [1e3, "K"] : [1, ""];
+  const raw = Math.max(((maxV - minV) + pad * 2) / 4, div / 100);
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = ([1, 2, 5, 10].find((m) => m * mag >= raw - 1e-9) ?? 10) * mag;
+  const lo = Math.floor((minV - pad) / step) * step, hi = Math.ceil((maxV + pad) / step) * step;
   const x = (i: number) => L + (i * (W - L - R)) / (points.length - 1);
   const y = (v: number) => T + ((hi - v) * (H - T - B)) / (hi - lo);
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => lo + (hi - lo) * f);
-  // ทศนิยมแกนปรับตามช่วงยอด: ยอดขยับน้อย → แสดงละเอียดขึ้น (กันป้ายซ้ำกัน เช่น 209.4M หลายบรรทัด)
-  const step = (hi - lo) / 4;
-  const fmt = (v: number) => {
-    const [div, unit] = Math.abs(v) >= 1e6 ? [1e6, "M"] : Math.abs(v) >= 1e3 ? [1e3, "K"] : [1, ""];
-    const d = Math.min(4, Math.max(unit === "M" ? 1 : 0, Math.ceil(-Math.log10(step / div))));
-    return `${(v / div).toFixed(d)}${unit}`;
-  };
+  const ticks = Array.from({ length: Math.round((hi - lo) / step) + 1 }, (_, i) => lo + i * step);
+  const d = Math.max(unit === "M" ? 1 : 0, [0, 1, 2].find((n) => Math.abs(Math.round((step / div) * 10 ** n) - (step / div) * 10 ** n) < 1e-6) ?? 2);
+  const fmt = (v: number) => `${(v / div).toFixed(d)}${unit}`;
   const path = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const showLabel = (i: number) => i === 0 || i === points.length - 1 || points.length <= (narrow ? 4 : 8);
 
