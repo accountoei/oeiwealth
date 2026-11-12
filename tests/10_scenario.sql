@@ -966,6 +966,29 @@ SELECT t.ok((SELECT round(sum(h.value_thb), 2) FROM public.v_holdings_active h W
             AND (SELECT round(portfolio_value * portfolio_fx_rate, 2) = round(thb_value, 2) FROM public.v_portfolio_values
                   WHERE asset_id = t.a('พอร์ตหลายบัญชี')),
             'หน้าพอร์ต: บาทรายตัวรวมกัน = มูลค่าเป็นบาท · มูลค่าสกุลพอร์ต × อัตรา = มูลค่าเป็นบาท');
+-- อัตราตาม Statement (12 พ.ย. 2026): สกุลอื่นในพอร์ต (ที่นี่ THB ในพอร์ต USD) → มูลค่าสกุลพอร์ตใช้อัตราธนาคาร · มูลค่าเป็นบาทไม่เปลี่ยน
+SELECT thb_value AS sfx_thb0, portfolio_value AS sfx_ccy0 FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี') \gset
+SELECT sum(hv.value) AS sfx_thb_local FROM public.investment_holdings h CROSS JOIN LATERAL private.holding_value_at(h.id, current_date) hv
+ WHERE h.portfolio_id = (SELECT id FROM public.investment_portfolios WHERE asset_id = t.a('พอร์ตหลายบัญชี')) AND h.deleted_at IS NULL AND h.currency = 'THB' \gset
+SELECT t.fails(format($$SELECT public.update_portfolio(%L, '{"name":"พอร์ตหลายบัญชี","statement_fx":{"THB":0.03}}')$$, t.a('พอร์ตหลายบัญชี')),
+               'วันที่', 'อัตราตาม Statement: ไม่มีวันที่ → บันทึกไม่ได้');
+SELECT t.fails(format($$SELECT public.update_portfolio(%L, '{"name":"พอร์ตหลายบัญชี","statement_fx":{"THB":0},"statement_fx_date":"2026-09-30"}')$$, t.a('พอร์ตหลายบัญชี')),
+               'มากกว่า 0', 'อัตราตาม Statement: 0 → บันทึกไม่ได้');
+SELECT t.fails(format($$SELECT public.update_portfolio(%L, '{"name":"พอร์ตหลายบัญชี","statement_fx":{"USD":1},"statement_fx_date":"2026-09-30"}')$$, t.a('พอร์ตหลายบัญชี')),
+               'สกุลพอร์ต', 'อัตราตาม Statement: ใส่สกุลพอร์ตเองไม่ได้');
+SELECT public.update_portfolio(t.a('พอร์ตหลายบัญชี'), '{"name":"พอร์ตหลายบัญชี","statement_fx":{"THB":0.03},"statement_fx_date":"2026-09-30"}');
+SELECT t.ok((SELECT round(thb_value, 4) = round(:sfx_thb0, 4)
+                    AND round(portfolio_value, 4) = round(:sfx_ccy0 - :sfx_thb_local / private.fx_rate('USD', current_date) + :sfx_thb_local * 0.03, 4)
+                    AND statement_fx_date = '2026-09-30'
+               FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี')),
+            'อัตราตาม Statement: มูลค่า USD = USD เดิม + THB × 0.03 · มูลค่าเป็นบาทเท่าเดิม');
+SELECT public.update_portfolio(t.a('พอร์ตหลายบัญชี'), '{"name":"พอร์ตหลายบัญชี","notes":"แก้ชื่ออย่างเดียว"}');
+SELECT t.ok((SELECT statement_fx = '{"THB":0.03}'::jsonb FROM public.investment_portfolios WHERE asset_id = t.a('พอร์ตหลายบัญชี')),
+            'อัตราตาม Statement: แก้รายละเอียดอื่น (ไม่ส่งอัตรา) → อัตราคงเดิม');
+SELECT public.update_portfolio(t.a('พอร์ตหลายบัญชี'), '{"name":"พอร์ตหลายบัญชี","statement_fx":null,"statement_fx_date":""}');
+SELECT t.ok((SELECT statement_fx IS NULL AND statement_fx_date IS NULL AND round(portfolio_value, 4) = round(:sfx_ccy0, 4)
+               FROM public.v_portfolio_values WHERE asset_id = t.a('พอร์ตหลายบัญชี')),
+            'อัตราตาม Statement: ล้างอัตรา → กลับไปใช้อัตรา ธปท.');
 -- ผลตอบแทนในสกุลหลักทรัพย์ (ปุ่ม ดูเป็น USD): จำนวนแถวเท่ากัน · มูลค่า × อัตราวันนี้ = มูลค่าเป็นบาท · รวม = ส่วนประกอบ
 SELECT t.ok((SELECT count(*) FROM public.investment_returns_local(t.a('Brokerage USD')))
               = (SELECT count(*) FROM public.investment_returns(t.a('Brokerage USD')))

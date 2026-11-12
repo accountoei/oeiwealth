@@ -427,10 +427,17 @@ export async function updatePortfolio(_: ActionState, form: FormData): Promise<A
   const { data: cur } = await supabase.from("assets").select("currency").eq("id", id).maybeSingle();
   const ccy = str(form.get("currency"));
   if (cur && ccy && ccy !== cur.currency && form.get("confirm_currency") !== "on") return { error: "กรุณาติ๊กยืนยันการเปลี่ยนสกุลพอร์ต" };
+  // อัตราตาม Statement (ช่อง fx_rate_AUD ฯลฯ) — ส่งเฉพาะเมื่อฟอร์มมีส่วนนี้ · เว้นว่าง = ใช้อัตรา ธปท.
+  const fx: Record<string, number> = {};
+  for (const [k, v] of form.entries()) {
+    const r = k.startsWith("fx_rate_") ? num(v) : null;
+    if (r != null) fx[k.slice(8)] = r;
+  }
   const { error } = await supabase.rpc("update_portfolio", {
     p_asset_id: id,
     p: { name: str(form.get("name")), institution: str(form.get("institution")), portfolio_type: str(form.get("portfolio_type")),
-         currency: ccy, notes: str(form.get("notes")) },
+         currency: ccy, notes: str(form.get("notes")),
+         ...(form.has("statement_fx") ? { statement_fx: Object.keys(fx).length ? fx : null, statement_fx_date: str(form.get("statement_fx_date")) } : {}) },
   });
   if (error) return { error: friendlyError(error.message) };
   revalidate(id);
