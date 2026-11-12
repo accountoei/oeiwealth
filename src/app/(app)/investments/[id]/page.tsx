@@ -16,7 +16,7 @@ import {
 import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import NetInvestedBox from "./NetInvestedBox";
-import { CAPITAL_MOVE_COLS, incomeToBank, netInvested, type CapitalMove, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, CAPITAL_PRE_COLS, incomeToBank, netInvested, type CapitalMove, type CapitalPre, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
 import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
 import PfTransferEdit from "./PfTransferEdit";
@@ -74,7 +74,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const pfQ = supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle().then((r) => r);
   const [[{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
     { data: unsettled }, { data: persons }], [{ data: lastTx }, { data: txs }, { data: autoRows }],
-    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: directMvs }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
+    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: directMvs }, { data: capPre }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
     Promise.all([
       loadAsset(id),
       pfQ,
@@ -109,6 +109,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       // ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต) → นับในเงินลงทุนสุทธิ
       supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).eq("is_derived", true).eq("source_entity_type", "INVESTMENT_TX").is("deleted_at", null)
         .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`).limit(2000),
+      // เงินที่โอนไปจริงก่อน Go-live (ถ้าใส่ไว้ ใช้แทนต้นทุนรวมของยอดตั้งต้น)
+      supabase.from("portfolio_capital_transfers").select(CAPITAL_PRE_COLS).eq("portfolio_asset_id", id).is("deleted_at", null).order("transfer_date"),
     ]),
     // จ่ายออกจากพอร์ต (ค่าใช้จ่าย / จ่ายบัตร) ในปุ่ม "+ รายการ"
     canWrite ? Promise.all([
@@ -161,11 +163,19 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const txList = (txs as Tx[] | null) ?? [];
   const transfers = (mvs as PfTransfer[] | null) ?? [];
   const transferById = new Map(transfers.map((m) => [m.id, m]));
-  // เงินลงทุนสุทธิ: ต้นทุนรวมของยอดตั้งต้น + โอนไป / โอนกลับหลัง Go-live
+  // เงินลงทุนสุทธิ: เงินที่โอนไปจริงก่อน Go-live (ถ้าใส่ไว้) หรือต้นทุนรวมของยอดตั้งต้น + โอนไป / โอนกลับหลัง Go-live
   const openingRows = txList.filter((t) => t.transaction_type === "OPENING_BALANCE")
     .map((t) => ({ ...(t as unknown as OpeningCost), portfolio_asset_id: id }));
   const invested = netInvested(id, a.currency, openingRows,
-    [...(transfers as unknown as CapitalMove[]), ...((directMvs as CapitalMove[] | null) ?? [])]);
+    [...(transfers as unknown as CapitalMove[]), ...((directMvs as CapitalMove[] | null) ?? [])], (capPre as CapitalPre[] | null) ?? []);
+  // คลิกแถวเงินที่โอนไปจริงก่อน Go-live = แก้ / ลบ
+  const preEdits = Object.fromEntries(canWrite ? ((capPre as CapitalPre[] | null) ?? []).map((p) => [p.id,
+    <RowActions key={p.id} table="portfolio_capital_transfers" id={p.id} paths={paths} canDelete={canDelete}
+      deleteEffect="ลบเฉพาะยอดอ้างอิง ไม่กระทบยอดบัญชี / มูลค่าพอร์ต (เงินลงทุนสุทธิกลับไปใช้ต้นทุนรวมของยอดตั้งต้น)"
+      fields={[{ name: "transfer_date", label: "วันที่", type: "date", value: p.transfer_date },
+        { name: "amount_thb", label: "เงินบาทที่โอนไป", type: "number", value: p.amount_thb },
+        ...(a.currency !== "THB" ? [{ name: "amount_ccy", label: `${a.currency} ที่พอร์ตได้รับ`, type: "number" as const, value: p.amount_ccy }] : []),
+        { name: "notes", label: "หมายเหตุ", value: p.notes, wide: true }]} />]) : []);
   // ต้นทุนยอดตั้งต้นรายตัวในหน้าต่างเงินลงทุนสุทธิ · คลิกแถว = หน้าต่างแก้รายการยอดตั้งต้นเดียวกับแท็บรายการ (ตกลง 12 พ.ย. 2026)
   const openingEdits = holdings.flatMap((h) => txList.filter((t) => t.transaction_type === "OPENING_BALANCE" && t.holding_id === h.id).map((t) => ({
     key: t.id, name: h.name, thb: Number(t.cost_base_currency ?? 0), local: Number(t.amount), currency: t.currency,
@@ -250,7 +260,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
             valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
             incomeThb={incomeThb} receivedThb={received.thb} receivedCcy={received.ccy}
-            closed={a.status === "CLOSED"} lines={invested.lines} openings={openingEdits}>
+            closed={a.status === "CLOSED"} lines={invested.lines} openings={openingEdits} cost={invested.cost} preEdits={preEdits}
+            addPre={canWrite && goLive && openingRows.length ? { assetId: id, goLive } : null}>
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (

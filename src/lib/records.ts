@@ -49,6 +49,7 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   health_results: { value_numeric: "num", value_text: "str", unit: "str", reference_min: "num", reference_max: "num", abnormal_flag: "str", notes: "str" },
   memberships: { program_name: "str", member_id: "str", tier: "str", benefits: "str", expiry_date: "date", status: "str", notes: "str" },
   points_accounts: { program_name: "str", balance: "num", balance_date: "date", expiry_date: "date" },
+  portfolio_capital_transfers: { transfer_date: "date", amount_thb: "num", amount_ccy: "num", notes: "str" },
   documents: { title: "str", document_type: "str", issue_date: "date", expiry_date: "date", notes: "str" },
 };
 // หนึ่งตารางต่อบรรทัด เรียงตามตัวอักษร — เพิ่มตารางใหม่ตรงตำแหน่งตัวอักษร ไม่ต่อท้าย (กัน PR ที่เปิดพร้อมกันชนกัน)
@@ -75,6 +76,7 @@ const DELETABLE = new Set([
   "loan_schedule_lines",
   "memberships",
   "points_accounts",
+  "portfolio_capital_transfers",
   "property_cost_items",
   "property_deeds",
   "property_inventory_items",

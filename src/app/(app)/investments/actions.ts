@@ -375,6 +375,23 @@ export async function splitPfLump(_: ActionState, form: FormData): Promise<Actio
 
 const pct = (v: FormDataEntryValue | null) => num(v);
 
+/** เงินที่โอนไปจริงก่อน Go-live (ใช้เป็นเงินลงทุนสุทธิแทนต้นทุนรวมของยอดตั้งต้น · ไม่กระทบยอดบัญชี / Net Worth) — ฐานข้อมูลตรวจวันที่ก่อน Go-live */
+export async function addCapitalTransfer(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  const id = String(form.get("asset_id"));
+  const date = str(form.get("transfer_date"));
+  const thb = num(form.get("amount_thb"));
+  const ccy = num(form.get("amount_ccy"));
+  if (!date) return { error: "กรุณาใส่วันที่" };
+  if (thb === null || Number.isNaN(thb) || thb <= 0) return { error: "กรุณาใส่เงินบาทที่โอนไป" };
+  if (ccy !== null && (Number.isNaN(ccy) || ccy <= 0)) return { error: "ยอดที่พอร์ตได้รับต้องมากกว่า 0" };
+  const { error } = await supabase.from("portfolio_capital_transfers").insert({
+    portfolio_asset_id: id, transfer_date: date, amount_thb: thb, amount_ccy: ccy, notes: str(form.get("notes")) });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(id);
+  return { ok: "บันทึกเงินที่โอนไปจริงแล้ว" };
+}
+
 /** รายละเอียด FCN / Structured Product (สร้างหรือแก้) */
 export async function saveFcn(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();

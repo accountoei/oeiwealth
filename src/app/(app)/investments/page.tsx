@@ -9,7 +9,7 @@ import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
-import { CAPITAL_MOVE_COLS, INCOME_TO_BANK_COLS, OPENING_COST_COLS, incomeToBank, netInvested, vsInvested, type CapitalMove, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, CAPITAL_PRE_COLS, INCOME_TO_BANK_COLS, OPENING_COST_COLS, incomeToBank, netInvested, vsInvested, type CapitalMove, type CapitalPre, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -51,7 +51,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: opening }, { data: capMoves }, { data: incBank }], { data: income }, rets,
+  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: opening }, { data: capMoves }, { data: incBank }, { data: capPre }], { data: income }, rets,
     [openPfs, updateData], dueData, totalPrev] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
@@ -69,6 +69,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       // ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง → บวกกลับในกำไรเทียบเงินลงทุน
       supabase.from("investment_transactions").select(`${INCOME_TO_BANK_COLS},pf:investment_portfolios!inner(asset_id)`)
         .in("transaction_type", ["DIVIDEND", "INTEREST", "COUPON"]).not("settle_to_asset_id", "is", null).is("deleted_at", null).limit(5000),
+      // เงินที่โอนไปจริงก่อน Go-live (ถ้าใส่ไว้ ใช้แทนต้นทุนรวมของยอดตั้งต้น)
+      supabase.from("portfolio_capital_transfers").select(CAPITAL_PRE_COLS).is("deleted_at", null),
     ]),
     // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
     Promise.all([pvQ, familyQ]).then(async ([v, { data: f }]) => {
@@ -147,7 +149,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     .map((o) => ({ ...o, portfolio_asset_id: o.pf.asset_id }));
   // เงินลงทุนสุทธิ (บาท × สัดส่วนของสมาชิกที่เลือก) · null = ไม่มียอดตั้งต้นและยังไม่มีเงินโอน
   const investedOf = (assetId: string, ccy: string) => {
-    const n = netInvested(assetId, ccy, openingRows, (capMoves as CapitalMove[] | null) ?? []);
+    const n = netInvested(assetId, ccy, openingRows, (capMoves as CapitalMove[] | null) ?? [], (capPre as CapitalPre[] | null) ?? []);
     return n.lines.length ? n.thb * sh(assetId) : null;
   };
   const receivedOf = (assetId: string, ccy: string) =>
