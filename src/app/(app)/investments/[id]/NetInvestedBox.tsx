@@ -18,18 +18,20 @@ const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
  * หัวกล่อง (children) = มูลค่าเป็นบาทที่ใช้ในความมั่งคั่งสุทธิ · ต่อด้วยเงินลงทุนสุทธิ / กำไร / ขาดทุนรวม / รายได้ลงทุน
  * เงินลงทุนสุทธิ = เงินโอนเข้าก่อน Go-live (กรอกที่นี่) + โอนไป − โอนกลับ หลัง Go-live (ปุ่มโอนเงิน) · เทียบมูลค่าล่าสุด (รวมเงินโอนรอใส่ยอด)
  * พอร์ตต่างประเทศ: บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน · พอร์ตปิดแล้ว = กำไร / ขาดทุนที่รับรู้แล้ว
+ * receivedThb / Ccy = ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่า) → บวกกลับในกำไร / ขาดทุน (ตกลง 12 พ.ย. 2026)
  * missingPre = พอร์ตมียอดตั้งต้นก่อน Go-live แต่ยังไม่ได้ใส่เงินโอนก่อน Go-live → ไม่แสดง % (ยอดยังไม่ครบ)
  */
-export default function NetInvestedBox({ assetId, currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, missingPre, closed, lines, goLive, canWrite, canDelete, paths, children }: {
+export default function NetInvestedBox({ assetId, currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, receivedThb, receivedCcy, missingPre, closed, lines, goLive, canWrite, canDelete, paths, children }: {
   assetId: string; currency: string; investedThb: number; investedCcy: number | null; valueThb: number | null; valueCcy: number | null;
-  incomeThb: number; missingPre: boolean;
+  incomeThb: number; receivedThb: number; receivedCcy: number | null; missingPre: boolean;
   closed: boolean; lines: CapitalLine[]; goLive: string; canWrite: boolean; canDelete: boolean; paths: string[]; children: ReactNode;
 }) {
   const [list, setList] = useState(false);
   const [add, setAdd] = useState(false);
   const fx = currency !== "THB";
-  const thb = vsInvested(valueThb, investedThb);
-  const ccy = fx ? vsInvested(valueCcy, investedCcy) : null;
+  const thb = vsInvested(valueThb, investedThb, receivedThb);
+  const ccy = fx ? vsInvested(valueCcy, investedCcy, receivedCcy) : null;
+  const hasReceived = Math.abs(receivedThb) > 0.005;
   const plLabel = closed ? "กำไร / ขาดทุน (รับรู้แล้ว)" : "กำไร / ขาดทุนรวม";
   const pct = (p: number | null) => (missingPre ? "" : pctTxt(p));
   const tone = (v: number) => (missingPre ? "text-slate-500" : sign(v));
@@ -42,7 +44,8 @@ export default function NetInvestedBox({ assetId, currency, investedThb, investe
             <div className="text-sm font-medium">{money(investedThb, "THB", 0)}</div>
             {fx && <div className="text-slate-500">{investedCcy == null ? `${currency} ยังไม่ครบ` : money(investedCcy, currency, 0)}</div>}</>}</dd></div>
         {lines.length > 0 && (
-          <div className="flex justify-between gap-3"><dt className="text-slate-500">{plLabel}</dt>
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">{plLabel}
+            {hasReceived && <div className="text-slate-400">รวมปันผล / ดอกเบี้ยที่เข้าบัญชีธนาคาร {money(receivedThb, "THB", 0)}</div>}</dt>
             <dd className="text-right tabular-nums">
               {thb && <div className={`text-sm font-medium ${tone(thb.pl)}`}>{signed(thb.pl, "THB")}{pct(thb.pct)}</div>}
               {ccy && <div className={tone(ccy.pl)}>{signed(ccy.pl, currency)}{pct(ccy.pct)}</div>}</dd></div>
@@ -69,9 +72,10 @@ export default function NetInvestedBox({ assetId, currency, investedThb, investe
                 {lines.map((l) => (
                   <tr key={l.key} className="align-top">
                     <td className="py-1.5">{thDate(l.date)}</td>
-                    <td>{l.kind === "PRE" ? "โอนเข้า (ก่อน Go-live)" : l.kind === "OUT" ? "โอนเข้าพอร์ต" : "โอนกลับจากพอร์ต"}
+                    <td>{l.kind === "PRE" ? "โอนเข้า (ก่อน Go-live)" : l.derived ? (l.kind === "OUT" ? "ซื้อ (ตัดบัญชีธนาคาร)" : "ขาย / ไถ่ถอน / ครบกำหนด (เข้าบัญชีธนาคาร)")
+                      : l.kind === "OUT" ? "โอนเข้าพอร์ต" : "โอนกลับจากพอร์ต"}
                       {l.pre?.notes && <div className="text-xs text-slate-500">{l.pre.notes}</div>}
-                      {l.kind !== "PRE" && <div className="text-xs text-slate-400">แก้ที่รายการโอนในหน้าพอร์ต</div>}</td>
+                      {l.kind !== "PRE" && <div className="text-xs text-slate-400">{l.derived ? "แก้ที่รายการในแท็บรายการ" : "แก้ที่รายการโอนในหน้าพอร์ต"}</div>}</td>
                     <td className={`text-right tabular-nums ${sign(l.thb)}`}>{signed(l.thb)}</td>
                     {fx && <td className={`text-right tabular-nums ${l.ccy == null ? "text-slate-400" : sign(l.ccy)}`}>{l.ccy == null ? "—" : signed(l.ccy)}</td>}
                     <td className="pl-2 text-right">{l.pre && canWrite && <RowActions table="portfolio_capital_transfers" id={l.pre.id} paths={paths} canDelete={canDelete}
@@ -89,7 +93,7 @@ export default function NetInvestedBox({ assetId, currency, investedThb, investe
                   {fx && <td className="text-right tabular-nums">{investedCcy == null ? "—" : money(investedCcy, undefined, 0)}</td>}<td></td></tr>
               </tfoot>
             </table>
-            <p className="mt-2 text-xs text-slate-500">หลัง Go-live นับจากปุ่ม &ldquo;โอนเงิน&rdquo; ของพอร์ตให้อัตโนมัติ · — = ยังไม่ทราบยอดฝั่งพอร์ต (ไม่นับในยอด {currency})</p>
+            <p className="mt-2 text-xs text-slate-500">หลัง Go-live นับจากปุ่ม &ldquo;โอนเงิน&rdquo; ของพอร์ต และซื้อ / ขายที่ชำระกับบัญชีธนาคารโดยตรงให้อัตโนมัติ · — = ยังไม่ทราบยอดฝั่งพอร์ต (ไม่นับในยอด {currency})</p>
           </div>
         </Modal>
       )}

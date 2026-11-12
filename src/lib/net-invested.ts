@@ -1,16 +1,19 @@
 // เงินลงทุนสุทธิของพอร์ต = เงินที่โอนเข้าก่อน Go-live (portfolio_capital_transfers) + เงินโอนหลัง Go-live (cash_movements)
 //   โอนไปพอร์ต (INVESTMENT_OUT) บวก · โอนกลับจากพอร์ต (INVESTMENT_IN) ลบ · ตกลง 2 พ.ย. 2026
 //   ใช้เทียบกับมูลค่าล่าสุด → กำไร / ขาดทุนรวม (บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน)
+//   ตกลง 12 พ.ย. 2026: นับเงินที่พอร์ตจ่ายเข้า / ตัดจากบัญชีธนาคารโดยตรงด้วย — ซื้อตัดบัญชี = โอนไป · ขาย / ไถ่ถอน / ครบกำหนดเข้าบัญชี = โอนกลับ
+//   ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่าพอร์ต) บวกกลับในกำไร / ขาดทุน (incomeToBank)
 
 /** แถวของ portfolio_capital_transfers (ก่อน Go-live) */
 export type CapitalPre = { id: string; portfolio_asset_id: string; transfer_date: string; amount_thb: number; amount_ccy: number | null; notes: string | null };
 /** เงินโอนธนาคาร ↔ พอร์ต หลัง Go-live (cash_movements ที่ไม่ใช่รายการระบบสร้าง) */
 export type CapitalMove = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
-  amount: number; currency: string; counter_amount: number | null; counter_currency: string | null; base_amount: number | null };
+  amount: number; currency: string; counter_amount: number | null; counter_currency: string | null; base_amount: number | null; is_derived?: boolean };
 
-export const CAPITAL_MOVE_COLS = "id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,counter_amount,counter_currency,base_amount";
+export const CAPITAL_MOVE_COLS = "id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,counter_amount,counter_currency,base_amount,is_derived";
 
-export type CapitalLine = { key: string; date: string; kind: "PRE" | "OUT" | "IN"; thb: number; ccy: number | null; pre?: CapitalPre; moveId?: string };
+/** derived = ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต) */
+export type CapitalLine = { key: string; date: string; kind: "PRE" | "OUT" | "IN"; thb: number; ccy: number | null; pre?: CapitalPre; moveId?: string; derived?: boolean };
 export type NetInvested = { thb: number; ccy: number | null; lines: CapitalLine[] };
 
 /** พอร์ตของรายการโอน (OUT = ปลายทาง · IN = ต้นทาง) */
@@ -37,7 +40,7 @@ export function netInvested(assetId: string, pfCcy: string, pre: CapitalPre[], m
         : !m.counter_currency && m.currency === "THB" ? Number(m.amount) : Number(m.base_amount ?? 0));
     const ccy = pfCcy === "THB" ? thb : pfSide && pfSide.ccy === pfCcy ? pfSide.amt : null;
     const s = out ? 1 : -1;
-    lines.push({ key: `m${m.id}`, date: m.movement_date, kind: out ? "OUT" : "IN", thb: s * thb, ccy: ccy == null ? null : s * ccy, moveId: m.id });
+    lines.push({ key: `m${m.id}`, date: m.movement_date, kind: out ? "OUT" : "IN", thb: s * thb, ccy: ccy == null ? null : s * ccy, moveId: m.id, derived: !!m.is_derived });
   });
   lines.sort((a, b) => a.date.localeCompare(b.date));
   const thb = lines.reduce((t, l) => t + l.thb, 0);
@@ -45,9 +48,25 @@ export function netInvested(assetId: string, pfCcy: string, pre: CapitalPre[], m
   return { thb, ccy, lines };
 }
 
-/** กำไร / ขาดทุนเทียบเงินลงทุนสุทธิ (% เฉพาะเมื่อเงินลงทุนสุทธิ > 0) */
-export function vsInvested(value: number | null, invested: number | null) {
-  if (value == null || invested == null) return null;
-  const pl = value - invested;
+/** ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (investment_transactions ที่มี settle_to_asset_id) */
+export type IncomeToBank = { amount: number; fee: number | null; tax: number | null; currency: string; amount_base_currency: number | null };
+export const INCOME_TO_BANK_COLS = "amount,fee,tax,currency,amount_base_currency";
+
+/** รวมยอดสุทธิ (หลังค่าธรรมเนียม / ภาษี) · บาท + สกุลพอร์ต (null = มีรายการต่างสกุล) */
+export function incomeToBank(pfCcy: string, rows: IncomeToBank[]) {
+  let thb = 0, ccy: number | null = 0;
+  for (const r of rows) {
+    const amt = Number(r.amount);
+    const net = amt - Number(r.fee ?? 0) - Number(r.tax ?? 0);
+    thb += r.currency === "THB" ? net : amt ? (net * Number(r.amount_base_currency ?? 0)) / amt : 0;
+    ccy = ccy == null || r.currency !== pfCcy ? null : ccy + net;
+  }
+  return { thb, ccy: pfCcy === "THB" ? thb : ccy };
+}
+
+/** กำไร / ขาดทุนเทียบเงินลงทุนสุทธิ = มูลค่า + ผลตอบแทนที่เข้าบัญชีธนาคารแล้ว − เงินลงทุนสุทธิ (% เฉพาะเมื่อเงินลงทุนสุทธิ > 0) */
+export function vsInvested(value: number | null, invested: number | null, received: number | null = 0) {
+  if (value == null || invested == null || received == null) return null;
+  const pl = value + received - invested;
   return { pl, pct: invested > 0 ? (pl / invested) * 100 : null };
 }

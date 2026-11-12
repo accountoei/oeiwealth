@@ -9,7 +9,7 @@ import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
-import { CAPITAL_MOVE_COLS, netInvested, vsInvested, type CapitalMove, type CapitalPre } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, INCOME_TO_BANK_COLS, incomeToBank, netInvested, vsInvested, type CapitalMove, type CapitalPre, type IncomeToBank } from "@/lib/net-invested";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -51,7 +51,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // มุมมองรายบุคคล: เฉพาะพอร์ตที่คนนั้นมีส่วน
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
-  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: capPre }, { data: capMoves }], { data: income }, rets,
+  const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: capPre }, { data: capMoves }, { data: incBank }], { data: income }, rets,
     [openPfs, updateData], dueData, totalPrev] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
@@ -62,8 +62,12 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       familyQ,
       // เงินลงทุนสุทธิรายพอร์ต: เงินโอนก่อน Go-live + โอนไป / โอนกลับหลัง Go-live
       supabase.from("portfolio_capital_transfers").select("id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes").is("deleted_at", null),
+      //   + ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต)
       supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).in("movement_type", ["INVESTMENT_OUT", "INVESTMENT_IN"])
-        .eq("is_derived", false).is("deleted_at", null).limit(5000),
+        .or("is_derived.eq.false,source_entity_type.eq.INVESTMENT_TX").is("deleted_at", null).limit(5000),
+      // ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง → บวกกลับในกำไรเทียบเงินลงทุน
+      supabase.from("investment_transactions").select(`${INCOME_TO_BANK_COLS},pf:investment_portfolios!inner(asset_id)`)
+        .in("transaction_type", ["DIVIDEND", "INTEREST", "COUPON"]).not("settle_to_asset_id", "is", null).is("deleted_at", null).limit(5000),
     ]),
     // รายได้ลงทุน: ทั้งครอบครัว = ยอดเต็ม · รายบุคคล = ส่วนแบ่งตามเจ้าของพอร์ต (v_income_by_person)
     Promise.all([pvQ, familyQ]).then(async ([v, { data: f }]) => {
@@ -143,6 +147,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     const n = netInvested(assetId, ccy, (capPre as CapitalPre[] | null) ?? [], (capMoves as CapitalMove[] | null) ?? []);
     return n.lines.length ? n.thb * sh(assetId) : null;
   };
+  const receivedOf = (assetId: string, ccy: string) =>
+    incomeToBank(ccy, ((incBank ?? []) as unknown as (IncomeToBank & { pf: { asset_id: string } })[]).filter((r) => r.pf.asset_id === assetId)).thb * sh(assetId);
   // ตารางพอร์ต · เรียงตามลำดับที่ตั้งไว้
   const ret = new Map(retRows.map((r) => [r.asset_id, r]));
   const rows: PortfolioRow[] = bySort(list.filter((p) => !tFilter || (pfType.get(p.asset_id) ?? "OTHER") === tFilter), (p) => p.asset_id, sortMap).map((p) => {
@@ -157,12 +163,12 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       atCost: holdings.some((h) => h.portfolio_asset_id === p.asset_id && h.valued_at_cost),
       unreal: r?.unreal ?? 0, real: r?.real ?? 0, fx: (r?.unrealFx ?? 0) + (r?.realFx ?? 0), income: r?.income ?? 0,
       total: r?.total ?? 0, cost: r?.cost ?? 0,
-      invested: investedOf(p.asset_id, p.portfolio_currency),
+      invested: investedOf(p.asset_id, p.portfolio_currency), received: receivedOf(p.asset_id, p.portfolio_currency),
     };
   });
   // กล่องสรุป: พอร์ตที่ยังเปิด (เทียบมูลค่าล่าสุด) แยกจากพอร์ตที่ปิดแล้ว (กำไรที่รับรู้แล้ว) · ทุกพอร์ต ไม่ขึ้นกับตัวกรองประเภท
   const allInv = list.map((p) => ({ closed: pfStatus.get(p.asset_id) === "CLOSED", inv: investedOf(p.asset_id, p.portfolio_currency),
-    value: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0) })).filter((x) => x.inv != null);
+    value: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0) + receivedOf(p.asset_id, p.portfolio_currency) })).filter((x) => x.inv != null);
   const openInv = allInv.filter((x) => !x.closed);
   const invOpen = openInv.reduce((t, x) => t + x.inv!, 0);
   const invOpenPl = vsInvested(openInv.reduce((t, x) => t + x.value, 0), invOpen);
