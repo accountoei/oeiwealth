@@ -1,11 +1,12 @@
-// เงินลงทุนสุทธิของพอร์ต = เงินที่โอนเข้าก่อน Go-live (portfolio_capital_transfers) + เงินโอนหลัง Go-live (cash_movements)
+// เงินลงทุนสุทธิของพอร์ต = ต้นทุนรวมของยอดตั้งต้น (ก่อน Go-live · ตกลง 12 พ.ย. 2026 แทนเงินโอนก่อน Go-live ที่กรอกเอง) + เงินโอนหลัง Go-live (cash_movements)
 //   โอนไปพอร์ต (INVESTMENT_OUT) บวก · โอนกลับจากพอร์ต (INVESTMENT_IN) ลบ · ตกลง 2 พ.ย. 2026
 //   ใช้เทียบกับมูลค่าล่าสุด → กำไร / ขาดทุนรวม (บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน)
 //   ตกลง 12 พ.ย. 2026: นับเงินที่พอร์ตจ่ายเข้า / ตัดจากบัญชีธนาคารโดยตรงด้วย — ซื้อตัดบัญชี = โอนไป · ขาย / ไถ่ถอน / ครบกำหนดเข้าบัญชี = โอนกลับ
 //   ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่าพอร์ต) บวกกลับในกำไร / ขาดทุน (incomeToBank)
 
-/** แถวของ portfolio_capital_transfers (ก่อน Go-live) */
-export type CapitalPre = { id: string; portfolio_asset_id: string; transfer_date: string; amount_thb: number; amount_ccy: number | null; notes: string | null };
+/** ยอดตั้งต้น (OPENING_BALANCE) ของพอร์ต · ต้นทุน = จำนวน × ราคาต่อหน่วย (สกุลหลักทรัพย์) / cost_base_currency (บาท) */
+export type OpeningCost = { portfolio_asset_id: string; transaction_date: string; quantity: number | null; price: number | null; currency: string; cost_base_currency: number | null };
+export const OPENING_COST_COLS = "transaction_date,quantity,price,currency,cost_base_currency";
 /** เงินโอนธนาคาร ↔ พอร์ต หลัง Go-live (cash_movements ที่ไม่ใช่รายการระบบสร้าง) */
 export type CapitalMove = { id: string; movement_date: string; movement_type: string; from_asset_id: string | null; to_asset_id: string | null;
   amount: number; currency: string; counter_amount: number | null; counter_currency: string | null; base_amount: number | null; is_derived?: boolean };
@@ -13,7 +14,7 @@ export type CapitalMove = { id: string; movement_date: string; movement_type: st
 export const CAPITAL_MOVE_COLS = "id,movement_date,movement_type,from_asset_id,to_asset_id,amount,currency,counter_amount,counter_currency,base_amount,is_derived";
 
 /** derived = ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต) */
-export type CapitalLine = { key: string; date: string; kind: "PRE" | "OUT" | "IN"; thb: number; ccy: number | null; pre?: CapitalPre; moveId?: string; derived?: boolean };
+export type CapitalLine = { key: string; date: string; kind: "PRE" | "OUT" | "IN"; thb: number; ccy: number | null; moveId?: string; derived?: boolean };
 export type NetInvested = { thb: number; ccy: number | null; lines: CapitalLine[] };
 
 /** พอร์ตของรายการโอน (OUT = ปลายทาง · IN = ต้นทาง) */
@@ -21,14 +22,17 @@ export const movePortfolio = (m: CapitalMove) => (m.movement_type === "INVESTMEN
 
 /**
  * รวมเงินลงทุนสุทธิของพอร์ตหนึ่ง · pfCcy = สกุลพอร์ต
- * บาท: ก่อน Go-live = ยอดบาทที่ใส่ · โอนไป = ยอดบาทของฝั่งธนาคาร (base_amount) · โอนกลับ = ยอดบาทที่เข้าบัญชี (ยังไม่ทราบ → base_amount)
- * สกุลพอร์ต: ยอดฝั่งพอร์ต · ไม่ทราบสักรายการ (เช่น รอยอดปลายทาง / ก่อน Go-live ไม่ได้ใส่) → null (แสดงเฉพาะบาท)
+ * บาท: ก่อน Go-live = ต้นทุนรวมของยอดตั้งต้น (1 บรรทัด) · โอนไป = ยอดบาทของฝั่งธนาคาร (base_amount) · โอนกลับ = ยอดบาทที่เข้าบัญชี (ยังไม่ทราบ → base_amount)
+ * สกุลพอร์ต: ยอดฝั่งพอร์ต · ไม่ทราบสักรายการ (เช่น รอยอดปลายทาง / ยอดตั้งต้นต่างสกุลพอร์ต) → null (แสดงเฉพาะบาท)
  */
-export function netInvested(assetId: string, pfCcy: string, pre: CapitalPre[], moves: CapitalMove[]): NetInvested {
+export function netInvested(assetId: string, pfCcy: string, opening: OpeningCost[], moves: CapitalMove[]): NetInvested {
   const lines: CapitalLine[] = [];
-  pre.filter((p) => p.portfolio_asset_id === assetId).forEach((p) => lines.push({
-    key: `p${p.id}`, date: p.transfer_date, kind: "PRE", thb: Number(p.amount_thb),
-    ccy: pfCcy === "THB" ? Number(p.amount_thb) : p.amount_ccy == null ? null : Number(p.amount_ccy), pre: p }));
+  const op = opening.filter((o) => o.portfolio_asset_id === assetId);
+  if (op.length) {
+    const thb = op.reduce((t, o) => t + Number(o.cost_base_currency ?? 0), 0);
+    lines.push({ key: "opening", date: op[0].transaction_date, kind: "PRE", thb,
+      ccy: pfCcy === "THB" ? thb : op.every((o) => o.currency === pfCcy) ? op.reduce((t, o) => t + Number(o.quantity ?? 0) * Number(o.price ?? 0), 0) : null });
+  }
   moves.filter((m) => movePortfolio(m) === assetId).forEach((m) => {
     const out = m.movement_type === "INVESTMENT_OUT";
     // ฝั่งพอร์ต: โอนไป = ปลายทาง (counter ถ้าต่างสกุล) · โอนกลับ = ต้นทาง
