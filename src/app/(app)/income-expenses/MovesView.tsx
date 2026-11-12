@@ -20,7 +20,7 @@ export type MoveRow = {
     /** ป้ายตามเมนูต้นทาง (ledger.ts sourceMeta) */ source?: MoveMeta | null };
 };
 /** ยอดตาม Statement ของบัญชี (ใช้เป็นจุดตั้งต้นใหม่ของยอดคงเหลือ) */
-export type StmtRow = { key: string; date: string; value: number; label: string };
+export type StmtRow = { key: string; date: string; value: number; label: string; /** ปุ่มแก้ / ลบ (กดทั้งแถว) */ actions?: ReactNode };
 
 const small = "rounded-md border border-slate-300 bg-white px-2 py-1 text-sm";
 /** บรรทัด ≈ THB ใต้ยอดสกุลอื่น */
@@ -178,7 +178,7 @@ export default function MovesView({ rows, banks, showActions = false, openings =
                   <td className="pr-2"><MoveBadge label="ยอดตาม Statement" tone="slate" /></td>
                   <td colSpan={4} className="pr-2">{l.s.label}{l.diff != null && <span className="ml-2 text-amber-700">ต่างจากรายการที่บันทึก {l.diff > 0 ? "+" : ""}{bm(l.diff)}</span>}</td>
                   <td className={`whitespace-nowrap pl-4 text-right font-medium tabular-nums ${Number(l.s.value ?? 0) < -0.005 ? "text-red-700" : "text-slate-700"}`}>{bm(l.s.value)}</td>
-                  {showActions && <td></td>}
+                  {showActions && <td className="pl-2 text-right">{l.s.actions}</td>}
                 </tr>
               );
               const r = l.r;

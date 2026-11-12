@@ -181,7 +181,14 @@ export default async function AccountDetailPage({ params, searchParams }: {
   const months = withOpeningMonth(monthOptions(family?.go_live_date, today, 0, ym), family?.go_live_date);
   // ตารางแบบเดียวกับกล่องเงินเข้า–ออกในหน้า Income & Expenses (ชุดคำสั่งกลาง entry-kit) · rows ส่งแบบใหม่ → เก่า
   const ledgerStmts: StmtRow[] = (vals ?? []).filter((v) => v.valuation_date >= start && v.valuation_date <= end)
-    .map((v) => ({ key: `v${v.id}`, date: v.valuation_date, value: Number(v.value), label: SOURCE_LABEL[v.source] ?? v.source }));
+    .map((v) => ({ key: `v${v.id}`, date: v.valuation_date, value: Number(v.value), label: SOURCE_LABEL[v.source] ?? v.source,
+      // กดแถวเพื่อแก้ยอด (รวมยอดตั้งต้น) · ฟอร์มเดียวกับปุ่ม "บันทึกยอดคงเหลือตาม Statement"
+      actions: canWrite && v.source !== "RECONCILIATION" ? (
+        <RowActions table="asset_valuations" id={v.id} paths={paths} canDelete={canDelete && (vals ?? []).length > 1}
+          fields={[{ name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
+            { name: "value", label: "ยอด", type: "number", value: v.value },
+            { name: "notes", label: "หมายเหตุ", value: v.notes, width: "w-40" }]} />
+      ) : undefined }));
   const kit = makeEntryKit(await loadKitCtx(supabase, (moves ?? []) as Move[], { ym, personId: "", canWrite, canDelete, paths }));
   const ledgerRows = kit.buildMoveRows([...((moves ?? []) as Move[])].reverse(), canWrite);
   // บรรทัดใต้ชื่อบัญชี: ธนาคาร · ประเภท · เลขบัญชี (ข้อมูลอื่นอยู่ในกล่องรายละเอียด)
