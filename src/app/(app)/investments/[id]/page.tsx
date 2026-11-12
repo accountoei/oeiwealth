@@ -46,7 +46,7 @@ type Tx = { id: string; holding_id: string | null; transaction_date: string; set
   settle_to_asset_id: string | null; cash_movement_id: string | null; notes: string | null; net_cash: number;
   settlement_status: string; counter_amount: number | null; counter_currency: string | null;
   cash_holding_id: string | null; counter_cash_holding_id: string | null;
-  source_expense_item_id?: string | null; to_credit_card_id?: string | null };
+  source_expense_item_id?: string | null; to_credit_card_id?: string | null; cost_base_currency?: number | null };
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall" };
 
@@ -166,6 +166,14 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     .map((t) => ({ ...(t as unknown as OpeningCost), portfolio_asset_id: id }));
   const invested = netInvested(id, a.currency, openingRows,
     [...(transfers as unknown as CapitalMove[]), ...((directMvs as CapitalMove[] | null) ?? [])]);
+  // ต้นทุนยอดตั้งต้นรายตัวในหน้าต่างเงินลงทุนสุทธิ · คลิกแถว = หน้าต่างแก้รายการยอดตั้งต้นเดียวกับแท็บรายการ (ตกลง 12 พ.ย. 2026)
+  const openingEdits = holdings.flatMap((h) => txList.filter((t) => t.transaction_type === "OPENING_BALANCE" && t.holding_id === h.id).map((t) => ({
+    key: t.id, name: h.name, thb: Number(t.cost_base_currency ?? 0), local: Number(t.amount), currency: t.currency,
+    edit: canWrite && !t.cash_movement_id ? (
+      <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={portfolioTxCols(t)}
+        deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม" fields={portfolioTxFields(t, false)} />
+    ) : null,
+  })));
   // ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่าพอร์ต) → บวกกลับในกำไรเทียบเงินลงทุน
   const incomeRows = txList.filter((t) => ["DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) && t.settle_to_asset_id);
   const received = incomeToBank(a.currency, incomeRows as unknown as IncomeToBank[]);
@@ -242,7 +250,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
             valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
             incomeThb={incomeThb} receivedThb={received.thb} receivedCcy={received.ccy}
-            closed={a.status === "CLOSED"} lines={invested.lines}>
+            closed={a.status === "CLOSED"} lines={invested.lines} openings={openingEdits}>
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (

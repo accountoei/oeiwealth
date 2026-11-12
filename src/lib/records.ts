@@ -15,7 +15,8 @@ const EDITABLE: Record<string, Record<string, Kind>> = {
   expense_items: { date: "date", description: "str", amount: "num", expense_category: "str", notes: "str", expected_reimbursement_amount: "num", person_id: "str",
     property_cost_type: "str" },
   cash_movements: { movement_date: "date", amount: "num", counter_amount: "num", fee: "num", description: "str" },
-  investment_transactions: { transaction_date: "date", settlement_date: "date", quantity: "num", price: "num", amount: "num", fee: "num", tax: "num", notes: "str" },
+  investment_transactions: { transaction_date: "date", settlement_date: "date", quantity: "num", price: "num", amount: "num", fee: "num", tax: "num", notes: "str",
+    cost_base_currency: "num" },
   asset_valuations: { valuation_date: "date", value: "num", notes: "str" },
   liability_valuations: { valuation_date: "date", balance: "num", notes: "str" },
   investment_valuations: { valuation_date: "date", price: "num", market_value: "num" },
@@ -111,9 +112,15 @@ export async function updateRecord(_: RecState, form: FormData): Promise<RecStat
   if (!Object.keys(patch).length) return { error: "ไม่มีข้อมูลที่แก้" };
   const supabase = await createClient();
   const id = String(form.get("id"));
-  if (table === "investment_transactions" && patch.quantity != null && patch.price != null) {
-    const { data: t } = await supabase.from("investment_transactions").select("transaction_type").eq("id", id).maybeSingle();
-    if (t && ["BUY", "SELL"].includes(t.transaction_type)) patch.amount = Math.round(Number(patch.quantity) * Number(patch.price) * 10000) / 10000;
+  if (table === "investment_transactions") {
+    const { data: t } = await supabase.from("investment_transactions").select("transaction_type,currency").eq("id", id).maybeSingle();
+    if (t && ["BUY", "SELL"].includes(t.transaction_type) && patch.quantity != null && patch.price != null)
+      patch.amount = Math.round(Number(patch.quantity) * Number(patch.price) * 10000) / 10000;
+    // ยอดตั้งต้น (ตกลง 12 พ.ย. 2026): ต้นทุนบาทต้องตามราคาที่แก้ · เงินบาท → ล้างให้ Trigger คิดใหม่ (= มูลค่า) · ต่างประเทศ → ช่องต้นทุนรวมเป็นบาท
+    if (t?.transaction_type === "OPENING_BALANCE" && t.currency === "THB") patch.cost_base_currency = null;
+    else if (t?.transaction_type === "OPENING_BALANCE" && "cost_base_currency" in patch) {
+      if (patch.cost_base_currency == null || Number(patch.cost_base_currency) < 0) return { error: "กรุณาใส่ต้นทุนรวมเป็นบาท (ไม่ติดลบ)" };
+    } else delete patch.cost_base_currency;
   }
   const { data, error } = await supabase.from(table).update(patch).eq("id", id).select("id");
   if (error) return { error: friendlyError(error.message) };
