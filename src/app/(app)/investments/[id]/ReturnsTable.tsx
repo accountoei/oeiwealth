@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { HOLDING_TYPE_LABEL, money, signedMoney } from "@/lib/format";
 import { InfoTip } from "@/components/HeaderBar";
+import type { ReturnSplit } from "@/lib/net-invested";
 
 /** ผลตอบแทนเป็นบาท (investment_returns) */
 export type Ret = {
@@ -28,10 +29,12 @@ const cls = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" 
  * ผลตอบแทนต่อหลักทรัพย์ · ปุ่มสลับ "ดูเป็น {สกุลพอร์ต} / ดูเป็นบาท" (เริ่มที่สกุลพอร์ต)
  * มุมสกุลพอร์ต: ตัวเลขในสกุลหลักทรัพย์ → แปลงเป็นสกุลพอร์ตด้วยอัตราล่าสุด (ไม่รวมผลค่าเงินบาท)
  */
-export default function ReturnsTable({ rows, local = [], portfolioCurrency = "THB", rates = {}, hrefBase, title, bare = false }: {
+export default function ReturnsTable({ rows, local = [], portfolioCurrency = "THB", rates = {}, hrefBase, title, bare = false, box = null }: {
   rows: Ret[]; local?: RetLocal[]; portfolioCurrency?: string; rates?: Rates; hrefBase?: string; title?: string;
   /** อยู่ในกล่องแท็บของหน้าพอร์ต → ไม่มีกรอบ / หัวข้อซ้ำ */
   bare?: boolean;
+  /** ผลตอบแทนในกล่องมูลค่าด้านบน (หน้าพอร์ต) → ท้ายตารางมีบรรทัดปรับให้ยอดรวมเท่ากับกล่อง */
+  box?: ReturnSplit | null;
 }) {
   const canLocal = portfolioCurrency !== "THB" && local.length > 0;
   const [view, setView] = useState<"PF" | "THB">(canLocal ? "PF" : "THB");
@@ -79,6 +82,20 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
   const otherCcy = isPf && data.some((r) => r.currency !== portfolioCurrency);
   const m = (v: number) => money(v, undefined, isPf ? 2 : 0);
   const sign = (v: number) => signedMoney(v, undefined, isPf ? 2 : 0);
+  // ท้ายตารางให้ยอดรวมเท่ากับรวมผลตอบแทนในกล่องด้านบน (ตกลง 13 พ.ย. 2026)
+  //   รับแล้วก่อน Go-live = ต้นทุนรวมของยอดตั้งต้น − เงินที่โอนไปจริง · ส่วนที่เหลือ = เงินฝากในพอร์ต (ไม่มีแถวในตาราง) + อัตราแปลงสกุลอื่นที่ต่างจากกล่อง
+  const pick = (x: { thb: number | null; ccy: number | null }) => (isPf ? x.ccy : x.thb);
+  const cost = box?.basis ? pick(box.basis.cost) : 0, sent = box?.basis ? pick(box.basis.sent) : 0;
+  const got = cost == null || sent == null ? null : cost - sent;
+  const boxTotal = box ? pick(box.total) : null;
+  const rest = boxTotal == null || got == null ? null : boxTotal - (sum("total") + fxTotal) - got;
+  const toBox = rest != null && (Math.abs(got!) >= 0.005 || Math.abs(rest) >= 0.005);
+  const line = (label: string, note: string, v: number) => (
+    <tr className="text-slate-600">
+      <td className="px-4 py-2 font-normal" colSpan={7}>{label}<div className="text-xs text-slate-500">{note}</div></td>
+      <td className={`px-3 text-right tabular-nums ${cls(v)}`}>{sign(v)}</td>
+    </tr>
+  );
 
   return (
     <section className={bare ? "" : "overflow-x-auto rounded-xl border border-slate-200 bg-white"}>
@@ -123,10 +140,10 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
             </tr>
           ))}
         </tbody>
-        {(data.length > 1 || hasFxLine) && (
+        {(data.length > 1 || hasFxLine || toBox) && (
           <tfoot className="border-t border-slate-200 font-medium">
             <tr>
-              <td className="px-4 py-2">{hasFxLine ? "รวม (ผลตอบแทนการลงทุน)" : "รวม"}</td>
+              <td className="px-4 py-2">{hasFxLine || toBox ? "รวม (ผลตอบแทนการลงทุน)" : "รวม"}</td>
               <td className="px-3 text-right tabular-nums">{m(sum("cost"))}</td>
               <td className="px-3 text-right tabular-nums">{m(sum("value"))}</td>
               <Cell v={sum("unreal")} fx={sum("unrealFx")} showFx={showFx} sign={sign} />
@@ -135,20 +152,26 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
               <td className={`px-3 text-right tabular-nums ${sum("fees") ? "text-red-700" : ""}`}>{sum("fees") ? `-${m(sum("fees"))}` : "-"}</td>
               <td className={`px-3 text-right tabular-nums ${cls(sum("total"))}`}>{sign(sum("total"))}</td>
             </tr>
-            {hasFxLine && (
+            {hasFxLine && line("ผลจากค่าเงินบาท (หลักทรัพย์)",
+              "ส่วนต่างระหว่างอัตราตอนซื้อ / ยอดตั้งต้น กับอัตราวันนี้ · ยังไม่รับรู้จนกว่าจะแลกกลับเป็นบาท · รวมอยู่ในความมั่งคั่งสุทธิแล้ว", fxTotal)}
+            {toBox ? (
               <>
-                <tr className="text-slate-600">
-                  <td className="px-4 py-2 font-normal" colSpan={7}>
-                    ผลจากค่าเงินบาท (ทั้งพอร์ต)
-                    <div className="text-xs text-slate-500">ส่วนต่างระหว่างอัตราตอนซื้อ / ยอดตั้งต้น กับอัตราวันนี้ · ยังไม่รับรู้จนกว่าจะแลกกลับเป็นบาท · รวมอยู่ในความมั่งคั่งสุทธิแล้ว</div>
-                  </td>
-                  <td className={`px-3 text-right tabular-nums ${cls(fxTotal)}`}>{sign(fxTotal)}</td>
-                </tr>
+                {Math.abs(rest!) >= 0.005 && (otherCcy
+                  ? line("ค่าเงินสกุลอื่น และเงินฝากในพอร์ต", `ตารางแปลงสกุลอื่นเป็น ${portfolioCurrency} ด้วยอัตราล่าสุด ส่วนกล่องใช้อัตราตอนตั้งต้น / ใน Statement · รวมผลค่าเงินและดอกเบี้ยของเงินฝากในพอร์ต ซึ่งไม่มีแถวในตารางด้านบน`, rest!)
+                  : line("เงินฝากในพอร์ต", "ผลค่าเงินและดอกเบี้ยของเงินฝากในพอร์ต ซึ่งไม่มีแถวในตารางด้านบน", rest!))}
+                {Math.abs(got!) >= 0.005 && line("ปันผล ดอกเบี้ย คูปอง กำไร ก่อน Go-live (รับแล้ว)",
+                  `ต้นทุนยอดตั้งต้น ${m(cost!)} − เงินที่โอนไปจริง ${m(sent!)} · ผลตอบแทนที่ได้รับและนำมาลงทุนต่อก่อน Go-live`, got!)}
                 <tr>
-                  <td className="px-4 py-2" colSpan={7}>รวมทั้งหมด (เป็นบาท)</td>
-                  <td className={`px-3 text-right tabular-nums ${cls(sum("total") + fxTotal)}`}>{sign(sum("total") + fxTotal)}</td>
+                  <td className="px-4 py-2" colSpan={7}>{box?.basis ? "รวมผลตอบแทน (เทียบเงินที่โอนไปจริง)" : "รวมผลตอบแทน (เทียบเงินลงทุนสุทธิ)"}
+                    <div className="text-xs font-normal text-slate-500">เท่ากับรวมผลตอบแทนในกล่องด้านบน</div></td>
+                  <td className={`px-3 text-right tabular-nums ${cls(boxTotal!)}`}>{sign(boxTotal!)}</td>
                 </tr>
               </>
+            ) : hasFxLine && (
+              <tr>
+                <td className="px-4 py-2" colSpan={7}>รวมทั้งหมด (เป็นบาท)</td>
+                <td className={`px-3 text-right tabular-nums ${cls(sum("total") + fxTotal)}`}>{sign(sum("total") + fxTotal)}</td>
+              </tr>
             )}
           </tfoot>
         )}

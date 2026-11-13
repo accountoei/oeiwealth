@@ -535,7 +535,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
 
         <TabPanel id="ret">
           <ReturnsTable bare rows={(rets as Ret[] | null) ?? []} local={(retsLocal as RetLocal[] | null) ?? []}
-            portfolioCurrency={a.currency} rates={fxRates} hrefBase={`/investments/${id}/holding/`} />
+            portfolioCurrency={a.currency} rates={fxRates} hrefBase={`/investments/${id}/holding/`} box={split} />
         </TabPanel>
 
         <TabPanel id="tx" className="p-4">
