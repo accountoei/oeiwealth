@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, ACCOUNT_TYPE_LABEL, CCY_COLORS, INCOME_TYPE_LABEL, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
+import { ADD_BTN, ACCOUNT_TYPE_LABEL, CCY_COLORS, INCOME_TYPE_LABEL, addDays, money, monthOptions, monthRange, thDate, thMonth, todayBangkok } from "@/lib/format";
 import { bankLabel } from "@/lib/banks";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
@@ -20,6 +20,8 @@ import { FLOW_LABEL, INCOME_KEYS, OTHER_KEYS, SPEND_KEYS, flowCount, flowSum, in
 import FlowCard from "./FlowCard";
 import { EntryEditor, type Bank, type Person } from "../../income-expenses/forms";
 import { cardLabel } from "@/lib/money-endpoint";
+import { bankFx } from "@/lib/bank-fx";
+import type { RateAt } from "@/lib/net-invested";
 
 type Acc = { asset_id: string; name: string; currency: string; bank_name: string; account_type: string;
   account_no_masked: string | null; status: string; interest_rate: number | null; maturity_date: string | null; overdraft_limit: number | null };
@@ -46,6 +48,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const ym = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? (sp.m as string) : today.slice(0, 7);
   const { start, end, prev } = monthRange(ym);
   const prevStart = `${prev}-01`;
+  const prevEnd = monthRange(prev).end;
   const asOf = end < today ? end : today;
   const upDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.d ?? "") && (sp.d as string) <= today ? (sp.d as string) : today;
   const pv = await loadPersonView(sp.p);
@@ -57,7 +60,7 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const movesQ = supabase.from("cash_movements").select("movement_type,from_asset_id,to_asset_id,amount,fee,counter_amount,counter_currency,source_entity_id")
     .gte("movement_date", start).lte("movement_date", asOf).is("deleted_at", null).limit(10000).then((r) => r);
   const [{ data: accounts, error }, { data: owners }, { data: fx }, { data: sumRaw }, { data: prevRaw }, { data: atRaw },
-    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }, { data: incTypes }, { data: persons }] = await Promise.all([
+    { data: lumpE }, { data: lumpI }, { data: family }, sortMap, { data: interestRaw }, { data: cardsRaw }, { data: cardPays }, { data: monthMoves }, { data: incTypes }, { data: persons }, { data: fxHist }] = await Promise.all([
     supabase.from("v_bank_accounts_safe").select("asset_id,name,currency,bank_name,account_type,account_no_masked,status,interest_rate,maturity_date,overdraft_limit").order("name"),
     supabase.from("v_asset_ownerships_active").select("asset_id,person_id,person_name,ownership_percent,end_date"),
     supabase.from("v_fx_status").select("currency,rate_to_thb"),
@@ -86,6 +89,9 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
     })(),
     // หน้าต่างแก้ดอกเบี้ยรับ = ฟอร์มเดียวกับ Income & Expenses / หน้าบัญชี (ตกลง 10 พ.ย. 2026)
     supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
+    // ส่วนต่างค่าเงิน (อัตราสิ้นเดือนก่อน → ปลายงวด) ใต้ยอดเงินฝากรวม · ตกลง 13 พ.ย. 2026
+    supabase.from("fx_rates").select("currency,rate_date,rate_to_thb").eq("rate_type", "MID_AVERAGE").is("deleted_at", null)
+      .gte("rate_date", addDays(prevEnd, -14)).lte("rate_date", asOf),
   ]);
   const rate = new Map<string, number>([["THB", 1], ...((fx ?? []).map((r) => [r.currency as string, Number(r.rate_to_thb)] as [string, number]))]);
   const thb = (v: number | null | undefined, c: string) => Number(v ?? 0) * (rate.get(c) ?? 0);
@@ -112,6 +118,8 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
   const pos = (v: number | string | null | undefined) => Math.max(Number(v ?? 0), 0);
   const totalNow = tot(sum, (s) => pos(s.balance));
   const totalPrev = tot(prevSum, (s) => pos(s.balance));
+  const fxDiff = bankFx(active.map((a) => ({ currency: a.currency, amount: pos(prevSum.get(a.asset_id)?.balance) * share(a.asset_id) })),
+    (fxHist as RateAt[] | null) ?? [], prevEnd, asOf);
   const flow = monthFlows((monthMoves as Move[] | null) ?? [], new Set(((accounts as Acc[] | null) ?? []).map((a) => a.asset_id)),
     new Map(active.map((a) => [a.asset_id, (v: number) => thb(v, a.currency) * share(a.asset_id)])),
     new Map((incTypes ?? []).map((r) => [r.id, r.income_type])));
@@ -235,6 +243,12 @@ export default async function CashPage({ searchParams }: { searchParams: Sp }) {
             <div className="text-xs text-slate-500">ยอดเงินฝากรวม (THB Equivalent){asOf < end ? " · ถึงวันนี้" : ""}</div>
             <div className="mt-1 text-xl font-semibold tabular-nums">{money(totalNow, "THB")}</div>
             <div className="mt-1 text-xs"><Delta v={pct(totalNow, totalPrev)} /> {Math.abs(totalPrev) > 0.005 && <span className="text-slate-400">({money(totalPrev, undefined, 0)})</span>}</div>
+            {Math.abs(fxDiff) >= 0.5 && (
+              <div className="mt-1 flex items-baseline justify-between gap-2 text-xs">
+                <span className="text-slate-500">ส่วนต่างค่าเงิน (อัตราสิ้นเดือนก่อน → {asOf < today ? "สิ้นเดือน" : "วันนี้"})</span>
+                <span className={`tabular-nums ${fxDiff < 0 ? "text-red-700" : "text-slate-700"}`}>{fxDiff > 0 ? "+" : ""}{money(fxDiff)}</span>
+              </div>
+            )}
             <p className="mt-1 text-xs text-slate-400">ยอดสกุลอื่นแปลงเป็นบาทด้วยอัตราล่าสุด</p>
             {byCcy.length > 0 && (
               <ul className="mt-3 space-y-1 text-xs">

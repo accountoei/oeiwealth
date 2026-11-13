@@ -2,7 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { requireAppUser } from "@/lib/auth";
-import { INCOME_TYPE_LABEL, friendlyError, monthRange, todayBangkok, type FormState } from "@/lib/format";
+import { INCOME_TYPE_LABEL, addDays, friendlyError, monthRange, todayBangkok, type FormState } from "@/lib/format";
+import { bankFx } from "@/lib/bank-fx";
+import { loadPersonView } from "@/lib/person-view";
+import type { RateAt } from "@/lib/net-invested";
 import { revalidatePath } from "@/lib/revalidate";
 
 // รายละเอียดของกล่องบน Dashboard (โหลดตอนกดเปิด pop up เท่านั้น → หน้า Dashboard ไม่ช้าลง)
@@ -136,6 +139,27 @@ export async function loadInvestmentGain(start: string, personId: string): Promi
   const { data, error } = await (await createClient()).rpc("month_investment_gain", { p_month: start, p_person: personId || null });
   if (error) return { error: error.message };
   return (data ?? null) as InvestmentGain | null;
+}
+
+/** ส่วนต่างค่าเงินของเงินฝากสกุลอื่นในเดือน (บรรทัดแรกของ "อื่น ๆ" แยกตามหมวด · 13 พ.ย. 2026) — สูตรเดียวกับกล่องแรกหน้า Bank Accounts */
+export async function loadBankFx(start: string, personId: string): Promise<number | { error: string }> {
+  await requireAppUser();
+  if (!ymd(start)) return { error: "เดือนไม่ถูกต้อง" };
+  const supabase = await createClient();
+  const { end, prev } = monthRange(start.slice(0, 7));
+  const prevEnd = monthRange(prev).end;
+  const today = todayBangkok();
+  const asOf = end < today ? end : today;
+  const [{ data: accs }, { data: bal }, { data: rates }, pv] = await Promise.all([
+    supabase.from("v_bank_accounts_safe").select("asset_id,currency").neq("currency", "THB"),
+    supabase.rpc("bank_month_summary", { p_month: `${prev}-01` }),
+    supabase.from("fx_rates").select("currency,rate_date,rate_to_thb").eq("rate_type", "MID_AVERAGE").is("deleted_at", null)
+      .gte("rate_date", addDays(prevEnd, -14)).lte("rate_date", asOf),
+    loadPersonView(personId || undefined),
+  ]);
+  const prevBal = new Map(((bal as { asset_id: string; balance: number | null }[] | null) ?? []).map((r) => [r.asset_id, Number(r.balance ?? 0)]));
+  return bankFx((accs ?? []).map((a) => ({ currency: a.currency as string, amount: Math.max(prevBal.get(a.asset_id as string) ?? 0, 0) * pv.assetShare(a.asset_id as string) })),
+    (rates as RateAt[] | null) ?? [], prevEnd, asOf);
 }
 
 /** ปุ่ม "คำนวณยอดสิ้นเดือนใหม่" (ADMIN / EDITOR · 9 พ.ย. 2026) = งานเช้า 07:30 ทันที
