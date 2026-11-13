@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Modal from "@/components/Modal";
 import { InfoTip } from "@/components/HeaderBar";
 import { baht } from "@/lib/format";
-import { loadGroupChanges, loadInvestmentGain, loadMonthFlows, type GroupChange, type InvestmentGain, type MonthFlows, type Row } from "./dashboard-detail";
+import { loadBankFx, loadGroupChanges, loadInvestmentGain, loadMonthFlows, type GroupChange, type InvestmentGain, type MonthFlows, type Row } from "./dashboard-detail";
 
 /** กรอบกล่องบน Dashboard · ปุ่ม "ดูรายละเอียด ›" มุมขวาบน → pop up (popup สร้างตอนกดเท่านั้น)
  *  (ตกลง 1 พ.ย. 2026: กดได้เฉพาะปุ่ม ไม่ใช่ทั้งกล่อง → ตารางในกล่องอ่านด้วยโปรแกรมอ่านหน้าจอได้ตามปกติ)
@@ -93,7 +93,8 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
   const { data: f, err: e1 } = useLoad<MonthFlows>(() => loadMonthFlows(start, personId));
   const { data: g, err: e2 } = useLoad<GroupChange[]>(() => loadGroupChanges(start, personId));
   const { data: ig, err: e3, done: igDone } = useLoad<InvestmentGain | null>(() => loadInvestmentGain(start, personId));
-  const err = e1 || e2 || e3;
+  const { data: bfx, err: e4 } = useLoad<number>(() => loadBankFx(start, personId));
+  const err = e1 || e2 || e3 || e4;
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) => setOpen((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const wait = err ? <p className="text-sm text-red-600">โหลดไม่สำเร็จ: {err}</p> : <Loading />;
@@ -134,7 +135,7 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
       note: b.fx ? <>ในนั้นจาก FX {b.fx > 0 ? "+" : ""}{baht(b.fx)}</> : null,
       detail: !igDone ? wait : ig && ig.by_portfolio.length > 0 ? <GainTable ig={ig} /> : <p className="text-sm text-slate-500">ไม่มีพอร์ตลงทุน</p> },
     { key: "other", label: "± มูลค่าเปลี่ยน / อื่น ๆ", v: b.other, signed: true,
-      detail: g ? <OtherTable gs={g} other={b.other} /> : wait },
+      detail: g && bfx != null ? <OtherTable gs={g} other={b.other} bankFx={bfx} /> : wait },
     { key: "end", label: b.endLabel, v: b.cur, bold: true },
     // ตารางยอดทุกหมวดแยกเป็นบรรทัดสุดท้าย (4 พ.ย. 2026 · เดิมอยู่ใต้ "อื่น ๆ" → แถวการลงทุนซ้ำกับบรรทัดกำไร / ขาดทุน ดูสับสน)
     { key: "groups", label: "ยอดตามหมวด ต้นงวด → สิ้นงวด", note: "รวมผลของทุกบรรทัดข้างบน", v: b.cur - b.prev, signed: true,
@@ -178,16 +179,19 @@ export function ChangeDetail({ start, personId, b }: { start: string; personId: 
 /** มูลค่าตามหมวด ต้นงวด → สิ้นงวด (ใต้บรรทัด "มูลค่าเปลี่ยน / อื่น ๆ") */
 /** "อื่น ๆ" แยกตามหมวด (4 พ.ย. 2026 · แบบ ก.): เฉพาะส่วนที่ไม่ได้อยู่ในบรรทัดข้างบน · รวมแล้ว = บรรทัด "อื่น ๆ" พอดี
  *  เงินฝากธนาคาร + การลงทุน = ยอดเปลี่ยนของสองหมวดนี้ − รายได้ / ค่าใช้จ่าย / กำไร / ขาดทุนข้างบน (เงินจากบรรทัดเหล่านั้นเข้า-ออกสองหมวดนี้)
- *  คิดเป็นยอดที่เหลือจาก "อื่น ๆ" หลังหักหมวดอื่น → ผลรวมตรงกับบรรทัดเสมอ · หมวดอื่น = ยอดเปลี่ยนทั้งหมวด · แสดงเฉพาะแถวที่ไม่ใช่ 0 */
-function OtherTable({ gs, other }: { gs: GroupChange[]; other: number }) {
+ *  คิดเป็นยอดที่เหลือจาก "อื่น ๆ" หลังหักหมวดอื่น → ผลรวมตรงกับบรรทัดเสมอ · หมวดอื่น = ยอดเปลี่ยนทั้งหมวด · แสดงเฉพาะแถวที่ไม่ใช่ 0
+ *  13 พ.ย. 2026: แยกส่วนต่างค่าเงินของเงินฝากสกุลอื่น (loadBankFx) ออกเป็นบรรทัดแรก · ที่เหลือ = "เงินฝากธนาคาร + การลงทุน · ส่วนที่เหลือ" */
+function OtherTable({ gs, other, bankFx }: { gs: GroupChange[]; other: number; bankFx: number }) {
   const rest = gs.filter((r) => r.key !== "FINANCIAL" && r.key !== "INVESTMENT")
     .map((r) => ({ key: r.key, label: r.label, v: (r.end - r.start) * (r.key === "LIABILITY" ? -1 : 1) }));   // หนี้เพิ่ม = ความมั่งคั่งลด
   const liquid = other - rest.reduce((t, r) => t + r.v, 0);
-  const rows = [{ key: "LIQUID", label: "เงินฝากธนาคาร + การลงทุน", v: liquid }, ...rest].filter((r) => Math.round(r.v) !== 0);
+  const rows = [{ key: "BANK_FX", label: "เงินฝากธนาคาร · ส่วนต่างค่าเงิน", v: bankFx },
+    { key: "LIQUID", label: "เงินฝากธนาคาร + การลงทุน · ส่วนที่เหลือ", v: liquid - bankFx }, ...rest].filter((r) => Math.round(r.v) !== 0);
   return (
     <>
       <SubHead info={<>&ldquo;อื่น ๆ&rdquo; = ประเมินมูลค่าใหม่ (อสังหาฯ / ธุรกิจ / ทอง / สินทรัพย์อื่น) · อัตราแลกเปลี่ยนของเงินฝากต่างประเทศ · ยอดหนี้ · รายการที่ยังไม่ได้บันทึก ·
-        &ldquo;เงินฝากธนาคาร + การลงทุน&rdquo; = ส่วนที่ไม่ได้อยู่ในบรรทัดรายได้ ค่าใช้จ่าย และกำไร / ขาดทุนข้างบน ·
+        &ldquo;ส่วนต่างค่าเงิน&rdquo; = ยอดเงินฝากสกุลอื่นสิ้นเดือนก่อน × (อัตราปลายงวด − อัตราสิ้นเดือนก่อน) (ตัวเลขเดียวกับกล่องแรกหน้า Bank Accounts) ·
+        &ldquo;ส่วนที่เหลือ&rdquo; = ส่วนที่ไม่ได้อยู่ในบรรทัดรายได้ ค่าใช้จ่าย และกำไร / ขาดทุนข้างบน เช่น รายการที่ยังไม่ได้บันทึก ·
         เงินที่ย้ายระหว่างหมวดจะเห็นทั้งสองฝั่ง (เช่น จ่ายเงินซื้ออสังหาฯ 1,000,000: อสังหาริมทรัพย์ +1,000,000 · เงินฝาก −1,000,000 รวมแล้ว 0) ·
         หนี้สินเพิ่ม = ความมั่งคั่งสุทธิลด</>}>แยกตามหมวด (เฉพาะส่วนที่เป็น &ldquo;อื่น ๆ&rdquo;)</SubHead>
       {rows.length === 0 ? <p className="text-sm text-slate-500">ไม่มี</p> : (
@@ -195,7 +199,8 @@ function OtherTable({ gs, other }: { gs: GroupChange[]; other: number }) {
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => (
               <tr key={r.key}>
-                <td className="py-1 pr-3">{r.label}{r.key === "LIQUID" && <span className="block text-xs text-slate-500">ส่วนที่ไม่ได้อยู่ในบรรทัดข้างบน</span>}</td>
+                <td className="py-1 pr-3">{r.label}{r.key === "LIQUID" && <span className="block text-xs text-slate-500">ส่วนที่ไม่ได้อยู่ในบรรทัดข้างบน</span>}
+                  {r.key === "BANK_FX" && <span className="block text-xs text-slate-500">บัญชีสกุลอื่น คิดอัตราสิ้นเดือนก่อน → ปลายงวด</span>}</td>
                 <td className={`py-1 text-right align-top tabular-nums ${sign(r.v)}`}>{r.v > 0 ? "+" : ""}{baht(r.v)}</td>
               </tr>
             ))}
