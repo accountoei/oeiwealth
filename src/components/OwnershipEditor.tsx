@@ -1,20 +1,20 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { useActionSlot } from "@/components/ActionBar";
 import { setOwnership, type RecState } from "@/lib/records";
 import Flash from "@/components/Flash";
 import { SMALL_BTN } from "@/lib/format";
 
-/** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability) */
-export default function OwnershipEditor({ kind, id, persons, current, paths, today, startOpen = false, unit = "percent", totalShares }: {
+/** แก้สัดส่วนเจ้าของ (asset) หรือผู้รับผิดชอบหนี้ (liability)
+ *  ปกติเห็นแค่บรรทัดสรุป + ปุ่ม แก้สัดส่วน · กดแล้วฟอร์มกางในหน้าต่างเดิม (ตกลง 13 พ.ย. 2026) */
+export default function OwnershipEditor({ kind, id, persons, current, paths, today, unit = "percent", totalShares }: {
   kind: "asset" | "liability"; id: string; persons: { id: string; name: string }[];
-  current: { person_id: string; percent: number; shares?: number | null; cost?: number | null }[]; paths: string[]; today: string; startOpen?: boolean;
+  current: { person_id: string; percent: number; shares?: number | null; cost?: number | null }[]; paths: string[]; today: string;
   /** ธุรกิจ: แก้เป็นจำนวนหุ้น (totalShares = หุ้นทั้งหมดของบริษัท) */
   unit?: "percent" | "shares"; totalShares?: number | null;
 }) {
   const bySh = unit === "shares";
-  const { open, setOpen, present, activeCls } = useActionSlot(startOpen);
+  const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("CORRECT");
   const [shares, setShares] = useState<Record<string, string>>(
     Object.fromEntries(current.map((c) => [c.person_id, bySh ? (c.shares != null ? String(Number(c.shares)) : "") : String(c.percent)])));
@@ -23,10 +23,14 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
   const [state, action, pending] = useActionState<RecState, FormData>(setOwnership, {});
   const total = Object.values(shares).reduce((s, v) => s + (Number(String(v).replace(/,/g, "")) || 0), 0);
   const over = bySh ? !!totalShares && total > totalShares : total > 100;
-  const trigger = <button type="button" onClick={() => setOpen(!open)} className={activeCls(SMALL_BTN)}>{bySh ? "แก้จำนวนหุ้น" : "แก้สัดส่วน"}</button>;
-  if (!open) return trigger;
-  return present(trigger, (
-    <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3 text-sm">
+  const name = (pid: string) => persons.find((p) => p.id === pid)?.name ?? "สมาชิกอื่น";
+  const summary = current.map((c) => `${name(c.person_id)} ${bySh && c.shares != null ? `${Number(c.shares).toLocaleString("th-TH")} หุ้น` : `${c.percent}%`}`).join(" · ");
+  return (<>
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span>{summary || <span className="text-slate-500">ยังไม่ระบุ</span>}</span>
+      <button type="button" onClick={() => setOpen(!open)} className={SMALL_BTN}>{bySh ? "แก้จำนวนหุ้น" : "แก้สัดส่วน"}</button>
+    </div>
+    {open && <form action={action} className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3 text-sm">
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="paths" value={paths.join(",")} />
@@ -71,6 +75,6 @@ export default function OwnershipEditor({ kind, id, persons, current, paths, tod
         {state.error && <span className="text-xs text-red-600">{state.error}</span>}
         <Flash on={state} as="span" className="text-xs text-emerald-700" />
       </div>
-    </form>
-  ));
+    </form>}
+  </>);
 }

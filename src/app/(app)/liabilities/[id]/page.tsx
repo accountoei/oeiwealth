@@ -171,7 +171,7 @@ export default async function LiabilityDetailPage({ params }: { params: Promise<
                   hint: "ปิดหนี้จริงให้เปลี่ยนสถานะเป็น \"ปิดหนี้แล้ว\"" } : undefined} />
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">ผู้รับผิดชอบหนี้</h3>
-                  <OwnershipEditor kind="liability" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                  <OwnershipEditor kind="liability" id={id} persons={persons ?? []} paths={paths} today={today}
                     current={ownerRows.map((o) => ({ person_id: o.person_id, percent: o.pct }))} />
                 </div>
               </div>

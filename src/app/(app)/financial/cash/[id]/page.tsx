@@ -276,10 +276,7 @@ export default async function AccountDetailPage({ params, searchParams }: {
                   </div>
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="mb-2 text-sm font-medium text-slate-800">เจ้าของบัญชี</h3>
-                    <ul className="mb-2 space-y-0.5 text-sm">
-                      {activeOwners.map((o) => <li key={o.person_name}>{o.person_name} · {Number(o.ownership_percent)}%</li>)}
-                    </ul>
-                    <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
                       current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
                   </div>
                 </div>
