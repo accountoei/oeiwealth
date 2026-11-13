@@ -55,7 +55,7 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
         <div className="flex justify-between gap-3"><dt className="text-slate-500">เงินลงทุนสุทธิ<div className="text-slate-400">{cost ? "เงินที่โอนไปจริง" : "ต้นทุนยอดตั้งต้น"} + โอนเข้า − โอนกลับ</div></dt>
           <dd className="text-right tabular-nums">{lines.length === 0 ? <span className="text-slate-500">ยังไม่มียอดตั้งต้น / เงินโอน</span> : <>
             <div className="text-sm font-medium">{money(investedThb, "THB", 0)}</div>
-            {fx && <div className="text-slate-500">{investedCcy == null ? `${currency} ยังไม่ครบ` : money(investedCcy, currency, 0)}</div>}</>}</dd></div>
+            {fx && (investedCcy == null ? <div className="text-slate-500">{currency} ยังไม่ครบ</div> : <div className="font-medium text-blue-700">{money(investedCcy, currency, 0)}</div>)}</>}</dd></div>
         {lines.length > 0 && (
           <div className="flex justify-between gap-3"><dt className="text-slate-500">{plLabel}
             {hasReceived && <div className="text-slate-400">รวมปันผล / ดอกเบี้ยที่เข้าบัญชีธนาคาร {money(receivedThb, "THB", 0)}</div>}</dt>
