@@ -29,8 +29,8 @@ const cls = (v: number) => (v > 0 ? "text-emerald-700" : v < 0 ? "text-red-700" 
  * ผลตอบแทนต่อหลักทรัพย์ · ปุ่มสลับ "ดูเป็น {สกุลพอร์ต} / ดูเป็นบาท" (เริ่มที่สกุลพอร์ต)
  * มุมสกุลพอร์ต: ตัวเลขในสกุลหลักทรัพย์ → แปลงเป็นสกุลพอร์ตด้วยอัตราล่าสุด (ไม่รวมผลค่าเงินบาท)
  */
-export default function ReturnsTable({ rows, local = [], portfolioCurrency = "THB", rates = {}, hrefBase, title, bare = false, box = null }: {
-  rows: Ret[]; local?: RetLocal[]; portfolioCurrency?: string; rates?: Rates; hrefBase?: string; title?: string;
+export default function ReturnsTable({ rows, local = [], portfolioCurrency = "THB", rates = {}, hrefBase, bare = false, box = null }: {
+  rows: Ret[]; local?: RetLocal[]; portfolioCurrency?: string; rates?: Rates; hrefBase?: string;
   /** อยู่ในกล่องแท็บของหน้าพอร์ต → ไม่มีกรอบ / หัวข้อซ้ำ */
   bare?: boolean;
   /** ผลตอบแทนในกล่องมูลค่าด้านบน (หน้าพอร์ต) → ท้ายตารางมีบรรทัดปรับให้ยอดรวมเท่ากับกล่อง */
@@ -101,7 +101,7 @@ export default function ReturnsTable({ rows, local = [], portfolioCurrency = "TH
     <section className={bare ? "" : "overflow-x-auto rounded-xl border border-slate-200 bg-white"}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
         {bare ? <span className="text-sm text-slate-600">หน่วย: {unit}</span>
-          : <h2 className="font-medium text-slate-900">{title ?? "ผลตอบแทน"} ({unit}) <InfoTip label="คำอธิบาย">{showFx && "“จาก FX” = ส่วนของกำไร/ขาดทุนที่เกิดจากค่าเงินเปลี่ยน (สินทรัพย์สกุลต่างประเทศ) · "}
+          : <h2 className="font-medium text-slate-900">ผลตอบแทน ({unit}) <InfoTip label="คำอธิบาย">{showFx && "“จาก FX” = ส่วนของกำไร/ขาดทุนที่เกิดจากค่าเงินเปลี่ยน (สินทรัพย์สกุลต่างประเทศ) · "}
         เงินฝากในพอร์ตไม่แสดงในตารางนี้ · ค่าธรรมเนียมซื้อขายรวมอยู่ในต้นทุน / เงินขายแล้ว</InfoTip> <InfoTip label="คำอธิบาย">ต้นทุนเฉลี่ย · นับตั้งแต่ยอดตั้งต้น / Go-live ·{" "}
         {isPf ? `ไม่รวมผลจากค่าเงินบาท${otherCcy ? ` · สกุลอื่นแปลงเป็น ${portfolioCurrency} ด้วยอัตราล่าสุด` : ""}`
           : hasFxLine ? "สกุลต่างประเทศ: ผลตอบแทนในสกุลเดิมแปลงเป็นบาทด้วยอัตราล่าสุด (ต้นทุนและมูลค่าใช้อัตราเดียวกัน) · ผลจากค่าเงินแสดงแยกท้ายตาราง"

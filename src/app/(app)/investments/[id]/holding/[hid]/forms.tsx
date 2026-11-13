@@ -89,13 +89,14 @@ export function UnderlyingForm({ assetId, fcnId }: { assetId: string; fcnId: str
 }
 
 /** รับ Coupon / ดอกเบี้ย / ปันผล ของหลักทรัพย์นี้ · ประเภท "คืนเงินต้น" = บันทึกครบกำหนด / Autocall (หลักทรัพย์ปิด) */
-export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultDate, defaultNotes, incomeAccount }: {
+export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName = "", currency, isFcn, canMature = false, banks, cashAccounts, today, minDate, label, title, defaultAmount, defaultDate, defaultNotes, defaultType, incomeAccount }: {
   assetId: string; portfolioName?: string; holdingId: string; holdingName?: string; currency: string; isFcn: boolean;
   /** หุ้นกู้ / FCN / Structured / อื่น ๆ ที่ยังถืออยู่ → มีประเภท "คืนเงินต้น" */ canMature?: boolean;
   banks: Bank[]; cashAccounts: CashAcct[]; today: string; minDate: string;
   /** ใช้จากแท็บ "บันทึกรับผลตอบแทน": ชื่อปุ่ม / หัวฟอร์ม · ยอดที่คาดว่าจะได้รับ · หมายเหตุงวด (ประเภท = Coupon / ดอกเบี้ย) */
   label?: string; title?: string; defaultAmount?: number | null; defaultNotes?: string;
   /** วันที่ตั้งต้น (แท็บรอรับ: วันรับตามตาราง · แก้ได้) */ defaultDate?: string;
+  /** ประเภทตั้งต้น (หน้าหลักทรัพย์: มีงวดดอกเบี้ยรอรับ = Coupon) */ defaultType?: string;
   /** บัญชีรับเงินที่ผูกไว้กับหลักทรัพย์ ("h:<id>" / "a:<id>") → ค่าตั้งต้นของการรับครั้งนี้ (เปลี่ยนได้ ไม่แก้ค่าที่ผูก) */
   incomeAccount?: string;
 }) {
@@ -104,7 +105,7 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
   const [mode, setMode] = useState(incEp.kind === "bank" ? "bank" : "cash");
   const [txState, txAction, txPending] = useActionState<ActionState, FormData>(recordTx, {});
   const [matState, matAction, matPending] = useActionState<ActionState, FormData>(recordMaturity, {});
-  const [type, setType] = useState(isFcn ? "COUPON" : "DIVIDEND");
+  const [type, setType] = useState(defaultType ?? (isFcn ? "COUPON" : "DIVIDEND"));
   const cf = useConfirmSubmit();
   const mat = type === "MATURITY";
   const [state, action, pending] = mat ? [matState, matAction, matPending] : [txState, txAction, txPending];
