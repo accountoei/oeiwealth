@@ -21,7 +21,7 @@ import EditToggle from "@/components/EditToggle";
 import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
-import HoldingHistory from "./history";
+import HoldingHistory, { PriceHistory } from "./history";
 import { InfoTip } from "@/components/HeaderBar";
 import { activeBanks } from "@/lib/pay-sources";
 import { VALUATION_AT_COLS, openingValues, ratesAt, type RateAt, type ValuationAt } from "@/lib/net-invested";
@@ -61,7 +61,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
       .order("transaction_date", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("investment_valuations").select("id,valuation_date,price,quantity,market_value,source").eq("holding_id", hid)
-      .is("deleted_at", null).order("valuation_date", { ascending: false }).limit(60),
+      .is("deleted_at", null).order("valuation_date", { ascending: false }).limit(1500),   // ราคาอัตโนมัติขึ้นทุกวันทำการ ≈ 6 ปี
     cachedRpc<Ret[]>("investment_returns", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // ผลเดียวกับหน้ารวม (จำไว้ / จนมีการบันทึก)
     supabase.from("fcn_details").select("*, fcn_underlyings(id,symbol,name,initial_price,strike_price,barrier_price,deleted_at)")
       .eq("holding_id", hid).is("deleted_at", null).maybeSingle(),
@@ -150,6 +150,15 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     const value = v.price != null ? Number(v.price) * q : Number(v.quantity) > 0 ? Number(v.market_value) * q / Number(v.quantity) : Number(v.market_value);
     return { ...v, q, value };
   });
+  // กล่องราคา: ราคาอัตโนมัติเดือนละบรรทัด = ราคาล่าสุดของเดือน · ที่เหลือ = รายวัน (ซ่อนไว้ก่อน · ส่งเฉพาะ 1 ปีล่าสุด)
+  const marketMonths = new Set<string>();
+  const dailyFrom = addDays(today, -366);
+  const priceRows = valRows.map((v) => {
+    const m = v.valuation_date.slice(0, 7);
+    const daily = v.source === "MARKET" && marketMonths.has(m);
+    if (v.source === "MARKET") marketMonths.add(m);
+    return { ...v, daily };
+  }).filter((v) => !v.daily || v.valuation_date >= dailyFrom);
   // แปลงเป็นจำนวนหน่วย: มีแค่ยอดตั้งต้น · มูลค่าก้อนเดียว หรือ 1 หน่วย
   const opening = txList.find((t) => t.transaction_type === "OPENING_BALANCE");
   const onlyOpening = !!opening && txList.every((t) => t.transaction_type === "OPENING_BALANCE");
@@ -302,7 +311,34 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </section>
       )}
 
-      <HoldingHistory title={sched.length ? "ตารางรับและรายการ" : "รายการและราคา / มูลค่า"}
+      <PriceHistory info={<InfoTip label="คำอธิบาย">ล่าสุดขึ้นก่อน · แสดง 12 เดือนล่าสุด ที่เก่ากว่ากด &ldquo;ดูทั้งหมด&rdquo; ·
+        ราคาอัตโนมัติ (ขึ้นทุกวันทำการ) แสดงเฉพาะราคาล่าสุดของแต่ละเดือน ติ๊ก &ldquo;แสดงราคารายวัน&rdquo; เพื่อดูทุกวัน{lump ? "" : " · จำนวน = หน่วยที่ถือ ณ วันนั้น"} ·
+        อัปเดตราคาที่หน้าพอร์ต · คลิกแถวเพื่อแก้ไข</InfoTip>}
+        head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ที่มา</th><th className="text-right">จำนวน</th>
+          <th className="text-right">ราคา</th><th className="text-right">มูลค่า</th><th></th></tr></thead>}
+        rows={priceRows.map((v) => ({ key: v.id, month: v.valuation_date.slice(0, 7), daily: v.daily, row: (
+          <tr>
+            <td className="py-1.5">{thDate(v.valuation_date)}</td>
+            <td>{VAL_SOURCE_LABEL[v.source] ?? v.source}</td>
+            <td className="text-right tabular-nums">{lump ? <span className="text-slate-400">—</span> : qty(v.q)}</td>
+            <td className="text-right tabular-nums">{lump || v.price == null ? <span className="text-slate-400">—</span> : money(v.price, undefined, 4)}</td>
+            <td className="text-right tabular-nums">{money(v.value)}</td>
+            <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete} cols={4}
+              fields={[
+                // วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว · แก้ราคา → มูลค่าเปลี่ยนตาม · แก้มูลค่า → ราคา = มูลค่า ÷ จำนวน (ตกลง 24 ต.ค.)
+                { name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
+                ...(lump || !(v.q > 0)
+                  ? [{ name: "market_value", label: "มูลค่า", type: "number" as const, value: v.market_value }]
+                  : [{ name: "held", label: "จำนวนที่ถือ ณ วันนั้น", type: "number" as const, value: qty(v.q), readOnly: true },
+                     { name: "price", label: "ราคา", type: "number" as const, value: v.price ?? Number((v.value / v.q).toFixed(6)),
+                       calc: { op: "div" as const, a: "market_value", b: "held", digits: 6 } },
+                     { name: "market_value", label: "มูลค่า", type: "number" as const, value: Number(v.value.toFixed(2)),
+                       calc: { op: "mul" as const, a: "held", b: "price" } }]),
+              ]} />}</td>
+          </tr>
+          ) }))} />
+
+      <HoldingHistory title={sched.length ? "ตารางรับและรายการ" : "รายการ"}
         tools={hasSched && canDelete && <CouponEditor assetId={id} holdingId={hid} currency={h.currency} goLive={goLive} current={editorLines} hasSchedule={stored.length > 0}
           defaults={{ face: Number(autoRow?.face_value ?? fcn?.principal ?? cost ?? 0), ratePct: Number(autoRow?.interest_rate ?? fcn?.coupon_rate ?? 0),
             freq: COUPON_MONTHS[freq0] || freq0 === "AT_MATURITY" ? freq0 : "SEMI_ANNUAL",
@@ -312,11 +348,11 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           ? <>งวดตามตารางที่ตั้งไว้ (แก้ที่ปุ่ม &ldquo;แก้ตารางรับทั้งชุด&rdquo;)</>
           : <>งวดตามตาราง คำนวณจากเงินต้น · อัตรา · จ่ายทุก · วันครบกำหนด (แก้ได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; หรือตั้งเองรายงวดที่ปุ่ม &ldquo;+ ตั้งตารางรับ&rdquo;)</>} ·
           ก่อน Go-live = ข้อมูลเท่านั้น ไม่เข้ายอดเงิน · ยกเลิก = ขาย / ครบกำหนดก่อนถึงงวด ·
-          แถวสีเขียว = เงินที่ได้รับจริง (ปันผล ดอกเบี้ย เงินต้นคืน ขาย) · แถวสีฟ้า = ยอดตั้งต้น / ซื้อ · ตัวสีเทา = ราคา / มูลค่า ·
+          แถวสีเขียว = เงินที่ได้รับจริง (ปันผล ดอกเบี้ย เงินต้นคืน ขาย) · แถวสีฟ้า = ยอดตั้งต้น / ซื้อ ·
           บันทึกรับ: ปุ่ม &ldquo;{isStructured ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}&rdquo; ด้านบน (เติมยอดงวดที่ถึงกำหนดให้) หรือแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; ของหน้า Investments · คลิกแถวรายการเพื่อแก้ไข</InfoTip>}
         head={
         <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">จำนวน</th>
-          <th className="text-right">ราคา</th><th className="text-right">{sched.length ? "ยอด / มูลค่า" : "มูลค่า"}</th><th className="pl-4">{sched.length ? "สถานะ / หมายเหตุ" : "หมายเหตุ"}</th><th></th></tr></thead>
+          <th className="text-right">ราคา</th><th className="text-right">ยอดเงิน</th><th className="pl-4">{sched.length ? "สถานะ / หมายเหตุ" : "หมายเหตุ"}</th><th></th></tr></thead>
       } foot={coupons.length > 0 || otherFees > 0 || preLines.length > 0 ? (
         <tfoot className="border-t-2 border-slate-200 text-xs text-slate-600">
           {preLines.length > 0 && <tr><td colSpan={4} className="py-2">ดอกเบี้ยตามตารางก่อน Go-live {preLines.length} งวด (ข้อมูลเท่านั้น · ก่อนภาษี)</td>
@@ -330,7 +366,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         rows={[
         ...sched.map((x) => ({ date: x.due, o: 0, h: {
           // ยกเลิก: ไม่นับทั้งยังไม่รับ / รับแล้ว · ก่อน Go-live: นับเป็นรับแล้ว (รับก่อนเริ่มใช้ระบบ)
-          key: `s${x.key}`, auto: false, open: x.cancelled ? undefined : !x.received && !x.pre, row: (
+          key: `s${x.key}`, open: x.cancelled ? undefined : !x.received && !x.pre, row: (
             <tr className={`align-top [&>td]:py-1.5 ${x.received ? "text-slate-500" : x.pre || x.cancelled ? "text-slate-400" : ""}`}>
               <td className="py-1.5">{thDate(x.due)}</td>
               <td>{dueLabel(x)}</td>
@@ -342,7 +378,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
             </tr>
           ) } })),
         ...txList.map((t) => ({ date: t.transaction_date, o: 1, h: {
-          key: `t${t.id}`, auto: false, row: (
+          key: `t${t.id}`, row: (
             <tr className={`align-top [&>td]:py-1.5 ${MONEY_IN.includes(t.transaction_type) ? "bg-emerald-50/40" : t.transaction_type === "OPENING_BALANCE" || t.transaction_type === "BUY" ? "bg-blue-50/50" : ""}`}
               data-row={`x-${t.id}`}>
               <td className="py-1.5">{thDate(t.transaction_date)}</td>
@@ -361,30 +397,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               </td>
             </tr>
           ) } })),
-        ...valRows.map((v) => ({ date: v.valuation_date, o: 2, h: {
-          key: `v${v.id}`, auto: v.source === "MARKET", row: (
-            <tr className="text-slate-600">
-              <td className="py-1.5">{thDate(v.valuation_date)}</td>
-              <td>{VAL_SOURCE_LABEL[v.source] ?? v.source}</td>
-              <td className="text-right tabular-nums" title="จำนวนที่ถือ ณ วันนั้น">{lump ? <span className="text-slate-400">—</span> : qty(v.q)}</td>
-              <td className="text-right tabular-nums">{lump || v.price == null ? <span className="text-slate-400">—</span> : money(v.price, undefined, 4)}</td>
-              <td className="text-right tabular-nums">{money(v.value)}</td>
-              <td className="pl-4 text-xs text-slate-500">{lump ? "" : "จำนวน = หน่วยที่ถือ ณ วันนั้น"}</td>
-              <td className="pl-2 text-right">{canWrite && v.source !== "OPENING" && <RowActions table="investment_valuations" id={v.id} paths={paths} canDelete={canDelete} cols={4}
-                fields={[
-                  // วันที่ · จำนวน · ราคา · มูลค่า แถวเดียว · แก้ราคา → มูลค่าเปลี่ยนตาม · แก้มูลค่า → ราคา = มูลค่า ÷ จำนวน (ตกลง 24 ต.ค.)
-                  { name: "valuation_date", label: "วันที่", type: "date", value: v.valuation_date },
-                  ...(lump || !(v.q > 0)
-                    ? [{ name: "market_value", label: "มูลค่า", type: "number" as const, value: v.market_value }]
-                    : [{ name: "held", label: "จำนวนที่ถือ ณ วันนั้น", type: "number" as const, value: qty(v.q), readOnly: true },
-                       { name: "price", label: "ราคา", type: "number" as const, value: v.price ?? Number((v.value / v.q).toFixed(6)),
-                         calc: { op: "div" as const, a: "market_value", b: "held", digits: 6 } },
-                       { name: "market_value", label: "มูลค่า", type: "number" as const, value: Number(v.value.toFixed(2)),
-                         calc: { op: "mul" as const, a: "held", b: "price" } }]),
-                ]} />}</td>
-            </tr>
-          ) } })),
-      // มีตารางรับ: เรียงเก่า → ใหม่แบบตารางผ่อน (วันเดียวกัน: งวด → รายการ → ราคา) · ไม่มี: ล่าสุดก่อน
+      // มีตารางรับ: เรียงเก่า → ใหม่แบบตารางผ่อน (วันเดียวกัน: งวด → รายการ) · ไม่มี: ล่าสุดก่อน
       ].sort((x, y) => (sched.length ? x.date.localeCompare(y.date) : y.date.localeCompare(x.date)) || x.o - y.o).map((x) => x.h)} />
 
     </div>
