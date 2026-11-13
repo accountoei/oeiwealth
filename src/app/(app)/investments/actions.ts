@@ -437,6 +437,18 @@ export async function addUnderlying(_: ActionState, form: FormData): Promise<Act
   return { ok: "เพิ่มหุ้นอ้างอิงแล้ว" };
 }
 
+/** ตั้ง / แทนที่ตารางรับดอกเบี้ย / เงินต้นทั้งชุด (หน้าหลักทรัพย์ · ตกลง 13 พ.ย. 2026) · ตารางว่าง = ลบ กลับไปใช้ตารางคำนวณ */
+export async function saveCouponSchedule(_: ActionState, form: FormData): Promise<ActionState> {
+  const supabase = await createClient();
+  let lines: unknown;
+  try { lines = JSON.parse(String(form.get("lines") ?? "[]")); } catch { return { error: "อ่านตารางรับไม่ได้" }; }
+  if (!Array.isArray(lines)) return { error: "อ่านตารางรับไม่ได้" };
+  const { data, error } = await supabase.rpc("set_holding_coupon_schedule", { p_holding_id: String(form.get("holding_id")), p_lines: lines });
+  if (error) return { error: friendlyError(error.message) };
+  revalidate(String(form.get("asset_id")));
+  return { ok: data ? `บันทึกตารางรับ ${data} งวดแล้ว` : "ลบตารางที่ตั้งไว้แล้ว · กลับไปใช้ตารางคำนวณ" };
+}
+
 /** แก้ไขรายละเอียดพอร์ต (ชื่อ / สถาบัน / ประเภท / สกุล / หมายเหตุ) */
 export async function updatePortfolio(_: ActionState, form: FormData): Promise<ActionState> {
   const supabase = await createClient();
