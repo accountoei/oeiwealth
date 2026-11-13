@@ -102,8 +102,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           .gte("rate_date", addDays(d0, -14)).lte("rate_date", d0).then((r) => r),
       ]) : [{ data: [] }, { data: [] }];
     }),
-    // ส่วนต่างค่าเงินของเดือนนี้ (ใต้ % จากเดือนก่อน · 13 พ.ย. 2026) = ตัวเลข "ในนั้นจาก FX" ใน pop up Dashboard (ใช้ cache เดียวกัน)
-    pvQ.then((v) => cachedRpc<{ fx: number }>("month_investment_gain", { p_month: `${today.slice(0, 7)}-01`, p_person: v.personId || null })),
+    // กำไร / ขาดทุนเงินลงทุนเดือนนี้ + ในนั้นจากส่วนต่างค่าเงิน (ใต้ % จากเดือนก่อน · 13 พ.ย. 2026) = บรรทัดเดียวกับ pop up Dashboard (ใช้ cache เดียวกัน)
+    pvQ.then((v) => cachedRpc<{ gain: number; fx: number }>("month_investment_gain", { p_month: `${today.slice(0, 7)}-01`, p_person: v.personId || null })),
   ]);
   const goLive = family?.go_live_date ?? "";
   const monthEnd = monthRange(ym).end;
@@ -218,7 +218,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         <StatBox label={<>{pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(total, "THB", 0)}
           sub={<>
             <MonthChange pct={changePct(total, totalPrev)} prev={totalPrev} />
-            {Math.abs(Number(invGain?.fx ?? 0)) >= 0.5 && <div>ในนั้นจากส่วนต่างค่าเงิน <span className={tone(Number(invGain?.fx))}>{signedMoney(Number(invGain?.fx), "THB", 0)}</span></div>}
+            {invGain && <div>กำไร / ขาดทุนเงินลงทุนเดือนนี้ <span className={tone(Number(invGain.gain))}>{signedMoney(Number(invGain.gain), "THB", 0)}</span></div>}
+            {Math.abs(Number(invGain?.fx ?? 0)) >= 0.5 && <div className="pl-3">ในนั้นจากส่วนต่างค่าเงิน <span className={tone(Number(invGain?.fx))}>{signedMoney(Number(invGain?.fx), "THB", 0)}</span></div>}
             <div>พอร์ตที่เปิด {openCount} พอร์ต{closedCount ? ` · ปิดแล้ว ${closedCount}` : ""}</div>
           </>} />
         <StatBox label="ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)" value={signedMoney(sinceOpen, "THB", 0)} valueClass={tone(sinceOpen)}
