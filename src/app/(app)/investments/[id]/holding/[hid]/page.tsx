@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { detailTitle } from "@/lib/page-title";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, thDate, todayBangkok, signedPct } from "@/lib/format";
+import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, thDate, todayBangkok } from "@/lib/format";
 import RowActions from "@/components/RowActions";
 import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import StatusSelect from "@/components/StatusSelect";
@@ -22,6 +22,8 @@ import PendingPrice, { type Pending } from "@/components/PendingPrice";
 import HoldingHistory from "./history";
 import { InfoTip } from "@/components/HeaderBar";
 import { activeBanks } from "@/lib/pay-sources";
+import { VALUATION_AT_COLS, openingValues, ratesAt, type RateAt, type ValuationAt } from "@/lib/net-invested";
+import HoldingValueBox from "./value-box";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
@@ -31,7 +33,7 @@ type H = Holding & { portfolio_asset_id: string; average_cost: number | null; cu
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean; notes: string | null };
 type Tx = { id: string; transaction_date: string; settlement_date: string | null; transaction_type: string; quantity: number | null;
   price: number | null; amount: number; fee: number | null; tax: number | null; direction: string | null; notes: string | null;
-  settle_from_asset_id: string | null; settle_to_asset_id: string | null; cash_movement_id: string | null };
+  settle_from_asset_id: string | null; settle_to_asset_id: string | null; cash_movement_id: string | null; cost_base_currency: number | null };
 type U = { id: string; symbol: string; name: string | null; initial_price: number | null; strike_price: number | null; barrier_price: number | null };
 
 // ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
@@ -47,7 +49,9 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const { id, hid } = await params;
   const me = await requireAppUser();
   const supabase = await createClient();
-  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: pvRow }, { data: autoRow }] = await Promise.all([
+  const famQ = supabase.from("families").select("go_live_date").maybeSingle().then((r) => r);
+  const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: pvRow }, { data: autoRow },
+    [{ data: vals0 }, { data: rates0 }]] = await Promise.all([
     loadHolding(id, hid),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
@@ -58,12 +62,22 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     supabase.from("fcn_details").select("*, fcn_underlyings(id,symbol,name,initial_price,strike_price,barrier_price,deleted_at)")
       .eq("holding_id", hid).is("deleted_at", null).maybeSingle(),
     activeBanks(supabase),
-    supabase.from("families").select("go_live_date").maybeSingle(),
+    famQ,
     supabase.from("v_holdings_active").select("id,name,currency,is_default_cash").eq("portfolio_asset_id", id)
       .eq("holding_type", "CASH").eq("status", "ACTIVE").order("created_at"),
     cachedRpc<RetLocal[]>("investment_returns_local", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // คู่กับบรรทัดบน (ตารางเดียวกัน → ตัวเลขชุดเดียวกัน)
     supabase.from("v_portfolio_values").select("portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
     supabase.from("investment_holdings").select("auto_price,price_ref,price_pending,valuation_mode,face_value,interest_rate,coupon_frequency,income_cash_holding_id,income_bank_asset_id").eq("id", hid).maybeSingle(),
+    // ผลตอบแทนก่อน Go-live: มูลค่าตลาด + อัตรา (บาท) ถึงวันก่อน Go-live (เหมือนหน้าพอร์ต · ตกลง 13 พ.ย. 2026)
+    famQ.then(async ({ data: f }) => {
+      const d0 = f?.go_live_date ? addDays(f.go_live_date, -1) : null;
+      return d0 ? Promise.all([
+        supabase.from("investment_valuations").select(VALUATION_AT_COLS).eq("holding_id", hid).lte("valuation_date", d0).is("deleted_at", null)
+          .order("valuation_date", { ascending: false }).limit(1).then((r) => r),
+        supabase.from("fx_rates").select("currency,rate_date,rate_to_thb").eq("rate_type", "MID_AVERAGE").is("deleted_at", null)
+          .gte("rate_date", addDays(d0, -14)).lte("rate_date", d0).then((r) => r),
+      ]) : [{ data: [] }, { data: [] }];
+    }),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
@@ -87,7 +101,6 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
   const daysLeft = h.maturity_date ? Math.round((Date.parse(h.maturity_date) - Date.parse(today)) / 86400000) : null;
   const coupons = txList.filter((t) => ["COUPON", "INTEREST", "DIVIDEND"].includes(t.transaction_type));
-  const couponSum = coupons.reduce((s, t) => s + Number(t.amount) - Number(t.tax ?? 0), 0);
   const canMature = h.status === "ACTIVE" && ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
   // ตารางรับดอกเบี้ย / เงินต้น (หุ้นกู้: ข้อมูลในแก้ไขข้อมูล · FCN: รายละเอียด FCN)
   const hasCoupon = ["BOND", "OTHER"].includes(h.holding_type);
@@ -124,6 +137,28 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const canConvert = canDelete && h.status === "ACTIVE" && onlyOpening && (lump || Number(h.quantity) === 1);
   const openingVal = opening ? valRows.find((v) => v.valuation_date === opening.transaction_date) : undefined;
   const openingValue = openingVal ? openingVal.value : opening ? Number(opening.amount) : 0;
+  // กล่องมูลค่า (ตกลง 13 พ.ย. 2026): บรรทัดเดียวกับกล่องพอร์ต · รวมผลตอบแทน = แถวของตัวนี้ในตารางผลตอบแทน
+  //   ก่อน Go-live = มูลค่าตลาด ณ วันก่อน Go-live − ต้นทุนยอดตั้งต้น (บาท: อัตรา ณ วันนั้น − ต้นทุนบาทที่บันทึก) · ตั้งแต่ Go-live = รวม − ก่อน Go-live
+  //   % = รวมผลตอบแทน ÷ เงินที่ใส่ในตัวนี้ (ยอดตั้งต้น + ซื้อเพิ่ม)
+  const r = ret[0], rl = retLocal[0];
+  const fxH = h.currency !== "THB";
+  const thb0 = ratesAt((rates0 as RateAt[] | null) ?? [], goLive ? addDays(goLive, -1) : "");
+  const ov = opening && goLive && opening.transaction_date < goLive
+    ? openingValues(id, [{ portfolio_asset_id: id, holding_id: hid, transaction_date: opening.transaction_date, quantity: opening.quantity, price: opening.price,
+      currency: h.currency, cost_base_currency: opening.cost_base_currency }], (vals0 as ValuationAt[] | null) ?? [])[0] : null;
+  const k0 = thb0(h.currency);
+  const pre = ov ? { thb: k0 == null || opening?.cost_base_currency == null ? null : ov.value * k0 - Number(opening.cost_base_currency), ccy: ov.value - ov.cost } : null;
+  const paid = (f: (t: Tx) => number | null) => txList.filter((t) => ["OPENING_BALANCE", "BUY"].includes(t.transaction_type))
+    .reduce<number | null>((s, t) => { const x = f(t); return s == null || x == null ? null : s + x; }, 0);
+  const paidCcy = paid((t) => Number(t.amount) + (t.transaction_type === "BUY" ? Number(t.fee ?? 0) : 0));
+  const paidThb = fxH ? paid((t) => (t.cost_base_currency == null ? null : Number(t.cost_base_currency))) : paidCcy;
+  const income = coupons.reduce((s, t) => s + Number(t.amount) - Number(t.tax ?? 0) - Number(t.fee ?? 0), 0);
+  const sinceCcy = rl ? Number(rl.total) - (pre?.ccy ?? 0) : null;
+  const split = r && rl ? {
+    pre,
+    since: { thb: pre && pre.thb == null ? null : Number(r.total_thb) - (pre?.thb ?? 0), ccy: sinceCcy, income, price: sinceCcy == null ? null : sinceCcy - income },
+    total: { thb: Number(r.total_thb), ccy: Number(rl.total), pctThb: paidThb ? (Number(r.total_thb) / paidThb) * 100 : null, pctCcy: paidCcy ? (Number(rl.total) / paidCcy) * 100 : null },
+  } : null;
 
   return (
     <div className="space-y-6">
@@ -159,22 +194,10 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
 
       <section className="grid gap-4 md:grid-cols-3">
         {/* ซ้าย: มูลค่า */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
-          <div className="text-xs text-slate-500">มูลค่าตลาด ({h.currency})</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{money(h.current_value)}</div>
-          <div className={`mt-1 text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>{h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}</div>
-          {(() => { const g = cost && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null; return g == null ? null : (
-            <div className={`mt-1 text-xs ${g >= 0 ? "text-emerald-700" : "text-red-700"}`}>กำไร / ขาดทุนยังไม่รับรู้ {money(g)} (<span className="font-semibold">{signedPct((g / (cost as number)) * 100)}</span>)</div>); })()}
-          <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
-            {lump ? <div className="flex justify-between gap-3"><dt className="text-slate-500">วิธีนับ</dt><dd>มูลค่าก้อนเดียว</dd></div> : <>
-              <div className="flex justify-between gap-3"><dt className="text-slate-500">จำนวนที่ถือ</dt><dd className="tabular-nums">{qty(h.quantity)}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนเฉลี่ย</dt><dd className="tabular-nums">{money(h.average_cost, undefined, 4)}</dd></div>
-            </>}
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">ต้นทุนที่ยังถือ</dt><dd className="tabular-nums">{money(cost)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">{isStructured ? "Coupon ที่ได้รับ (สุทธิภาษี)" : "ปันผล / ดอกเบี้ย (สุทธิภาษี)"}</dt>
-              <dd className="tabular-nums">{money(couponSum, h.currency)} · {coupons.length} ครั้ง</dd></div>
-          </dl>
-        </div>
+        <HoldingValueBox currency={h.currency} value={{ thb: r ? Number(r.value_thb) : fxH ? null : h.current_value, ccy: h.current_value }}
+          cost={{ thb: r ? Number(r.cost_thb) : fxH ? null : cost, ccy: cost }} lump={lump} quantity={Number(h.quantity)} avgCost={h.average_cost}
+          dateNote={<div className={`mt-1 text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>{h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}</div>}
+          split={split} incomeCount={coupons.length} soldSince={txList.some((t) => ["SELL", "REDEMPTION", "MATURITY"].includes(t.transaction_type))} />
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <EditToggle title="รายละเอียด" canEdit={canWrite}
             view={
