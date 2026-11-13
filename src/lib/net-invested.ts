@@ -1,14 +1,14 @@
 // เงินลงทุนสุทธิของพอร์ต = ต้นทุนรวมของยอดตั้งต้น (ก่อน Go-live · ตกลง 12 พ.ย. 2026 แทนเงินโอนก่อน Go-live ที่กรอกเอง) + เงินโอนหลัง Go-live (cash_movements)
 //   ตกลง 12 พ.ย. 2026 (ค่ำ): ใส่ "เงินที่โอนไปจริงก่อน Go-live" (portfolio_capital_transfers) ได้ → ใช้แทนต้นทุนรวมของยอดตั้งต้น
-//     ต้นทุนรายตัวยังเป็นต้นทุนจริง · ส่วนต่าง (ต้นทุนรวม − เงินที่โอนไปจริง) = ปรับกำไร (ขาดทุน) ก่อน Go-live แสดงประกอบ
+//     ต้นทุนรายตัวยังเป็นต้นทุนจริง · ส่วนต่าง (ต้นทุนรวม − เงินที่โอนไปจริง) = ผลตอบแทนที่รับรู้แล้วก่อน Go-live แสดงประกอบ (ชื่อใหม่ 13 พ.ย. 2026)
 //   โอนไปพอร์ต (INVESTMENT_OUT) บวก · โอนกลับจากพอร์ต (INVESTMENT_IN) ลบ · ตกลง 2 พ.ย. 2026
-//   ใช้เทียบกับมูลค่าล่าสุด → กำไร / ขาดทุนรวม (บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน)
+//   ใช้เทียบกับมูลค่าล่าสุด → รวมผลตอบแทน (returnSplit · บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน)
 //   ตกลง 12 พ.ย. 2026: นับเงินที่พอร์ตจ่ายเข้า / ตัดจากบัญชีธนาคารโดยตรงด้วย — ซื้อตัดบัญชี = โอนไป · ขาย / ไถ่ถอน / ครบกำหนดเข้าบัญชี = โอนกลับ
 //   ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่าพอร์ต) บวกกลับในกำไร / ขาดทุน (incomeToBank)
 
 /** ยอดตั้งต้น (OPENING_BALANCE) ของพอร์ต · ต้นทุน = จำนวน × ราคาต่อหน่วย (สกุลหลักทรัพย์) / cost_base_currency (บาท) */
-export type OpeningCost = { portfolio_asset_id: string; transaction_date: string; quantity: number | null; price: number | null; currency: string; cost_base_currency: number | null };
-export const OPENING_COST_COLS = "transaction_date,quantity,price,currency,cost_base_currency";
+export type OpeningCost = { portfolio_asset_id: string; holding_id: string | null; transaction_date: string; quantity: number | null; price: number | null; currency: string; cost_base_currency: number | null };
+export const OPENING_COST_COLS = "holding_id,transaction_date,quantity,price,currency,cost_base_currency";
 /** เงินที่โอนไปจริงก่อน Go-live (portfolio_capital_transfers · ใส่เองที่หน้าต่างรายการเงินโอน) */
 export type CapitalPre = { id: string; portfolio_asset_id: string; transfer_date: string; amount_thb: number; amount_ccy: number | null; notes: string | null };
 export const CAPITAL_PRE_COLS = "id,portfolio_asset_id,transfer_date,amount_thb,amount_ccy,notes";
@@ -88,4 +88,90 @@ export function vsInvested(value: number | null, invested: number | null, receiv
   if (value == null || invested == null || received == null) return null;
   const pl = value + received - invested;
   return { pl, pct: invested > 0 ? (pl / invested) * 100 : null };
+}
+
+/** มูลค่าตลาดของหลักทรัพย์ (investment_valuations) ที่ดึงมาเฉพาะถึงวันก่อน Go-live */
+export type ValuationAt = { holding_id: string; valuation_date: string; market_value: number | null };
+export const VALUATION_AT_COLS = "holding_id,valuation_date,market_value";
+/** อัตรา (บาทต่อหน่วย) ช่วงก่อนวันก่อน Go-live → อัตราล่าสุดถึงวันนั้นของแต่ละสกุล */
+export type RateAt = { currency: string; rate_date: string; rate_to_thb: number };
+export function ratesAt(rows: RateAt[], date: string) {
+  const m = new Map<string, RateAt>();
+  for (const r of rows) if (r.rate_date <= date && !((m.get(r.currency)?.rate_date ?? "") > r.rate_date)) m.set(r.currency, r);
+  return (ccy: string) => (ccy === "THB" ? 1 : m.has(ccy) ? Number(m.get(ccy)!.rate_to_thb) : null);
+}
+
+/** ยอดตั้งต้นรายตัว: ต้นทุน + มูลค่าตลาดล่าสุดถึงวันก่อน Go-live (สกุลหลักทรัพย์ · ไม่มีราคา เช่น เงินฝาก = ต้นทุน) */
+export type OpeningValue = { currency: string; cost: number; value: number };
+export function openingValues(assetId: string, opening: OpeningCost[], vals: ValuationAt[]): OpeningValue[] {
+  const last = new Map<string, ValuationAt>();
+  for (const v of vals) if (!((last.get(v.holding_id)?.valuation_date ?? "") > v.valuation_date)) last.set(v.holding_id, v);
+  return opening.filter((o) => o.portfolio_asset_id === assetId).map((o) => {
+    const cost = Number(o.quantity ?? 0) * Number(o.price ?? 0);
+    const v = o.holding_id ? last.get(o.holding_id)?.market_value : null;
+    return { currency: o.currency, cost, value: v == null ? cost : Number(v) };
+  });
+}
+
+type Amt = { thb: number | null; ccy: number | null };
+
+/** ผลตอบแทนก่อน Go-live (บาท) = มูลค่าตลาด ณ วันก่อน Go-live (อัตรา ณ วันนั้น) − เงินที่โอนไปจริง (ไม่ได้ใส่ = ต้นทุนรวมของยอดตั้งต้น) · null = ไม่มียอดตั้งต้น / ไม่มีอัตรา */
+export function preGoLiveThb(n: NetInvested, rows: OpeningValue[], thb0: (ccy: string) => number | null) {
+  const sent = n.lines.filter((l) => l.pre);
+  const cost = n.cost ?? n.lines.find((l) => l.key === "opening") ?? null;
+  if (!rows.length || !cost || rows.some((r) => thb0(r.currency) == null)) return null;
+  return rows.reduce((t, r) => t + r.value * thb0(r.currency)!, 0) - (sent.length ? sent.reduce((t, l) => t + l.thb, 0) : cost.thb);
+}
+
+/** ผลตอบแทนแยกช่วง · บรรทัดย่อยเป็นสกุลพอร์ต (null = ไม่ทราบ / ไม่แสดง) */
+export type ReturnSplit = {
+  pre: (Amt & { got: number | null; price: number | null; fx: number | null }) | null;
+  since: Amt & { income: number | null; price: number | null; fx: number | null };
+  total: Amt & { pctThb: number | null; pctCcy: number | null };
+  /** มีหลักทรัพย์ / เงินฝากต่างสกุลพอร์ต → แสดงบรรทัดค่าเงิน */
+  foreign: boolean;
+};
+
+/**
+ * ผลตอบแทนก่อน / ตั้งแต่ Go-live (ตกลง 13 พ.ย. 2026 · แทน "กำไร / ขาดทุนรวม" + "รายได้ลงทุนตั้งแต่ Go-live")
+ * รวมผลตอบแทน = มูลค่า + เงินที่เข้าบัญชีธนาคารแล้ว − เงินลงทุนสุทธิ (vsInvested)
+ * ก่อน Go-live = มูลค่าตลาด ณ วันก่อน Go-live − เงินที่โอนไปจริง (ไม่ได้ใส่ = ต้นทุนรวมของยอดตั้งต้น)
+ *   ได้รับจริง = ต้นทุนรวม − เงินที่โอนไปจริง (คูปอง / กำไรที่นำมาลงทุนต่อ) · ราคาเปลี่ยน = Σ (มูลค่า − ต้นทุน) สกุลหลักทรัพย์ × อัตรา ณ วันนั้น
+ *   ค่าเงิน = ต้นทุนแปลงด้วยอัตรา ณ วันนั้น − ต้นทุนรวมที่บันทึก (สกุลอื่นในต้นทุนรวมแปลงด้วยอัตราเฉลี่ย · ดู netInvested)
+ * ตั้งแต่ Go-live = รวม − ก่อน Go-live · ค่าเงิน = มูลค่า ณ วันก่อน Go-live × (อัตราวันนี้ − อัตราวันนั้น) · ราคาเปลี่ยน = ส่วนที่เหลือหลังหักปันผล ดอกเบี้ย คูปอง
+ * rate0 / rateNow = อัตราแปลงสกุลหลักทรัพย์ → สกุลพอร์ต (วันก่อน Go-live / วันนี้) · thb0 = บาทต่อหน่วย ณ วันก่อน Go-live
+ */
+export function returnSplit(pfCcy: string, n: NetInvested, rows: OpeningValue[], value: Amt, received: Amt, incomeCcy: number | null,
+  thb0: (ccy: string) => number | null, rate0: (ccy: string) => number | null, rateNow: (ccy: string) => number | null): ReturnSplit | null {
+  const tThb = vsInvested(value.thb, n.thb, received.thb);
+  if (!tThb) return null;
+  const tCcy = pfCcy === "THB" ? tThb : vsInvested(value.ccy, n.ccy, received.ccy);
+  const sum = (f: (r: OpeningValue) => number | null) => rows.reduce<number | null>((t, r) => { const x = f(r); return t == null || x == null ? null : t + x; }, 0);
+  const sent = n.lines.filter((l) => l.pre);
+  const cost = n.cost ?? n.lines.find((l) => l.key === "opening") ?? null;
+  let pre: ReturnSplit["pre"] = null;
+  const preThb = preGoLiveThb(n, rows, thb0);
+  if (preThb != null && cost) {
+    const sentCcy = sent.some((l) => l.ccy == null) ? null : sent.reduce((t, l) => t + (l.ccy ?? 0), 0);
+    const basisCcy = sent.length ? sentCcy : cost.ccy;
+    const v0 = sum((r) => { const k = rate0(r.currency); return k == null ? null : r.value * k; });
+    const c0 = sum((r) => { const k = rate0(r.currency); return k == null ? null : r.cost * k; });
+    const ccy = v0 == null || basisCcy == null ? null : v0 - basisCcy;
+    pre = {
+      thb: preThb, ccy,
+      got: sent.length && cost.ccy != null && sentCcy != null ? cost.ccy - sentCcy : null,
+      price: ccy == null || c0 == null ? null : v0! - c0,
+      fx: ccy == null || c0 == null || cost.ccy == null ? null : c0 - cost.ccy,
+    };
+  }
+  const sinceCcy = tCcy == null ? null : pre ? (pre.ccy == null ? null : tCcy.pl - pre.ccy) : tCcy.pl;
+  const fx = sum((r) => { if (r.currency === pfCcy) return 0; const a = rateNow(r.currency), b = rate0(r.currency); return a == null || b == null ? null : r.value * (a - b); });
+  const sinceFx = pre ? fx : 0;
+  return {
+    pre,
+    since: { thb: tThb.pl - (pre?.thb ?? 0), ccy: sinceCcy, income: incomeCcy,
+      price: sinceCcy == null || incomeCcy == null || sinceFx == null ? null : sinceCcy - incomeCcy - sinceFx, fx: sinceFx },
+    total: { thb: tThb.pl, ccy: tCcy?.pl ?? null, pctThb: tThb.pct, pctCcy: tCcy?.pct ?? null },
+    foreign: rows.some((r) => r.currency !== pfCcy),
+  };
 }

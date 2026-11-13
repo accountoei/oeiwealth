@@ -5,7 +5,7 @@ import Modal from "@/components/Modal";
 import Flash from "@/components/Flash";
 import { addCapitalTransfer, type ActionState } from "../actions";
 import { SMALL_BTN, money, thDate, signedMoney, signedPct } from "@/lib/format";
-import { vsInvested, type CapitalLine } from "@/lib/net-invested";
+import type { CapitalLine, ReturnSplit } from "@/lib/net-invested";
 
 const input = "mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
 
@@ -15,15 +15,17 @@ const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
 
 /**
  * กล่องสรุปมูลค่าพอร์ต (รวมกล่องมูลค่าเป็นบาท + เงินลงทุนสุทธิ · ตกลง 5 พ.ย. 2026)
- * หัวกล่อง (children) = มูลค่าเป็นบาทที่ใช้ในความมั่งคั่งสุทธิ · ต่อด้วยเงินลงทุนสุทธิ / กำไร / ขาดทุนรวม / รายได้ลงทุน
+ * หัวกล่อง (children) = มูลค่าเป็นบาทที่ใช้ในความมั่งคั่งสุทธิ · ต่อด้วยเงินลงทุนสุทธิ / ผลตอบแทนก่อน Go-live / ตั้งแต่ Go-live / รวมผลตอบแทน
+ *   (ตกลง 13 พ.ย. 2026 · split = returnSplit · บรรทัดย่อยเป็นสกุลพอร์ต: ได้รับจริง / ราคาเปลี่ยน / ค่าเงิน · ปันผล ดอกเบี้ย คูปอง / ราคาเปลี่ยน / ค่าเงิน)
  * เงินลงทุนสุทธิ = ต้นทุนรวมของยอดตั้งต้น (ก่อน Go-live · ตกลง 12 พ.ย. 2026) + โอนไป − โอนกลับ หลัง Go-live (ปุ่มโอนเงิน / ซื้อขายกับบัญชีธนาคารโดยตรง) · เทียบมูลค่าล่าสุด (รวมเงินโอนรอใส่ยอด)
  * พอร์ตต่างประเทศ: บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน · พอร์ตปิดแล้ว = กำไร / ขาดทุนที่รับรู้แล้ว
  * receivedThb / Ccy = ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่า) → บวกกลับในกำไร / ขาดทุน (ตกลง 12 พ.ย. 2026)
- * cost = ต้นทุนรวมของยอดตั้งต้น เมื่อใส่เงินที่โอนไปจริงก่อน Go-live แล้ว → แสดง เงินที่โอนไปจริง / ปรับกำไร (ขาดทุน) ก่อน Go-live / รวมต้นทุนยอดตั้งต้น (ตกลง 12 พ.ย. 2026)
+ * cost = ต้นทุนรวมของยอดตั้งต้น เมื่อใส่เงินที่โอนไปจริงก่อน Go-live แล้ว → แสดง เงินที่โอนไปจริง / ผลตอบแทนที่รับรู้แล้วก่อน Go-live / รวมต้นทุนยอดตั้งต้น (ตกลง 12–13 พ.ย. 2026)
  */
-export default function NetInvestedBox({ currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, receivedThb, receivedCcy, closed, lines, openings = [], cost = null, preEdits = {}, moveEdits = {}, addPre = null, children }: {
-  currency: string; investedThb: number; investedCcy: number | null; valueThb: number | null; valueCcy: number | null;
-  incomeThb: number; receivedThb: number; receivedCcy: number | null;
+export default function NetInvestedBox({ currency, investedThb, investedCcy, split, soldSince, receivedThb, closed, lines, openings = [], cost = null, preEdits = {}, moveEdits = {}, addPre = null, children }: {
+  currency: string; investedThb: number; investedCcy: number | null;
+  /** soldSince = มีขาย / ไถ่ถอน / ครบกำหนดหลัง Go-live → บรรทัดราคาเปลี่ยนรวมส่วนนั้นด้วย */
+  split: ReturnSplit | null; soldSince: boolean; receivedThb: number;
   closed: boolean; lines: CapitalLine[];
   /** ต้นทุนยอดตั้งต้นรายตัว (แสดงใต้บรรทัดก่อน Go-live) · edit = RowActions ของรายการยอดตั้งต้น → คลิกแถวเพื่อแก้ (ตกลง 12 พ.ย. 2026) */
   openings?: { key: string; name: string; thb: number; local: number; currency: string; edit: ReactNode }[];
@@ -35,19 +37,26 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
 }) {
   const [list, setList] = useState(false);
   const [add, setAdd] = useState(false);
-  // แถวก่อน Go-live สุดท้าย → ต่อด้วยบรรทัดปรับกำไร (ขาดทุน) / รวมต้นทุนยอดตั้งต้น / ต้นทุนรายตัว
+  // แถวก่อน Go-live สุดท้าย → ต่อด้วยบรรทัดผลตอบแทนที่รับรู้แล้ว / รวมต้นทุนยอดตั้งต้น / ต้นทุนรายตัว
   const lastPre = lines.reduce((k, l, i) => (l.kind === "PRE" ? i : k), -1);
   const sent = lines.filter((l) => l.pre);
   const sentCcy = sent.some((l) => l.ccy == null) ? null : sent.reduce((t, l) => t + (l.ccy ?? 0), 0);
   const adj = cost && { thb: cost.thb - sent.reduce((t, l) => t + l.thb, 0), ccy: cost.ccy == null || sentCcy == null ? null : cost.ccy - sentCcy };
   const costHint = openings.some((o) => o.edit) ? "คลิกแถวรายตัวด้านล่างเพื่อแก้ต้นทุน" : "ต้นทุนรายตัวด้านล่าง";
   const fx = currency !== "THB";
-  const thb = vsInvested(valueThb, investedThb, receivedThb);
-  const ccy = fx ? vsInvested(valueCcy, investedCcy, receivedCcy) : null;
   const hasReceived = Math.abs(receivedThb) > 0.005;
-  const plLabel = closed ? "กำไร / ขาดทุน (รับรู้แล้ว)" : "กำไร / ขาดทุนรวม";
   const pct = pctTxt;
   const tone = sign;
+  // บรรทัดผลตอบแทน: บาท (ตัวหนา) + สกุลพอร์ต · บรรทัดย่อยเป็นสกุลพอร์ต (ไม่ทราบ = ไม่แสดง)
+  const ret = (label: ReactNode, thb: number | null, ccy: number | null, pThb?: number | null, pCcy?: number | null) => (
+    <div className="flex justify-between gap-3"><dt className="text-slate-500">{label}</dt>
+      <dd className="text-right tabular-nums">
+        {thb != null && <div className={`text-sm font-medium ${tone(thb)}`}>{signed(thb, "THB")}{pct(pThb ?? null)}</div>}
+        {fx && ccy != null && <div className={tone(ccy)}>{signed(ccy, currency)}{pct(pCcy ?? null)}</div>}</dd></div>
+  );
+  const sub = (label: string, v: number | null) => v != null && (
+    <div className="flex justify-between gap-3 pl-3 text-slate-400"><dt>· {label}</dt><dd className={`tabular-nums ${tone(v)}`}>{signed(v)}</dd></div>
+  );
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
       {children}
@@ -56,17 +65,23 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
           <dd className="text-right tabular-nums">{lines.length === 0 ? <span className="text-slate-500">ยังไม่มียอดตั้งต้น / เงินโอน</span> : <>
             <div className="text-sm font-medium">{money(investedThb, "THB", 0)}</div>
             {fx && (investedCcy == null ? <div className="text-slate-500">{currency} ยังไม่ครบ</div> : <div className="font-medium text-blue-700">{money(investedCcy, currency, 0)}</div>)}</>}</dd></div>
-        {lines.length > 0 && (
-          <div className="flex justify-between gap-3"><dt className="text-slate-500">{plLabel}
-            {hasReceived && <div className="text-slate-400">รวมปันผล / ดอกเบี้ยที่เข้าบัญชีธนาคาร {money(receivedThb, "THB", 0)}</div>}</dt>
-            <dd className="text-right tabular-nums">
-              {thb && <div className={`text-sm font-medium ${tone(thb.pl)}`}>{signed(thb.pl, "THB")}{pct(thb.pct)}</div>}
-              {ccy && <div className={tone(ccy.pl)}>{signed(ccy.pl, currency)}{pct(ccy.pct)}</div>}</dd></div>
-        )}
-        <div className="flex justify-between gap-3"><dt className="text-slate-500">รายได้ลงทุนตั้งแต่ Go-live<div className="text-slate-400">ก่อนภาษี</div></dt>
-          <dd className="text-sm tabular-nums">{money(incomeThb, "THB", 0)}</dd></div>
+        {lines.length > 0 && split && <>
+          {split.pre && <>
+            {ret("ผลตอบแทนก่อน Go-live (ก่อนภาษี)", split.pre.thb, split.pre.ccy)}
+            {sub("ได้รับจริง (คูปอง / กำไรที่นำมาลงทุนต่อ)", split.pre.got)}
+            {sub("ราคาเปลี่ยน (ยังไม่รับรู้)", split.pre.price)}
+            {split.foreign && sub("ค่าเงิน (ยังไม่รับรู้)", split.pre.fx)}
+          </>}
+          {ret("ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)", split.since.thb, split.since.ccy)}
+          {sub("ปันผล ดอกเบี้ย คูปอง", split.since.income)}
+          {sub(soldSince ? "ราคาเปลี่ยน / ขาย / ครบกำหนด" : "ราคาเปลี่ยน (ยังไม่รับรู้)", split.since.price)}
+          {split.foreign && sub("ค่าเงิน (ยังไม่รับรู้)", split.since.fx)}
+          {ret(<>{closed ? "รวมผลตอบแทน (รับรู้แล้ว)" : "รวมผลตอบแทน"}
+            {hasReceived && <div className="text-slate-400">รวมปันผล / ดอกเบี้ยที่เข้าบัญชีธนาคาร {money(receivedThb, "THB", 0)}</div>}</>,
+            split.total.thb, split.total.ccy, split.total.pctThb, split.total.pctCcy)}
+        </>}
       </dl>
-      {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน</p>}
+      {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน · บรรทัดย่อยเป็น {currency}</p>}
       {lines.length > 0 && <div className="mt-3 text-sm">
         <button type="button" onClick={() => setList(true)} className={SMALL_BTN}>ดูรายการเงินโอน ({lines.length})</button>
       </div>}
@@ -95,9 +110,9 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
                   {i === lastPre && cost && adj && <>
                     <tr className="align-top text-slate-600">
                       <td></td>
-                      <td className="py-1.5">ปรับกำไร (ขาดทุน) ก่อน Go-live<div className="text-xs text-slate-400">ต้นทุนรวมของยอดตั้งต้น − เงินที่โอนไปจริง · ไม่นับในเงินลงทุนสุทธิ</div></td>
-                      <td className="text-right tabular-nums">{signed(adj.thb)}</td>
-                      {fx && <td className="text-right tabular-nums">{adj.ccy == null ? "—" : signed(adj.ccy)}</td>}
+                      <td className="py-1.5">ผลตอบแทนที่รับรู้แล้วก่อน Go-live (ก่อนภาษี)<div className="text-xs text-slate-400">ต้นทุนรวมของยอดตั้งต้น − เงินที่โอนไปจริง · ไม่นับในเงินลงทุนสุทธิ</div></td>
+                      <td className={`text-right tabular-nums ${sign(adj.thb)}`}>{signed(adj.thb)}</td>
+                      {fx && <td className={`text-right tabular-nums ${adj.ccy == null ? "" : sign(adj.ccy)}`}>{adj.ccy == null ? "—" : signed(adj.ccy)}</td>}
                     </tr>
                     <tr className="align-top text-slate-600">
                       <td className="py-1.5">{thDate(cost.date)}</td>
@@ -151,7 +166,7 @@ function AddForm({ assetId, currency, goLive }: { assetId: string; currency: str
         {fx && <label className="block text-sm text-slate-700">{currency} ที่พอร์ตได้รับ<input name="amount_ccy" inputMode="decimal" className={input} /></label>}
         <label className="block text-sm text-slate-700 sm:col-span-full">หมายเหตุ<input name="notes" className={input} /></label>
       </div>
-      <p className="text-xs text-slate-500">ใส่เงินที่โอนไปพอร์ตจริงก่อน Go-live (ยอดรวมยอดเดียว หรือแยกทีละครั้งก็ได้) · ระบบใช้ยอดนี้เป็นเงินลงทุนสุทธิแทนต้นทุนรวมของยอดตั้งต้น ส่วนต่างแสดงเป็น &ldquo;ปรับกำไร (ขาดทุน) ก่อน Go-live&rdquo;
+      <p className="text-xs text-slate-500">ใส่เงินที่โอนไปพอร์ตจริงก่อน Go-live (ยอดรวมยอดเดียว หรือแยกทีละครั้งก็ได้) · ระบบใช้ยอดนี้เป็นเงินลงทุนสุทธิแทนต้นทุนรวมของยอดตั้งต้น ส่วนต่างแสดงเป็น &ldquo;ผลตอบแทนที่รับรู้แล้วก่อน Go-live&rdquo;
         · ไม่กระทบยอดบัญชี มูลค่าพอร์ต หรือความมั่งคั่งสุทธิ · ต้องเป็นวันที่ก่อน Go-live ({thDate(goLive)})
         {fx && ` · ไม่ทราบยอด ${currency} เว้นว่างได้ (ยอดเทียบเป็น ${currency} จะยังไม่แสดง)`}</p>
       <div className="flex items-center gap-3">

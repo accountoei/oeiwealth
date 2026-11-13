@@ -2,14 +2,14 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cachedRpc } from "@/lib/data-cache";
 import { requireAppUser } from "@/lib/auth";
-import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct, thMonth } from "@/lib/format";
+import { ADD_BTN, HOLDING_TYPE_LABEL, PORTFOLIO_TYPE_LABEL, addDays, money, monthOptions, monthRange, todayBangkok, signedMoney, signedPct, thMonth } from "@/lib/format";
 import { ShareBox, SHARE_COLORS } from "@/components/ShareTable";
 import { loadPersonView } from "@/lib/person-view";
 import PersonFilter from "@/components/PersonFilter";
 import MonthPicker from "@/components/MonthPicker";
 import { HeaderFilters, PageInfo } from "@/components/HeaderBar";
 import { TabActions } from "@/components/TabActions";
-import { CAPITAL_MOVE_COLS, CAPITAL_PRE_COLS, INCOME_TO_BANK_COLS, OPENING_COST_COLS, incomeToBank, netInvested, vsInvested, type CapitalMove, type CapitalPre, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, CAPITAL_PRE_COLS, INCOME_TO_BANK_COLS, OPENING_COST_COLS, VALUATION_AT_COLS, incomeToBank, netInvested, openingValues, preGoLiveThb, ratesAt, vsInvested, type CapitalMove, type CapitalPre, type IncomeToBank, type OpeningCost, type RateAt, type ValuationAt } from "@/lib/net-invested";
 import PortfolioTable, { type PortfolioRow } from "./PortfolioTable";
 import { SortToggle, bySort } from "@/components/SortControls";
 import { loadSortMap, orderHrefs } from "@/lib/sort";
@@ -52,7 +52,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
   const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: opening }, { data: capMoves }, { data: incBank }, { data: capPre }], { data: income }, rets,
-    [openPfs, updateData], dueData, totalPrev] = await Promise.all([
+    [openPfs, updateData], dueData, totalPrev, [{ data: vals0 }, { data: rates0 }]] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
     Promise.all([
@@ -93,6 +93,15 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     pvQ.then((v) => loadDue(ym, canWrite, v.showAsset)),
     // มูลค่าลงทุน ณ สิ้นเดือนก่อน (เทียบ ▲/▼ ในกล่องแรก)
     pvQ.then((v) => prevMonthValue(today, v.personId, "INVESTMENT")),
+    // ผลตอบแทนก่อน Go-live: มูลค่าตลาด + อัตรา (บาท) ถึงวันก่อน Go-live (ตกลง 13 พ.ย. 2026)
+    familyQ.then(async ({ data: f }) => {
+      const d0 = f?.go_live_date ? addDays(f.go_live_date, -1) : null;
+      return d0 ? Promise.all([
+        supabase.from("investment_valuations").select(VALUATION_AT_COLS).lte("valuation_date", d0).is("deleted_at", null).limit(10000).then((r) => r),
+        supabase.from("fx_rates").select("currency,rate_date,rate_to_thb").eq("rate_type", "MID_AVERAGE").is("deleted_at", null)
+          .gte("rate_date", addDays(d0, -14)).lte("rate_date", d0).then((r) => r),
+      ]) : [{ data: [] }, { data: [] }];
+    }),
   ]);
   const goLive = family?.go_live_date ?? "";
   const monthEnd = monthRange(ym).end;
@@ -152,6 +161,10 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
     const n = netInvested(assetId, ccy, openingRows, (capMoves as CapitalMove[] | null) ?? [], (capPre as CapitalPre[] | null) ?? []);
     return n.lines.length ? n.thb * sh(assetId) : null;
   };
+  // ผลตอบแทนก่อน Go-live (บาท × สัดส่วน) · ไม่มียอดตั้งต้น = 0 (ทั้งหมดเป็นผลตอบแทนตั้งแต่ Go-live)
+  const thb0 = ratesAt((rates0 as RateAt[] | null) ?? [], goLive ? addDays(goLive, -1) : "");
+  const preOf = (assetId: string, ccy: string) => (preGoLiveThb(netInvested(assetId, ccy, openingRows, (capMoves as CapitalMove[] | null) ?? [], (capPre as CapitalPre[] | null) ?? []),
+    openingValues(assetId, openingRows, (vals0 as ValuationAt[] | null) ?? []), thb0) ?? 0) * sh(assetId);
   const receivedOf = (assetId: string, ccy: string) =>
     incomeToBank(ccy, ((incBank ?? []) as unknown as (IncomeToBank & { pf: { asset_id: string } })[]).filter((r) => r.pf.asset_id === assetId)).thb * sh(assetId);
   // ตารางพอร์ต · เรียงตามลำดับที่ตั้งไว้
@@ -173,10 +186,14 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   });
   // กล่องสรุป: พอร์ตที่ยังเปิด (เทียบมูลค่าล่าสุด) แยกจากพอร์ตที่ปิดแล้ว (กำไรที่รับรู้แล้ว) · ทุกพอร์ต ไม่ขึ้นกับตัวกรองประเภท
   const allInv = list.map((p) => ({ closed: pfStatus.get(p.asset_id) === "CLOSED", inv: investedOf(p.asset_id, p.portfolio_currency),
-    value: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0) + receivedOf(p.asset_id, p.portfolio_currency) })).filter((x) => x.inv != null);
+    value: Number(p.thb_value ?? 0) + Number(p.in_transit_thb ?? 0) + receivedOf(p.asset_id, p.portfolio_currency), pre: preOf(p.asset_id, p.portfolio_currency) })).filter((x) => x.inv != null);
   const openInv = allInv.filter((x) => !x.closed);
   const invOpen = openInv.reduce((t, x) => t + x.inv!, 0);
   const invOpenPl = vsInvested(openInv.reduce((t, x) => t + x.value, 0), invOpen);
+  // กล่องผลตอบแทน (ตกลง 13 พ.ย. 2026): ตั้งแต่ Go-live = รวมผลตอบแทน − ก่อน Go-live · พอร์ตที่เปิด
+  const preOpen = openInv.reduce((t, x) => t + x.pre, 0);
+  const sinceOpen = (invOpenPl?.pl ?? 0) - preOpen;
+  const tone = (v: number) => (v < -0.005 ? "text-red-700" : v > 0.005 ? "text-emerald-700" : "");
   const closedPl = allInv.filter((x) => x.closed).reduce((t, x) => t + (x.value - x.inv!), 0);
   const hasClosedInv = allInv.some((x) => x.closed);
   const share = (m: Map<string, number>, label: (k: string) => string, offset = 0) =>
@@ -196,19 +213,22 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
       <TabPanel id="overview" className="space-y-6">
 
       <section className={`grid gap-4 sm:grid-cols-2 ${allInv.length ? "xl:grid-cols-4" : "lg:grid-cols-3"}`}>
-        {/* 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าลงทุนรวม + จำนวนพอร์ต (แบบกล่องยอดเงินฝากรวมของ Bank Accounts) · รายได้ · เงินลงทุนสุทธิ · เงินฝากในพอร์ต (ท้ายสุด) */}
+        {/* 4 กล่อง (ตกลง 7 พ.ย. 2026): มูลค่าลงทุนรวม + จำนวนพอร์ต (แบบกล่องยอดเงินฝากรวมของ Bank Accounts) · ผลตอบแทน (13 พ.ย. 2026) · เงินลงทุนสุทธิ · เงินฝากในพอร์ต (ท้ายสุด) */}
         <StatBox label={<>{pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(total, "THB", 0)}
           sub={<>
             <MonthChange pct={changePct(total, totalPrev)} prev={totalPrev} />
             <div>พอร์ตที่เปิด {openCount} พอร์ต{closedCount ? ` · ปิดแล้ว ${closedCount}` : ""}</div>
           </>} />
-        <StatBox label={<>รายได้ลงทุนตั้งแต่ Go-live <span className="text-slate-400">· ปันผล ดอกเบี้ย Coupon (ก่อนภาษี)</span></>} value={money(incomeThb, "THB", 0)}
-          sub={<><div>ปีนี้ (ม.ค. – {thMonth(mStart)}) {money(incomeYear, "THB", 0)}</div><div>{mLabel} {money(incomeMonth, "THB", 0)}</div></>} />
+        <StatBox label="ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)" value={signedMoney(sinceOpen, "THB", 0)} valueClass={tone(sinceOpen)}
+          sub={<>
+            <div>ปันผล ดอกเบี้ย คูปอง {money(incomeThb, "THB", 0)}</div>
+            <div>ปีนี้ (ม.ค. – {thMonth(mStart)}) {money(incomeYear, "THB", 0)} · {mLabel} {money(incomeMonth, "THB", 0)}</div>
+            {allInv.length > 0 && <div>ผลตอบแทนก่อน Go-live (ก่อนภาษี) <span className={tone(preOpen)}>{signedMoney(preOpen, "THB", 0)}</span></div>}
+            {invOpenPl && <div>รวมผลตอบแทน <span className={tone(invOpenPl.pl)}>{signedMoney(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && <> (<span className="font-semibold">{signedPct(invOpenPl.pct)}</span>)</>}</span></div>}
+          </>} />
         {allInv.length > 0 && (
           <StatBox label="เงินลงทุนสุทธิ (พอร์ตที่เปิด)" value={money(invOpen, "THB", 0)}
             sub={<>
-              {invOpenPl && <div className={invOpenPl.pl >= 0 ? "text-emerald-700" : "text-red-700"}>
-                กำไร / ขาดทุน {signedMoney(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && <> (<span className="font-semibold">{signedPct(invOpenPl.pct)}</span>)</>}</div>}
               {hasClosedInv && <div className="text-slate-500">พอร์ตที่ปิดแล้ว: รับรู้แล้ว <span className={closedPl < -0.005 ? "text-red-700" : closedPl > 0.005 ? "text-emerald-700" : ""}>{signedMoney(closedPl, "THB", 0)}</span></div>}
             </>} />
         )}

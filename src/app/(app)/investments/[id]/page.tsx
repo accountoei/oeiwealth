@@ -16,7 +16,7 @@ import {
 import { moveHolding } from "../actions";
 import ReturnsTable, { type Ret, type RetLocal } from "./ReturnsTable";
 import NetInvestedBox from "./NetInvestedBox";
-import { CAPITAL_MOVE_COLS, CAPITAL_PRE_COLS, incomeToBank, netInvested, type CapitalMove, type CapitalPre, type IncomeToBank, type OpeningCost } from "@/lib/net-invested";
+import { CAPITAL_MOVE_COLS, CAPITAL_PRE_COLS, VALUATION_AT_COLS, incomeToBank, netInvested, openingValues, ratesAt, returnSplit, type CapitalMove, type CapitalPre, type IncomeToBank, type OpeningCost, type RateAt, type ValuationAt } from "@/lib/net-invested";
 import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import RowActions from "@/components/RowActions";
 import PfTransferEdit from "./PfTransferEdit";
@@ -72,17 +72,20 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   // ดึงข้อมูลพร้อมกันรอบเดียว (30 ต.ค. 2026) — เดิมรอต่อกัน 4 ทอด (ข้อมูลพอร์ต → รายการล่าสุด → รายการทั้งหมด → หมวด / บัตร)
   //   ชุดที่ใช้รหัสแถวพอร์ต (pf.id) เริ่มทันทีที่ได้แถวพอร์ต · ไม่พบพอร์ต → ไม่ดึงชุดนั้น และขึ้นหน้าไม่พบเหมือนเดิม
   const pfQ = supabase.from("investment_portfolios").select("*").eq("asset_id", id).is("deleted_at", null).maybeSingle().then((r) => r);
+  const hsQ = supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name").then((r) => r);
+  const famQ = supabase.from("families").select("go_live_date,system_status").maybeSingle().then((r) => r);
   const [[{ data: a }, { data: pf }, { data: pv }, { data: hs }, { data: owners }, { data: banks }, { data: family },
     { data: unsettled }, { data: persons }], [{ data: lastTx }, { data: txs }, { data: autoRows }],
-    [{ data: income }, { data: rets }, { data: retsLocal }, { data: mvs }, { data: directMvs }, { data: capPre }], [{ data: catRows }, { data: cardRows }, { data: cardBal }]] = await Promise.all([
+    [{ data: rets }, { data: retsLocal }, { data: mvs }, { data: directMvs }, { data: capPre }], [{ data: catRows }, { data: cardRows }, { data: cardBal }],
+    [{ data: vals0 }, { data: rates0 }]] = await Promise.all([
     Promise.all([
       loadAsset(id),
       pfQ,
       supabase.from("v_portfolio_values").select("thb_value,in_transit,in_transit_thb,portfolio_value,portfolio_fx_rate").eq("asset_id", id).maybeSingle(),
-      supabase.from("v_holdings_active").select("*").eq("portfolio_asset_id", id).order("sort_order").order("name"),
+      hsQ,
       supabase.from("v_asset_ownerships_active").select("person_id,person_name,ownership_percent,end_date").eq("asset_id", id),
       activeBanks(supabase),
-      supabase.from("families").select("go_live_date,system_status").maybeSingle(),
+      famQ,
       supabase.from("v_unsettled_trades").select("*").eq("portfolio_asset_id", id),
       supabase.from("persons").select("id,name").is("deleted_at", null).eq("status", "ACTIVE").order("sort_order").order("created_at"),
     ]),
@@ -96,8 +99,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       supabase.from("investment_holdings").select("id,auto_price,valuation_mode").eq("portfolio_id", p.id).is("deleted_at", null),
     ]) : [{ data: null }, { data: null }, { data: null }] as const),
     Promise.all([
-      supabase.from("income_transactions").select("amount,tax,currency,base_amount").eq("asset_id", id)
-        .not("source_transaction_id", "is", null).is("deleted_at", null),
       cachedRpc<Ret[]>("investment_returns", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // ผลเดียวกับหน้ารวม (จำไว้ / จนมีการบันทึก)
       cachedRpc<RetLocal[]>("investment_returns_local", { p_portfolio_asset_id: id }).then((data) => ({ data })),   // คู่กับบรรทัดบน (ตารางเดียวกัน → ตัวเลขชุดเดียวกัน)
       // รายการโอน ธนาคาร ↔ พอร์ต (แก้ไข / ใส่ยอดที่เข้าทีหลัง)
@@ -118,6 +119,16 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
       supabase.from("credit_cards").select("id,issuer,card_name,card_last4,currency,outstanding_balance").is("deleted_at", null).neq("status", "CLOSED"),
       supabase.from("v_card_balances").select("card_id,current_balance"),
     ]) : [{ data: [] }, { data: [] }, { data: [] }] as const,
+    // ผลตอบแทนก่อน Go-live: มูลค่าตลาด + อัตรา (บาท) ถึงวันก่อน Go-live (ตกลง 13 พ.ย. 2026)
+    Promise.all([hsQ, famQ]).then(async ([{ data: h }, { data: f }]) => {
+      const d0 = f?.go_live_date ? addDays(f.go_live_date, -1) : null;
+      const ids = ((h as { id: string }[] | null) ?? []).map((x) => x.id);
+      return d0 ? Promise.all([
+        ids.length ? supabase.from("investment_valuations").select(VALUATION_AT_COLS).in("holding_id", ids).lte("valuation_date", d0).is("deleted_at", null).limit(5000).then((r) => r) : { data: [] },
+        supabase.from("fx_rates").select("currency,rate_date,rate_to_thb").eq("rate_type", "MID_AVERAGE").is("deleted_at", null)
+          .gte("rate_date", addDays(d0, -14)).lte("rate_date", d0).then((r) => r),
+      ]) : [{ data: [] }, { data: [] }];
+    }),
   ]);
   if (!a || !pf) notFound();
   // แท็บรายการ: กรองเดือน (เริ่มที่เดือนล่าสุดที่มีรายการ) / ประเภท / หลักทรัพย์-บัญชี
@@ -156,7 +167,6 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const rateNote = (h: H) => h.currency === "THB" ? null
     : h.fx_rate == null ? "ไม่มีอัตรา" : `@ ${money(h.fx_rate, undefined, 4)}${h.fx_rate_date ? ` (${thDate(h.fx_rate_date)})` : ""}`;
   const acctName = (hid: string | null) => (hid ? byId.get(hid)?.name ?? "" : "");
-  const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   const activeOwners = (owners ?? []).filter((o) => !o.end_date);
   const ownerTotal = activeOwners.reduce((s, o) => s + Number(o.ownership_percent), 0);
   const bankList = banks ?? [];
@@ -188,6 +198,19 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   // ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่าพอร์ต) → บวกกลับในกำไรเทียบเงินลงทุน
   const incomeRows = txList.filter((t) => ["DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type) && t.settle_to_asset_id);
   const received = incomeToBank(a.currency, incomeRows as unknown as IncomeToBank[]);
+  // ผลตอบแทนก่อน / ตั้งแต่ Go-live (ตกลง 13 พ.ย. 2026) · อัตราแปลงเป็นสกุลพอร์ต: สกุลเดียวกัน = 1 · อัตรา Statement (ณ วันก่อน Go-live สำหรับช่วงก่อน) · ไม่มี = อัตราธนาคารแห่งประเทศไทยหารกัน
+  const thb0 = ratesAt((rates0 as RateAt[] | null) ?? [], openingDate);
+  const stmtRate = (c: string) => ((pf.statement_fx ?? {}) as Record<string, number>)[c];
+  const rate0 = (c: string) => c === a.currency ? 1 : pf.statement_fx_date === openingDate && stmtRate(c) != null ? Number(stmtRate(c))
+    : thb0(c) != null && thb0(a.currency) ? thb0(c)! / thb0(a.currency)! : null;
+  const rateNow = (c: string) => c === a.currency ? 1 : stmtRate(c) != null ? Number(stmtRate(c))
+    : fxRates[c] != null && fxRates[a.currency] ? fxRates[c] / fxRates[a.currency] : null;
+  const sinceGoLive = txList.filter((t) => goLive && t.transaction_date >= goLive);
+  const incomeCcy = sinceGoLive.filter((t) => ["DIVIDEND", "INTEREST", "COUPON"].includes(t.transaction_type))
+    .reduce<number | null>((s, t) => { const k = rateNow(t.currency); return s == null || k == null ? null : s + (Number(t.amount) - Number(t.fee ?? 0) - Number(t.tax ?? 0)) * k; }, 0);
+  const split = returnSplit(a.currency, invested, openingValues(id, openingRows, (vals0 as ValuationAt[] | null) ?? []),
+    { thb: pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null, ccy: pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null },
+    received, incomeCcy, thb0, rate0, rateNow);
   // เงินโอนที่ยังไม่ทราบยอด (รอยอด) รายบัญชี — ที่ทราบยอดแล้วนับในยอดบัญชีเงินฝากทันที
   const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
@@ -269,9 +292,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         {/* ซ้าย: มูลค่า */}
         <div className="flex flex-col gap-4 [&>:last-child]:flex-1">
           <NetInvestedBox currency={a.currency} investedThb={invested.thb} investedCcy={invested.ccy}
-            valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
-            valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
-            incomeThb={incomeThb} receivedThb={received.thb} receivedCcy={received.ccy}
+            split={split} soldSince={sinceGoLive.some((t) => ["SELL", "REDEMPTION", "MATURITY"].includes(t.transaction_type))} receivedThb={received.thb}
             closed={a.status === "CLOSED"} lines={invested.lines} openings={openingEdits} cost={invested.cost} preEdits={preEdits} moveEdits={moveEdits}
             addPre={canWrite && goLive && openingRows.length ? { assetId: id, goLive } : null}>
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
