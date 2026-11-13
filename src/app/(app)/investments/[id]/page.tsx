@@ -277,10 +277,10 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
             {a.currency !== "THB" && (
-              <div className="mt-1 text-xs text-slate-500">{stmtFx.length ? "มูลค่า " : "= "}{money(pv?.portfolio_value ?? null, a.currency, 0)}
+              <div className="mt-1 text-xs text-slate-500">{stmtFx.length ? "มูลค่า " : "= "}<span className="font-medium text-blue-700">{money(pv?.portfolio_value ?? null, a.currency, 0)}</span>
                 {pv?.portfolio_fx_rate ? ` · 1 ${a.currency} = ${money(pv.portfolio_fx_rate, undefined, 4)} บาท` : ""}
-                {stmtFx.length > 0 && <div>{stmtFx.map(([c]) => c).join(" / ")} คิดเป็น {a.currency} ตามอัตรา Statement {thDate(pf.statement_fx_date)}
-                  {" "}({stmtFx.map(([c, r]) => `1 ${c} = ${money(r, undefined, 4)}`).join(" · ")})</div>}</div>
+                {stmtFx.length > 0 && <div>{stmtFx.map(([c]) => c).join(" / ")} คิดเป็น {a.currency} ตามอัตรา Statement {thDate(pf.statement_fx_date)}</div>}
+                {stmtFx.length > 0 && <div>{stmtFx.map(([c, r]) => `1 ${c} = ${money(r, undefined, 4)}`).join(" · ")}</div>}</div>
             )}
             {Number(pv?.in_transit ?? 0) !== 0 && (
               <div className="mt-1 text-xs text-amber-700">+ เงินโอนที่รอใส่ยอด {money(pv?.in_transit ?? 0, a.currency, 0)}</div>
