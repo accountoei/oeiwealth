@@ -128,6 +128,8 @@ export type ReturnSplit = {
   pre: (Amt & { got: number | null; price: number | null }) | null;
   since: Amt & { income: number | null; price: number | null };
   total: Amt & { pctThb: number | null; pctCcy: number | null };
+  /** ต้นทุนรวมของยอดตั้งต้น เทียบเงินที่โอนไปจริงก่อน Go-live (เฉพาะเมื่อใส่ไว้) · ท้ายตารางผลตอบแทนใช้ */
+  basis: { cost: Amt; sent: Amt } | null;
 };
 
 /**
@@ -145,10 +147,11 @@ export function returnSplit(pfCcy: string, n: NetInvested, rows: OpeningValue[],
   const tCcy = pfCcy === "THB" ? tThb : vsInvested(value.ccy, n.ccy, received.ccy);
   const sent = n.lines.filter((l) => l.pre);
   const cost = n.cost ?? n.lines.find((l) => l.key === "opening") ?? null;
+  const sentCcy = sent.some((l) => l.ccy == null) ? null : sent.reduce((t, l) => t + (l.ccy ?? 0), 0);
+  const basis = sent.length && cost ? { cost: { thb: cost.thb, ccy: cost.ccy }, sent: { thb: sent.reduce((t, l) => t + l.thb, 0), ccy: sentCcy } } : null;
   let pre: ReturnSplit["pre"] = null;
   const preThb = preGoLiveThb(n, rows, thb0);
   if (preThb != null && cost) {
-    const sentCcy = sent.some((l) => l.ccy == null) ? null : sent.reduce((t, l) => t + (l.ccy ?? 0), 0);
     const basisCcy = sent.length ? sentCcy : cost.ccy;
     const v0 = rows.reduce<number | null>((t, r) => { const k = rate0(r.currency); return t == null || k == null ? null : t + r.value * k; }, 0);
     pre = {
@@ -163,5 +166,6 @@ export function returnSplit(pfCcy: string, n: NetInvested, rows: OpeningValue[],
     since: { thb: tThb.pl - (pre?.thb ?? 0), ccy: sinceCcy, income: incomeCcy,
       price: sinceCcy == null || incomeCcy == null ? null : sinceCcy - incomeCcy },
     total: { thb: tThb.pl, ccy: tCcy?.pl ?? null, pctThb: tThb.pct, pctCcy: tCcy?.pct ?? null },
+    basis,
   };
 }
