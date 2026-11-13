@@ -210,7 +210,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     .reduce<number | null>((s, t) => { const k = rateNow(t.currency); return s == null || k == null ? null : s + (Number(t.amount) - Number(t.fee ?? 0) - Number(t.tax ?? 0)) * k; }, 0);
   const split = returnSplit(a.currency, invested, openingValues(id, openingRows, (vals0 as ValuationAt[] | null) ?? []),
     { thb: pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null, ccy: pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null },
-    received, incomeCcy, thb0, rate0, rateNow);
+    received, incomeCcy, thb0, rate0);
   // เงินโอนที่ยังไม่ทราบยอด (รอยอด) รายบัญชี — ที่ทราบยอดแล้วนับในยอดบัญชีเงินฝากทันที
   const ledger = cashLedger(holdings, txList as unknown as LTx[], transfers as LMove[]);
   const waitingTransfers = transfers.filter((m) => m.counter_currency != null && m.counter_amount == null);
