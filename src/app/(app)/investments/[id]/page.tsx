@@ -152,6 +152,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
   const fxCcys = [...new Set([...holdings.map((h) => h.currency), ...stmtFx.map(([c]) => c)])].filter((c) => c !== a.currency).sort();
   const cashAccounts: CashAcct[] = cashHoldings.map((h) => ({ id: h.id, name: h.name, currency: h.currency, is_default_cash: h.is_default_cash }));
   const secThb = securities.filter((h) => h.status === "ACTIVE").reduce((s, h) => s + (thbOf(h) ?? 0), 0);
+  const realizedOf = new Map(((retsLocal as RetLocal[] | null) ?? []).map((r) => [r.holding_id, Number(r.realized)]));
   const rateNote = (h: H) => h.currency === "THB" ? null
     : h.fx_rate == null ? "ไม่มีอัตรา" : `@ ${money(h.fx_rate, undefined, 4)}${h.fx_rate_date ? ` (${thDate(h.fx_rate_date)})` : ""}`;
   const acctName = (hid: string | null) => (hid ? byId.get(hid)?.name ?? "" : "");
@@ -436,7 +437,8 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
           <TabPanel id="hold" className="flex items-baseline gap-3 pb-2">
             {canDelete && securities.length > 1 && <OrderToggle id={id} mode="sec" active={orderMode === "sec"} />}
             <span className="text-sm text-slate-500">รวมหลักทรัพย์ <span className="font-medium tabular-nums text-slate-900">{money(secThb, "THB", 0)}</span></span>
-           <InfoTip label="คำอธิบาย">มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับความมั่งคั่งสุทธิ
+           <InfoTip label="คำอธิบาย">ต้นทุนรวม = จำนวน × ต้นทุนเฉลี่ย (@) · มูลค่าตลาด = จำนวน × ราคาล่าสุด (@ · วันที่ของราคา) · ผลต่าง = มูลค่าตลาด − ต้นทุนรวม ของส่วนที่ยังถือ (ส่วนที่ขายไปแล้วดูในแท็บผลตอบแทน) · ตัวที่ขายหมด / ครบกำหนด = กำไร / ขาดทุนที่รับรู้แล้ว
+            · มูลค่า (บาท) = มูลค่าในสกุลเดิม × อัตราแลกเปลี่ยนล่าสุด (บาทต่อ 1 หน่วย · วันที่ในวงเล็บ = วันของอัตรา) · ชุดเดียวกับความมั่งคั่งสุทธิ
             · เงินฝาก {money(cashThb, undefined, 0)} + หลักทรัพย์ {money(secThb, undefined, 0)} = {money(cashThb + secThb, "THB", 0)}
             · กดชื่อหลักทรัพย์เพื่อดูรายละเอียด / แก้ไข / รับปันผล · ดอกเบี้ย · คืนเงินต้น</InfoTip></TabPanel>
         </div>
@@ -444,16 +446,19 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         <TabPanel id="hold">
           <table className="mt-2 w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
-              <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนเฉลี่ย</th>
-                <th className="px-3 text-right">ราคาล่าสุด</th><th className="px-3 text-right">มูลค่าตลาด</th><th className="px-3 text-right">มูลค่า (บาท)</th>
-                <th className="px-3 text-right">กำไร/ขาดทุนยังไม่รับรู้</th><th className="px-3 text-right">สัดส่วน</th>
+              <tr><th className="px-4 py-2">หลักทรัพย์</th><th className="px-3 text-right">จำนวน</th><th className="px-3 text-right">ต้นทุนรวม</th>
+                <th className="px-3 text-right">มูลค่าตลาด</th><th className="px-3 text-right">ผลต่าง</th><th className="px-3 text-right">มูลค่า (บาท)</th>
+                <th className="px-3 text-right">สัดส่วน</th>
                 {orderMode === "sec" && <th className="px-3"></th>}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {securities.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
+              {securities.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-500">ยังไม่มีหลักทรัพย์</td></tr>}
               {securities.map((h, k) => {
                 const cost = h.average_cost != null ? Number(h.quantity) * Number(h.average_cost) : null;
                 const gain = cost != null && h.current_value != null && !h.valued_at_cost ? Number(h.current_value) - cost : null;
+                // ขายหมด / ครบกำหนด → กำไร / ขาดทุนที่รับรู้แล้ว (สกุลหลักทรัพย์ · ชุดเดียวกับแท็บผลตอบแทน)
+                const realized = h.status !== "ACTIVE" ? realizedOf.get(h.id) ?? null : null;
+                const lump = lumpIds.has(h.id);
                 const v = thbOf(h);
                 const share = h.status === "ACTIVE" && v != null && totalThb > 0 ? (v / totalThb) * 100 : null;
                 return (
@@ -470,22 +475,31 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                         {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
                       </div>
                     </td>
-                    <td className="px-3 text-right tabular-nums">{lumpIds.has(h.id) ? <span className="text-xs text-slate-400">มูลค่าก้อนเดียว</span> : qty(h.quantity)}</td>
-                    <td className="px-3 text-right tabular-nums">{lumpIds.has(h.id) ? "—" : money(h.average_cost, undefined, 4)}</td>
-                    <td className="px-3 text-right tabular-nums">{lumpIds.has(h.id) ? "—" : money(h.current_price, undefined, 4)}</td>
+                    <td className="px-3 text-right tabular-nums">{lump ? <span className="text-xs text-slate-400">มูลค่าก้อนเดียว</span> : qty(h.quantity)}</td>
+                    <td className="whitespace-nowrap px-3 text-right">
+                      <div className="tabular-nums">{cost == null ? "—" : money(cost)}</div>
+                      {!lump && h.average_cost != null && <div className="text-xs tabular-nums text-slate-500">@ {money(h.average_cost, undefined, 4)}</div>}
+                    </td>
                     <td className="whitespace-nowrap px-3 text-right">
                       <div className="tabular-nums">{money(h.current_value)}</div>
                       <div className={`text-xs ${h.valued_at_cost ? "text-amber-700" : "text-slate-500"}`}>
-                        {h.valued_at_cost ? "ราคาทุน · รอ Statement" : `ณ ${thDate(h.current_value_date)}`}
+                        {h.valued_at_cost ? "ราคาทุน · รอ Statement"
+                          : lump || h.current_price == null ? `ณ ${thDate(h.current_value_date)}` : `@ ${money(h.current_price, undefined, 4)} · ${thDate(h.current_value_date)}`}
                         {autoIds.has(h.id) && <span className="text-sky-700"> · อัตโนมัติ</span>}
                       </div>
                     </td>
+                    {realized != null ? (
+                      <td className={`px-3 text-right tabular-nums ${realized > 0 ? "text-emerald-700" : realized < 0 ? "text-red-700" : ""}`}>
+                        {money(realized)}<div className="text-xs">รับรู้แล้ว</div>
+                      </td>
+                    ) : (
+                      <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                        {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? signedPct((gain / cost) * 100) : ""}</div></>}
+                      </td>
+                    )}
                     <td className="whitespace-nowrap px-3 text-right">
                       <div className="tabular-nums">{v == null ? "—" : money(v, undefined, 0)}</div>
                       {rateNote(h) && <div className="text-xs text-slate-500">{rateNote(h)}</div>}
-                    </td>
-                    <td className={`px-3 text-right tabular-nums ${gain == null ? "" : gain >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                      {gain == null ? "" : <>{money(gain)}<div className="text-xs">{cost ? signedPct((gain / cost) * 100) : ""}</div></>}
                     </td>
                     <td className="px-3 text-right tabular-nums text-slate-600">{share != null ? `${share.toFixed(1)}%` : ""}</td>
                     {orderMode === "sec" && (
