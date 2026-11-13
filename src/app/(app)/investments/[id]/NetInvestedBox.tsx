@@ -21,7 +21,7 @@ const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
  * receivedThb / Ccy = ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่า) → บวกกลับในกำไร / ขาดทุน (ตกลง 12 พ.ย. 2026)
  * cost = ต้นทุนรวมของยอดตั้งต้น เมื่อใส่เงินที่โอนไปจริงก่อน Go-live แล้ว → แสดง เงินที่โอนไปจริง / ปรับกำไร (ขาดทุน) ก่อน Go-live / รวมต้นทุนยอดตั้งต้น (ตกลง 12 พ.ย. 2026)
  */
-export default function NetInvestedBox({ currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, receivedThb, receivedCcy, closed, lines, openings = [], cost = null, preEdits = {}, addPre = null, children }: {
+export default function NetInvestedBox({ currency, investedThb, investedCcy, valueThb, valueCcy, incomeThb, receivedThb, receivedCcy, closed, lines, openings = [], cost = null, preEdits = {}, moveEdits = {}, addPre = null, children }: {
   currency: string; investedThb: number; investedCcy: number | null; valueThb: number | null; valueCcy: number | null;
   incomeThb: number; receivedThb: number; receivedCcy: number | null;
   closed: boolean; lines: CapitalLine[];
@@ -29,6 +29,8 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
   openings?: { key: string; name: string; thb: number; local: number; currency: string; edit: ReactNode }[];
   /** ต้นทุนรวมของยอดตั้งต้น (เฉพาะเมื่อมีเงินที่โอนไปจริงก่อน Go-live) · preEdits = RowActions ของเงินที่โอนไปจริงแต่ละแถว · addPre = ปุ่มใส่เงินที่โอนไปจริง */
   cost?: CapitalLine | null; preEdits?: Record<string, ReactNode>; addPre?: { assetId: string; goLive: string } | null;
+  /** เงินโอนหลัง Go-live (key = moveId) → RowActions เดียวกับรายการโอนในหน้าพอร์ต / ซื้อ-ขายในแท็บรายการ → คลิกแถวเพื่อแก้ / ลบ */
+  moveEdits?: Record<string, ReactNode>;
   children: ReactNode;
 }) {
   const [list, setList] = useState(false);
@@ -84,8 +86,9 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, val
                       : l.kind === "OUT" ? "โอนเข้าพอร์ต" : "โอนกลับจากพอร์ต"}
                       {l.pre?.notes && <div className="text-xs text-slate-500">{l.pre.notes}</div>}
                       <div className="text-xs text-slate-400">{l.pre ? (preEdits[l.pre.id] ? "คลิกแถวเพื่อแก้" : "") : l.kind === "PRE" ? costHint
+                        : l.moveId && moveEdits[l.moveId] ? (l.derived ? "คลิกแถวเพื่อแก้ / ลบรายการซื้อขาย" : "คลิกแถวเพื่อแก้ / ลบ")
                         : l.derived ? "แก้ที่รายการในแท็บรายการ" : "แก้ที่รายการโอนในหน้าพอร์ต"}</div>
-                      {l.pre && preEdits[l.pre.id]}</td>
+                      {l.pre && preEdits[l.pre.id]}{l.moveId && moveEdits[l.moveId]}</td>
                     <td className={`text-right tabular-nums ${sign(l.thb)}`}>{signed(l.thb)}</td>
                     {fx && <td className={`text-right tabular-nums ${l.ccy == null ? "text-slate-400" : sign(l.ccy)}`}>{l.ccy == null ? "—" : signed(l.ccy)}</td>}
                   </tr>
