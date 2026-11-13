@@ -107,7 +107,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
         .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`)
         .order("movement_date", { ascending: false }).limit(2000),
       // ซื้อ / ขาย ที่ชำระกับบัญชีธนาคารโดยตรง (ระบบสร้างจากรายการในพอร์ต) → นับในเงินลงทุนสุทธิ
-      supabase.from("cash_movements").select(CAPITAL_MOVE_COLS).eq("is_derived", true).eq("source_entity_type", "INVESTMENT_TX").is("deleted_at", null)
+      supabase.from("cash_movements").select(`${CAPITAL_MOVE_COLS},source_entity_id`).eq("is_derived", true).eq("source_entity_type", "INVESTMENT_TX").is("deleted_at", null)
         .or(`and(movement_type.eq.INVESTMENT_OUT,to_asset_id.eq.${id}),and(movement_type.eq.INVESTMENT_IN,from_asset_id.eq.${id})`).limit(2000),
       // เงินที่โอนไปจริงก่อน Go-live (ถ้าใส่ไว้ ใช้แทนต้นทุนรวมของยอดตั้งต้น)
       supabase.from("portfolio_capital_transfers").select(CAPITAL_PRE_COLS).eq("portfolio_asset_id", id).is("deleted_at", null).order("transfer_date"),
@@ -216,6 +216,17 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
     <PfTransferEdit m={m} portfolioId={id} portfolioLabel={a.name} bankLabel={transferBank(m)} cashAccounts={cashAccounts}
       paths={paths} canDelete={canDelete} button={button} />
   );
+  // หน้าต่างเงินลงทุนสุทธิ: คลิกแถวเงินโอนหลัง Go-live = หน้าต่างเดียวกับรายการโอนในหน้าพอร์ต / ซื้อ-ขายในแท็บรายการ (ตกลง 13 พ.ย. 2026)
+  const txById = new Map(txList.map((t) => [t.id, t]));
+  const moveEdits = Object.fromEntries(canWrite ? [
+    ...transfers.map((m) => [m.id, transferEdit(m)]),
+    ...((directMvs as (CapitalMove & { source_entity_id: string })[] | null) ?? []).flatMap((m) => {
+      const t = txById.get(m.source_entity_id);
+      return t && !t.cash_movement_id && !t.source_expense_item_id ? [[m.id,
+        <RowActions key={m.id} table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={portfolioTxCols(t)}
+          deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม" fields={portfolioTxFields(t, true)} />]] : [];
+    }),
+  ] : []);
   // ตัวเลือกเดือน: เดือนปัจจุบัน → เดือนยอดตั้งต้น (ใหม่สุดก่อน) + ทุกเดือน
   const txMonths: { value: string; label: string }[] = [];
   for (let m = today.slice(0, 7); txMonths.length < 240; ) {
@@ -260,7 +271,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
             valueThb={pv ? Number(pv.thb_value ?? 0) + Number(pv.in_transit_thb ?? 0) : null}
             valueCcy={pv ? Number(pv.portfolio_value ?? 0) + Number(pv.in_transit ?? 0) : null}
             incomeThb={incomeThb} receivedThb={received.thb} receivedCcy={received.ccy}
-            closed={a.status === "CLOSED"} lines={invested.lines} openings={openingEdits} cost={invested.cost} preEdits={preEdits}
+            closed={a.status === "CLOSED"} lines={invested.lines} openings={openingEdits} cost={invested.cost} preEdits={preEdits} moveEdits={moveEdits}
             addPre={canWrite && goLive && openingRows.length ? { assetId: id, goLive } : null}>
             <div className="text-xs text-slate-500">มูลค่าเป็นบาท (ใช้ในความมั่งคั่งสุทธิ)</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{money(pv?.thb_value ?? null, "THB", 0)}</div>
