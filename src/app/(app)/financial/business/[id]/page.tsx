@@ -109,6 +109,9 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   divs.filter((i) => i.currency === a.currency).forEach((i) => { const y = Number(i.date.slice(0, 4)); gotBy.set(y, (gotBy.get(y) ?? 0) + Number(i.amount)); });
   const divYears = [...new Set([...paidBy.keys(), ...gotBy.keys()])].sort((x, y) => y - x);
   const sumOf = (m: Map<number, number>) => [...m.values()].reduce((t, v) => t + v, 0);
+  // ปันผลก่อน Go-live (13 พ.ย. 2026) ≈ ปันผลที่บริษัทจ่าย (ปีก่อนปี Go-live) × % ที่ถือตอนนี้ · ตั้งแต่ปี Go-live บันทึกเป็นรายได้แทน
+  const prePaid = fin.filter((f) => f.fiscal_year < Number((goLive || today).slice(0, 4)) && (f.dividends_paid ?? 0) > 0);
+  const preDiv = companyPct == null || prePaid.length === 0 ? null : prePaid.reduce((t, f) => t + (f.dividends_paid! * companyPct) / 100, 0);
   const divYearly = divYears.length === 0 ? null : (
     <div className="mb-5">
       <h3 className="mb-1 text-sm font-medium text-slate-800">ปันผลรายปี <InfoTip label="คำอธิบาย">บริษัทจ่าย = ปันผลที่บริษัทจ่ายทั้งหมดในปีนั้น (จากกล่องผลประกอบการ) · ส่วนของครอบครัว ≈ คิดจาก % ที่ถือตอนนี้ ({fmtPct(companyPct)}) ปีก่อน ๆ ที่ถือไม่เท่านี้จะไม่ตรง · บันทึกรับแล้ว = ปันผลที่บันทึกเป็นรายได้ในระบบ (ก่อนภาษี)</InfoTip></h3>
@@ -207,7 +210,10 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             <div className="mt-4 border-t border-slate-100 pt-3">
               <div className="text-xs text-slate-500">ปันผลรับ (ก่อนภาษี)</div>
               <div className="mt-0.5 text-sm tabular-nums">ปี {Number(today.slice(0, 4)) + 543} <span className={divYear > 0 ? "font-medium text-emerald-700" : ""}>{money(divYear, a.currency)}</span>
-                <span className="text-slate-500"> · รวมทั้งหมด {money(divAll, a.currency)}</span></div>
+                <span className="text-slate-500"> · ตั้งแต่ Go-live {money(divAll, a.currency)}</span></div>
+              {preDiv != null && <div className="text-sm tabular-nums text-slate-500">
+                <div>ก่อน Go-live ≈ {money(preDiv, a.currency)} (ปี {Math.min(...prePaid.map((f) => f.fiscal_year)) + 543}–{Math.max(...prePaid.map((f) => f.fiscal_year)) + 543})</div>
+                <div>รวมทั้งหมด ≈ {money(divAll + preDiv, a.currency)}</div></div>}
               <div className="mt-3 flex flex-wrap gap-2">
                 {canWrite && a.status === "ACTIVE" && <DividendForm assetId={id} banks={banks ?? []} today={today} minDate={goLive} />}
                 <ModalButton label={`ประวัติปันผล (${(incomes ?? []).length + (moves ?? []).length})`} title="ปันผล / เงินลงทุนเพิ่ม / ขาย" size="md">{divHistory}</ModalButton>
