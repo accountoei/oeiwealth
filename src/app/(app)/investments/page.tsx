@@ -52,7 +52,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   const shownQ = Promise.all([pvQ, pvsQ]).then(([v, { data }]) => ((data as PV[] | null) ?? []).filter((p) => v.showAsset(p.asset_id)));
   type R = { status: string; cost_thb: number; unrealized_thb: number; unrealized_fx_thb: number; realized_thb: number; realized_fx_thb: number; income_thb: number; fees_thb: number; total_thb: number };
   const [pv, sortMap, [{ data: pvs, error }, { data: pfs }, { data: hs }, { data: family }, { data: opening }, { data: capMoves }, { data: incBank }, { data: capPre }], { data: income }, rets,
-    [openPfs, updateData], dueData, totalPrev, [{ data: vals0 }, { data: rates0 }]] = await Promise.all([
+    [openPfs, updateData], dueData, totalPrev, [{ data: vals0 }, { data: rates0 }], invGain] = await Promise.all([
     pvQ,
     loadSortMap("assets"),
     Promise.all([
@@ -102,6 +102,8 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           .gte("rate_date", addDays(d0, -14)).lte("rate_date", d0).then((r) => r),
       ]) : [{ data: [] }, { data: [] }];
     }),
+    // ส่วนต่างค่าเงินของเดือนนี้ (ใต้ % จากเดือนก่อน · 13 พ.ย. 2026) = ตัวเลข "ในนั้นจาก FX" ใน pop up Dashboard (ใช้ cache เดียวกัน)
+    pvQ.then((v) => cachedRpc<{ fx: number }>("month_investment_gain", { p_month: `${today.slice(0, 7)}-01`, p_person: v.personId || null })),
   ]);
   const goLive = family?.go_live_date ?? "";
   const monthEnd = monthRange(ym).end;
@@ -216,6 +218,7 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
         <StatBox label={<>{pv.personId ? `มูลค่าลงทุนส่วนของ ${pv.personName}` : "มูลค่าลงทุนรวม"} (THB Equivalent) · ถึงวันนี้</>} value={money(total, "THB", 0)}
           sub={<>
             <MonthChange pct={changePct(total, totalPrev)} prev={totalPrev} />
+            {Math.abs(Number(invGain?.fx ?? 0)) >= 0.5 && <div>ในนั้นจากส่วนต่างค่าเงิน <span className={tone(Number(invGain?.fx))}>{signedMoney(Number(invGain?.fx), "THB", 0)}</span></div>}
             <div>พอร์ตที่เปิด {openCount} พอร์ต{closedCount ? ` · ปิดแล้ว ${closedCount}` : ""}</div>
           </>} />
         <StatBox label="ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)" value={signedMoney(sinceOpen, "THB", 0)} valueClass={tone(sinceOpen)}
