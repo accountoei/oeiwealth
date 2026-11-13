@@ -125,28 +125,24 @@ export function preGoLiveThb(n: NetInvested, rows: OpeningValue[], thb0: (ccy: s
 
 /** ผลตอบแทนแยกช่วง · บรรทัดย่อยเป็นสกุลพอร์ต (null = ไม่ทราบ / ไม่แสดง) */
 export type ReturnSplit = {
-  pre: (Amt & { got: number | null; price: number | null; fx: number | null }) | null;
-  since: Amt & { income: number | null; price: number | null; fx: number | null };
+  pre: (Amt & { got: number | null; price: number | null }) | null;
+  since: Amt & { income: number | null; price: number | null };
   total: Amt & { pctThb: number | null; pctCcy: number | null };
-  /** มีหลักทรัพย์ / เงินฝากต่างสกุลพอร์ต → แสดงบรรทัดค่าเงิน */
-  foreign: boolean;
 };
 
 /**
  * ผลตอบแทนก่อน / ตั้งแต่ Go-live (ตกลง 13 พ.ย. 2026 · แทน "กำไร / ขาดทุนรวม" + "รายได้ลงทุนตั้งแต่ Go-live")
  * รวมผลตอบแทน = มูลค่า + เงินที่เข้าบัญชีธนาคารแล้ว − เงินลงทุนสุทธิ (vsInvested)
  * ก่อน Go-live = มูลค่าตลาด ณ วันก่อน Go-live − เงินที่โอนไปจริง (ไม่ได้ใส่ = ต้นทุนรวมของยอดตั้งต้น)
- *   ได้รับจริง = ต้นทุนรวม − เงินที่โอนไปจริง (คูปอง / กำไรที่นำมาลงทุนต่อ) · ราคาเปลี่ยน = Σ (มูลค่า − ต้นทุน) สกุลหลักทรัพย์ × อัตรา ณ วันนั้น
- *   ค่าเงิน = ต้นทุนแปลงด้วยอัตรา ณ วันนั้น − ต้นทุนรวมที่บันทึก (สกุลอื่นในต้นทุนรวมแปลงด้วยอัตราเฉลี่ย · ดู netInvested)
- * ตั้งแต่ Go-live = รวม − ก่อน Go-live · ค่าเงิน = มูลค่า ณ วันก่อน Go-live × (อัตราวันนี้ − อัตราวันนั้น) · ราคาเปลี่ยน = ส่วนที่เหลือหลังหักปันผล ดอกเบี้ย คูปอง
- * rate0 / rateNow = อัตราแปลงสกุลหลักทรัพย์ → สกุลพอร์ต (วันก่อน Go-live / วันนี้) · thb0 = บาทต่อหน่วย ณ วันก่อน Go-live
+ *   รับแล้ว = ต้นทุนรวม − เงินที่โอนไปจริง (ปันผล ดอกเบี้ย คูปอง กำไรที่นำมาลงทุนต่อ) · ราคาเปลี่ยน = มูลค่า − ต้นทุนรวม (รวมค่าเงิน)
+ * ตั้งแต่ Go-live = รวม − ก่อน Go-live · ราคาเปลี่ยน = ส่วนที่เหลือหลังหักปันผล ดอกเบี้ย คูปอง (รวมค่าเงิน)
+ * rate0 = อัตราแปลงสกุลหลักทรัพย์ → สกุลพอร์ต ณ วันก่อน Go-live · thb0 = บาทต่อหน่วย ณ วันนั้น
  */
 export function returnSplit(pfCcy: string, n: NetInvested, rows: OpeningValue[], value: Amt, received: Amt, incomeCcy: number | null,
-  thb0: (ccy: string) => number | null, rate0: (ccy: string) => number | null, rateNow: (ccy: string) => number | null): ReturnSplit | null {
+  thb0: (ccy: string) => number | null, rate0: (ccy: string) => number | null): ReturnSplit | null {
   const tThb = vsInvested(value.thb, n.thb, received.thb);
   if (!tThb) return null;
   const tCcy = pfCcy === "THB" ? tThb : vsInvested(value.ccy, n.ccy, received.ccy);
-  const sum = (f: (r: OpeningValue) => number | null) => rows.reduce<number | null>((t, r) => { const x = f(r); return t == null || x == null ? null : t + x; }, 0);
   const sent = n.lines.filter((l) => l.pre);
   const cost = n.cost ?? n.lines.find((l) => l.key === "opening") ?? null;
   let pre: ReturnSplit["pre"] = null;
@@ -154,24 +150,18 @@ export function returnSplit(pfCcy: string, n: NetInvested, rows: OpeningValue[],
   if (preThb != null && cost) {
     const sentCcy = sent.some((l) => l.ccy == null) ? null : sent.reduce((t, l) => t + (l.ccy ?? 0), 0);
     const basisCcy = sent.length ? sentCcy : cost.ccy;
-    const v0 = sum((r) => { const k = rate0(r.currency); return k == null ? null : r.value * k; });
-    const c0 = sum((r) => { const k = rate0(r.currency); return k == null ? null : r.cost * k; });
-    const ccy = v0 == null || basisCcy == null ? null : v0 - basisCcy;
+    const v0 = rows.reduce<number | null>((t, r) => { const k = rate0(r.currency); return t == null || k == null ? null : t + r.value * k; }, 0);
     pre = {
-      thb: preThb, ccy,
+      thb: preThb, ccy: v0 == null || basisCcy == null ? null : v0 - basisCcy,
       got: sent.length && cost.ccy != null && sentCcy != null ? cost.ccy - sentCcy : null,
-      price: ccy == null || c0 == null ? null : v0! - c0,
-      fx: ccy == null || c0 == null || cost.ccy == null ? null : c0 - cost.ccy,
+      price: v0 == null || cost.ccy == null ? null : v0 - cost.ccy,
     };
   }
   const sinceCcy = tCcy == null ? null : pre ? (pre.ccy == null ? null : tCcy.pl - pre.ccy) : tCcy.pl;
-  const fx = sum((r) => { if (r.currency === pfCcy) return 0; const a = rateNow(r.currency), b = rate0(r.currency); return a == null || b == null ? null : r.value * (a - b); });
-  const sinceFx = pre ? fx : 0;
   return {
     pre,
     since: { thb: tThb.pl - (pre?.thb ?? 0), ccy: sinceCcy, income: incomeCcy,
-      price: sinceCcy == null || incomeCcy == null || sinceFx == null ? null : sinceCcy - incomeCcy - sinceFx, fx: sinceFx },
+      price: sinceCcy == null || incomeCcy == null ? null : sinceCcy - incomeCcy },
     total: { thb: tThb.pl, ccy: tCcy?.pl ?? null, pctThb: tThb.pct, pctCcy: tCcy?.pct ?? null },
-    foreign: rows.some((r) => r.currency !== pfCcy),
   };
 }

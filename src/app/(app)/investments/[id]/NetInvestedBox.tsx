@@ -16,7 +16,7 @@ const pctTxt = (p: number | null) => (p == null ? "" : ` (${signedPct(p)})`);
 /**
  * กล่องสรุปมูลค่าพอร์ต (รวมกล่องมูลค่าเป็นบาท + เงินลงทุนสุทธิ · ตกลง 5 พ.ย. 2026)
  * หัวกล่อง (children) = มูลค่าเป็นบาทที่ใช้ในความมั่งคั่งสุทธิ · ต่อด้วยเงินลงทุนสุทธิ / ผลตอบแทนก่อน Go-live / ตั้งแต่ Go-live / รวมผลตอบแทน
- *   (ตกลง 13 พ.ย. 2026 · split = returnSplit · บรรทัดย่อยเป็นสกุลพอร์ต: ได้รับจริง / ราคาเปลี่ยน / ค่าเงิน · ปันผล ดอกเบี้ย คูปอง / ราคาเปลี่ยน / ค่าเงิน)
+ *   (ตกลง 13 พ.ย. 2026 · split = returnSplit · บรรทัดย่อยเป็นสกุลพอร์ต: รับแล้ว / ราคาเปลี่ยน (รวมค่าเงิน))
  * เงินลงทุนสุทธิ = ต้นทุนรวมของยอดตั้งต้น (ก่อน Go-live · ตกลง 12 พ.ย. 2026) + โอนไป − โอนกลับ หลัง Go-live (ปุ่มโอนเงิน / ซื้อขายกับบัญชีธนาคารโดยตรง) · เทียบมูลค่าล่าสุด (รวมเงินโอนรอใส่ยอด)
  * พอร์ตต่างประเทศ: บาท = รวมผลค่าเงิน · สกุลพอร์ต = ผลการลงทุนล้วน · พอร์ตปิดแล้ว = กำไร / ขาดทุนที่รับรู้แล้ว
  * receivedThb / Ccy = ปันผล / ดอกเบี้ย / Coupon ที่เข้าบัญชีธนาคารโดยตรง (ไม่อยู่ในมูลค่า) → บวกกลับในกำไร / ขาดทุน (ตกลง 12 พ.ย. 2026)
@@ -55,7 +55,7 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, spl
         {fx && ccy != null && <div className={tone(ccy)}>{signed(ccy, currency)}{pct(pCcy ?? null)}</div>}</dd></div>
   );
   const sub = (label: string, v: number | null) => v != null && (
-    <div className="flex justify-between gap-3 pl-3 text-slate-400"><dt>· {label}</dt><dd className={`tabular-nums ${tone(v)}`}>{signed(v)}</dd></div>
+    <div className="flex justify-between gap-3 pl-3 text-slate-400"><dt>· {label}</dt><dd className={`tabular-nums ${tone(v)}`}>{signed(v, currency)}</dd></div>
   );
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 num-box">
@@ -68,20 +68,18 @@ export default function NetInvestedBox({ currency, investedThb, investedCcy, spl
         {lines.length > 0 && split && <>
           {split.pre && <>
             {ret("ผลตอบแทนก่อน Go-live (ก่อนภาษี)", split.pre.thb, split.pre.ccy)}
-            {sub("ได้รับจริง (คูปอง / กำไรที่นำมาลงทุนต่อ)", split.pre.got)}
+            {sub("ปันผล ดอกเบี้ย คูปอง กำไร (รับแล้ว)", split.pre.got)}
             {sub("ราคาเปลี่ยน (ยังไม่รับรู้)", split.pre.price)}
-            {split.foreign && sub("ค่าเงิน (ยังไม่รับรู้)", split.pre.fx)}
           </>}
           {ret("ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)", split.since.thb, split.since.ccy)}
-          {sub("ปันผล ดอกเบี้ย คูปอง", split.since.income)}
+          {sub("ปันผล ดอกเบี้ย คูปอง (รับแล้ว)", split.since.income)}
           {sub(soldSince ? "ราคาเปลี่ยน / ขาย / ครบกำหนด" : "ราคาเปลี่ยน (ยังไม่รับรู้)", split.since.price)}
-          {split.foreign && sub("ค่าเงิน (ยังไม่รับรู้)", split.since.fx)}
           {ret(<>{closed ? "รวมผลตอบแทน (รับรู้แล้ว)" : "รวมผลตอบแทน"}
             {hasReceived && <div className="text-slate-400">รวมปันผล / ดอกเบี้ยที่เข้าบัญชีธนาคาร {money(receivedThb, "THB", 0)}</div>}</>,
             split.total.thb, split.total.ccy, split.total.pctThb, split.total.pctCcy)}
         </>}
       </dl>
-      {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน · บรรทัดย่อยเป็น {currency}</p>}
+      {fx && lines.length > 0 && <p className="mt-2 text-xs text-slate-400">บาท = รวมผลจากค่าเงิน · {currency} = ผลการลงทุนล้วน</p>}
       {lines.length > 0 && <div className="mt-3 text-sm">
         <button type="button" onClick={() => setList(true)} className={SMALL_BTN}>ดูรายการเงินโอน ({lines.length})</button>
       </div>}

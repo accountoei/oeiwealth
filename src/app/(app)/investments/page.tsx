@@ -136,7 +136,6 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
   // กล่องเงินฝากในพอร์ต (ตกลง 9 พ.ย. 2026): % ของมูลค่าลงทุนรวม · รอใส่ยอด (ถ้ามี) หรือจำนวนพอร์ตที่มีเงินฝาก
   const cashPfCount = new Set([...holdings.filter((h) => h.holding_type === "CASH" && Math.abs(thb(h)) > 0.005).map((h) => h.portfolio_asset_id),
     ...list.filter((p) => Number(p.in_transit_thb ?? 0) > 0.005).map((p) => p.asset_id)]).size;
-  const incomeThb = (income ?? []).reduce((s, i) => s + Number(i.base_amount ?? 0), 0);
   // รายได้ปีนี้ (ม.ค. → เดือนที่เลือก) / เดือนที่เลือก (ตกลง 9 พ.ย. 2026)
   const mStart = `${ym}-01`, mEnd = monthRange(ym).end, yStart = `${ym.slice(0, 4)}-01-01`;
   const incomeIn = (a: string, b: string) => (income ?? []).filter((i) => String(i.date) >= a && String(i.date) <= b)
@@ -221,9 +220,9 @@ export default async function InvestmentsPage({ searchParams }: { searchParams: 
           </>} />
         <StatBox label="ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)" value={signedMoney(sinceOpen, "THB", 0)} valueClass={tone(sinceOpen)}
           sub={<>
-            <div>ปันผล ดอกเบี้ย คูปอง {money(incomeThb, "THB", 0)}</div>
-            <div>ปีนี้ (ม.ค. – {thMonth(mStart)}) {money(incomeYear, "THB", 0)} · {mLabel} {money(incomeMonth, "THB", 0)}</div>
-            {allInv.length > 0 && <div>ผลตอบแทนก่อน Go-live (ก่อนภาษี) <span className={tone(preOpen)}>{signedMoney(preOpen, "THB", 0)}</span></div>}
+            <div>ปันผล ดอกเบี้ย คูปอง ปีนี้ (ม.ค. – {thMonth(mStart)}) {money(incomeYear, "THB", 0)}</div>
+            <div>ปันผล ดอกเบี้ย คูปอง {mLabel} {money(incomeMonth, "THB", 0)}</div>
+            {allInv.length > 0 && <div>ผลตอบแทนก่อน Go-live <span className={tone(preOpen)}>{signedMoney(preOpen, "THB", 0)}</span></div>}
             {invOpenPl && <div>รวมผลตอบแทน <span className={tone(invOpenPl.pl)}>{signedMoney(invOpenPl.pl, "THB", 0)}{invOpenPl.pct != null && <> (<span className="font-semibold">{signedPct(invOpenPl.pct)}</span>)</>}</span></div>}
           </>} />
         {allInv.length > 0 && (
