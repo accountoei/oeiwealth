@@ -4,6 +4,8 @@
 //   ยอดต่องวด = เงินต้น × อัตรา % ÷ 100 × เดือนต่องวด ÷ 12 (ตอนบันทึกรับแก้เป็นยอดจริงได้)
 //   งวดที่ "รับแล้ว" = มีรายการ Coupon / ดอกเบี้ยของหลักทรัพย์นี้ ตั้งแต่ 20 วันก่อนวันรับ จนก่อนงวดถัดไป (จับคู่ทีละงวดตามลำดับ)
 //   เงินต้น "รับแล้ว" = มีรายการครบกำหนด (MATURITY) แล้ว
+//   ตั้งตารางเองรายงวด (13 พ.ย. 2026 · investment_coupon_lines · แบบตารางผ่อนเงินกู้) → ใช้งวดที่ตั้งไว้แทนการคำนวณ
+//   งวดก่อน Go-live = ข้อมูลเท่านั้น (pre) · ขาย / ครบกำหนดก่อนถึงงวด = ยกเลิก (cancelled) · ทั้งสองแบบไม่รอรับ
 
 export const COUPON_MONTHS: Record<string, number> = { MONTHLY: 1, QUARTERLY: 3, SEMI_ANNUAL: 6, ANNUAL: 12 };
 /** ตัวเลือกความถี่ในฟอร์มหุ้นกู้ (ค่าที่ฐานข้อมูลรับ · ih_coupon_frequency_ck) */
@@ -26,7 +28,12 @@ export type Receipt = { date: string; amount: number; id?: string };
 export type DueRow = {
   key: string; kind: "INTEREST" | "PRINCIPAL"; no: number; total: number; due: string;
   expected: number | null; received: Receipt | null;
+  /** ก่อน Go-live: ข้อมูลเท่านั้น (ไม่รอรับ) */ pre?: boolean;
+  /** ขาย / ครบกำหนด / Autocall ก่อนถึงงวดนี้ → ไม่ต้องรอรับแล้ว */ cancelled?: boolean;
+  notes?: string | null;
 };
+/** งวดที่ตั้งไว้เอง (investment_coupon_lines) */
+export type StoredLine = { due_date: string; interest_due: number; principal_due: number; notes: string | null };
 
 function addMonths(iso: string, k: number, day: number): string {
   const [y, m] = iso.split("-").map(Number);
@@ -56,34 +63,60 @@ export function couponDates(maturity: string, freq: string, start: string | null
   return out.reverse();
 }
 
-export function buildSchedule(h: SchedInput, coupons: Receipt[], maturityTx: Receipt | null): DueRow[] {
-  if (!h.maturity_date) return [];
+export function buildSchedule(h: SchedInput, coupons: Receipt[], maturityTx: Receipt | null, stored: StoredLine[] = [], goLive = ""): DueRow[] {
+  const ls = [...stored].sort((a, b) => a.due_date.localeCompare(b.due_date));
+  // ตั้งตารางเอง: เงินต้นอยู่งวดสุดท้ายงวดเดียว (set_holding_coupon_schedule บังคับ) → วันครบกำหนด = วันของงวดนั้น
+  const lastP = ls.filter((l) => Number(l.principal_due) > 0).at(-1);
+  const maturity = lastP?.due_date ?? h.maturity_date ?? ls.at(-1)?.due_date ?? null;
+  if (!maturity) return [];
   const closed = h.status !== "ACTIVE";
   // ถูกเรียกคืนก่อนกำหนด (Autocall / ขาย) → งวดหลังวันปิดไม่มีแล้ว
-  const endDate = closed && maturityTx && maturityTx.date < h.maturity_date ? maturityTx.date : h.maturity_date;
-  const rows: DueRow[] = [];
-  const canInterest = h.face != null && h.face > 0 && h.rate != null && h.rate > 0 && !!h.freq;
-  if (canInterest) {
-    const dates = couponDates(h.maturity_date, h.freq!, h.start);
-    const months = h.freq === "AT_MATURITY" ? (h.start ? monthsBetween(h.start, h.maturity_date) : 12) : COUPON_MONTHS[h.freq!];
-    const amount = Math.round(h.face! * h.rate! / 100 * months / 12 * 100) / 100;
-    const pool = [...coupons].sort((a, b) => a.date.localeCompare(b.date));
-    const used = new Set<number>();
-    dates.forEach((due, i) => {
-      const lo = shift(due, -EARLY_DAYS);
-      const hi = dates[i + 1] ? shift(dates[i + 1], -EARLY_DAYS) : "9999-12-31";
-      const j = pool.findIndex((r, k) => !used.has(k) && r.date >= lo && r.date < hi);
-      if (j >= 0) used.add(j);
-      // ปิดแล้ว: งวดที่ยังไม่รับ แสดงเฉพาะเมื่อครบกำหนด / Autocall แล้ว และไม่เกินวันปิด (ขายไปแล้ว = ไม่ต้องรอรับ)
-      if (closed && j < 0 && (!maturityTx || due > endDate)) return;
-      rows.push({ key: `${h.id}:I:${due}`, kind: "INTEREST", no: i + 1, total: dates.length, due, expected: amount, received: j >= 0 ? pool[j] : null });
-    });
+  const endDate = closed && maturityTx && maturityTx.date < maturity ? maturityTx.date : maturity;
+  let interest: { due: string; expected: number; notes?: string | null }[] = [];
+  if (ls.length) {
+    interest = ls.filter((l) => Number(l.interest_due) > 0).map((l) => ({ due: l.due_date, expected: Number(l.interest_due), notes: l.notes }));
+  } else if (h.face != null && h.face > 0 && h.rate != null && h.rate > 0 && h.freq) {
+    const months = h.freq === "AT_MATURITY" ? (h.start ? monthsBetween(h.start, maturity) : 12) : COUPON_MONTHS[h.freq];
+    const amount = Math.round(h.face * h.rate / 100 * months / 12 * 100) / 100;
+    interest = couponDates(maturity, h.freq, h.start).map((due) => ({ due, expected: amount }));
   }
-  if (!closed || maturityTx) {
-    rows.push({ key: `${h.id}:P`, kind: "PRINCIPAL", no: 1, total: 1, due: endDate,
-      expected: h.face ?? h.current_value, received: maturityTx });
-  }
+  const isPre = (due: string) => !!goLive && due < goLive;
+  const pool = [...coupons].sort((a, b) => a.date.localeCompare(b.date));
+  const used = new Set<number>();
+  const rows: DueRow[] = interest.map((x, i) => {
+    const lo = shift(x.due, -EARLY_DAYS);
+    const hi = interest[i + 1] ? shift(interest[i + 1].due, -EARLY_DAYS) : "9999-12-31";
+    const j = pool.findIndex((r, k) => !used.has(k) && r.date >= lo && r.date < hi);
+    if (j >= 0) used.add(j);
+    const pre = j < 0 && isPre(x.due);
+    // ปิดแล้ว: งวดที่ยังไม่รับ รอรับเฉพาะเมื่อครบกำหนด / Autocall แล้ว และไม่เกินวันปิด (ขายไปแล้ว = ยกเลิก)
+    const cancelled = closed && !pre && j < 0 && (!maturityTx || x.due > endDate);
+    return { key: `${h.id}:I:${x.due}`, kind: "INTEREST", no: i + 1, total: interest.length, due: x.due, expected: x.expected,
+      received: j >= 0 ? pool[j] : null, pre, cancelled, notes: x.notes };
+  });
+  // เงินต้น = รายการครบกำหนด (MATURITY) · ขายไปแล้ว = ยกเลิก
+  rows.push({ key: `${h.id}:P`, kind: "PRINCIPAL", no: 1, total: 1, due: endDate,
+    expected: lastP ? Number(lastP.principal_due) : h.face ?? h.current_value, received: maturityTx,
+    pre: !maturityTx && isPre(endDate), cancelled: closed && !maturityTx, notes: lastP && !(Number(lastP.interest_due) > 0) ? lastP.notes : null });
   return rows;
+}
+
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
+/**
+ * สูตรตั้งตารางรับ (หน้าต่าง "ตั้ง / แก้ตารางรับ"): งวดดอกเบี้ยนับย้อนจากวันครบกำหนดจนถึงหลังวันเริ่ม (วันซื้อ / วันออก) · เงินต้นคืนงวดสุดท้าย
+ * ดอกเบี้ยต่องวด = เงินต้น × อัตรา × (เดือนต่องวด ÷ 12 · หรือ actual: จำนวนวันในงวด ÷ 365 นับจากงวดก่อนหน้า — งวดแรกนับจากก่อนหน้า 1 รอบ)
+ * ครั้งเดียวตอนครบกำหนด: นับจากวันเริ่ม
+ */
+export function couponLines(p: { face: number; ratePct: number; freq: string; start: string; maturity: string; actual: boolean }) {
+  const step = COUPON_MONTHS[p.freq];
+  const dates = couponDates(p.maturity, p.freq, p.start || null);
+  const day = Number(p.maturity.slice(8, 10));
+  return dates.map((d, i) => {
+    const prev = i > 0 ? dates[i - 1] : step ? addMonths(d, -step, day) : p.start;
+    const frac = !prev ? 1 : p.actual ? daysBetween(prev, d) / 365 : step ? step / 12 : monthsBetween(prev, d) / 12;
+    return { due_date: d, principal: i === dates.length - 1 ? p.face : 0, interest: Math.round(p.face * p.ratePct / 100 * frac * 100) / 100 };
+  }).filter((l) => l.principal + l.interest > 0);
 }
 
 type HoldingCols = { id: string; status: string; maturity_date: string | null; current_value: number | null;
@@ -91,8 +124,9 @@ type HoldingCols = { id: string; status: string; maturity_date: string | null; c
 type FcnCols = { principal: number | null; coupon_rate: number | null; coupon_frequency: string | null; issue_date: string | null; trade_date: string | null };
 type TxCols = { id?: string; transaction_type: string; transaction_date: string; amount: number | null };
 
-/** ข้อมูลหลัก + รายการของหลักทรัพย์ → ตารางรับ (หุ้นกู้ใช้คอลัมน์ของหลักทรัพย์ · FCN ใช้ fcn_details เมื่อหลักทรัพย์ไม่ได้ใส่) */
-export function scheduleOf(h: HoldingCols, fcn: FcnCols | null, txs: TxCols[]): DueRow[] {
+/** ข้อมูลหลัก + รายการของหลักทรัพย์ → ตารางรับ (หุ้นกู้ใช้คอลัมน์ของหลักทรัพย์ · FCN ใช้ fcn_details เมื่อหลักทรัพย์ไม่ได้ใส่)
+ *  stored = งวดที่ตั้งไว้เอง (มี = ใช้แทนการคำนวณ) · goLive = งวดก่อนวันนี้เป็นข้อมูลเท่านั้น */
+export function scheduleOf(h: HoldingCols, fcn: FcnCols | null, txs: TxCols[], stored: StoredLine[] = [], goLive = ""): DueRow[] {
   const n = (v: number | null | undefined) => (v == null ? null : Number(v));
   const firstTx = txs.filter((t) => t.transaction_type === "OPENING_BALANCE" || t.transaction_type === "BUY")
     .map((t) => t.transaction_date).sort()[0] ?? null;
@@ -103,5 +137,5 @@ export function scheduleOf(h: HoldingCols, fcn: FcnCols | null, txs: TxCols[]): 
     freq: h.coupon_frequency ?? fcn?.coupon_frequency ?? null,
     start: fcn?.issue_date ?? fcn?.trade_date ?? firstTx,
   }, txs.filter((t) => t.transaction_type === "COUPON" || t.transaction_type === "INTEREST").map((t) => ({ date: t.transaction_date, amount: Number(t.amount ?? 0), id: t.id })),
-  mat ? { date: mat.transaction_date, amount: Number(mat.amount ?? 0), id: mat.id } : null);
+  mat ? { date: mat.transaction_date, amount: Number(mat.amount ?? 0), id: mat.id } : null, stored, goLive);
 }

@@ -11,7 +11,8 @@ import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import StatusSelect from "@/components/StatusSelect";
 import { type CashAcct, type Holding } from "../../forms";
 import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
-import { scheduleOf } from "@/lib/coupon-schedule";
+import { COUPON_MONTHS, scheduleOf, type StoredLine } from "@/lib/coupon-schedule";
+import { CouponEditor } from "./coupon-editor";
 import { dueLabel } from "../../../due";
 import { DueStatus } from "../../../due-batch";
 import type { Ret, RetLocal } from "../../ReturnsTable";
@@ -54,7 +55,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const supabase = await createClient();
   const famQ = supabase.from("families").select("go_live_date").maybeSingle().then((r) => r);
   const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: autoRow },
-    [{ data: vals0 }, { data: rates0 }]] = await Promise.all([
+    [{ data: vals0 }, { data: rates0 }], { data: lineRows }] = await Promise.all([
     loadHolding(id, hid),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
@@ -80,6 +81,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           .gte("rate_date", addDays(d0, -14)).lte("rate_date", d0).then((r) => r),
       ]) : [{ data: [] }, { data: [] }];
     }),
+    supabase.from("investment_coupon_lines").select("due_date,interest_due,principal_due,notes").eq("holding_id", hid).is("deleted_at", null).order("due_date"),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
@@ -103,13 +105,27 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const couponTax = coupons.reduce((s, t) => s + Number(t.tax ?? 0), 0);
   const otherFees = txList.filter((t) => t.transaction_type === "FEE" || t.transaction_type === "TAX").reduce((s, t) => s + Number(t.amount), 0);
   const canMature = h.status === "ACTIVE" && ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
-  // ตารางรับดอกเบี้ย / เงินต้น (หุ้นกู้: ข้อมูลในแก้ไขข้อมูล · FCN: รายละเอียด FCN)
+  // ตารางรับดอกเบี้ย / เงินต้น (หุ้นกู้: ข้อมูลในแก้ไขข้อมูล · FCN: รายละเอียด FCN · ตั้งเองรายงวด: ปุ่ม "+ ตั้งตารางรับ")
   const hasCoupon = ["BOND", "OTHER"].includes(h.holding_type);
-  const sched = ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type)
-    ? scheduleOf({ ...h, face_value: autoRow?.face_value, interest_rate: autoRow?.interest_rate, coupon_frequency: autoRow?.coupon_frequency }, fcn, txList)
+  const hasSched = ["BOND", "FCN", "STRUCTURED_PRODUCT", "OTHER"].includes(h.holding_type);
+  const stored = (lineRows as StoredLine[] | null) ?? [];
+  const sched = hasSched
+    ? scheduleOf({ ...h, face_value: autoRow?.face_value, interest_rate: autoRow?.interest_rate, coupon_frequency: autoRow?.coupon_frequency }, fcn, txList, stored, goLive)
     : [];
   // ปุ่ม "+ รับ…" เติมงวดดอกเบี้ยที่ค้างรับ (เก่าสุด) ไม่มี = งวดถัดไป (แบบปุ่มบันทึกรับชำระของเงินกู้ · ตกลง 13 พ.ย. 2026)
-  const dueNext = sched.find((x) => x.kind === "INTEREST" && !x.received && x.due <= today) ?? sched.find((x) => x.kind === "INTEREST" && !x.received);
+  const waiting = (x: (typeof sched)[number]) => x.kind === "INTEREST" && !x.received && !x.pre && !x.cancelled;
+  const dueNext = sched.find((x) => waiting(x) && x.due <= today) ?? sched.find(waiting);
+  // งวดก่อน Go-live (ข้อมูลเท่านั้น) → รวมไว้ท้ายตาราง
+  const preLines = sched.filter((x) => x.pre && x.kind === "INTEREST");
+  const preSum = preLines.reduce((s, x) => s + Number(x.expected ?? 0), 0);
+  // หน้าต่างตั้ง / แก้ตารางรับ: เริ่มจากงวดที่ตั้งไว้ ไม่มี = งวดที่คำนวณจากข้อมูลหลัก (ดอกเบี้ย + เงินต้นวันเดียวกัน = งวดเดียว)
+  const editorLines = stored.length
+    ? stored.map((l) => ({ due_date: l.due_date, principal: Number(l.principal_due), interest: Number(l.interest_due), notes: l.notes ?? undefined }))
+    : [...new Set(sched.map((x) => x.due))].sort().map((d) => {
+      const sum = (k: string) => sched.filter((x) => x.due === d && x.kind === k).reduce((s, x) => s + Number(x.expected ?? 0), 0);
+      return { due_date: d, principal: sum("PRINCIPAL"), interest: sum("INTEREST") };
+    }).filter((l) => l.principal + l.interest > 0);
+  const freq0 = autoRow?.coupon_frequency ?? fcn?.coupon_frequency ?? "";
   const pct = (v: number | null) => (v == null ? "-" : `${Number(v)}%`);
   // วิธีนับ: มูลค่าก้อนเดียว = ไม่แสดงจำนวน / ราคาต่อหน่วย (เก็บภายในเป็น 1 × มูลค่า)
   const lump = autoRow?.valuation_mode === "LUMP_SUM";
@@ -287,14 +303,24 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       )}
 
       <HoldingHistory title={sched.length ? "ตารางรับและรายการ" : "รายการและราคา / มูลค่า"}
-        info={sched.length > 0 && <InfoTip label="คำอธิบายตาราง">งวดตามตาราง คำนวณจากเงินต้น · อัตรา · จ่ายทุก · วันครบกำหนด (แก้ได้ที่ &ldquo;แก้ไขข้อมูล&rdquo;) ·
+        tools={hasSched && canDelete && <CouponEditor assetId={id} holdingId={hid} currency={h.currency} goLive={goLive} current={editorLines} hasSchedule={stored.length > 0}
+          defaults={{ face: Number(autoRow?.face_value ?? fcn?.principal ?? cost ?? 0), ratePct: Number(autoRow?.interest_rate ?? fcn?.coupon_rate ?? 0),
+            freq: COUPON_MONTHS[freq0] || freq0 === "AT_MATURITY" ? freq0 : "SEMI_ANNUAL",
+            start: fcn?.issue_date ?? fcn?.trade_date ?? txList.filter((t) => ["OPENING_BALANCE", "BUY"].includes(t.transaction_type)).at(-1)?.transaction_date ?? "",
+            maturity: h.maturity_date ?? "" }} />}
+        info={sched.length > 0 && <InfoTip label="คำอธิบายตาราง">{stored.length
+          ? <>งวดตามตารางที่ตั้งไว้ (แก้ที่ปุ่ม &ldquo;แก้ตารางรับทั้งชุด&rdquo;)</>
+          : <>งวดตามตาราง คำนวณจากเงินต้น · อัตรา · จ่ายทุก · วันครบกำหนด (แก้ได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; หรือตั้งเองรายงวดที่ปุ่ม &ldquo;+ ตั้งตารางรับ&rdquo;)</>} ·
+          ก่อน Go-live = ข้อมูลเท่านั้น ไม่เข้ายอดเงิน · ยกเลิก = ขาย / ครบกำหนดก่อนถึงงวด ·
           แถวสีเขียว = เงินที่ได้รับจริง (ปันผล ดอกเบี้ย เงินต้นคืน ขาย) · แถวสีฟ้า = ยอดตั้งต้น / ซื้อ · ตัวสีเทา = ราคา / มูลค่า ·
           บันทึกรับ: ปุ่ม &ldquo;{isStructured ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}&rdquo; ด้านบน (เติมยอดงวดที่ถึงกำหนดให้) หรือแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; ของหน้า Investments · คลิกแถวรายการเพื่อแก้ไข</InfoTip>}
         head={
         <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">จำนวน</th>
           <th className="text-right">ราคา</th><th className="text-right">{sched.length ? "ยอด / มูลค่า" : "มูลค่า"}</th><th className="pl-4">{sched.length ? "สถานะ / หมายเหตุ" : "หมายเหตุ"}</th><th></th></tr></thead>
-      } foot={coupons.length > 0 || otherFees > 0 ? (
+      } foot={coupons.length > 0 || otherFees > 0 || preLines.length > 0 ? (
         <tfoot className="border-t-2 border-slate-200 text-xs text-slate-600">
+          {preLines.length > 0 && <tr><td colSpan={4} className="py-2">ดอกเบี้ยตามตารางก่อน Go-live {preLines.length} งวด (ข้อมูลเท่านั้น · ก่อนภาษี)</td>
+            <td className="text-right text-sm tabular-nums">{money(preSum, h.currency)}</td><td colSpan={2} /></tr>}
           {coupons.length > 0 && <tr><td colSpan={4} className="py-2">รับปันผล / ดอกเบี้ยแล้ว {coupons.length} ครั้ง · สุทธิหลังหักภาษี / ค่าธรรมเนียม</td>
             <td className="text-right text-sm font-medium tabular-nums text-emerald-700">{money(income, h.currency)}</td>
             <td className="pl-4">ก่อนภาษี {money(couponGross)}{couponTax > 0 && ` · ภาษี ${money(couponTax)}`}</td><td /></tr>}
@@ -303,13 +329,15 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </tfoot>) : undefined}
         rows={[
         ...sched.map((x) => ({ date: x.due, o: 0, h: {
-          key: `s${x.key}`, auto: false, open: !x.received, row: (
-            <tr className={`align-top [&>td]:py-1.5 ${x.received ? "text-slate-500" : ""}`}>
+          // ยกเลิก: ไม่นับทั้งยังไม่รับ / รับแล้ว · ก่อน Go-live: นับเป็นรับแล้ว (รับก่อนเริ่มใช้ระบบ)
+          key: `s${x.key}`, auto: false, open: x.cancelled ? undefined : !x.received && !x.pre, row: (
+            <tr className={`align-top [&>td]:py-1.5 ${x.received ? "text-slate-500" : x.pre || x.cancelled ? "text-slate-400" : ""}`}>
               <td className="py-1.5">{thDate(x.due)}</td>
               <td>{dueLabel(x)}</td>
               <td /><td />
               <td className="text-right tabular-nums">{x.expected != null ? money(x.expected) : "-"}</td>
-              <td className="pl-4 text-xs"><DueStatus due={x.due} received={x.received} today={today} /></td>
+              <td className="pl-4 text-xs">{x.cancelled ? "ยกเลิก" : x.pre && !x.received ? "ก่อน Go-live" : <DueStatus due={x.due} received={x.received} today={today} />}
+                {x.notes && <div className="text-slate-500">{x.notes}</div>}</td>
               <td />
             </tr>
           ) } })),

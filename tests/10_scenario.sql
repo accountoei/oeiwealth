@@ -6211,4 +6211,53 @@ SELECT t.ok(NOT has_function_privilege('anon', 'public.split_pf_lump(text, uuid,
             'ก้อนพอร์ต: anon เรียกแยกไม่ได้ · ฟังก์ชันภายในเรียกตรงไม่ได้');
 ROLLBACK;
 
+\echo '== 13zz999999. ตารางรับดอกเบี้ย / เงินต้นแบบตั้งเองรายงวด (ROLLBACK ท้ายหัวข้อ)'
+BEGIN;
+SET ROLE authenticated; SELECT t.login('00000000-0000-0000-0000-00000000000e');
+SELECT public.add_holding(t.a('Brokerage USD'), 'BOND', 'หุ้นกู้ตารางรับ', NULL, 'USD', current_date + 400, NULL, NULL) AS cl_bond \gset
+SELECT public.add_holding(t.a('Brokerage USD'), 'EQUITY', 'หุ้นตารางรับ', NULL, 'USD', NULL, NULL, NULL) AS cl_stock \gset
+SELECT public.set_holding_coupon_schedule(:'cl_bond', jsonb_build_array(
+    jsonb_build_object('due_date', current_date + 400, 'interest', 25, 'principal', 1000),
+    jsonb_build_object('due_date', '2026-01-15', 'interest', 25, 'notes', 'ก่อน Go-live'),
+    jsonb_build_object('due_date', current_date + 200, 'interest', 25.004))) AS cl_n \gset
+SELECT t.ok(:cl_n = 3
+            AND (SELECT array_agg(line_no ORDER BY due_date) = '{1,2,3}' AND sum(interest_due) = 75 AND sum(principal_due) = 1000
+                   FROM public.investment_coupon_lines WHERE holding_id = :'cl_bond' AND deleted_at IS NULL),
+            'ตารางรับ: EDITOR ตั้งได้ 3 งวด (รวมงวดก่อน Go-live) · เลขงวดเรียงตามวันที่ · ปัดเศษ 2 ตำแหน่ง');
+SELECT public.set_holding_coupon_schedule(:'cl_bond', jsonb_build_array(
+    jsonb_build_object('due_date', current_date + 200, 'interest', 30),
+    jsonb_build_object('due_date', current_date + 400, 'interest', 30, 'principal', 1000))) AS cl_n \gset
+SELECT t.ok(:cl_n = 2
+            AND (SELECT count(*) FROM public.investment_coupon_lines WHERE holding_id = :'cl_bond' AND deleted_at IS NULL) = 2
+            AND (SELECT count(*) FROM public.investment_coupon_lines WHERE holding_id = :'cl_bond' AND deleted_at IS NOT NULL) = 3,
+            'ตารางรับ: บันทึกใหม่ = แทนที่ทั้งชุด (ของเดิมลบแบบ soft delete)');
+SELECT t.fails(format($$SELECT public.set_holding_coupon_schedule(%L, '[{"due_date":"2027-01-01","interest":0,"principal":0}]')$$, :'cl_bond'),
+               'มากกว่า 0', 'ตารางรับ: งวดที่ยอดเป็น 0 บันทึกไม่ได้');
+SELECT t.fails(format($$SELECT public.set_holding_coupon_schedule(%L, '[{"due_date":"2027-01-01","interest":10,"principal":500},{"due_date":"2027-07-01","interest":10,"principal":500}]')$$, :'cl_bond'),
+               'งวดสุดท้าย', 'ตารางรับ: เงินต้นใส่ได้เฉพาะงวดสุดท้าย');
+SELECT t.fails(format($$SELECT public.set_holding_coupon_schedule(%L, '[{"due_date":"2027-01-01","interest":10}]')$$, :'cl_stock'),
+               'ใช้ได้กับหุ้นกู้', 'ตารางรับ: หุ้นตั้งตารางรับไม่ได้');
+SELECT t.fails(format($$SELECT public.set_holding_coupon_schedule(%L, '[{"due_date":"2027-01-01","interest":10}]')$$, (SELECT id FROM public.investment_holdings WHERE holding_type = 'CASH' AND deleted_at IS NULL LIMIT 1)),
+               'ใช้ได้กับหุ้นกู้', 'ตารางรับ: เงินฝากในพอร์ตตั้งตารางรับไม่ได้');
+SELECT t.fails(format($$INSERT INTO public.investment_coupon_lines(holding_id, line_no, due_date, interest_due) VALUES (%L, 9, '2027-01-01', 10)$$, :'cl_stock'),
+               'ใช้ได้กับหุ้นกู้', 'ตารางรับ: เพิ่มงวดตรงให้หุ้นไม่ได้ (trigger)');
+SELECT t.fails(format($$UPDATE public.investment_coupon_lines SET holding_id = %L WHERE holding_id = %L AND deleted_at IS NULL$$, :'cl_stock', :'cl_bond'),
+               'ย้ายงวด', 'ตารางรับ: ย้ายงวดไปหลักทรัพย์อื่นไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000c');
+SELECT t.fails(format($$SELECT public.set_holding_coupon_schedule(%L, '[]')$$, :'cl_bond'), 'PERMISSION|สิทธิ์|denied', 'ตารางรับ: CONTRIBUTOR ตั้งตารางไม่ได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000f');
+SELECT t.fails(format($$SELECT public.set_holding_coupon_schedule(%L, '[]')$$, :'cl_bond'), 'PERMISSION|สิทธิ์|denied', 'ตารางรับ: VIEWER ตั้งตารางไม่ได้');
+SELECT t.ok((SELECT count(*) FROM public.investment_coupon_lines WHERE holding_id = :'cl_bond' AND deleted_at IS NULL) = 2, 'ตารางรับ: VIEWER อ่านได้');
+SELECT t.login('00000000-0000-0000-0000-00000000000a');
+SELECT public.set_holding_coupon_schedule(:'cl_bond', '[]') AS cl_n \gset
+SELECT t.ok(:cl_n = 0
+            AND NOT EXISTS (SELECT 1 FROM public.investment_coupon_lines WHERE holding_id = :'cl_bond' AND deleted_at IS NULL),
+            'ตารางรับ: ส่งตารางว่าง = ลบทั้งชุด (กลับไปใช้ตารางคำนวณ)');
+RESET ROLE;
+SELECT t.ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.investment_coupon_lines'::regclass)
+            AND NOT has_table_privilege('anon', 'public.investment_coupon_lines', 'SELECT')
+            AND NOT has_function_privilege('anon', 'public.set_holding_coupon_schedule(uuid, jsonb)', 'EXECUTE'),
+            'ตารางรับ: เปิด RLS · anon อ่าน / เรียกไม่ได้');
+ROLLBACK;
+
 \echo 'ALL SCENARIO TESTS PASSED'
