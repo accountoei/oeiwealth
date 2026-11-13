@@ -336,7 +336,7 @@ export default async function PortfolioDetailPage({ params, searchParams }: {
                 </WithStatus>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="mb-2 text-sm font-medium text-slate-800">สมาชิกที่เป็นเจ้าของ</h3>
-                  <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today} startOpen
+                  <OwnershipEditor kind="asset" id={id} persons={persons ?? []} paths={paths} today={today}
                     current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
                 </div>
               </div>

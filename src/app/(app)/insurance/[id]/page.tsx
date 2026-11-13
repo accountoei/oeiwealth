@@ -784,7 +784,7 @@ export default async function PolicyDetailPage({ params, searchParams }: { param
                 {cvAsset && (
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="mb-2 text-sm font-medium text-slate-800">เจ้าของมูลค่าเวนคืน</h3>
-                    <OwnershipEditor kind="asset" id={cvAsset.id} persons={persons ?? []} paths={paths} today={today} startOpen
+                    <OwnershipEditor kind="asset" id={cvAsset.id} persons={persons ?? []} paths={paths} today={today}
                       current={activeOwners.map((o) => ({ person_id: o.person_id, percent: Number(o.ownership_percent) }))} />
                   </div>
                 )}
