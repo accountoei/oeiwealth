@@ -1,49 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
-import { money, monthRange, thDate } from "@/lib/format";
+import { monthRange } from "@/lib/format";
 import { scheduleOf, type DueRow } from "@/lib/coupon-schedule";
 import type { Bank } from "./[id]/forms";
 import { recEdit, recLabel, recLink, type Recorded } from "@/lib/recorded-edit";
 import { portfolioTxFields } from "@/lib/source-edit";
-import DueBatch, { DueStatus, type DueGroup, type PfCash } from "./due-batch";
+import DueBatch, { type DueGroup, type PfCash } from "./due-batch";
 import { activeBanks } from "@/lib/pay-sources";
 
-// แท็บ "บันทึกรับผลตอบแทน" (หน้า Investments) + กล่องตารางรับ (หน้าหลักทรัพย์)
+// แท็บ "บันทึกรับผลตอบแทน" (หน้า Investments) · งวดในตารางของหน้าหลักทรัพย์ใช้ชื่องวด dueLabel ร่วมกัน
 //   ดอกเบี้ย / Coupon และเงินต้นที่ครบกำหนดในเดือนที่เลือก (ทุกพอร์ตในตารางเดียว) · งวดที่เลยกำหนดแล้วยังไม่บันทึก = ค้างรับ (ขึ้นก่อน · รวมงวดของเดือนก่อน ๆ) · หลังวันนี้ = รอรับ (ยังไม่ถึงกำหนด)
 //   ตารางคำนวณจากข้อมูลหลักทุกครั้ง (src/lib/coupon-schedule.ts) · ช่องกรอก / บันทึกหลายรายการพร้อมกันอยู่ใน due-batch.tsx
 
-const label = (r: DueRow) => (r.kind === "PRINCIPAL" ? "เงินต้นครบกำหนด" : r.total > 1 ? `ดอกเบี้ย งวด ${r.no}/${r.total}` : "ดอกเบี้ย (ตอนครบกำหนด)");
-
-/** หน้าหลักทรัพย์: ตารางรับทั้งหมด (งวดที่ยังไม่รับก่อน) */
-export function ScheduleBox({ rows, currency, today }: { rows: DueRow[]; currency: string; today: string }) {
-  const open = rows.filter((r) => !r.received).length;
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-medium text-slate-900">ตารางรับดอกเบี้ย / เงินต้น</h2>
-        <span className="text-xs text-slate-500">ยังไม่รับ {open} รายการ · บันทึกรับได้ที่หน้า Investments → แท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo;</span>
-      </div>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[32rem] text-sm">
-          <thead className="text-left text-xs text-slate-500">
-            <tr><th className="py-1 pr-3">วันรับ</th><th className="pr-3">รายการ</th><th className="pr-3 text-right">ยอดคาดว่าจะได้รับ ({currency})</th>
-              <th className="pr-3 text-right">ได้รับจริง</th><th>สถานะ</th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((r) => (
-              <tr key={r.key} className={r.received ? "text-slate-500" : ""}>
-                <td className="py-1.5 pr-3">{thDate(r.due)}</td>
-                <td className="pr-3">{label(r)}</td>
-                <td className="pr-3 text-right tabular-nums">{r.expected != null ? money(r.expected) : "-"}</td>
-                <td className="pr-3 text-right tabular-nums">{r.received ? money(r.received.amount) : ""}</td>
-                <td><DueStatus due={r.due} received={r.received} today={today} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
+export const dueLabel = (r: DueRow) => (r.kind === "PRINCIPAL" ? "เงินต้นครบกำหนด" : r.total > 1 ? `ดอกเบี้ย งวด ${r.no}/${r.total}` : "ดอกเบี้ย (ตอนครบกำหนด)");
 
 type HRow = { id: string; name: string; holding_type: string; currency: string; status: string; maturity_date: string | null;
   current_value: number | null; face_value: number | null; interest_rate: number | null; coupon_frequency: string | null;
@@ -129,7 +97,7 @@ export function DueTab({ data, month, today, goLive, canWrite, canDelete }: {
       fields: portfolioTxFields({ ...t, amount: t.amount ?? 0 }, !!t.settle_to_asset_id) }) };
   };
   const dueGroups: DueGroup[] = [...groups.entries()].map(([pf, g]) => ({ pf, name: g.name, rows: g.rows.map(({ r, h }) => ({
-    key: r.key, kind: r.kind, label: label(r), due: r.due, expected: r.expected, received: r.received, defaultDate: dueDefault(r.due),
+    key: r.key, kind: r.kind, label: dueLabel(r), due: r.due, expected: r.expected, received: r.received, defaultDate: dueDefault(r.due),
     edit: r.received?.id && txById.has(r.received.id) ? [txEdit(txById.get(r.received.id)!, pf, h.currency, "ได้รับ", false)] : undefined,
     holding: { id: h.id, name: h.name, holding_type: h.holding_type, currency: h.currency, status: h.status,
       income_cash_holding_id: h.income_cash_holding_id, income_bank_asset_id: h.income_bank_asset_id } })) }));
