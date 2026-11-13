@@ -149,13 +149,19 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
     .filter((x) => x.date >= mStart && shownIds.has(x.asset_id))
     .reduce((t, x) => t + (pv.personId ? divShare.get(x.id) ?? 0 : Number(x.base_amount ?? 0)), 0);
   const divPct = gain.cost > 0 ? (totals.div * 100) / gain.cost : null;
+  // ปันผลก่อน Go-live (13 พ.ย. 2026) ≈ ปันผลที่บริษัทจ่าย (ผลประกอบการ ปีก่อนปี Go-live) × % ที่ถือตอนนี้ · ตั้งแต่ปี Go-live บันทึกเป็นรายได้แทน
+  const fin = toFinYears(finRows);
+  const goLiveYear = Number((family?.go_live_date ?? today).slice(0, 4));
+  const pctNow = new Map(rows.map((r) => [r.asset_id, companyPct(r) ?? 0]));
+  const prePaid = fin.filter((f) => f.asset_id && pctNow.has(f.asset_id) && f.fiscal_year < goLiveYear && (f.dividends_paid ?? 0) > 0);
+  const preDiv = prePaid.reduce((t, f) => t + (f.dividends_paid! * pctNow.get(f.asset_id!)!) / 100, 0);
+  const preSpan = prePaid.length ? `${Math.min(...prePaid.map((f) => f.fiscal_year)) + 543}–${Math.max(...prePaid.map((f) => f.fiscal_year)) + 543}` : "";
   const mLabel = ym === today.slice(0, 7) ? "เดือนนี้" : thMonth(mStart);
   const staleN = held.filter((r) => !r.assets.current_value_date || r.assets.current_value_date < old).length;
 
   // ---------------------------------------------------------------- แท็บ "บันทึกรับเงินปันผล/อัพเดตมูลค่า" (กิจการที่ดำเนินการอยู่ · ผู้ถือหุ้น ณ วันนี้)
   type DivRow = { id: string; asset_id: string; person_id: string | null; date: string; amount: number; tax: number | null; notes: string | null; currency: string };
   const nameOf = new Map(((people ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name]));
-  const fin = toFinYears(finRows);
   // มูลค่าตามงบการเงิน (ส่วนของครอบครัว · ปีล่าสุดที่บันทึก) = ส่วนของผู้ถือหุ้น × % ที่ครอบครัวถือ (9 พ.ย. 2026)
   const bookOf = (r: Row): BizRow["book"] => {
     const last = calcYears(fin.filter((f) => f.asset_id === r.asset_id)).at(-1);
@@ -229,9 +235,10 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
             sub={<>
               <div>ม.ค. – {thMonth(mStart)} · ก่อนภาษี</div>
               <div>{mLabel} {plusMoney(divMonth)}{divPct != null && <> · คิดเป็น <span className="font-semibold">{divPct.toFixed(2)}%</span> ของเงินลงทุน</>}</div>
+              {prePaid.length > 0 && <div>ก่อน Go-live ≈ {plusMoney(preDiv)} (ปี {preSpan})</div>}
             </>} />
           <StatBox label={<>{gLast ? `กำไร (ขาดทุน) ปี ${gLast.fiscal_year + 543}` : "ผลประกอบการ"} · ทั้งกลุ่ม (100%)
-              {gLast && gLast.audit_status !== "AUDITED" && <span className="ml-1 rounded bg-amber-50 px-1 text-amber-700"
+              {gLast && gLast.audit_status !== "AUDITED" && <span className="mt-1 block w-fit rounded bg-amber-50 px-1 text-amber-700"
                 title={`ยังไม่ตรวจสอบ: ${(gLast.pendingIds ?? []).map((k) => coName.get(k) ?? "").filter(Boolean).join(", ")}`}>
                 Pre-audit{(gLast.auditN ?? 0) > 1 ? ` ${(gLast.auditN ?? 0) - (gLast.auditOk ?? 0)} จาก ${gLast.auditN} บริษัท` : ""}</span>}</>}
             value={gLast?.net_profit != null ? money(gLast.net_profit, "THB") : "-"} valueClass={gLast?.net_profit != null && gLast.net_profit < 0 ? "text-red-700" : undefined}
@@ -239,7 +246,7 @@ export default async function BusinessPage({ searchParams }: { searchParams: Pro
               <div>รายได้รวม {money(gLast.revenue, "THB")}{gLast.marginPct != null && <> · กำไร <span className={gLast.marginPct < 0 ? "text-red-700" : ""}>{gLast.marginPct.toFixed(1)}%</span></>}</div>
               {gPrev && (profitChg != null || revChg != null) && <div>เทียบปี {gPrev.fiscal_year + 543}: กำไร <span className={profitChg == null ? "" : signTone(profitChg, 1)}>{profitChg == null ? "-" : signedPct(profitChg, 1)}</span>
                 {" · "}รายได้ <span className={revChg == null ? "" : signTone(revChg, 1)}>{revChg == null ? "-" : signedPct(revChg, 1)}</span></div>}
-              {gFixed?.fixedNet != null && <div>สินทรัพย์ถาวรคงเหลือ {money(gFixed.fixedNet, "THB")} (ปี {gFixed.fiscal_year + 543})</div>}
+              {gFixed?.fixedNet != null && <div>สินทรัพย์ถาวร ปี {gFixed.fiscal_year + 543} {money(gFixed.fixedNet, "THB")}</div>}
             </>} />
         </section>
       )}
