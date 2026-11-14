@@ -3,9 +3,10 @@
 import { Fragment, useState, type ReactNode } from "react";
 
 // หน้าหลักทรัพย์ 2 กล่อง แบบเดียวกันทุกประเภท (ตกลง 13 พ.ย. 2026):
-//   1) PriceHistory "ราคา / มูลค่า" (อยู่บน): ล่าสุดก่อน · เดือนละบรรทัด · 12 เดือนล่าสุด ที่เหลือกด "ดูทั้งหมด"
+//   1) PriceHistory "ราคา / มูลค่า และซื้อ-ขาย" (อยู่บน): ล่าสุดก่อน · เดือนละบรรทัด · 12 เดือนล่าสุด ที่เหลือกด "ดูทั้งหมด"
+//      ยอดตั้งต้น / ซื้อ / ขาย / ไถ่ถอน / ปรับปรุงจำนวน อยู่กล่องนี้ (ตกลง 15 พ.ย. 2026)
 //      ราคาตลาดอัตโนมัติ (ขึ้นทุกวันทำการ) แสดงเฉพาะราคาล่าสุดของเดือน · ติ๊กเพื่อแสดงรายวัน
-//   2) HoldingHistory "รายการ" / "ตารางรับและรายการ": รายการซื้อ / ขาย / ปันผล ฯลฯ
+//   2) HoldingHistory "ปันผล / ดอกเบี้ยที่รับ" / "ตารางรับ": เงินที่รับ · คอลัมน์แบบแท็บบันทึกรับ (ก่อนภาษี · ภาษี · สุทธิ · เข้าบัญชี)
 //      หุ้นกู้ / FCN (แบบตารางผ่อนเงินกู้): งวดตามตารางรับอยู่ในตารางเดียวกัน · ตัวกรอง ยังไม่รับ / รับแล้ว / ทั้งหมด
 /** open: งวดตามตาราง (true = ยังไม่รับ · false = รับแล้ว) · ไม่ใส่ = รายการ */
 export type HistoryRow = { key: string; row: ReactNode; open?: boolean };
@@ -14,7 +15,7 @@ export type PriceRow = { key: string; month: string; daily: boolean; row: ReactN
 
 const MONTHS = 12;
 
-export function PriceHistory({ rows, head, info, tools, pinned }: { rows: PriceRow[]; head: ReactNode; info?: ReactNode;
+export function PriceHistory({ title, rows, head, info, tools, pinned }: { title: string; rows: PriceRow[]; head: ReactNode; info?: ReactNode;
   /** ปุ่มมุมขวาของหัวกล่อง (อัปเดตราคา / Statement) */ tools?: ReactNode;
   /** แถวบนสุดเสมอ: ยอดตั้งต้น (ต้นทุน) · ตกลง 14 พ.ย. 2026 */ pinned?: ReactNode }) {
   const [daily, setDaily] = useState(false);
@@ -27,7 +28,7 @@ export function PriceHistory({ rows, head, info, tools, pinned }: { rows: PriceR
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-medium text-slate-900">ราคา / มูลค่า {info}</h2>
+        <h2 className="font-medium text-slate-900">{title} {info}</h2>
         <div className="flex flex-wrap items-center gap-3">
           {dailyCount > 0 && (
             <label className="flex items-center gap-2 text-sm text-slate-600">
