@@ -14,7 +14,9 @@ export type PriceRow = { key: string; month: string; daily: boolean; row: ReactN
 
 const MONTHS = 12;
 
-export function PriceHistory({ rows, head, info }: { rows: PriceRow[]; head: ReactNode; info?: ReactNode }) {
+export function PriceHistory({ rows, head, info, tools, pinned }: { rows: PriceRow[]; head: ReactNode; info?: ReactNode;
+  /** ปุ่มมุมขวาของหัวกล่อง (อัปเดตราคา / Statement) */ tools?: ReactNode;
+  /** แถวบนสุดเสมอ: ยอดตั้งต้น (ต้นทุน) · ตกลง 14 พ.ย. 2026 */ pinned?: ReactNode }) {
   const [daily, setDaily] = useState(false);
   const [all, setAll] = useState(false);
   const dailyCount = rows.filter((r) => r.daily).length;
@@ -26,18 +28,21 @@ export function PriceHistory({ rows, head, info }: { rows: PriceRow[]; head: Rea
     <section className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-medium text-slate-900">ราคา / มูลค่า {info}</h2>
-        {dailyCount > 0 && (
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={daily} onChange={(e) => setDaily(e.target.checked)} />
-            แสดงราคารายวัน ({dailyCount})
-          </label>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {dailyCount > 0 && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={daily} onChange={(e) => setDaily(e.target.checked)} />
+              แสดงราคารายวัน ({dailyCount})
+            </label>
+          )}
+          {tools}
+        </div>
       </div>
-      {shown.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีราคา / มูลค่า</p> : (
+      {shown.length === 0 && !pinned ? <p className="text-sm text-slate-500">ยังไม่มีราคา / มูลค่า</p> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[32rem] text-sm">
             {head}
-            <tbody className="divide-y divide-slate-100">{shown.map((r) => <Fragment key={r.key}>{r.row}</Fragment>)}</tbody>
+            <tbody className="divide-y divide-slate-100">{pinned}{shown.map((r) => <Fragment key={r.key}>{r.row}</Fragment>)}</tbody>
           </table>
         </div>
       )}

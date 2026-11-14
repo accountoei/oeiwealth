@@ -547,8 +547,9 @@ export type PfTransfer = { id: string; movement_date: string; movement_type: str
   counter_fee: number | null; cash_holding_id: string | null; description: string | null };
 
 /* ------------------------------------------------------------------ อัปเดตราคา (Statement) */
-export function ValuationsForm({ assetId, holdings, today, minDate }:
-  { assetId: string; holdings: Holding[]; today: string; minDate: string }) {
+export function ValuationsForm({ assetId, holdings, today, minDate, highlight }:
+  { assetId: string; holdings: Holding[]; today: string; minDate: string;
+    /** เปิดจากหน้าหลักทรัพย์: แถวของตัวนั้นสีฟ้า + เคอร์เซอร์รอที่ช่องราคา (ตกลง 14 พ.ย. 2026) */ highlight?: string }) {
   const { open, setOpen, present, activeCls } = useActionSlot(false, { size: "lg" });
   const [state, action, pending] = useActionState<ActionState, FormData>(saveValuations, {});
   const list = holdings.filter((h) => h.status === "ACTIVE");
@@ -572,7 +573,7 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
         </thead>
         <tbody className="divide-y divide-slate-100">
           {list.map((h) => (
-            <tr key={h.id}>
+            <tr key={h.id} className={h.id === highlight ? "bg-blue-50" : undefined}>
               <td className="py-1.5">{h.name} <span className="text-xs text-slate-500">{h.currency}</span>
                 <input type="hidden" name={`qty_${h.id}`} value={String(h.quantity)} />
                 {h.holding_type === "CASH" && <input type="hidden" name={`cash_${h.id}`} value="1" />}
@@ -580,10 +581,12 @@ export function ValuationsForm({ assetId, holdings, today, minDate }:
               <td className="text-right tabular-nums">{h.holding_type === "CASH" ? "-" : h.valuation_mode === "LUMP_SUM" ? <span className="text-xs text-slate-400">ก้อนเดียว</span> : qty(h.quantity)}</td>
               <td className="pl-3">
                 {h.holding_type === "CASH" || h.valuation_mode === "LUMP_SUM" ? <span className="text-xs text-slate-400">—</span> :
-                  <input name={`price_${h.id}`} inputMode="decimal" placeholder={h.current_price ? String(Number(h.current_price)) : ""} className={`w-28 ${small}`} />}
+                  <input name={`price_${h.id}`} inputMode="decimal" placeholder={h.current_price ? String(Number(h.current_price)) : ""} className={`w-28 ${small}`}
+                    data-autofocus={h.id === highlight || undefined} />}
               </td>
               <td className="pl-3">
-                <input name={`mv_${h.id}`} inputMode="decimal" placeholder={h.holding_type === "CASH" ? "ยอดเงินฝากตาม Statement" : ""} className={`w-40 ${small}`} />
+                <input name={`mv_${h.id}`} inputMode="decimal" placeholder={h.holding_type === "CASH" ? "ยอดเงินฝากตาม Statement" : ""} className={`w-40 ${small}`}
+                  data-autofocus={(h.id === highlight && (h.holding_type === "CASH" || h.valuation_mode === "LUMP_SUM")) || undefined} />
               </td>
             </tr>
           ))}

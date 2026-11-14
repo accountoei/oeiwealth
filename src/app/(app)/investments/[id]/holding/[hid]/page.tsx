@@ -9,7 +9,7 @@ import { COUPON_FREQ_LABEL, HOLDING_TYPE_LABEL, ITX_LABEL, addDays, money, qty, 
 import RowActions from "@/components/RowActions";
 import { portfolioTxCols, portfolioTxFields } from "@/lib/source-edit";
 import StatusSelect from "@/components/StatusSelect";
-import { type CashAcct, type Holding } from "../../forms";
+import { ValuationsForm, type CashAcct, type Holding } from "../../forms";
 import { defaultIncomeAccount, incomeAccountOptions } from "@/lib/income-account";
 import { COUPON_MONTHS, scheduleOf, type StoredLine } from "@/lib/coupon-schedule";
 import { CouponEditor } from "./coupon-editor";
@@ -18,7 +18,6 @@ import { DueStatus } from "../../../due-batch";
 import type { Ret, RetLocal } from "../../ReturnsTable";
 import { ConvertUnitsForm, HoldingInfoForm, IncomeForm, UnderlyingForm, type Fcn } from "./forms";
 import EditToggle from "@/components/EditToggle";
-import { ActionBar } from "@/components/ActionBar";
 import { DetailItem as Item } from "@/components/Boxes";
 import PendingPrice, { type Pending } from "@/components/PendingPrice";
 import HoldingHistory, { PriceHistory } from "./history";
@@ -55,7 +54,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   const supabase = await createClient();
   const famQ = supabase.from("families").select("go_live_date").maybeSingle().then((r) => r);
   const [{ data: hRow }, { data: a }, { data: txs }, { data: vals }, { data: rets }, { data: fcnRow }, { data: banks }, { data: family }, { data: cashRows }, { data: retsLocal }, { data: autoRow },
-    [{ data: vals0 }, { data: rates0 }], { data: lineRows }] = await Promise.all([
+    [{ data: vals0 }, { data: rates0 }], { data: lineRows }, [{ data: pfHs }, { data: pfLump }]] = await Promise.all([
     loadHolding(id, hid),
     supabase.from("assets").select("name,currency").eq("id", id).is("deleted_at", null).maybeSingle(),
     supabase.from("v_investment_transactions_net").select("*").eq("holding_id", hid)
@@ -82,8 +81,17 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       ]) : [{ data: [] }, { data: [] }];
     }),
     supabase.from("investment_coupon_lines").select("due_date,interest_due,principal_due,notes").eq("holding_id", hid).is("deleted_at", null).order("due_date"),
+    // ปุ่ม "อัปเดตราคา / Statement" (หน้าต่างเดียวกับหน้าพอร์ต · ทุกตัวในพอร์ต · ตกลง 14 พ.ย. 2026)
+    Promise.all([
+      supabase.from("v_holdings_active").select("id,name,symbol,holding_type,currency,quantity,current_price,status").eq("portfolio_asset_id", id)
+        .order("sort_order").order("name").then((r) => r),
+      supabase.from("investment_holdings").select("id,investment_portfolios!inner(asset_id)").eq("investment_portfolios.asset_id", id)
+        .eq("valuation_mode", "LUMP_SUM").is("deleted_at", null).then((r) => r),
+    ]),
   ]);
   const cashAccounts = (cashRows ?? []) as CashAcct[];
+  const lumpIds = new Set((pfLump ?? []).map((x) => x.id as string));
+  const pfHoldings = ((pfHs as Holding[] | null) ?? []).map((x) => ({ ...x, valuation_mode: lumpIds.has(x.id) ? "LUMP_SUM" : "UNITS" }));
   const h = hRow ? { ...(hRow as H), auto_price: !!autoRow?.auto_price, price_ref: (autoRow?.price_ref as string | null) ?? null } : null;
   if (!h || !a || h.holding_type === "CASH") notFound();
 
@@ -201,15 +209,6 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               {h.derived_status === "MATURITY_SOON" && <span className="text-amber-700"> · ใกล้ครบกำหนด</span>}
             </p>
           </div>
-          {canWrite && h.status === "ACTIVE" && (
-            <ActionBar>
-              <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} holdingName={h.name} currency={h.currency} isFcn={isStructured} canMature={canMature} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive}
-                {...(dueNext && { defaultType: "COUPON", defaultAmount: dueNext.expected, defaultNotes: `${dueLabel(dueNext)} (ครบ ${thDate(dueNext.due)})`,
-                  defaultDate: dueNext.due > today ? today : dueNext.due < goLive ? goLive : dueNext.due })}
-                incomeAccount={defaultIncomeAccount(incomeAccountOptions(cashAccounts, banks ?? [], h.currency), autoRow?.income_cash_holding_id, autoRow?.income_bank_asset_id)} />
-              <Link href={`/investments/${id}`} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50">ซื้อ / ขาย / อัปเดตราคา (หน้าพอร์ต)</Link>
-            </ActionBar>
-          )}
         </div>
       </div>
 
@@ -267,12 +266,12 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                     options={[["MATURED", "ครบกำหนดตามปกติ"], ["AUTOCALLED", "Autocall (ถูกเรียกคืนก่อนกำหนด)"]]} /></div>
                 )}
                 {isStructured && h.status === "ACTIVE" && (
-                  <p className="text-xs text-slate-500">ถูก Autocall: กด &ldquo;+ รับ Coupon&rdquo; → ประเภท &ldquo;คืนเงินต้น&rdquo; (ใส่วันที่ถูกเรียกคืน) แล้วกลับมาเลือก &ldquo;ปิดแบบ Autocall&rdquo; ที่นี่</p>
+                  <p className="text-xs text-slate-500">ถูก Autocall: กด &ldquo;บันทึกรับ&rdquo; (หัวตารางรับ) → ประเภท &ldquo;คืนเงินต้น&rdquo; (ใส่วันที่ถูกเรียกคืน) แล้วกลับมาเลือก &ldquo;ปิดแบบ Autocall&rdquo; ที่นี่</p>
                 )}
               </div>
             } />
           {h.maturity_date && h.status === "ACTIVE" && h.maturity_date < addDays(today, 0) && (
-            <p className="mt-3 text-xs text-amber-700">เลยวันครบกำหนดแล้ว — กด &ldquo;{isStructured ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}&rdquo; → ประเภท &ldquo;คืนเงินต้น&rdquo; เมื่อได้รับเงินต้นคืน</p>
+            <p className="mt-3 text-xs text-amber-700">เลยวันครบกำหนดแล้ว — กด &ldquo;บันทึกรับ&rdquo; (หัวตารางรับ) → ประเภท &ldquo;คืนเงินต้น&rdquo; เมื่อได้รับเงินต้นคืน</p>
           )}
         </div>
       </section>
@@ -313,7 +312,21 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
 
       <PriceHistory info={<InfoTip label="คำอธิบาย">ล่าสุดขึ้นก่อน · แสดง 12 เดือนล่าสุด ที่เก่ากว่ากด &ldquo;ดูทั้งหมด&rdquo; ·
         ราคาอัตโนมัติ (ขึ้นทุกวันทำการ) แสดงเฉพาะราคาล่าสุดของแต่ละเดือน ติ๊ก &ldquo;แสดงราคารายวัน&rdquo; เพื่อดูทุกวัน{lump ? "" : " · จำนวน = หน่วยที่ถือ ณ วันนั้น"} ·
-        อัปเดตราคาที่หน้าพอร์ต · คลิกแถวเพื่อแก้ไข</InfoTip>}
+        แถวแรก (สีฟ้า) = ยอดตั้งต้น (ต้นทุน) · อัปเดตราคา: ปุ่ม &ldquo;อัปเดตราคา / Statement&rdquo; (ทุกตัวในพอร์ต) · คลิกแถวเพื่อแก้ไข</InfoTip>}
+        tools={canWrite && h.status === "ACTIVE" && <ValuationsForm assetId={id} holdings={pfHoldings} today={today} minDate={goLive} highlight={hid} />}
+        pinned={opening && (
+          // ยอดตั้งต้น (ต้นทุน) อยู่บนสุดเสมอ · ย้ายมาจากตารางรายการ (ตกลง 14 พ.ย. 2026)
+          <tr className="bg-blue-50/50" data-row={`x-${opening.id}`}>
+            <td className="py-1.5">{thDate(opening.transaction_date)}</td>
+            <td>ยอดตั้งต้น (ต้นทุน){opening.notes && <div className="text-xs text-slate-500">{opening.notes}</div>}</td>
+            <td className="text-right tabular-nums">{lump || opening.quantity == null ? <span className="text-slate-400">—</span> : qty(opening.quantity)}</td>
+            <td className="text-right tabular-nums">{lump || opening.price == null ? <span className="text-slate-400">—</span> : money(opening.price, undefined, 4)}</td>
+            <td className="text-right tabular-nums">{money(opening.amount)}</td>
+            <td className="pl-2 text-right">{canWrite && !opening.cash_movement_id && <RowActions table="investment_transactions" id={opening.id} paths={paths} canDelete={canDelete}
+              cols={portfolioTxCols(opening)} deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
+              fields={portfolioTxFields(opening, !!(opening.settle_from_asset_id || opening.settle_to_asset_id))} />}</td>
+          </tr>
+        )}
         head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ที่มา</th><th className="text-right">จำนวน</th>
           <th className="text-right">ราคา</th><th className="text-right">มูลค่า</th><th></th></tr></thead>}
         rows={priceRows.map((v) => ({ key: v.id, month: v.valuation_date.slice(0, 7), daily: v.daily, row: (
@@ -339,17 +352,21 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           ) }))} />
 
       <HoldingHistory title={sched.length ? "ตารางรับและรายการ" : "รายการ"}
-        tools={hasSched && canDelete && <CouponEditor assetId={id} holdingId={hid} currency={h.currency} goLive={goLive} current={editorLines} hasSchedule={stored.length > 0}
+        tools={<div className="flex flex-wrap items-center gap-2">{hasSched && canDelete && <CouponEditor assetId={id} holdingId={hid} currency={h.currency} goLive={goLive} current={editorLines} hasSchedule={stored.length > 0}
           defaults={{ face: Number(autoRow?.face_value ?? fcn?.principal ?? cost ?? 0), ratePct: Number(autoRow?.interest_rate ?? fcn?.coupon_rate ?? 0),
             freq: COUPON_MONTHS[freq0] || freq0 === "AT_MATURITY" ? freq0 : "SEMI_ANNUAL",
             start: fcn?.issue_date ?? fcn?.trade_date ?? txList.filter((t) => ["OPENING_BALANCE", "BUY"].includes(t.transaction_type)).at(-1)?.transaction_date ?? "",
             maturity: h.maturity_date ?? "" }} />}
+          {canWrite && h.status === "ACTIVE" && <IncomeForm assetId={id} portfolioName={a.name} holdingId={hid} holdingName={h.name} currency={h.currency} isFcn={isStructured} canMature={canMature} banks={banks ?? []} cashAccounts={cashAccounts} today={today} minDate={goLive}
+                {...(dueNext && { defaultType: "COUPON", defaultAmount: dueNext.expected, defaultNotes: `${dueLabel(dueNext)} (ครบ ${thDate(dueNext.due)})`,
+                  defaultDate: dueNext.due > today ? today : dueNext.due < goLive ? goLive : dueNext.due })}
+                incomeAccount={defaultIncomeAccount(incomeAccountOptions(cashAccounts, banks ?? [], h.currency), autoRow?.income_cash_holding_id, autoRow?.income_bank_asset_id)} />}</div>}
         info={sched.length > 0 && <InfoTip label="คำอธิบายตาราง">{stored.length
           ? <>งวดตามตารางที่ตั้งไว้ (แก้ที่ปุ่ม &ldquo;แก้ตารางรับทั้งชุด&rdquo;)</>
           : <>งวดตามตาราง คำนวณจากเงินต้น · อัตรา · จ่ายทุก · วันครบกำหนด (แก้ได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; หรือตั้งเองรายงวดที่ปุ่ม &ldquo;+ ตั้งตารางรับ&rdquo;)</>} ·
           ก่อน Go-live = ข้อมูลเท่านั้น ไม่เข้ายอดเงิน · ยกเลิก = ขาย / ครบกำหนดก่อนถึงงวด ·
-          แถวสีเขียว = เงินที่ได้รับจริง (ปันผล ดอกเบี้ย เงินต้นคืน ขาย) · แถวสีฟ้า = ยอดตั้งต้น / ซื้อ ·
-          บันทึกรับ: ปุ่ม &ldquo;{isStructured ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย"}&rdquo; ด้านบน (เติมยอดงวดที่ถึงกำหนดให้) หรือแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; ของหน้า Investments · คลิกแถวรายการเพื่อแก้ไข</InfoTip>}
+          แถวสีเขียว = เงินที่ได้รับจริง (ปันผล ดอกเบี้ย เงินต้นคืน ขาย) · แถวสีฟ้า = ซื้อ (ยอดตั้งต้นอยู่แถวแรกของกล่องราคา / มูลค่า) ·
+          บันทึกรับ: ปุ่ม &ldquo;บันทึกรับ&rdquo; ของกล่องนี้ (เติมยอดงวดที่ค้างรับเก่าสุดให้ ไม่มี = งวดถัดไป) หรือแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; ของหน้า Investments · คลิกแถวรายการเพื่อแก้ไข</InfoTip>}
         head={
         <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">จำนวน</th>
           <th className="text-right">ราคา</th><th className="text-right">ยอดเงิน</th><th className="pl-4">{sched.length ? "สถานะ / หมายเหตุ" : "หมายเหตุ"}</th><th></th></tr></thead>
@@ -377,7 +394,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               <td />
             </tr>
           ) } })),
-        ...txList.map((t) => ({ date: t.transaction_date, o: 1, h: {
+        ...txList.filter((t) => t.transaction_type !== "OPENING_BALANCE").map((t) => ({ date: t.transaction_date, o: 1, h: {
           key: `t${t.id}`, row: (
             <tr className={`align-top [&>td]:py-1.5 ${MONEY_IN.includes(t.transaction_type) ? "bg-emerald-50/40" : t.transaction_type === "OPENING_BALANCE" || t.transaction_type === "BUY" ? "bg-blue-50/50" : ""}`}
               data-row={`x-${t.id}`}>
