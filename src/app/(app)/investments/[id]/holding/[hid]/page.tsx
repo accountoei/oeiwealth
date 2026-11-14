@@ -29,14 +29,18 @@ import HoldingValueBox from "./value-box";
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "ถืออยู่", SOLD: "ขายแล้ว", MATURED: "ครบกำหนด", AUTOCALLED: "Autocall (ครบกำหนดก่อนกำหนด)" };
 const STRUCTURED = ["FCN", "STRUCTURED_PRODUCT"];
 /** รายการที่เงินเข้า (แถวสีเขียวในตาราง) */
-const MONEY_IN = ["COUPON", "INTEREST", "DIVIDEND", "MATURITY", "REDEMPTION", "SELL"];
+const MONEY_IN = ["COUPON", "INTEREST", "DIVIDEND", "MATURITY"];
+/** รายการที่จำนวนหน่วยเปลี่ยน → กล่อง "ราคา / มูลค่า และซื้อ-ขาย" (ตกลง 15 พ.ย. 2026) · ที่เหลือ = เงินที่รับ อยู่ตารางล่าง */
+const UNIT_TX = ["BUY", "SELL", "REDEMPTION", "ADJUSTMENT"];
+/** ภาษีหัก ณ ที่จ่ายของงวดก่อน Go-live (ข้อมูลเท่านั้น): หุ้นกู้ / พันธบัตรเงินบาท 15% · ระบบนับดอกเบี้ยเป็นยอดสุทธิ (ตกลง 15 พ.ย. 2026) */
+const PRE_WHT = 0.15;
 const VAL_SOURCE_LABEL: Record<string, string> = { OPENING: "มูลค่า ณ วันตั้งต้น", STATEMENT: "ราคาตาม Statement", MARKET: "ราคาตลาด (อัตโนมัติ)", USER: "ราคา (ผู้ใช้ใส่)" };
 
 type H = Holding & { portfolio_asset_id: string; average_cost: number | null; current_value: number | null; current_value_date: string | null;
   maturity_date: string | null; derived_status: string | null; valued_at_cost: boolean; notes: string | null };
 type Tx = { id: string; transaction_date: string; settlement_date: string | null; transaction_type: string; quantity: number | null;
   price: number | null; amount: number; fee: number | null; tax: number | null; direction: string | null; notes: string | null;
-  settle_from_asset_id: string | null; settle_to_asset_id: string | null; cash_movement_id: string | null; cost_base_currency: number | null };
+  settle_from_asset_id: string | null; settle_to_asset_id: string | null; cash_holding_id: string | null; cash_movement_id: string | null; cost_base_currency: number | null };
 type U = { id: string; symbol: string; name: string | null; initial_price: number | null; strike_price: number | null; barrier_price: number | null };
 
 // ข้อมูลหลักของหน้า: ใช้ทั้งชื่อแท็บเบราว์เซอร์และในหน้า (cache → โหลดครั้งเดียวต่อการเปิดหน้า)
@@ -126,6 +130,11 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
   // งวดก่อน Go-live (ข้อมูลเท่านั้น) → รวมไว้ท้ายตาราง
   const preLines = sched.filter((x) => x.pre && x.kind === "INTEREST");
   const preSum = preLines.reduce((s, x) => s + Number(x.expected ?? 0), 0);
+  // ยอดสุทธิรายงวด (ปัดทีละงวด) → รวม = "ดอกเบี้ย คูปอง (รับแล้ว)" ก่อน Go-live ในกล่องมูลค่า และยอดในไฟล์เงินที่โอนไปจริงของพอร์ต
+  const preRate = h.holding_type === "BOND" && h.currency === "THB" ? PRE_WHT : 0;
+  // ปัดครึ่งขึ้นเป็นสตางค์แบบเลขจำนวนเต็ม (ตรงกับ round(interest_due × 0.85, 2) ในไฟล์ SQL)
+  const preNet = (gross: number) => Math.floor((Math.round(gross * 100) * Math.round((1 - preRate) * 100) + 50) / 100) / 100;
+  const preNetSum = preLines.reduce((s, x) => s + preNet(Number(x.expected ?? 0)), 0);
   // หน้าต่างตั้ง / แก้ตารางรับ: เริ่มจากงวดที่ตั้งไว้ ไม่มี = งวดที่คำนวณจากข้อมูลหลัก (ดอกเบี้ย + เงินต้นวันเดียวกัน = งวดเดียว)
   const editorLines = stored.length
     ? stored.map((l) => ({ due_date: l.due_date, principal: Number(l.principal_due), interest: Number(l.interest_due), notes: l.notes ?? undefined }))
@@ -183,18 +192,46 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     ? openingValues(id, [{ portfolio_asset_id: id, holding_id: hid, transaction_date: opening.transaction_date, quantity: opening.quantity, price: opening.price,
       currency: h.currency, cost_base_currency: opening.cost_base_currency }], (vals0 as ValuationAt[] | null) ?? [])[0] : null;
   const k0 = thb0(h.currency);
-  const pre = ov ? { thb: k0 == null || opening?.cost_base_currency == null ? null : ov.value * k0 - Number(opening.cost_base_currency), ccy: ov.value - ov.cost } : null;
+  // ก่อน Go-live = ราคาเปลี่ยน + ดอกเบี้ยตามตารางก่อน Go-live (สุทธิ · ข้อมูลเท่านั้น · หุ้นกู้ / พันธบัตร · ตกลง 15 พ.ย. 2026)
+  const prePrice = ov ? { thb: k0 == null || opening?.cost_base_currency == null ? null : ov.value * k0 - Number(opening.cost_base_currency), ccy: ov.value - ov.cost } : null;
+  const pre = prePrice ? { thb: prePrice.thb == null ? null : prePrice.thb + preNetSum * (fxH ? k0 ?? 0 : 1), ccy: prePrice.ccy + preNetSum,
+    got: preNetSum, n: preLines.length, price: fxH ? prePrice.ccy : prePrice.thb } : null;
   const paid = (f: (t: Tx) => number | null) => txList.filter((t) => ["OPENING_BALANCE", "BUY"].includes(t.transaction_type))
     .reduce<number | null>((s, t) => { const x = f(t); return s == null || x == null ? null : s + x; }, 0);
   const paidCcy = paid((t) => Number(t.amount) + (t.transaction_type === "BUY" ? Number(t.fee ?? 0) : 0));
   const paidThb = fxH ? paid((t) => (t.cost_base_currency == null ? null : Number(t.cost_base_currency))) : paidCcy;
   const income = coupons.reduce((s, t) => s + Number(t.amount) - Number(t.tax ?? 0) - Number(t.fee ?? 0), 0);
-  const sinceCcy = rl ? Number(rl.total) - (pre?.ccy ?? 0) : null;
+  const sinceCcy = rl ? Number(rl.total) - (prePrice?.ccy ?? 0) : null;
+  // รวม = แถวของตัวนี้ในตารางผลตอบแทน + ดอกเบี้ยก่อน Go-live (ตารางผลตอบแทนนับก้อนนี้ระดับพอร์ต)
+  const totThb = r ? Number(r.total_thb) + (pre && pre.thb != null && prePrice?.thb != null ? pre.thb - prePrice.thb : 0) : 0;
+  const totCcy = rl ? Number(rl.total) + preNetSum * (pre ? 1 : 0) : 0;
   const split = r && rl ? {
     pre,
-    since: { thb: pre && pre.thb == null ? null : Number(r.total_thb) - (pre?.thb ?? 0), ccy: sinceCcy, income, price: sinceCcy == null ? null : sinceCcy - income },
-    total: { thb: Number(r.total_thb), ccy: Number(rl.total), pctThb: paidThb ? (Number(r.total_thb) / paidThb) * 100 : null, pctCcy: paidCcy ? (Number(rl.total) / paidCcy) * 100 : null },
+    since: { thb: prePrice && prePrice.thb == null ? null : Number(r.total_thb) - (prePrice?.thb ?? 0), ccy: sinceCcy, income, price: sinceCcy == null ? null : sinceCcy - income },
+    total: { thb: totThb, ccy: totCcy, pctThb: paidThb ? (totThb / paidThb) * 100 : null, pctCcy: paidCcy ? (totCcy / paidCcy) * 100 : null },
   } : null;
+
+  // ตารางล่าง (คอลัมน์แบบแท็บบันทึกรับ · ตกลง 15 พ.ย. 2026): งวดที่รับแล้วแสดงยอดจริงในแถวงวด → ไม่มีแถวรายการซ้ำ
+  const txById = new Map(txList.map((t) => [t.id, t]));
+  const matchedIds = new Set(sched.map((x) => x.received?.id).filter(Boolean) as string[]);
+  const acctName = (t: Tx) => t.settle_to_asset_id ? ((banks ?? []).find((b) => b.asset_id === t.settle_to_asset_id)?.name ?? "บัญชีธนาคาร")
+    : t.cash_holding_id ? (cashAccounts.find((c) => c.id === t.cash_holding_id)?.name ?? "เงินฝากในพอร์ต") : "-";
+  const txEdit = (t: Tx) => canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={portfolioTxCols(t)}
+    deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม" fields={portfolioTxFields(t, !!(t.settle_from_asset_id || t.settle_to_asset_id))} />;
+  const num = (v: number | null, cls = "") => <td className={`text-right tabular-nums ${cls}`}>{v == null ? "" : money(v)}</td>;
+  /** ยอดก่อนภาษี · ภาษี · สุทธิ · เข้าบัญชี ของรายการจริง */
+  const txCells = (t: Tx) => {
+    const fee = Number(t.fee ?? 0), tax = Number(t.tax ?? 0);
+    const out = t.transaction_type === "FEE" || t.transaction_type === "TAX";
+    return <>
+      {num(out ? null : Number(t.amount))}
+      <td className="text-right tabular-nums">{tax > 0 ? money(tax) : ""}{fee > 0 && <div className="text-xs text-slate-500">ค่าธรรมเนียม {money(fee)}</div>}</td>
+      {num(out ? -Number(t.amount) : Number(t.amount) - tax - fee, `font-medium ${out ? "text-red-600" : ""}`)}
+      <td className="pl-4 text-xs text-slate-600">{acctName(t)}</td>
+    </>;
+  };
+  // กล่องบน: ราคา + ซื้อ / ขาย / ไถ่ถอน / ปรับปรุงจำนวน (ล่าสุดก่อน · วันเดียวกัน: ราคาก่อน)
+  const unitTxs = txList.filter((t) => UNIT_TX.includes(t.transaction_type));
 
   return (
     <div className="space-y-6">
@@ -310,9 +347,9 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </section>
       )}
 
-      <PriceHistory info={<InfoTip label="คำอธิบาย">ล่าสุดขึ้นก่อน · แสดง 12 เดือนล่าสุด ที่เก่ากว่ากด &ldquo;ดูทั้งหมด&rdquo; ·
-        ราคาอัตโนมัติ (ขึ้นทุกวันทำการ) แสดงเฉพาะราคาล่าสุดของแต่ละเดือน ติ๊ก &ldquo;แสดงราคารายวัน&rdquo; เพื่อดูทุกวัน{lump ? "" : " · จำนวน = หน่วยที่ถือ ณ วันนั้น"} ·
-        แถวแรก (สีฟ้า) = ยอดตั้งต้น (ต้นทุน) · อัปเดตราคา: ปุ่ม &ldquo;อัปเดตราคา / Statement&rdquo; (ทุกตัวในพอร์ต) · คลิกแถวเพื่อแก้ไข</InfoTip>}
+      <PriceHistory title="ราคา / มูลค่า และซื้อ-ขาย" info={<InfoTip label="คำอธิบาย">ล่าสุดขึ้นก่อน · แสดง 12 เดือนล่าสุด ที่เก่ากว่ากด &ldquo;ดูทั้งหมด&rdquo; ·
+        ราคาอัตโนมัติ (ขึ้นทุกวันทำการ) แสดงเฉพาะราคาล่าสุดของแต่ละเดือน ติ๊ก &ldquo;แสดงราคารายวัน&rdquo; เพื่อดูทุกวัน{lump ? "" : " · จำนวน = หน่วยที่ถือ ณ วันนั้น (แถวซื้อ / ขาย = จำนวนของรายการ)"} ·
+        แถวแรก (สีฟ้า) = ยอดตั้งต้น (ต้นทุน) · สีฟ้า = ซื้อ · สีเขียว = ขาย / ไถ่ถอน (เงินเข้า) · อัปเดตราคา: ปุ่ม &ldquo;อัปเดตราคา / Statement&rdquo; (ทุกตัวในพอร์ต) · คลิกแถวเพื่อแก้ไข</InfoTip>}
         tools={canWrite && h.status === "ACTIVE" && <ValuationsForm assetId={id} holdings={pfHoldings} today={today} minDate={goLive} highlight={hid} />}
         pinned={opening && (
           // ยอดตั้งต้น (ต้นทุน) อยู่บนสุดเสมอ · ย้ายมาจากตารางรายการ (ตกลง 14 พ.ย. 2026)
@@ -322,14 +359,13 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
             <td className="text-right tabular-nums">{lump || opening.quantity == null ? <span className="text-slate-400">—</span> : qty(opening.quantity)}</td>
             <td className="text-right tabular-nums">{lump || opening.price == null ? <span className="text-slate-400">—</span> : money(opening.price, undefined, 4)}</td>
             <td className="text-right tabular-nums">{money(opening.amount)}</td>
-            <td className="pl-2 text-right">{canWrite && !opening.cash_movement_id && <RowActions table="investment_transactions" id={opening.id} paths={paths} canDelete={canDelete}
-              cols={portfolioTxCols(opening)} deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-              fields={portfolioTxFields(opening, !!(opening.settle_from_asset_id || opening.settle_to_asset_id))} />}</td>
+            <td className="pl-2 text-right">{txEdit(opening)}</td>
           </tr>
         )}
-        head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>ที่มา</th><th className="text-right">จำนวน</th>
+        head={<thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">จำนวน</th>
           <th className="text-right">ราคา</th><th className="text-right">มูลค่า</th><th></th></tr></thead>}
-        rows={priceRows.map((v) => ({ key: v.id, month: v.valuation_date.slice(0, 7), daily: v.daily, row: (
+        rows={[
+          ...priceRows.map((v) => ({ date: v.valuation_date, o: 0, r: { key: v.id, month: v.valuation_date.slice(0, 7), daily: v.daily, row: (
           <tr>
             <td className="py-1.5">{thDate(v.valuation_date)}</td>
             <td>{VAL_SOURCE_LABEL[v.source] ?? v.source}</td>
@@ -349,9 +385,24 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                        calc: { op: "mul" as const, a: "held", b: "price" } }]),
               ]} />}</td>
           </tr>
-          ) }))} />
+          ) } })),
+          // ซื้อ / ขาย / ไถ่ถอน / ปรับปรุงจำนวน · ย้ายมาจากตารางรายการ (ตกลง 15 พ.ย. 2026) · ไม่ซ่อนตามช่องรายวัน
+          ...unitTxs.map((t) => ({ date: t.transaction_date, o: 1, r: { key: `t${t.id}`, month: t.transaction_date.slice(0, 7), daily: false, row: (
+          <tr className={`align-top ${t.transaction_type === "BUY" ? "bg-blue-50/50" : t.transaction_type === "ADJUSTMENT" ? "" : "bg-emerald-50/40"}`} data-row={`x-${t.id}`}>
+            <td className="py-1.5">{thDate(t.transaction_date)}</td>
+            <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}
+              {(t.notes || t.settle_from_asset_id || t.settle_to_asset_id) && <div className="text-xs text-slate-500">{t.notes}{(t.settle_from_asset_id || t.settle_to_asset_id) && <div>ผ่านบัญชีธนาคาร</div>}</div>}</td>
+            <td className="text-right tabular-nums">{t.quantity != null ? qty(t.quantity) : ""}</td>
+            <td className="text-right tabular-nums">{t.price != null ? money(t.price, undefined, 4) : ""}</td>
+            <td className="text-right tabular-nums">{money(t.amount)}
+              {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && <div className="text-xs text-slate-500">
+                {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}</div>}</td>
+            <td className="pl-2 text-right">{txEdit(t)}</td>
+          </tr>
+          ) } })),
+        ].sort((x, y) => y.date.localeCompare(x.date) || x.o - y.o).map((x) => x.r)} />
 
-      <HoldingHistory title={sched.length ? "ตารางรับและรายการ" : "รายการ"}
+      <HoldingHistory title={sched.length ? "ตารางรับ" : "ปันผล / ดอกเบี้ยที่รับ"}
         tools={<div className="flex flex-wrap items-center gap-2">{hasSched && canDelete && <CouponEditor assetId={id} holdingId={hid} currency={h.currency} goLive={goLive} current={editorLines} hasSchedule={stored.length > 0}
           defaults={{ face: Number(autoRow?.face_value ?? fcn?.principal ?? cost ?? 0), ratePct: Number(autoRow?.interest_rate ?? fcn?.coupon_rate ?? 0),
             freq: COUPON_MONTHS[freq0] || freq0 === "AT_MATURITY" ? freq0 : "SEMI_ANNUAL",
@@ -361,57 +412,52 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                 {...(dueNext && { defaultType: "COUPON", defaultAmount: dueNext.expected, defaultNotes: `${dueLabel(dueNext)} (ครบ ${thDate(dueNext.due)})`,
                   defaultDate: dueNext.due > today ? today : dueNext.due < goLive ? goLive : dueNext.due })}
                 incomeAccount={defaultIncomeAccount(incomeAccountOptions(cashAccounts, banks ?? [], h.currency), autoRow?.income_cash_holding_id, autoRow?.income_bank_asset_id)} />}</div>}
-        info={sched.length > 0 && <InfoTip label="คำอธิบายตาราง">{stored.length
+        info={<InfoTip label="คำอธิบายตาราง">{sched.length > 0 && <>{stored.length
           ? <>งวดตามตารางที่ตั้งไว้ (แก้ที่ปุ่ม &ldquo;แก้ตารางรับทั้งชุด&rdquo;)</>
           : <>งวดตามตาราง คำนวณจากเงินต้น · อัตรา · จ่ายทุก · วันครบกำหนด (แก้ได้ที่ &ldquo;แก้ไขข้อมูล&rdquo; หรือตั้งเองรายงวดที่ปุ่ม &ldquo;+ ตั้งตารางรับ&rdquo;)</>} ·
-          ก่อน Go-live = ข้อมูลเท่านั้น ไม่เข้ายอดเงิน · ยกเลิก = ขาย / ครบกำหนดก่อนถึงงวด ·
-          แถวสีเขียว = เงินที่ได้รับจริง (ปันผล ดอกเบี้ย เงินต้นคืน ขาย) · แถวสีฟ้า = ซื้อ (ยอดตั้งต้นอยู่แถวแรกของกล่องราคา / มูลค่า) ·
-          บันทึกรับ: ปุ่ม &ldquo;บันทึกรับ&rdquo; ของกล่องนี้ (เติมยอดงวดที่ค้างรับเก่าสุดให้ ไม่มี = งวดถัดไป) หรือแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; ของหน้า Investments · คลิกแถวรายการเพื่อแก้ไข</InfoTip>}
+          ก่อน Go-live = ข้อมูลเท่านั้น ไม่เข้ายอดเงิน{preRate > 0 && ` (คิดภาษีหัก ณ ที่จ่าย ${preRate * 100}% ให้)`} · ยกเลิก = ขาย / ครบกำหนดก่อนถึงงวด ·
+          งวดที่รับแล้วแสดงยอดที่บันทึกจริง · </>}
+          แถวสีเขียว = เงินที่ได้รับจริง · ยอดเข้าบัญชีสุทธิ = ก่อนภาษี − ภาษี − ค่าธรรมเนียม · ซื้อ / ขาย อยู่กล่องราคา / มูลค่า ·
+          บันทึกรับ: ปุ่ม &ldquo;บันทึกรับ&rdquo; ของกล่องนี้{sched.length > 0 && " (เติมยอดงวดที่ค้างรับเก่าสุดให้ ไม่มี = งวดถัดไป)"} หรือแท็บ &ldquo;บันทึกรับผลตอบแทน&rdquo; ของหน้า Investments · คลิกแถวที่รับแล้วเพื่อแก้ไข</InfoTip>}
         head={
-        <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">จำนวน</th>
-          <th className="text-right">ราคา</th><th className="text-right">ยอดเงิน</th><th className="pl-4">{sched.length ? "สถานะ / หมายเหตุ" : "หมายเหตุ"}</th><th></th></tr></thead>
+        <thead className="text-left text-xs text-slate-500"><tr><th className="py-1">วันที่</th><th>รายการ</th><th className="text-right">ยอดก่อนภาษี</th>
+          <th className="text-right">ภาษีหัก ณ ที่จ่าย</th><th className="text-right">ยอดเข้าบัญชีสุทธิ</th><th className="pl-4">เข้าบัญชี</th>
+          <th className="pl-4">{sched.length ? "สถานะ / หมายเหตุ" : "หมายเหตุ"}</th><th></th></tr></thead>
       } foot={coupons.length > 0 || otherFees > 0 || preLines.length > 0 ? (
         <tfoot className="border-t-2 border-slate-200 text-xs text-slate-600">
-          {preLines.length > 0 && <tr><td colSpan={4} className="py-2">ดอกเบี้ยตามตารางก่อน Go-live {preLines.length} งวด (ข้อมูลเท่านั้น · ก่อนภาษี)</td>
-            <td className="text-right text-sm tabular-nums">{money(preSum, h.currency)}</td><td colSpan={2} /></tr>}
-          {coupons.length > 0 && <tr><td colSpan={4} className="py-2">รับปันผล / ดอกเบี้ยแล้ว {coupons.length} ครั้ง · สุทธิหลังหักภาษี / ค่าธรรมเนียม</td>
-            <td className="text-right text-sm font-medium tabular-nums text-emerald-700">{money(income, h.currency)}</td>
-            <td className="pl-4">ก่อนภาษี {money(couponGross)}{couponTax > 0 && ` · ภาษี ${money(couponTax)}`}</td><td /></tr>}
-          {otherFees > 0 && <tr><td colSpan={4} className="py-2">ค่าธรรมเนียมอื่น (หักจากผลตอบแทน)</td>
-            <td className="text-right text-sm tabular-nums">{money(otherFees, h.currency)}</td><td colSpan={2} /></tr>}
+          {preLines.length > 0 && <tr><td colSpan={2} className="py-2">ดอกเบี้ยตามตารางก่อน Go-live {preLines.length} งวด (ข้อมูลเท่านั้น)</td>
+            {num(preSum, "text-sm")}{num(preRate ? preSum - preNetSum : null)}{num(preNetSum, "text-sm font-medium")}<td colSpan={3} /></tr>}
+          {coupons.length > 0 && <tr><td colSpan={2} className="py-2">รับปันผล / ดอกเบี้ยแล้ว {coupons.length} ครั้ง</td>
+            {num(couponGross, "text-sm")}{num(couponTax)}{num(income, "text-sm font-medium text-emerald-700")}<td colSpan={3} /></tr>}
+          {otherFees > 0 && <tr><td colSpan={2} className="py-2">ค่าธรรมเนียมอื่น (หักจากผลตอบแทน)</td>
+            <td /><td />{num(-otherFees, "text-sm text-red-600")}<td colSpan={3} /></tr>}
         </tfoot>) : undefined}
         rows={[
-        ...sched.map((x) => ({ date: x.due, o: 0, h: {
+        ...sched.map((x) => {
+          const t = x.received?.id ? txById.get(x.received.id) : undefined;
+          const g = Number(x.expected ?? 0);
+          return { date: x.due, o: 0, h: {
           // ยกเลิก: ไม่นับทั้งยังไม่รับ / รับแล้ว · ก่อน Go-live: นับเป็นรับแล้ว (รับก่อนเริ่มใช้ระบบ)
           key: `s${x.key}`, open: x.cancelled ? undefined : !x.received && !x.pre, row: (
-            <tr className={`align-top [&>td]:py-1.5 ${x.received ? "text-slate-500" : x.pre || x.cancelled ? "text-slate-400" : ""}`}>
+            <tr className={`align-top [&>td]:py-1.5 ${t ? "bg-emerald-50/40" : x.pre || x.cancelled ? "text-slate-400" : ""}`} data-row={t ? `x-${t.id}` : undefined}>
               <td className="py-1.5">{thDate(x.due)}</td>
               <td>{dueLabel(x)}</td>
-              <td /><td />
-              <td className="text-right tabular-nums">{x.expected != null ? money(x.expected) : "-"}</td>
+              {t ? txCells(t) : x.pre && x.kind === "INTEREST" ? <>{num(g)}{num(preRate ? g - preNet(g) : null)}{num(preNet(g))}<td className="pl-4 text-xs">-</td></>
+                : <>{num(x.expected)}<td /><td /><td /></>}
               <td className="pl-4 text-xs">{x.cancelled ? "ยกเลิก" : x.pre && !x.received ? "ก่อน Go-live" : <DueStatus due={x.due} received={x.received} today={today} />}
-                {x.notes && <div className="text-slate-500">{x.notes}</div>}</td>
-              <td />
+                {x.notes && <div className="text-slate-500">{x.notes}</div>}{t?.notes && <div className="text-slate-500">{t.notes}</div>}</td>
+              <td className="pl-2 text-right">{t && txEdit(t)}</td>
             </tr>
-          ) } })),
-        ...txList.filter((t) => t.transaction_type !== "OPENING_BALANCE").map((t) => ({ date: t.transaction_date, o: 1, h: {
+          ) } };
+        }),
+        ...txList.filter((t) => t.transaction_type !== "OPENING_BALANCE" && !UNIT_TX.includes(t.transaction_type) && !matchedIds.has(t.id)).map((t) => ({ date: t.transaction_date, o: 1, h: {
           key: `t${t.id}`, row: (
-            <tr className={`align-top [&>td]:py-1.5 ${MONEY_IN.includes(t.transaction_type) ? "bg-emerald-50/40" : t.transaction_type === "OPENING_BALANCE" || t.transaction_type === "BUY" ? "bg-blue-50/50" : ""}`}
-              data-row={`x-${t.id}`}>
+            <tr className={`align-top [&>td]:py-1.5 ${MONEY_IN.includes(t.transaction_type) ? "bg-emerald-50/40" : ""}`} data-row={`x-${t.id}`}>
               <td className="py-1.5">{thDate(t.transaction_date)}</td>
               <td>{ITX_LABEL[t.transaction_type] ?? t.transaction_type}{t.direction && ` (${t.direction === "IN" ? "เพิ่ม" : "ลด"})`}</td>
-              <td className="text-right tabular-nums text-slate-600">{t.quantity != null ? qty(t.quantity) : ""}</td>
-              <td className="text-right tabular-nums text-slate-600">{t.price != null ? money(t.price, undefined, 4) : ""}</td>
-              <td className="text-right tabular-nums">{money(t.amount)}
-                {(Number(t.fee ?? 0) > 0 || Number(t.tax ?? 0) > 0) && <div className="text-xs text-slate-500">
-                  {Number(t.fee ?? 0) > 0 && `ค่าธรรมเนียม ${money(t.fee)}`} {Number(t.tax ?? 0) > 0 && `ภาษี ${money(t.tax)}`}</div>}
-              </td>
-              <td className="pl-4 text-xs text-slate-500">{t.notes}{(t.settle_from_asset_id || t.settle_to_asset_id) && <div>ผ่านบัญชีธนาคาร</div>}</td>
-              <td className="pl-2 text-right">
-                {canWrite && !t.cash_movement_id && <RowActions table="investment_transactions" id={t.id} paths={paths} canDelete={canDelete} cols={portfolioTxCols(t)}
-                  deleteNote="รายได้ / เงินเข้าออกบัญชีที่ระบบสร้างจากรายการนี้จะถูกลบตาม"
-                  fields={portfolioTxFields(t, !!(t.settle_from_asset_id || t.settle_to_asset_id))} />}
-              </td>
+              {txCells(t)}
+              <td className="pl-4 text-xs text-slate-500">{t.notes}</td>
+              <td className="pl-2 text-right">{txEdit(t)}</td>
             </tr>
           ) } })),
       // มีตารางรับ: เรียงเก่า → ใหม่แบบตารางผ่อน (วันเดียวกัน: งวด → รายการ) · ไม่มี: ล่าสุดก่อน

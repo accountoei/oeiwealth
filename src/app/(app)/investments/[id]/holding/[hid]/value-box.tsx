@@ -5,7 +5,8 @@ import { money, qty, signTone, signedMoney, signedPct } from "@/lib/format";
 export type Amt = { thb: number | null; ccy: number | null };
 /** ผลตอบแทนรายตัว · บรรทัดย่อยเป็นสกุลหลักทรัพย์ */
 export type HoldingSplit = {
-  pre: Amt | null;
+  /** got / n = ดอกเบี้ยตามตารางก่อน Go-live (สุทธิ · ข้อมูลเท่านั้น) · price = ราคาเปลี่ยน (สกุลหลักทรัพย์ · บาทถ้าเป็นบาท) */
+  pre: (Amt & { got: number; n: number; price: number | null }) | null;
   since: Amt & { income: number; price: number | null };
   total: Amt & { pctThb: number | null; pctCcy: number | null };
 };
@@ -45,7 +46,8 @@ export default function HoldingValueBox({ currency, value, cost, dateNote, lump,
         {split && <>
           {split.pre && <>
             {two("ผลตอบแทนก่อน Go-live", split.pre, true)}
-            {sub("ราคาเปลี่ยน (ยังไม่รับรู้)", fx ? split.pre.ccy : split.pre.thb)}
+            {split.pre.n > 0 && sub("ดอกเบี้ย คูปอง (รับแล้ว · สุทธิ)", split.pre.got, ` · ${split.pre.n} งวด`)}
+            {sub("ราคาเปลี่ยน (ยังไม่รับรู้)", split.pre.price)}
           </>}
           {two("ผลตอบแทนตั้งแต่ Go-live (ก่อนภาษี)", split.since, true)}
           {sub("ปันผล ดอกเบี้ย คูปอง (รับแล้ว)", split.since.income, ` · ${incomeCount} ครั้ง`)}
