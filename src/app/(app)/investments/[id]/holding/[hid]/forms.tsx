@@ -110,7 +110,8 @@ export function IncomeForm({ assetId, portfolioName = "", holdingId, holdingName
   const mat = type === "MATURITY";
   const [state, action, pending] = mat ? [matState, matAction, matPending] : [txState, txAction, txPending];
   const list = banks.filter((b) => b.currency === currency);
-  const trigger = <button onClick={() => setOpen(!open)} className={label ? ROW_BTN : activeCls(obtn)}>{label ?? (isFcn ? "+ รับ Coupon" : "+ รับปันผล / ดอกเบี้ย")}</button>;
+  // หน้าหลักทรัพย์: ปุ่ม "บันทึกรับ" ที่หัวตารางรับ / ตารางรายการ (แบบ "บันทึกรับชำระ" ของเงินกู้ · ตกลง 14 พ.ย. 2026)
+  const trigger = <button onClick={() => setOpen(!open)} className={label ? ROW_BTN : activeCls(btn.replace("px-4 py-2", "px-3 py-1.5"))}>{label ?? "บันทึกรับ"}</button>;
   if (!open) return trigger;
   const types: [string, string][] = [...(isFcn ? [] : [["DIVIDEND", "ปันผล"]] as [string, string][]),
     ["COUPON", isFcn ? "Coupon" : "Coupon / ดอกเบี้ยพันธบัตร"], ...(canMature ? [["MATURITY", "คืนเงินต้น (ครบกำหนด / Autocall)"]] as [string, string][] : [])];
